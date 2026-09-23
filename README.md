@@ -40,7 +40,10 @@ Other targets are passed through to Buildroot: `make menuconfig`,
 ## Using the Pi
 
 - `ssh -i ~/.ssh/sleepradiopi root@sleepradiopi.local` (key only; the
-  authorised key is `board/sleepradiopi/rootfs-overlay/root/.ssh/authorized_keys`).
+  authorised keys are in `board/sleepradiopi/rootfs-overlay/root/.ssh/authorized_keys`).
+- Green ACT LED: flickers while booting; **3 slow pulses** once it's on the
+  network and ready for ssh, then stays dark. A steady **fast blink** means it
+  booted but has no Wi-Fi address (check `wpa_supplicant.conf`).
 - Wi-Fi: `wpa_supplicant.conf` on the boot partition (FAT, readable on
   any PC).
 - Serial console: GPIO14/15, 115200 baud (Bluetooth is disabled so the full
