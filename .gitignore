@@ -1,0 +1,4 @@
+/output/
+/dl/
+# Machine-local secrets: Wi-Fi credentials and SSH host keys. Never commit.
+/local/

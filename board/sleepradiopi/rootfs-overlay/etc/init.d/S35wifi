@@ -1,0 +1,48 @@
+#!/bin/sh
+#
+# Join Wi-Fi using /boot/wpa_supplicant.conf (edit it on a PC), then run
+# DHCP in the background so boot never waits for the network.
+#
+
+CONF=/boot/wpa_supplicant.conf
+IFACE=wlan0
+
+start() {
+	printf "Starting Wi-Fi: "
+	if [ ! -r "$CONF" ]; then
+		echo "no $CONF, skipping"
+		return 0
+	fi
+	# The brcmfmac driver is loaded by udev; give it a moment to appear.
+	i=0
+	while [ ! -e /sys/class/net/$IFACE ] && [ $i -lt 50 ]; do
+		sleep 0.1
+		i=$((i + 1))
+	done
+	if [ ! -e /sys/class/net/$IFACE ]; then
+		echo "FAIL (no $IFACE)"
+		return 1
+	fi
+	ip link set $IFACE up
+	# Power saving makes the Zero's Wi-Fi laggy and drops the stream.
+	iw dev $IFACE set power_save off 2>/dev/null
+	wpa_supplicant -B -D nl80211 -i $IFACE -c "$CONF" \
+		-P /run/wpa_supplicant.pid -f /var/log/wpa_supplicant.log
+	udhcpc -b -S -i $IFACE -x hostname:"$(hostname)" \
+		-p /run/udhcpc.$IFACE.pid >/dev/null 2>&1
+	echo "OK"
+}
+
+stop() {
+	printf "Stopping Wi-Fi: "
+	[ -f /run/udhcpc.$IFACE.pid ] && kill "$(cat /run/udhcpc.$IFACE.pid)"
+	[ -f /run/wpa_supplicant.pid ] && kill "$(cat /run/wpa_supplicant.pid)"
+	echo "OK"
+}
+
+case "$1" in
+	start) start ;;
+	stop) stop ;;
+	restart|reload) stop; sleep 1; start ;;
+	*) echo "Usage: $0 {start|stop|restart}"; exit 1 ;;
+esac

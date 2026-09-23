@@ -1,0 +1,22 @@
+# SleepRadioPi boot config (Pi Zero 2 W). The boot partition is mounted
+# read-only at /boot; edit this file on a PC if you need to change it.
+
+# Cut-down GPU firmware: headless, no camera or video decode.
+start_file=start_cd.elf
+fixup_file=fixup_cd.dat
+gpu_mem=16
+
+kernel=Image
+arm_64bit=1
+
+disable_splash=1
+boot_delay=0
+
+# HiFiBerry MiniAmp (PCM5102A-style I2S DAC); onboard audio off.
+dtparam=audio=off
+dtoverlay=hifiberry-dac
+
+# No Bluetooth: gives the full UART back to the serial console
+# (GPIO14/15, ttyAMA0, 115200) and saves a little power.
+dtoverlay=disable-bt
+enable_uart=1

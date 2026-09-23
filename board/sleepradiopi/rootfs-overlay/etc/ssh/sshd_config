@@ -1,0 +1,8 @@
+# SleepRadioPi: key-only root login. Host keys are baked into the image
+# (generated once per build machine, kept in local/, never committed).
+PermitRootLogin prohibit-password
+PasswordAuthentication no
+KbdInteractiveAuthentication no
+AuthorizedKeysFile .ssh/authorized_keys
+UseDNS no
+Subsystem sftp /usr/libexec/sftp-server

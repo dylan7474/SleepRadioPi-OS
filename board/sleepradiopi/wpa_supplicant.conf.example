@@ -1,0 +1,9 @@
+# Copy to local/wpa_supplicant.conf (git-ignored) before building, or put it
+# on the card's boot partition as wpa_supplicant.conf after flashing.
+ctrl_interface=/run/wpa_supplicant
+country=GB
+
+network={
+	ssid="YourNetwork"
+	psk="your-password"
+}
