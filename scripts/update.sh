@@ -5,7 +5,8 @@
 #
 # Writes output/images/rootfs.squashfs to the root slot the Pi isn't running
 # from (p2 or p3), verifies it, points cmdline.txt at it and reboots, then
-# waits for the station to come back. /data and /media aren't touched. The
+# waits for the station to come back; config.txt is updated too if it
+# changed. /data and /media aren't touched. The
 # old slot is left as it was, so going back is just switching cmdline.txt.
 #
 # Only the root is updated: the kernel is on the shared boot partition and
@@ -49,6 +50,15 @@ WANT=$(sha256sum < "$ROOT" | cut -c1-64)
 GOT=$(pi "head -c $SIZE $NEW | sha256sum" | cut -c1-64)
 [ "$WANT" = "$GOT" ] || { echo "verify FAILED: $NEW doesn't match; still booting $CUR" >&2; exit 1; }
 echo "verified"
+
+# config.txt (overlays, GPIO) is shared by both slots: bring it up to date
+# if it changed. Written beside the old one and renamed over it, synced.
+BOOT_CFG="$IMAGES/rpi-firmware/config.txt"
+if [ "$(sha256sum < "$BOOT_CFG" | cut -c1-64)" != "$(pi 'sha256sum < /boot/config.txt' | cut -c1-64)" ]; then
+	pi "mount -o remount,rw /boot && cat > /boot/config.new && mv /boot/config.new /boot/config.txt &&
+		sync && mount -o remount,ro /boot" < "$BOOT_CFG"
+	echo "config.txt updated"
+fi
 
 # The one write to the boot partition: a single small file, synced at once.
 pi "mount -o remount,rw /boot &&

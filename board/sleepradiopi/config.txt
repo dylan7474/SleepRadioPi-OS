@@ -20,3 +20,12 @@ dtoverlay=hifiberry-dac
 # (GPIO14/15, ttyAMA0, 115200) and saves a little power.
 dtoverlay=disable-bt
 enable_uart=1
+
+# Volume knob: a rotary encoder on GPIO17/27 (header pins 11/13) and its
+# push switch on GPIO22 (pin 15), each to GND (pin 9 or 14). The kernel
+# turns them into input events for the station (volume, play/pause). The
+# internal pull-ups mean a bare encoder works; a module with its own
+# pull-ups (KY-040 style) should have its + pin on 3.3 V, never 5 V.
+gpio=17,27=ip,pu
+dtoverlay=rotary-encoder,pin_a=17,pin_b=27,relative_axis=1
+dtoverlay=gpio-key,gpio=22,active_low=1,gpio_pull=up,keycode=164,label="PLAYPAUSE"

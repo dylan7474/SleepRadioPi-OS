@@ -121,7 +121,8 @@ if [ ! -f "$CONF" ]; then
 	{
 	  "music_folder": "/media/music",
 	  "voices_folder": "/media/voices",
-	  "jingles_folder": "/media/jingles"$HOOKS_LINE
+	  "jingles_folder": "/media/jingles",
+	  "speaker_enabled": true$HOOKS_LINE
 	}
 	EOF
 	echo "wrote a starter config: /data/radio/.config/sleepradiopi/config.json"
