@@ -23,6 +23,8 @@ start() {
 		# /var/lib/seedrng links here; seedrng won't create it through
 		# the link, so the seed would never be saved.
 		mkdir -p -m 0700 /data/seedrng
+		# Start from the last saved time rather than 1970 (no RTC).
+		clock-restore
 	else
 		echo "S00data: could not mount $DATA" >&2
 	fi
@@ -34,6 +36,7 @@ start() {
 }
 
 stop() {
+	clock-save
 	sync
 	umount /data 2>/dev/null
 }

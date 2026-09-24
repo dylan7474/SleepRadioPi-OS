@@ -6,7 +6,8 @@
 
 start() {
 	printf "Starting ntpd: "
-	start-stop-daemon -S -q -x /usr/sbin/ntpd -- \
+	# -S: save the clock to /data once it's set, and every 11 minutes.
+	start-stop-daemon -S -q -x /usr/sbin/ntpd -- -S /usr/sbin/clock-save \
 		-p 0.pool.ntp.org -p 1.pool.ntp.org -p 2.pool.ntp.org
 	[ $? = 0 ] && echo "OK" || echo "FAIL"
 }

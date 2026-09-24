@@ -1,0 +1,3 @@
+# The station runs as radio, not root. Its home (settings, caches) is on the
+# writable data partition; audio for when it plays through the MiniAmp.
+radio -1 radio -1 * /data/radio /bin/sh audio SleepRadioPi station

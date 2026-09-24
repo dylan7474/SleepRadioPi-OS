@@ -28,3 +28,7 @@ mkdir -p "${TARGET_DIR}/data" "${TARGET_DIR}/media"
 # each boot).
 rm -rf "${TARGET_DIR}/var/lib/seedrng"
 ln -sfn /data/seedrng "${TARGET_DIR}/var/lib/seedrng"
+
+# The station: init starts it after rcS and restarts it if it exits.
+grep -q sleepradiopi-station "${TARGET_DIR}/etc/inittab" ||
+	echo "::respawn:/usr/sbin/sleepradiopi-station" >> "${TARGET_DIR}/etc/inittab"

@@ -1,0 +1,26 @@
+#!/bin/sh
+# Run the SleepRadioPi station as user radio. Started (and restarted if it
+# exits) by init: see the respawn line in /etc/inittab. Output goes to
+# syslog: `grep sleepradiopi /var/log/messages`.
+#
+# Settings: /data/radio/.config/sleepradiopi/config.json
+# Stop it for a while:  touch /data/radio/station.off  (then kill it, or reboot)
+
+HOME=/data/radio
+
+# /data may be missing if it couldn't be mounted; don't spin.
+if ! grep -q ' /data ' /proc/mounts || [ -e $HOME/station.off ]; then
+	sleep 60
+	exit 0
+fi
+
+mkdir -p $HOME
+chown -R radio:radio $HOME
+cd $HOME
+
+HOME=$HOME MALLOC_ARENA_MAX=2 start-stop-daemon -S -c radio \
+	-x /usr/bin/python3 -- -u -m sleepradiopi.main 2>&1 |
+	logger -t sleepradiopi
+
+# Don't restart in a tight loop if it keeps failing.
+sleep 5

@@ -1,0 +1,27 @@
+#!/bin/sh
+# Save the time to /data so the next boot starts close to it: the Pi has no
+# real-time clock, and without this every boot begins in 1970 until NTP
+# answers (seconds after Wi-Fi comes up, or never if it doesn't).
+#
+# Run by ntpd (-S) after it sets the clock and every 11 minutes, and by
+# S00data at shutdown. Never saves a time earlier than the saved one, so a
+# boot without network can't wind the saved clock back.
+#
+# clock-restore (at boot, before anything else) moves the clock forward to
+# the saved time if it's behind.
+
+F=/data/clock
+now=$(date +%s)
+
+case "$(basename "$0")" in
+	clock-restore)
+		saved=$(cat $F 2>/dev/null) || exit 0
+		[ "$saved" -gt "$now" ] 2>/dev/null && date -s "@$saved" >/dev/null
+		;;
+	*)
+		saved=$(cat $F 2>/dev/null || echo 0)
+		[ "$now" -ge "$saved" ] 2>/dev/null || exit 0
+		echo "$now" > $F.tmp && mv -f $F.tmp $F
+		;;
+esac
+exit 0
