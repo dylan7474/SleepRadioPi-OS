@@ -1,0 +1,10 @@
+#!/bin/sh
+# Wi-Fi just got an address. If the clock hasn't been set yet (the Pi booted
+# offline), restart ntpd so it looks the time servers up now, instead of
+# after its own back-off (minutes).
+case "$1" in
+	bound|renew)
+		[ -e /run/time-synced ] || /etc/init.d/S45ntpd restart >/dev/null 2>&1
+		;;
+esac
+exit 0

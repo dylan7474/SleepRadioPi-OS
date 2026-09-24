@@ -9,6 +9,14 @@ IFACE=wlan0
 
 start() {
 	printf "Starting Wi-Fi: "
+	# Offline test: `touch /data/wifi-off-once; reboot` boots with no Wi-Fi
+	# and turns it on 5 minutes later (so you can ssh back in).
+	if [ -e /data/wifi-off-once ]; then
+		rm -f /data/wifi-off-once
+		echo "off for 5 minutes (offline test)"
+		( sleep 300; "$0" start ) </dev/null >/dev/null 2>&1 &
+		return 0
+	fi
 	if [ ! -r "$CONF" ]; then
 		echo "no $CONF, skipping"
 		return 0

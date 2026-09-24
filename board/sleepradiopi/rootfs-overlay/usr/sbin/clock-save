@@ -19,6 +19,12 @@ case "$(basename "$0")" in
 		[ "$saved" -gt "$now" ] 2>/dev/null && date -s "@$saved" >/dev/null
 		;;
 	*)
+		# ntpd passes step / stratum / periodic once it has the real time:
+		# from now until power-off the clock can be trusted (the station
+		# reads the time out and schedules news only then).
+		case "$1" in
+			step|stratum|periodic) touch /run/time-synced ;;
+		esac
 		saved=$(cat $F 2>/dev/null || echo 0)
 		[ "$now" -ge "$saved" ] 2>/dev/null || exit 0
 		echo "$now" > $F.tmp && mv -f $F.tmp $F

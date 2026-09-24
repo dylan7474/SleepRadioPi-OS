@@ -18,7 +18,9 @@ mkdir -p $HOME
 chown -R radio:radio $HOME
 cd $HOME
 
-HOME=$HOME MALLOC_ARENA_MAX=2 start-stop-daemon -S -c radio \
+# The clock is only right once NTP has set it (no RTC; often offline).
+HOME=$HOME MALLOC_ARENA_MAX=2 SLEEPRADIOPI_CLOCK_FLAG=/run/time-synced \
+	start-stop-daemon -S -c radio \
 	-x /usr/bin/python3 -- -u -m sleepradiopi.main 2>&1 |
 	logger -t sleepradiopi
 

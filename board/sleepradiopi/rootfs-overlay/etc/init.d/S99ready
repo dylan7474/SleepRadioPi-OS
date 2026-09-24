@@ -2,10 +2,10 @@
 #
 # Headless status on the green ACT LED:
 #   flickering        booting (SD card activity, the kernel default)
-#   fast blink        booted, but no Wi-Fi address yet
-#   heartbeat         on the network; the station is starting (reading the
-#                     library and loading the voice takes a minute or two)
-#   3 slow pulses     the station is on http://sleepradiopi.local/, then dark
+#   heartbeat         the station is starting
+#   3 slow pulses     the station is playing, then dark
+#
+# Wi-Fi isn't shown: the radio is often used offline, and that's normal.
 #
 # The LED stays dark afterwards so it doesn't light up the bedroom. If the
 # heartbeat never stops, the station isn't starting: ssh in and
@@ -14,29 +14,12 @@
 
 LED=/sys/class/leds/ACT
 [ -d $LED ] || LED=/sys/class/leds/led0
-IFACE=wlan0
 
 led_on()  { echo none > $LED/trigger; echo 1 > $LED/brightness; }
 led_off() { echo none > $LED/trigger; echo 0 > $LED/brightness; }
 
-fast_blink() {
-	echo timer > $LED/trigger
-	echo 100 > $LED/delay_on
-	echo 100 > $LED/delay_off
-}
-
-has_address() {
-	ip -4 addr show dev $IFACE 2>/dev/null | grep -q 'inet '
-}
 
 signal() {
-	i=0
-	while ! has_address; do
-		# Give Wi-Fi a few seconds before calling it a problem.
-		[ $i -eq 10 ] && fast_blink
-		sleep 1
-		i=$((i + 1))
-	done
 	echo heartbeat > $LED/trigger
 	while ! wget -q -T 5 -O /dev/null http://127.0.0.1/api/status; do
 		sleep 3
