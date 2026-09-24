@@ -1,0 +1,40 @@
+#!/bin/sh
+#
+# Mount the writable data partition and the read-only media partition.
+#
+#   /data   p5, ext4 -- settings, caches, the random seed. The only thing
+#           written at run time; the app replaces files atomically, and the
+#           ext4 journal covers the metadata if the power is pulled.
+#   /media  p6, ext4 -- music, voices, jingles. Read-only; written only on
+#           a PC (scripts/provision-media.sh) or after `media-rw`.
+#
+# A card without p6 (not provisioned yet) still boots; /media stays empty.
+#
+
+DATA=/dev/mmcblk0p5
+MEDIA=/dev/mmcblk0p6
+
+start() {
+	# -p repairs what's safe to repair unattended; after a power cut this
+	# is normally just a journal replay. Exit codes 0-1 mean OK or fixed.
+	e2fsck -p $DATA >/dev/null 2>&1
+	[ $? -le 1 ] || echo "S00data: e2fsck $DATA needs attention" >&2
+	mount -t ext4 -o noatime,errors=remount-ro $DATA /data ||
+		echo "S00data: could not mount $DATA" >&2
+
+	if [ -b $MEDIA ]; then
+		mount -t ext4 -o ro,noatime $MEDIA /media ||
+			echo "S00data: could not mount $MEDIA" >&2
+	fi
+}
+
+stop() {
+	sync
+	umount /data 2>/dev/null
+}
+
+case "$1" in
+	start) start ;;
+	stop)  stop ;;
+	*) echo "Usage: $0 {start|stop}"; exit 1 ;;
+esac

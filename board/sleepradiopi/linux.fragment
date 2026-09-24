@@ -1,0 +1,60 @@
+# Applied on top of bcm2711_defconfig.
+
+# The root is a squashfs image, so it must be built in, not a module.
+CONFIG_SQUASHFS=y
+CONFIG_SQUASHFS_ZSTD=y
+CONFIG_SQUASHFS_XZ=y
+
+# Trim: a headless Wi-Fi audio appliance. Everything below is hardware or
+# features the Zero 2 W station never uses; dropping it saves build time,
+# space and boot-time probing (the camera/codec stack logged VCHI errors).
+# CONFIG_MEDIA_SUPPORT is not set
+# CONFIG_DRM is not set
+# The VideoCore services (HDMI/analogue audio, video memory) pull in VCHIQ;
+# sound goes out over I2S to the HiFiBerry instead.
+# CONFIG_SND_BCM2835 is not set
+# CONFIG_BCM_VC_SM_CMA is not set
+# CONFIG_BCM2835_VCHIQ_MMAL is not set
+# CONFIG_VCHIQ_CDEV is not set
+# CONFIG_BCM2835_VCHIQ is not set
+# CONFIG_BT is not set
+# CONFIG_CAN is not set
+# CONFIG_NFC is not set
+# CONFIG_HAMRADIO is not set
+# CONFIG_IIO is not set
+# CONFIG_NETFILTER is not set
+# CONFIG_MD is not set
+# CONFIG_ATA is not set
+# CONFIG_VIRTUALIZATION is not set
+# CONFIG_INPUT_JOYSTICK is not set
+# CONFIG_INPUT_TOUCHSCREEN is not set
+# CONFIG_INPUT_TABLET is not set
+# CONFIG_SND_USB is not set
+# CONFIG_BTRFS_FS is not set
+# CONFIG_XFS_FS is not set
+# CONFIG_NFS_FS is not set
+# CONFIG_NFSD is not set
+# CONFIG_CIFS is not set
+# CONFIG_F2FS_FS is not set
+# CONFIG_JFS_FS is not set
+# CONFIG_NILFS2_FS is not set
+# CONFIG_GFS2_FS is not set
+# CONFIG_OCFS2_FS is not set
+# CONFIG_UBIFS_FS is not set
+# CONFIG_WLAN_VENDOR_ADMTEK is not set
+# CONFIG_WLAN_VENDOR_ATH is not set
+# CONFIG_WLAN_VENDOR_ATMEL is not set
+# CONFIG_WLAN_VENDOR_INTEL is not set
+# CONFIG_WLAN_VENDOR_INTERSIL is not set
+# CONFIG_WLAN_VENDOR_MARVELL is not set
+# CONFIG_WLAN_VENDOR_MEDIATEK is not set
+# CONFIG_WLAN_VENDOR_MICROCHIP is not set
+# CONFIG_WLAN_VENDOR_PURELIFI is not set
+# CONFIG_WLAN_VENDOR_RALINK is not set
+# CONFIG_WLAN_VENDOR_REALTEK is not set
+# CONFIG_WLAN_VENDOR_RSI is not set
+# CONFIG_WLAN_VENDOR_SILABS is not set
+# CONFIG_WLAN_VENDOR_ST is not set
+# CONFIG_WLAN_VENDOR_TI is not set
+# CONFIG_WLAN_VENDOR_ZYDAS is not set
+# CONFIG_WLAN_VENDOR_QUANTENNA is not set

@@ -1,0 +1,8 @@
+#!/bin/sh
+# Make /media writable to add files over ssh; `media-rw off` to finish.
+# Normally the media partition is filled on a PC instead: it's faster.
+case "$1" in
+	""|on) mount -o remount,rw /media && echo "/media is writable: run 'media-rw off' when done" ;;
+	off)   sync && mount -o remount,ro /media && echo "/media is read-only" ;;
+	*)     echo "Usage: media-rw [on|off]"; exit 1 ;;
+esac

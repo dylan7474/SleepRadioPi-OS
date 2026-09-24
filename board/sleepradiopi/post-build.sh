@@ -19,3 +19,12 @@ mkdir -p "${TARGET_DIR}/boot"
 
 # No console on the HDMI port: it's headless, and it saves a getty.
 sed -i '/^tty1::/d' "${TARGET_DIR}/etc/inittab"
+
+# Mount points for the data (rw) and media (ro) partitions; see S00data.
+mkdir -p "${TARGET_DIR}/data" "${TARGET_DIR}/media"
+
+# Keep the random seed on /data so it survives reboots (seedrng credits it
+# only if it could be saved; a read-only /var/lib would mean a fresh seed
+# each boot).
+rm -rf "${TARGET_DIR}/var/lib/seedrng"
+ln -sfn /data/seedrng "${TARGET_DIR}/var/lib/seedrng"

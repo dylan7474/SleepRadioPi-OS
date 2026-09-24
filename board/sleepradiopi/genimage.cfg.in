@@ -1,3 +1,10 @@
+# Card layout (MBR; partitions 5+ live in an automatic extended partition):
+#   p1 boot    FAT, read-only at run time
+#   p2 rootA   squashfs, the running system
+#   p3 rootB   spare root slot for updates (phase 4); empty for now
+#   p5 data    ext4, the only partition written at run time
+#   p6 media   ext4, read-only; NOT in this image -- scripts/provision-media.sh
+#              adds it on the PC, filling the rest of the card
 image boot.vfat {
 	vfat {
 		files = {
@@ -8,8 +15,24 @@ image boot.vfat {
 	size = 64M
 }
 
+image data.ext4 {
+	ext4 {
+		label = "data"
+		use-mke2fs = true
+		features = "^64bit"
+	}
+	size = 256M
+}
+
 image sdcard.img {
 	hdimage {
+		partition-table-type = "mbr"
+		# p4 is always the extended partition, so data is p5 and there's
+		# room for media (p6) inside it.
+		extended-partition = 4
+		# SD cards erase in 4 MB blocks: aligned partitions are faster and
+		# wear the card less.
+		align = 4M
 	}
 
 	partition boot {
@@ -18,8 +41,19 @@ image sdcard.img {
 		image = "boot.vfat"
 	}
 
-	partition rootfs {
+	partition rootA {
 		partition-type = 0x83
-		image = "rootfs.ext4"
+		image = "rootfs.squashfs"
+		size = 256M
+	}
+
+	partition rootB {
+		partition-type = 0x83
+		size = 256M
+	}
+
+	partition data {
+		partition-type = 0x83
+		image = "data.ext4"
 	}
 }

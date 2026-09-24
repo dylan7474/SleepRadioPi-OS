@@ -1,6 +1,7 @@
 # <file system>	<mount pt>	<type>	<options>	<dump>	<pass>
-# Root and boot are read-only so pulling the plug can't corrupt them.
-/dev/root	/		ext4	ro,noauto	0	0
+# Root (squashfs) and boot are read-only so pulling the plug can't corrupt
+# them. /data and /media are mounted by /etc/init.d/S00data (fsck first).
+/dev/root	/		squashfs	ro,noauto	0	0
 /dev/mmcblk0p1	/boot		vfat	ro,noatime	0	0
 proc		/proc		proc	defaults	0	0
 devpts		/dev/pts	devpts	defaults,gid=5,mode=620,ptmxmode=0666	0	0
