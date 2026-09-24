@@ -1,0 +1,12 @@
+config BR2_PACKAGE_PYTHON_SHERPA_ONNX
+	bool "python-sherpa-onnx"
+	depends on BR2_PACKAGE_PYTHON3
+	depends on BR2_aarch64
+	depends on BR2_TOOLCHAIN_USES_GLIBC
+	help
+	  Offline text-to-speech (and speech recognition) with
+	  onnxruntime. Installed from the prebuilt manylinux aarch64
+	  wheels on PyPI (sherpa-onnx + sherpa-onnx-core), which bundle
+	  onnxruntime, so nothing is compiled.
+
+	  https://github.com/k2-fsa/sherpa-onnx

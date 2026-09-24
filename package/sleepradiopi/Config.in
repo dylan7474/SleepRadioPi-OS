@@ -1,0 +1,13 @@
+config BR2_PACKAGE_SLEEPRADIOPI
+	bool "sleepradiopi"
+	depends on BR2_PACKAGE_PYTHON3
+	select BR2_PACKAGE_PYTHON_SHERPA_ONNX
+	select BR2_PACKAGE_PYTHON_NUMPY
+	select BR2_PACKAGE_PYTHON_MUTAGEN
+	select BR2_PACKAGE_FFMPEG
+	select BR2_PACKAGE_FFMPEG_FFMPEG
+	help
+	  The SleepRadioPi Broadcast Radio station (pure Python).
+	  Voices, music and settings live outside the root filesystem.
+
+	  https://github.com/dylan7474/SleepRadioPi

@@ -1,0 +1,2 @@
+source "$BR2_EXTERNAL_SLEEPRADIOPI_PATH/package/python-sherpa-onnx/Config.in"
+source "$BR2_EXTERNAL_SLEEPRADIOPI_PATH/package/sleepradiopi/Config.in"
