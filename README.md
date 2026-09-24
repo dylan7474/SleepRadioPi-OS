@@ -54,8 +54,8 @@ make && scripts/update.sh
 ```
 
 Writes the new root to the slot the Pi isn't running from (p2 or p3),
-verifies it, switches `cmdline.txt` to it and reboots, then waits for the
-station (about 2 minutes). The previous root stays in the other slot. If the
+verifies it, updates `config.txt` if it changed, switches `cmdline.txt` to
+it and reboots, then waits for the station (about 2 minutes). The previous root stays in the other slot. If the
 Pi doesn't come back, put the card in the PC and set `root=` in
 `cmdline.txt` on the boot partition back to the other slot. Kernel changes
 can't be done this way (the kernel is on the shared boot partition): the
@@ -72,12 +72,11 @@ Other targets are passed through to Buildroot: `make menuconfig`,
 
 - `ssh -i ~/.ssh/sleepradiopi root@sleepradiopi.local` (key only; the
   authorised keys are in `board/sleepradiopi/rootfs-overlay/root/.ssh/authorized_keys`).
-- Green ACT LED: flickers while booting; a **fast blink** means no Wi-Fi
-  address yet (check `wpa_supplicant.conf`); a **heartbeat** means it's on the
-  network and the station is starting; **3 slow pulses** when the station is
-  on http://sleepradiopi.local/, then dark. A heartbeat that never ends means
-  the station isn't starting (see the logs). A steady light means the kernel
-  didn't start or mount the root.
+- Green ACT LED: flickers while booting; a **heartbeat** while the station
+  starts; **3 slow pulses** once it's playing, then dark. Wi-Fi isn't shown:
+  offline is normal. A heartbeat that never ends means the station isn't
+  starting (see the logs); a steady light means the kernel didn't start or
+  mount the root.
 - Wi-Fi: `wpa_supplicant.conf` on the boot partition (FAT, readable on
   any PC).
 - Serial console: GPIO14/15, 115200 baud (Bluetooth is disabled so the full
@@ -87,10 +86,38 @@ Other targets are passed through to Buildroot: `make menuconfig`,
   Settings: `/data/radio/.config/sleepradiopi/config.json`; logs:
   `grep sleepradiopi /var/log/messages`; restart: `pkill -f sleepradiopi.main`;
   keep it off: `touch /data/radio/station.off`.
-- The clock is saved to `/data/clock` (no RTC) and restored at boot, so the
-  time is roughly right even before NTP answers.
+- It plays through the MiniAmp from power-up (`speaker_enabled`). The knob:
+  turn for volume (remembered), press to pause. Volume and pause over the
+  network: `POST /api/speaker` (see the SleepRadioPi README).
+- **Offline is normal.** The clock is saved to `/data/clock` and restored at
+  boot, but with no RTC and no network it can be hours out, so until NTP
+  sets it (`/run/time-synced` appears) the station says no times, greets
+  with "Hello" and skips news. When Wi-Fi comes up, a udhcpc hook restarts
+  ntpd so the clock is set within seconds. To test offline:
+  `touch /data/wifi-off-once; reboot` (Wi-Fi off for 5 minutes).
 - `media-rw` / `media-rw off`: make `/media` writable for a quick change over
   ssh (a card reader is much faster for anything big).
+
+## Hardware and wiring
+
+A Pi Zero 2 W with a **HiFiBerry MiniAmp** (pHAT on a full 2×20 header), a
+**rotary encoder** with push switch, and optionally a **DS3231 RTC**. The pin
+table, parts list and cautions (3.3 V only for the encoder module and RTC;
+the ZS-042 RTC board's charging circuit) are in the
+[SleepRadioPi README](https://github.com/dylan7474/SleepRadioPi#wiring).
+In short:
+
+| Use | GPIO | Header pin |
+|---|---|---|
+| MiniAmp I2S | 18, 19, 21 | 12, 35, 40 (+ 5 V on 2/4, GND 6) |
+| Encoder A / B / switch | 17 / 27 / 22 | 11 / 13 / 15 (GND 9 or 14) |
+| RTC SDA / SCL | 2 / 3 | 3 / 5 (3.3 V on 1, GND 9) |
+
+`board/sleepradiopi/config.txt` sets the MiniAmp, encoder and switch
+overlays (and the encoder pull-ups); the RTC overlay
+(`dtoverlay=i2c-rtc,ds3231`) goes in once the module is fitted, and the
+kernel already has its driver. `update.sh` brings `config.txt` up to date on
+the Pi, so none of this needs the card reader.
 
 ## Card layout
 
@@ -127,7 +154,12 @@ anything else starts.
 3. **Storage layout**: read-only root (squashfs), read-only music partition,
    small data partition written only with atomic replace; pull-the-plug tests.
 4. **Appliance**: the station as a boot service, the ready LED, saved clock
-   time (no RTC), updates.
+   time (no RTC), A/B updates over Wi-Fi (`update.sh`).
+
+All four are done, plus the speaker output and knob, offline mode and a
+tag cache (on air ~20 s after power-up). Next: fit the MiniAmp, knob and
+RTC and test real sound; then a smaller web side (see the SleepRadioPi
+roadmap).
 
 ## Licence
 
