@@ -34,7 +34,7 @@ write() {  # write <image> <target>
 
 lsblk -o NAME,SIZE,LABEL,FSTYPE "$DEV"
 echo
-if [ "$FULL" != --full ] && [ "$(lsblk -no LABEL "$(part 5)" 2>/dev/null)" = data ]; then
+if [ "$FULL" != --full ] && [ "$(blkid -s LABEL -o value "$(part 5)" 2>/dev/null)" = data ]; then
 	read -r -p "Update boot + root on $DEV (keeps /data and /media)? [y/N] " ok
 	[ "$ok" = y ] || exit 1
 	write "$IMAGES/boot.vfat" "$(part 1)"

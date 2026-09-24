@@ -41,6 +41,8 @@ done
 
 # Partition device names: mmcblk0 -> mmcblk0p1, sdb -> sdb1.
 part() { case "$DEV" in *[0-9]) echo "${DEV}p$1" ;; *) echo "${DEV}$1" ;; esac; }
+# blkid reads the disk; lsblk's udev cache can lag behind a fresh mkfs.
+label() { blkid -s LABEL -o value "$1" 2>/dev/null; }
 
 # --- Refuse anything that isn't an unmounted SleepRadioPi-OS card ---------
 [ -b "$DEV" ] || { echo "$DEV is not a block device" >&2; exit 1; }
@@ -48,8 +50,8 @@ case "$(lsblk -dno TYPE "$DEV")" in disk|loop) ;; *) echo "$DEV is not a whole d
 if lsblk -no MOUNTPOINTS "$DEV" | grep -q .; then
 	echo "$DEV has mounted partitions; unmount them first" >&2; exit 1
 fi
-if [ "$(lsblk -no LABEL "$(part 5)" 2>/dev/null)" != data ] ||
-   [ "$(lsblk -no FSTYPE "$(part 1)" 2>/dev/null)" != vfat ]; then
+if [ "$(label "$(part 5)")" != data ] ||
+   [ "$(blkid -s TYPE -o value "$(part 1)" 2>/dev/null)" != vfat ]; then
 	echo "$DEV doesn't look like a SleepRadioPi-OS card (no FAT p1 + 'data' p5)" >&2
 	exit 1
 fi
@@ -71,15 +73,20 @@ if [ ! -b "$MEDIA" ]; then
 	read -r -p "Add a media partition filling the rest of $DEV? [y/N] " ok
 	[ "$ok" = y ] || exit 1
 	# Grow the extended partition (p4) to the end of the card, then add
-	# logical p6 in the free space after p5.
+	# logical p6 after p5. Give p6 an explicit start: the image's 4 MB
+	# alignment leaves a gap before p5, and sfdisk would otherwise fill
+	# that first. Leave 1 MB after p5 for p6's EBR, then round up to 4 MB.
 	echo ',+' | sfdisk --no-reread -q -N 4 "$DEV"
-	echo ',+,L' | sfdisk --no-reread -q -N 6 "$DEV"
+	P5_END=$(sfdisk -d "$DEV" | awk -v p="$(part 5)" \
+		'$1 == p { gsub(",", ""); print $4 + $6 }')
+	START=$(( (P5_END + 2048 + 8191) / 8192 * 8192 ))
+	echo "$START,+,L" | sfdisk --no-reread -q -N 6 "$DEV"
 	partprobe "$DEV"; udevadm settle
 	[ -b "$MEDIA" ] || { echo "p6 didn't appear" >&2; exit 1; }
 	# One inode per 64 KB is plenty for music; no root-reserved blocks.
 	mkfs.ext4 -q -L media -m 0 -i 65536 "$MEDIA"
 fi
-[ "$(lsblk -no LABEL "$MEDIA")" = media ] ||
+[ "$(label "$MEDIA")" = media ] ||
 	{ echo "$MEDIA isn't labelled 'media'; not touching it" >&2; exit 1; }
 
 # --- Copy -------------------------------------------------------------------
