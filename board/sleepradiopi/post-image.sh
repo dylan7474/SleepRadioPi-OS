@@ -7,6 +7,11 @@ LOCAL="${BR2_EXTERNAL_SLEEPRADIOPI_PATH}/local"
 GENIMAGE_CFG="${BINARIES_DIR}/genimage.cfg"
 GENIMAGE_TMP="${BUILD_DIR}/genimage.tmp"
 
+# rpi-firmware installs these only when it's (re)built, so an edit to the
+# board copies would otherwise be missed by an incremental build.
+install -m 0644 "${BOARD_DIR}/config.txt" "${BOARD_DIR}/cmdline.txt" \
+	"${BINARIES_DIR}/rpi-firmware/"
+
 FILES=()
 for i in "${BINARIES_DIR}"/*.dtb "${BINARIES_DIR}"/rpi-firmware/*; do
 	FILES+=( "${i#${BINARIES_DIR}/}" )
