@@ -46,6 +46,20 @@ per subfolder (`stock/`, `personal/`: `model.onnx`, `tokens.txt`,
 After a rebuild, the same `flash.sh` command on a provisioned card rewrites
 only boot and root, keeping `/data` and `/media`; `--full` wipes the card.
 
+### Updating over Wi-Fi
+
+```sh
+make && scripts/update.sh
+```
+
+Writes the new root to the slot the Pi isn't running from (p2 or p3),
+verifies it, switches `cmdline.txt` to it and reboots, then waits for the
+station (about 2 minutes). The previous root stays in the other slot. If the
+Pi doesn't come back, put the card in the PC and set `root=` in
+`cmdline.txt` on the boot partition back to the other slot. Kernel changes
+can't be done this way (the kernel is on the shared boot partition): the
+script refuses, and you use `flash.sh`.
+
 `local/` is git-ignored. It holds your Wi-Fi credentials and the SSH host
 keys, which are generated on the first build so the Pi keeps the same
 identity across rebuilds.
@@ -57,14 +71,23 @@ Other targets are passed through to Buildroot: `make menuconfig`,
 
 - `ssh -i ~/.ssh/sleepradiopi root@sleepradiopi.local` (key only; the
   authorised keys are in `board/sleepradiopi/rootfs-overlay/root/.ssh/authorized_keys`).
-- Green ACT LED: flickers while booting; **3 slow pulses** once it's on the
-  network and ready for ssh, then stays dark. A steady **fast blink** means it
-  booted but has no Wi-Fi address (check `wpa_supplicant.conf`).
+- Green ACT LED: flickers while booting; a **fast blink** means no Wi-Fi
+  address yet (check `wpa_supplicant.conf`); a **heartbeat** means it's on the
+  network and the station is starting; **3 slow pulses** when the station is
+  on http://sleepradiopi.local/, then dark. A heartbeat that never ends means
+  the station isn't starting (see the logs). A steady light means the kernel
+  didn't start or mount the root.
 - Wi-Fi: `wpa_supplicant.conf` on the boot partition (FAT, readable on
   any PC).
 - Serial console: GPIO14/15, 115200 baud (Bluetooth is disabled so the full
   UART is used).
 - Logs: `/var/log/messages` (in RAM, lost at power-off).
+- The station starts at boot as user `radio` and is restarted if it exits.
+  Settings: `/data/radio/.config/sleepradiopi/config.json`; logs:
+  `grep sleepradiopi /var/log/messages`; restart: `pkill -f sleepradiopi.main`;
+  keep it off: `touch /data/radio/station.off`.
+- The clock is saved to `/data/clock` (no RTC) and restored at boot, so the
+  time is roughly right even before NTP answers.
 - `media-rw` / `media-rw off`: make `/media` writable for a quick change over
   ssh (a card reader is much faster for anything big).
 
@@ -74,7 +97,7 @@ Other targets are passed through to Buildroot: `make menuconfig`,
 |---|---|---|---|---|
 | 1 | boot, FAT | 64 MB | `/boot` ro | firmware, kernel, `wpa_supplicant.conf` |
 | 2 | rootA, squashfs | 256 MB | `/` ro | the system and the app |
-| 3 | rootB | 256 MB | | spare root slot for updates (phase 4) |
+| 3 | rootB | 256 MB | `/` ro when active | the other root slot: `update.sh` alternates between p2 and p3 |
 | 5 | data, ext4 | 256 MB | `/data` rw | settings, caches, the random seed |
 | 6 | media, ext4 | rest of the card | `/media` ro | music, voices, jingles |
 
@@ -92,7 +115,7 @@ anything else starts.
 | `board/sleepradiopi/rootfs-overlay/` | Files copied into the root filesystem |
 | `board/sleepradiopi/linux.fragment` | Kernel options on top of `bcm2711_defconfig` (squashfs built in; unused drivers trimmed) |
 | `package/` | `python-sherpa-onnx` (PyPI wheels) and `sleepradiopi` (the app) |
-| `scripts/` | `flash.sh`, `provision-media.sh` (run on the PC) |
+| `scripts/` | `flash.sh`, `provision-media.sh`, `update.sh` (run on the PC) |
 
 ## Roadmap
 
