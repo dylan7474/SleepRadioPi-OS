@@ -65,6 +65,10 @@ script refuses, and you use `flash.sh`.
 keys, which are generated on the first build so the Pi keeps the same
 identity across rebuilds.
 
+**Building it yourself?** Put your own public key(s) in
+`board/sleepradiopi/rootfs-overlay/root/.ssh/authorized_keys` first: the
+ones there are the author's, and root login is by key only.
+
 Other targets are passed through to Buildroot: `make menuconfig`,
 `make savedefconfig`, `make linux-menuconfig`, `make <pkg>-rebuild`, ...
 
