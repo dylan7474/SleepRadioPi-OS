@@ -34,14 +34,15 @@ The image is `output/images/sdcard.img`. With the card in the PC's reader:
 sudo scripts/flash.sh /dev/mmcblk0          # new card: the whole image
 sudo scripts/provision-media.sh /dev/mmcblk0 \
     --music ~/Music/SleepRadioMusic --voices ~/voices \
-    --jingles ~/Music/SleepRadioJingles [--hooks dj_hooks_70s.txt]
+    --jingles ~/Music/SleepRadioJingles
 ```
 
 `provision-media.sh` adds the media partition (filling the card) on its first
 run and syncs the folders on later runs; it also writes a starter config to
 `/data` that points at `/media`. `--voices` is a folder of voice packs, one
 per subfolder (`stock/`, `personal/`: `model.onnx`, `tokens.txt`,
-`espeak-ng-data/`).
+`espeak-ng-data/`). The 70s DJ hooks come with the app; `--hooks FILE` puts
+your own list on `/media` instead.
 
 After a rebuild, the same `flash.sh` command on a provisioned card rewrites
 only boot and root, keeping `/data` and `/media`; `--full` wipes the card.

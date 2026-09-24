@@ -20,7 +20,7 @@
 #   music/            the library, as-is
 #   voices/<id>/      voice packs (model.onnx, tokens.txt, espeak-ng-data/)
 #   jingles/          station jingles (mp3 only; the app skips the rest)
-#   dj_hooks_70s.txt  optional
+#   dj_hooks_70s.txt  optional: replaces the DJ hooks bundled with the app
 set -euo pipefail
 
 usage() { sed -n '2,8p' "$0" | sed 's/^# \{0,1\}//'; exit 1; }
@@ -113,12 +113,15 @@ mount "$(part 5)" "$DMNT"
 CONF="$DMNT/radio/.config/sleepradiopi/config.json"
 if [ ! -f "$CONF" ]; then
 	mkdir -p "$(dirname "$CONF")"
+	# The DJ hooks ship with the app; point at /media only for --hooks.
+	HOOKS_LINE=
+	[ -z "$HOOKS" ] || HOOKS_LINE=',
+	  "hooks_file": "/media/dj_hooks_70s.txt"'
 	cat > "$CONF" <<-EOF
 	{
 	  "music_folder": "/media/music",
 	  "voices_folder": "/media/voices",
-	  "jingles_folder": "/media/jingles",
-	  "hooks_file": "/media/dj_hooks_70s.txt"
+	  "jingles_folder": "/media/jingles"$HOOKS_LINE
 	}
 	EOF
 	echo "wrote a starter config: /data/radio/.config/sleepradiopi/config.json"
