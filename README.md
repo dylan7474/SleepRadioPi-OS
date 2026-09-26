@@ -132,6 +132,16 @@ overlays (and the encoder pull-ups), and the RTC overlay
 fitted). A new RTC is set from NTP the first time the Pi is online. `update.sh` brings `config.txt` up to date on
 the Pi, so none of this needs the card reader.
 
+### Case
+
+[`hardware/case/`](hardware/case/) is a 3D-printable stereo cabinet for this
+build: two 40 mm speakers behind hex grilles, the Pi, MiniAmp and RTC on the
+removable back panel, and the encoder knob in the top. OpenSCAD source, ready
+STLs and assembly notes are there (work in progress: the tube isn't
+test-printed yet).
+
+![SleepRadioPi case mock-up](hardware/case/mockup.jpg)
+
 ## Card layout
 
 | # | Partition | Size | Mounted | Holds |
@@ -157,6 +167,7 @@ anything else starts.
 | `board/sleepradiopi/linux.fragment` | Kernel options on top of `bcm2711_defconfig` (squashfs built in; unused drivers trimmed) |
 | `package/` | `python-sherpa-onnx` (PyPI wheels) and `sleepradiopi` (the app) |
 | `scripts/` | `flash.sh`, `provision-media.sh`, `update.sh`, `speaker-mode.sh` (run on the PC) |
+| `hardware/case/` | The 3D-printed case (OpenSCAD source, STLs, assembly notes) |
 
 ## Roadmap
 
@@ -177,5 +188,5 @@ roadmap).
 
 ## Licence
 
-Build scripts and configs: GPL-2.0-or-later, the same as Buildroot. The image
+Build scripts, configs and the case design: GPL-2.0-or-later, the same as Buildroot. The image
 contains many packages under their own licences; `make legal-info` lists them.
