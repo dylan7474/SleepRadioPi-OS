@@ -140,7 +140,7 @@ removable back panel, and the encoder knob in the top. OpenSCAD source, ready
 STLs and assembly notes are there (work in progress: the tube isn't
 test-printed yet).
 
-![SleepRadioPi case mock-up](hardware/case/mockup.jpg)
+![SleepRadioPi case mock-up](hardware/case/mockup_logo_sunburst.jpg)
 
 ## Card layout
 

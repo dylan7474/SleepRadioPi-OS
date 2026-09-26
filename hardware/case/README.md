@@ -1,6 +1,6 @@
 # SleepRadioPi box
 
-![The finished radio: white body, blue panels and knob](mockup.jpg)
+![The finished radio: white body, blue panels and knob, sunburst grilles and SLEEP RADIO lettering](mockup_logo_sunburst.jpg)
 
 > **Work in progress.** The front and back panels have been printed and fitted;
 > the full tube hasn't been printed yet, and the speaker sizes below are still
@@ -24,7 +24,7 @@ Outer size 152 x 100 x 91 mm (w x d x h), about 1.1 L inside (sealed box, which 
 | `stl/front.stl`, `knob.stl`, `tabs.stl` | | the same parts, separately |
 | `knob.scad` → `stl/knob.stl` | top face down, no supports | **standalone knob** (e.g. to print in another colour); same knob as `part="knob"` -- keep the two in step. `openscad --backend=manifold -o stl/knob.stl knob.scad` |
 | `sleepradiopi_box.scad` | | parametric source: all sizes at the top |
-| `mockup.scad`, `make-mockup.sh` → `mockup.jpg` | | the picture above (see the end) |
+| `mockup.scad`, `make-mockup.sh` → `mockup*.jpg` | | the pictures in this README (see the end) |
 
 PLA or PETG, 0.2 mm layers, 3 perimeters, 15–20 % infill, no supports. Everything fits the MK2.5 bed.
 
@@ -66,7 +66,7 @@ them 20 mm out, and above the arc an extra ray runs between each pair so the
 top slots stay narrow (`sun_*` settings). Ribs are 1.6 mm wide; the slots are
 about 1.2 mm near the half-sun and 4.3 mm at the top.
 
-![Sunburst grilles with the lettering](mockup_logo_sunburst.jpg)
+The picture at the top shows it with the lettering.
 
 ## Hardware
 
@@ -113,9 +113,12 @@ Gikfun's listing only gives the 40 mm diameter. Check with calipers and change t
 - `spk_depth = 22`: front of the speaker to the back of the magnet (plenty of room either way).
 - The width of the flat rim: the clamp tabs reach 2 mm in over it.
 
-## Mock-up picture
+## Mock-up pictures
 
-`mockup.jpg` is a coloured picture of the finished radio. `mockup.scad` sets the
+`mockup_logo_sunburst.jpg` (top), `mockup_logo.jpg` (lettering, hex grilles) and
+`mockup.jpg` (plain hex front) are coloured pictures of the finished radio,
+from `LOGO=1 SUNBURST=1 ./make-mockup.sh`, `LOGO=1 ./make-mockup.sh` and
+`./make-mockup.sh`. `mockup.scad` sets the
 colours (`body_colour`, `panel_colour`, `knob_colour`) and reuses the real parts
 unchanged; `./make-mockup.sh` renders it and places it on a studio backdrop
 (needs OpenSCAD + ImageMagick, ~30 s). Change the view with
