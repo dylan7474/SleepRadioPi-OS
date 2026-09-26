@@ -35,3 +35,7 @@ ln -sfn /data/seedrng "${TARGET_DIR}/var/lib/seedrng"
 # The station: init starts it after rcS and restarts it if it exits.
 grep -q sleepradiopi-station "${TARGET_DIR}/etc/inittab" ||
 	echo "::respawn:/usr/sbin/sleepradiopi-station" >> "${TARGET_DIR}/etc/inittab"
+
+# Shut down when the station's web page asks (runs as root; see the script).
+grep -q power-request-watch "${TARGET_DIR}/etc/inittab" ||
+	echo "::respawn:/usr/sbin/power-request-watch" >> "${TARGET_DIR}/etc/inittab"

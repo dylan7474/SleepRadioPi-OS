@@ -1,0 +1,16 @@
+#!/bin/sh
+# Power the Pi off when the station asks: the web page's Shut down button
+# makes the station (user radio, not root) create $REQ. Started by init: see
+# the respawn line in /etc/inittab. /run/sleepradiopi is made by
+# sleepradiopi-station and only radio and root can write to it.
+
+REQ=/run/sleepradiopi/poweroff
+
+while sleep 1; do
+	if [ -e $REQ ]; then
+		rm -f $REQ
+		logger -t sleepradiopi "shutdown requested from the web page"
+		poweroff
+		exit 0
+	fi
+done

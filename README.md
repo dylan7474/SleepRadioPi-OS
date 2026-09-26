@@ -94,6 +94,11 @@ Other targets are passed through to Buildroot: `make menuconfig`,
 - It plays through the MiniAmp from power-up (`speaker_enabled`). The knob:
   turn for volume (remembered), press to pause. Volume and pause over the
   network: `POST /api/speaker` (see the SleepRadioPi README).
+- **Shut down** from the web page (http://sleepradiopi.local/, bottom of
+  the page): the station creates `/run/sleepradiopi/poweroff`, and
+  `power-request-watch` (root, from inittab) runs `poweroff`, which saves the
+  clock and unmounts `/data` as usual. Unplug after about 20 seconds; plug
+  it back in to turn it on.
 - Mono or stereo (`speaker_mono`; only the speaker, the web stream stays
   stereo): `scripts/speaker-mode.sh mono|stereo` from the PC sets it and
   restarts the station; with no argument it shows the current mode.
