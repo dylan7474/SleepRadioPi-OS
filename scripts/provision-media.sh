@@ -3,7 +3,13 @@
 #
 #   sudo scripts/provision-media.sh /dev/mmcblk0 \
 #       --music ~/Music/SleepRadioMusic --voices ~/voices \
-#       [--jingles ~/Music/SleepRadioJingles] [--hooks dj_hooks_70s.txt]
+#       [--jingles ~/Music/SleepRadioJingles] [--hooks dj_hooks_70s.txt] \
+#       [--mono | --stereo]
+#
+# --mono / --stereo pick the speaker model (one speaker or two): a new
+# starter config gets it, and an existing config is changed. Without either,
+# a new config is stereo and an existing one is left as it is. On a running
+# Pi, use scripts/speaker-mode.sh instead.
 #
 # The card must already hold output/images/sdcard.img. The first run adds p6
 # (the media partition) in the free space after the image, filling the card,
@@ -23,16 +29,18 @@
 #   dj_hooks_70s.txt  optional: replaces the DJ hooks bundled with the app
 set -euo pipefail
 
-usage() { sed -n '2,8p' "$0" | sed 's/^# \{0,1\}//'; exit 1; }
+usage() { sed -n '2,14p' "$0" | sed 's/^# \{0,1\}//'; exit 1; }
 
 DEV=${1:-}; [ -n "$DEV" ] || usage; shift
-MUSIC= VOICES= JINGLES= HOOKS=
+MUSIC= VOICES= JINGLES= HOOKS= MONO=
 while [ $# -gt 0 ]; do
 	case "$1" in
 		--music)   MUSIC=$2; shift 2 ;;
 		--voices)  VOICES=$2; shift 2 ;;
 		--jingles) JINGLES=$2; shift 2 ;;
 		--hooks)   HOOKS=$2; shift 2 ;;
+		--mono)    MONO=true; shift ;;
+		--stereo)  MONO=false; shift ;;
 		*) usage ;;
 	esac
 done
@@ -122,10 +130,23 @@ if [ ! -f "$CONF" ]; then
 	  "music_folder": "/media/music",
 	  "voices_folder": "/media/voices",
 	  "jingles_folder": "/media/jingles",
-	  "speaker_enabled": true$HOOKS_LINE
+	  "speaker_enabled": true,
+	  "speaker_mono": ${MONO:-false}$HOOKS_LINE
 	}
 	EOF
 	echo "wrote a starter config: /data/radio/.config/sleepradiopi/config.json"
+elif [ -n "$MONO" ]; then
+	python3 - "$CONF" "$MONO" <<-'EOF'
+	import json, os, sys
+	path, mono = sys.argv[1], sys.argv[2] == "true"
+	conf = json.load(open(path))
+	conf["speaker_mono"] = mono
+	with open(path + ".tmp", "w") as f:
+	    json.dump(conf, f, indent=2)
+	    f.write("\n")
+	os.replace(path + ".tmp", path)
+	EOF
+	echo "speaker_mono set to $MONO in the existing config"
 fi
 sync
 

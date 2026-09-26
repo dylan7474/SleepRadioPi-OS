@@ -34,7 +34,7 @@ The image is `output/images/sdcard.img`. With the card in the PC's reader:
 sudo scripts/flash.sh /dev/mmcblk0          # new card: the whole image
 sudo scripts/provision-media.sh /dev/mmcblk0 \
     --music ~/Music/SleepRadioMusic --voices ~/voices \
-    --jingles ~/Music/SleepRadioJingles
+    --jingles ~/Music/SleepRadioJingles --mono    # or --stereo
 ```
 
 `provision-media.sh` adds the media partition (filling the card) on its first
@@ -42,7 +42,8 @@ run and syncs the folders on later runs; it also writes a starter config to
 `/data` that points at `/media`. `--voices` is a folder of voice packs, one
 per subfolder (`stock/`, `personal/`: `model.onnx`, `tokens.txt`,
 `espeak-ng-data/`). The 70s DJ hooks come with the app; `--hooks FILE` puts
-your own list on `/media` instead.
+your own list on `/media` instead. `--mono` (one speaker, or two playing the
+same) or `--stereo` picks the model; a new config defaults to stereo.
 
 After a rebuild, the same `flash.sh` command on a provisioned card rewrites
 only boot and root, keeping `/data` and `/media`; `--full` wipes the card.
@@ -93,6 +94,9 @@ Other targets are passed through to Buildroot: `make menuconfig`,
 - It plays through the MiniAmp from power-up (`speaker_enabled`). The knob:
   turn for volume (remembered), press to pause. Volume and pause over the
   network: `POST /api/speaker` (see the SleepRadioPi README).
+- Mono or stereo (`speaker_mono`; only the speaker, the web stream stays
+  stereo): `scripts/speaker-mode.sh mono|stereo` from the PC sets it and
+  restarts the station; with no argument it shows the current mode.
 - **Offline is normal.** The clock is saved to `/data/clock` and restored at
   boot, but with no RTC and no network it can be hours out, so until NTP
   sets it (`/run/time-synced` appears) the station says no times, greets
@@ -147,7 +151,7 @@ anything else starts.
 | `board/sleepradiopi/rootfs-overlay/` | Files copied into the root filesystem |
 | `board/sleepradiopi/linux.fragment` | Kernel options on top of `bcm2711_defconfig` (squashfs built in; unused drivers trimmed) |
 | `package/` | `python-sherpa-onnx` (PyPI wheels) and `sleepradiopi` (the app) |
-| `scripts/` | `flash.sh`, `provision-media.sh`, `update.sh` (run on the PC) |
+| `scripts/` | `flash.sh`, `provision-media.sh`, `update.sh`, `speaker-mode.sh` (run on the PC) |
 
 ## Roadmap
 
@@ -161,8 +165,8 @@ anything else starts.
    time (no RTC), A/B updates over Wi-Fi (`update.sh`).
 
 All four are done, plus the speaker output and knob, offline mode and a
-tag cache (on air ~20 s after power-up). Next: fit the MiniAmp, knob and
-RTC and test real sound; then a smaller web side (see the SleepRadioPi
+tag cache (on air ~20 s after power-up), and mono or stereo speakers. The
+MiniAmp plays real sound (2026-09-26). Next: the knob and the RTC; then a smaller web side (see the SleepRadioPi
 roadmap).
 
 ## Licence
