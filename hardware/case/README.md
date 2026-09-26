@@ -19,6 +19,7 @@ Outer size 152 x 100 x 91 mm (w x d x h), about 1.1 L inside (sealed box, which 
 | `stl/front_plate.stl` | face down | front panel + knob + 7 clamp tabs, pre-arranged |
 | `stl/front_plate_noknob.stl` | face down | the same plate **without the knob**, for printing the knob in another colour (`part="front_plate_noknob"`) |
 | `stl/front_logo.stl`, `stl/front_plate_logo.stl` | face down | front panel with **SLEEP RADIO** engraved between the speakers (alone, and as a plate with the knob + tabs); see *Lettering* below |
+| `stl/front_logo_sunburst.stl`, `stl/front_plate_logo_sunburst.stl` | face down | the lettered front with **art deco sunburst** grilles instead of hex (`-D 'grille_style="sunburst"'`); see *Sunburst grilles* below |
 | `stl/rear.stl` | outside face down | back panel with the Pi posts and RTC rim |
 | `stl/front.stl`, `knob.stl`, `tabs.stl` | | the same parts, separately |
 | `knob.scad` → `stl/knob.stl` | top face down, no supports | **standalone knob** (e.g. to print in another colour); same knob as `part="knob"` -- keep the two in step. `openscad --backend=manifold -o stl/knob.stl knob.scad` |
@@ -57,6 +58,17 @@ In one filament the letters are a subtle recess. To make them stand out:
 - **Multi-colour printer:** would need the letters as a separate inlay body
   to colour in the slicer; not provided yet.
 
+## Sunburst grilles
+
+`-D 'grille_style="sunburst"'` swaps the hex holes for a 1930s art deco fan:
+nine rays rise from a half-sun at the bottom of each grille, an arc crosses
+them 20 mm out, and above the arc an extra ray runs between each pair so the
+top slots stay narrow (`sun_*` settings). Ribs are 1.6 mm wide; the slots are
+about 1.2 mm near the half-sun and 4.3 mm at the top.
+
+![Sunburst grilles with the lettering](mockup_logo_sunburst.jpg)
+
+## Hardware
 
 - 4x M3 x 12 countersunk self-tapping screws per panel (8 in total), into the corner bosses of the tube.
 - 4x M2.5 x 6 screws + 4x 12 mm M2.5 standoffs (the pHAT kit), for the Pi and the amp.

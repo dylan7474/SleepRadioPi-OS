@@ -91,6 +91,12 @@ lip_clr     = 0.3;
 
 hex_flat    = 3.2;       // grille: hexagonal holes, flat to flat
 hex_web     = 1.2;
+grille_style = "hex";    // "hex" or "sunburst" (art deco: a fan rising from the bottom)
+sun_rays    = 9;         // sunburst: rays from the half-sun at the bottom of the grille
+sun_spread  = 80;        // ...fanned out to +-this many degrees from vertical
+sun_hub_r   = 8;         // the half-sun
+sun_arc_r   = 20;        // arc across the rays; above it an extra ray between each pair
+sun_rib_w   = 1.6;       // rays and arc (4 perimeters at 0.4 mm)
 
 /* ---------- Rear panel electronics ---------- */
 pi_dx       = 0;         // Pi position: offset from the centre line
@@ -240,7 +246,24 @@ module panel_screw_holes() for (b = bosses) {
 
 /* ---------- Front panel ---------- */
 hex_pitch = hex_flat + hex_web;
-module grille2d() intersection() {
+module grille2d(style = grille_style) {
+    if (style == "sunburst") sunburst2d(); else hex2d();
+}
+// Art deco sunburst, 1930s radio style: rays fan up from a half-sun at the
+// bottom of the grille, with an arc across them and extra rays above the arc
+// so the top slots stay narrow. The open slots are what's left of the circle.
+module sunburst2d() {
+    step = 2 * sun_spread / (sun_rays - 1);
+    module ray(a, r0) rotate(90 + a) translate([r0, -sun_rib_w / 2]) square([spk_grille_d * 2, sun_rib_w]);
+    translate([0, -spk_grille_d / 2]) difference() {
+        translate([0, spk_grille_d / 2]) circle(d = spk_grille_d);
+        circle(r = sun_hub_r);
+        for (i = [0 : sun_rays - 1]) ray(-sun_spread + i * step, 0);
+        for (i = [0 : sun_rays - 2]) ray(-sun_spread + (i + 0.5) * step, sun_arc_r);
+        difference() { circle(r = sun_arc_r + sun_rib_w / 2); circle(r = sun_arc_r - sun_rib_w / 2); }
+    }
+}
+module hex2d() intersection() {
     circle(d = spk_grille_d);
     n = ceil(spk_grille_d / hex_pitch);
     for (j = [-n : n]) for (i = [-n : n])
@@ -248,7 +271,7 @@ module grille2d() intersection() {
             rotate(30) circle(d = hex_flat / cos(30), $fn = 6);
 }
 
-module front(logo = front_logo) {
+module front(logo = front_logo, grille = grille_style) {
     difference() {
         union() {
             panel_blank();
@@ -264,7 +287,7 @@ module front(logo = front_logo) {
         }
         panel_screw_holes();
         for (p = spk_pos) translate([p[0], 0, p[1]]) {
-            yext(-1, panel_t + 1) if (draft) circle(d = spk_grille_d); else grille2d();
+            yext(-1, panel_t + 1) if (draft) circle(d = spk_grille_d); else grille2d(grille);
             yext(grille_t, panel_t + 1) circle(d = spk_grille_d);  // cone clearance
         }
         if (clamp) for (p = spk_pos) for (c = clamp_pts(p))
