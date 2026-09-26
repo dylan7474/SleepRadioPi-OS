@@ -1,15 +1,18 @@
 #!/bin/sh
 # Render mockup.scad to mockup.jpg: the radio cut out from a flat render and
 # placed on a soft studio backdrop with a shadow. Needs openscad + ImageMagick.
+# LOGO=1 shows the SLEEP RADIO front and writes mockup_logo.jpg instead.
 set -e
 cd "$(dirname "$0")"
 tmp=$(mktemp -d)
 cam=${CAM:-0,40,40,64,0,22,600}
 size=3200,2400          # rendered at 2x, scaled down at the end to smooth edges
+logo=false; out=mockup.jpg
+if [ -n "$LOGO" ]; then logo=true; out=mockup_logo.jpg; fi
 
-openscad --backend=manifold --render --camera=$cam --imgsize=$size --colorscheme=Tomorrow -o "$tmp/radio.png" mockup.scad 2>/dev/null
+openscad --backend=manifold --render --camera=$cam --imgsize=$size --colorscheme=Tomorrow -D mockup_logo=$logo -o "$tmp/radio.png" mockup.scad 2>/dev/null
 # Same view on a flat red background, used only to cut the radio out
-openscad --backend=manifold --render --camera=$cam --imgsize=$size --colorscheme=Sunset -o "$tmp/key.png" mockup.scad 2>/dev/null
+openscad --backend=manifold --render --camera=$cam --imgsize=$size --colorscheme=Sunset -D mockup_logo=$logo -o "$tmp/key.png" mockup.scad 2>/dev/null
 
 magick "$tmp/key.png" -fuzz 1% -fill black -opaque 'srgb(170,68,68)' -fill white +opaque black "$tmp/mask.png"
 magick "$tmp/radio.png" "$tmp/mask.png" -alpha off -compose CopyOpacity -composite "$tmp/cut.png"
@@ -23,6 +26,6 @@ magick "$tmp/mask.png" -fill black -colorize 100 -alpha copy \
 magick "$tmp/bg.png" \
     "$tmp/shadow.png" -geometry +30+60 -composite \
     "$tmp/cut.png" -composite \
-    -resize 1600x1200 -quality 92 mockup.jpg
+    -resize 1600x1200 -quality 92 "$out"
 rm -rf "$tmp"
-echo "wrote mockup.jpg"
+echo "wrote $out"

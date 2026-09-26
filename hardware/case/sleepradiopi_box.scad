@@ -30,6 +30,16 @@ part = "assembly";
 // countersinks). Only for the front/rear/draft_plate parts -- never the tube.
 draft = false;
 
+// Lettering engraved into the front face between the speakers. Engraved, not
+// raised: the front prints face down, and raised letters would need the whole
+// panel on supports. Try -D front_logo=true with part="front" / "front_plate".
+front_logo    = false;
+logo_lines    = ["SLEEP", "RADIO"];
+logo_font     = "Liberation Sans:style=Bold";
+logo_w        = 36;      // every line is stretched to this width
+logo_gap      = 4;       // between lines
+logo_depth    = 0.8;     // 4 layers at 0.2 mm
+
 /* ---------- Speakers (CHECK WITH CALIPERS) ---------- */
 spk_d        = 40;      // rim diameter (Gikfun's listing: 40 mm)
 spk_rim_t    = 2;       // thickness of the flat front rim/flange   (UNVERIFIED)
@@ -238,7 +248,7 @@ module grille2d() intersection() {
             rotate(30) circle(d = hex_flat / cos(30), $fn = 6);
 }
 
-module front() {
+module front(logo = front_logo) {
     difference() {
         union() {
             panel_blank();
@@ -259,8 +269,23 @@ module front() {
         }
         if (clamp) for (p = spk_pos) for (c = clamp_pts(p))
             ycyl(c[0], c[1], draft ? -1 : 1.2, panel_t + clamp_boss_h + 1, clamp_pilot);
+        if (logo && !draft) yext(-1, logo_depth) logo2d();
     }
 }
+
+// The lettering, centred between the speakers, each line the same width
+module logo2d() {
+    n = len(logo_lines);
+    line_h = logo_line_h();
+    total = n * line_h + (n - 1) * logo_gap;
+    for (i = [0 : n - 1])
+        translate([0, spk_z + total / 2 - line_h / 2 - i * (line_h + logo_gap)])
+            resize([logo_w, line_h])
+                text(logo_lines[i], size = 10, font = logo_font, halign = "center", valign = "center");
+}
+// Cap height once a line is stretched to logo_w (Liberation Sans Bold caps
+// are about 0.72 x size tall and ~0.72 x size wide per letter)
+function logo_line_h() = logo_w / max([for (l = logo_lines) len(l)]) * 1.0;
 
 /* ---------- Speaker clamp tab ---------- */
 // Stepped tab: the plate sits on the tall boss with the screw in the slot, and

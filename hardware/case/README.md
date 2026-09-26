@@ -18,6 +18,7 @@ Outer size 152 x 100 x 91 mm (w x d x h), about 1.1 L inside (sealed box, which 
 | `stl/tube_ring.stl` | stands on an end, 152 x 91 footprint, 20 mm tall | **fit-test ring**: a 20 mm slice of the tube with the same walls, corner bosses and knob hole. Screw both panels to it (M3 x 12 still fit) and fit the encoder before printing the full tube (~1/4.5 of its print time) |
 | `stl/front_plate.stl` | face down | front panel + knob + 7 clamp tabs, pre-arranged |
 | `stl/front_plate_noknob.stl` | face down | the same plate **without the knob**, for printing the knob in another colour (`part="front_plate_noknob"`) |
+| `stl/front_logo.stl`, `stl/front_plate_logo.stl` | face down | front panel with **SLEEP RADIO** engraved between the speakers (alone, and as a plate with the knob + tabs); see *Lettering* below |
 | `stl/rear.stl` | outside face down | back panel with the Pi posts and RTC rim |
 | `stl/front.stl`, `knob.stl`, `tabs.stl` | | the same parts, separately |
 | `knob.scad` → `stl/knob.stl` | top face down, no supports | **standalone knob** (e.g. to print in another colour); same knob as `part="knob"` -- keep the two in step. `openscad --backend=manifold -o stl/knob.stl knob.scad` |
@@ -35,7 +36,27 @@ the RTC rim, the cable slot, the corner screw holes and the locating lips. The c
 through the thin plate (7.2 mm deep with the boss, so an M2.5 x 6 or x 8 screw stays inside). Only the panels have a draft
 version; never render the tube with `draft=true`.
 
-## Hardware
+## Lettering
+
+`-D front_logo=true` engraves the words in `logo_lines` (default SLEEP / RADIO)
+0.8 mm into the front face, centred between the grilles, every line stretched to
+`logo_w` (36 mm). Engraved rather than raised because the front prints face
+down: raised letters would put the whole panel on supports. The font is
+Liberation Sans Bold; OpenSCAD substitutes another font if it isn't installed.
+
+![The lettered front](mockup_logo.jpg)
+
+In one filament the letters are a subtle recess. To make them stand out:
+
+- **Paint or wax fill:** wipe acrylic paint or rub-n-buff over the letters and
+  wipe the face clean.
+- **Filament change (single-colour printer):** change filament at the start of
+  the layer at 0.8 mm (layer 5 at 0.2 mm). The letters show the new colour at the
+  bottom of each recess, but so do the panel's edges and the insides of the
+  grille holes above 0.8 mm.
+- **Multi-colour printer:** would need the letters as a separate inlay body
+  to colour in the slicer; not provided yet.
+
 
 - 4x M3 x 12 countersunk self-tapping screws per panel (8 in total), into the corner bosses of the tube.
 - 4x M2.5 x 6 screws + 4x 12 mm M2.5 standoffs (the pHAT kit), for the Pi and the amp.
