@@ -10,9 +10,10 @@ knob_colour    = "#2f6fd6";   // the knob, printed separately
 speaker_colour = "#0b0b0c";   // cones seen through the grilles
 mockup_logo    = false;       // show the SLEEP RADIO lettering on the front
 mockup_grille  = "hex";       // "hex" or "sunburst"
+mockup_knob    = "plain";     // "plain" or "sunburst"
 
 color(body_colour) tube();
 color(panel_colour) front(logo = mockup_logo, grille = mockup_grille);
 color(panel_colour) rear();
 color(speaker_colour) speakers_placed();
-color(knob_colour) knob_placed();
+color(knob_colour) knob_placed(mockup_knob);

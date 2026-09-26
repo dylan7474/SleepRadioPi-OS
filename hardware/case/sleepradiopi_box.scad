@@ -127,6 +127,12 @@ enc_pocket_d = 15;       // thin the top wall around it so the nut gets thread
 enc_pocket  = 1;
 knob_d      = 30;
 knob_h      = 16;
+knob_style  = "plain";   // "plain" (pointer groove) or "sunburst" (the grille's fan
+                         // engraved in the top; it rises towards where the groove points)
+knob_sun_d  = 26;
+knob_sun_rays = 7;
+knob_sun_rib_w = 1.4;
+knob_engrave = 0.8;
 shaft_d     = 6.15;
 shaft_flat  = 4.65;
 shaft_len   = 12;
@@ -252,15 +258,17 @@ module grille2d(style = grille_style) {
 // Art deco sunburst, 1930s radio style: rays fan up from a half-sun at the
 // bottom of the grille, with an arc across them and extra rays above the arc
 // so the top slots stay narrow. The open slots are what's left of the circle.
-module sunburst2d() {
-    step = 2 * sun_spread / (sun_rays - 1);
-    module ray(a, r0) rotate(90 + a) translate([r0, -sun_rib_w / 2]) square([spk_grille_d * 2, sun_rib_w]);
-    translate([0, -spk_grille_d / 2]) difference() {
-        translate([0, spk_grille_d / 2]) circle(d = spk_grille_d);
-        circle(r = sun_hub_r);
-        for (i = [0 : sun_rays - 1]) ray(-sun_spread + i * step, 0);
-        for (i = [0 : sun_rays - 2]) ray(-sun_spread + (i + 0.5) * step, sun_arc_r);
-        difference() { circle(r = sun_arc_r + sun_rib_w / 2); circle(r = sun_arc_r - sun_rib_w / 2); }
+// d and rays default to the speaker grille; the hub and arc scale with d.
+module sunburst2d(d = spk_grille_d, rays = sun_rays, rib_w = sun_rib_w) {
+    k = d / spk_grille_d;
+    step = 2 * sun_spread / (rays - 1);
+    module ray(a, r0) rotate(90 + a) translate([r0, -rib_w / 2]) square([d * 2, rib_w]);
+    translate([0, -d / 2]) difference() {
+        translate([0, d / 2]) circle(d = d);
+        circle(r = sun_hub_r * k);
+        for (i = [0 : rays - 1]) ray(-sun_spread + i * step, 0);
+        for (i = [0 : rays - 2]) ray(-sun_spread + (i + 0.5) * step, sun_arc_r * k);
+        difference() { circle(r = sun_arc_r * k + rib_w / 2); circle(r = sun_arc_r * k - rib_w / 2); }
     }
 }
 module hex2d() intersection() {
@@ -367,7 +375,7 @@ module rear() {
 }
 
 /* ---------- Knob (print top face down) ---------- */
-module knob() {
+module knob(style = knob_style) {
     difference() {
         union() {
             cylinder(d = knob_d - 1.2, h = knob_h);
@@ -383,7 +391,11 @@ module knob() {
             cylinder(d = knob_d - 6, h = 4);
             cylinder(d = shaft_d + 4, h = 4);
         }
-        translate([0, -0.7, knob_h - 1]) cube([knob_d / 2 - 3, 1.4, 1.2]);
+        if (style == "sunburst")
+            translate([0, 0, knob_h - knob_engrave]) linear_extrude(knob_engrave + 0.01)
+                rotate(-90) sunburst2d(knob_sun_d, knob_sun_rays, knob_sun_rib_w);
+        else
+            translate([0, -0.7, knob_h - 1]) cube([knob_d / 2 - 3, 1.4, 1.2]);
     }
 }
 
@@ -432,7 +444,7 @@ module encoder_model() color("gray") translate([0, enc_y, 0]) {
 module knob_in_place() color("orange") translate([0, enc_y, H + 2]) knob();
 
 // Uncoloured versions for mockup.scad (it picks its own colours)
-module knob_placed() translate([0, enc_y, H + 2]) knob();
+module knob_placed(style = knob_style) translate([0, enc_y, H + 2]) knob(style);
 module speakers_placed() for (p = spk_pos) translate([p[0], 0, p[1]]) {
     ycyl(0, 0, ti, ti + spk_rim_t, spk_d);
     ycyl(0, 0, ti + spk_rim_t, ti + spk_depth - 8, spk_d - 6, 20);

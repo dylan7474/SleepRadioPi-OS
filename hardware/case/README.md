@@ -1,6 +1,6 @@
 # SleepRadioPi box
 
-![The finished radio: white body, blue panels and knob, sunburst grilles and SLEEP RADIO lettering](mockup_logo_sunburst.jpg)
+![The finished radio: white body, blue panels and knob, sunburst grilles and knob, SLEEP RADIO lettering](mockup_logo_sunburst.jpg)
 
 > **Work in progress.** The front and back panels have been printed and fitted;
 > the full tube hasn't been printed yet, and the speaker sizes below are still
@@ -19,9 +19,10 @@ Outer size 152 x 100 x 91 mm (w x d x h), about 1.1 L inside (sealed box, which 
 | `stl/front_plate.stl` | face down | front panel + knob + 7 clamp tabs, pre-arranged |
 | `stl/front_plate_noknob.stl` | face down | the same plate **without the knob**, for printing the knob in another colour (`part="front_plate_noknob"`) |
 | `stl/front_logo.stl`, `stl/front_plate_logo.stl` | face down | front panel with **SLEEP RADIO** engraved between the speakers (alone, and as a plate with the knob + tabs); see *Lettering* below |
-| `stl/front_logo_sunburst.stl`, `stl/front_plate_logo_sunburst.stl` | face down | the lettered front with **art deco sunburst** grilles instead of hex (`-D 'grille_style="sunburst"'`); see *Sunburst grilles* below |
+| `stl/front_logo_sunburst.stl`, `stl/front_plate_logo_sunburst.stl` | face down | the lettered front with **art deco sunburst** grilles instead of hex (`-D 'grille_style="sunburst"'`); the plate adds the **sunburst knob** and the 7 tabs, the complete matching set; see *Sunburst grilles* below |
 | `stl/rear.stl` | outside face down | back panel with the Pi posts and RTC rim |
 | `stl/front.stl`, `knob.stl`, `tabs.stl` | | the same parts, separately |
+| `stl/knob_sunburst.stl` | top face down, no supports | the knob with the grilles' **sunburst fan** engraved 0.8 mm into its top instead of the pointer groove; the fan rises towards where the groove pointed, so it still shows the knob's position (`knob_style="sunburst"` in either `.scad`) |
 | `knob.scad` → `stl/knob.stl` | top face down, no supports | **standalone knob** (e.g. to print in another colour); same knob as `part="knob"` -- keep the two in step. `openscad --backend=manifold -o stl/knob.stl knob.scad` |
 | `sleepradiopi_box.scad` | | parametric source: all sizes at the top |
 | `mockup.scad`, `make-mockup.sh` → `mockup*.jpg` | | the pictures in this README (see the end) |
