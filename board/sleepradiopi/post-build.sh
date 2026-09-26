@@ -17,6 +17,9 @@ done
 
 mkdir -p "${TARGET_DIR}/boot"
 
+# When this image was built: S12rtc won't believe an RTC that's earlier.
+date +%s > "${TARGET_DIR}/etc/build-time"
+
 # No console on the HDMI port: it's headless, and it saves a getty.
 sed -i '/^tty1::/d' "${TARGET_DIR}/etc/inittab"
 

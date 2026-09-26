@@ -97,11 +97,16 @@ Other targets are passed through to Buildroot: `make menuconfig`,
 - Mono or stereo (`speaker_mono`; only the speaker, the web stream stays
   stereo): `scripts/speaker-mode.sh mono|stereo` from the PC sets it and
   restarts the station; with no argument it shows the current mode.
-- **Offline is normal.** The clock is saved to `/data/clock` and restored at
-  boot, but with no RTC and no network it can be hours out, so until NTP
-  sets it (`/run/time-synced` appears) the station says no times, greets
-  with "Hello" and skips news. When Wi-Fi comes up, a udhcpc hook restarts
-  ntpd so the clock is set within seconds. To test offline:
+- **Offline is normal.** The station only says the time and schedules news
+  once the clock can be trusted (`/run/time-synced`): either NTP has set it
+  since power-on, or an **RTC** answered at boot with a sensible time (its
+  oscillator never stopped, and it's no earlier than the image build or the
+  last saved time; `S12rtc`, logged as `rtc` in `/var/log/messages`). Until
+  then it says no times, greets with "Hello" and skips news. Without an RTC
+  the clock is still restored from `/data/clock` at boot, but that can be
+  hours out. When Wi-Fi comes up, a udhcpc hook restarts ntpd so the clock
+  is set within seconds, and every NTP update (on sync, then every 11
+  minutes) is written to the RTC. To test offline:
   `touch /data/wifi-off-once; reboot` (Wi-Fi off for 5 minutes).
 - `media-rw` / `media-rw off`: make `/media` writable for a quick change over
   ssh (a card reader is much faster for anything big).
@@ -122,9 +127,9 @@ In short:
 | RTC SDA / SCL | 2 / 3 | 3 / 5 (3.3 V on 1, GND 9) |
 
 `board/sleepradiopi/config.txt` sets the MiniAmp, encoder and switch
-overlays (and the encoder pull-ups); the RTC overlay
-(`dtoverlay=i2c-rtc,ds3231`) goes in once the module is fitted, and the
-kernel already has its driver. `update.sh` brings `config.txt` up to date on
+overlays (and the encoder pull-ups), and the RTC overlay
+(`dtoverlay=i2c-rtc,ds3231`, which also turns I2C on; harmless with no RTC
+fitted). A new RTC is set from NTP the first time the Pi is online. `update.sh` brings `config.txt` up to date on
 the Pi, so none of this needs the card reader.
 
 ## Card layout
@@ -166,7 +171,8 @@ anything else starts.
 
 All four are done, plus the speaker output and knob, offline mode and a
 tag cache (on air ~20 s after power-up), and mono or stereo speakers. The
-MiniAmp plays real sound (2026-09-26). Next: the knob and the RTC; then a smaller web side (see the SleepRadioPi
+MiniAmp plays real sound (2026-09-26); RTC support is in, waiting for the
+module to be wired. Next: wire the knob and the RTC; then a smaller web side (see the SleepRadioPi
 roadmap).
 
 ## Licence

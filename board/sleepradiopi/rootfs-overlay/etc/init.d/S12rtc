@@ -1,0 +1,59 @@
+#!/bin/sh
+#
+# Real-time clock: a DS3231 on I2C (header pins 1/3/5/9; see config.txt).
+#
+# At boot, if an RTC answers and its time is sensible, set the clock from it
+# and mark the time as trusted (/run/time-synced), so the station reads the
+# time out and schedules news straight away, even with no Wi-Fi. Once ntpd
+# has the internet time, clock-save writes it back to the RTC.
+#
+# Sensible means: the RTC's oscillator never stopped (after a flat battery
+# the driver refuses to read it until it's set again), and its time is no
+# earlier than this image's build or the last time saved to /data, and less
+# than 10 years after that.
+#
+# No RTC fitted: nothing happens, and the time is trusted only after NTP.
+#
+
+RTC=${RTC:-/sys/class/rtc/rtc0}
+CLOCK=${CLOCK:-/data/clock}
+BUILT=${BUILT:-/etc/build-time}
+FLAG=${FLAG:-/run/time-synced}
+
+log() { logger -t rtc "$*"; }
+
+start() {
+	# udev may still be loading these; modprobe waits for them either way.
+	modprobe -q i2c-bcm2835 2>/dev/null
+	modprobe -q rtc-ds1307 2>/dev/null
+	i=0
+	while [ ! -e $RTC ] && [ $i -lt 10 ]; do sleep 0.1; i=$((i + 1)); done
+	if [ ! -e $RTC ]; then
+		log "no RTC found; the time is trusted once NTP sets it"
+		return 0
+	fi
+
+	t=$(cat $RTC/since_epoch 2>/dev/null)
+	if [ -z "$t" ]; then
+		log "RTC unreadable (flat battery, or never set): not used until NTP sets it"
+		return 0
+	fi
+	floor=$(cat $BUILT 2>/dev/null || echo 0)
+	saved=$(cat $CLOCK 2>/dev/null || echo 0)
+	[ "$saved" -gt "$floor" ] 2>/dev/null && floor=$saved
+	floor=$((floor - 120))                  # allow for a little drift
+	if [ "$t" -lt "$floor" ] || [ "$t" -gt $((floor + 10 * 365 * 86400)) ]; then
+		log "RTC time $(date -u -d @$t '+%F %T') UTC isn't sensible: not used"
+		return 0
+	fi
+
+	date -u -s "@$t" >/dev/null
+	touch $FLAG
+	log "clock set from the RTC: $(date '+%F %T %Z')"
+}
+
+case "$1" in
+	start) start ;;
+	stop) ;;
+	*) echo "Usage: $0 {start|stop}"; exit 1 ;;
+esac

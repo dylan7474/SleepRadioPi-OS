@@ -1,7 +1,8 @@
 #!/bin/sh
-# Save the time to /data so the next boot starts close to it: the Pi has no
-# real-time clock, and without this every boot begins in 1970 until NTP
-# answers (seconds after Wi-Fi comes up, or never if it doesn't).
+# Save the time to /data so the next boot starts close to it: without an RTC
+# every boot would begin in 1970 until NTP answers (seconds after Wi-Fi comes
+# up, or never if it doesn't). With an RTC (S12rtc), the RTC is set from NTP
+# here too.
 #
 # Run by ntpd (-S) after it sets the clock and every 11 minutes, and by
 # S00data at shutdown. Never saves a time earlier than the saved one, so a
@@ -21,9 +22,13 @@ case "$(basename "$0")" in
 	*)
 		# ntpd passes step / stratum / periodic once it has the real time:
 		# from now until power-off the clock can be trusted (the station
-		# reads the time out and schedules news only then).
+		# reads the time out and schedules news only then; S12rtc may have
+		# trusted it already, from the RTC). Keep the RTC in step with it.
 		case "$1" in
-			step|stratum|periodic) touch /run/time-synced ;;
+			step|stratum|periodic)
+				touch /run/time-synced /run/ntp-synced
+				[ -e /dev/rtc0 ] && hwclock -w -u -f /dev/rtc0 2>/dev/null
+				;;
 		esac
 		saved=$(cat $F 2>/dev/null || echo 0)
 		[ "$now" -ge "$saved" ] 2>/dev/null || exit 0

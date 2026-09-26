@@ -29,3 +29,9 @@ enable_uart=1
 gpio=17,27=ip,pu
 dtoverlay=rotary-encoder,pin_a=17,pin_b=27,relative_axis=1
 dtoverlay=gpio-key,gpio=22,active_low=1,gpio_pull=up,keycode=164,label="PLAYPAUSE"
+
+# Real-time clock: a DS3231 (e.g. ZS-042) on I2C -- 3.3 V pin 1, SDA pin 3,
+# SCL pin 5, GND pin 9. This also turns the I2C bus on. With no RTC fitted
+# it's harmless. S12rtc sets the clock from it at boot; clock-save sets it
+# from NTP.
+dtoverlay=i2c-rtc,ds3231
