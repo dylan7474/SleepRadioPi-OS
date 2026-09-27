@@ -60,8 +60,10 @@ software, and the case to print.
 
 ### Using it
 
-- **Power on and it plays.** An LED flickers while it boots and pulses when
-  it's on air.
+- **Power on and it plays.** About 10 seconds after you plug it in it chimes
+  and the DJ says it's warming up, so you know it's alive; the show starts
+  once the voice has loaded. (An LED flickers while it boots and pulses when
+  it's on air.)
 - **One knob.** Turn for volume; press to pause or play; **hold it for 3
   seconds** and the radio reads out its network address (handy away from
   home).
@@ -329,7 +331,7 @@ web page as a control panel (EQ, sleep timer, artist radio and lists,
 birthdays, test sounds, settings backup, shut down, the knob's spoken
 address). The MiniAmp plays real sound in the printed cabinet; RTC support
 is in. Next: wire the knob and test it; a Wi-Fi manager (saved
-networks, and a hotspot when none is in range); a start-up sound; downloading
+networks, and a hotspot when none is in range); downloading
 the default voice when a radio has none, and uploading your own; and a
 physical needle VU meter.
 

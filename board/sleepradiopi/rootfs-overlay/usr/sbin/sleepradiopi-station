@@ -24,6 +24,12 @@ mkdir -p /run/sleepradiopi
 chown radio:radio /run/sleepradiopi
 rm -f /run/sleepradiopi/poweroff
 
+# The start-up chime (then the DJ: "Sleep Radio is warming up..."), played
+# while the station loads, so a slow start doesn't look like a broken radio.
+# It holds /run/sleepradiopi/startup-sound.lock; the station waits for it
+# before opening the sound card.
+python3 -m sleepradiopi.startup_sound --home $HOME 2>&1 | logger -t startup-sound &
+
 # The clock is only right once NTP has set it (no RTC; often offline).
 HOME=$HOME MALLOC_ARENA_MAX=2 SLEEPRADIOPI_CLOCK_FLAG=/run/time-synced \
 	SLEEPRADIOPI_POWER_REQUEST=/run/sleepradiopi/poweroff SLEEPRADIOPI_SUPERVISED=1 \

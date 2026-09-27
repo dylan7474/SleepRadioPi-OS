@@ -24,9 +24,14 @@ and with no network, and is set up from its web page. See
 
 ## How it behaves
 
-- **Power on and it plays.** Within about 40 seconds of power-up the show
-  starts ("Hello, and welcome to Sleep Radio...") through the speakers; most
-  of that is the voice loading. No app, no phone, no button press.
+- **Power on and it plays.** About 10 seconds after power-up it chimes, and
+  the DJ says "Sleep Radio is warming up…", so you know it's alive; the show
+  itself starts once the voice has loaded ("Good evening, and welcome to
+  Sleep Radio..."). No app, no phone, no button press. The chime is a small
+  separate program (`startup_sound.py`, standard library only) run before
+  the station; the spoken line is made once in the DJ's voice after the show
+  is under way and kept in the cache, so it plays from the next start-up.
+  It follows the saved volume (0 = silent) and can be turned off.
 - **One knob.** Turn for volume (0–100 in 0.5 dB steps; the level is
   remembered). Press (and let go) to pause or play. **Hold it for 3 seconds**
   and the radio beeps and reads out its network address — handy away from
@@ -241,8 +246,8 @@ The cards:
 - **The DJ** — the voice (your voice packs; changing it restarts the radio,
   about a minute, because only one voice fits in a Zero 2 W's memory), how
   often it talks (before every song, or every 2, 3 or 5), 70s hooks on/off,
-  jingles (off or every 2–8 songs) and news on/off. All but the voice are
-  heard from the next gap.
+  jingles (off or every 2–8 songs), news on/off, and the start-up sound
+  (chime or silent). All but the voice are heard from the next gap.
 - **Birthdays** — starts empty; add a name, day and month, and optionally
   the year born. On the day, once the clock is known and outside the news
   quiet hours, the DJ wishes them a happy birthday first thing in a gap
@@ -297,7 +302,7 @@ everything but the page itself and the login needs the session cookie
 | `POST /api/speaker` | Any of `{"volume": 0-100}`, `{"step": n}`, `{"pause": true \| false \| "toggle"}`, `{"sleep": minutes}` (0 = off), `{"mono": bool}`, `{"eq": {"bass": dB, ...}}`, `{"highpass": Hz}`, `{"test": "bass" \| "sweep" \| "pink" \| "left" \| "right" \| "phase" \| "stop"}` |
 | `POST /api/knob` | `{"press": "short" \| "long"}` — the knob's switch |
 | `POST /api/skip` | Skip what's on air (track, link, jingle or bulletin) |
-| `GET` / `POST /api/dj` | The DJ settings (and the voices there are) / any of `{"voice", "chattiness", "dj_hooks", "jingle_every", "news_enabled"}` |
+| `GET` / `POST /api/dj` | The DJ settings (and the voices there are) / any of `{"voice", "chattiness", "dj_hooks", "jingle_every", "news_enabled", "startup_sound"}` |
 | `GET /api/search?q=` | Up to 40 tracks and 20 albums matching every word, each with an `id` |
 | `POST /api/album` / `/api/album/stop` | `{"id": n}` from the search's `albums` — play it next, start to finish / drop the rest of it |
 | `POST /api/request` | `{"id": n}` — play that track next; the status's `requests` lists what's queued |

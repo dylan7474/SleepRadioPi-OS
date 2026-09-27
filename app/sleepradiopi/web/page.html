@@ -281,6 +281,11 @@
       <label>News</label>
       <button type="button" data-v="true">On</button><button type="button" data-v="false">Off</button>
     </div>
+    <div class="row seg" id="djStartup" role="group" aria-label="Start-up sound">
+      <label>At power-on</label>
+      <button type="button" data-v="true" title="A chime, then the DJ says it's warming up">Chime</button>
+      <button type="button" data-v="false">Silent</button>
+    </div>
     <p id="djNote" class="muted" style="margin:.6rem 0 0;font-size:.85rem">Changes are heard from the next gap
       between songs. Jingles only play on the main mix (all artists). Changing the voice restarts the radio
       (about a minute): only one voice fits in its memory.</p>
@@ -719,6 +724,7 @@ function showDj(d) {
   j.value = String(d.jingle_every);
   $("djJingleRow").hidden = !d.jingles_available;
   pressSeg("djNews", d.news_enabled);
+  pressSeg("djStartup", d.startup_sound);
 }
 async function loadDj() {
   try { showDj(await (await fetch("/api/dj", { cache: "no-store" })).json()); } catch {}
@@ -743,6 +749,8 @@ const CHAT = { maximum: "before every song", chatty: "every 2 songs", balanced: 
 document.querySelectorAll("#djChat button").forEach(b => b.onclick = () => setDj({ chattiness: b.dataset.v }, `The DJ now talks ${CHAT[b.dataset.v]}.`));
 document.querySelectorAll("#djHooks button").forEach(b => b.onclick = () => setDj({ dj_hooks: b.dataset.v === "true" }, `70s hooks ${b.textContent.toLowerCase()}.`));
 $("djJingles").onchange = e => setDj({ jingle_every: +e.target.value }, +e.target.value ? `A jingle every ${e.target.value} songs.` : "No jingles.");
+document.querySelectorAll("#djStartup button").forEach(b => b.onclick = () => setDj({ startup_sound: b.dataset.v === "true" },
+  b.dataset.v === "true" ? "At power-on: a chime, then the DJ says it's warming up." : "Silent at power-on."));
 document.querySelectorAll("#djNews button").forEach(b => b.onclick = () => setDj({ news_enabled: b.dataset.v === "true" }, `News ${b.textContent.toLowerCase()}.`));
 
 // Birthdays: kept on the radio (and in the saved settings file).

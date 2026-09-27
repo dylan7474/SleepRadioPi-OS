@@ -394,7 +394,14 @@ def make_handler(station: Station, output: Mp3Output, speaker=None,
             self._send(json.dumps({"found": found, **self._selection()}).encode(), "application/json")
 
         def _dj_state(self) -> dict:
-            return {**station.dj_settings(), "can_restart": bool(os.environ.get(RESTART_ENV))}
+            startup = True
+            if config_file is not None:
+                try:
+                    startup = bool(json.loads(config_file.read_text()).get("startup_sound", True))
+                except (OSError, ValueError):
+                    pass
+            return {**station.dj_settings(), "startup_sound": startup,
+                    "can_restart": bool(os.environ.get(RESTART_ENV))}
 
         def _set_dj(self) -> None:
             """POST /api/dj with any of {"voice", "chattiness", "dj_hooks",
@@ -404,7 +411,7 @@ def make_handler(station: Station, output: Mp3Output, speaker=None,
                 body = self._body()
                 if not isinstance(body, dict):
                     raise ValueError("send a JSON object")
-                for key in ("dj_hooks", "news_enabled"):
+                for key in ("dj_hooks", "news_enabled", "startup_sound"):
                     if key in body and not isinstance(body[key], bool):
                         raise ValueError(f"{key} must be true or false")
                 every = body.get("jingle_every")
@@ -430,6 +437,8 @@ def make_handler(station: Station, output: Mp3Output, speaker=None,
                         save_setting(config_file, "broadcast_jingle_every", every)
                 if "news_enabled" in body:
                     save_setting(config_file, "news_enabled", body["news_enabled"])
+                if "startup_sound" in body:
+                    save_setting(config_file, "startup_sound", body["startup_sound"])
                 if voice is not None and voice != station.dj_voice:
                     save_setting(config_file, "broadcast_voice", voice)
                     restarting = bool(os.environ.get(RESTART_ENV))

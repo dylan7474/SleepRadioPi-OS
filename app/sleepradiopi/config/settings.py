@@ -47,6 +47,7 @@ class Settings:
     # Play through the Pi's own sound card (the MiniAmp) from start-up, with a
     # rotary encoder for volume and its push switch for pause. Off by default
     # so a desktop test run doesn't start playing out loud.
+    startup_sound: bool = True        # a chime (and "warming up") at power-on, while the station loads
     speaker_enabled: bool = False
     speaker_device: str = "default"   # ALSA device for aplay
     speaker_volume: int = 30          # 0-100 on first start; after that the knob's last setting
