@@ -264,6 +264,42 @@ Pi doesn't come back, put the card in the PC and set `root=` in
 can't be done this way (the kernel is on the shared boot partition): the
 script refuses, and you use `flash.sh`.
 
+### Going back to the previous version
+
+The card holds two copies of the system, in partitions 2 and 3. The radio
+runs one, and each update goes into the other, so the version you had before
+is still on the card. If a new version doesn't come on air within 5 minutes,
+the radio goes back by itself. To go back by choice, change which one it
+boots. That's one word in `cmdline.txt` on the boot partition:
+
+```
+root=/dev/mmcblk0p3 rootfstype=squashfs ro rootwait ...
+```
+
+- **On a PC:** put the card in, open `cmdline.txt` on the boot partition (FAT,
+  readable on any computer), change `mmcblk0p3` to `mmcblk0p2` or the other
+  way round, and save. Keep it all on one line and change nothing else.
+- **Over ssh:** `grep -o 'root=[^ ]*' /proc/cmdline` shows the running one.
+  To go to the other one (here, from p3 to p2):
+
+  ```sh
+  mount -o remount,rw /boot
+  sed -i 's#root=/dev/mmcblk0p3#root=/dev/mmcblk0p2#' /boot/cmdline.txt
+  sync; mount -o remount,ro /boot; reboot
+  ```
+
+Good to know:
+
+- **A new card has only one version.** Partition 3 stays empty until the first
+  update, so there's nothing to go back to. Booting an empty slot just leaves
+  the LED steady; set it back on a PC.
+- **Only one earlier version is kept.** The next update overwrites the slot
+  you're not running.
+- **Settings, music and voices are shared** by both versions (they're on
+  `/data` and `/media`), and so are the kernel and boot files (updates
+  never change the kernel).
+- After going back, Settings → Updates offers the newer version again.
+
 `local/` is git-ignored. Its `wpa_supplicant.conf` and `authorized_keys` go
 on the boot partition of the cards you build, but never into a release
 (`scripts/release.sh` builds without them and checks). The system itself
