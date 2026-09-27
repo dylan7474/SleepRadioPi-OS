@@ -22,6 +22,7 @@ from sleepradiopi.audio.speaker import SpeakerControl, SpeakerOutput, TeeOutput
 from sleepradiopi.broadcast.station import Station
 from sleepradiopi.config.settings import DEFAULT_PATH, load, save
 from sleepradiopi import startup_sound
+from sleepradiopi.updater import Updates
 from sleepradiopi.voices import STANDARD_NAME, VoiceJobs
 from sleepradiopi.io.announce import Announcer
 from sleepradiopi.io.knob import Knob
@@ -56,6 +57,30 @@ def _make_warming_up(station: Station, ready) -> None:
         logging.info("start-up line made in the %s voice (%.1f s)", station.dj_voice, len(audio) / pcm.SAMPLE_RATE)
     except Exception:
         logging.exception("couldn't make the start-up line")
+
+
+def _say_now(station: Station, control, text: str) -> None:
+    """Say something on the radio's speaker now (in the background), e.g. an
+    update's progress. Needs a voice and a speaker; otherwise it's only logged."""
+    logging.info("say: %s", text)
+    if control is None or not station._has_voice:
+        return
+
+    def run():
+        from sleepradiopi.io.announce import Clip
+        try:
+            control.play_clip(Clip(station.render_speech(text), "notice", "Notice"))
+        except Exception:
+            logging.exception("couldn't say it")
+    threading.Thread(target=run, name="say", daemon=True).start()
+
+
+def _after_first_song(station: Station, updates: Updates) -> None:
+    """Once music is playing after a start-up, confirm a pending update (so the
+    boot watchdog doesn't roll it back) and say how it went."""
+    while station.current_track is None:
+        time.sleep(2)
+    updates.on_air()
 
 
 def _fetch_standard_voice(jobs: VoiceJobs) -> None:
@@ -133,11 +158,14 @@ def main() -> None:
         control.play()   # a bedside radio plays as soon as it's powered
     else:
         station = Station(cfg, tts, stream)
+    updates = Updates(settings.update_source, say=lambda text: _say_now(station, control, text))
+    threading.Thread(target=_after_first_song, args=(station, updates), name="update-confirm",
+                     daemon=True).start()
     jobs = VoiceJobs(voices, Path.home() / "voice-inbox",
                      on_installed=lambda name: _voice_installed(station, args.config, control, name))
     if not station.voices():
         threading.Thread(target=_fetch_standard_voice, args=(jobs,), name="voice-fetch", daemon=True).start()
-    serve(station, stream, args.port or settings.http_port, control, args.config, announcer, jobs)
+    serve(station, stream, args.port or settings.http_port, control, args.config, announcer, jobs, updates)
 
 
 if __name__ == "__main__":

@@ -54,7 +54,7 @@ def _restart_soon(speaker) -> None:
 
 
 def make_handler(station: Station, output: Mp3Output, speaker=None,
-                 config_file: Path | None = None, announcer=None, voice_jobs=None):
+                 config_file: Path | None = None, announcer=None, voice_jobs=None, updates=None):
     auth = Auth(config_file)
     open_paths = {"/", "/index.html", "/api/auth", "/api/login"}
 
@@ -168,6 +168,8 @@ def make_handler(station: Station, output: Mp3Output, speaker=None,
                 self._send(json.dumps(self._birthdays_state()).encode(), "application/json")
             elif path == "/api/voices":
                 self._send(json.dumps(self._voices_state()).encode(), "application/json")
+            elif path == "/api/update" and updates is not None:
+                self._send(json.dumps(updates.status()).encode(), "application/json")
             elif path == "/api/dj":
                 self._send(json.dumps(self._dj_state()).encode(), "application/json")
             elif path == "/api/search":
@@ -236,6 +238,14 @@ def make_handler(station: Station, output: Mp3Output, speaker=None,
                 self._send(json.dumps(self._voices_state()).encode(), "application/json")
             elif path == "/api/voices/upload" and voice_jobs is not None:
                 self._upload_voice()
+            elif path in ("/api/update/check", "/api/update/install") and updates is not None:
+                self._body()
+                try:
+                    reply = updates.check() if path.endswith("check") else updates.install()
+                except (ValueError, OSError) as e:          # incl. no network / GitHub errors
+                    self._error(str(e) or e.__class__.__name__)
+                    return
+                self._send(json.dumps(reply).encode(), "application/json")
             elif path == "/api/birthdays/hear":
                 self._hear_birthday()
             else:
@@ -647,9 +657,10 @@ def make_handler(station: Station, output: Mp3Output, speaker=None,
 
 
 def serve(station: Station, output: Mp3Output, port: int, speaker=None,
-          config_file: Path | None = None, announcer=None, voice_jobs=None) -> None:
+          config_file: Path | None = None, announcer=None, voice_jobs=None, updates=None) -> None:
     server = ThreadingHTTPServer(("0.0.0.0", port),
-                                 make_handler(station, output, speaker, config_file, announcer, voice_jobs))
+                                 make_handler(station, output, speaker, config_file, announcer, voice_jobs,
+                                              updates))
     server.daemon_threads = True
     log.info("Sleep Radio on http://0.0.0.0:%d/", port)
     server.serve_forever()

@@ -393,6 +393,19 @@
     <p id="testNow" class="muted" hidden></p>
   </section>
 
+  <section id="upd" class="card">
+    <h2>Updates</h2>
+    <p id="updVersion" class="muted" style="margin:0;font-size:.85rem">This radio: …</p>
+    <div class="row">
+      <button id="updCheck" type="button">Check for updates</button>
+      <button id="updInstall" type="button" hidden>Install</button>
+    </div>
+    <div class="bar" id="updBarBox" hidden><div id="updBar"></div></div>
+    <p id="updNote" class="muted" style="margin:.5rem 0 0;font-size:.85rem">Updates come from the radio's releases
+      on GitHub. The music carries on while one downloads; then the radio restarts (about a minute) and says
+      how it went. If a new version doesn't come on air, it goes back to the old one by itself.</p>
+  </section>
+
   <section id="pw" class="card">
     <h2>Password</h2>
     <p id="pwState" class="muted" style="margin:0;font-size:.85rem">No password: anyone on your network can use this page.</p>
@@ -847,6 +860,45 @@ $("voiceUpload").onsubmit = e => {
   x.send(file);
 };
 
+// Updates: check GitHub, install; follow the download until the restart.
+let updTimer = null;
+function updNote(text) { $("updNote").textContent = text; }
+function showUpdate(u) {
+  $("updVersion").textContent = "This radio: version " + u.version;
+  const job = u.job || {}, busy = ["requested", "downloading", "verifying", "ready"].includes(job.state);
+  $("updInstall").hidden = !u.available || busy;
+  if (u.available) $("updInstall").textContent = `Install version ${u.available.version}`;
+  $("updCheck").disabled = busy;
+  $("updBarBox").hidden = job.state !== "downloading";
+  if (job.progress !== undefined) $("updBar").style.width = Math.round(job.progress * 100) + "%";
+  if (job.state === "checked") updNote(u.available ? `Version ${u.available.version} is available. ${u.available.notes || ""}`
+                                                   : "This radio is up to date.");
+  else if (job.state === "requested") updNote("Starting the update…");
+  else if (job.state === "downloading") updNote(`Downloading the update… ${Math.round((job.progress || 0) * 100)}%`);
+  else if (job.state === "verifying") updNote("Checking the download…");
+  else if (job.state === "ready") updNote("Installed: the radio is restarting. This page will be back in about a minute.");
+  else if (job.state === "error") updNote("The update didn't work: " + job.message + ". Nothing has changed.");
+  if (busy && !updTimer) updTimer = setInterval(loadUpdate, 1500);
+  if (!busy && updTimer) { clearInterval(updTimer); updTimer = null; }
+}
+async function loadUpdate() {
+  try { showUpdate(await (await fetch("/api/update", { cache: "no-store" })).json()); } catch {}
+}
+async function updPost(path, busyText) {
+  updNote(busyText);
+  try {
+    const r = await fetch(path, { method: "POST" });
+    const reply = await r.json();
+    if (!r.ok) return updNote("Couldn't: " + reply.error + ".");
+    showUpdate(reply);
+  } catch { updNote("Couldn't reach the radio."); }
+}
+$("updCheck").onclick = () => updPost("/api/update/check", "Checking GitHub…");
+$("updInstall").onclick = () => {
+  if (confirm($("updInstall").textContent + "?\n\nThe music carries on while it downloads, then the radio restarts."))
+    updPost("/api/update/install", "Starting the update…");
+};
+
 // Birthdays: kept on the radio (and in the saved settings file).
 const MONTHS = ["January", "February", "March", "April", "May", "June", "July", "August",
                 "September", "October", "November", "December"];
@@ -1145,7 +1197,7 @@ function showView() {
   $("viewMain").hidden = settings;
   $("viewSettings").hidden = !settings;
   $("gear").hidden = settings;
-  if (settings) { fillListPick(); showListEditor(); loadAuth(); loadVoices(); }
+  if (settings) { fillListPick(); showListEditor(); loadAuth(); loadVoices(); loadUpdate(); }
   window.scrollTo(0, 0);
 }
 window.addEventListener("hashchange", () => { if (started) showView(); });

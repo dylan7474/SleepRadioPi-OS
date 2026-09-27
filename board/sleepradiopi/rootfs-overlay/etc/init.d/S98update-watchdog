@@ -1,0 +1,14 @@
+#!/bin/sh
+#
+# After an update: if the new version doesn't come on air within 5 minutes
+# (the station confirms it once music plays), go back to the previous root
+# slot and reboot. Does nothing when no update is pending.
+#
+
+case "$1" in
+	start)
+		[ -e /data/radio/.update/pending.json ] || exit 0
+		(python3 -m sleepradiopi.updater watchdog 2>&1 | logger -t update) &
+		;;
+	stop|restart) ;;
+esac

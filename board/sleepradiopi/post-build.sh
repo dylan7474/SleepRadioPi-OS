@@ -17,6 +17,12 @@ done
 
 mkdir -p "${TARGET_DIR}/boot"
 
+# The image's version, shown on the web page and compared with GitHub
+# releases: scripts/release.sh sets SLEEPRADIOPI_VERSION; otherwise it's
+# git's description of this checkout (e.g. v1.0.0-3-gabc1234-dirty).
+echo "${SLEEPRADIOPI_VERSION:-$(git -C "${BR2_EXTERNAL_SLEEPRADIOPI_PATH}" describe --tags --always --dirty 2>/dev/null || echo unknown)}" \
+	> "${TARGET_DIR}/etc/sleepradiopi-version"
+
 # When this image was built: S12rtc won't believe an RTC that's earlier.
 date +%s > "${TARGET_DIR}/etc/build-time"
 
@@ -41,3 +47,5 @@ grep -q power-request-watch "${TARGET_DIR}/etc/inittab" ||
 	echo "::respawn:/usr/sbin/power-request-watch" >> "${TARGET_DIR}/etc/inittab"
 grep -q voice-install-watch "${TARGET_DIR}/etc/inittab" ||
 	echo "::respawn:/usr/sbin/voice-install-watch" >> "${TARGET_DIR}/etc/inittab"
+grep -q update-watch "${TARGET_DIR}/etc/inittab" ||
+	echo "::respawn:/usr/sbin/update-watch" >> "${TARGET_DIR}/etc/inittab"
