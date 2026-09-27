@@ -24,6 +24,7 @@ from sleepradiopi.config.auth import COOKIE, SESSION_S, Auth
 from sleepradiopi.config.clock import clock_trusted
 from sleepradiopi.io.announce import Clip
 from sleepradiopi import voices as voices_mod
+from sleepradiopi import updater as updater_mod
 from sleepradiopi import wifi as wifi_mod
 from sleepradiopi.config import backup
 from sleepradiopi.config.settings import save_setting
@@ -171,6 +172,7 @@ def make_handler(station: Station, output: Mp3Output, speaker=None,
                     status["speaker"] = speaker.status()
                 status["can_power_off"] = can_power_off()
                 status["stream"] = output is not None and output.enabled
+                status["version"] = updater_mod.this_version()
                 self._send(json.dumps(status).encode(), "application/json")
             elif path == "/api/settings" and config_file is not None:
                 self._save_settings()

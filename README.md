@@ -96,6 +96,34 @@ software, and the case to print.
   doesn't come on air within 5 minutes, the radio goes back to the old one
   by itself (and says so).
 
+## Build one
+
+You need a Raspberry Pi Zero 2 W, a HiFiBerry MiniAmp, one or two small
+speakers (4–8 Ω), a rotary encoder with a push switch (a KY-040 module is
+easiest), a 5 V 2.5 A micro-USB supply and a microSD card; a DS3231 clock
+module is optional. The case is in [`hardware/case/`](hardware/case/).
+
+![Wiring diagram: the Pi's header, the MiniAmp, the rotary encoder, the optional RTC, speakers and power](hardware/wiring/wiring.svg)
+
+| From | To the Pi's header |
+|---|---|
+| MiniAmp | plugged onto all 40 pins (or wired: 5 V → 2 and 4, GND → 6 and 39, BCLK → 12, LRCLK → 35, DIN → 40) |
+| Encoder CLK / DT / SW | pins 11 / 13 / 15 (GPIO17 / 27 / 22) |
+| Encoder GND | pin 25 (any GND pin) |
+| Encoder + (KY-040 only) | pin 17 (3.3 V — **never 5 V**) |
+| RTC VCC / SDA / SCL / GND (optional) | pins 1 / 3 / 5 / 9 (3.3 V only) |
+| Speakers | the MiniAmp's terminal: left + and −, right + and − |
+
+The knob and RTC pins are under the MiniAmp: solder their wires to the
+underside of the Pi's header, or put a stacking header / GPIO extender between
+the Pi and the MiniAmp. Then flash the card (the release's `sdcard.img.xz`,
+or build it, below) and add your music.
+
+**Testing the knob:** with the radio playing, turn the knob — the volume on
+the web page moves with it (if it goes the wrong way, swap CLK and DT);
+press and let go — it pauses, and again — it plays; hold it for 3 seconds —
+it beeps and reads out its network address.
+
 ## The appliance image
 
 - **Pull the plug at any time.** Boot, root (squashfs) and the media library
@@ -283,9 +311,8 @@ Other targets are passed through to Buildroot: `make menuconfig`,
 | DS3231 RTC module (optional) | Keeps the time with no network. |
 | 5 V supply, 2.5 A or more | The amp draws from the Pi's 5 V. |
 
-![Wiring diagram: the Pi's header, the MiniAmp, the knob, the optional RTC, speakers and power](hardware/wiring/wiring.svg)
-
-(The drawing is made by `hardware/wiring/make_wiring.py`; keep it in step with
+The wiring diagram is under [*Build one*](#build-one), above. (It's drawn by
+`hardware/wiring/make_wiring.py`; keep it in step with
 `board/sleepradiopi/config.txt` if a pin ever changes.)
 
 The MiniAmp covers the pins the knob and RTC need, so either solder their
@@ -295,12 +322,12 @@ extender between the Pi and the amp.
 | Use | GPIO | Header pin |
 |---|---|---|
 | MiniAmp I2S | 18, 19, 21 | 12, 35, 40 (+ 5 V on 2/4, GND 6) |
-| Encoder A / B / switch | 17 / 27 / 22 | 11 / 13 / 15 (GND 9 or 14) |
+| Encoder A / B / switch | 17 / 27 / 22 | 11 / 13 / 15 (GND: any, e.g. 25) |
 | RTC SDA / SCL | 2 / 3 | 3 / 5 (3.3 V on 1, GND 9) |
 
 - The encoder pins have the Pi's internal pull-ups on, so a bare encoder
   works. A module with its own pull-ups (KY-040) has a `+` pin: put it on
-  **3.3 V (pin 1), never 5 V**.
+  **3.3 V (pin 1 or 17), never 5 V**.
 - Power the RTC from **3.3 V, never 5 V** (its I2C pull-ups go to its
   supply, and the Pi's pins are 3.3 V only). The common ZS-042 board charges
   its battery for a rechargeable LIR2032; with an ordinary CR2032, remove its

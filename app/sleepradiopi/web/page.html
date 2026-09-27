@@ -123,6 +123,7 @@
   #settingsNote.bad { color: var(--live); }
   #off { border-color: var(--live); color: var(--live); }
   .head-right { display: flex; align-items: center; gap: .75rem; }
+  #version { font-size: .75rem; letter-spacing: .04em; margin-top: .15rem; }
   button.icon { font-size: 1.25rem; line-height: 1; padding: .35rem .55rem; }
   .view-head { display: flex; align-items: center; justify-content: space-between; gap: 1rem; margin-top: 1.25rem; }
   .view-head h2 { margin: 0; }
@@ -139,7 +140,10 @@
 <body>
 <main>
   <header>
-    <h1 id="stationName">Sleep <span>Radio</span></h1>
+    <div>
+      <h1 id="stationName">Sleep <span>Radio</span></h1>
+      <div id="version" class="muted" title="The radio's software version (Settings → Updates)"></div>
+    </div>
     <div class="head-right">
       <span id="badge" class="badge">Off air</span>
       <button id="gear" class="icon" type="button" aria-label="Settings" title="Settings" hidden>⚙</button>
@@ -1162,6 +1166,7 @@ async function poll() {
     // Follow the speaker (the knob, or another page), except mid-drag.
     hasSpeaker = !!s.speaker;
     $("power").hidden = !s.can_power_off;
+    if (s.version) $("version").textContent = /^\d/.test(s.version) ? "v" + s.version : "build " + s.version;
     streamOn = !!s.stream;
     $("tune").hidden = !streamOn;
     if (!streamOn && wanted) tuneOut();              // switched off (here or on another phone)

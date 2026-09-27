@@ -84,11 +84,16 @@ box(*RTC, "DS3231 RTC (optional)", ["ZS-042 board. 3.3 V only!", "With a plain C
 rtc_t = {"VCC": (RTC[0] + RTC[2], 205), "SDA": (RTC[0] + RTC[2], 222),
          "SCL": (RTC[0] + RTC[2], 239), "GND": (RTC[0] + RTC[2], 256 - 1)}
 # Rotary encoder, middle left
-ENC = (60, 330, 250, 190)
+ENC = (60, 330, 250, 300)
 box(*ENC, "Rotary encoder + switch", ["Turn: volume. Press: pause/play.", "Hold 3 s: says the IP address.",
-                                      "Bare EC11 or a KY-040 module."], "#f1fff4")
-enc_t = {"A / CLK": (ENC[0] + ENC[2], 430), "B / DT": (ENC[0] + ENC[2], 448),
-         "SW": (ENC[0] + ENC[2], 466), "GND": (ENC[0] + ENC[2], 484), "+ (KY-040 only)": (ENC[0] + ENC[2], 502)}
+                                      "KY-040 module: pins in this order."], "#f1fff4")
+# In the order printed on a KY-040 module
+enc_t = {"CLK (A)": (ENC[0] + ENC[2], 430), "DT (B)": (ENC[0] + ENC[2], 448),
+         "SW": (ENC[0] + ENC[2], 466), "+ (KY-040 only)": (ENC[0] + ENC[2], 484), "GND": (ENC[0] + ENC[2], 502)}
+for i, line in enumerate(["Bare EC11 (no board): on the 3-pin", "side, the middle pin is GND, the outer",
+                          "two CLK and DT; of the 2 pins, one to", "SW, the other to GND.",
+                          "Volume goes the wrong way? Swap CLK/DT."]):
+    add(f'<text x="{ENC[0] + 12}" y="{530 + i * 17}" font-size="12.5" fill="#444">{line}</text>')
 # MiniAmp, right
 AMP = (850, 150, 270, 300)
 box(*AMP, "HiFiBerry MiniAmp", ["Normally plugged straight onto all", "40 pins. Wired by hand instead,",
@@ -124,11 +129,11 @@ left_wire(rtc_t["VCC"], 1, ORANGE, 450)
 left_wire(rtc_t["SDA"], 3, BLUE, 466)
 left_wire(rtc_t["SCL"], 5, YELLOW, 482)
 left_wire(rtc_t["GND"], 9, BLACK, 498)
-left_wire(enc_t["A / CLK"], 11, GREEN, 450)
-left_wire(enc_t["B / DT"], 13, TEAL, 466)
+left_wire(enc_t["CLK (A)"], 11, GREEN, 450)
+left_wire(enc_t["DT (B)"], 13, TEAL, 466)
 left_wire(enc_t["SW"], 15, PURPLE, 482)
-left_wire(enc_t["GND"], 25, BLACK, 498)
-left_wire(enc_t["+ (KY-040 only)"], 17, ORANGE, 514, dashed=True)
+left_wire(enc_t["+ (KY-040 only)"], 17, ORANGE, 498, dashed=True)
+left_wire(enc_t["GND"], 25, BLACK, 514)
 
 # The higher the pin, the further out its lane, so the wires nest without crossing
 right_wire(amp_t["5V"], 2, RED, 838)

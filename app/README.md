@@ -111,14 +111,14 @@ GPIO extender between the Pi and the amp.
 | Encoder A (CLK) | GPIO17 | 11 |
 | Encoder B (DT) | GPIO27 | 13 |
 | Encoder push switch (SW) | GPIO22 | 15 |
-| Encoder ground | GND | 9 or 14 |
+| Encoder ground | GND | any GND (e.g. 9, 14 or 25) |
 | RTC VCC | 3.3 V | 1 |
 | RTC SDA / SCL | GPIO2 / GPIO3 | 3 / 5 |
 | RTC ground | GND | 9 |
 
 - The Pi's internal pull-ups are enabled on the encoder pins, so a bare
   encoder works. A module with its own pull-ups (KY-040) has a `+` pin: put
-  it on **3.3 V (pin 1), never 5 V**.
+  it on **3.3 V (pin 1 or 17), never 5 V**.
 - Power the RTC from **3.3 V, never 5 V**: its I2C pull-ups go to its supply,
   and the Pi's I2C pins are 3.3 V only. The common ZS-042 DS3231 board has a
   charging circuit meant for a rechargeable LIR2032; with an ordinary CR2032
