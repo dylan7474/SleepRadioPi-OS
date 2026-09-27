@@ -95,7 +95,8 @@ Other targets are passed through to Buildroot: `make menuconfig`,
   turn for volume (remembered), press to pause; **hold it 3 s** and the radio
   beeps and reads out its IP address (or says it isn't connected), for
   finding the web page away from home.
-- **The web page** (http://sleepradiopi.local/) is the control panel:
+- **The web page** (http://sleepradiopi.local/) is the control panel
+  (everyday controls on the main page, the rest under ⚙ Settings):
   volume, stereo/mono, a 3-band EQ and low cut, a sleep timer that fades the
   speakers, the DJ (voice, how often it talks, hooks, jingles, news), **play next** (search the library and queue songs; the DJ
   introduces them), artist radio ("Beatles Radio") and your own lists of
@@ -104,6 +105,10 @@ Other targets are passed through to Buildroot: `make menuconfig`,
   settings and shut down. All of it is described in the
   [SleepRadioPi README](https://github.com/dylan7474/SleepRadioPi#the-web-page),
   with the JSON API behind it.
+- **Web password** (optional, off by default): set it on the page under
+  Settings → Password. Forgotten it? `sleepradio-password clear` on the Pi
+  (or `scripts/web-password.sh clear` from the PC) opens the page again at
+  once; `set` chooses a new one. The radio itself never needs it.
 - **Shut down** from the web page (http://sleepradiopi.local/, bottom of
   the page): the station creates `/run/sleepradiopi/poweroff`, and
   `power-request-watch` (root, from inittab) runs `poweroff`, which saves the
@@ -199,7 +204,7 @@ anything else starts.
 | `board/sleepradiopi/rootfs-overlay/` | Files copied into the root filesystem |
 | `board/sleepradiopi/linux.fragment` | Kernel options on top of `bcm2711_defconfig` (squashfs built in; unused drivers trimmed) |
 | `package/` | `python-sherpa-onnx` (PyPI wheels) and `sleepradiopi` (the app) |
-| `scripts/` | `flash.sh`, `provision-media.sh`, `update.sh`, `speaker-mode.sh` (run on the PC) |
+| `scripts/` | `flash.sh`, `provision-media.sh`, `update.sh`, `speaker-mode.sh`, `web-password.sh` (run on the PC) |
 | `hardware/case/` | The 3D-printed case (OpenSCAD source, STLs, assembly notes) |
 
 ## Roadmap
