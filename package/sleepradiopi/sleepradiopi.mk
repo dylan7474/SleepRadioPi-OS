@@ -7,7 +7,7 @@
 #
 ################################################################################
 
-SLEEPRADIOPI_VERSION = 9592091db23f6f6149dfaaad1a37b091c8016b12
+SLEEPRADIOPI_VERSION = 2cc2abeb15f5164ce5947dc37049829f6c0fa0f3
 SLEEPRADIOPI_SITE = $(call github,dylan7474,SleepRadioPi,$(SLEEPRADIOPI_VERSION))
 SLEEPRADIOPI_LICENSE = GPL-3.0-or-later
 SLEEPRADIOPI_LICENSE_FILES = LICENSE NOTICE
