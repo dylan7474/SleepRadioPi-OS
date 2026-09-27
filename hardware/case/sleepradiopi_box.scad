@@ -13,10 +13,11 @@
 //   tabs  - speaker clamp tabs (6 + 1 spare)
 //   tube_ring - a 20 mm slice of the tube (same section, corner bosses and
 //           knob hole) to test the panels and encoder before the full tube
+//   grommet - closes the power cable slot round the cable (for the bass port)
 //
 // Render a part:
 //   openscad --backend=manifold -D 'part="tube"' -o tube.stl sleepradiopi_box.scad
-// part = "tube" | "tube_ring" | "front" | "rear" | "knob" | "tabs" | "front_plate" |
+// part = "tube" | "tube_ring" | "front" | "rear" | "knob" | "tabs" | "grommet" | "front_plate" |
 //        "front_plate_noknob" |
 //        "assembly" | "exploded" | "rear_inside" | "front_inside" | "check" | "check_pull"
 //
@@ -115,6 +116,26 @@ cable_dx    = 32;        // power cable slot: this far out from the Pi's port ed
 cable_w     = 14;
 cable_h     = 10;
 
+// Bass port (-D rear_port=true). The box is ~0.95 L inside (both speakers
+// share it); a 20 mm port 22 mm long (the panel + a tube inside) tunes it to
+// ~160 Hz, just below where 40 mm speakers give up. The cable slot is a vent
+// too (~160 Hz on its own), so close it with the grommet when the port is on,
+// and set the radio's low cut (speaker_highpass_hz) to ~140 Hz so the bass EQ
+// doesn't push the speakers below the port's note.
+rear_port   = false;
+port_d      = 20;
+port_len    = 22;        // outside face to the tube's inner end
+port_wall   = 1.6;
+port_flare  = 3;         // 45-degree flare at both ends: quieter, no supports needed
+port_pos    = [47, 30];  // (x, z): low down on the side away from the RTC
+box_net_l   = 0.95;      // inside volume less the speakers, Pi, bosses (estimated)
+
+grommet_clr     = 0.15;  // plug vs the slot, each side
+grommet_cable_d = 4;     // micro-USB cable (CHECK WITH CALIPERS)
+grommet_slit    = 0.8;   // so it springs round the cable
+grommet_flange  = 2.5;   // outside lip, all round
+grommet_flange_t = 1.6;
+
 rtc         = true;      // ZS-042 DS3231: a locating rim, fix with foam tape
 rtc_w       = 22.5;
 rtc_l       = 38.5;
@@ -171,6 +192,13 @@ function pi_pt(u, v) = [port_x - v, pi_z0 + u];  // board coords -> (x, z)
 pi_holes = [for (u = [hole_in, pcb_l - hole_in]) for (v = [hole_in, pcb_w - hole_in]) pi_pt(u, v)];
 cable_pos = [port_x + cable_dx, pi_z0 + port_pwr_u];
 rtc_pos   = [pi_x0 - rtc_gap - rtc_w / 2, H / 2];
+
+if (rear_port) {
+    a = PI * port_d * port_d / 4;
+    leff = port_len + 0.85 * port_d;   // end correction 1.7 r
+    echo(str("Bass port: ", port_d, " mm x ", port_len, " mm -> tuned to about ",
+             round(343000 / (2 * PI) * sqrt(a / (box_net_l * 1e6 * leff))), " Hz"));
+}
 
 echo(str("Outer size: ", W, " x ", D, " x ", H, " mm (w x d x h); inside ",
          inner_w, " x ", tube_len, " x ", inner_h, " = ",
@@ -356,7 +384,9 @@ module rear() {
                 square([rtc_w, rtc_l], center = true);
                 square([rtc_w - 6, rtc_l + 4], center = true);  // gaps for the header wires
             }
+            if (rear_port) port_tube();
         }
+        if (rear_port) port_bore();
         translate([0, D, 0]) mirror([0, 1, 0]) panel_screw_holes();
         for (h = pi_holes) {
             if (pi_screw == "outside") {
@@ -373,6 +403,39 @@ module rear() {
         }
     }
 }
+
+// Bass port: a tube on the inside face, flared at both ends.
+port_tip = D - port_len;                 // y of the tube's inner end
+module port_tube() {
+    od = port_d + 2 * port_wall;
+    ycyl(port_pos[0], port_pos[1], port_tip + port_flare, to + 0.01, od);
+    ycyl(port_pos[0], port_pos[1], port_tip, port_tip + port_flare + 0.01, od + 2 * port_flare, od);
+}
+module port_bore() {
+    ycyl(port_pos[0], port_pos[1], port_tip - 1, D + 1, port_d);
+    ycyl(port_pos[0], port_pos[1], port_tip - 0.01, port_tip + port_flare, port_d + 2 * port_flare, port_d);
+    ycyl(port_pos[0], port_pos[1], D - port_flare, D + 0.01, port_d, port_d + 2 * port_flare);
+}
+
+/* ---------- Grommet (print flange down) ---------- */
+// Fills the power cable slot round the cable once the plug is through. Open
+// the slit, clip it round the cable, press it into the slot from outside.
+module grommet() {
+    module slot2d(grow) rrect(-cable_w / 2 - grow, -cable_h / 2 - grow,
+                              cable_w / 2 + grow, cable_h / 2 + grow, 3 + max(grow, -2.9));
+    difference() {
+        union() {
+            linear_extrude(grommet_flange_t) slot2d(grommet_flange);
+            linear_extrude(grommet_flange_t + panel_t) slot2d(-grommet_clr);
+        }
+        translate([0, 0, -1]) {
+            cylinder(d = grommet_cable_d, h = panel_t + grommet_flange_t + 2);
+            translate([-grommet_slit / 2, -cable_h, 0]) cube([grommet_slit, cable_h, panel_t + grommet_flange_t + 2]);
+        }
+    }
+}
+module grommet_in_place() translate([cable_pos[0], D + grommet_flange_t, cable_pos[1]])
+    rotate([90, 0, 0]) grommet();
 
 /* ---------- Knob (print top face down) ---------- */
 module knob(style = knob_style) {
@@ -468,6 +531,7 @@ else if (part == "front") front_print();
 else if (part == "rear") rear_print();
 else if (part == "knob") knob_print();
 else if (part == "tabs") tabs_print();
+else if (part == "grommet") grommet();
 else if (part == "draft_plate") {   // run with -D draft=true: both panels + tabs
     front_print();
     translate([0, 6, 0]) rear_print();
@@ -497,7 +561,7 @@ else if (part == "exploded") {
     encoder_model();
     knob_in_place();
 }
-else if (part == "rear_inside") { color("tan") rear(); pi_stack_model(); }
+else if (part == "rear_inside") { color("tan") rear(); pi_stack_model(); if (rear_port) color("orange") grommet_in_place(); }
 else if (part == "front_inside") {
     color("tan") front();
     speaker_model(spk_pos[1]);

@@ -10,7 +10,8 @@ A 3D-printable stereo radio cabinet for SleepRadioPi-OS: two **Gikfun EK1794 40 
 grilles, the **Pi Zero 2 W + HiFiBerry MiniAmp** and the **ZS-042 DS3231 RTC** on the back panel, and an
 **EC11 rotary encoder** in the middle of the top. No display.
 
-Outer size 152 x 100 x 91 mm (w x d x h), about 1.1 L inside (sealed box, which helps the small speakers' bass).
+Outer size 152 x 100 x 91 mm (w x d x h), about 1.1 L inside (~0.95 L net). Not quite sealed: the power cable
+slot in the back is a small vent. An optional **bass port** back panel is below.
 
 | File | Print | Notes |
 |---|---|---|
@@ -21,6 +22,8 @@ Outer size 152 x 100 x 91 mm (w x d x h), about 1.1 L inside (sealed box, which 
 | `stl/front_logo.stl`, `stl/front_plate_logo.stl` | face down | front panel with **SLEEP RADIO** engraved between the speakers (alone, and as a plate with the knob + tabs); see *Lettering* below |
 | `stl/front_logo_sunburst.stl`, `stl/front_plate_logo_sunburst.stl` | face down | the lettered front with **art deco sunburst** grilles instead of hex (`-D 'grille_style="sunburst"'`); the plate adds the **sunburst knob** and the 7 tabs, the complete matching set; see *Sunburst grilles* below |
 | `stl/rear.stl` | outside face down | back panel with the Pi posts and RTC rim |
+| `stl/rear_port.stl` | outside face down, no supports | the same back panel with a **bass port** (`-D rear_port=true`); see *Bass port* below |
+| `stl/grommet.stl` | flange down | closes the power cable slot round the cable; use it with the bass port |
 | `stl/front.stl`, `knob.stl`, `tabs.stl` | | the same parts, separately |
 | `stl/knob_sunburst.stl` | top face down, no supports | the knob with the grilles' **sunburst fan** engraved 0.8 mm into its top instead of the pointer groove; the fan rises towards where the groove pointed, so it still shows the knob's position (`knob_style="sunburst"` in either `.scad`) |
 | `knob.scad` → `stl/knob.stl` | top face down, no supports | **standalone knob** (e.g. to print in another colour); same knob as `part="knob"` -- keep the two in step. `openscad --backend=manifold -o stl/knob.stl knob.scad` |
@@ -69,6 +72,30 @@ about 1.2 mm near the half-sun and 4.3 mm at the top.
 
 The picture at the top shows it with the lettering.
 
+## Bass port
+
+`-D rear_port=true` adds a 20 mm port low down on the back panel, on the side away from the RTC: a tube 22 mm
+long overall (the 5 mm panel + 17 mm inside), flared 45 degrees at both ends so it prints without supports and
+doesn't whistle. With ~0.95 L inside it tunes the box to about **160 Hz** (OpenSCAD echoes the estimate). It's
+clear of the Pi, the USB plug, the RTC and the speakers (`part="check"` is unchanged).
+
+What to expect: a little more **warmth, roughly 150-250 Hz**; 40 mm speakers can't do deep bass in any box.
+Gikfun don't publish the speakers' Thiele-Small figures, so the tuning is a sound estimate; the back panel is a
+separate part, so going back is just swapping panels.
+
+With the port:
+
+- **Close the cable slot** with `stl/grommet.stl`. On its own the slot is a vent tuned ~160 Hz too; two vents
+  together push the tuning up and make it unpredictable. Thread the USB plug through the slot, open the grommet's
+  slit, clip it round the cable and press it in from outside. `grommet_cable_d` (4 mm) is a guess: measure your
+  cable. `grommet_clr` sets the fit in the slot.
+- **Set the radio's low cut to 140 Hz** (the web page's *Speaker EQ* card). Below the port's note a ported box
+  stops holding the cones back, and a bass boost there only makes them flap and distort.
+- Keep the back of the radio **about 5 cm from the wall**, so the port can breathe.
+
+Change `port_len` to retune: longer is lower (a 20 mm port 27 mm long is ~150 Hz; 17 mm long, ~170 Hz). Don't go
+much below 150 Hz.
+
 ## Hardware
 
 - 4x M3 x 12 countersunk self-tapping screws per panel (8 in total), into the corner bosses of the tube.
@@ -101,7 +128,8 @@ The back panel comes off with all the electronics on it, so you don't need to re
 
 `part="check"` and `part="check_pull"` render as empty or zero-volume: the tube, panels, speakers, Pi stack
 (including the USB plug and its bend), encoder, RTC and clamp tabs don't overlap, and the back panel with the Pi
-on it slides straight out past the encoder.
+on it slides straight out past the encoder. The same with `-D rear_port=true` (the port tube is clear of
+everything), and the grommet in its slot only touches the panel's outside face.
 
 ## To measure (unverified)
 
