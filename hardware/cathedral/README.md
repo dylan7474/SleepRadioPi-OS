@@ -39,6 +39,8 @@ the dial lamps of the originals:
   chime;
 - matched to the VU meter's warm backlight, and dimmed with it.
 
+![The cathedral radio at night: the grille cloth glowing warm behind the sunburst fretwork, and the backlit VU meter](concept_night.jpg)
+
 ### How it will go together
 
 Multi-part to fit an ordinary printer bed (designed on a Prusa MK2.5,
@@ -152,5 +154,8 @@ Earlier studies, also in this folder:
 
 - `concept.scad`: the model behind the pictures (not printable parts). Colours
   and sizes are variables at the top.
+- `./make-night.sh`: renders the night picture (`concept_night.jpg`), the
+  wood radio with its lamps on. OpenSCAD has no lights, so it renders the
+  lit parts as a mask and adds the glow with ImageMagick.
 - `./make-concept.sh`: renders the pictures. Add `WOOD=1` for the wood ones or
   `WALNUT=1` for walnut and cream. Needs OpenSCAD and ImageMagick.
