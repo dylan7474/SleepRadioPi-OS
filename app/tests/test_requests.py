@@ -129,7 +129,7 @@ def test_web_api(tmp_path: Path) -> None:
         results = req("/api/search?q=pink%20moon")["results"]
         assert [r["title"] for r in results] == ["Pink Moon", "Place to Be"]   # the album matches too
         got = req("/api/request", {"id": results[0]["id"]})
-        assert got["title"] == "Pink Moon" and got["requests"] == [{"title": "Pink Moon", "artist": "Nick Drake"}]
+        assert got["title"] == "Pink Moon" and got["requests"] == [{"title": "Pink Moon", "artist": "Nick Drake", "album": False}]
         for bad in ({"id": 999}, {"id": "1"}, {}):
             with pytest.raises(urllib.error.HTTPError) as err:
                 req("/api/request", bad)

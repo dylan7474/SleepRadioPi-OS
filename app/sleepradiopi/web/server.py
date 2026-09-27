@@ -168,7 +168,8 @@ def make_handler(station: Station, output: Mp3Output, speaker=None,
                 self._send(json.dumps(self._dj_state()).encode(), "application/json")
             elif path == "/api/search":
                 q = parse_qs(urlparse(self.path).query).get("q", [""])[0][:200]
-                self._send(json.dumps({"results": station.search(q)}).encode(), "application/json")
+                self._send(json.dumps({"results": station.search(q), "albums": station.search_albums(q)}).encode(),
+                           "application/json")
             elif path == "/api/artists":
                 self._send(json.dumps({**self._selection(), "artists": station.artists(),
                                        "profiles": station.profiles}).encode(), "application/json")
@@ -208,6 +209,12 @@ def make_handler(station: Station, output: Mp3Output, speaker=None,
                 self._set_profiles()
             elif path == "/api/request":
                 self._request()
+            elif path == "/api/album":
+                self._album()
+            elif path == "/api/album/stop":
+                self._body()
+                self._send(json.dumps({"stopped": station.stop_album(), "requests": station.requests()}).encode(),
+                           "application/json")
             elif path == "/api/dj":
                 self._set_dj()
             elif path == "/api/birthdays/hear":
@@ -431,6 +438,20 @@ def make_handler(station: Station, output: Mp3Output, speaker=None,
                                    "restarting": restarting}).encode(), "application/json")
             if restarting:
                 _restart_soon(speaker)
+
+        def _album(self) -> None:
+            """POST /api/album {"id": n} (from /api/search's albums): play it next,
+            start to finish."""
+            try:
+                album_id = self._body()["id"]
+                if isinstance(album_id, bool) or not isinstance(album_id, int):
+                    raise ValueError("id must be a number from /api/search")
+                reply = station.request_album(album_id)
+            except (ValueError, TypeError, KeyError, AttributeError) as e:
+                self._error(str(e) if isinstance(e, ValueError) else "send {\"id\": n}")
+                return
+            self._send(json.dumps({**reply, "album": station.album_status(),
+                                   "requests": station.requests()}).encode(), "application/json")
 
         def _request(self) -> None:
             """POST /api/request {"id": n} (from /api/search): play that track next."""

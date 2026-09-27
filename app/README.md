@@ -223,7 +223,13 @@ The cards:
   DJ introduces it (the gap's talk is re-worded; a time check already worded
   is kept). Several requests play in order; one made during a gap plays
   after the song the DJ has just introduced; off air the next show opens
-  with it. Requests play even on artist radio or a list.
+  with it. Requests play even on artist radio or a list. The search finds
+  **albums** too (one per folder, in file order): *Play album* queues the
+  whole album to play start to finish — the DJ introduces it ("an album all
+  the way through: Rubber Soul, by The Beatles…"), then it's straight on
+  like a record, with no talk, jingles or news between tracks, and a
+  back-announcement at the end. *Stop album* goes back to the usual mix
+  after the song playing.
 - **Artist radio** — play one artist only: the DJ then calls the station
   after them ("welcome to Beatles Radio"; a leading "The" is dropped), and
   so do the page heading and tab. **Lists…** makes your own named lists of
@@ -292,7 +298,8 @@ everything but the page itself and the login needs the session cookie
 | `POST /api/knob` | `{"press": "short" \| "long"}` — the knob's switch |
 | `POST /api/skip` | Skip what's on air (track, link, jingle or bulletin) |
 | `GET` / `POST /api/dj` | The DJ settings (and the voices there are) / any of `{"voice", "chattiness", "dj_hooks", "jingle_every", "news_enabled"}` |
-| `GET /api/search?q=` | Up to 40 tracks matching every word (title, artist, album), each with an `id` |
+| `GET /api/search?q=` | Up to 40 tracks and 20 albums matching every word, each with an `id` |
+| `POST /api/album` / `/api/album/stop` | `{"id": n}` from the search's `albums` — play it next, start to finish / drop the rest of it |
 | `POST /api/request` | `{"id": n}` — play that track next; the status's `requests` lists what's queued |
 | `GET /api/artists` | Every artist with a track count, your lists, and what's playing |
 | `POST /api/station` | `{"artist": name \| null}` or `{"profile": name}` |

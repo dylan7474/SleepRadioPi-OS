@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import logging
 import random
+import re
 import threading
 import time
 from collections import Counter, deque
@@ -114,6 +115,11 @@ class OnAir:
     duration_s: float = 0.0
 
 
+def _natural(name: str) -> list:
+    """'10 - x' after '9 - x': digits compare as numbers."""
+    return [int(p) if p.isdigit() else p.lower() for p in re.split(r"(\d+)", name)]
+
+
 def artist_key(artist: str) -> str:
     """"The Beatles", "Beatles", "beatles " -> "beatles"."""
     key = " ".join(artist.lower().split())
@@ -200,6 +206,10 @@ class Station:
         self._in_gap = False
         self._n_requested = 0                # requests at the front of the queue
         self._pending: deque[BroadcastTrack] = deque()   # requests made during a gap
+        self._albums: list[dict] = []        # album runs being played start to finish
+        self._album_index: list[dict] | None = None
+        self._gap_is_album = False           # this gap is between two tracks of an album
+        self.current_track: BroadcastTrack | None = None
         self._took_request = False
         self._opening_requested = False      # the prepared opening's first song was asked for
         self._skip_for: OnAir | None = None
@@ -432,6 +442,110 @@ class Station:
         return {"position": position, "after_announced": after_announced, "replanned": replanned,
                 "title": t.title, "artist": t.artist}
 
+    # --- albums: played start to finish -----------------------------------------------
+
+    def albums(self) -> list[dict]:
+        """The library's albums: one per folder (Artist/Album/NN - Title), its
+        tracks in file order. Cached (the library doesn't change while running)."""
+        if self._album_index is None:
+            folders: dict[Path, list[BroadcastTrack]] = {}
+            for t in self.tracks:
+                folders.setdefault(t.path.parent, []).append(t)
+            index = []
+            for folder, tracks in folders.items():
+                tracks.sort(key=lambda t: _natural(t.path.name))
+                titles = Counter(t.album.strip() for t in tracks if t.album.strip())
+                artists = Counter(t.artist.strip() for t in tracks if t.artist.strip())
+                artist, n = artists.most_common(1)[0] if artists else ("", 0)
+                index.append({"title": titles.most_common(1)[0][0] if titles else folder.name,
+                              "artist": artist if n >= 0.6 * len(tracks) else "Various artists",
+                              "tracks": tracks})
+            index.sort(key=lambda a: (artist_key(a["artist"]), a["title"].lower()))
+            for i, a in enumerate(index):
+                a["id"] = i
+            self._album_index = index
+        return self._album_index
+
+    def search_albums(self, query: str, limit: int = 20) -> list[dict]:
+        words = query.lower().split()
+        if not words:
+            return []
+        hits = [a for a in self.albums() if all(w in f"{a['title']} {a['artist']}".lower() for w in words)]
+        return [{"id": a["id"], "title": a["title"], "artist": a["artist"], "tracks": len(a["tracks"])}
+                for a in hits[:limit]]
+
+    def request_album(self, album_id: int) -> dict:
+        """Queue a whole album to play next, in order, straight through: the DJ
+        introduces it and back-announces it, with nothing in between."""
+        albums = self.albums()
+        if not 0 <= album_id < len(albums):
+            raise ValueError("no such album")
+        album = albums[album_id]
+        run = {"title": album["title"], "artist": album["artist"], "tracks": list(album["tracks"])}
+        with self._lock:
+            self._albums.append(run)          # before the requests, so the gap is worded for it
+        index = {t.path: i for i, t in enumerate(self.tracks)}
+        for t in run["tracks"]:
+            self.request(index[t.path])
+        log.info("album: %s by %s (%d tracks)", run["title"], run["artist"], len(run["tracks"]))
+        return {"title": run["title"], "artist": run["artist"], "tracks": len(run["tracks"])}
+
+    def stop_album(self) -> bool:
+        """Drop the rest of the album(s) from the queue; the track playing finishes."""
+        with self._lock:
+            if not self._albums:
+                return False
+            in_albums = {t for run in self._albums for t in run["tracks"]}
+            front = list(self._queue)[:self._n_requested]
+            keep = [t for t in front if t not in in_albums]
+            rest = list(self._queue)[self._n_requested:]
+            self._queue = deque(keep + rest)
+            self._n_requested = len(keep)
+            self._pending = deque(t for t in self._pending if t not in in_albums)
+            self._albums.clear()
+            on_air = self._thread is not None and self._thread.is_alive()
+            self._refill()
+            if on_air and not self._in_gap and self._queue:
+                if self._gap_decision is not None:
+                    self._replan_gap(self._queue[0])
+                else:                          # was straight on inside the album: talk again
+                    self._gap_is_album = False
+                    self._plan = self._build_gap(LinkKind.LINK, False, [], self.current_track, self._queue[0])
+                    self.next_track = self._queue[0]
+                    self.gap_plan = [s.describe() for s in self._plan]
+        log.info("album stopped")
+        return True
+
+    def album_status(self) -> dict | None:
+        """The album playing (or about to), for the page."""
+        for run in self._albums:
+            t = self.current_track
+            if run.get("started") and t in run["tracks"]:
+                return {"title": run["title"], "artist": run["artist"],
+                        "track": run["tracks"].index(t) + 1, "of": len(run["tracks"])}
+        if self._albums:
+            run = self._albums[0]
+            return {"title": run["title"], "artist": run["artist"], "track": 0, "of": len(run["tracks"])}
+        return None
+
+    def _album_of(self, t: BroadcastTrack | None) -> dict | None:
+        """The started album this track belongs to."""
+        return next((r for r in self._albums if r.get("started") and t in r["tracks"]), None) if t else None
+
+    def _album_inside(self, prev: BroadcastTrack, nxt: BroadcastTrack) -> bool:
+        run = self._album_of(prev)
+        if run is None or not run.get("started") or nxt not in run["tracks"]:
+            return False
+        return run["tracks"].index(nxt) == run["tracks"].index(prev) + 1
+
+    def _album_start(self, prev: BroadcastTrack | None, nxt: BroadcastTrack) -> dict | None:
+        run = next((r for r in self._albums if not r.get("started") and r["tracks"][0] == nxt), None)
+        return run
+
+    def _album_end(self, prev: BroadcastTrack | None) -> dict | None:
+        run = next((r for r in self._albums if r.get("started") and r["tracks"][-1] == prev), None)
+        return run
+
     def _place_pending(self) -> None:
         """(show thread, under the lock) after the gap: queue requests made during it."""
         while self._pending:
@@ -443,7 +557,8 @@ class Station:
         queued = list(self._queue)[:self._n_requested] + list(self._pending)
         if self._opening is not None and self._opening_requested:
             queued.insert(0, self._opening[2])
-        return [{"title": t.title, "artist": t.artist} for t in queued]
+        in_albums = {t for run in self._albums for t in run["tracks"]}
+        return [{"title": t.title, "artist": t.artist, "album": t in in_albums} for t in queued]
 
     def _play_file(self, path: Path, on_air: OnAir, near_end=None) -> None:
         """Play a file to its end (or until skipped). near_end(end_at, again) is called
@@ -473,7 +588,15 @@ class Station:
         if not fired:
             near_end(datetime.now(), False)
 
+    def _track_started(self, track: BroadcastTrack) -> None:
+        self.current_track = track
+        for run in self._albums:              # an album counts as under way from its first track
+            if not run.get("started") and run["tracks"][0] == track:
+                run["started"] = True
+                break
+
     def _play_track(self, track: BroadcastTrack) -> None:
+        self._track_started(track)
         self._refill()
         self.next_track = self._queue[0] if self._queue else None
         plan = self._plan_gap(track, self.next_track)
@@ -566,6 +689,10 @@ class Station:
         """onBroadcastTrackStarted: what fills the gap after [prev]. The decisions
         (link or time check, jingle, birthday) are made once here and kept, so a
         request for the next song can re-word the gap without making them again."""
+        self._gap_is_album = nxt is not None and self._album_inside(prev, nxt)
+        if self._gap_is_album:               # like a record: straight on to the next track
+            self._gap_decision = None
+            return []
         kind = self._show_clock.on_track_started(datetime.now().time())
         if kind == LinkKind.TIME_CHECK and not clock_trusted():
             kind = LinkKind.LINK   # offline, the clock may be hours out: say no times
@@ -579,11 +706,28 @@ class Station:
                 self.birthdays.wished(now)
                 log.info("birthday wish planned for %s", ", ".join(p["name"] for p in people))
         self._gap_decision = (kind, jingle_due, people, prev)
-        return self._build_gap(kind, jingle_due, people, prev, nxt)
+        steps = self._build_gap(kind, jingle_due, people, prev, nxt)
+        finished = self._album_end(prev)
+        if finished is not None:              # its back-announcement is planned: done with it
+            self._albums.remove(finished)
+        return steps
 
     def _build_gap(self, kind: LinkKind, jingle_due: bool, people: list, prev: BroadcastTrack,
                    nxt: BroadcastTrack | None) -> list[Step]:
         b, voice = self.builder, self._has_voice
+        starts = self._album_start(prev, nxt) if nxt is not None else None
+        ends = self._album_end(prev)
+        if voice and (starts or ends):        # into or out of an album
+            steps = [Step("say", self._say(b.album_outro(ends) if ends else b.outro_line(prev)))]
+            if jingle_due:
+                steps.append(Step("jingle"))
+            if starts:
+                steps.append(Step("say", self._say(b.album_intro(starts, nxt))))
+            elif nxt is not None:
+                steps.append(Step("say", self._say(b.intro_line(nxt))))
+            if people:
+                steps.insert(0, Step("say", self._say(wish_text(people, b.station))))
+            return steps
         steps: list[Step] = []
         talky = kind in (LinkKind.LINK, LinkKind.TIME_CHECK)
         if jingle_due and voice and talky:
@@ -660,7 +804,7 @@ class Station:
     def _run_gap(self) -> None:
         plan = self._plan
         news = self._news_ready
-        if news is not None and self.config.news_enabled:
+        if news is not None and self.config.news_enabled and not self._gap_is_album:
             due = self.news_schedule.due_at(datetime.now())
             if due is not None and due.key == news.due.key:
                 self.news_schedule.mark_read(due)
@@ -806,13 +950,15 @@ class Station:
         greeting = self.builder.welcome_greeting(time_known=clock_trusted())
         steps: list[Step] = []
         startup = [j for j in self.jingles if 0 < j.duration_s < STARTUP_JINGLE_MAX_S] if self.main_mix else []
+        album = self._album_start(None, first)
+        opener = self.builder.album_intro(album, first) if album else self.builder.welcome_first_track(first)
         if self._has_voice:
             if startup:
                 steps = [Step("say", self._say(greeting)),
                          Step("jingle", jingle=random.choice(startup)),
-                         Step("say", self._say(self.builder.welcome_first_track(first)))]
+                         Step("say", self._say(opener))]
             else:
-                steps = [Step("say", self._say(f"{greeting} {self.builder.welcome_first_track(first)}"))]
+                steps = [Step("say", self._say(f"{greeting} {opener}"))]
         elif startup:
             steps = [Step("jingle", jingle=random.choice(startup))]
         self._opening = (greeting, steps, first)
@@ -850,6 +996,7 @@ class Station:
             "artist": self.artist,
             "profile": self.profile,
             "requests": self.requests(),
+            "album": self.album_status(),
             "station_name": self.builder.station,
             "voices_ready": bool(self.tts and self.tts.ready),
             "voice": {"name": self.dj_voice, "rss_mb": self.tts.last_rss_mb, "restarts": self.tts.restarts}

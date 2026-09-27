@@ -136,6 +136,14 @@ class DjScriptBuilder:
             return self._pick(STATION_ONLY)
         return f"{self._pick(INTROS)} {track_phrase(next_)}."
 
+    def album_intro(self, album: dict, first: BroadcastTrack) -> str:
+        """Before an album played start to finish ({"title", "artist"})."""
+        lead = ALBUM_INTROS[self.rng.randrange(len(ALBUM_INTROS))]
+        return lead.format(album=album_phrase(album), first=normalize_for_speech(first.title.strip()) or "track one")
+
+    def album_outro(self, album: dict) -> str:
+        return ALBUM_OUTROS[self.rng.randrange(len(ALBUM_OUTROS))].format(album=album_phrase(album))
+
     def time_line(self, now: Time | None = None) -> str:
         now = now or datetime.now().time()
         return f"{self._time_lead(now)} {spoken_time(now)}."
@@ -147,6 +155,24 @@ class DjScriptBuilder:
         if off > 0:
             return "It's just gone"
         return self._pick(EXACT_TIME_LEADS)
+
+
+ALBUM_INTROS = [
+    "Now, an album from start to finish: {album}. It opens with {first}.",
+    "Time for a whole album: {album}, from the top. Here's {first}.",
+    "Let's hear an album all the way through: {album}. First, {first}.",
+]
+ALBUM_OUTROS = [
+    "That was {album}, from start to finish.",
+    "And that was the whole of {album}.",
+]
+
+
+def album_phrase(album: dict) -> str:
+    """'Rubber Soul, by The Beatles' (or 'by various artists')."""
+    title = normalize_for_speech(album["title"].strip()) or "that album"
+    artist = normalize_for_speech(album["artist"].strip())
+    return f"{title}, by {artist.lower() if artist == 'Various artists' else artist}" if artist else title
 
 
 def track_phrase(t: BroadcastTrack) -> str:

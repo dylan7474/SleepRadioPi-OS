@@ -39,6 +39,9 @@ software, and the case to print.
   List on Sleep Radio"*).
 - **Play next** — search the library from your phone and queue songs; the
   DJ introduces them.
+- **Album mode** — or pick a whole album: the DJ introduces it, then it plays
+  start to finish like a record (no talk between tracks), and the DJ
+  back-announces it at the end.
 - **Jingles** from your own collection, shuffled, and a short one to open
   the show (on the main mix only, since they say "Sleep Radio").
 
@@ -325,9 +328,10 @@ tag cache (on air ~20 s after power-up), mono or stereo speakers, and the
 web page as a control panel (EQ, sleep timer, artist radio and lists,
 birthdays, test sounds, settings backup, shut down, the knob's spoken
 address). The MiniAmp plays real sound in the printed cabinet; RTC support
-is in. Next: wire the knob and test it; album mode; a Wi-Fi manager (saved
+is in. Next: wire the knob and test it; a Wi-Fi manager (saved
 networks, and a hotspot when none is in range); a start-up sound; downloading
-the default voice when a radio has none; and a physical needle VU meter.
+the default voice when a radio has none, and uploading your own; and a
+physical needle VU meter.
 
 ## Licence
 
