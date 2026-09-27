@@ -54,7 +54,8 @@ log = logging.getLogger(__name__)
 LOOKAHEAD = 3             # tracks picked (and loudness-scanned) ahead
 PREFETCH_S = 45.0         # word the time check / news time line this long before a track ends
                           # (room for a TTS worker recycle, ~15 s, to finish first)
-STARTUP_JINGLE_MAX_S = 45.0
+STARTUP_JINGLE_MAX_S = 20.0   # the opening ident: longer ones (most jingles) wait for the first gap,
+                              # so the first song isn't held back after a slow start-up
 SPEECH_PAD_S = 0.25       # breath of silence either side of the DJ
 SPEECH_WAIT_S = 45.0      # give up on a line that still isn't synthesised after this
 PER_LINE_ESTIMATE_S = 4.0  # rough length of a spoken line, for wording a clock after one
