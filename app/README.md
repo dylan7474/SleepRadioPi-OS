@@ -78,7 +78,10 @@ SleepRadio:
   Radio".
 - **News** — BBC News bulletins at :00 (top stories) and :30 (softer
   stories), read with a time line for when they're read, and none in the
-  night-time quiet hours.
+  night-time quiet hours. A bulletin still being made when its gap comes
+  (a skip can bring the gap early) is read at the next gap instead of
+  leaving dead air; any other wait for speech shows "Just a moment" on the
+  page, and Skip ends it.
 - **It plays when someone's listening.** The show starts for the speaker (or
   the first browser) and stops 30 s after the last listener goes; pressing
   play again within that carries on live.

@@ -1153,7 +1153,7 @@ setInterval(() => {
   $("sleepLeft").textContent = Math.ceil(left / 60000) + " min left";
 }, 1000);
 
-const KIND = { track: "Now playing", dj: "On the mic", jingle: "Station ident", news: "News" };
+const KIND = { track: "Now playing", dj: "On the mic", jingle: "Station ident", news: "News", wait: "Just a moment" };
 const ICON = { track: "♪", dj: "🎙", jingle: "✦", news: "📰" };
 const hhmm = t => new Date(t * 1000).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 

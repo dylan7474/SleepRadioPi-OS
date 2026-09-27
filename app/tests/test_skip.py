@@ -83,3 +83,41 @@ def test_skip_cuts_a_line_short_and_nothing_to_skip_off_air(tmp_path: Path, monk
     assert st._speak(speech) is False
     assert out.blocks < 20
     assert st._speak(Speech("again", "v", _done(np.zeros((BLOCK, 2), np.int16)))) is True
+
+
+def test_news_not_ready_waits_for_the_next_gap(tmp_path: Path, monkeypatch) -> None:
+    from datetime import datetime
+    from sleepradiopi.broadcast.station import NewsItem, Step
+    st = _playing_station(tmp_path, monkeypatch, SkipAt(after=10**9), seconds=1)
+    pending = Future()                                    # the bulletin is still being made
+    due = type("Due", (), {"key": "k", "mark": "19:00"})()
+    st._news_ready = NewsItem(due, ["headline"], Speech("news", "voice", pending))
+    st.config.news_enabled = True
+    monkeypatch.setattr(st.news_schedule, "due_at", lambda now: due)
+    read = []
+    monkeypatch.setattr(st.news_schedule, "mark_read", lambda d: read.append(d))
+    ran = []
+    monkeypatch.setattr(st, "_run_steps", lambda steps: ran.append([s.kind for s in steps]))
+    st._plan = [Step("say", Speech("Coming up, X.", "voice", _done(None)))]
+    st._run_gap()
+    assert ran == [["say"]] and read == [] and st._news_ready is not None    # music on; news kept
+    pending.set_result(np.zeros((10, 2), np.int16))
+    st._run_gap()
+    assert ran[-1][0] == "news" and read == [due]                             # now it's read
+
+
+def test_skip_ends_a_wait_for_a_line_that_isnt_ready(tmp_path: Path, monkeypatch) -> None:
+    import threading
+    st = _playing_station(tmp_path, monkeypatch, SkipAt(after=10**9), seconds=1)
+    never = Future()
+    result = []
+    t = threading.Thread(target=lambda: result.append(st._speak(Speech("Hello there.", "voice", never))))
+    t.start()
+    for _ in range(50):
+        if st.on_air is not None and st.on_air.kind == "wait":
+            break
+        __import__("time").sleep(0.02)
+    assert st.on_air.kind == "wait"                                            # the page shows the wait
+    assert st.skip()
+    t.join(timeout=3)
+    assert result == [False]                                                   # gave up at once

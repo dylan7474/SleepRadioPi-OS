@@ -310,12 +310,15 @@ class Station:
     def _write(self, block: np.ndarray) -> None:
         self.output.write(block)
 
-    def _await(self, fut: Future, limit_s: float = SPEECH_WAIT_S):
+    def _await(self, fut: Future, limit_s: float = SPEECH_WAIT_S, skip_for: OnAir | None = None):
         """Wait for background work while keeping the stream fed with silence, so a slow
-        synthesis is a pause on air rather than a dropped connection."""
+        synthesis is a pause on air rather than a dropped connection. A skip of
+        skip_for (what the page shows meanwhile) gives up waiting."""
         deadline = time.monotonic() + limit_s
         while not fut.done():
             if self._stop.is_set() or time.monotonic() > deadline:
+                return None
+            if skip_for is not None and self._skipped(skip_for):
                 return None
             self._write(pcm.silence(0.1))
         try:
@@ -352,8 +355,14 @@ class Station:
 
     def _speak(self, speech: Speech, kind: str = "dj") -> bool:
         """Say a line. False only if it was skipped (or the show stopped)."""
-        audio = self._await(speech.future)
+        waiting = None
+        if not speech.future.done():     # not made yet: say so on the page, and let Skip end the wait
+            waiting = self.on_air = OnAir("wait", "Getting the next bit ready…")
+        audio = self._await(speech.future, skip_for=waiting)
         if audio is None:
+            if waiting is not None and self._skipped(waiting):
+                log.info("skipped a line that wasn't ready: %s", speech.text[:70])
+                return False
             log.warning("dropped line (not ready): %s", speech.text)
             return True
         on_air = self.on_air = OnAir(kind, speech.text, duration_s=len(audio) / pcm.SAMPLE_RATE)
@@ -807,7 +816,11 @@ class Station:
         news = self._news_ready
         if news is not None and self.config.news_enabled and not self._gap_is_album:
             due = self.news_schedule.due_at(datetime.now())
-            if due is not None and due.key == news.due.key:
+            if due is not None and due.key == news.due.key and not news.body.future.done():
+                # Still being made (a skip can bring the gap early): don't sit in
+                # silence for it -- it's read at the next gap if it's still due.
+                log.info("news not ready yet: at the next gap")
+            elif due is not None and due.key == news.due.key:
                 self.news_schedule.mark_read(due)
                 self._news_ready = None
                 had_jingle = any(s.kind == "jingle" for s in plan)
