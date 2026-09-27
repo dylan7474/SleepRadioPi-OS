@@ -28,6 +28,17 @@ wood. This page collects the design and the recommended parts.
 
 ![Front view in wood](concept_wood_front.jpg)
 
+### A glow at night (planned)
+
+Warm-white LEDs behind the grille cloth, with the fretwork in silhouette, like
+the dial lamps of the originals:
+- a 5 V warm-white (about 2700 K) COB LED strip on a printed diffuser ring
+  round the speaker, with a wire channel designed in;
+- dimmed by the radio (one GPIO pin through a small MOSFET), so it can be set
+  from the web page, fade with the sleep timer and come up with the start-up
+  chime;
+- matched to the VU meter's warm backlight, and dimmed with it.
+
 ### How it will go together
 
 Multi-part to fit an ordinary printer bed (designed on a Prusa MK2.5,
@@ -52,6 +63,7 @@ Multi-part to fit an ordinary printer bed (designed on a Prusa MK2.5,
 | Meter backlight (maybe) | a small **5 V → 12 V boost board** | The backlight is rated 6–12 V; the radio has 5 V |
 | Filament | **Prusament Woodfill**: 2 × **Chocolate Brown**, 1 × **Pastel Brown** or **Linden Light** | See [the filament](#the-filament) |
 | Nozzle (optional) | a **0.6 mm** E3D V6 nozzle | Less clogging with wood, half the print time on the big parts |
+| Grille glow (planned) | a 5 V **warm-white COB LED strip** (about 2700 K), a logic-level N-MOSFET (e.g. AO3400) or a small MOSFET module | Lights the grille cloth from behind |
 | Grille cloth | vintage-style speaker grille cloth, gold/tan, about 250 × 250 mm | Sits behind the fretwork |
 | Fixings | M3 heat-set inserts and M3 screws (a quantity per part once designed) | Bolt-together, no glue |
 | The electronics | the same as the first radio: Pi Zero 2 W, HiFiBerry MiniAmp, knob, optional RTC, and the [GPIO splitter](../../README.md#hardware-and-wiring) | See [Build one](../../README.md#build-one) |
