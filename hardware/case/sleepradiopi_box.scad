@@ -14,10 +14,14 @@
 //   tube_ring - a 20 mm slice of the tube (same section, corner bosses and
 //           knob hole) to test the panels and encoder before the full tube
 //   grommet - closes the power cable slot round the cable (for the bass port)
+//   strap_loops - two loops for a leather carry strap, screwed to the sides
+//           from inside; strap_guide - a drill guide that clips over the box
+//           to put the loops' screw holes in a tube printed without them
 //
 // Render a part:
 //   openscad --backend=manifold -D 'part="tube"' -o tube.stl sleepradiopi_box.scad
 // part = "tube" | "tube_ring" | "front" | "rear" | "knob" | "tabs" | "grommet" | "front_plate" |
+//        "strap_loops" | "strap_guide" |
 //        "front_plate_noknob" |
 //        "assembly" | "exploded" | "rear_inside" | "front_inside" | "check" | "check_pull"
 //
@@ -158,6 +162,27 @@ shaft_d     = 6.15;
 shaft_flat  = 4.65;
 shaft_len   = 12;
 
+/* ---------- Carry strap ---------- */
+// A leather strap over the top, through a loop on each side: the strap goes
+// down behind the loop's bar, folds back up over it and is fixed to itself
+// above the loop (Chicago screws or rivets). Each loop has two M3 x 10
+// self-tappers from inside the box, through the side wall into its pilots.
+// -D handle=true puts the holes in the tube; for a tube printed without them,
+// drill them through strap_guide.
+handle      = false;
+strap_w     = 20;        // leather strap (CHECK: the channel is 2 mm wider)
+strap_t     = 4;         // ...and its thickness (the channel is 0.5 mm deeper)
+loop_side   = 10;        // screw lugs either side of the strap channel
+loop_h      = 22;        // top to bottom
+loop_bar    = 4;         // the bar the strap folds round
+loop_top    = 11;        // below the top of the box (clear of the corner bosses inside)
+loop_pilot  = 2.5;       // M3 self-tapping
+loop_skin   = 1.2;       // plastic left over the end of each pilot
+loop_hole_d = 3.4;       // through the side wall
+guide_hole_d = 3.5;      // the drill guide's holes: drill 3.5 mm
+guide_t     = 2;
+guide_clr   = 0.3;
+
 $fn = 64;
 
 /* ---------- Derived ---------- */
@@ -178,6 +203,15 @@ bz1 = H - wall - boss_off;
 bosses = [[-bx, bz0, -1, -1], [bx, bz0, 1, -1], [-bx, bz1, -1, 1], [bx, bz1, 1, 1]];
 
 enc_y = ti + tube_len / 2;
+
+loop_cw = strap_w + 2;                       // strap channel width
+loop_gap = strap_t + 0.5;                    // channel depth (the strap runs between the wall and the bar)
+loop_t = loop_gap + loop_bar;                // how far a loop stands out from the side
+loop_l = loop_cw + 2 * loop_side;
+loop_dy = loop_cw / 2 + loop_side / 2;       // screws either side of the middle
+loop_y = D / 2;                              // centred front to back (the balance point)
+loop_z = H - loop_top - loop_h / 2;
+loop_screws = [for (sx = [-1, 1]) for (dy = [-loop_dy, loop_dy]) [sx, loop_y + dy]];
 
 // Pi on the rear panel, long side vertical, SD end down, parts facing forward,
 // ports on the +x edge.
@@ -256,6 +290,7 @@ module tube() {
             ycyl(b[0], b[1], ti - 1, ti + pilot_len, pilot_d);
             ycyl(b[0], b[1], to - pilot_len, to + 1, pilot_d);
         }
+        if (handle) strap_holes(loop_hole_d);
         // Encoder hole in the top, with a thinner patch of wall around it.
         translate([0, enc_y, H - wall - 1]) linear_extrude(wall + 2) enc2d(enc_hole_d);
         translate([0, enc_y, H - wall - 1]) linear_extrude(1 + enc_pocket) enc2d(enc_pocket_d);
@@ -438,6 +473,63 @@ module grommet_in_place() translate([cable_pos[0], D + grommet_flange_t, cable_p
     rotate([90, 0, 0]) grommet();
 
 /* ---------- Knob (print top face down) ---------- */
+/* ---------- Carry strap loops ---------- */
+// Extrude a (y, z) profile along x from x0 to x1.
+module xext(x0, x1) translate([x0, 0, 0]) rotate([90, 0, 90]) linear_extrude(x1 - x0) children();
+
+// One loop, built with x along the strap's width, y up and z out from the
+// side wall (z = 0 against the wall).
+module strap_loop() {
+    difference() {
+        intersection() {
+            translate([0, 0, -1]) linear_extrude(loop_t + 2)
+                rrect(-loop_l / 2, -loop_h / 2, loop_l / 2, loop_h / 2, 4);
+            union() {
+                // the screw lugs: rounded on the outside
+                for (sx = [-1, 1]) xext(sx > 0 ? loop_cw / 2 : -loop_l / 2 - 1,
+                                        sx > 0 ? loop_l / 2 + 1 : -loop_cw / 2) hull() {
+                    translate([-loop_h / 2, 0]) square([loop_h, 0.01]);
+                    for (y = [-1, 1]) translate([y * (loop_h / 2 - 2.5), loop_t - 2.5]) circle(r = 2.5);
+                }
+                // the bar, rounded all round so the leather folds over it easily
+                xext(-loop_cw / 2 - 1, loop_cw / 2 + 1) rrect(-loop_h / 2, loop_gap, loop_h / 2, loop_t, 1.8);
+            }
+        }
+        for (sx = [-1, 1]) translate([sx * loop_dy, 0, -1]) cylinder(d = loop_pilot, h = 1 + loop_t - loop_skin);
+    }
+}
+// The loops on the box: the right one, and the left one mirrored.
+module strap_loops_placed() for (sx = [-1, 1]) mirror([sx < 0 ? 1 : 0, 0, 0])
+    multmatrix([[0, 0, 1, W / 2], [1, 0, 0, loop_y], [0, 1, 0, loop_z], [0, 0, 0, 1]]) strap_loop();
+// The screw holes through the side walls (also the screws, for the checks).
+module strap_holes(d, len = wall + 2) for (sc = loop_screws)
+    translate([sc[0] * (W / 2 - wall - 1 + len / 2), sc[1], loop_z]) rotate([0, 90, 0]) cylinder(d = d, h = len, center = true);
+// M3 x 10: a pan head inside the box, 3 mm of wall, 7 mm into the loop.
+module strap_screws() {
+    strap_holes(3, 10 + 2);
+    for (sc = loop_screws) translate([sc[0] * (W / 2 - wall - 1.2), sc[1], loop_z]) rotate([0, 90, 0])
+        cylinder(d = 5.6, h = 2.4, center = true);
+}
+// Drill guide for a tube without the holes: clips over the top corner of the
+// assembled box, between stops on the front and back panels' faces, and
+// turns round end to end for the other side. Drill 3.5 mm through its holes.
+module strap_guide() {
+    win = [W / 2 - 18, loop_z - loop_h / 2 - 8];
+    module window() translate(win) square([40, 60]);
+    difference() {
+        union() {
+            yext(-guide_clr, D + guide_clr) intersection() {
+                difference() { offset(r = guide_clr + guide_t) outer2d(); offset(r = guide_clr) outer2d(); }
+                window();
+            }
+            for (y = [-guide_clr - guide_t, D + guide_clr]) yext(y, y + guide_t)
+                intersection() { offset(r = guide_clr + guide_t) outer2d(); window(); }
+        }
+        for (sc = loop_screws) if (sc[0] > 0)
+            translate([W / 2 - 1, sc[1], loop_z]) rotate([0, 90, 0]) cylinder(d = guide_hole_d, h = 10);
+    }
+}
+
 module knob(style = knob_style) {
     difference() {
         union() {
@@ -524,6 +616,8 @@ module tube_print()  rotate([90, 0, 0]) translate([0, -ti, 0]) tube();          
 module front_print() rotate([90, 0, 0]) front();                               // face down
 module rear_print()  translate([0, 0, D]) rotate([-90, 0, 0]) rear();          // outside face down
 module knob_print()  translate([0, 0, knob_h]) rotate([180, 0, 0]) knob();
+module strap_loops_print() for (i = [0, 1]) translate([0, i * (loop_h + 6), loop_t]) mirror([0, 0, 1]) strap_loop();  // bar down
+module strap_guide_print() translate([0, 0, W / 2 + guide_clr + guide_t]) rotate([0, 90, 0]) translate([0, -D / 2, 0]) strap_guide();  // side down
 module tabs_print()  for (i = [0 : 6]) translate([i * (clamp_boss_d + 3), 0, 0]) rotate(90) tab_print();
 
 if (part == "tube" || part == "tube_ring") tube_print();
@@ -532,6 +626,8 @@ else if (part == "rear") rear_print();
 else if (part == "knob") knob_print();
 else if (part == "tabs") tabs_print();
 else if (part == "grommet") grommet();
+else if (part == "strap_loops") strap_loops_print();
+else if (part == "strap_guide") strap_guide_print();
 else if (part == "draft_plate") {   // run with -D draft=true: both panels + tabs
     front_print();
     translate([0, 6, 0]) rear_print();
@@ -576,6 +672,11 @@ else if (part == "check") {
     intersection() { union() { for (p = spk_pos) speaker_model(p); } union() { pi_stack_model(); encoder_model(); } }
     intersection() { pi_stack_model(); encoder_model(); }
     if (clamp) intersection() { tabs_in_place(); union() { tube(); front(); for (p = spk_pos) speaker_model(p); } }
+    if (handle) {
+        intersection() { strap_loops_placed(); union() { tube(); front(); rear(); } }
+        // the screws inside: clear of the corner bosses, the speakers and the electronics
+        intersection() { strap_screws(); union() { for (b = bosses) yext(ti, to) boss2d(b); models(); } }
+    }
 }
 // The rear panel with everything on it slides straight out of the back.
 else if (part == "check_pull")

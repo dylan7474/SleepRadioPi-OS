@@ -14,6 +14,9 @@ speaker_colour = "#0b0b0c";   // cones seen through the grilles
 mockup_logo    = false;       // show the SLEEP RADIO lettering on the front
 mockup_grille  = "hex";       // "hex" or "sunburst"
 mockup_knob    = "plain";     // "plain" or "sunburst"
+mockup_handle  = false;       // the leather carry strap and its side loops
+strap_colour   = "#6b4226";   // leather
+stud_colour    = "#b08d57";   // brass Chicago screws
 
 color(body_colour) tube();
 // The two-tone front: the letters are cut 0.8 mm into the face (logo_depth),
@@ -29,3 +32,35 @@ if (mockup_logo) {
 color(panel_colour) rear();
 color(speaker_colour) speakers_placed();
 color(knob_colour) knob_placed(mockup_knob);
+
+// The carry strap, as it hangs when carried: up from each loop and over the top
+// in an arch. (The sizes repeat sleepradiopi_box.scad's; a mock-up can't
+// read another file's variables.)
+W = 152; H = 91; D = 100;
+strap_w = 20; strap_t = 4; loop_h = 22; loop_top = 11; loop_gap = 4.5; loop_t = 8.5;
+s_ztop = H - loop_top; s_zbot = s_ztop - loop_h;
+s_x = W / 2 + loop_gap / 2;                       // strap centre, in the channel
+s_xo = W / 2 + loop_t + strap_t / 2;              // ...folded back up over the bar
+s_z0 = H + 2;                                     // where the arch begins
+s_b = 80;                                         // the arch's height
+module sect(x, z, ang = 0) translate([x, D / 2, z]) rotate([0, ang, 0]) cube([strap_t, strap_w, 0.05], center = true);
+if (mockup_handle) {
+    color(panel_colour) strap_loops_placed();
+    color(strap_colour) for (sx = [-1, 1]) mirror([sx < 0 ? 1 : 0, 0, 0]) {
+        // down through the loop, round the bottom and back up over the bar
+        hull() { sect(s_x, s_zbot - 6); sect(s_x, s_z0); }
+        hull() { sect(s_x + strap_t / 2 + 1, s_zbot - 9, 90); sect(s_xo - 1, s_zbot - 9, 90); }
+        hull() { sect(s_xo, s_zbot - 7); sect(s_xo, s_ztop); }
+        hull() { sect(s_xo, s_ztop); sect(s_x + strap_t, s_ztop + 7); }
+        hull() { sect(s_x + strap_t, s_ztop + 7); sect(s_x + strap_t, s_ztop + 19); }
+    }
+    color(stud_colour) for (sx = [-1, 1]) mirror([sx < 0 ? 1 : 0, 0, 0])
+        translate([s_x + strap_t * 1.5, D / 2, s_ztop + 13]) rotate([0, 90, 0]) cylinder(d = 8, h = 1.2);
+    color(strap_colour) for (i = [0 : 35]) {
+        t0 = i * 5; t1 = t0 + 5;
+        hull() {
+            sect(s_x * cos(t0), s_z0 + s_b * sin(t0), -t0);
+            sect(s_x * cos(t1), s_z0 + s_b * sin(t1), -t1);
+        }
+    }
+}

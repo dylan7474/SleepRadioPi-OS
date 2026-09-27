@@ -27,6 +27,9 @@ slot in the back is a small vent. An optional **bass port** back panel is below.
 | `stl/rear.stl` | outside face down | back panel with the Pi posts and RTC rim |
 | `stl/rear_port.stl` | outside face down, no supports | the same back panel with a **bass port** (`-D rear_port=true`); see *Bass port* below |
 | `stl/grommet.stl` | flange down | closes the power cable slot round the cable; use it with the bass port |
+| `stl/strap_loops.stl` | bar down, no supports | two **carry strap loops**, screwed to the sides from inside; see *Carry strap* below |
+| `stl/strap_guide.stl` | side down, no supports | a **drill guide** for the loops' screw holes in a tube printed without them |
+| `stl/tube_handle.stl` | as the tube | the tube **with the loops' screw holes** (`-D handle=true`), for a new print |
 | `stl/front.stl`, `knob.stl`, `tabs.stl` | | the same parts, separately |
 | `stl/knob_sunburst.stl` | top face down, no supports | the knob with the grilles' **sunburst fan** engraved 0.8 mm into its top instead of the pointer groove; the fan rises towards where the groove pointed, so it still shows the knob's position (`knob_style="sunburst"` in either `.scad`) |
 | `knob.scad` → `stl/knob.stl` | top face down, no supports | **standalone knob** (e.g. to print in another colour); same knob as `part="knob"` -- keep the two in step. `openscad --backend=manifold -o stl/knob.stl knob.scad` |
@@ -137,6 +140,52 @@ out paler. `python3 make-twotone.py` rebuilds them (from
 `stl/front_logo_sunburst.stl` and `stl/twotone_test.stl`) and slices each one
 to check every change comes at the start of the right layer.
 
+## Carry strap
+
+![The radio with its leather carry strap](mockup_logo_sunburst_handle.jpg)
+
+A leather strap over the top, fixed through a printed loop on each side,
+1930s portable style. The loops sit centred front to back (the balance point),
+11 mm below the top, clear of the corner bosses inside. Each stands out 8.5 mm
+from the side. The strap runs in a channel between the side wall and the loop's
+bar.
+
+**You need:**
+
+- **A leather strap, 20 mm wide and up to 4 mm thick, about 430 mm long**
+  (buy longer and cut to fit). That's about 280 mm for an arch 80 mm above the
+  top (room for your hand over the knob), plus about 75 mm at each end to go
+  through the loop and fold back. For another size of
+  strap, change `strap_w` and `strap_t` at the top of the `.scad` and render the loops again.
+- **2 Chicago screws** (5 mm, for 8–10 mm of leather) or rivets, and a leather
+  hole punch.
+- **4 M3 x 10 self-tapping screws with pan or cheese heads** (not countersunk),
+  and small washers.
+
+**The holes:**
+
+- **New tube:** print `stl/tube_handle.stl`. It's the normal tube with the
+  four 3.4 mm holes already in the sides.
+- **Tube already printed:** use `stl/strap_guide.stl`. With both panels on,
+  clip it over a top corner of the box, between the front and back faces, and
+  drill a 3.5 mm hole through each of its two holes. For the other side, turn
+  it round end to end. Then take the back panel off and blow out the swarf.
+
+**Fitting:**
+
+1. Take the back panel off (the electronics come with it). Hold a loop on the
+   outside, bar outwards and the channel against the wall. From inside, screw
+   in the two M3 x 10 screws, with washers, through the wall into the loop's
+   pilot holes. Snug them up, but don't overtighten: they grip the plastic.
+2. Push each end of the strap down through a loop, behind the bar. Fold it
+   up over the bar, and lay it back on the strap above the loop. Punch through
+   both layers about 13 mm above the loop, and fit a Chicago screw.
+3. Put the back panel back on.
+
+The whole radio weighs about half a kilogram. Each loop's two screws take the
+load sideways, and the bar prints flat, so the load is along its layers, not
+across them.
+
 ## Hardware
 
 - 4x M3 x 12 countersunk self-tapping screws per panel (8 in total), into the corner bosses of the tube.
@@ -170,7 +219,9 @@ The back panel comes off with all the electronics on it, so you don't need to re
 `part="check"` and `part="check_pull"` render as empty or zero-volume: the tube, panels, speakers, Pi stack
 (including the USB plug and its bend), encoder, RTC and clamp tabs don't overlap, and the back panel with the Pi
 on it slides straight out past the encoder. The same with `-D rear_port=true` (the port tube is clear of
-everything), and the grommet in its slot only touches the panel's outside face.
+everything), and the grommet in its slot only touches the panel's outside face. With `-D handle=true` it
+also checks that the strap loops only touch the tube, and that the screws inside miss the corner bosses, the
+speakers and the electronics.
 
 ## To measure (unverified)
 
@@ -186,7 +237,8 @@ Gikfun's listing only gives the 40 mm diameter. Check with calipers and change t
 ## Mock-up pictures
 
 `mockup_logo_sunburst.jpg` (top), `mockup_logo.jpg` (lettering, hex grilles) and
-`mockup.jpg` (plain hex front) are coloured pictures of the finished radio,
+`mockup.jpg` (plain hex front) are coloured pictures of the finished radio
+(`mockup_logo_sunburst_handle.jpg`, with the carry strap: add `HANDLE=1`),
 from `LOGO=1 SUNBURST=1 ./make-mockup.sh`, `LOGO=1 ./make-mockup.sh` and
 `./make-mockup.sh`. `mockup.scad` sets the
 colours (`body_colour`, `panel_colour`, `knob_colour`, and `letter_colour` for the
