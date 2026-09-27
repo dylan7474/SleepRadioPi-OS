@@ -4,6 +4,13 @@ The station writes PCM here; write() paces it to real time (a little ahead,
 to cover each track's decoder start-up), and a reader thread copies the
 encoder's MP3 bytes to every connected listener's queue. A new listener
 gets the last few seconds first, so playback starts at once.
+
+Listening in a browser is off unless it's switched on (the "web_stream"
+setting; always on without a speaker, or there'd be nothing to hear): the
+radio is for its own speakers, and the encoder costs a Zero 2 W CPU all the
+time. Switched off, this still paces the show to real time -- with the
+speaker paused nothing else would -- but runs no encoder and takes no
+listeners. It can be switched either way while the show runs.
 """
 
 from __future__ import annotations
@@ -29,7 +36,9 @@ CLIENT_QUEUE_CHUNKS = 400  # a listener this far behind is dropped
 
 
 class Mp3Output:
-    def __init__(self) -> None:
+    def __init__(self, enabled: bool = True) -> None:
+        self.enabled = enabled
+        self._running = False                # between the show's start() and stop()
         self._proc: subprocess.Popen | None = None
         self._clients: set[queue.Queue] = set()
         self._lock = threading.Lock()
@@ -41,19 +50,23 @@ class Mp3Output:
     # --- Output protocol (called by the station's show thread) --------------------------
 
     def start(self) -> None:
+        self._running = True
+        self._t0 = time.monotonic()
+        self._frames = 0
+        if self.enabled:
+            self._start_encoder()
+
+    def _start_encoder(self) -> None:
         self._proc = subprocess.Popen(
             [*pcm.FFMPEG, "-f", "s16le", "-ar", str(pcm.SAMPLE_RATE), "-ac", str(pcm.CHANNELS),
              "-i", "-", "-c:a", "libmp3lame", "-b:a", BITRATE, "-f", "mp3", "-"],
             stdin=subprocess.PIPE, stdout=subprocess.PIPE,
         )
         threading.Thread(target=self._pump, args=(self._proc,), name="mp3-pump", daemon=True).start()
-        self._t0 = time.monotonic()
-        self._frames = 0
         log.info("encoder started")
 
     def write(self, block: np.ndarray) -> None:
-        proc = self._proc
-        if proc is None:
+        if not self._running:
             return
         ahead = self._t0 + self._frames / pcm.SAMPLE_RATE - time.monotonic()
         if ahead > LEAD_S:
@@ -61,15 +74,39 @@ class Mp3Output:
         elif ahead < -CATCH_UP_S:
             log.warning("stream fell %.1fs behind real time; resyncing", -ahead)
             self._t0 = time.monotonic() - self._frames / pcm.SAMPLE_RATE
+        self._frames += len(block)
+        proc = self._proc
+        if proc is None:
+            return
         try:
             proc.stdin.write(block.tobytes())
-        except (BrokenPipeError, ValueError):
-            log.error("encoder went away")
-            return
-        self._frames += len(block)
+        except (BrokenPipeError, ValueError, OSError):
+            if self._proc is proc:
+                log.error("encoder went away")
 
     def stop(self) -> None:
+        self._running = False
+        self._stop_encoder()
+
+    def set_enabled(self, enabled: bool) -> None:
+        """Switch listening in a browser on or off, even mid-show. Off closes
+        every listener's connection."""
+        self.enabled = enabled
+        if enabled and self._running and self._proc is None:
+            self._start_encoder()
+        elif not enabled:
+            self._stop_encoder()
+            with self._lock:
+                clients, self._clients = list(self._clients), set()
+            for q in clients:
+                with q.mutex:
+                    q.queue.clear()
+                q.put_nowait(None)          # tells its connection to close
+
+    def _stop_encoder(self) -> None:
         proc, self._proc = self._proc, None
+        if proc is None:
+            return
         if proc is not None:
             try:
                 proc.stdin.close()

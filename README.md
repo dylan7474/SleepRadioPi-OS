@@ -68,9 +68,10 @@ software, and the case to print.
   seconds** and the radio reads out its network address (handy away from
   home).
 - **The web page** — http://sleepradiopi.local/ from any phone or computer
-  on your network (optionally with a password). Everyday controls up front:
-  now playing and skip, listen in the browser, volume and a sleep timer that
-  fades the speakers out, artist radio, play next. Under ⚙ Settings: the
+  on your network (optionally with a password) is its remote control.
+  Everyday controls up front: now playing and skip, volume and a sleep timer
+  that fades the speakers out, artist radio, play next (and, if you switch
+  it on, listening in the browser too). Under ⚙ Settings: the
   speakers (stereo/mono, EQ, low cut), the DJ (voice, how often it talks,
   hooks, jingles, news), your artist lists, birthdays, test sounds for
   checking speakers and wiring, the password, a settings backup you can

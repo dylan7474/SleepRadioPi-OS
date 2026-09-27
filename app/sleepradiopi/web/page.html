@@ -146,7 +146,7 @@
 
   <section class="card" aria-live="polite">
     <div id="kind" class="kind">Ready</div>
-    <p id="title" class="title">Press play to tune in</p>
+    <p id="title" class="title">Nothing on air</p>
     <p id="artist" class="artist"></p>
     <div class="bar"><div id="progress"></div></div>
     <div class="now-foot">
@@ -155,7 +155,7 @@
     </div>
   </section>
 
-  <button id="tune" type="button">▶ Tune in</button>
+  <button id="tune" type="button" hidden>▶ Listen here</button>
 
   <section class="card">
     <div class="row">
@@ -255,6 +255,16 @@
     <p class="muted" style="margin:.6rem 0 0;font-size:.85rem">The radio's own speakers only; saved on the radio.
       A boost lowers the overall level a little, so it can't distort. With the bass port
       back panel, set the low cut to 140 Hz.</p>
+  </section>
+
+  <section id="streamCard" class="card">
+    <h2>Listen in a browser</h2>
+    <div class="row seg" id="streamSeg" role="group" aria-label="Listen in a browser" style="margin-top:0">
+      <button type="button" data-v="true">On</button><button type="button" data-v="false">Off</button>
+    </div>
+    <p id="streamNote" class="muted" style="margin:.5rem 0 0;font-size:.85rem">With it on, the main page gets a
+      <i>Listen here</i> button that plays the show on your phone or computer too. Off, the page is just the
+      radio's remote control, and the radio saves the work of making the stream.</p>
   </section>
 
   <h3 class="group">Music and the DJ</h3>
@@ -430,7 +440,7 @@ function tuneOut() {
   audio.load();  // drops the connection so the station can go off air
   setTune(false);
 }
-function setTune(on) { $("tune").textContent = on ? "■ Stop" : "▶ Tune in"; }
+function setTune(on) { $("tune").textContent = on ? "■ Stop listening here" : "▶ Listen here"; }
 $("tune").onclick = () => wanted ? tuneOut() : tuneIn().catch(() => {});
 
 // Reconnect if the stream drops while we still want it.
@@ -849,6 +859,20 @@ $("knobBtn").addEventListener("contextmenu", e => e.preventDefault());   // long
 $("knobBtn").addEventListener("keydown", e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); if (!e.repeat) knobDown(e); } });
 $("knobBtn").addEventListener("keyup", e => { if (e.key === "Enter" || e.key === " ") knobUp(false); });
 
+// Listening in a browser: off unless switched on in Settings.
+let streamOn = false;
+document.querySelectorAll("#streamSeg button").forEach(b => b.onclick = async () => {
+  const enabled = b.dataset.v === "true";
+  try {
+    const r = await fetch("/api/stream", { method: "POST", headers: { "Content-Type": "application/json" },
+                                           body: JSON.stringify({ enabled }) });
+    const reply = await r.json();
+    if (!r.ok) { $("streamNote").textContent = "Not changed: " + reply.error + "."; return; }
+    $("streamNote").textContent = enabled ? "On: the main page has a Listen here button." : "Off: the page is the radio's remote control.";
+    poll();
+  } catch { $("streamNote").textContent = "Couldn't reach the radio."; }
+});
+
 // Low cut (Hz, 0 = off): keeps the deepest bass out of the small speakers.
 let lowcut = 0, lowcutSent = 0;
 const showLowcut = () => document.querySelectorAll("#lowcut button")
@@ -909,7 +933,11 @@ async function poll() {
     // Follow the speaker (the knob, or another page), except mid-drag.
     hasSpeaker = !!s.speaker;
     $("power").hidden = !s.can_power_off;
-    $("volNote").hidden = !hasSpeaker;
+    streamOn = !!s.stream;
+    $("tune").hidden = !streamOn;
+    if (!streamOn && wanted) tuneOut();              // switched off (here or on another phone)
+    pressSeg("streamSeg", streamOn);
+    $("volNote").hidden = !hasSpeaker || !streamOn;
     $("mode").hidden = !hasSpeaker;
     $("test").hidden = !hasSpeaker;
     $("knob").hidden = !hasSpeaker;
@@ -949,7 +977,7 @@ async function poll() {
       $("progress").style.width = pct + "%";
     } else if (!s.on_air) {
       $("kind").textContent = "Ready";
-      $("title").textContent = wanted ? "Starting the show…" : "Press play to tune in";
+      $("title").textContent = wanted ? "Starting the show…" : "Nothing on air";
       $("artist").textContent = "";
       $("progress").style.width = "0";
     }
@@ -1053,8 +1081,6 @@ function start() {
   poll();
   setInterval(poll, 3000);
   loadArtists(); loadBirthdays(); loadDj();
-  // Start playing on open where the browser allows it; otherwise the button does it.
-  if (location.hash !== "#settings") tuneIn().catch(() => {});
 }
 function showLogin() {
   if (started) { location.reload(); return; }   // logged out while using it: start clean

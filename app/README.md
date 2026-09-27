@@ -186,6 +186,7 @@ Most of these are set from the web page; the rest are in the config file.
 | `speaker_enabled` | `false` | Play through the sound card from start-up (the appliance turns it on). Off by default so a desktop test run doesn't play out loud. |
 | `speaker_device` | `"default"` | ALSA device. |
 | `speaker_volume` | `30` | Volume on the very first start; after that the knob's last setting. |
+| `web_stream` | `false` | Listen in a browser too (always on without a speaker). |
 | `speaker_mono` | `false` | Both speakers play left + right mixed (the web stream stays stereo). |
 | `speaker_eq` | flat | `{"bass", "mid", "treble"}` in dB, -12 to 12. |
 | `speaker_highpass_hz` | `0` | Low cut for the speaker (~140 with the case's bass port); 0 = off. |
@@ -205,7 +206,7 @@ NTP sets the clock). If the variable isn't set, the clock is trusted.
 ### The web page
 
 **http://sleepradiopi.local/** (or the address the knob reads out). The
-main page has the everyday controls — now playing, tune in, volume and sleep
+main page is the radio's remote control — now playing, volume and sleep
 timer, artist radio, play next, recently on air — and **⚙ Settings** has the
 rest, grouped as Sound, Music and the DJ, and The radio. Cards that need a
 speaker only appear when the station has one.
@@ -222,7 +223,11 @@ new one. The change is picked up at once.
 The cards:
 
 - **Now playing** with a progress bar, what's next, and **Skip**.
-- **Tune in** to listen in the browser (an MP3 stream of the same show).
+- **Listen here** (only when *Listen in a browser* is on, under Settings →
+  Sound; off by default): an MP3 stream of the same show in the browser. Off,
+  no encoder runs (it costs a Zero 2 W CPU all the time), `/stream` answers
+  404, and the stream output only paces the show to real time. Without a
+  speaker it's always on.
 - **Play next** — search the library (every word must match the title,
   artist or album) and pick a song: it plays after the current one, and the
   DJ introduces it (the gap's talk is re-worded; a time check already worded
@@ -300,6 +305,7 @@ everything but the page itself and the login needs the session cookie
 | `POST /api/password` | `{"password": "..." \| null}` — set, change or remove (needs to be logged in) |
 | `GET /api/status` | What's on air, next, history, the library, the voice, the speaker (volume, playing, mono, EQ, low cut, sleep timer, test sound), artist/list playing |
 | `POST /api/speaker` | Any of `{"volume": 0-100}`, `{"step": n}`, `{"pause": true \| false \| "toggle"}`, `{"sleep": minutes}` (0 = off), `{"mono": bool}`, `{"eq": {"bass": dB, ...}}`, `{"highpass": Hz}`, `{"test": "bass" \| "sweep" \| "pink" \| "left" \| "right" \| "phase" \| "stop"}` |
+| `POST /api/stream` | `{"enabled": bool}` — listening in a browser on/off (saved as `web_stream`) |
 | `POST /api/knob` | `{"press": "short" \| "long"}` — the knob's switch |
 | `POST /api/skip` | Skip what's on air (track, link, jingle or bulletin) |
 | `GET` / `POST /api/dj` | The DJ settings (and the voices there are) / any of `{"voice", "chattiness", "dj_hooks", "jingle_every", "news_enabled", "startup_sound"}` |
@@ -313,7 +319,7 @@ everything but the page itself and the login needs the session cookie
 | `POST /api/birthdays/hear` | `{"name", "day", "month", "year"?}` — say that wish now |
 | `GET` / `POST /api/settings` | Download the settings file / load one (400 with `{"error"}` if it's wrong) |
 | `POST /api/power` | Shut down (404 unless the appliance's watcher is there) |
-| `GET /stream` | The MP3 stream |
+| `GET /stream` | The MP3 stream (404 while listening in a browser is off) |
 
 ## Why Python
 

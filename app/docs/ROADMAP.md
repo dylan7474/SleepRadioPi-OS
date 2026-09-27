@@ -53,24 +53,30 @@ modules stay in the tree until that's decided.
 17. **Tidier web page and a password** — everyday controls up front, the
     rest under Settings; an optional password, set from the page and
     resettable over ssh.
-18. **A start-up sound** — a chime about 10 s after power-on, then the DJ
+18. **A remote control, not a player** — listening in a browser is off unless
+    switched on in Settings, so no MP3 encoder runs.
+19. **A start-up sound** — a chime about 10 s after power-on, then the DJ
     saying it's warming up; the first song comes ~25 s sooner too.
-19. **Album mode** — pick an album and it plays start to finish, introduced
+20. **Album mode** — pick an album and it plays start to finish, introduced
     and back-announced by the DJ.
-20. **Play next** — search the library from the page and queue songs; the
+21. **Play next** — search the library from the page and queue songs; the
     DJ introduces them. Jingles only on the main mix.
 
 ## Next
 
-21. **Wire the knob and the RTC** — check the knob's direction and step and
+22. **Wire the knob and the RTC** — check the knob's direction and step and
     the long press on the real switch; the RTC with no network.
-22. **Wi-Fi manager** — several saved networks tried in turn at start-up,
+23. **Wi-Fi manager** — several saved networks tried in turn at start-up,
     added from the page; a hotspot with a fixed name and password when none
     is in range.
-23. **Voices** — download the stock voice when a radio has none, and upload
+24. **Voices** — download the stock voice when a radio has none, and upload
     your own voice pack from the page.
-24. **A lighter web side** — the browser stream off by default (it runs an
-    MP3 encoder all the time).
 25. **Library tools** — copying/syncing music from the desktop library.
 26. **A needle VU meter** — a physical meter driven from a PWM pin, with the
     Android app's ballistics (see the appliance image's roadmap).
+27. **Updates from GitHub** — publish each image as a GitHub release; the
+    radio checks and installs it from the page (A/B slots, so a bad one can
+    be undone), saying how it's going ("Downloading the update…",
+    "Update installed").
+28. **A wiring diagram** — an easy-to-follow picture of how the Pi, MiniAmp,
+    speakers, knob (and RTC) connect, for anyone building one.

@@ -159,6 +159,7 @@ def make_handler(station: Station, output: Mp3Output, speaker=None,
                 if speaker is not None:
                     status["speaker"] = speaker.status()
                 status["can_power_off"] = can_power_off()
+                status["stream"] = output is not None and output.enabled
                 self._send(json.dumps(status).encode(), "application/json")
             elif path == "/api/settings" and config_file is not None:
                 self._save_settings()
@@ -174,6 +175,9 @@ def make_handler(station: Station, output: Mp3Output, speaker=None,
                 self._send(json.dumps({**self._selection(), "artists": station.artists(),
                                        "profiles": station.profiles}).encode(), "application/json")
             elif path == "/stream":
+                if output is None or not output.enabled:
+                    self.send_error(404, "listening in a browser is switched off")
+                    return
                 self._stream()
             else:
                 self.send_error(404)
@@ -217,6 +221,8 @@ def make_handler(station: Station, output: Mp3Output, speaker=None,
                            "application/json")
             elif path == "/api/dj":
                 self._set_dj()
+            elif path == "/api/stream":
+                self._set_stream()
             elif path == "/api/birthdays/hear":
                 self._hear_birthday()
             else:
@@ -461,6 +467,24 @@ def make_handler(station: Station, output: Mp3Output, speaker=None,
                 return
             self._send(json.dumps({**reply, "album": station.album_status(),
                                    "requests": station.requests()}).encode(), "application/json")
+
+        def _set_stream(self) -> None:
+            """POST /api/stream {"enabled": bool}: listening in a browser. Saved."""
+            try:
+                enabled = self._body()["enabled"]
+                if not isinstance(enabled, bool):
+                    raise ValueError("enabled must be true or false")
+                if not enabled and speaker is None:
+                    raise ValueError("this radio has no speaker: the browser is the only way to listen")
+            except (ValueError, TypeError, KeyError, AttributeError) as e:
+                self._error(str(e) if isinstance(e, ValueError) else "send {\"enabled\": true|false}")
+                return
+            if output is not None:
+                output.set_enabled(enabled)
+            if config_file is not None:
+                save_setting(config_file, "web_stream", enabled)
+            log.info("listening in a browser %s", "on" if enabled else "off")
+            self._send(json.dumps({"stream": output is not None and output.enabled}).encode(), "application/json")
 
         def _request(self) -> None:
             """POST /api/request {"id": n} (from /api/search): play that track next."""

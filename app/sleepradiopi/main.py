@@ -80,7 +80,7 @@ def main() -> None:
 
     # One voice only: two don't fit a Pi Zero 2 W's RAM alongside the stream.
     tts = TtsWorker(voices, settings.broadcast_voice) if settings.broadcast_voice else None
-    stream = Mp3Output()
+    stream = Mp3Output(enabled=settings.web_stream or not settings.speaker_enabled)
     speaker = control = announcer = None
     if settings.speaker_enabled:
         startup_sound.wait_for_it()   # the chime / "warming up" may still be playing
