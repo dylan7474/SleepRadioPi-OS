@@ -1,0 +1,21 @@
+# Sleep Radio broadcast station -- installed by scripts/install_service.sh.
+# Listens on port 80 (http://sleepradiopi.local/) as the unprivileged user.
+[Unit]
+Description=Sleep Radio broadcast station
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=pi
+WorkingDirectory=/home/pi/SleepRadioPi
+ExecStart=/home/pi/SleepRadioPi/.venv/bin/python -u -m sleepradiopi.main
+# Fewer glibc malloc arenas: the Pi Zero 2 W's RAM is the station's limit.
+Environment=MALLOC_ARENA_MAX=2
+# Loading settings from the web page may exit (code 75) to restart the station.
+Environment=SLEEPRADIOPI_SUPERVISED=1
+AmbientCapabilities=CAP_NET_BIND_SERVICE
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

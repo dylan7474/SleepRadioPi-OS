@@ -1,0 +1,32 @@
+[project]
+name = "sleepradiopi"
+version = "0.0.1"
+description = "Standalone Raspberry Pi bedside sleep radio: local music, audiobooks, internet radio, and a TTS-DJ'd Broadcast mode, controlled by physical buttons and an LCD."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "GPL-3.0-or-later" }
+authors = [{ name = "Dylan Jones" }]
+
+# Deliberately unpinned for now -- this is pre-implementation scaffolding.
+# Pin exact versions once each milestone in docs/ROADMAP.md lands.
+dependencies = [
+    # TTS: on-device voice synthesis (same voice packs as SleepRadio)
+    "sherpa-onnx",
+    # Playback: local files + internet radio (HTTP/HLS/ICY)
+    "python-vlc",
+    # Ambient mixer waveform synthesis
+    "numpy",
+    "sounddevice",
+    # Audio tag / duration reading for local music + audiobooks
+    "mutagen",
+    # Physical buttons
+    "gpiozero",
+    # LCD panel driver (swap for the actual panel's library once chosen)
+    "luma.lcd",
+]
+
+[project.optional-dependencies]
+dev = ["pytest"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

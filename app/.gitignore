@@ -1,0 +1,18 @@
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+*.egg-info/
+.pytest_cache/
+
+# Local settings / hardware config (paths, GPIO pin mapping, LCD type)
+config.local.json
+config.local.yaml
+
+# Imported voice packs and any downloaded audio -- never commit these
+voices/*
+!voices/.gitkeep
+
+# OS cruft
+.DS_Store

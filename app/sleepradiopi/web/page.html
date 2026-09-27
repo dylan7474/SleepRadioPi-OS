@@ -1,0 +1,1065 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#121316">
+<title>Sleep Radio</title>
+<style>
+  :root {
+    --bg: #121316; --panel: #1b1d22; --line: #2a2d34; --text: #e8e2d4;
+    --muted: #9c968a; --accent: #f0b44c; --accent-ink: #1a1405; --live: #e0604c;
+  }
+  * { box-sizing: border-box; }
+  [hidden] { display: none !important; }
+  body { margin: 0; background: var(--bg); color: var(--text);
+         font: 16px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; }
+  main { max-width: 34rem; margin: 0 auto; padding: 2rem 1rem 3rem; }
+  header { display: flex; align-items: baseline; justify-content: space-between; gap: 1rem; }
+  h1 { font-size: 1.5rem; margin: 0; letter-spacing: .02em; }
+  h1 span { color: var(--accent); }
+  .badge { font-size: .75rem; letter-spacing: .12em; text-transform: uppercase; color: var(--muted); }
+  .badge.live { color: var(--live); }
+  .badge.live::before { content: "● "; }
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: .8rem;
+          padding: 1.25rem; margin-top: 1.25rem; }
+  .kind { font-size: .75rem; letter-spacing: .12em; text-transform: uppercase; color: var(--accent); }
+  .title { font-size: 1.35rem; margin: .25rem 0 0; overflow-wrap: anywhere; }
+  .artist { color: var(--muted); margin: .1rem 0 0; }
+  .bar { height: 4px; background: var(--line); border-radius: 2px; margin-top: 1rem; overflow: hidden; }
+  .bar > div { height: 100%; width: 0; background: var(--accent); transition: width 1s linear; }
+  button { font: inherit; cursor: pointer; border-radius: .6rem; border: 1px solid var(--line);
+           background: transparent; color: var(--text); padding: .5rem .9rem; }
+  button:focus-visible, input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  #tune { width: 100%; margin-top: 1.25rem; padding: 1rem; font-size: 1.15rem; font-weight: 600;
+          background: var(--accent); color: var(--accent-ink); border: 0; }
+  .row { display: flex; align-items: center; gap: .75rem; flex-wrap: wrap; margin-top: 1rem; }
+  .row label { color: var(--muted); font-size: .9rem; }
+  input[type=range] { flex: 1; min-width: 8rem; accent-color: var(--accent); }
+  .sleep button, .seg button { padding: .35rem .7rem; font-size: .9rem; }
+  .sleep button[aria-pressed=true], .seg button[aria-pressed=true] { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+  h2 { font-size: .8rem; letter-spacing: .12em; text-transform: uppercase; color: var(--muted);
+       margin: 0 0 .5rem; font-weight: 600; }
+  ul { list-style: none; margin: 0; padding: 0; }
+  li { padding: .4rem 0; border-top: 1px solid var(--line); display: flex; gap: .75rem; }
+  li:first-child { border-top: 0; }
+  li time { color: var(--muted); font-variant-numeric: tabular-nums; flex: none; }
+  li .k { color: var(--accent); flex: none; width: 1.2rem; text-align: center; }
+  .muted { color: var(--muted); }
+  .now-foot { display: flex; align-items: center; justify-content: space-between; gap: .75rem; margin-top: .8rem; }
+  .now-foot #next { margin: 0; }
+  #skip { flex: none; padding: .35rem .8rem; font-size: .9rem; }
+  #power .row { margin-top: 0; justify-content: space-between; }
+  #eq .row label { width: 3.6rem; }
+  #eq output { width: 3.2rem; text-align: right; font-variant-numeric: tabular-nums; }
+  .card-head { display: flex; align-items: center; justify-content: space-between; }
+  .card-head h2 { margin: 0; }
+  #eqFlat { padding: .3rem .7rem; font-size: .85rem; }
+  a.btn { font: inherit; font-size: .9rem; border-radius: .6rem; border: 1px solid var(--line);
+          color: var(--text); padding: .45rem .9rem; text-decoration: none; display: inline-block; }
+  a.btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  #settings button { font-size: .9rem; padding: .45rem .9rem; }
+  #settingsNote { margin: .75rem 0 0; font-size: .85rem; }
+  #test button { font-size: .9rem; padding: .45rem .8rem; }
+  #artistRadio { flex: 1; min-width: 0; font: inherit; color: var(--text); background: var(--bg);
+            border: 1px solid var(--line); border-radius: .6rem; padding: .5rem .6rem; }
+  #artistRadio:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  #dj select { font: inherit; font-size: .95rem; color: var(--text); background: var(--bg);
+    border: 1px solid var(--line); border-radius: .5rem; padding: .4rem .5rem; }
+  #dj .row label { width: 6.5rem; flex: none; }
+  #djNote.bad { color: var(--live); }
+  #q { width: 100%; font: inherit; color: var(--text); background: var(--bg); border: 1px solid var(--line);
+       border-radius: .6rem; padding: .55rem .7rem; }
+  #q:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  #results { max-height: 20rem; overflow-y: auto; margin-top: .5rem; }
+  #results li, #reqList li { align-items: center; }
+  #results .t, #reqList .t { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+  #results .t small { color: var(--muted); display: block; }
+  #results button { flex: none; padding: .3rem .7rem; font-size: .85rem; }
+  #reqBox { margin-top: .75rem; }
+  #listEd { margin-top: .75rem; border-top: 1px solid var(--line); padding-top: .25rem; }
+  #listEd select, #listEd input:not([type=checkbox]) { font: inherit; font-size: .95rem; color: var(--text);
+    background: var(--bg); border: 1px solid var(--line); border-radius: .5rem; padding: .45rem .5rem; min-width: 0; }
+  #listName { flex: 1 1 10rem; }
+  #listFilter { width: 100%; margin-top: .75rem; }
+  #listArtists { max-height: 16rem; overflow-y: auto; margin-top: .5rem; border: 1px solid var(--line);
+    border-radius: .5rem; padding: .25rem .5rem; }
+  #listArtists label { display: block; padding: .25rem 0; overflow-wrap: anywhere; }
+  #listArtists input { accent-color: var(--accent); }
+  #listDelete { border-color: var(--live); color: var(--live); }
+  #bdList li { align-items: center; }
+  #bdList .who { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+  #bdList button { padding: .25rem .6rem; font-size: .85rem; }
+  #bdForm { display: flex; flex-wrap: wrap; gap: .5rem; margin-top: .75rem; }
+  #bdForm input, #bdForm select { font: inherit; font-size: .95rem; color: var(--text); background: var(--bg);
+    border: 1px solid var(--line); border-radius: .5rem; padding: .45rem .5rem; min-width: 0; }
+  #bdName { flex: 1 1 9rem; }
+  #bdYear { width: 5.5rem; }
+  #bdToday { margin: 0 0 .6rem; color: var(--accent); }
+  #bdNote.bad { color: var(--live); }
+  #knobBtn { position: relative; overflow: hidden; width: 100%; padding: .9rem; font-size: 1rem;
+             touch-action: none; user-select: none; -webkit-user-select: none; }
+  #knobBtn span { position: relative; }
+  #knobFill { position: absolute; inset: 0 auto 0 0; width: 0; background: var(--accent); opacity: .35; }
+  #knobBtn.holding #knobFill { width: 100%; transition: width 3s linear; }
+  #testStop { border-color: var(--live); color: var(--live); }
+  #testNow { margin: .75rem 0 0; font-variant-numeric: tabular-nums; }
+  #testNow b { color: var(--accent); font-size: 1.4rem; }
+  #settingsNote.bad { color: var(--live); }
+  #off { border-color: var(--live); color: var(--live); }
+  .head-right { display: flex; align-items: center; gap: .75rem; }
+  button.icon { font-size: 1.25rem; line-height: 1; padding: .35rem .55rem; }
+  .view-head { display: flex; align-items: center; justify-content: space-between; gap: 1rem; margin-top: 1.25rem; }
+  .view-head h2 { margin: 0; }
+  h3.group { font-size: .8rem; letter-spacing: .12em; text-transform: uppercase; color: var(--accent);
+             margin: 2rem 0 -.4rem; font-weight: 600; }
+  #pwForm input, #loginForm input { flex: 1 1 9rem; min-width: 0; font: inherit; color: var(--text);
+    background: var(--bg); border: 1px solid var(--line); border-radius: .5rem; padding: .5rem .6rem; }
+  #pwRemove, #pwLogout { font-size: .9rem; }
+  code { font-size: .85em; color: var(--text); }
+  footer { margin-top: 2rem; font-size: .8rem; color: var(--muted); }
+  footer a { color: var(--muted); }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <h1 id="stationName">Sleep <span>Radio</span></h1>
+    <div class="head-right">
+      <span id="badge" class="badge">Off air</span>
+      <button id="gear" class="icon" type="button" aria-label="Settings" title="Settings" hidden>⚙</button>
+    </div>
+  </header>
+
+  <section id="login" class="card" hidden>
+    <h2>Password</h2>
+    <form id="loginForm" class="row">
+      <input id="loginPw" type="password" placeholder="Password" aria-label="Password" autocomplete="current-password" required>
+      <button type="submit">Log in</button>
+    </form>
+    <p id="loginNote" class="muted" style="margin:.5rem 0 0;font-size:.85rem">This radio's page has a password.</p>
+  </section>
+
+  <div id="viewMain" hidden>
+
+  <section class="card" aria-live="polite">
+    <div id="kind" class="kind">Ready</div>
+    <p id="title" class="title">Press play to tune in</p>
+    <p id="artist" class="artist"></p>
+    <div class="bar"><div id="progress"></div></div>
+    <div class="now-foot">
+      <p id="next" class="muted"></p>
+      <button id="skip" type="button" hidden title="Skip to what's next">Skip ⏭︎</button>
+    </div>
+  </section>
+
+  <button id="tune" type="button">▶ Tune in</button>
+
+  <section class="card">
+    <div class="row">
+      <label for="vol">Volume</label>
+      <input id="vol" type="range" min="0" max="100" step="1" value="80">
+      <output id="volNum" for="vol" class="muted">80</output>
+    </div>
+    <p id="volNote" class="muted" style="margin:.4rem 0 0;font-size:.85rem" hidden>Also sets the radio's own speaker.</p>
+    <div class="row sleep" role="group" aria-label="Sleep timer">
+      <label>Sleep</label>
+      <button type="button" data-min="0" aria-pressed="true">Off</button>
+      <button type="button" data-min="15" aria-pressed="false">15m</button>
+      <button type="button" data-min="30" aria-pressed="false">30m</button>
+      <button type="button" data-min="60" aria-pressed="false">1h</button>
+      <button type="button" data-min="90" aria-pressed="false">1½h</button>
+      <span id="sleepLeft" class="muted"></span>
+    </div>
+  </section>
+
+  <section class="card">
+    <h2>Artist radio</h2>
+    <div class="row" style="margin-top:0">
+      <select id="artistRadio" aria-label="Artist radio">
+        <option value="">All artists (Sleep Radio)</option>
+      </select>
+      <button id="listsBtn" type="button" title="Make lists of artists, e.g. a Friday List">Edit lists</button>
+    </div>
+    <p id="artistNote" class="muted" style="margin:.5rem 0 0;font-size:.85rem">Play one artist only (e.g. Beatles
+      Radio), or one of your lists of artists.</p>
+  </section>
+
+  <section class="card">
+    <h2>Play next</h2>
+    <input id="q" type="search" placeholder="Find a song, artist or album" aria-label="Find a song" autocomplete="off">
+    <ul id="results"></ul>
+    <p id="qNote" class="muted" style="margin:.4rem 0 0;font-size:.85rem" hidden></p>
+    <div id="reqBox" hidden>
+      <h2>By request</h2>
+      <ul id="reqList"></ul>
+    </div>
+  </section>
+
+  <section class="card">
+    <h2>Recently on air</h2>
+    <ul id="history"><li class="muted">Nothing yet.</li></ul>
+  </section>
+
+  <footer>News bulletins from <a href="https://www.bbc.co.uk/news">BBC News</a>.
+    The sleep timer fades out over the last minute (the radio's speakers too).</footer>
+
+  </div>
+
+  <div id="viewSettings" hidden>
+  <div class="view-head">
+    <button id="back" type="button">‹ Back to the radio</button>
+    <h2>Settings</h2>
+  </div>
+
+  <h3 class="group">Sound</h3>
+
+  <section id="eq" class="card" hidden>
+    <div class="card-head">
+      <h2>Speakers</h2>
+      <button id="eqFlat" type="button">Flat EQ</button>
+    </div>
+    <div id="mode" class="row seg" role="group" aria-label="Radio speakers" hidden>
+      <label>Speakers</label>
+      <button type="button" data-mono="false" aria-pressed="true">Stereo</button>
+      <button type="button" data-mono="true" aria-pressed="false">Mono</button>
+    </div>
+    <div class="row"><label for="eq-bass">Bass</label>
+      <input id="eq-bass" data-band="bass" type="range" min="-12" max="12" step="1" value="0">
+      <output id="eq-bassNum" class="muted">0 dB</output></div>
+    <div class="row"><label for="eq-mid">Mid</label>
+      <input id="eq-mid" data-band="mid" type="range" min="-12" max="12" step="1" value="0">
+      <output id="eq-midNum" class="muted">0 dB</output></div>
+    <div class="row"><label for="eq-treble">Treble</label>
+      <input id="eq-treble" data-band="treble" type="range" min="-12" max="12" step="1" value="0">
+      <output id="eq-trebleNum" class="muted">0 dB</output></div>
+    <div id="lowcut" class="row seg" role="group" aria-label="Low cut">
+      <label>Low cut</label>
+      <button type="button" data-hz="0" aria-pressed="true">Off</button>
+      <button type="button" data-hz="100" aria-pressed="false">100</button>
+      <button type="button" data-hz="120" aria-pressed="false">120</button>
+      <button type="button" data-hz="140" aria-pressed="false">140</button>
+      <button type="button" data-hz="160" aria-pressed="false">160 Hz</button>
+    </div>
+    <p class="muted" style="margin:.6rem 0 0;font-size:.85rem">The radio's own speakers only; saved on the radio.
+      A boost lowers the overall level a little, so it can't distort. With the bass port
+      back panel, set the low cut to 140 Hz.</p>
+  </section>
+
+  <h3 class="group">Music and the DJ</h3>
+
+  <section id="dj" class="card" hidden>
+    <h2>The DJ</h2>
+    <div class="row" style="margin-top:0"><label for="djVoice">Voice</label><select id="djVoice"></select></div>
+    <div class="row seg" id="djChat" role="group" aria-label="How chatty">
+      <label>Talks</label>
+      <button type="button" data-v="maximum" title="A link before every song">Every song</button>
+      <button type="button" data-v="chatty" title="A link every 2 songs">Every 2</button>
+      <button type="button" data-v="balanced" title="A link every 3 songs">Every 3</button>
+      <button type="button" data-v="minimal" title="A link every 5 songs">Every 5</button>
+    </div>
+    <div class="row seg" id="djHooks" role="group" aria-label="70s DJ hooks">
+      <label>70s hooks</label>
+      <button type="button" data-v="true">On</button><button type="button" data-v="false">Off</button>
+    </div>
+    <div class="row" id="djJingleRow"><label for="djJingles">Jingles</label><select id="djJingles">
+      <option value="0">Off</option><option value="2">Every 2 songs</option><option value="3">Every 3 songs</option>
+      <option value="4">Every 4 songs</option><option value="5">Every 5 songs</option>
+      <option value="6">Every 6 songs</option><option value="8">Every 8 songs</option></select></div>
+    <div class="row seg" id="djNews" role="group" aria-label="News bulletins">
+      <label>News</label>
+      <button type="button" data-v="true">On</button><button type="button" data-v="false">Off</button>
+    </div>
+    <p id="djNote" class="muted" style="margin:.6rem 0 0;font-size:.85rem">Changes are heard from the next gap
+      between songs. Jingles only play on the main mix (all artists). Changing the voice restarts the radio
+      (about a minute): only one voice fits in its memory.</p>
+  </section>
+
+  <section id="lists" class="card">
+    <h2>Artist lists</h2>
+    <p class="muted" style="margin:0;font-size:.85rem">Your own lists of artists, e.g. a Friday List: choose
+      one under Artist radio on the main page.</p>
+    <div id="listEd">
+      <div class="row">
+        <select id="listPick" aria-label="List to edit"></select>
+        <input id="listName" placeholder="List name, e.g. Friday List" maxlength="40" aria-label="List name">
+      </div>
+      <input id="listFilter" placeholder="Find an artist" aria-label="Find an artist">
+      <div id="listArtists"></div>
+      <p id="listCount" class="muted" style="margin:.4rem 0 0;font-size:.85rem"></p>
+      <div class="row">
+        <button id="listSave" type="button">Save list</button>
+        <button id="listDelete" type="button" hidden>Delete list</button>
+      </div>
+    </div>
+  </section>
+
+  <section id="bd" class="card">
+    <h2>Birthdays</h2>
+    <p id="bdToday" hidden></p>
+    <ul id="bdList"><li class="muted">No birthdays yet.</li></ul>
+    <form id="bdForm" autocomplete="off">
+      <input id="bdName" placeholder="Name" maxlength="60" aria-label="Name" required>
+      <select id="bdDay" aria-label="Day"></select>
+      <select id="bdMonth" aria-label="Month"></select>
+      <input id="bdYear" type="number" inputmode="numeric" min="1900" placeholder="Year" aria-label="Year born (optional)">
+      <button type="submit">Add</button>
+    </form>
+    <p id="bdNote" class="muted" style="margin:.5rem 0 0;font-size:.85rem">On their birthday the DJ wishes them a
+      happy one between songs, a few times through the day (not in the night-time quiet hours). The year is
+      optional: with it the DJ says which birthday.</p>
+  </section>
+
+  <h3 class="group">The radio</h3>
+
+  <section id="knob" class="card" hidden>
+    <h2>Knob switch</h2>
+    <button id="knobBtn" type="button"><i id="knobFill"></i><span>Tap: pause / play · Hold 3 s: say the address</span></button>
+    <p id="knobNote" class="muted" style="margin:.5rem 0 0;font-size:.85rem">The same as pressing the radio's knob.
+      Holding it for 3 seconds makes the radio beep and then read out its network address, or say it isn't
+      connected.</p>
+  </section>
+
+  <section id="test" class="card" hidden>
+    <h2>Test sound</h2>
+    <p class="muted" style="margin:0;font-size:.85rem">To compare back panels: plays on the radio's own speakers
+      at the current volume, with the EQ and low cut off, instead of the show for a moment. Turn the volume
+      down first.</p>
+    <div class="row">
+      <button type="button" data-test="bass" title="40-600 Hz in 24 s">Bass sweep</button>
+      <button type="button" data-test="sweep" title="40 Hz-16 kHz in 24 s">Full sweep</button>
+      <button type="button" data-test="pink" title="15 s, for a phone spectrum app">Pink noise</button>
+      <button id="testStop" type="button" hidden>Stop</button>
+    </div>
+    <div class="row">
+      <label>Speaker check</label>
+      <button type="button" data-test="left" title="Noise on the left speaker only">Left</button>
+      <button type="button" data-test="right" title="Noise on the right speaker only">Right</button>
+      <button type="button" data-test="phase" title="Switches every 3 s: both the same, then the right one inverted">Phase check</button>
+    </div>
+    <p class="muted" style="margin:.5rem 0 0;font-size:.85rem">Phase check: <i>in phase</i> should sound fuller
+      and centred. If <i>out of phase</i> sounds fuller, one speaker's wires are the wrong way round at the amp
+      (swap its + and −).</p>
+    <p id="testNow" class="muted" hidden></p>
+  </section>
+
+  <section id="pw" class="card">
+    <h2>Password</h2>
+    <p id="pwState" class="muted" style="margin:0;font-size:.85rem">No password: anyone on your network can use this page.</p>
+    <form id="pwForm" class="row" autocomplete="off">
+      <input id="pwNew" type="password" placeholder="New password" minlength="4" maxlength="128" aria-label="New password" autocomplete="new-password">
+      <input id="pwAgain" type="password" placeholder="Again" minlength="4" maxlength="128" aria-label="New password again" autocomplete="new-password">
+      <button type="submit" id="pwSet">Set password</button>
+    </form>
+    <div class="row">
+      <button id="pwRemove" type="button" hidden>Remove password</button>
+      <button id="pwLogout" type="button" hidden>Log out</button>
+    </div>
+    <p id="pwNote" class="muted" style="margin:.5rem 0 0;font-size:.85rem">Forgotten it? Over ssh:
+      <code>sleepradio-password clear</code>. The radio itself never needs it.</p>
+  </section>
+
+  <section id="settings" class="card">
+    <h2>Backup</h2>
+    <p class="muted" style="margin:0;font-size:.85rem">Keep a copy of the radio's settings on this device,
+      or load a saved copy back (after re-flashing the card, or onto another radio).</p>
+    <div class="row">
+      <a id="saveSettings" class="btn" href="/api/settings" download>Save settings</a>
+      <button id="loadSettings" type="button">Load settings…</button>
+      <input id="settingsFile" type="file" accept=".json,application/json" hidden>
+    </div>
+    <p id="settingsNote" class="muted" hidden></p>
+  </section>
+
+  <section id="power" class="card" hidden>
+    <div class="row">
+      <span id="powerNote" class="muted">Turn the radio off before unplugging it.</span>
+      <button id="off" type="button">Shut down</button>
+    </div>
+  </section>
+
+  </div>
+</main>
+
+<audio id="audio" preload="none"></audio>
+<script>
+const $ = id => document.getElementById(id);
+const audio = $("audio");
+let wanted = false, sleepEnd = 0, shuttingDown = false;
+
+// Volume 0-100 in 0.5 dB steps, the same scale as the radio's speaker (and
+// its knob), so this page and the speaker sound alike at the same number.
+// When the station has a speaker, the slider sets it too.
+const gain = v => v <= 0 ? 0 : Math.pow(10, (Math.min(v, 100) - 100) * 0.5 / 20);
+let vol = 80, baseVol = gain(vol), hasSpeaker = false, lastInput = 0, sendTimer = null;
+try { vol = Math.max(0, Math.min(100, parseInt(localStorage.getItem("vol100") ?? "80", 10))) || 0; } catch {}
+function showVol() {
+  baseVol = gain(vol);
+  $("vol").value = vol;
+  $("volNum").textContent = vol;
+  if (!sleepEnd) audio.volume = baseVol;
+}
+showVol();
+
+function tuneIn() {
+  wanted = true;
+  audio.src = "/stream?t=" + Date.now();
+  audio.volume = baseVol;
+  return audio.play().then(() => setTune(true)).catch(err => { wanted = false; setTune(false); throw err; });
+}
+function tuneOut() {
+  wanted = false;
+  audio.pause();
+  audio.removeAttribute("src");
+  audio.load();  // drops the connection so the station can go off air
+  setTune(false);
+}
+function setTune(on) { $("tune").textContent = on ? "■ Stop" : "▶ Tune in"; }
+$("tune").onclick = () => wanted ? tuneOut() : tuneIn().catch(() => {});
+
+// Reconnect if the stream drops while we still want it.
+["error", "stalled", "ended"].forEach(ev => audio.addEventListener(ev, () => {
+  if (wanted) setTimeout(() => { if (wanted) tuneIn().catch(() => {}); }, 3000);
+}));
+
+$("vol").oninput = e => {
+  vol = parseInt(e.target.value, 10);
+  lastInput = Date.now();
+  try { localStorage.setItem("vol100", vol); } catch {}
+  showVol();
+  if (hasSpeaker && !sendTimer) sendTimer = setTimeout(sendSpeakerVol, 150);  // at most ~7 a second
+};
+async function sendSpeakerVol() {
+  try {
+    await fetch("/api/speaker", { method: "POST", headers: { "Content-Type": "application/json" },
+                                  body: JSON.stringify({ volume: vol }) });
+  } catch {}
+  sendTimer = null;
+}
+
+// Mono or stereo on the radio's own speakers (the browser stream stays
+// stereo). The radio switches at once and remembers it.
+let mono = null, modeSent = 0;
+function showMode() {
+  document.querySelectorAll("#mode button").forEach(b => b.setAttribute("aria-pressed", String(b.dataset.mono === String(mono))));
+}
+document.querySelectorAll("#mode button").forEach(b => b.onclick = async () => {
+  mono = b.dataset.mono === "true";
+  modeSent = Date.now();
+  showMode();
+  try {
+    await fetch("/api/speaker", { method: "POST", headers: { "Content-Type": "application/json" },
+                                  body: JSON.stringify({ mono }) });
+  } catch {}
+});
+
+// Bass / mid / treble (dB) on the radio's own speakers. The radio saves it.
+const BANDS = ["bass", "mid", "treble"];
+let eq = { bass: 0, mid: 0, treble: 0 }, eqInput = 0, eqTimer = null;
+const fmtDb = v => (v > 0 ? "+" : v < 0 ? "−" : "") + Math.abs(v) + " dB";
+function showEq() {
+  BANDS.forEach(b => { $("eq-" + b).value = eq[b]; $("eq-" + b + "Num").textContent = fmtDb(eq[b]); });
+}
+function queueEq() {
+  eqInput = Date.now();
+  showEq();
+  if (!eqTimer) eqTimer = setTimeout(async () => {
+    try {
+      await fetch("/api/speaker", { method: "POST", headers: { "Content-Type": "application/json" },
+                                    body: JSON.stringify({ eq }) });
+    } catch {}
+    eqTimer = null;
+  }, 150);
+}
+BANDS.forEach(b => $("eq-" + b).oninput = e => { eq = { ...eq, [b]: parseInt(e.target.value, 10) }; queueEq(); });
+$("eqFlat").onclick = () => { eq = { bass: 0, mid: 0, treble: 0 }; queueEq(); };
+
+// Test sounds on the radio's speakers. While one plays the page asks the
+// radio every half second, so the frequency readout keeps up with the sweep.
+let testTimer = null;
+function showTest(t) {
+  $("testStop").hidden = !t;
+  $("testNow").hidden = !t;
+  if (t) {
+    const hz = t.note ? `<b>${t.note}</b> · `
+             : t.hz == null ? "" : `<b>${t.hz >= 1000 ? (t.hz / 1000).toFixed(1) + " kHz" : t.hz + " Hz"}</b> · `;
+    $("testNow").innerHTML = `${t.label}: ${hz}${Math.floor(t.elapsed_s)} s of ${t.duration_s}`;
+  }
+  if (t && !testTimer) testTimer = setInterval(poll, 500);
+  if (!t && testTimer) { clearInterval(testTimer); testTimer = null; }
+}
+async function sendTest(test) {
+  try {
+    const r = await fetch("/api/speaker", { method: "POST", headers: { "Content-Type": "application/json" },
+                                            body: JSON.stringify({ test }) });
+    showTest((await r.json()).test);
+  } catch {}
+}
+document.querySelectorAll("#test button[data-test]").forEach(b => b.onclick = () => sendTest(b.dataset.test));
+$("testStop").onclick = () => sendTest("stop");
+
+// Artist radio and lists: one artist, or a named list of artists ("Friday
+// List"); the DJ (and this page) call the station after it. On air the song
+// already lined up next still plays first. Values: "", "a:<artist>", "p:<list>".
+let selNow = "", allArtists = [], allLists = [];
+const selValue = (artist, profile) => profile ? "p:" + profile : artist ? "a:" + artist : "";
+async function loadArtists() {
+  try {
+    const data = await (await fetch("/api/artists", { cache: "no-store" })).json();
+    allArtists = data.artists; allLists = data.profiles;
+    const sel = $("artistRadio");
+    sel.replaceChildren(new Option("All artists (Sleep Radio)", ""));
+    if (allLists.length) {
+      const g = Object.assign(document.createElement("optgroup"), { label: "Your lists" });
+      allLists.forEach(p => g.append(new Option(`${p.name} (${p.artists.length} artists)`, "p:" + p.name)));
+      sel.append(g);
+    }
+    const g = Object.assign(document.createElement("optgroup"), { label: "Artists" });
+    allArtists.forEach(a => g.append(new Option(`${a.name} (${a.tracks})`, "a:" + a.name)));
+    sel.append(g);
+    showSelection(data.artist, data.profile, data.station_name);
+    fillListPick();
+  } catch {}
+}
+function showSelection(artist, profile, name) {
+  selNow = selValue(artist, profile);
+  const sel = $("artistRadio");
+  if (selNow && ![...sel.options].some(o => o.value === selNow))   // list not loaded yet
+    sel.append(new Option(profile || artist, selNow));
+  sel.value = selNow;
+  const words = (name || "Sleep Radio").split(" ");
+  const last = words.pop();
+  $("stationName").replaceChildren(words.join(" ") + " ", Object.assign(document.createElement("span"), { textContent: last }));
+  document.title = name || "Sleep Radio";
+}
+$("artistRadio").onchange = async e => {
+  const v = e.target.value;
+  const body = v.startsWith("p:") ? { profile: v.slice(2) } : { artist: v ? v.slice(2) : null };
+  try {
+    const r = await (await fetch("/api/station", { method: "POST", headers: { "Content-Type": "application/json" },
+                                                   body: JSON.stringify(body) })).json();
+    showSelection(r.artist, r.profile, r.station_name);
+    $("artistNote").textContent = !r.found ? "Nothing to play for that here; playing everything."
+      : v ? `${r.station_name}: after the song that's lined up next.` : "Back to everything.";
+  } catch { $("artistNote").textContent = "Couldn't reach the radio."; }
+};
+
+// The list editor: pick a list (or New), name it, tick artists, save.
+let listTicked = new Set();
+function fillListPick(keep) {
+  const pick = $("listPick"), was = keep ?? pick.value;
+  pick.replaceChildren(new Option("New list…", ""), ...allLists.map(p => new Option(p.name, p.name)));
+  pick.value = allLists.some(p => p.name === was) ? was : "";
+}
+function showListEditor() {
+  const list = allLists.find(p => p.name === $("listPick").value);
+  $("listName").value = list ? list.name : "";
+  listTicked = new Set(list ? list.artists.map(a => a.toLowerCase()) : []);
+  $("listDelete").hidden = !list;
+  drawListArtists();
+}
+function drawListArtists() {
+  const q = $("listFilter").value.trim().toLowerCase();
+  const names = allArtists.map(a => a.name);
+  // artists on the list that the library no longer has still show, so they can be unticked
+  const extra = [...listTicked].filter(k => !names.some(n => n.toLowerCase() === k));
+  const box = $("listArtists");
+  box.replaceChildren(...[...names, ...extra].filter(n => !q || n.toLowerCase().includes(q)).map(n => {
+    const lab = document.createElement("label");
+    const cb = Object.assign(document.createElement("input"), { type: "checkbox", checked: listTicked.has(n.toLowerCase()) });
+    cb.onchange = () => { cb.checked ? listTicked.add(n.toLowerCase()) : listTicked.delete(n.toLowerCase()); countList(); };
+    lab.append(cb, " " + n);
+    return lab;
+  }));
+  countList();
+}
+function countList() { $("listCount").textContent = `${listTicked.size} artist${listTicked.size === 1 ? "" : "s"} ticked`; }
+async function saveLists(lists, done) {
+  try {
+    const r = await fetch("/api/profiles", { method: "POST", headers: { "Content-Type": "application/json" },
+                                             body: JSON.stringify({ profiles: lists }) });
+    const reply = await r.json();
+    if (!r.ok) { $("listCount").textContent = "Not saved: " + reply.error + "."; return false; }
+    $("listCount").textContent = done;
+    return true;
+  } catch { $("listCount").textContent = "Couldn't reach the radio."; return false; }
+}
+$("listPick").onchange = showListEditor;
+$("listFilter").oninput = drawListArtists;
+$("listSave").onclick = async () => {
+  const name = $("listName").value.trim(), old = $("listPick").value;
+  const byKey = new Map([...allArtists.map(a => [a.name.toLowerCase(), a.name]),
+                         ...(allLists.find(p => p.name === old)?.artists || []).map(a => [a.toLowerCase(), a])]);
+  const entry = { name, artists: [...listTicked].map(k => byKey.get(k) || k) };
+  const lists = old ? allLists.map(p => p.name === old ? entry : p) : [...allLists, entry];
+  if (await saveLists(lists, `Saved “${name}”.`)) { await loadArtists(); fillListPick(name); showListEditor(); $("listCount").textContent = `Saved “${name}”.`; }
+};
+$("listDelete").onclick = async () => {
+  const old = $("listPick").value;
+  if (!old || !confirm(`Delete the list “${old}”?`)) return;
+  if (await saveLists(allLists.filter(p => p.name !== old), `Deleted “${old}”.`)) { await loadArtists(); fillListPick(""); showListEditor(); }
+};
+
+// Play next: search the library, and a pick plays after the current song
+// (after any earlier requests). The DJ introduces it.
+let qTimer = null;
+function qNote(text) { $("qNote").textContent = text; $("qNote").hidden = !text; }
+$("q").oninput = () => {
+  clearTimeout(qTimer);
+  qTimer = setTimeout(search, 300);
+};
+async function search() {
+  const q = $("q").value.trim();
+  if (q.length < 2) { $("results").replaceChildren(); qNote(""); return; }
+  try {
+    const { results } = await (await fetch("/api/search?q=" + encodeURIComponent(q), { cache: "no-store" })).json();
+    if (q !== $("q").value.trim()) return;            // typed on since
+    qNote(results.length ? (results.length >= 40 ? "Showing the first 40: add a word to narrow it." : "") : "Nothing found.");
+    $("results").replaceChildren(...results.map(r => {
+      const li = document.createElement("li");
+      const t = document.createElement("span"); t.className = "t";
+      t.append(r.title, Object.assign(document.createElement("small"), { textContent: [r.artist, r.album].filter(Boolean).join(" · ") }));
+      const b = document.createElement("button"); b.type = "button"; b.textContent = "Play next";
+      b.onclick = () => requestTrack(r, b);
+      li.append(t, b);
+      return li;
+    }));
+  } catch { qNote("Couldn't reach the radio."); }
+}
+async function requestTrack(r, button) {
+  button.disabled = true;
+  try {
+    const resp = await fetch("/api/request", { method: "POST", headers: { "Content-Type": "application/json" },
+                                              body: JSON.stringify({ id: r.id }) });
+    const reply = await resp.json();
+    if (!resp.ok) { qNote("Couldn't: " + reply.error + "."); button.disabled = false; return; }
+    button.textContent = "Queued ✓";
+    qNote(reply.after_announced ? `“${r.title}” plays after the song that's just been introduced.`
+      : reply.position > 0 ? `“${r.title}” is queued: ${reply.position} request${reply.position === 1 ? "" : "s"} before it.`
+      : `“${r.title}” plays next.`);
+    showRequests(reply.requests);
+  } catch { qNote("Couldn't reach the radio."); button.disabled = false; }
+}
+function showRequests(list) {
+  $("reqBox").hidden = !list || !list.length;
+  $("reqList").replaceChildren(...(list || []).map((r, i) => {
+    const li = document.createElement("li");
+    const k = document.createElement("span"); k.className = "k"; k.textContent = i + 1;
+    const t = document.createElement("span"); t.className = "t"; t.textContent = `${r.title} — ${r.artist}`;
+    li.append(k, t);
+    return li;
+  }));
+}
+
+// The DJ: voice, how often it talks, 70s hooks, jingles, news.
+function djNote(text, bad) { $("djNote").textContent = text; $("djNote").classList.toggle("bad", !!bad); }
+function pressSeg(id, value) {
+  document.querySelectorAll(`#${id} button`).forEach(b => b.setAttribute("aria-pressed", String(b.dataset.v === String(value))));
+}
+function showDj(d) {
+  $("dj").hidden = false;
+  const v = $("djVoice");
+  v.replaceChildren(...d.voices.map(n => new Option(n[0].toUpperCase() + n.slice(1), n)));
+  if (d.voice && !d.voices.includes(d.voice)) v.append(new Option(d.voice, d.voice));
+  v.value = d.voice || "";
+  v.disabled = d.voices.length < 2;
+  pressSeg("djChat", d.chattiness);
+  pressSeg("djHooks", d.dj_hooks);
+  $("djHooks").hidden = !d.hooks_available;
+  const j = $("djJingles");
+  if (![...j.options].some(o => +o.value === d.jingle_every)) j.append(new Option(`Every ${d.jingle_every} songs`, d.jingle_every));
+  j.value = String(d.jingle_every);
+  $("djJingleRow").hidden = !d.jingles_available;
+  pressSeg("djNews", d.news_enabled);
+}
+async function loadDj() {
+  try { showDj(await (await fetch("/api/dj", { cache: "no-store" })).json()); } catch {}
+}
+async function setDj(change, done) {
+  try {
+    const r = await fetch("/api/dj", { method: "POST", headers: { "Content-Type": "application/json" },
+                                       body: JSON.stringify(change) });
+    const reply = await r.json();
+    if (!r.ok) { djNote("Not changed: " + reply.error + ".", true); loadDj(); return; }
+    showDj(reply);
+    if (reply.restarting) { $("djVoice").value = reply.saved_voice; djNote("The radio is restarting with the new voice; back in about a minute."); }
+    else if ("voice" in change) djNote("Saved: the new voice is used the next time the radio starts.");
+    else djNote(done);
+  } catch { djNote("Couldn't reach the radio.", true); }
+}
+$("djVoice").onchange = e => {
+  if (!confirm(`Change the DJ's voice to “${e.target.value}”?\n\nThe radio restarts (about a minute).`)) { loadDj(); return; }
+  setDj({ voice: e.target.value });
+};
+const CHAT = { maximum: "before every song", chatty: "every 2 songs", balanced: "every 3 songs", minimal: "every 5 songs" };
+document.querySelectorAll("#djChat button").forEach(b => b.onclick = () => setDj({ chattiness: b.dataset.v }, `The DJ now talks ${CHAT[b.dataset.v]}.`));
+document.querySelectorAll("#djHooks button").forEach(b => b.onclick = () => setDj({ dj_hooks: b.dataset.v === "true" }, `70s hooks ${b.textContent.toLowerCase()}.`));
+$("djJingles").onchange = e => setDj({ jingle_every: +e.target.value }, +e.target.value ? `A jingle every ${e.target.value} songs.` : "No jingles.");
+document.querySelectorAll("#djNews button").forEach(b => b.onclick = () => setDj({ news_enabled: b.dataset.v === "true" }, `News ${b.textContent.toLowerCase()}.`));
+
+// Birthdays: kept on the radio (and in the saved settings file).
+const MONTHS = ["January", "February", "March", "April", "May", "June", "July", "August",
+                "September", "October", "November", "December"];
+let bdList = [], bdCanHear = false;
+for (let d = 1; d <= 31; d++) $("bdDay").append(new Option(d, d));
+MONTHS.forEach((m, i) => $("bdMonth").append(new Option(m, i + 1)));
+function bdNote(text, bad) { $("bdNote").textContent = text; $("bdNote").classList.toggle("bad", !!bad); }
+function showBirthdays(state) {
+  bdList = state.birthdays; bdCanHear = state.can_hear;
+  const list = $("bdList");
+  list.replaceChildren(...(bdList.length ? bdList.map((b, i) => {
+    const li = document.createElement("li");
+    const who = document.createElement("span"); who.className = "who";
+    who.textContent = `${b.name} · ${b.day} ${MONTHS[b.month - 1]}${b.year ? " " + b.year : ""}`;
+    li.append(who);
+    if (bdCanHear) {
+      const hear = document.createElement("button"); hear.type = "button"; hear.textContent = "Hear it";
+      hear.title = "The DJ says this wish on the radio now";
+      hear.onclick = () => hearBirthday(b);
+      li.append(hear);
+    }
+    const del = document.createElement("button"); del.type = "button"; del.textContent = "Remove";
+    del.onclick = () => saveBirthdays(bdList.filter((_, j) => j !== i), `Removed ${b.name}.`);
+    li.append(del);
+    return li;
+  }) : [Object.assign(document.createElement("li"), { className: "muted", textContent: "No birthdays yet." })]));
+  const today = state.today || [];
+  $("bdToday").hidden = !today.length;
+  $("bdToday").textContent = today.length ? "🎂 Today: " + today.map(t => t.name + (t.age ? ` (${t.age})` : "")).join(", ") : "";
+  if (!state.clock_trusted) bdNote("The radio's clock isn't set yet (no internet), so no birthday wishes until it is.");
+}
+async function loadBirthdays() {
+  try { showBirthdays(await (await fetch("/api/birthdays", { cache: "no-store" })).json()); } catch {}
+}
+async function saveBirthdays(list, done) {
+  try {
+    const r = await fetch("/api/birthdays", { method: "POST", headers: { "Content-Type": "application/json" },
+                                              body: JSON.stringify({ birthdays: list }) });
+    const reply = await r.json();
+    if (!r.ok) return bdNote("Not saved: " + reply.error + ".", true), false;
+    showBirthdays(reply); bdNote(done);
+    return true;
+  } catch { bdNote("Couldn't reach the radio.", true); return false; }
+}
+async function hearBirthday(b) {
+  bdNote(`Making ${b.name}'s wish; it plays on the radio in a few seconds…`);
+  try {
+    const r = await fetch("/api/birthdays/hear", { method: "POST", headers: { "Content-Type": "application/json" },
+                                                   body: JSON.stringify(b) });
+    const reply = await r.json();
+    bdNote(r.ok ? `On the radio: “${reply.text}”` : "Couldn't: " + reply.error + ".", !r.ok);
+  } catch { bdNote("Couldn't reach the radio.", true); }
+}
+$("bdForm").onsubmit = async e => {
+  e.preventDefault();
+  const name = $("bdName").value.trim();
+  if (!name) return;
+  const entry = { name, day: +$("bdDay").value, month: +$("bdMonth").value };
+  if ($("bdYear").value) entry.year = +$("bdYear").value;
+  if (await saveBirthdays([...bdList, entry], `Added ${name}.`)) { $("bdName").value = ""; $("bdYear").value = ""; }
+};
+
+// The knob's switch: tap = pause/play, hold 3 s = say the address, the
+// same timing as the real one (the fill shows how long to hold).
+let knobTimer = null, knobLong = false;
+async function knobPress(press) {
+  try {
+    const r = await (await fetch("/api/knob", { method: "POST", headers: { "Content-Type": "application/json" },
+                                                body: JSON.stringify({ press }) })).json();
+    $("knobNote").textContent = press === "long"
+      ? (r.done ? "Beep, then the address: listen to the radio." : "It's already saying it.")
+      : (r.playing ? "Playing." : "Paused.");
+    poll();
+  } catch { $("knobNote").textContent = "Couldn't reach the radio."; }
+}
+function knobDown(e) {
+  e.preventDefault();
+  if (knobTimer) return;
+  knobLong = false;
+  $("knobBtn").classList.add("holding");
+  knobTimer = setTimeout(() => { knobLong = true; $("knobBtn").classList.remove("holding"); knobPress("long"); }, 3000);
+}
+function knobUp(cancel) {
+  if (!knobTimer) return;
+  clearTimeout(knobTimer); knobTimer = null;
+  $("knobBtn").classList.remove("holding");
+  if (!knobLong && !cancel) knobPress("short");
+}
+$("knobBtn").addEventListener("pointerdown", knobDown);
+$("knobBtn").addEventListener("pointerup", () => knobUp(false));
+$("knobBtn").addEventListener("pointercancel", () => knobUp(true));
+$("knobBtn").addEventListener("pointerleave", () => knobUp(true));
+$("knobBtn").addEventListener("contextmenu", e => e.preventDefault());   // long touch on phones
+$("knobBtn").addEventListener("keydown", e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); if (!e.repeat) knobDown(e); } });
+$("knobBtn").addEventListener("keyup", e => { if (e.key === "Enter" || e.key === " ") knobUp(false); });
+
+// Low cut (Hz, 0 = off): keeps the deepest bass out of the small speakers.
+let lowcut = 0, lowcutSent = 0;
+const showLowcut = () => document.querySelectorAll("#lowcut button")
+  .forEach(b => b.setAttribute("aria-pressed", String(b.dataset.hz === String(lowcut))));
+document.querySelectorAll("#lowcut button").forEach(b => b.onclick = () => {
+  lowcut = parseInt(b.dataset.hz, 10);
+  lowcutSent = Date.now();
+  showLowcut();
+  fetch("/api/speaker", { method: "POST", headers: { "Content-Type": "application/json" },
+                          body: JSON.stringify({ highpass: lowcut }) }).catch(() => {});
+});
+
+// Sleep timer. With a speaker the radio runs it (it fades the speaker over
+// the last minute, then pauses it) and this page follows it, so it keeps
+// going when the phone locks and every page shows the same countdown. This
+// page's own stream fades and stops at the same time.
+let sleepSent = 0;
+const pressSleep = min => document.querySelectorAll(".sleep button")
+  .forEach(x => x.setAttribute("aria-pressed", String(x.dataset.min === String(min))));
+function sleepOff() { sleepEnd = 0; audio.volume = baseVol; $("sleepLeft").textContent = ""; pressSleep(0); }
+function sleepDone() { tuneOut(); sleepOff(); $("sleepLeft").textContent = "Goodnight"; }
+document.querySelectorAll(".sleep button").forEach(b => b.onclick = () => {
+  const min = parseInt(b.dataset.min, 10);
+  if (min) { sleepEnd = Date.now() + min * 60000; pressSleep(min); } else sleepOff();
+  if (hasSpeaker) {
+    sleepSent = Date.now();
+    fetch("/api/speaker", { method: "POST", headers: { "Content-Type": "application/json" },
+                            body: JSON.stringify({ sleep: min }) }).catch(() => {});
+  }
+});
+function followSleep(sp) {
+  if (Date.now() - sleepSent < 2000) return;
+  if (sp.sleep_left_s == null) {
+    if (sleepEnd) (sleepEnd - Date.now() < 4000 ? sleepDone : sleepOff)();  // ended, or cancelled elsewhere
+  } else {
+    sleepEnd = Date.now() + sp.sleep_left_s * 1000;
+    pressSleep(sp.sleep_min);
+  }
+}
+setInterval(() => {
+  if (!sleepEnd) return;
+  const left = sleepEnd - Date.now();
+  if (left <= 0) return sleepDone();
+  audio.volume = baseVol * Math.min(1, left / 60000);
+  $("sleepLeft").textContent = Math.ceil(left / 60000) + " min left";
+}, 1000);
+
+const KIND = { track: "Now playing", dj: "On the mic", jingle: "Station ident", news: "News" };
+const ICON = { track: "♪", dj: "🎙", jingle: "✦", news: "📰" };
+const hhmm = t => new Date(t * 1000).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+
+async function poll() {
+  if (shuttingDown) return;
+  try {
+    const r = await fetch("/api/status", { cache: "no-store" });
+    if (r.status === 401) return showLogin();
+    const s = await r.json();
+    // Follow the speaker (the knob, or another page), except mid-drag.
+    hasSpeaker = !!s.speaker;
+    $("power").hidden = !s.can_power_off;
+    $("volNote").hidden = !hasSpeaker;
+    $("mode").hidden = !hasSpeaker;
+    $("test").hidden = !hasSpeaker;
+    $("knob").hidden = !hasSpeaker;
+    if (hasSpeaker) showTest(s.speaker.test);
+    if (hasSpeaker) followSleep(s.speaker);
+    $("eq").hidden = !(hasSpeaker && s.speaker.eq);
+    if (hasSpeaker && s.speaker.eq && !eqTimer && Date.now() - eqInput > 2000 &&
+        BANDS.some(b => s.speaker.eq[b] !== eq[b])) {
+      eq = { ...s.speaker.eq };
+      showEq();
+    }
+    if (hasSpeaker && Date.now() - lowcutSent > 2000 && s.speaker.highpass_hz !== undefined &&
+        s.speaker.highpass_hz !== lowcut) {
+      lowcut = s.speaker.highpass_hz;
+      showLowcut();
+    }
+    if (hasSpeaker && Date.now() - modeSent > 2000 && s.speaker.mono !== mono) {
+      mono = s.speaker.mono;
+      showMode();
+    }
+    if (hasSpeaker && !sendTimer && Date.now() - lastInput > 2000 && s.speaker.volume !== vol) {
+      vol = s.speaker.volume;
+      showVol();
+    }
+    if (s.station_name && selValue(s.artist, s.profile) !== selNow && document.activeElement !== $("artistRadio"))
+      showSelection(s.artist, s.profile, s.station_name);    // changed on another phone
+    showRequests(s.requests);
+    const badge = $("badge");
+    badge.textContent = s.on_air ? "On air" : (s.voices_ready ? "Off air" : "Warming up");
+    badge.classList.toggle("live", s.on_air);
+    if (s.now) {
+      $("kind").textContent = KIND[s.now.kind] || s.now.kind;
+      $("title").textContent = s.now.title;
+      $("artist").textContent = s.now.artist || "";
+      const pct = s.now.duration_s ? Math.min(100, 100 * s.now.elapsed_s / s.now.duration_s) : 0;
+      $("progress").style.width = pct + "%";
+    } else if (!s.on_air) {
+      $("kind").textContent = "Ready";
+      $("title").textContent = wanted ? "Starting the show…" : "Press play to tune in";
+      $("artist").textContent = "";
+      $("progress").style.width = "0";
+    }
+    $("skip").hidden = !s.can_skip;
+    $("next").textContent = s.on_air && s.next ? `Next: ${s.next.title}${s.next.artist ? " — " + s.next.artist : ""}` : "";
+    const hist = $("history");
+    hist.replaceChildren(...(s.history.length ? s.history.map(h => {
+      const li = document.createElement("li");
+      const t = document.createElement("time"); t.textContent = hhmm(h.at);
+      const k = document.createElement("span"); k.className = "k"; k.textContent = ICON[h.kind] || "·";
+      const x = document.createElement("span"); x.textContent = h.text;
+      li.append(t, k, x);
+      return li;
+    }) : [Object.assign(document.createElement("li"), { className: "muted", textContent: "Nothing yet." })]));
+  } catch {}
+}
+
+// Skip applies to the station itself, so the speaker and every listener hear
+// it; a browser hears it a few seconds later (its stream buffer).
+$("skip").onclick = async () => {
+  $("skip").disabled = true;
+  try { await fetch("/api/skip", { method: "POST" }); } catch {}
+  setTimeout(() => { $("skip").disabled = false; poll(); }, 1500);
+};
+
+// Save is a plain download. Load sends the chosen file to the radio, which
+// checks it first; volume, mono and EQ change at once, anything else makes
+// the station restart (about 20 seconds).
+function settingsNote(text, bad) {
+  const n = $("settingsNote");
+  n.textContent = text; n.hidden = false; n.classList.toggle("bad", !!bad);
+}
+$("loadSettings").onclick = () => $("settingsFile").click();
+$("settingsFile").onchange = async e => {
+  const file = e.target.files[0];
+  e.target.value = "";
+  if (!file) return;
+  if (!confirm(`Load the settings from "${file.name}"?\n\nThey replace this radio's settings.`)) return;
+  try {
+    const r = await fetch("/api/settings", { method: "POST", headers: { "Content-Type": "application/json" },
+                                             body: await file.text() });
+    const reply = await r.json().catch(() => ({}));
+    if (!r.ok) return settingsNote("Not loaded: " + (reply.error || "the radio said no (" + r.status + ")") + ".", true);
+    settingsNote(reply.restarting ? "Loaded. The radio is restarting to use them; back in about 20 seconds."
+               : reply.needs_restart ? "Loaded. Some take effect the next time the radio starts."
+               : reply.changed.length ? "Loaded." : "Loaded. They were the same as the radio's already.");
+    lastInput = eqInput = modeSent = lowcutSent = 0;   // let the page follow the new volume, EQ and mode
+    poll(); loadBirthdays(); loadArtists(); loadDj();   // (lists come with the artists)
+  } catch {
+    settingsNote("Couldn't reach the radio. Try again?", true);
+  }
+};
+
+$("off").onclick = async () => {
+  if (!confirm("Shut down the radio?\n\nTo turn it back on, unplug it and plug it in again.")) return;
+  try {
+    const r = await fetch("/api/power", { method: "POST" });
+    if (!r.ok) throw new Error(r.status);
+  } catch {
+    $("powerNote").textContent = "Couldn't shut down. Try again?";
+    return;
+  }
+  shuttingDown = true;
+  tuneOut();
+  $("off").disabled = true;
+  $("tune").disabled = true;
+  $("skip").hidden = true;
+  $("progress").style.width = "0";
+  $("badge").textContent = "Off"; $("badge").classList.remove("live");
+  $("kind").textContent = "Shutting down";
+  $("title").textContent = "Goodnight";
+  $("artist").textContent = "";
+  $("next").textContent = "";
+  $("powerNote").textContent = "Safe to unplug in about 20 seconds.";
+};
+
+// --- Views, login and the password ------------------------------------------------
+// The main page has the everyday controls; ⚙ opens Settings (#settings).
+function showView() {
+  const settings = location.hash === "#settings";
+  $("viewMain").hidden = settings;
+  $("viewSettings").hidden = !settings;
+  $("gear").hidden = settings;
+  if (settings) { fillListPick(); showListEditor(); loadAuth(); }
+  window.scrollTo(0, 0);
+}
+window.addEventListener("hashchange", () => { if (started) showView(); });
+$("gear").onclick = () => { location.hash = "#settings"; };
+$("back").onclick = () => { location.hash = ""; };
+$("listsBtn").onclick = () => {
+  location.hash = "#settings";
+  setTimeout(() => $("lists").scrollIntoView({ behavior: "smooth" }), 50);
+};
+
+let started = false;
+function start() {
+  if (started) return;
+  started = true;
+  $("login").hidden = true;
+  showView();
+  poll();
+  setInterval(poll, 3000);
+  loadArtists(); loadBirthdays(); loadDj();
+  // Start playing on open where the browser allows it; otherwise the button does it.
+  if (location.hash !== "#settings") tuneIn().catch(() => {});
+}
+function showLogin() {
+  if (started) { location.reload(); return; }   // logged out while using it: start clean
+  $("login").hidden = false;
+  $("viewMain").hidden = $("viewSettings").hidden = $("gear").hidden = true;
+  $("loginPw").focus();
+}
+$("loginForm").onsubmit = async e => {
+  e.preventDefault();
+  try {
+    const r = await fetch("/api/login", { method: "POST", headers: { "Content-Type": "application/json" },
+                                          body: JSON.stringify({ password: $("loginPw").value }) });
+    if (!r.ok) { $("loginNote").textContent = "That's not the password."; $("loginPw").select(); return; }
+    $("loginPw").value = "";
+    start();
+  } catch { $("loginNote").textContent = "Couldn't reach the radio."; }
+};
+
+function showAuth(a) {
+  $("pwState").textContent = a.protected
+    ? "This page has a password; this device stays logged in for 30 days."
+    : "No password: anyone on your network can use this page.";
+  $("pwSet").textContent = a.protected ? "Change password" : "Set password";
+  $("pwRemove").hidden = !a.protected;
+  $("pwLogout").hidden = !a.protected || a.local;
+}
+async function loadAuth() {
+  try { showAuth(await (await fetch("/api/auth", { cache: "no-store" })).json()); } catch {}
+}
+async function setPassword(password, done) {
+  try {
+    const r = await fetch("/api/password", { method: "POST", headers: { "Content-Type": "application/json" },
+                                             body: JSON.stringify({ password }) });
+    const reply = await r.json();
+    if (!r.ok) { $("pwNote").textContent = "Not changed: " + reply.error + "."; return; }
+    showAuth(reply);
+    $("pwNote").textContent = done;
+  } catch { $("pwNote").textContent = "Couldn't reach the radio."; }
+}
+$("pwForm").onsubmit = e => {
+  e.preventDefault();
+  const a = $("pwNew").value, b = $("pwAgain").value;
+  if (a.length < 4) { $("pwNote").textContent = "At least 4 characters, please."; return; }
+  if (a !== b) { $("pwNote").textContent = "The two don't match."; return; }
+  $("pwNew").value = $("pwAgain").value = "";
+  setPassword(a, "Password set. Other phones and computers will be asked for it; this one stays logged in.");
+};
+$("pwRemove").onclick = () => {
+  if (confirm("Remove the password? Anyone on your network will be able to use this page.")) setPassword(null, "Password removed.");
+};
+$("pwLogout").onclick = async () => {
+  try { await fetch("/api/logout", { method: "POST" }); } catch {}
+  location.hash = ""; location.reload();
+};
+
+(async () => {
+  try {
+    const a = await (await fetch("/api/auth", { cache: "no-store" })).json();
+    if (a.protected && !a.logged_in) return showLogin();
+  } catch {}
+  start();
+})();
+</script>
+</body>
+</html>

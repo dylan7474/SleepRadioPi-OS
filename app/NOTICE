@@ -1,0 +1,42 @@
+SleepRadioPi
+Copyright (C) 2026 Dylan Jones
+
+This program is free software: you can redistribute it and/or modify it under
+the terms of the GNU General Public License as published by the Free Software
+Foundation, either version 3 of the License, or (at your option) any later
+version. See the LICENSE file for the full text.
+
+
+Why GPL-3.0-or-later
+--------------------
+
+SleepRadioPi's Broadcast Radio auto-DJ mode uses on-device text-to-speech via
+sherpa-onnx (https://github.com/k2-fsa/sherpa-onnx), via its Python bindings.
+sherpa-onnx itself is Apache-2.0, but for Piper / VITS voices it statically
+links eSpeak-NG (https://github.com/espeak-ng/espeak-ng) for phoneme
+generation, and eSpeak-NG is licensed GPL-3.0-or-later. Because a running
+install therefore includes GPL-licensed code, the project as a whole is
+distributed under GPL-3.0-or-later.
+
+Corresponding source is this repository:
+https://github.com/dylan7474/SleepRadioPi
+
+This project is a from-scratch Python reimplementation of the ideas and
+algorithms in the Android app SleepRadio (https://github.com/dylan7474/SleepRadio,
+also GPL-3.0-or-later), targeting a standalone Raspberry Pi device instead of
+a phone. See docs/SCOPE.md for the relationship between the two projects.
+
+
+Third-party components (planned)
+---------------------------------
+
+* sherpa-onnx .......... Apache-2.0         https://github.com/k2-fsa/sherpa-onnx
+* eSpeak-NG ............ GPL-3.0-or-later   https://github.com/espeak-ng/espeak-ng
+    (statically linked inside sherpa-onnx's native library; also the source of
+     the espeak-ng-data phoneme files installed at runtime)
+
+Other planned dependencies (python-vlc / libVLC, mutagen, numpy, sounddevice,
+gpiozero, a small LCD driver library) are permissively licensed (LGPL/MIT/BSD
+family) and do not change the overall GPL-3.0-or-later status, which is
+already fixed by the eSpeak-NG dependency above. Re-check this file if the
+dependency list changes.
