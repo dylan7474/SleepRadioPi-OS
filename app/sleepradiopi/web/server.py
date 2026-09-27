@@ -24,6 +24,7 @@ from sleepradiopi.config.auth import COOKIE, SESSION_S, Auth
 from sleepradiopi.config.clock import clock_trusted
 from sleepradiopi.io.announce import Clip
 from sleepradiopi import voices as voices_mod
+from sleepradiopi import wifi as wifi_mod
 from sleepradiopi.config import backup
 from sleepradiopi.config.settings import save_setting
 from sleepradiopi.config.power import can_power_off, request_power_off
@@ -149,6 +150,15 @@ def make_handler(station: Station, output: Mp3Output, speaker=None,
 
         def do_GET(self) -> None:
             path = urlparse(self.path).path
+            if (not path.startswith("/api/") and path not in ("/", "/index.html", "/stream")
+                    and wifi_mod.status().get("mode") == "hotspot"):
+                # The radio's own network: a phone checking for internet
+                # (e.g. /generate_204) is sent to the page, which it then offers to open.
+                self.send_response(302)
+                self.send_header("Location", f"http://{wifi_mod.HOTSPOT_IP}/")
+                self.send_header("Content-Length", "0")
+                self.end_headers()
+                return
             if not self._gate(path):
                 return
             if path == "/api/auth":
@@ -168,6 +178,8 @@ def make_handler(station: Station, output: Mp3Output, speaker=None,
                 self._send(json.dumps(self._birthdays_state()).encode(), "application/json")
             elif path == "/api/voices":
                 self._send(json.dumps(self._voices_state()).encode(), "application/json")
+            elif path == "/api/wifi":
+                self._send(json.dumps(self._wifi_state()).encode(), "application/json")
             elif path == "/api/update" and updates is not None:
                 self._send(json.dumps(updates.status()).encode(), "application/json")
             elif path == "/api/dj":
@@ -238,6 +250,8 @@ def make_handler(station: Station, output: Mp3Output, speaker=None,
                 self._send(json.dumps(self._voices_state()).encode(), "application/json")
             elif path == "/api/voices/upload" and voice_jobs is not None:
                 self._upload_voice()
+            elif path.startswith("/api/wifi/"):
+                self._wifi(path.rsplit("/", 1)[1])
             elif path in ("/api/update/check", "/api/update/install") and updates is not None:
                 self._body()
                 try:
@@ -490,6 +504,39 @@ def make_handler(station: Station, output: Mp3Output, speaker=None,
                 return
             self._send(json.dumps({**reply, "album": station.album_status(),
                                    "requests": station.requests()}).encode(), "application/json")
+
+        def _wifi_state(self) -> dict:
+            st = wifi_mod.status()
+            saved = wifi_mod.load()
+            return {**st, "saved": [n["ssid"] for n in saved["networks"]],
+                    "on_card": wifi_mod.card_networks(), "hotspot_settings": {"ssid": saved["hotspot"]["ssid"]}}
+
+        def _wifi(self, action: str) -> None:
+            """POST /api/wifi/add {"ssid", "password"}, /remove {"ssid"}, /scan,
+            /hotspot {"ssid", "password"} (the radio's own network's details),
+            /try (leave the hotspot and try the saved networks now)."""
+            try:
+                body = self._body()
+                if action == "add":
+                    wifi_mod.add_network(body.get("ssid"), body.get("password", ""))
+                    wifi_mod.ask("reload")
+                elif action == "remove":
+                    wifi_mod.remove_network(body.get("ssid", ""))
+                    wifi_mod.ask("reload")
+                elif action == "scan":
+                    wifi_mod.ask("scan")
+                elif action == "hotspot":
+                    wifi_mod.set_hotspot(body.get("ssid"), body.get("password", ""))
+                elif action == "try":
+                    wifi_mod.ask("station")
+                else:
+                    self.send_error(404)
+                    return
+            except (ValueError, TypeError, AttributeError, OSError) as e:
+                self._error(str(e))
+                return
+            log.info("wifi %s from %s", action, self.address_string())
+            self._send(json.dumps(self._wifi_state()).encode(), "application/json")
 
         def _voices_state(self) -> dict:
             there = station.voices()

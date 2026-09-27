@@ -91,6 +91,13 @@
   #listDelete { border-color: var(--live); color: var(--live); }
   #bdList li { align-items: center; }
   #voiceList li { align-items: center; }
+  #wifiSaved li, #wifiNearby li { align-items: center; }
+  #wifiSaved .who, #wifiNearby .who { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+  #wifiSaved button, #wifiNearby button { padding: .25rem .6rem; font-size: .85rem; }
+  #wifiAdd input, #spotForm input { flex: 1 1 9rem; min-width: 0; font: inherit; font-size: .95rem; color: var(--text);
+    background: var(--bg); border: 1px solid var(--line); border-radius: .5rem; padding: .45rem .5rem; }
+  #wifiNow b { color: var(--accent); }
+  #wifiNote.bad { color: var(--live); }
   #voiceUpload input { font: inherit; font-size: .95rem; color: var(--text); background: var(--bg);
     border: 1px solid var(--line); border-radius: .5rem; padding: .45rem .5rem; min-width: 0; }
   #voiceName { flex: 1 1 8rem; }
@@ -361,6 +368,33 @@
   </section>
 
   <h3 class="group">The radio</h3>
+
+  <section id="wifiCard" class="card">
+    <h2>Wi-Fi</h2>
+    <p id="wifiNow" style="margin:0"></p>
+    <ul id="wifiSaved"></ul>
+    <div class="row">
+      <button id="wifiScan" type="button">Find networks</button>
+      <button id="wifiTry" type="button" hidden>Try saved networks now</button>
+    </div>
+    <ul id="wifiNearby"></ul>
+    <form id="wifiAdd" class="row" autocomplete="off">
+      <input id="wifiSsid" placeholder="Network name" maxlength="32" aria-label="Network name" required>
+      <input id="wifiPw" type="password" placeholder="Password" maxlength="63" aria-label="Wi-Fi password" autocomplete="new-password">
+      <button type="submit">Add</button>
+    </form>
+    <details style="margin-top:.75rem">
+      <summary class="muted" style="font-size:.9rem;cursor:pointer">The radio's own network (hotspot)</summary>
+      <form id="spotForm" class="row" autocomplete="off">
+        <input id="spotSsid" maxlength="32" aria-label="Hotspot name" required>
+        <input id="spotPw" type="password" placeholder="New password" minlength="8" maxlength="63" aria-label="Hotspot password" required>
+        <button type="submit">Save</button>
+      </form>
+    </details>
+    <p id="wifiNote" class="muted" style="margin:.5rem 0 0;font-size:.85rem">The radio joins any saved network it can
+      see. If none is in range when it starts, it makes its own network (the hotspot): join it on your phone and
+      open http://192.168.4.1 to add yours. Holding the knob for 3 s says how.</p>
+  </section>
 
   <section id="knob" class="card" hidden>
     <h2>Knob switch</h2>
@@ -899,6 +933,65 @@ $("updInstall").onclick = () => {
     updPost("/api/update/install", "Starting the update…");
 };
 
+// Wi-Fi: saved networks, nearby ones, the hotspot.
+let wifiTimer = null;
+function wifiNote(text, bad) { $("wifiNote").textContent = text; $("wifiNote").classList.toggle("bad", !!bad); }
+function li(text, button, onclick) {
+  const l = document.createElement("li");
+  const t = document.createElement("span"); t.className = "who"; t.textContent = text;
+  l.append(t);
+  if (button) {
+    const b = document.createElement("button"); b.type = "button"; b.textContent = button; b.onclick = onclick;
+    l.append(b);
+  }
+  return l;
+}
+function showWifi(w) {
+  const now = $("wifiNow");
+  if (w.mode === "station") now.replaceChildren("Connected to ", Object.assign(document.createElement("b"), { textContent: w.ssid }), ` (${w.ip})`);
+  else if (w.mode === "hotspot") now.replaceChildren("Hotspot on: join ", Object.assign(document.createElement("b"), { textContent: w.hotspot.ssid }),
+                                                     `, then open http://${w.hotspot.ip}`);
+  else if (w.mode === "connecting") now.textContent = "Joining a saved network…";
+  else now.textContent = "Wi-Fi status unknown (not the radio's own system?)";
+  $("wifiTry").hidden = w.mode !== "hotspot";
+  $("wifiSaved").replaceChildren(
+    ...w.on_card.map(s => li(`${s} — set up on the card`)),
+    ...w.saved.map(s => li(s, "Remove", () => wifiPost("remove", { ssid: s }, `Removed ${s}.`))));
+  $("wifiNearby").replaceChildren(...(w.nearby || []).map(n =>
+    li(`${n.ssid} (${n.signal} dBm)`, "Use", () => { $("wifiSsid").value = n.ssid; $("wifiPw").focus(); })));
+  if (document.activeElement !== $("spotSsid")) $("spotSsid").value = w.hotspot_settings.ssid;
+}
+async function loadWifi() {
+  try { showWifi(await (await fetch("/api/wifi", { cache: "no-store" })).json()); } catch {}
+}
+async function wifiPost(action, body, done) {
+  try {
+    const r = await fetch("/api/wifi/" + action, { method: "POST", headers: { "Content-Type": "application/json" },
+                                                   body: JSON.stringify(body || {}) });
+    const reply = await r.json();
+    if (!r.ok) return wifiNote("Not done: " + reply.error + ".", true), false;
+    showWifi(reply); wifiNote(done);
+    return true;
+  } catch { wifiNote("Couldn't reach the radio.", true); return false; }
+}
+$("wifiScan").onclick = async () => {
+  await wifiPost("scan", {}, "Looking for networks…");
+  setTimeout(loadWifi, 6000);
+};
+$("wifiTry").onclick = () => wifiPost("try", {}, "Trying the saved networks: this page will stop answering while it does. If none works, the hotspot comes back within a minute.");
+$("wifiAdd").onsubmit = async e => {
+  e.preventDefault();
+  const ssid = $("wifiSsid").value.trim(), password = $("wifiPw").value;
+  if (await wifiPost("add", { ssid, password }, `Saved ${ssid}.` + (($("wifiNow").textContent || "").startsWith("Hotspot")
+      ? " Tap “Try saved networks now” to join it." : " The radio will use it when it's in range.")))
+    { $("wifiSsid").value = ""; $("wifiPw").value = ""; }
+};
+$("spotForm").onsubmit = async e => {
+  e.preventDefault();
+  if (await wifiPost("hotspot", { ssid: $("spotSsid").value.trim(), password: $("spotPw").value },
+                     "Saved: used the next time the radio makes its own network.")) $("spotPw").value = "";
+};
+
 // Birthdays: kept on the radio (and in the saved settings file).
 const MONTHS = ["January", "February", "March", "April", "May", "June", "July", "August",
                 "September", "October", "November", "December"];
@@ -1197,7 +1290,7 @@ function showView() {
   $("viewMain").hidden = settings;
   $("viewSettings").hidden = !settings;
   $("gear").hidden = settings;
-  if (settings) { fillListPick(); showListEditor(); loadAuth(); loadVoices(); loadUpdate(); }
+  if (settings) { fillListPick(); showListEditor(); loadAuth(); loadVoices(); loadUpdate(); loadWifi(); }
   window.scrollTo(0, 0);
 }
 window.addEventListener("hashchange", () => { if (started) showView(); });

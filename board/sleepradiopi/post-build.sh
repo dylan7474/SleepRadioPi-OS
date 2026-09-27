@@ -47,5 +47,7 @@ grep -q power-request-watch "${TARGET_DIR}/etc/inittab" ||
 	echo "::respawn:/usr/sbin/power-request-watch" >> "${TARGET_DIR}/etc/inittab"
 grep -q voice-install-watch "${TARGET_DIR}/etc/inittab" ||
 	echo "::respawn:/usr/sbin/voice-install-watch" >> "${TARGET_DIR}/etc/inittab"
+# dnsmasq only runs for the hotspot, started by the Wi-Fi manager.
+rm -f "${TARGET_DIR}/etc/init.d/S80dnsmasq"
 grep -q update-watch "${TARGET_DIR}/etc/inittab" ||
 	echo "::respawn:/usr/sbin/update-watch" >> "${TARGET_DIR}/etc/inittab"

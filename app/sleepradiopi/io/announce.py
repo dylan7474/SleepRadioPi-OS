@@ -68,7 +68,14 @@ def spoken_host(host: str) -> str:
     return f"{name} dot local"
 
 
-def announcement(addrs: list[tuple[str, str]], host: str) -> str:
+def announcement(addrs: list[tuple[str, str]], host: str, hotspot: dict | None = None) -> str:
+    """What the radio says. hotspot: {"ssid", "password", "ip"} when it has
+    made its own network (no saved one in range)."""
+    if hotspot:
+        pw = hotspot["password"]
+        return ("Sleep Radio here. I couldn't find a Wi-Fi network I know, so I've made my own. "
+                f"On your phone, join {hotspot['ssid']}. The password is {pw}, spelled {', '.join(pw)}. "
+                f"Then open: {spoken_ip(hotspot['ip'])}, and add your Wi-Fi.")
     if not addrs:
         return "Sleep Radio here. I'm not connected to a network."
     ip = spoken_ip(addrs[0][1])
@@ -127,7 +134,8 @@ class Announcer:
     def __init__(self, render: Callable[[str], np.ndarray] | None, play: Callable[[Clip], None],
                  voice_ready: Callable[[], bool] = lambda: True,
                  get_addresses: Callable[[], list] = addresses,
-                 host: str | None = None) -> None:
+                 host: str | None = None, hotspot: Callable[[], dict | None] = lambda: None) -> None:
+        self.hotspot = hotspot
         self.render, self.play = render, play
         self.voice_ready, self.get_addresses = voice_ready, get_addresses
         self.host = host or socket.gethostname()
@@ -136,7 +144,7 @@ class Announcer:
         self._busy = threading.Lock()   # one announcement at a time
 
     def text(self) -> str:
-        return announcement(self.get_addresses(), self.host)
+        return announcement(self.get_addresses(), self.host, self.hotspot())
 
     def _speech(self, text: str) -> np.ndarray:
         with self._lock:

@@ -22,6 +22,7 @@ from sleepradiopi.audio.speaker import SpeakerControl, SpeakerOutput, TeeOutput
 from sleepradiopi.broadcast.station import Station
 from sleepradiopi.config.settings import DEFAULT_PATH, load, save
 from sleepradiopi import startup_sound
+from sleepradiopi import wifi
 from sleepradiopi.updater import Updates
 from sleepradiopi.voices import STANDARD_NAME, VoiceJobs
 from sleepradiopi.io.announce import Announcer
@@ -57,6 +58,25 @@ def _make_warming_up(station: Station, ready) -> None:
         logging.info("start-up line made in the %s voice (%.1f s)", station.dj_voice, len(audio) / pcm.SAMPLE_RATE)
     except Exception:
         logging.exception("couldn't make the start-up line")
+
+
+def _hotspot() -> dict | None:
+    """The radio's own network's details, while it's a hotspot."""
+    st = wifi.status()
+    return st.get("hotspot") if st.get("mode") == "hotspot" else None
+
+
+def _announce_hotspot(announcer) -> None:
+    """When the radio becomes a hotspot (no saved network in range), say how to
+    join it, once each time -- in a new place you'd otherwise never know."""
+    was = None
+    while True:
+        mode = wifi.status().get("mode")
+        if mode == "hotspot" and was != "hotspot":
+            time.sleep(3)
+            announcer.speak()
+        was = mode
+        time.sleep(10)
 
 
 def _say_now(station: Station, control, text: str) -> None:
@@ -148,8 +168,10 @@ def main() -> None:
         # Made only once the show is playing music, so it never holds up the opening.
         on_air = lambda: bool(tts and tts.ready) and station.current_track is not None
         announcer = Announcer(station.render_speech if station._has_voice else None, control.play_clip,
-                              voice_ready=on_air)
+                              voice_ready=on_air, hotspot=_hotspot)
         announcer.start()
+        threading.Thread(target=_announce_hotspot, args=(announcer,), name="hotspot-watch",
+                         daemon=True).start()
         if station._has_voice:
             threading.Thread(target=_make_warming_up, args=(station, on_air), name="warming-up",
                              daemon=True).start()
