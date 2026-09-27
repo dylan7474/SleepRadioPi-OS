@@ -93,6 +93,10 @@ With the port:
   stops holding the cones back, and a bass boost there only makes them flap and distort.
 - Keep the back of the radio **about 5 cm from the wall**, so the port can breathe.
 
+To compare the panels, use the **Test sound** card on the radio's web page: the bass sweep (40-600 Hz, the
+frequency shown as it plays) by ear, or pink noise with a phone spectrum-analyser app held in the same place for
+each panel. Tests bypass the EQ and low cut, so they hear the box itself; keep the volume the same for both.
+
 Change `port_len` to retune: longer is lower (a 20 mm port 27 mm long is ~150 Hz; 17 mm long, ~170 Hz). Don't go
 much below 150 Hz.
 
