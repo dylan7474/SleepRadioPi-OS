@@ -191,3 +191,20 @@ def test_web_api(tmp_path: Path) -> None:
         assert err.value.code == 400
     finally:
         httpd.shutdown()
+
+
+def test_trailing_padding_after_the_tar_end_is_read(tmp_path: Path) -> None:
+    """Real archives often have lots of zero blocks after the end marker; if
+    they're left unread the unpacker gets a broken pipe and fails."""
+    src = tmp_path / "src"
+    _pack(src)
+    tar_path = tmp_path / "padded.tar"
+    with tarfile.open(tar_path, "w") as t:
+        t.add(src / "vits-piper-en_GB-x-low", arcname="v")
+    with open(tar_path, "ab") as f:
+        f.write(bytes(4 * 1024 * 1024))        # far more padding than any pipe buffer
+    subprocess.run(["gzip", "-k", str(tar_path)], check=True)
+    voices = tmp_path / "voices"
+    voices.mkdir()
+    arc = tmp_path / "padded.tar.gz"
+    assert v.install(arc, "padded", voices) == voices / "padded"

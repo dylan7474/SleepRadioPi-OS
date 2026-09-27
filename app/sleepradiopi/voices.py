@@ -97,6 +97,10 @@ def unpack(archive: Path, into: Path) -> None:
         with tarfile.open(fileobj=proc.stdout, mode="r|") as tar:
             for m in _safe_members(tar):
                 tar.extract(m, into, filter="data")
+        # tar stops at its end marker; read the padding after it too, or the
+        # unpacker dies writing into a closed pipe and looks like a failure
+        while proc.stdout.read(1 << 16):
+            pass
     finally:
         proc.stdout.close()
         if proc.wait() != 0:
