@@ -53,20 +53,22 @@ modules stay in the tree until that's decided.
 17. **Tidier web page and a password** — everyday controls up front, the
     rest under Settings; an optional password, set from the page and
     resettable over ssh.
-18. **Play next** — search the library from the page and queue songs; the
+18. **Album mode** — pick an album and it plays start to finish, introduced
+    and back-announced by the DJ.
+19. **Play next** — search the library from the page and queue songs; the
     DJ introduces them. Jingles only on the main mix.
 
 ## Next
 
-19. **Wire the knob and the RTC** — check the knob's direction and step and
+20. **Wire the knob and the RTC** — check the knob's direction and step and
     the long press on the real switch; the RTC with no network.
-20. **Album mode** — play an album start to finish.
 21. **Wi-Fi manager** — several saved networks tried in turn at start-up,
     added from the page; a hotspot with a fixed name and password when none
     is in range.
 22. **A start-up sound** — a chime and a spoken "warming up", so a slow
     start doesn't look broken.
-23. **The default voice** — download the stock voice when a radio has none.
+23. **Voices** — download the stock voice when a radio has none, and upload
+    your own voice pack from the page.
 24. **A lighter web side** — the browser stream off by default (it runs an
     MP3 encoder all the time).
 25. **Library tools** — copying/syncing music from the desktop library.
