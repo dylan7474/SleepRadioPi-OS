@@ -16,7 +16,7 @@ This repo builds everything: a small, fast-booting, read-only Linux image
 (Buildroot) that you can pull the plug on at any moment, with the radio
 software, and the case to print.
 
-![The radio: blue body, white front, back and knob, sunburst grilles and knob](hardware/case/mockup_logo_sunburst.jpg)
+![The radio: blue body, white front, back and knob, sunburst grilles and knob, blue lettering](hardware/case/mockup_logo_sunburst.jpg)
 
 ## What it does
 

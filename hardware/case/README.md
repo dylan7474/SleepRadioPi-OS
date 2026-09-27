@@ -1,6 +1,6 @@
 # SleepRadioPi box
 
-![The finished radio: blue body, white front, back and knob, sunburst grilles and knob, SLEEP RADIO lettering](mockup_logo_sunburst.jpg)
+![The finished radio: blue body, white front, back and knob, sunburst grilles and knob, SLEEP RADIO lettering in blue](mockup_logo_sunburst.jpg)
 
 > **Work in progress.** The front and back panels have been printed and fitted;
 > the full tube hasn't been printed yet, and the speaker sizes below are still
@@ -21,6 +21,8 @@ slot in the back is a small vent. An optional **bass port** back panel is below.
 | `stl/front_plate_noknob.stl` | face down | the same plate **without the knob**, for printing the knob in another colour (`part="front_plate_noknob"`) |
 | `stl/front_logo.stl`, `stl/front_plate_logo.stl` | face down | front panel with **SLEEP RADIO** engraved between the speakers (alone, and as a plate with the knob + tabs); see *Lettering* below |
 | `stl/front_logo_sunburst.stl`, `stl/front_plate_logo_sunburst.stl` | face down | the lettered front with **art deco sunburst** grilles instead of hex (`-D 'grille_style="sunburst"'`); the plate adds the **sunburst knob** and the 7 tabs, the complete matching set; see *Sunburst grilles* below |
+| `twotone/front_white_face_blue_letters.3mf` | face down (PrusaSlicer project) | the lettered sunburst front in **two colours**: white face, **blue letters** (two filament changes built in); see *Two-tone front* below |
+| `twotone/front_blue_face_white_letters.3mf` | face down (PrusaSlicer project) | the same front with a **blue face and white letters** (one filament change) |
 | `stl/rear.stl` | outside face down | back panel with the Pi posts and RTC rim |
 | `stl/rear_port.stl` | outside face down, no supports | the same back panel with a **bass port** (`-D rear_port=true`); see *Bass port* below |
 | `stl/grommet.stl` | flange down | closes the power cable slot round the cable; use it with the bass port |
@@ -99,6 +101,31 @@ each panel. Tests bypass the EQ and low cut, so they hear the box itself; keep t
 
 Change `port_len` to retune: longer is lower (a 20 mm port 27 mm long is ~150 Hz; 17 mm long, ~170 Hz). Don't go
 much below 150 Hz.
+
+## Two-tone front
+
+The lettered front prints face down with SLEEP RADIO cut 0.8 mm into the
+face, so the first 0.8 mm printed *is* the face, with letter-shaped holes,
+and whatever colour comes next shows at the bottom of the letters. One or two
+filament changes at the right layers make a two-colour front on a
+single-extruder printer:
+
+- **`twotone/front_white_face_blue_letters.3mf`** — load **white**; the
+  printer stops after the face (0.8 mm) for **blue**, and again after two
+  more layers (1.2 mm) for **white**. A white face with blue letters (as in
+  the picture). The 0.4 mm blue layer also shows as a thin line round the
+  panel's edge and in the grille slots.
+- **`twotone/front_blue_face_white_letters.3mf`** — load **blue**; one stop
+  after the face for **white**. A blue face with white letters, and a 0.8 mm
+  blue band at the front edge.
+
+They're PrusaSlicer projects (an STL can't hold a colour change) with
+PrusaSlicer's own presets: Original Prusa i3 MK2.5, **0.20mm NORMAL @MK2.5**
+(so the face is exactly 4 layers — keep 0.2 mm layers, or the changes miss
+it) and Sunlu PLA; about 3½ hours. Open one, check it's on your printer,
+slice, and print: each change is an M600, and the printer beeps for the swap.
+`python3 make-twotone.py` rebuilds them from `stl/front_logo_sunburst.stl`
+and slices each one to check the changes land on the right layers.
 
 ## Hardware
 
