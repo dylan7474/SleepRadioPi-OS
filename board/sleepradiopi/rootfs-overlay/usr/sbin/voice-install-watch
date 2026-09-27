@@ -1,0 +1,32 @@
+#!/bin/sh
+# Install voice packs for the station: the web page's "download the standard
+# voice" / "upload a voice" saves an archive in $INBOX, and the station (user
+# radio, not root) asks for it here by writing $REQ (the name, then the
+# archive). The voices live on /media, which is read-only: it's made writable
+# just for the install. The answer (a line of JSON) goes in $REQ.result.
+# Started by init: see the respawn line in /etc/inittab.
+
+REQ=/run/sleepradiopi/voice-install
+RES=$REQ.result
+INBOX=/data/radio/voice-inbox
+
+while sleep 1; do
+	[ -e $REQ ] || continue
+	name=$(sed -n 1p $REQ)
+	archive=$(sed -n 2p $REQ)
+	rm -f $REQ
+	logger -t voice-install "installing voice '$name' from $archive"
+	was_ro=
+	if awk '$2 == "/media" { print $4 }' /proc/mounts | grep -q '^ro'; then
+		was_ro=1
+		mount -o remount,rw /media
+	fi
+	mkdir -p /media/voices
+	python3 -m sleepradiopi.voices install --archive "$archive" --name "$name" \
+		--voices /media/voices --inbox $INBOX > $RES.tmp 2>/dev/null
+	sync
+	[ -n "$was_ro" ] && mount -o remount,ro /media
+	chown radio:radio $RES.tmp 2>/dev/null
+	mv $RES.tmp $RES
+	logger -t voice-install "$(cat $RES)"
+done

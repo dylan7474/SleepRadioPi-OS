@@ -73,7 +73,8 @@ software, and the case to print.
   that fades the speakers out, artist radio, play next (and, if you switch
   it on, listening in the browser too). Under ⚙ Settings: the
   speakers (stereo/mono, EQ, low cut), the DJ (voice, how often it talks,
-  hooks, jingles, news), your artist lists, birthdays, test sounds for
+  hooks, jingles, news), voices (download the standard one, upload your
+  own), your artist lists, birthdays, test sounds for
   checking speakers and wiring, the password, a settings backup you can
   download and load back, and shut down.
 - **Offline is normal.** Without the internet it keeps playing and talking;
@@ -346,5 +347,6 @@ physical needle VU meter.
 
 Build scripts, configs and the case design: GPL-2.0-or-later, the same as Buildroot. The radio
 software in `app/` is GPL-3.0-or-later (`app/LICENSE`; its offline voice engine links eSpeak-NG,
-which is GPL). The image
+which is GPL). The standard voice, downloaded by the radio when it has none, is Piper's
+"southern_english_female" (low) via sherpa-onnx; its training data is OpenSLR 83, CC BY-SA 4.0. The image
 contains many packages under their own licences; `make legal-info` lists them.

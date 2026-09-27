@@ -22,6 +22,7 @@ from sleepradiopi.audio.speaker import SpeakerControl, SpeakerOutput, TeeOutput
 from sleepradiopi.broadcast.station import Station
 from sleepradiopi.config.settings import DEFAULT_PATH, load, save
 from sleepradiopi import startup_sound
+from sleepradiopi.voices import STANDARD_NAME, VoiceJobs
 from sleepradiopi.io.announce import Announcer
 from sleepradiopi.io.knob import Knob
 from sleepradiopi.tts.worker import TtsWorker
@@ -55,6 +56,32 @@ def _make_warming_up(station: Station, ready) -> None:
         logging.info("start-up line made in the %s voice (%.1f s)", station.dj_voice, len(audio) / pcm.SAMPLE_RATE)
     except Exception:
         logging.exception("couldn't make the start-up line")
+
+
+def _fetch_standard_voice(jobs: VoiceJobs) -> None:
+    """A radio with no voice at all (e.g. a fresh card): get the standard one
+    once it's online. Tries again every minute until it works."""
+    logging.warning("no voice packs: downloading the standard voice when online")
+    while True:
+        try:
+            jobs.download_standard(wait=True)
+        except ValueError:            # one is already going (e.g. started from the page)
+            pass
+        if jobs.status()["state"] == "done":
+            return
+        time.sleep(60)
+
+
+def _voice_installed(station: Station, config_file: Path, control, name: str) -> None:
+    """A new voice is there. If the radio had no working voice, use it (restart)."""
+    from sleepradiopi.config.settings import save_setting
+    from sleepradiopi.web.server import RESTART_ENV, _restart_soon
+    if station.dj_voice and station.dj_voice in station.voices() and station.dj_voice != name:
+        return                         # keep the voice in use; the page can switch
+    save_setting(config_file, "broadcast_voice", name)
+    logging.info("using the new voice %s", name)
+    if os.environ.get(RESTART_ENV):
+        _restart_soon(control)
 
 
 def main() -> None:
@@ -106,7 +133,11 @@ def main() -> None:
         control.play()   # a bedside radio plays as soon as it's powered
     else:
         station = Station(cfg, tts, stream)
-    serve(station, stream, args.port or settings.http_port, control, args.config, announcer)
+    jobs = VoiceJobs(voices, Path.home() / "voice-inbox",
+                     on_installed=lambda name: _voice_installed(station, args.config, control, name))
+    if not station.voices():
+        threading.Thread(target=_fetch_standard_voice, args=(jobs,), name="voice-fetch", daemon=True).start()
+    serve(station, stream, args.port or settings.http_port, control, args.config, announcer, jobs)
 
 
 if __name__ == "__main__":

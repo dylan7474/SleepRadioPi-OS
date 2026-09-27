@@ -90,6 +90,12 @@
   #listArtists input { accent-color: var(--accent); }
   #listDelete { border-color: var(--live); color: var(--live); }
   #bdList li { align-items: center; }
+  #voiceList li { align-items: center; }
+  #voiceUpload input { font: inherit; font-size: .95rem; color: var(--text); background: var(--bg);
+    border: 1px solid var(--line); border-radius: .5rem; padding: .45rem .5rem; min-width: 0; }
+  #voiceName { flex: 1 1 8rem; }
+  #voiceFile { flex: 2 1 12rem; }
+  #voiceNote.bad { color: var(--live); }
   #bdList .who { flex: 1; min-width: 0; overflow-wrap: anywhere; }
   #bdList button { padding: .25rem .6rem; font-size: .85rem; }
   #bdForm { display: flex; flex-wrap: wrap; gap: .5rem; margin-top: .75rem; }
@@ -299,6 +305,24 @@
     <p id="djNote" class="muted" style="margin:.6rem 0 0;font-size:.85rem">Changes are heard from the next gap
       between songs. Jingles only play on the main mix (all artists). Changing the voice restarts the radio
       (about a minute): only one voice fits in its memory.</p>
+  </section>
+
+  <section id="voicesCard" class="card">
+    <h2>Voices</h2>
+    <ul id="voiceList"></ul>
+    <div class="row">
+      <button id="getStandard" type="button" hidden>Download the standard voice</button>
+    </div>
+    <form id="voiceUpload" class="row" autocomplete="off">
+      <input id="voiceName" placeholder="Name, e.g. mine" maxlength="32" pattern="[a-z0-9][a-z0-9_-]*" aria-label="Voice name" required>
+      <input id="voiceFile" type="file" accept=".zip,.tar,.gz,.tgz,.bz2,.tbz2,.xz,.txz" aria-label="Voice archive" required>
+      <button type="submit">Upload</button>
+    </form>
+    <div class="bar" id="voiceBarBox" hidden><div id="voiceBar"></div></div>
+    <p id="voiceNote" class="muted" style="margin:.5rem 0 0;font-size:.85rem">Add a voice: an archive (.zip, .tar.gz,
+      .tar.bz2 or .tar.xz) of a Piper / sherpa-onnx voice folder (a .onnx model, tokens.txt and espeak-ng-data).
+      Then pick it as the DJ's voice above.</p>
+    <p id="voiceCredit" class="muted" style="margin:.4rem 0 0;font-size:.8rem"></p>
   </section>
 
   <section id="lists" class="card">
@@ -763,6 +787,66 @@ document.querySelectorAll("#djStartup button").forEach(b => b.onclick = () => se
   b.dataset.v === "true" ? "At power-on: a chime, then the DJ says it's warming up." : "Silent at power-on."));
 document.querySelectorAll("#djNews button").forEach(b => b.onclick = () => setDj({ news_enabled: b.dataset.v === "true" }, `News ${b.textContent.toLowerCase()}.`));
 
+// Voices: what's there, download the standard one, upload your own. A job
+// (download / upload / install) is followed every second until it ends.
+let voiceTimer = null;
+function voiceNote(text, bad) { $("voiceNote").textContent = text; $("voiceNote").classList.toggle("bad", !!bad); }
+function showVoices(v) {
+  $("voiceList").replaceChildren(...(v.voices.length ? v.voices.map(n => {
+    const li = document.createElement("li");
+    const t = document.createElement("span"); t.className = "who";
+    t.textContent = n[0].toUpperCase() + n.slice(1) + (n === v.current ? " — the DJ's voice now" : "");
+    li.append(t);
+    return li;
+  }) : [Object.assign(document.createElement("li"), { className: "muted", textContent: "No voices yet: the DJ is silent." })]));
+  $("getStandard").hidden = v.has_standard;
+  $("voiceCredit").textContent = v.credit;
+  const job = v.job, busy = ["downloading", "uploading", "installing"].includes(job.state);
+  $("voiceBarBox").hidden = !busy || job.progress === undefined;
+  if (job.progress !== undefined) $("voiceBar").style.width = Math.round(job.progress * 100) + "%";
+  if (job.state === "downloading") voiceNote(`Downloading the standard voice… ${Math.round(job.progress * 100)}%`);
+  else if (job.state === "installing") voiceNote(`Installing “${job.name}”… (a minute or so)`);
+  else if (job.state === "done") voiceNote(`“${job.name}” is ready. Pick it as the DJ's voice above if it isn't already.`);
+  else if (job.state === "error") voiceNote(job.message, true);
+  if (busy && !voiceTimer) voiceTimer = setInterval(loadVoices, 1000);
+  if (!busy && voiceTimer) { clearInterval(voiceTimer); voiceTimer = null; if (job.state === "done") loadDj(); }
+}
+async function loadVoices() {
+  try { showVoices(await (await fetch("/api/voices", { cache: "no-store" })).json()); } catch {}
+}
+$("getStandard").onclick = async () => {
+  try {
+    const r = await fetch("/api/voices/standard", { method: "POST" });
+    const reply = await r.json();
+    if (!r.ok) return voiceNote(reply.error, true);
+    showVoices(reply);
+  } catch { voiceNote("Couldn't reach the radio.", true); }
+};
+$("voiceUpload").onsubmit = e => {
+  e.preventDefault();
+  const file = $("voiceFile").files[0], name = $("voiceName").value.trim().toLowerCase();
+  if (!file) return;
+  // XMLHttpRequest, for the upload's progress
+  const x = new XMLHttpRequest();
+  x.open("POST", `/api/voices/upload?name=${encodeURIComponent(name)}&file=${encodeURIComponent(file.name)}`);
+  x.setRequestHeader("Content-Type", "application/octet-stream");
+  $("voiceBarBox").hidden = false;
+  x.upload.onprogress = ev => {
+    if (!ev.lengthComputable) return;
+    $("voiceBar").style.width = Math.round(100 * ev.loaded / ev.total) + "%";
+    voiceNote(`Uploading “${name}”… ${Math.round(100 * ev.loaded / ev.total)}%`);
+  };
+  x.onload = () => {
+    let reply = {};
+    try { reply = JSON.parse(x.responseText); } catch {}
+    if (x.status !== 200) { $("voiceBarBox").hidden = true; return voiceNote("Not uploaded: " + (reply.error || x.status) + ".", true); }
+    $("voiceFile").value = "";
+    showVoices(reply);
+  };
+  x.onerror = () => { $("voiceBarBox").hidden = true; voiceNote("The upload was interrupted.", true); };
+  x.send(file);
+};
+
 // Birthdays: kept on the radio (and in the saved settings file).
 const MONTHS = ["January", "February", "March", "April", "May", "June", "July", "August",
                 "September", "October", "November", "December"];
@@ -1061,7 +1145,7 @@ function showView() {
   $("viewMain").hidden = settings;
   $("viewSettings").hidden = !settings;
   $("gear").hidden = settings;
-  if (settings) { fillListPick(); showListEditor(); loadAuth(); }
+  if (settings) { fillListPick(); showListEditor(); loadAuth(); loadVoices(); }
   window.scrollTo(0, 0);
 }
 window.addEventListener("hashchange", () => { if (started) showView(); });

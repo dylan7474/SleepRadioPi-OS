@@ -39,3 +39,5 @@ grep -q sleepradiopi-station "${TARGET_DIR}/etc/inittab" ||
 # Shut down when the station's web page asks (runs as root; see the script).
 grep -q power-request-watch "${TARGET_DIR}/etc/inittab" ||
 	echo "::respawn:/usr/sbin/power-request-watch" >> "${TARGET_DIR}/etc/inittab"
+grep -q voice-install-watch "${TARGET_DIR}/etc/inittab" ||
+	echo "::respawn:/usr/sbin/voice-install-watch" >> "${TARGET_DIR}/etc/inittab"

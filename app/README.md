@@ -255,6 +255,16 @@ The cards:
   often it talks (before every song, or every 2, 3 or 5), 70s hooks on/off,
   jingles (off or every 2–8 songs), news on/off, and the start-up sound
   (chime or silent). All but the voice are heard from the next gap.
+- **Voices** — the voice packs on the radio; *Download the standard voice*
+  (if it isn't there) and *Upload* your own (an archive — .zip, .tar.gz,
+  .tar.bz2 or .tar.xz — of a Piper / sherpa-onnx voice folder: a .onnx
+  model, tokens.txt, espeak-ng-data; the model is renamed model.onnx). Then
+  pick it on the DJ card. A radio with **no voice at all** downloads the
+  standard one by itself once it's online, and switches to it. On the
+  appliance image the voices are on the read-only media partition: the
+  station saves the archive under `~/voice-inbox` and a root helper
+  (`voice-install-watch`, via `SLEEPRADIOPI_VOICE_REQUEST`) installs it
+  (`sleepradiopi/voices.py`).
 - **Birthdays** — starts empty; add a name, day and month, and optionally
   the year born. On the day, once the clock is known and outside the news
   quiet hours, the DJ wishes them a happy birthday first thing in a gap
@@ -311,6 +321,9 @@ everything but the page itself and the login needs the session cookie
 | `POST /api/knob` | `{"press": "short" \| "long"}` — the knob's switch |
 | `POST /api/skip` | Skip what's on air (track, link, jingle or bulletin) |
 | `GET` / `POST /api/dj` | The DJ settings (and the voices there are) / any of `{"voice", "chattiness", "dj_hooks", "jingle_every", "news_enabled", "startup_sound"}` |
+| `GET /api/voices` | The voices, the one in use, and any download/upload/install under way |
+| `POST /api/voices/standard` | Download and install the standard voice |
+| `POST /api/voices/upload?name=N&file=F` | The archive as the body (up to 400 MB); installed in the background |
 | `GET /api/search?q=` | Up to 40 tracks and 20 albums matching every word, each with an `id` |
 | `POST /api/album` / `/api/album/stop` | `{"id": n}` from the search's `albums` — play it next, start to finish / drop the rest of it |
 | `POST /api/request` | `{"id": n}` — play that track next; the status's `requests` lists what's queued |
@@ -331,6 +344,10 @@ binding that runs unchanged on Raspberry Pi ARM, and ffmpeg does the audio
 work. See `docs/SCOPE.md` for the full stack rationale.
 
 ## License
+
+The standard voice (downloaded, not in this repo) is Piper's
+"southern_english_female" (low), packaged by sherpa-onnx; its training
+data is [OpenSLR 83](http://www.openslr.org/83/), CC BY-SA 4.0.
 
 GPL-3.0-or-later — see [`NOTICE`](NOTICE) for why (short version: the offline
 TTS engine statically links eSpeak-NG, which is GPL).

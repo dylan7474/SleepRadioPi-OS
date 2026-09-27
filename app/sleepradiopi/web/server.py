@@ -23,6 +23,7 @@ from sleepradiopi.broadcast.station import Station
 from sleepradiopi.config.auth import COOKIE, SESSION_S, Auth
 from sleepradiopi.config.clock import clock_trusted
 from sleepradiopi.io.announce import Clip
+from sleepradiopi import voices as voices_mod
 from sleepradiopi.config import backup
 from sleepradiopi.config.settings import save_setting
 from sleepradiopi.config.power import can_power_off, request_power_off
@@ -53,7 +54,7 @@ def _restart_soon(speaker) -> None:
 
 
 def make_handler(station: Station, output: Mp3Output, speaker=None,
-                 config_file: Path | None = None, announcer=None):
+                 config_file: Path | None = None, announcer=None, voice_jobs=None):
     auth = Auth(config_file)
     open_paths = {"/", "/index.html", "/api/auth", "/api/login"}
 
@@ -165,6 +166,8 @@ def make_handler(station: Station, output: Mp3Output, speaker=None,
                 self._save_settings()
             elif path == "/api/birthdays":
                 self._send(json.dumps(self._birthdays_state()).encode(), "application/json")
+            elif path == "/api/voices":
+                self._send(json.dumps(self._voices_state()).encode(), "application/json")
             elif path == "/api/dj":
                 self._send(json.dumps(self._dj_state()).encode(), "application/json")
             elif path == "/api/search":
@@ -223,6 +226,16 @@ def make_handler(station: Station, output: Mp3Output, speaker=None,
                 self._set_dj()
             elif path == "/api/stream":
                 self._set_stream()
+            elif path == "/api/voices/standard" and voice_jobs is not None:
+                self._body()
+                try:
+                    voice_jobs.download_standard()
+                except ValueError as e:
+                    self._error(str(e))
+                    return
+                self._send(json.dumps(self._voices_state()).encode(), "application/json")
+            elif path == "/api/voices/upload" and voice_jobs is not None:
+                self._upload_voice()
             elif path == "/api/birthdays/hear":
                 self._hear_birthday()
             else:
@@ -468,6 +481,27 @@ def make_handler(station: Station, output: Mp3Output, speaker=None,
             self._send(json.dumps({**reply, "album": station.album_status(),
                                    "requests": station.requests()}).encode(), "application/json")
 
+        def _voices_state(self) -> dict:
+            there = station.voices()
+            return {"voices": there, "current": station.dj_voice,
+                    "job": voice_jobs.status() if voice_jobs is not None else {"state": "idle"},
+                    "standard_name": voices_mod.STANDARD_NAME,
+                    "has_standard": voices_mod.STANDARD_NAME in there,
+                    "credit": voices_mod.STANDARD_CREDIT}
+
+        def _upload_voice(self) -> None:
+            """POST /api/voices/upload?name=N&file=F with the archive as the body."""
+            q = parse_qs(urlparse(self.path).query)
+            length = int(self.headers.get("Content-Length", 0) or 0)
+            try:
+                voice_jobs.receive(q.get("name", [""])[0], q.get("file", [""])[0], length, self.rfile.read)
+            except ValueError as e:
+                if length and not self.rfile.closed:
+                    self.close_connection = True       # don't read a big body we've refused
+                self._error(str(e))
+                return
+            self._send(json.dumps(self._voices_state()).encode(), "application/json")
+
         def _set_stream(self) -> None:
             """POST /api/stream {"enabled": bool}: listening in a browser. Saved."""
             try:
@@ -613,9 +647,9 @@ def make_handler(station: Station, output: Mp3Output, speaker=None,
 
 
 def serve(station: Station, output: Mp3Output, port: int, speaker=None,
-          config_file: Path | None = None, announcer=None) -> None:
+          config_file: Path | None = None, announcer=None, voice_jobs=None) -> None:
     server = ThreadingHTTPServer(("0.0.0.0", port),
-                                 make_handler(station, output, speaker, config_file, announcer))
+                                 make_handler(station, output, speaker, config_file, announcer, voice_jobs))
     server.daemon_threads = True
     log.info("Sleep Radio on http://0.0.0.0:%d/", port)
     server.serve_forever()
