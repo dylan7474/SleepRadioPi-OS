@@ -17,6 +17,10 @@ arch_off = 15;           // arch circle centres at +-this: a slightly pointed ar
 
 cabinet_colour = "#2f6fd6";   // blue, as the first radio
 trim_colour    = "#fbfbf8";   // white face, mouldings, knob
+face_colour    = trim_colour; // the face plate and fretwork
+moulding_colour = trim_colour; // mouldings, pilasters, dial bezel, plinth line
+plaque_colour  = trim_colour; // the name plaque
+knob_colour    = trim_colour;
 cloth_colour   = "#c9a86a";   // gold grille cloth
 meter_colour   = "#f3e2b8";   // warm, backlit meter face
 letter_colour  = "#2f6fd6";
@@ -74,18 +78,20 @@ module cabinet() {
     color(cabinet_colour) yext(0, D) outline2d();
     // plinth
     color(cabinet_colour) translate([-W / 2 - 8, -14, 0]) cube([W + 16, D + 22, 14]);
-    color(trim_colour) translate([-W / 2 - 8, -14.5, 10]) cube([W + 16, 1, 3]);   // a thin white line along the plinth
+    color(moulding_colour) translate([-W / 2 - 8, -14.5, 10]) cube([W + 16, 1, 3]);   // a thin white line along the plinth
 }
 
 module face() {
-    color(trim_colour) {
+    color(face_colour) {
         // the face plate, with the grille opening cut out
         yext(-3, 0) difference() { inset2d(10); translate([0, 14]) grille_area2d(); translate([-W, -1]) square([2 * W, 24]); }
+        // the fretwork, flush with the face
+        translate([0, 0, 14]) yext(-4, 0) fret2d();
+    }
+    color(moulding_colour) {
         // stepped mouldings following the arch
         yext(-6, -3) difference() { band2d(10, 18); translate([-W, -1]) square([2 * W, 24]); }
         yext(-8, -6) difference() { band2d(24, 29); translate([-W, -1]) square([2 * W, 24]); }
-        // the fretwork, flush with the face
-        translate([0, 0, 14]) yext(-4, 0) fret2d();
     }
     // grille cloth behind it
     color(cloth_colour) translate([0, 0, 14]) yext(-1.4, -0.9) offset(delta = 2) grille_area2d();
@@ -93,7 +99,7 @@ module face() {
 
 // Fluted pilasters either side of the lower face.
 pil_x = 108;
-module pilasters() color(trim_colour) for (sx = [-1, 1]) translate([sx * pil_x, 0, 0]) {
+module pilasters() color(moulding_colour) for (sx = [-1, 1]) translate([sx * pil_x, 0, 0]) {
     difference() {
         translate([-11, -10, 34]) cube([22, 10, 150]);
         for (fx = [-6, 0, 6]) translate([fx, -10, 44]) rotate([-90, 0, 0])
@@ -106,7 +112,7 @@ module pilasters() color(trim_colour) for (sx = [-1, 1]) translate([sx * pil_x, 
 
 // Name plaque between the grille and the meter.
 module plaque() {
-    color(trim_colour) translate([0, -8, 157]) rotate([90, 0, 0]) linear_extrude(4)
+    color(plaque_colour) translate([0, -8, 157]) rotate([90, 0, 0]) linear_extrude(4)
         offset(r = 3) square([128, 18], center = true);
     color(letter_colour) translate([0, -12.4, 157]) rotate([90, 0, 0]) linear_extrude(0.8)
         text("SLEEP  RADIO", size = 13, font = font, halign = "center", valign = "center", spacing = 1.15);
@@ -115,7 +121,7 @@ module plaque() {
 // The VU meter in a stepped dial window.
 meter_z = 106;
 module dial() {
-    color(trim_colour) translate([0, 0, meter_z]) {
+    color(moulding_colour) translate([0, 0, meter_z]) {
         yext(-6, 0) difference() { offset(r = 6) square([88, 60], center = true); offset(r = 4) square([66, 46], center = true); }
         yext(-10, -6) difference() { offset(r = 4) square([76, 52], center = true); offset(r = 4) square([66, 46], center = true); }
     }
@@ -142,7 +148,7 @@ module dial() {
 }
 
 // One knob below the dial: stepped, fluted, with a pointer.
-module knob() color(trim_colour) translate([0, -8, 47]) rotate([90, 0, 0]) {
+module knob() color(knob_colour) translate([0, -8, 47]) rotate([90, 0, 0]) {
     difference() {
         union() {
             cylinder(d = 50, h = 6);

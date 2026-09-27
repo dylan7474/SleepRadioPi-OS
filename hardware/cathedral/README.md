@@ -22,12 +22,28 @@ the meter are here to measure.
 
 ![Front view](concept_front.jpg)
 
-**In wood-look filament:** a walnut cabinet with a cream face, the classic
-1930s finish. Print the hood and plinth in wood-filled PLA or Polymaker
-PolyWood, and the face, fretwork, bezel and knob in cream PLA for crisp detail.
+**All wood, the authentic look:**
+- a dark walnut cabinet and mouldings;
+- a lighter figured-wood face and fretwork;
+- a brass name plaque;
+- a brown "Bakelite" knob.
 
-![Concept in walnut and cream](concept_walnut.jpg)
+![Concept in wood](concept_wood.jpg)
+
+![Concept in wood, front](concept_wood_front.jpg)
+
+**Filament:** Prusament Woodfill, with real wood particles, sold by Prusa. It prints
+on a standard 0.4 mm brass nozzle, needs no drying, and can be sanded and
+stained. PrusaSlicer's `Prusament Woodfill` profile works on the MK2.5.
+- **Chocolate Brown** for the cabinet, mouldings, plinth and knob.
+- **Pastel Brown** or **Linden Light** for the face and fretwork.
+- It's more brittle than plain PLA, so the screw bosses and clips will be
+  designed thicker.
+- It sticks very hard to a PEI bed: use glue stick as a release layer.
+
+(Earlier colour studies: `concept_walnut*.jpg`, a walnut cabinet with a cream
+face.)
 
 `concept.scad` is the picture's model (not printable parts), and
-`./make-concept.sh` renders the pictures (`WALNUT=1` for the walnut ones) (needs OpenSCAD + ImageMagick).
+`./make-concept.sh` renders the pictures (`WOOD=1` for the all-wood ones, `WALNUT=1` for walnut and cream) (needs OpenSCAD + ImageMagick).
 Colours and sizes are variables at the top.

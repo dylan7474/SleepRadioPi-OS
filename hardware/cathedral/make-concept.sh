@@ -3,7 +3,8 @@
 # concept_front.jpg: the radio cut out from a flat render and placed on a soft
 # studio backdrop with a shadow, as the box's make-mockup.sh does.
 # WALNUT=1: a walnut cabinet with a cream face (wood-look filament), as
-# concept_walnut.jpg and concept_walnut_front.jpg.
+# concept_walnut.jpg and concept_walnut_front.jpg. WOOD=1: all wood (the
+# authentic look), as concept_wood.jpg and concept_wood_front.jpg.
 # Needs openscad + ImageMagick.
 set -e
 cd "$(dirname "$0")"
@@ -29,6 +30,14 @@ set --
 if [ -n "$WALNUT" ]; then
 	name=concept_walnut
 	set -- -D 'cabinet_colour="#5b3a24"' -D 'trim_colour="#efe5cf"' -D 'letter_colour="#5b3a24"' -D 'cloth_colour="#a8834e"'
+fi
+if [ -n "$WOOD" ]; then
+	# All wood, as the 1930s sets: a dark walnut cabinet and mouldings, a
+	# lighter figured-wood face and fretwork, a brass name plaque with dark
+	# letters and a brown "Bakelite" knob.
+	name=concept_wood
+	set -- -D 'cabinet_colour="#4e2f1c"' -D 'moulding_colour="#4e2f1c"' -D 'face_colour="#9a6a3f"' \
+		-D 'plaque_colour="#b8913f"' -D 'letter_colour="#2b1a10"' -D 'knob_colour="#3a2416"' -D 'cloth_colour="#c2a36e"'
 fi
 render ${CAM:-0,100,175,80,0,22,1350} $name.jpg "$@"
 render ${CAM_FRONT:-0,0,175,84,0,9,1250} ${name}_front.jpg "$@"
