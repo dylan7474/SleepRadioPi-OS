@@ -83,8 +83,12 @@ software, and the case to print.
   real-time clock module.
 - **Pull the plug any time.** The system and the music are read-only, logs
   live in RAM, and settings are written atomically, so a power cut can't
-  corrupt anything. Updates go over Wi-Fi into a spare system slot, with the
-  old one kept to fall back on.
+  corrupt anything.
+- **Updates from the web page.** Settings → Updates checks for a new release
+  on GitHub and installs it into a spare system slot while the music plays;
+  the radio restarts, and the DJ says it's been updated. If a new version
+  doesn't come on air within 5 minutes, the radio goes back to the old one
+  by itself (and says so).
 
 ## The appliance image
 
@@ -141,7 +145,26 @@ image, and update the Pi:
 make sleepradiopi-dirclean && make && scripts/update.sh
 ```
 
-### Updating over Wi-Fi
+### Releases, and updating from the web page
+
+`scripts/release.sh 1.2.0 --notes "What's new."` builds the image with that
+version in it and publishes a GitHub release (tag `v1.2.0`) with the system
+image, `config.txt` and a `manifest.json` of sizes and SHA-256s (and the
+kernel's). `--sdcard` also attaches the whole card image for new builds;
+`--local` builds the files without tagging or publishing, to test an update
+from a local web server (set `"update_source": "http://<PC>:8765/manifest.json"`
+in the radio's config).
+
+A radio updates itself from its page (Settings → Updates): the station asks
+the root helper `update-watch` (`app/sleepradiopi/updater.py`), which
+refuses a kernel change, streams the image into the spare root slot,
+checks it against the SHA-256 (and reads it back from the card), updates
+`config.txt` if needed, switches `cmdline.txt` and reboots. The station
+confirms the update once music plays; if it hasn't within 5 minutes,
+`S98update-watchdog` switches back to the old slot and reboots. Logs:
+`grep update /var/log/messages`.
+
+### Updating over Wi-Fi from the PC
 
 ```sh
 make && scripts/update.sh
@@ -318,7 +341,7 @@ anything else starts.
 | `board/sleepradiopi/rootfs-overlay/` | Files copied into the root filesystem |
 | `board/sleepradiopi/linux.fragment` | Kernel options on top of `bcm2711_defconfig` (squashfs built in; unused drivers trimmed) |
 | `package/` | `python-sherpa-onnx` (PyPI wheels) and `sleepradiopi` (installs `app/`) |
-| `scripts/` | `flash.sh`, `provision-media.sh`, `update.sh`, `speaker-mode.sh`, `web-password.sh` (run on the PC) |
+| `scripts/` | `flash.sh`, `provision-media.sh`, `update.sh`, `release.sh`, `speaker-mode.sh`, `web-password.sh` (run on the PC) |
 | `hardware/case/` | The 3D-printed case (OpenSCAD source, STLs, assembly notes) |
 | `hardware/wiring/` | The wiring diagram (`wiring.svg`) and the script that draws it |
 

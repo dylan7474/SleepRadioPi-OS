@@ -53,30 +53,29 @@ modules stay in the tree until that's decided.
 17. **Tidier web page and a password** — everyday controls up front, the
     rest under Settings; an optional password, set from the page and
     resettable over ssh.
-18. **Voices** — download the standard voice (automatically on a radio with
+18. **Updates from GitHub** — releases made by scripts/release.sh, installed
+    from the page into the spare slot; the DJ says how it's going; a new
+    version that doesn't come on air undoes itself.
+19. **Voices** — download the standard voice (automatically on a radio with
     none), and upload your own voice pack from the page.
-19. **A wiring diagram** — `hardware/wiring/wiring.svg`: the header, MiniAmp,
+20. **A wiring diagram** — `hardware/wiring/wiring.svg`: the header, MiniAmp,
     knob, RTC, speakers and power in one picture.
-20. **A remote control, not a player** — listening in a browser is off unless
+21. **A remote control, not a player** — listening in a browser is off unless
     switched on in Settings, so no MP3 encoder runs.
-21. **A start-up sound** — a chime about 10 s after power-on, then the DJ
+22. **A start-up sound** — a chime about 10 s after power-on, then the DJ
     saying it's warming up; the first song comes ~25 s sooner too.
-22. **Album mode** — pick an album and it plays start to finish, introduced
+23. **Album mode** — pick an album and it plays start to finish, introduced
     and back-announced by the DJ.
-23. **Play next** — search the library from the page and queue songs; the
+24. **Play next** — search the library from the page and queue songs; the
     DJ introduces them. Jingles only on the main mix.
 
 ## Next
 
-24. **Wire the knob and the RTC** — check the knob's direction and step and
+25. **Wire the knob and the RTC** — check the knob's direction and step and
     the long press on the real switch; the RTC with no network.
-25. **Wi-Fi manager** — several saved networks tried in turn at start-up,
+26. **Wi-Fi manager** — several saved networks tried in turn at start-up,
     added from the page; a hotspot with a fixed name and password when none
     is in range.
-26. **Library tools** — copying/syncing music from the desktop library.
-27. **A needle VU meter** — a physical meter driven from a PWM pin, with the
+27. **Library tools** — copying/syncing music from the desktop library.
+28. **A needle VU meter** — a physical meter driven from a PWM pin, with the
     Android app's ballistics (see the appliance image's roadmap).
-28. **Updates from GitHub** — publish each image as a GitHub release; the
-    radio checks and installs it from the page (A/B slots, so a bad one can
-    be undone), saying how it's going ("Downloading the update…",
-    "Update installed").

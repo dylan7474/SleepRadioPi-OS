@@ -41,7 +41,7 @@ fi
 
 echo "building $VERSION ..."
 make sleepradiopi-dirclean >/dev/null
-SLEEPRADIOPI_VERSION="$VERSION" make
+SLEEPRADIOPI_RELEASE="$VERSION" make   # (not _VERSION: that is the package's own make variable)
 IMAGES=output/images
 [ "$(cat output/target/etc/sleepradiopi-version)" = "$VERSION" ] || { echo "the version didn't make it into the image" >&2; exit 1; }
 

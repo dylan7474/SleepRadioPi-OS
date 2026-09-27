@@ -188,6 +188,7 @@ Most of these are set from the web page; the rest are in the config file.
 | `speaker_enabled` | `false` | Play through the sound card from start-up (the appliance turns it on). Off by default so a desktop test run doesn't play out loud. |
 | `speaker_device` | `"default"` | ALSA device. |
 | `speaker_volume` | `30` | Volume on the very first start; after that the knob's last setting. |
+| `update_source` | `github:dylan7474/SleepRadioPi-OS` | Where updates come from, or a manifest.json URL (for testing). |
 | `web_stream` | `false` | Listen in a browser too (always on without a speaker). |
 | `speaker_mono` | `false` | Both speakers play left + right mixed (the web stream stays stereo). |
 | `speaker_eq` | flat | `{"bass", "mid", "treble"}` in dB, -12 to 12. |
@@ -293,6 +294,11 @@ The cards:
   and a **phase check** (every 3 s: both speakers the same, then the right
   one inverted — if the inverted part sounds fuller, a speaker is wired the
   wrong way round, and vocals would vanish in stereo but not in mono).
+- **Updates** — the radio's version; *Check for updates* looks at the latest
+  GitHub release (`update_source`) and *Install* puts it on (see the
+  top-level README): the music carries on while it downloads, the DJ says
+  when it's restarting and afterwards that it's been updated -- or, if the
+  new version didn't come on air, that it went back.
 - **Backup** — *Save settings* downloads everything above plus the volume
   as one JSON file; *Load settings* puts it back (after re-flashing the
   card, or onto a second radio). The file is checked before anything is
@@ -324,6 +330,8 @@ everything but the page itself and the login needs the session cookie
 | `GET /api/voices` | The voices, the one in use, and any download/upload/install under way |
 | `POST /api/voices/standard` | Download and install the standard voice |
 | `POST /api/voices/upload?name=N&file=F` | The archive as the body (up to 400 MB); installed in the background |
+| `GET /api/update` | The radio's version, any update found, and one under way |
+| `POST /api/update/check` / `/api/update/install` | Look for a newer release / install it (the root helper does the work) |
 | `GET /api/search?q=` | Up to 40 tracks and 20 albums matching every word, each with an `id` |
 | `POST /api/album` / `/api/album/stop` | `{"id": n}` from the search's `albums` — play it next, start to finish / drop the rest of it |
 | `POST /api/request` | `{"id": n}` — play that track next; the status's `requests` lists what's queued |
