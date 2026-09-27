@@ -10,7 +10,7 @@
 //
 //   openscad --backend=manifold -o stl/twotone_test.stl twotone_test.scad
 
-tile   = [50, 16, 1.6];   // 1.6 mm: just over the second colour change (1.4 mm)
+tile   = [50, 16, 2.4];   // 2.4 mm, like the grille: 4 face + 4 blue + 4 white layers
 depth  = 0.8;             // = logo_depth in sleepradiopi_box.scad (4 layers at 0.2 mm)
 size   = [36, 7.2];       // one line of the front's lettering (logo_w, logo_line_h())
 font   = "Liberation Sans:style=Bold";   // = logo_font

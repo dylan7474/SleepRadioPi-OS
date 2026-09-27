@@ -112,39 +112,30 @@ filament changes at the right layers make a two-colour front on a
 single-extruder printer:
 
 - **`twotone/front_white_face_blue_letters.3mf`** — load **white**; the
-  printer pauses after the face (0.8 mm, 4 layers) for **blue**, and again
-  after two more layers (1.2 mm) for **white**. A white face with blue letters (as in
-  the picture). The 0.4 mm blue layer also shows as a thin line round the
-  panel's edge and in the grille slots.
-- **`twotone/front_blue_face_white_letters.3mf`** — load **blue**; one pause
-  after the face for **white**. A blue face with white letters, and a 0.8 mm
+  printer changes to **blue** after the face (0.8 mm, 4 layers), and back to
+  **white** after 4 more layers (1.6 mm). A white face with blue letters (as
+  in the picture). The letters' 4 blue layers keep them bold (one layer looked
+  washed out); the 0.8 mm blue layer also shows as a line round the panel's
+  edge and in the grille slots.
+- **`twotone/front_blue_face_white_letters.3mf`** — load **blue**; one change
+  after the face to **white**. A blue face with white letters, and a 0.8 mm
   blue band at the front edge.
 
 **Try it first:** `twotone/test_white_face_blue_letters.3mf` (or
-`test_blue_face_white_letters.3mf`) prints a small tile with "SLEEP" at the
-real size and depth and the same changes in about 9 minutes, so you can check
-the swaps and how the letters come out before the 3½-hour front.
+`test_blue_face_white_letters.3mf`) prints a small 2.4 mm tile with "SLEEP" at
+the real size and depth and the same changes in about 12 minutes, so you can
+check the swaps and how the letters come out before the 3½-hour front.
 
 They're PrusaSlicer projects (an STL can't hold a colour change) with
 PrusaSlicer's own presets: Original Prusa i3 MK2.5, **0.20mm NORMAL @MK2.5**
 (so the face is exactly 4 layers — keep 0.2 mm layers, or the changes miss
 it) and Sunlu PLA; about 3½ hours. Open one, check it's on your printer,
-slice, and print.
-
-**At each pause** the printer parks and the LCD says *Load BLUE, Resume* (or
-WHITE). It waits for you — nothing is automatic, so take your time:
-
-1. LCD menu → **Unload filament**; pull the old colour out.
-2. LCD menu → **Load filament**; feed in the new colour. When it asks whether
-   the colour is clear, answer **No** to purge more until it is (or load
-   again if it didn't grip first time).
-3. Clean the purged blob off the nozzle, then LCD menu → **Resume print**.
-
-(They're pauses, M601, rather than M600 colour changes, which run the unload
-and load themselves and carry on — hard to rescue if the new filament doesn't
-feed first time.) `python3 make-twotone.py` rebuilds them (from
+slice, and print. At each change (M600) the printer unloads, beeps for the new
+filament, loads it and asks on the LCD whether the colour is clear — answer
+**No** to purge more until it's the clean new colour, or the first layers come
+out paler. `python3 make-twotone.py` rebuilds them (from
 `stl/front_logo_sunburst.stl` and `stl/twotone_test.stl`) and slices each one
-to check every pause comes at the start of the right layer.
+to check every change comes at the start of the right layer.
 
 ## Hardware
 
