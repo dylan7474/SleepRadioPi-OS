@@ -208,3 +208,14 @@ def test_trailing_padding_after_the_tar_end_is_read(tmp_path: Path) -> None:
     voices.mkdir()
     arc = tmp_path / "padded.tar.gz"
     assert v.install(arc, "padded", voices) == voices / "padded"
+
+
+def test_a_damaged_archive_says_so(tmp_path: Path) -> None:
+    arc = _archive(tmp_path, ".tar.gz")
+    data = arc.read_bytes()
+    arc.write_bytes(data[: len(data) // 2])       # cut off half way
+    voices = tmp_path / "voices"
+    voices.mkdir()
+    with pytest.raises(ValueError, match="damaged"):
+        v.install(arc, "cut", voices)
+    assert list(voices.iterdir()) == []

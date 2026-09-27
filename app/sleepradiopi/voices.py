@@ -92,7 +92,8 @@ def unpack(archive: Path, into: Path) -> None:
                 tar.extract(m, into, filter="data")
         return
     # bz2/xz aren't built into the image's Python: stream through the command-line tools
-    proc = subprocess.Popen([*UNPACKERS[suffix], str(archive)], stdout=subprocess.PIPE)
+    proc = subprocess.Popen([*UNPACKERS[suffix], str(archive)], stdout=subprocess.PIPE,
+                            stderr=subprocess.DEVNULL)
     try:
         with tarfile.open(fileobj=proc.stdout, mode="r|") as tar:
             for m in _safe_members(tar):
@@ -101,10 +102,18 @@ def unpack(archive: Path, into: Path) -> None:
         # unpacker dies writing into a closed pipe and looks like a failure
         while proc.stdout.read(1 << 16):
             pass
+    except tarfile.TarError as e:
+        proc.kill()
+        proc.wait()
+        raise ValueError(f"the archive is damaged or isn't what its name says ({e})") from None
+    except BaseException:
+        proc.kill()                        # keep the real error, not the unpacker's
+        proc.wait()
+        raise
     finally:
         proc.stdout.close()
-        if proc.wait() != 0:
-            raise ValueError("the archive couldn't be unpacked (damaged, or not what its name says)")
+    if proc.wait() != 0:
+        raise ValueError("the archive couldn't be unpacked (damaged, or not what its name says)")
 
 
 def find_pack(root: Path) -> Path:
