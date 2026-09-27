@@ -92,8 +92,17 @@ Other targets are passed through to Buildroot: `make menuconfig`,
   `grep sleepradiopi /var/log/messages`; restart: `pkill -f sleepradiopi.main`;
   keep it off: `touch /data/radio/station.off`.
 - It plays through the MiniAmp from power-up (`speaker_enabled`). The knob:
-  turn for volume (remembered), press to pause. Volume and pause over the
-  network: `POST /api/speaker` (see the SleepRadioPi README).
+  turn for volume (remembered), press to pause; **hold it 3 s** and the radio
+  beeps and reads out its IP address (or says it isn't connected), for
+  finding the web page away from home.
+- **The web page** (http://sleepradiopi.local/) is the control panel:
+  volume, stereo/mono, a 3-band EQ and low cut, a sleep timer that fades the
+  speakers, artist radio ("Beatles Radio") and your own lists of artists
+  ("Friday List"), birthdays the DJ wishes on the day, test sounds (sweeps,
+  pink noise, left/right and phase checks), a virtual knob, skip, save/load
+  settings and shut down. All of it is described in the
+  [SleepRadioPi README](https://github.com/dylan7474/SleepRadioPi#the-web-page),
+  with the JSON API behind it.
 - **Shut down** from the web page (http://sleepradiopi.local/, bottom of
   the page): the station creates `/run/sleepradiopi/poweroff`, and
   `power-request-watch` (root, from inittab) runs `poweroff`, which saves the
@@ -103,9 +112,11 @@ Other targets are passed through to Buildroot: `make menuconfig`,
   stereo): the **Speakers** buttons on the web page switch it at once and
   save it. `scripts/speaker-mode.sh mono|stereo` from the PC does the same
   but restarts the station; with no argument it shows the current mode.
-- Speaker EQ (`speaker_eq`, bass / mid / treble, ±12 dB): the **Speaker EQ**
-  card on the web page. The MiniAmp has no EQ, so the app does it in
-  software; it's heard at once and saved on `/data`.
+- Speaker EQ (`speaker_eq`, bass / mid / treble, ±12 dB) and low cut
+  (`speaker_highpass_hz`): the **Speaker EQ** card on the web page. The
+  MiniAmp has no EQ, so the app does it in software; it's heard at once and
+  saved on `/data`. With the case's bass port back panel, set the low cut
+  to 140 Hz.
 - **Save / Load settings** on the web page: a JSON copy of the settings and
   volume on your computer or phone, to load back after re-flashing the card
   or onto another radio (each radio keeps its own folders, port and pins).
@@ -122,6 +133,10 @@ Other targets are passed through to Buildroot: `make menuconfig`,
   is set within seconds, and every NTP update (on sync, then every 11
   minutes) is written to the RTC. To test offline:
   `touch /data/wifi-off-once; reboot` (Wi-Fi off for 5 minutes).
+- **An update restarts the station, and it plays at start-up.** To update a
+  paused radio without it starting to play: `POST /api/speaker
+  {"volume": 0}`, wait 4 s (the volume is saved), run `update.sh`, then as
+  soon as the page answers `{"pause": true}` and put the volume back.
 - `media-rw` / `media-rw off`: make `/media` writable for a quick change over
   ssh (a card reader is much faster for anything big).
 
@@ -149,10 +164,13 @@ the Pi, so none of this needs the card reader.
 ### Case
 
 [`hardware/case/`](hardware/case/) is a 3D-printable stereo cabinet for this
-build: two 40 mm speakers behind hex grilles, the Pi, MiniAmp and RTC on the
-removable back panel, and the encoder knob in the top. OpenSCAD source, ready
-STLs and assembly notes are there (work in progress: the tube isn't
-test-printed yet).
+build: two 40 mm speakers behind hex or art deco sunburst grilles (with
+optional SLEEP RADIO lettering), the Pi, MiniAmp and RTC on the removable
+back panel, and the encoder knob in the top. There's an optional **bass
+port** back panel (~160 Hz) with a grommet for the cable slot; compare the
+panels with the web page's test sounds. OpenSCAD source, ready STLs and
+assembly notes are there (work in progress: the panels are printed and
+fitted to a test ring; the full tube isn't printed yet).
 
 ![SleepRadioPi case mock-up](hardware/case/mockup_logo_sunburst.jpg)
 
@@ -195,10 +213,13 @@ anything else starts.
    time (no RTC), A/B updates over Wi-Fi (`update.sh`).
 
 All four are done, plus the speaker output and knob, offline mode and a
-tag cache (on air ~20 s after power-up), and mono or stereo speakers. The
-MiniAmp plays real sound (2026-09-26); RTC support is in, waiting for the
-module to be wired. Next: wire the knob and the RTC; then a smaller web side (see the SleepRadioPi
-roadmap).
+tag cache (on air ~20 s after power-up), mono or stereo speakers, and the
+web page as a control panel (EQ, sleep timer, artist radio and lists,
+birthdays, test sounds, settings backup, shut down, the knob's spoken
+address). The MiniAmp plays real sound in the printed cabinet; RTC support
+is in. Next: wire the knob and the RTC module and test them; then see the
+[SleepRadioPi roadmap](https://github.com/dylan7474/SleepRadioPi/blob/main/docs/ROADMAP.md),
+and a physical needle VU meter for this image.
 
 ## Licence
 
