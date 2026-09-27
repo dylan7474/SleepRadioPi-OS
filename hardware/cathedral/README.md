@@ -99,7 +99,7 @@ pair later.
 **All wood, for authenticity.** A white front, like the first radio's, would
 look wrong on a cathedral set.
 
-**Prusament Woodfill** (Prusa; on Amazon, about £35 per kg) is the pick:
+**Prusament Woodfill** (£34.90 per kg from Prusa; also sold on Amazon, so search there for "Prusament Woodfill") is the pick:
 
 - **Real wood particles.** It looks, feels and smells like wood, and it can be
   sanded and stained.
