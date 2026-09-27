@@ -16,9 +16,16 @@ mockup_grille  = "hex";       // "hex" or "sunburst"
 mockup_knob    = "plain";     // "plain" or "sunburst"
 
 color(body_colour) tube();
-color(panel_colour) front(logo = mockup_logo, grille = mockup_grille);
-// The letters are cut 0.8 mm into the face (logo_depth); colour their floor.
-if (mockup_logo) color(letter_colour) yext(0.8 - 0.1, 0.8) logo2d();
+// The two-tone front: the letters are cut 0.8 mm into the face (logo_depth),
+// and the 4 layers behind the face (0.8-1.6 mm) are printed in letter_colour --
+// the letters' floor, and a line round the panel's edge and in the grilles.
+band = [0.8, 1.6];
+module band_slab() translate([-1000, band[0], -1000]) cube([2000, band[1] - band[0], 2000]);
+if (mockup_logo) {
+    color(panel_colour) difference() { front(logo = true, grille = mockup_grille); band_slab(); }
+    color(letter_colour) intersection() { front(logo = true, grille = mockup_grille); band_slab(); }
+} else
+    color(panel_colour) front(logo = false, grille = mockup_grille);
 color(panel_colour) rear();
 color(speaker_colour) speakers_placed();
 color(knob_colour) knob_placed(mockup_knob);

@@ -1,6 +1,6 @@
 # SleepRadioPi box
 
-![The finished radio: blue body, white front, back and knob, sunburst grilles and knob, SLEEP RADIO lettering in blue](mockup_logo_sunburst.jpg)
+![The finished radio: blue body, white front, back and knob, sunburst grilles and knob, and the two-tone front: SLEEP RADIO lettering in blue, with a thin blue line round the panel's edge and in the grilles](mockup_logo_sunburst.jpg)
 
 > **Work in progress.** The front and back panels have been printed and fitted;
 > the full tube hasn't been printed yet, and the speaker sizes below are still
@@ -189,7 +189,8 @@ Gikfun's listing only gives the 40 mm diameter. Check with calipers and change t
 `mockup.jpg` (plain hex front) are coloured pictures of the finished radio,
 from `LOGO=1 SUNBURST=1 ./make-mockup.sh`, `LOGO=1 ./make-mockup.sh` and
 `./make-mockup.sh`. `mockup.scad` sets the
-colours (`body_colour`, `panel_colour`, `knob_colour`) and reuses the real parts
+colours (`body_colour`, `panel_colour`, `knob_colour`, and `letter_colour` for the
+two-tone front's blue layers 0.8–1.6 mm behind the face) and reuses the real parts
 unchanged; `./make-mockup.sh` renders it and places it on a studio backdrop
 (needs OpenSCAD + ImageMagick, ~30 s). Change the view with
 `CAM=tx,ty,tz,rx,ry,rz,dist ./make-mockup.sh`.
