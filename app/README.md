@@ -294,6 +294,11 @@ The cards:
   and a **phase check** (every 3 s: both speakers the same, then the right
   one inverted — if the inverted part sounds fuller, a speaker is wired the
   wrong way round, and vocals would vanish in stereo but not in mono).
+- **Wi-Fi** — the connection; saved networks (the card's, and ones added
+  here — kept as WPA keys, never passwords); *Find networks*; add or remove
+  one; the hotspot's name and password (SleepRadio-Setup / sleepradio to
+  start with); *Try saved networks now* while it's a hotspot. See
+  `sleepradiopi/wifi.py` for how the manager decides.
 - **Updates** — the radio's version; *Check for updates* looks at the latest
   GitHub release (`update_source`) and *Install* puts it on (see the
   top-level README): the music carries on while it downloads, the DJ says
@@ -327,6 +332,8 @@ everything but the page itself and the login needs the session cookie
 | `POST /api/knob` | `{"press": "short" \| "long"}` — the knob's switch |
 | `POST /api/skip` | Skip what's on air (track, link, jingle or bulletin) |
 | `GET` / `POST /api/dj` | The DJ settings (and the voices there are) / any of `{"voice", "chattiness", "dj_hooks", "jingle_every", "news_enabled", "startup_sound"}` |
+| `GET /api/wifi` | Wi-Fi: mode (station / hotspot / connecting), network and address, saved networks, nearby ones |
+| `POST /api/wifi/add` / `remove` / `scan` / `hotspot` / `try` | `{"ssid", "password"}` / `{"ssid"}` / – / `{"ssid", "password"}` / – |
 | `GET /api/voices` | The voices, the one in use, and any download/upload/install under way |
 | `POST /api/voices/standard` | Download and install the standard voice |
 | `POST /api/voices/upload?name=N&file=F` | The archive as the body (up to 400 MB); installed in the background |

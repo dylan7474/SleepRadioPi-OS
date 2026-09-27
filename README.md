@@ -77,6 +77,12 @@ software, and the case to print.
   own), your artist lists, birthdays, test sounds for
   checking speakers and wiring, the password, a settings backup you can
   download and load back, and shut down.
+- **Wi-Fi anywhere.** Add networks on the web page (Settings → Wi-Fi) as
+  well as the one set up on the card; it joins whichever is in range. If
+  none is, it makes its own network — **SleepRadio-Setup**, password
+  **sleepradio** — and says so: join it on your phone, open
+  http://192.168.4.1 (phones usually offer to), and add your Wi-Fi. With
+  nobody on the hotspot it tries the saved networks again every 5 minutes.
 - **Offline is normal.** Without the internet it keeps playing and talking;
   it only leaves out what needs the right time (time checks, news, birthday
   wishes) until the clock is known, from the internet or an optional
@@ -199,7 +205,11 @@ Other targets are passed through to Buildroot: `make menuconfig`,
   starting (see the logs); a steady light means the kernel didn't start or
   mount the root.
 - Wi-Fi: `wpa_supplicant.conf` on the boot partition (FAT, readable on
-  any PC).
+  any PC), plus any networks added on the web page (`/data/radio/wifi.json`,
+  kept as WPA keys, not passwords). The manager (`sleepradiopi/wifi.py`,
+  started by `S35wifi`, logs tagged `wifi`) joins a saved network or, after
+  45 s without one, runs the hotspot (hostapd + dnsmasq, 192.168.4.1); if the
+  manager can't run, `S35wifi` joins the card's network directly after 20 s.
 - Serial console: GPIO14/15, 115200 baud (Bluetooth is disabled so the full
   UART is used).
 - Logs: `/var/log/messages` (in RAM, lost at power-off).
@@ -361,10 +371,9 @@ tag cache (on air ~20 s after power-up), mono or stereo speakers, and the
 web page as a control panel (EQ, sleep timer, artist radio and lists,
 birthdays, test sounds, settings backup, shut down, the knob's spoken
 address). The MiniAmp plays real sound in the printed cabinet; RTC support
-is in. Next: wire the knob and test it; a Wi-Fi manager (saved
-networks, and a hotspot when none is in range); downloading
-the default voice when a radio has none, and uploading your own; and a
-physical needle VU meter.
+is in, as are voices (download/upload), updates from GitHub releases and
+the Wi-Fi manager. Next: wire the knob and test it; publish the first
+release; and a physical needle VU meter.
 
 ## Licence
 

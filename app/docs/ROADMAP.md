@@ -53,29 +53,28 @@ modules stay in the tree until that's decided.
 17. **Tidier web page and a password** — everyday controls up front, the
     rest under Settings; an optional password, set from the page and
     resettable over ssh.
-18. **Updates from GitHub** — releases made by scripts/release.sh, installed
+18. **Wi-Fi manager** — networks added from the page; a hotspot
+    (SleepRadio-Setup) with a page to add yours when none is in range.
+19. **Updates from GitHub** — releases made by scripts/release.sh, installed
     from the page into the spare slot; the DJ says how it's going; a new
     version that doesn't come on air undoes itself.
-19. **Voices** — download the standard voice (automatically on a radio with
+20. **Voices** — download the standard voice (automatically on a radio with
     none), and upload your own voice pack from the page.
-20. **A wiring diagram** — `hardware/wiring/wiring.svg`: the header, MiniAmp,
+21. **A wiring diagram** — `hardware/wiring/wiring.svg`: the header, MiniAmp,
     knob, RTC, speakers and power in one picture.
-21. **A remote control, not a player** — listening in a browser is off unless
+22. **A remote control, not a player** — listening in a browser is off unless
     switched on in Settings, so no MP3 encoder runs.
-22. **A start-up sound** — a chime about 10 s after power-on, then the DJ
+23. **A start-up sound** — a chime about 10 s after power-on, then the DJ
     saying it's warming up; the first song comes ~25 s sooner too.
-23. **Album mode** — pick an album and it plays start to finish, introduced
+24. **Album mode** — pick an album and it plays start to finish, introduced
     and back-announced by the DJ.
-24. **Play next** — search the library from the page and queue songs; the
+25. **Play next** — search the library from the page and queue songs; the
     DJ introduces them. Jingles only on the main mix.
 
 ## Next
 
-25. **Wire the knob and the RTC** — check the knob's direction and step and
+26. **Wire the knob and the RTC** — check the knob's direction and step and
     the long press on the real switch; the RTC with no network.
-26. **Wi-Fi manager** — several saved networks tried in turn at start-up,
-    added from the page; a hotspot with a fixed name and password when none
-    is in range.
 27. **Library tools** — copying/syncing music from the desktop library.
 28. **A needle VU meter** — a physical meter driven from a PWM pin, with the
     Android app's ballistics (see the appliance image's roadmap).
