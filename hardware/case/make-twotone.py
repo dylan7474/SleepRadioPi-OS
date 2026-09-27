@@ -4,26 +4,29 @@
 The lettered sunburst front (stl/front_logo_sunburst.stl) prints face down,
 with SLEEP RADIO cut 0.8 mm into the face -- so the first 0.8 mm printed IS the
 face, with letter-shaped holes, and whatever colour comes next shows at the
-bottom of the letters. A pause for a filament change (M600) at the right
-layer makes a two-tone front on a single-extruder printer:
+bottom of the letters. A pause for a filament change at the right layer
+makes a two-tone front on a single-extruder printer:
 
   twotone/front_blue_face_white_letters.3mf   blue face, white letters, white
-      panel: blue for the face, then white (one change, at 0.8 mm)
+      panel: blue for the face, then white (one pause, before the 1.0 mm layer)
   twotone/front_white_face_blue_letters.3mf   white face, blue letters, white
       panel: white for the face, blue for two layers (the bottom of the
-      letters), then white again (two changes, at 0.8 and 1.2 mm) -- that
-      0.4 mm blue layer shows as a thin line round the panel's edge and in
-      the grille slots
+      letters), then white again (pauses before the 1.0 and 1.4 mm layers) --
+      that 0.4 mm blue layer shows as a thin line round the panel's edge and
+      in the grille slots
 
 An STL can't hold a colour change, but a PrusaSlicer project can. These use
 PrusaSlicer's own presets: Original Prusa i3 MK2.5, 0.20mm NORMAL @MK2.5 (so
-the 0.8 mm face is exactly 4 layers) and Sunlu PLA. Open one, slice, print:
-the printer stops at each change for you to swap filament.
+the 0.8 mm face is exactly 4 layers) and Sunlu PLA. Open one, slice, print.
+Each change is a PAUSE (M601), not an automatic M600 change: the printer parks,
+the LCD says "Load WHITE, Resume" (or BLUE), and nothing happens until you've
+swapped the filament with the LCD's Unload and Load menus -- as many times as
+it takes -- and chosen Resume print.
 
     python3 make-twotone.py [--bundle ~/.config/PrusaSlicer/vendor/PrusaResearch.ini]
 
-Needs prusa-slicer. It slices each project afterwards and checks the M600s
-land where they should.
+Needs prusa-slicer. It slices each project afterwards and checks each pause
+comes at the start of the right layer, before anything of it is printed.
 """
 
 from __future__ import annotations
@@ -42,6 +45,7 @@ TEST = HERE / "stl" / "twotone_test.stl"            # twotone_test.scad: a few m
 OUT = HERE / "twotone"
 PRESETS = {"printer": "Original Prusa i3 MK2.5", "print": "0.20mm NORMAL @MK2.5", "filament": "Sunlu PLA"}
 BLUE, WHITE = "#2F6FD6", "#F4F4F2"
+NAMES = {BLUE: "BLUE", WHITE: "WHITE"}
 FACE_MM = 0.8                        # the letters' depth (sleepradiopi_box.scad: logo_depth)
 LAYER_MM = 0.2                       # 0.20mm NORMAL: first layer and every layer
 
@@ -94,16 +98,20 @@ def config(bundle: Path, first_colour: str) -> str:
                 "compatible_prints_condition", "renamed_from"):
         merged.pop(key, None)
     merged["filament_colour"] = first_colour
+    merged["pause_print_gcode"] = "M601"          # the MK2.5 profile leaves it to the default
     assert float(merged["layer_height"]) == LAYER_MM and float(merged["first_layer_height"]) == LAYER_MM, \
         "the print profile's layers aren't 0.2 mm: the colour changes would miss the face"
     return "".join(f"{k} = {v}\n" for k, v in sorted(merged.items()))
 
 
 def colour_changes_xml(changes) -> str:
-    # PrusaSlicer files a colour change under the last layer in the old colour
-    # (M600 goes after it), so z - one layer. check() confirms where it lands.
-    codes = "".join(f'<code print_z="{round(z - LAYER_MM, 3):g}" type="0" extruder="1" color="{c}" extra="" '
-                    f'gcode="M600"/>\n' for z, c in changes)
+    # A pause (type 1: M117 message, then M601) at the start of the layer at z,
+    # the first one in the new colour -- not an automatic M600 change: the
+    # printer parks and waits, and the filament is swapped with its own Unload
+    # and Load menus (which ask whether the colour is clear) until it's right,
+    # then Resume print. The LCD shows the message (20 characters).
+    codes = "".join(f'<code print_z="{z:g}" type="1" extruder="1" color="" '
+                    f'extra="Load {NAMES[c]}, Resume" gcode="M601"/>\n' for z, c in changes)
     return ('<?xml version="1.0" encoding="utf-8"?>\n<custom_gcodes_per_print_z>\n'
             f'{codes}<mode value="SingleExtruder"/>\n</custom_gcodes_per_print_z>\n')
 
@@ -133,24 +141,32 @@ def build(name: str, bundle: Path, work: Path) -> Path:
 
 
 def check(project: Path, changes, work: Path) -> tuple[list[float], str]:
-    """Slice the project; return the Z of the layer that follows each M600,
-    and the estimated printing time."""
+    """Slice the project; return the Z of the layer each pause is in -- it must
+    come before anything of that layer is printed -- and the estimated time."""
     gcode = work / (project.stem + ".gcode")
     subprocess.run(["prusa-slicer", "--export-gcode", "--output", str(gcode), str(project)],
                    check=True, capture_output=True)
-    found, pending, estimate = [], False, "?"
+    found, estimate, layer, printed, messages = [], "?", None, False, []
     for line in gcode.read_text().splitlines():
         if line.startswith("; estimated printing time (normal mode)"):
             estimate = line.split("=", 1)[1].strip()
-        if line.startswith("M600"):
-            pending = True
         m = re.match(r";Z:([\d.]+)", line)
-        if m and pending:
-            found.append(round(float(m.group(1)), 3))
-            pending = False
+        if m:
+            layer, printed = round(float(m.group(1)), 3), False
+        elif line.startswith(";TYPE:"):             # the layer's first feature: printing has begun
+            printed = True
+        elif line.startswith("M117 Load"):
+            messages.append(line[5:])
+        elif line.startswith("M601"):
+            if printed:
+                raise SystemExit(f"{project.name}: a pause after the layer at {layer} mm had begun")
+            found.append(layer)
+        elif line.startswith("M600"):
+            raise SystemExit(f"{project.name}: an M600 where only pauses should be")
     want = [round(z, 3) for z, _ in changes]
-    if found != want:
-        raise SystemExit(f"{project.name}: M600 before layers {found}, expected {want}")
+    if found != want or messages != [f"Load {NAMES[c]}, Resume" for _, c in changes]:
+        raise SystemExit(f"{project.name}: pauses at the start of layers {found} ({messages}), "
+                         f"expected {want}")
     return found, estimate
 
 
@@ -165,7 +181,8 @@ def main() -> int:
         for name, (model, (first, changes, title)) in VARIANTS.items():
             project = build(name, args.bundle, work)
             zs, estimate = check(project, changes, work)
-            print(f"{project.relative_to(HERE)}: {title}; changes before the layers at {zs} mm (checked); {estimate}")
+            print(f"{project.relative_to(HERE)}: {title}; pauses at the start of the layers at {zs} mm "
+                  f"(checked); {estimate}")
     return 0
 
 

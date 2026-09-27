@@ -112,11 +112,11 @@ filament changes at the right layers make a two-colour front on a
 single-extruder printer:
 
 - **`twotone/front_white_face_blue_letters.3mf`** — load **white**; the
-  printer stops after the face (0.8 mm) for **blue**, and again after two
-  more layers (1.2 mm) for **white**. A white face with blue letters (as in
+  printer pauses after the face (0.8 mm, 4 layers) for **blue**, and again
+  after two more layers (1.2 mm) for **white**. A white face with blue letters (as in
   the picture). The 0.4 mm blue layer also shows as a thin line round the
   panel's edge and in the grille slots.
-- **`twotone/front_blue_face_white_letters.3mf`** — load **blue**; one stop
+- **`twotone/front_blue_face_white_letters.3mf`** — load **blue**; one pause
   after the face for **white**. A blue face with white letters, and a 0.8 mm
   blue band at the front edge.
 
@@ -129,10 +129,22 @@ They're PrusaSlicer projects (an STL can't hold a colour change) with
 PrusaSlicer's own presets: Original Prusa i3 MK2.5, **0.20mm NORMAL @MK2.5**
 (so the face is exactly 4 layers — keep 0.2 mm layers, or the changes miss
 it) and Sunlu PLA; about 3½ hours. Open one, check it's on your printer,
-slice, and print: each change is an M600, and the printer beeps for the swap.
-`python3 make-twotone.py` rebuilds them (from `stl/front_logo_sunburst.stl` and
-`stl/twotone_test.stl`) and slices each one to check the changes land on the
-right layers.
+slice, and print.
+
+**At each pause** the printer parks and the LCD says *Load BLUE, Resume* (or
+WHITE). It waits for you — nothing is automatic, so take your time:
+
+1. LCD menu → **Unload filament**; pull the old colour out.
+2. LCD menu → **Load filament**; feed in the new colour. When it asks whether
+   the colour is clear, answer **No** to purge more until it is (or load
+   again if it didn't grip first time).
+3. Clean the purged blob off the nozzle, then LCD menu → **Resume print**.
+
+(They're pauses, M601, rather than M600 colour changes, which run the unload
+and load themselves and carry on — hard to rescue if the new filament doesn't
+feed first time.) `python3 make-twotone.py` rebuilds them (from
+`stl/front_logo_sunburst.stl` and `stl/twotone_test.stl`) and slices each one
+to check every pause comes at the start of the right layer.
 
 ## Hardware
 
