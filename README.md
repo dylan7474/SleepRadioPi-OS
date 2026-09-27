@@ -384,23 +384,14 @@ anything else starts.
 
 ## Roadmap
 
-1. **Minimal image**: boots, Wi-Fi, `sleepradiopi.local`, ssh, MiniAmp
-   visible to ALSA; measure boot time.
-2. **App runtime**: Python, ffmpeg, numpy, mutagen, and a sherpa-onnx
-   package; the radio's test suite passes on the Pi.
-3. **Storage layout**: read-only root (squashfs), read-only music partition,
-   small data partition written only with atomic replace; pull-the-plug tests.
-4. **Appliance**: the station as a boot service, the ready LED, saved clock
-   time (no RTC), A/B updates over Wi-Fi (`update.sh`).
+What's left to do (everything else described here is built and running):
 
-All four are done, plus the speaker output and knob, offline mode and a
-tag cache (on air ~20 s after power-up), mono or stereo speakers, and the
-web page as a control panel (EQ, sleep timer, artist radio and lists,
-birthdays, test sounds, settings backup, shut down, the knob's spoken
-address). The MiniAmp plays real sound in the printed cabinet; RTC support
-is in, as are voices (download/upload), updates from GitHub releases and
-the Wi-Fi manager. Next: wire the knob and test it; publish the first
-release; and a physical needle VU meter.
+- **Wire the knob and the RTC** — check the knob's direction, step and long
+  press on the real switch, and the RTC keeping time with no network.
+- **Library tools** — copying and syncing music from a desktop library onto
+  the card.
+- **A needle VU meter** — a physical meter driven from a PWM pin, with the
+  Android app's ballistics; one meter first.
 
 ## Licence
 
