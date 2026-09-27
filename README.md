@@ -249,6 +249,11 @@ Other targets are passed through to Buildroot: `make menuconfig`,
 | DS3231 RTC module (optional) | Keeps the time with no network. |
 | 5 V supply, 2.5 A or more | The amp draws from the Pi's 5 V. |
 
+![Wiring diagram: the Pi's header, the MiniAmp, the knob, the optional RTC, speakers and power](hardware/wiring/wiring.svg)
+
+(The drawing is made by `hardware/wiring/make_wiring.py`; keep it in step with
+`board/sleepradiopi/config.txt` if a pin ever changes.)
+
 The MiniAmp covers the pins the knob and RTC need, so either solder their
 wires to the underside of the Pi's header, or put a stacking header / GPIO
 extender between the Pi and the amp.
@@ -314,6 +319,7 @@ anything else starts.
 | `package/` | `python-sherpa-onnx` (PyPI wheels) and `sleepradiopi` (installs `app/`) |
 | `scripts/` | `flash.sh`, `provision-media.sh`, `update.sh`, `speaker-mode.sh`, `web-password.sh` (run on the PC) |
 | `hardware/case/` | The 3D-printed case (OpenSCAD source, STLs, assembly notes) |
+| `hardware/wiring/` | The wiring diagram (`wiring.svg`) and the script that draws it |
 
 ## Roadmap
 

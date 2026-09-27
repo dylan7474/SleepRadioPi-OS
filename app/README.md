@@ -95,6 +95,8 @@ SleepRadio:
 
 ### Wiring
 
+A diagram of all of it: [`hardware/wiring/wiring.svg`](../hardware/wiring/wiring.svg).
+
 Solder a **full 2×20 header** on the Pi: the MiniAmp is a pHAT that plugs
 onto all 40 pins. It covers the pins the knob and RTC need, so either solder
 their wires to the underside of the Pi's header, or put a stacking header /
