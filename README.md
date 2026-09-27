@@ -490,6 +490,15 @@ What's left to do (everything else described here is built and running):
   (`provision-media.sh`). The radio could make its music partition itself on
   first boot and take music uploaded from the web page, so that Windows and
   Mac users can do it too.
+- **A laser-cut wood cathedral** — a real-wood version of the cathedral case:
+  - the face and fretwork cut from walnut-veneered plywood, the sides and
+    back from plywood or MDF;
+  - the arch kerf-bent (cut so the plywood bends) or built from stacked
+    profiles;
+  - printed parts where that's easier (knob, meter bezel, speaker ring,
+    brackets);
+  - the flat parts exported as DXF/SVG for the laser from the same OpenSCAD
+    design.
 - **A family bulletin** — reassuring messages the DJ reads at set times:
   - for someone with poor memory, for example in a care home;
   - for example "You're at Rosewood House, the staff are looking after you.

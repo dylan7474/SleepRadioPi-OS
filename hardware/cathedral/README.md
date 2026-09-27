@@ -55,6 +55,13 @@ Multi-part to fit an ordinary printer bed (designed on a Prusa MK2.5,
 - a clip-in frame for the grille cloth, so it can be changed;
 - trim that screws on from behind: the meter bezel, the plaque and the knob.
 
+### Real wood (a future option)
+
+With a laser cutter, the cathedral could be real wood: the face and fretwork
+in walnut-veneered plywood, the sides and back in plywood, and the arch
+kerf-bent or stacked. The knob, meter bezel and brackets would stay printed.
+The flat parts would be exported for the laser (DXF/SVG) from the same design.
+
 ## What to buy
 
 | Part | Recommendation | Why |
