@@ -114,9 +114,11 @@ module is optional. The case is in [`hardware/case/`](hardware/case/).
 | RTC VCC / SDA / SCL / GND (optional) | pins 1 / 3 / 5 / 9 (3.3 V only) |
 | Speakers | the MiniAmp's terminal: left + and −, right + and − |
 
-The knob and RTC pins are under the MiniAmp: solder their wires to the
-underside of the Pi's header, or put a stacking header / GPIO extender between
-the Pi and the MiniAmp. Then [put the software on a card](#put-it-on-a-card).
+The knob and RTC pins are under the MiniAmp. Either solder their wires to
+the underside of the Pi's header, or use a 1-to-2 GPIO splitter. This build
+uses a GeeekPi 1-to-2 40-pin GPIO Edge Adapter Board, from Amazon: the MiniAmp
+goes on one of its headers, and the knob and RTC wire to the other. A
+stacking header between the Pi and the MiniAmp works too. Then [put the software on a card](#put-it-on-a-card).
 
 **Testing the knob:** with the radio playing, turn the knob — the volume on
 the web page moves with it (if it goes the wrong way, swap CLK and DT);
@@ -400,6 +402,7 @@ Other targets are passed through to Buildroot: `make menuconfig`,
 | Two speakers | 4–8 Ω; the case takes two 40 mm Gikfun EK1794. One speaker works too (set mono). |
 | Rotary encoder with push switch | Volume, pause, and the long press. A bare encoder or a KY-040-style module. |
 | DS3231 RTC module (optional) | Keeps the time with no network. |
+| 40-pin GPIO splitter (optional) | Reaches the knob and RTC pins under the MiniAmp without soldering to the header. This build uses a GeeekPi 1-to-2 40-pin GPIO Edge Adapter Board (from Amazon; it fits the Zero 2 W too). |
 | 5 V supply, 2.5 A or more | The amp draws from the Pi's 5 V. |
 
 The wiring diagram is under [*Build one*](#build-one), above. (It's drawn by
@@ -407,8 +410,8 @@ The wiring diagram is under [*Build one*](#build-one), above. (It's drawn by
 `board/sleepradiopi/config.txt` if a pin ever changes.)
 
 The MiniAmp covers the pins the knob and RTC need, so either solder their
-wires to the underside of the Pi's header, or put a stacking header / GPIO
-extender between the Pi and the amp.
+wires to the underside of the Pi's header, or use a GPIO splitter (see the
+parts list) or a stacking header between the Pi and the amp.
 
 | Use | GPIO | Header pin |
 |---|---|---|
