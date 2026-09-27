@@ -225,15 +225,21 @@ class VoiceJobs:
             self.inbox.mkdir(parents=True, exist_ok=True)
             with urllib.request.urlopen(self.url, timeout=30) as r:
                 total = int(r.headers.get("Content-Length") or 0)
-                if total and total + 20_000_000 > self._free():
-                    raise ValueError("not enough room on the data partition for the download")
-                got = 0
+            if total and total + 20_000_000 > self._free():
+                raise ValueError("not enough room on the data partition for the download")
+            if total:          # resumes if the server closes early (see updater.download)
+                from sleepradiopi.updater import download
                 with open(path, "wb") as f:
+                    got = download(self.url, total, f.write, lambda n: self._set(
+                        state="downloading", name=STANDARD_NAME, progress=round(n / total, 3)))
+                if got != total:
+                    raise ValueError(f"only {got >> 20} of {total >> 20} MB arrived")
+            else:
+                got = 0
+                with urllib.request.urlopen(self.url, timeout=30) as r, open(path, "wb") as f:
                     while chunk := r.read(1 << 20):
                         f.write(chunk)
                         got += len(chunk)
-                        if total:
-                            self._set(state="downloading", name=STANDARD_NAME, progress=round(got / total, 3))
             log.info("standard voice downloaded (%d MB)", got >> 20)
             self._install(path, STANDARD_NAME)
         except Exception as e:

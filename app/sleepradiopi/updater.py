@@ -27,6 +27,7 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import http.client
 import json
 import logging
 import os
@@ -61,6 +62,37 @@ def this_version(path: Path = VERSION_FILE) -> str:
 
 def _get(url: str, timeout: float = 20):
     return urllib.request.urlopen(urllib.request.Request(url, headers=UA), timeout=timeout)
+
+
+def download(url: str, size: int, write: Callable[[bytes], None],
+             progress: Callable[[int], None] = lambda got: None, attempts: int = 8) -> int:
+    """Fetch exactly size bytes, handing them to write() in order. GitHub's
+    download servers sometimes close the connection early -- and Python then
+    just sees the end -- so a short download carries on from where it
+    stopped (an HTTP Range request), up to attempts times. Returns the bytes got."""
+    got = 0
+    for attempt in range(attempts):
+        headers = dict(UA)
+        if got:
+            headers["Range"] = f"bytes={got}-"
+        try:
+            with urllib.request.urlopen(urllib.request.Request(url, headers=headers), timeout=60) as r:
+                if got and r.status != 206:           # the server ignored the Range
+                    log.warning("the server can't resume a download (%d of %d bytes)", got, size)
+                    return got                        # the caller's checksum refuses it
+                while chunk := r.read(1 << 20):
+                    if got + len(chunk) > size:
+                        raise ValueError("the download is bigger than the release says")
+                    write(chunk)
+                    got += len(chunk)
+                    progress(got)
+        except (OSError, urllib.error.URLError, http.client.HTTPException) as e:
+            log.warning("download interrupted at %d of %d bytes: %s", got, size, e)
+        if got == size:
+            return got
+        log.warning("download stopped at %d of %d bytes; resuming (%d)", got, size, attempt + 1)
+        time.sleep(min(2 ** attempt, 30))
+    return got
 
 
 def fetch_manifest(source: str = DEFAULT_SOURCE) -> dict:
@@ -188,14 +220,12 @@ def install(req: dict, p: Paths = Paths(), status=None) -> str:
     dev = p.device(new)
     say("downloading", progress=0.0)
     got, h = 0, hashlib.sha256()
-    with _get(req["rootfs"]["url"], timeout=60) as r, open(dev, "r+b" if dev.exists() else "wb") as out:
-        while chunk := r.read(1 << 20):
-            got += len(chunk)
-            if got > size:
-                raise ValueError("the download is bigger than the manifest says")
+    with open(dev, "r+b" if dev.exists() else "wb") as out:
+        def write(chunk: bytes) -> None:
             h.update(chunk)
             out.write(chunk)
-            say("downloading", progress=round(got / size, 3))
+        got = download(req["rootfs"]["url"], size, write,
+                       lambda n: say("downloading", progress=round(n / size, 3)))
         out.flush()
         os.fsync(out.fileno())
     if got != size or h.hexdigest() != want:

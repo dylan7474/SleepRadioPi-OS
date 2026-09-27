@@ -140,3 +140,74 @@ def test_the_station_side(release) -> None:
     assert (tmp / "run" / "update-reboot").exists() and "restarting" in said[-1]
     (tmp / "version").write_text("1.2.0\n")
     assert u.check()["available"] is None                                 # up to date now
+
+
+def _flaky_server(data: bytes, cut_after: int, cuts: int = 1, ranges: bool = True):
+    """Serves data, but closes the first `cuts` responses after cut_after bytes
+    (as GitHub's download servers sometimes do); honours Range requests."""
+    from http.server import BaseHTTPRequestHandler
+    state = {"cuts": cuts, "requests": []}
+
+    class H(BaseHTTPRequestHandler):
+        protocol_version = "HTTP/1.1"
+
+        def log_message(self, *a):
+            pass
+
+        def do_GET(self):
+            rng = self.headers.get("Range")
+            state["requests"].append(rng)
+            start = int(rng.split("=")[1].rstrip("-")) if (rng and ranges) else 0
+            body = data[start:]
+            self.send_response(206 if start else 200)
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            if state["cuts"] > 0:
+                state["cuts"] -= 1
+                self.wfile.write(body[:cut_after])
+                self.wfile.flush()
+                self.close_connection = True
+                return
+            self.wfile.write(body)
+
+    httpd = ThreadingHTTPServer(("127.0.0.1", 0), H)
+    threading.Thread(target=httpd.serve_forever, daemon=True).start()
+    return httpd, f"http://127.0.0.1:{httpd.server_address[1]}/rootfs.squashfs", state
+
+
+def test_a_download_cut_short_is_resumed(monkeypatch) -> None:
+    monkeypatch.setattr(up.time, "sleep", lambda s: None)
+    data = bytes(range(256)) * 20000                       # ~5 MB
+    httpd, url, state = _flaky_server(data, cut_after=3_000_000, cuts=2)
+    try:
+        out = bytearray()
+        got = up.download(url, len(data), out.extend)
+        assert got == len(data) and bytes(out) == data
+        assert state["requests"][0] is None and state["requests"][1].startswith("bytes=")   # resumed
+    finally:
+        httpd.shutdown()
+
+
+def test_a_download_that_cant_resume_gives_up_cleanly(monkeypatch) -> None:
+    monkeypatch.setattr(up.time, "sleep", lambda s: None)
+    data = bytes(1_000_000)
+    httpd, url, state = _flaky_server(data, cut_after=100_000, cuts=99, ranges=False)
+    try:
+        out = bytearray()
+        got = up.download(url, len(data), out.extend, attempts=3)
+        assert got < len(data)                             # install() then refuses on the checksum
+    finally:
+        httpd.shutdown()
+
+
+def test_install_survives_a_cut_download(release, monkeypatch) -> None:
+    monkeypatch.setattr(up.time, "sleep", lambda s: None)
+    url, paths, image, remounts, tmp = release
+    req = up.fetch_manifest(url)
+    httpd, flaky_url, state = _flaky_server(image, cut_after=len(image) // 3, cuts=1)
+    try:
+        req["rootfs"]["url"] = flaky_url
+        assert up.install(req, paths) == "p3"
+        assert (tmp / "slot_p3").read_bytes()[:len(image)] == image
+    finally:
+        httpd.shutdown()
