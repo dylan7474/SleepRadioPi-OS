@@ -1,6 +1,6 @@
 # SleepRadioPi box
 
-![The finished radio: white body, blue panels and knob, sunburst grilles and knob, SLEEP RADIO lettering](mockup_logo_sunburst.jpg)
+![The finished radio: blue body, white front, back and knob, sunburst grilles and knob, SLEEP RADIO lettering](mockup_logo_sunburst.jpg)
 
 > **Work in progress.** The front and back panels have been printed and fitted;
 > the full tube hasn't been printed yet, and the speaker sizes below are still

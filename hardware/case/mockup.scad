@@ -4,9 +4,9 @@
 
 use <sleepradiopi_box.scad>
 
-body_colour    = "#f4f4f2";   // tube (top, bottom, sides)
-panel_colour   = "#2f6fd6";   // front and rear panels
-knob_colour    = "#2f6fd6";   // the knob, printed separately
+body_colour    = "#2f6fd6";   // tube (top, bottom, sides)
+panel_colour   = "#fbfbf8";   // front and rear panels
+knob_colour    = "#fbfbf8";   // the knob, printed separately
 speaker_colour = "#0b0b0c";   // cones seen through the grilles
 mockup_logo    = false;       // show the SLEEP RADIO lettering on the front
 mockup_grille  = "hex";       // "hex" or "sunburst"

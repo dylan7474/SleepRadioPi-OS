@@ -6,7 +6,7 @@
 set -e
 cd "$(dirname "$0")"
 tmp=$(mktemp -d)
-cam=${CAM:-0,40,40,64,0,22,600}
+cam=${CAM:-0,40,40,76,0,22,600}
 size=3200,2400          # rendered at 2x, scaled down at the end to smooth edges
 logo=false; out=mockup.jpg
 grille=hex; knob=plain
