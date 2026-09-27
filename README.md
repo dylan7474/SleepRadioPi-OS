@@ -100,8 +100,9 @@ Other targets are passed through to Buildroot: `make menuconfig`,
   clock and unmounts `/data` as usual. Unplug after about 20 seconds; plug
   it back in to turn it on.
 - Mono or stereo (`speaker_mono`; only the speaker, the web stream stays
-  stereo): `scripts/speaker-mode.sh mono|stereo` from the PC sets it and
-  restarts the station; with no argument it shows the current mode.
+  stereo): the **Speakers** buttons on the web page switch it at once and
+  save it. `scripts/speaker-mode.sh mono|stereo` from the PC does the same
+  but restarts the station; with no argument it shows the current mode.
 - **Offline is normal.** The station only says the time and schedules news
   once the clock can be trusted (`/run/time-synced`): either NTP has set it
   since power-on, or an **RTC** answered at boot with a sensible time (its
