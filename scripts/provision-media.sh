@@ -2,9 +2,12 @@
 # Fill the media partition of a SleepRadioPi-OS card, on the PC.
 #
 #   sudo scripts/provision-media.sh /dev/mmcblk0 \
-#       --music ~/Music/SleepRadioMusic --voices ~/voices \
+#       --music ~/Music/SleepRadioMusic [--voices ~/voices] \
 #       [--jingles ~/Music/SleepRadioJingles] [--hooks dj_hooks_70s.txt] \
 #       [--mono | --stereo]
+#
+# Without --voices the radio downloads the standard voice itself, the first
+# time it's on the internet (voices already on the card are kept).
 #
 # --mono / --stereo pick the speaker model (one speaker or two): a new
 # starter config gets it, and an existing config is changed. Without either,
@@ -29,7 +32,7 @@
 #   dj_hooks_70s.txt  optional: replaces the DJ hooks bundled with the app
 set -euo pipefail
 
-usage() { sed -n '2,14p' "$0" | sed 's/^# \{0,1\}//'; exit 1; }
+usage() { sed -n '2,17p' "$0" | sed 's/^# \{0,1\}//'; exit 1; }
 
 DEV=${1:-}; [ -n "$DEV" ] || usage; shift
 MUSIC= VOICES= JINGLES= HOOKS= MONO=
@@ -44,7 +47,7 @@ while [ $# -gt 0 ]; do
 		*) usage ;;
 	esac
 done
-[ -n "$MUSIC" ] && [ -n "$VOICES" ] || usage
+[ -n "$MUSIC" ] || usage
 [ "$(id -u)" = 0 ] || { echo "run with sudo" >&2; exit 1; }
 
 # Partition device names: mmcblk0 -> mmcblk0p1, sdb -> sdb1.
@@ -63,11 +66,11 @@ if [ "$(label "$(part 5)")" != data ] ||
 	echo "$DEV doesn't look like a SleepRadioPi-OS card (no FAT p1 + 'data' p5)" >&2
 	exit 1
 fi
-for d in "$MUSIC" "$VOICES" ${JINGLES:+"$JINGLES"}; do
+for d in "$MUSIC" ${VOICES:+"$VOICES"} ${JINGLES:+"$JINGLES"}; do
 	[ -d "$d" ] || { echo "no such folder: $d" >&2; exit 1; }
 done
 [ -z "$HOOKS" ] || [ -f "$HOOKS" ] || { echo "no such file: $HOOKS" >&2; exit 1; }
-for v in "$VOICES"/*/; do
+[ -z "$VOICES" ] || for v in "$VOICES"/*/; do
 	[ -f "$v/model.onnx" ] && [ -f "$v/tokens.txt" ] ||
 		{ echo "not a voice pack: $v (needs model.onnx + tokens.txt)" >&2; exit 1; }
 done
@@ -108,7 +111,11 @@ mount "$MEDIA" "$MNT"
 RSYNC=(rsync -rt --delete --info=progress2 --no-inc-recursive
 	--chown=0:0 --chmod=D755,F644)
 echo "music:";  "${RSYNC[@]}" "$MUSIC/"  "$MNT/music/"
-echo "voices:"; "${RSYNC[@]}" "$VOICES/" "$MNT/voices/"
+if [ -n "$VOICES" ]; then
+	echo "voices:"; "${RSYNC[@]}" "$VOICES/" "$MNT/voices/"
+else
+	mkdir -p -m 755 "$MNT/voices"   # the radio downloads the standard voice into it
+fi
 if [ -n "$JINGLES" ]; then
 	echo "jingles:"; "${RSYNC[@]}" --include='*/' --include='*.mp3' --exclude='*' \
 		"$JINGLES/" "$MNT/jingles/"

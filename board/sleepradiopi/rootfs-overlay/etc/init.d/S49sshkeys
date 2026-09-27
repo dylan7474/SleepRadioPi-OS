@@ -1,0 +1,45 @@
+#!/bin/sh
+#
+# SSH keys, kept in /data/ssh (the root is read-only and shared by every
+# radio, so it holds no keys):
+#   - the host key: made on the first boot, so each radio has its own;
+#   - who can log in: the keys in authorized_keys on the boot partition (put
+#     it there on a PC; one public key per line) are added to
+#     /data/ssh/authorized_keys at each boot. With none, ssh is closed.
+#
+
+DIR=/data/ssh
+BOOT_KEYS=/boot/authorized_keys
+
+start() {
+	printf "SSH keys: "
+	mkdir -p -m 0700 $DIR || { echo "FAIL (no /data)"; return 1; }
+	if [ ! -s $DIR/ssh_host_ed25519_key ]; then
+		rm -f $DIR/ssh_host_ed25519_key $DIR/ssh_host_ed25519_key.pub
+		ssh-keygen -q -t ed25519 -N '' -C sleepradiopi -f $DIR/ssh_host_ed25519_key.new &&
+			mv $DIR/ssh_host_ed25519_key.new.pub $DIR/ssh_host_ed25519_key.pub &&
+			mv $DIR/ssh_host_ed25519_key.new $DIR/ssh_host_ed25519_key
+		printf "new host key, "
+	fi
+	touch $DIR/authorized_keys
+	if [ -r $BOOT_KEYS ]; then
+		# Add the lines that aren't there yet; replace the file atomically.
+		tr -d '\r' < $BOOT_KEYS | grep -E '^(ssh|ecdsa|sk-)' | while read -r line; do
+			grep -qxF "$line" $DIR/authorized_keys || echo "$line"
+		done > $DIR/authorized_keys.add
+		if [ -s $DIR/authorized_keys.add ]; then
+			cat $DIR/authorized_keys $DIR/authorized_keys.add > $DIR/authorized_keys.new &&
+				mv $DIR/authorized_keys.new $DIR/authorized_keys
+			printf "%s key(s) added, " "$(wc -l < $DIR/authorized_keys.add)"
+		fi
+		rm -f $DIR/authorized_keys.add
+	fi
+	chmod 600 $DIR/authorized_keys
+	echo "OK"
+}
+
+case "$1" in
+	start) start ;;
+	stop) ;;
+	*) echo "Usage: $0 {start|stop}"; exit 1 ;;
+esac

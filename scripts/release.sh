@@ -11,13 +11,16 @@
 #               don't tag or publish (serve that folder to test an update:
 #               set "update_source" in the radio's config to its manifest.json)
 #
+# A release has no Wi-Fi settings or ssh keys (checked): a new radio joins
+# Wi-Fi through its hotspot, and gets its own ssh host key on first boot.
+#
 # A release has rootfs.squashfs (written into the radio's spare root slot),
 # config.txt and manifest.json (version, notes, sizes and SHA-256s, and the
 # kernel's SHA-256: a radio refuses an update that changes the kernel).
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-usage() { sed -n '2,17p' "$0" | sed 's/^# \{0,1\}//'; exit 1; }
+usage() { sed -n '2,19p' "$0" | sed 's/^# \{0,1\}//'; exit 1; }
 VERSION=${1:-}; shift || true
 [[ "$VERSION" =~ ^[0-9]+(\.[0-9]+){1,2}(-[a-z0-9.]+)?$ ]] || usage
 NOTES="" SDCARD="" LOCAL=""
@@ -44,6 +47,10 @@ make sleepradiopi-dirclean >/dev/null
 SLEEPRADIOPI_RELEASE="$VERSION" make   # (not _VERSION: that is the package's own make variable)
 IMAGES=output/images
 [ "$(cat output/target/etc/sleepradiopi-version)" = "$VERSION" ] || { echo "the version didn't make it into the image" >&2; exit 1; }
+# A release is public: nothing private may be in it (Wi-Fi, ssh keys).
+leaks=$( { output/host/bin/unsquashfs -l -d / "$IMAGES/rootfs.squashfs" | grep -E 'ssh_host_|authorized_keys'
+	output/host/bin/mdir -b -i "$IMAGES/boot.vfat" ::/ | grep -iE 'wpa_supplicant|authorized_keys'; } || true)
+[ -z "$leaks" ] || { printf 'private files in the release image:\n%s\n' "$leaks" >&2; exit 1; }
 
 OUT="output/release/$VERSION"
 rm -rf "$OUT" && mkdir -p "$OUT"

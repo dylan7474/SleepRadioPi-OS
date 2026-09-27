@@ -116,13 +116,64 @@ module is optional. The case is in [`hardware/case/`](hardware/case/).
 
 The knob and RTC pins are under the MiniAmp: solder their wires to the
 underside of the Pi's header, or put a stacking header / GPIO extender between
-the Pi and the MiniAmp. Then flash the card (the release's `sdcard.img.xz`,
-or build it, below) and add your music.
+the Pi and the MiniAmp. Then [put the software on a card](#put-it-on-a-card).
 
 **Testing the knob:** with the radio playing, turn the knob — the volume on
 the web page moves with it (if it goes the wrong way, swap CLK and DT);
 press and let go — it pauses, and again — it plays; hold it for 3 seconds —
 it beeps and reads out its network address.
+
+## Put it on a card
+
+You need a microSD card (16 GB or more, depending on your music) and, for
+now, a **Linux PC** to add the music. Windows and Mac can flash the card, but
+can't add the music yet.
+
+1. **Download** `sdcard.img.xz` from the
+   [latest release](https://github.com/dylan7474/SleepRadioPi-OS/releases/latest).
+2. **Flash it** with [Raspberry Pi Imager](https://www.raspberrypi.com/software/):
+   - Device: Raspberry Pi Zero 2 W.
+   - OS: *Use custom*, then pick the downloaded `sdcard.img.xz`. You don't need
+     to unpack it.
+   - Storage: your card.
+   - When it offers OS customisation, choose **No**. Those settings are for
+     Raspberry Pi OS and don't apply here.
+
+   [balenaEtcher](https://etcher.balena.io/) works just as well. On Linux you
+   can also use
+   `xz -dc sdcard.img.xz | sudo dd of=/dev/sdX bs=4M conv=fsync status=progress`.
+3. **Add your music.** Run this on a Linux PC, with the card in the reader
+   and not mounted; `/dev/sdX` is the card:
+
+   ```sh
+   git clone https://github.com/dylan7474/SleepRadioPi-OS
+   cd SleepRadioPi-OS
+   sudo scripts/provision-media.sh /dev/sdX --music ~/Music --stereo   # or --mono
+   ```
+
+   The first run adds a music partition that fills the rest of the card; run
+   it again later to sync changes. Folders of albums are fine, and
+   `--jingles <folder>` adds station jingles (mp3). Details are in
+   [Building](#building).
+4. **Optional, before you eject the card:** the boot partition (FAT, readable
+   on any computer) can hold two files:
+   - `wpa_supplicant.conf`: your Wi-Fi, so you can skip step 6. Copy
+     [the example](board/sleepradiopi/wpa_supplicant.conf.example) and fill in
+     your network's name and password.
+   - `authorized_keys`: your ssh public key(s), one per line, if you want to
+     log in (see [Using the Pi](#using-the-pi)).
+5. **Put the card in the Pi and power on.** The first start takes a little
+   longer.
+6. **Connect it to your Wi-Fi.** With no network it knows, the radio makes its
+   own after about a minute: **SleepRadio-Setup**, password **sleepradio**.
+   Join it on your phone, open http://192.168.4.1 if the phone doesn't offer
+   to, and add your Wi-Fi.
+7. **The first time it's online**, it downloads the standard DJ voice (67 MB,
+   a few minutes), and the show starts. Open **http://sleepradiopi.local** to
+   control it, or hold the knob for 3 seconds and it reads out its address.
+
+Later versions install from the web page (Settings → Updates), and your
+music and settings stay put.
 
 ## The appliance image
 
@@ -145,7 +196,8 @@ builds reuse `dl/` and ccache.
 git clone --recurse-submodules <this repo>
 cd SleepRadioPi-OS
 cp board/sleepradiopi/wpa_supplicant.conf.example local/wpa_supplicant.conf
-$EDITOR local/wpa_supplicant.conf     # your Wi-Fi network
+$EDITOR local/wpa_supplicant.conf     # your Wi-Fi network (optional)
+cp ~/.ssh/id_ed25519.pub local/authorized_keys   # who can ssh in (optional)
 make
 ```
 
@@ -212,21 +264,24 @@ Pi doesn't come back, put the card in the PC and set `root=` in
 can't be done this way (the kernel is on the shared boot partition): the
 script refuses, and you use `flash.sh`.
 
-`local/` is git-ignored. It holds your Wi-Fi credentials and the SSH host
-keys, which are generated on the first build so the Pi keeps the same
-identity across rebuilds.
-
-**Building it yourself?** Put your own public key(s) in
-`board/sleepradiopi/rootfs-overlay/root/.ssh/authorized_keys` first: the
-ones there are the author's, and root login is by key only.
+`local/` is git-ignored. Its `wpa_supplicant.conf` and `authorized_keys` go
+on the boot partition of the cards you build, but never into a release
+(`scripts/release.sh` builds without them and checks). The system itself
+holds no keys. Each radio makes its own ssh host key on its first boot, in
+`/data/ssh`, and adds any `authorized_keys` from the boot partition to
+`/data/ssh/authorized_keys` (`S49sshkeys`). After a new card, or on first
+moving to 1.0.4, your ssh client will warn that the host key has changed:
+`ssh-keygen -R sleepradiopi.local` clears it.
 
 Other targets are passed through to Buildroot: `make menuconfig`,
 `make savedefconfig`, `make linux-menuconfig`, `make <pkg>-rebuild`, ...
 
 ## Using the Pi
 
-- `ssh -i ~/.ssh/sleepradiopi root@sleepradiopi.local` (key only; the
-  authorised keys are in `board/sleepradiopi/rootfs-overlay/root/.ssh/authorized_keys`).
+- `ssh root@sleepradiopi.local`: key only, and only with an
+  `authorized_keys` file on the boot partition (one public key per line;
+  it's added to `/data/ssh/authorized_keys` at the next boot). Without one,
+  ssh stays closed.
 - Green ACT LED: flickers while booting; a **heartbeat** while the station
   starts; **3 slow pulses** once it's playing, then dark. Wi-Fi isn't shown:
   offline is normal. A heartbeat that never ends means the station isn't
@@ -392,6 +447,10 @@ What's left to do (everything else described here is built and running):
   the card.
 - **A needle VU meter** — a physical meter driven from a PWM pin, with the
   Android app's ballistics; one meter first.
+- **Music from any computer** — adding music needs a Linux PC today
+  (`provision-media.sh`). The radio could make its music partition itself on
+  first boot and take music uploaded from the web page, so that Windows and
+  Mac users can do it too.
 - **A carry strap** — designed, still to print and fit: a leather strap
   through two printed side loops, with a drill guide for a case that's already
   printed (see [the case README](hardware/case/README.md#carry-strap)).

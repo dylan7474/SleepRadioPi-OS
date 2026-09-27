@@ -3,6 +3,8 @@
 PermitRootLogin prohibit-password
 PasswordAuthentication no
 KbdInteractiveAuthentication no
-AuthorizedKeysFile .ssh/authorized_keys
+AuthorizedKeysFile /data/ssh/authorized_keys
+# Made on the first boot by S49sshkeys (the root is read-only)
+HostKey /data/ssh/ssh_host_ed25519_key
 UseDNS no
 Subsystem sftp /usr/libexec/sftp-server

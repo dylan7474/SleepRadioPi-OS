@@ -4,16 +4,10 @@ set -eu
 
 LOCAL="${BR2_EXTERNAL_SLEEPRADIOPI_PATH}/local"
 
-# SSH host keys: generate once per build machine and keep them in local/
-# (git-ignored), so the Pi keeps the same identity across rebuilds and the
-# read-only root never has to write them.
-mkdir -p "${LOCAL}/ssh"
-for t in ed25519 rsa; do
-	k="${LOCAL}/ssh/ssh_host_${t}_key"
-	[ -f "$k" ] || ssh-keygen -q -t "$t" -N '' -C sleepradiopi -f "$k"
-	install -m 600 "$k" "${TARGET_DIR}/etc/ssh/"
-	install -m 644 "$k.pub" "${TARGET_DIR}/etc/ssh/"
-done
+# No SSH keys in the root: the same squashfs goes into public releases. The
+# host keys are made on the radio's first boot and kept in /data/ssh, with
+# the authorised login keys (S49sshkeys). The ssh tree can't hold them.
+rm -f "${TARGET_DIR}"/etc/ssh/ssh_host_* "${TARGET_DIR}/root/.ssh/authorized_keys"
 
 mkdir -p "${TARGET_DIR}/boot"
 

@@ -18,14 +18,23 @@ for i in "${BINARIES_DIR}"/*.dtb "${BINARIES_DIR}"/rpi-firmware/*; do
 done
 FILES+=( "Image" )
 
-# Wi-Fi credentials go on the boot partition so they can be edited on a PC.
-if [ -f "${LOCAL}/wpa_supplicant.conf" ]; then
-	cp "${LOCAL}/wpa_supplicant.conf" "${BINARIES_DIR}/wpa_supplicant.conf"
-	FILES+=( "wpa_supplicant.conf" )
+# Your own card (not a public release): your Wi-Fi and your ssh login key go
+# on the boot partition, where they can also be edited on a PC. A release
+# (scripts/release.sh sets SLEEPRADIOPI_RELEASE) gets neither: a new radio
+# joins Wi-Fi through its hotspot, and ssh stays closed until the builder
+# puts an authorized_keys file on the boot partition.
+rm -f "${BINARIES_DIR}/wpa_supplicant.conf" "${BINARIES_DIR}/authorized_keys"
+if [ -n "${SLEEPRADIOPI_RELEASE:-}" ]; then
+	echo "release build: no Wi-Fi settings or ssh keys on the card"
 else
-	echo "WARNING: no local/wpa_supplicant.conf -- the image won't join Wi-Fi" >&2
-	echo "         until you add wpa_supplicant.conf to the boot partition." >&2
-	rm -f "${BINARIES_DIR}/wpa_supplicant.conf"
+	for f in wpa_supplicant.conf authorized_keys; do
+		if [ -f "${LOCAL}/$f" ]; then
+			cp "${LOCAL}/$f" "${BINARIES_DIR}/$f"
+			FILES+=( "$f" )
+		else
+			echo "note: no local/$f -- not on the card" >&2
+		fi
+	done
 fi
 
 BOOT_FILES=$(printf '\\t\\t\\t"%s",\\n' "${FILES[@]}")
