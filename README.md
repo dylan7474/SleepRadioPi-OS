@@ -97,8 +97,9 @@ Other targets are passed through to Buildroot: `make menuconfig`,
   finding the web page away from home.
 - **The web page** (http://sleepradiopi.local/) is the control panel:
   volume, stereo/mono, a 3-band EQ and low cut, a sleep timer that fades the
-  speakers, artist radio ("Beatles Radio") and your own lists of artists
-  ("Friday List"), birthdays the DJ wishes on the day, test sounds (sweeps,
+  speakers, **play next** (search the library and queue songs; the DJ
+  introduces them), artist radio ("Beatles Radio") and your own lists of
+  artists ("Friday List"; the "Sleep Radio" jingles only play on the main mix), birthdays the DJ wishes on the day, test sounds (sweeps,
   pink noise, left/right and phase checks), a virtual knob, skip, save/load
   settings and shut down. All of it is described in the
   [SleepRadioPi README](https://github.com/dylan7474/SleepRadioPi#the-web-page),
