@@ -490,10 +490,10 @@ What's left to do (everything else described here is built and running):
   (`provision-media.sh`). The radio could make its music partition itself on
   first boot and take music uploaded from the web page, so that Windows and
   Mac users can do it too.
-- **A cathedral radio case** — a 1930s art deco cathedral set with one
-  4-inch speaker and the VU meter as its dial; the concept is in
-  [`hardware/cathedral/`](hardware/cathedral/), and the parts come once the
-  speaker and meter are here to measure.
+- **A cathedral radio case** — a 1930s art deco cathedral set in wood, with
+  one 4-inch speaker and the VU meter as its dial. The design, the pictures and
+  what to buy are on [its page](hardware/cathedral/README.md); the parts come
+  once the speaker and meter are here to measure.
 - **A carry strap** — designed, still to print and fit: a leather strap
   through two printed side loops, with a drill guide for a case that's already
   printed (see [the case README](hardware/case/README.md#carry-strap)).
