@@ -26,7 +26,7 @@ rm -f /run/sleepradiopi/poweroff
 
 # The clock is only right once NTP has set it (no RTC; often offline).
 HOME=$HOME MALLOC_ARENA_MAX=2 SLEEPRADIOPI_CLOCK_FLAG=/run/time-synced \
-	SLEEPRADIOPI_POWER_REQUEST=/run/sleepradiopi/poweroff \
+	SLEEPRADIOPI_POWER_REQUEST=/run/sleepradiopi/poweroff SLEEPRADIOPI_SUPERVISED=1 \
 	start-stop-daemon -S -c radio \
 	-x /usr/bin/python3 -- -u -m sleepradiopi.main 2>&1 |
 	logger -t sleepradiopi

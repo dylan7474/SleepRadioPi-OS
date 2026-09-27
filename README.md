@@ -106,6 +106,11 @@ Other targets are passed through to Buildroot: `make menuconfig`,
 - Speaker EQ (`speaker_eq`, bass / mid / treble, ±12 dB): the **Speaker EQ**
   card on the web page. The MiniAmp has no EQ, so the app does it in
   software; it's heard at once and saved on `/data`.
+- **Save / Load settings** on the web page: a JSON copy of the settings and
+  volume on your computer or phone, to load back after re-flashing the card
+  or onto another radio (each radio keeps its own folders, port and pins).
+  If a loaded setting needs it, the station restarts itself (init respawns
+  it; `SLEEPRADIOPI_SUPERVISED=1` in `sleepradiopi-station` allows this).
 - **Offline is normal.** The station only says the time and schedules news
   once the clock can be trusted (`/run/time-synced`): either NTP has set it
   since power-on, or an **RTC** answered at boot with a sensible time (its
