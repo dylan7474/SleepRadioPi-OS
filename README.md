@@ -103,6 +103,9 @@ Other targets are passed through to Buildroot: `make menuconfig`,
   stereo): the **Speakers** buttons on the web page switch it at once and
   save it. `scripts/speaker-mode.sh mono|stereo` from the PC does the same
   but restarts the station; with no argument it shows the current mode.
+- Speaker EQ (`speaker_eq`, bass / mid / treble, ±12 dB): the **Speaker EQ**
+  card on the web page. The MiniAmp has no EQ, so the app does it in
+  software; it's heard at once and saved on `/data`.
 - **Offline is normal.** The station only says the time and schedules news
   once the clock can be trusted (`/run/time-synced`): either NTP has set it
   since power-on, or an **RTC** answered at boot with a sensible time (its
