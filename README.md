@@ -490,12 +490,27 @@ What's left to do (everything else described here is built and running):
   (`provision-media.sh`). The radio could make its music partition itself on
   first boot and take music uploaded from the web page, so that Windows and
   Mac users can do it too.
+- **A family bulletin** — reassuring messages the DJ reads at set times:
+  - for someone with poor memory, for example in a care home;
+  - for example "You're at Rosewood House, the staff are looking after you.
+    Dylan lives five minutes away and will be in to see you soon";
+  - it opens with the day and date;
+  - messages are written on the web page, and can end on a set date
+    (for "coming on Sunday");
+  - none at night;
+  - read in the DJ's voice as "a message from ...", or optionally a
+    recorded clip;
+  - updated from home, through a private link the radio checks or through
+    remote access, since a care home's Wi-Fi usually blocks incoming
+    connections.
 - **A glow behind the grilles** — warm-white LEDs (a 5 V COB strip)
   lighting the grille from behind, for a soft glow at night: dimmable from the
   page, fading with the sleep timer, shared with the VU meter's backlight. On
   the box it glows round each speaker (a clip-in holder inside the collar,
   wired with the speakers). On the cathedral it's behind the grille cloth, so
-  the sunburst shows in silhouette.
+  the sunburst shows in silhouette:
+
+  ![The cathedral radio at night, the grille cloth and VU meter glowing warm](hardware/cathedral/concept_night.jpg)
 - **A cathedral radio case** — a 1930s art deco cathedral set in wood, with
   one 4-inch speaker and the VU meter as its dial. The design, the pictures and
   what to buy are on [its page](hardware/cathedral/README.md); the parts come
