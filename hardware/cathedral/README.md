@@ -22,6 +22,12 @@ the meter are here to measure.
 
 ![Front view](concept_front.jpg)
 
+**In wood-look filament:** a walnut cabinet with a cream face, the classic
+1930s finish. Print the hood and plinth in wood-filled PLA or Polymaker
+PolyWood, and the face, fretwork, bezel and knob in cream PLA for crisp detail.
+
+![Concept in walnut and cream](concept_walnut.jpg)
+
 `concept.scad` is the picture's model (not printable parts), and
-`./make-concept.sh` renders both pictures (needs OpenSCAD + ImageMagick).
+`./make-concept.sh` renders the pictures (`WALNUT=1` for the walnut ones) (needs OpenSCAD + ImageMagick).
 Colours and sizes are variables at the top.
