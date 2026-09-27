@@ -11,7 +11,9 @@ left.
 ## Next
 
 1. **Wire the knob and the RTC** — check the knob's direction and step and
-   the long press on the real switch; the RTC with no network.
+   the long press on the real switch; that a press wakes the radio after
+   the sleep timer has faded it out and paused it (playing again, speaker
+   back at its normal level, the page showing it); the RTC with no network.
 2. **Library tools** — copying/syncing music from the desktop library.
 3. **A needle VU meter** — a physical meter driven from a PWM pin, with the
    Android app's ballistics (see the [appliance image's roadmap](../../README.md#roadmap)).
