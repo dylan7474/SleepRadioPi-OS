@@ -392,6 +392,12 @@ What's left to do (everything else described here is built and running):
   the card.
 - **A needle VU meter** — a physical meter driven from a PWM pin, with the
   Android app's ballistics; one meter first.
+- **A carry handle** — for moving the radio from room to room. Ideas so far:
+  a leather or webbing strap through two printed loops on the sides (the
+  simplest, and a 1930s look to go with the sunburst), or a fold-down bail
+  over the top that clears the knob. Loops or mounts would be printed
+  separately and screwed on (the tube prints standing up, so lugs grown on its
+  sides would be weak across the layers), and the back panel stays removable.
 
 ## Licence
 
