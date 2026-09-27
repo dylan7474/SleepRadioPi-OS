@@ -107,8 +107,8 @@ play through the amp from start-up.
 ```bash
 sudo apt update
 sudo apt install -y python3-venv python3-pip vlc libportaudio2
-git clone https://github.com/dylan7474/SleepRadioPi.git
-cd SleepRadioPi
+git clone https://github.com/dylan7474/SleepRadioPi-OS.git
+cd SleepRadioPi-OS/app
 python3 -m venv .venv
 .venv/bin/pip install -e ".[dev]"
 ```

@@ -1,6 +1,9 @@
-# SleepRadioPi
+# The radio software (app/)
 
-A **bedside radio station** on a Raspberry Pi: an auto-DJ that plays your
+This folder is the radio itself, the Python program that runs on the Pi; the
+rest of the repo builds the image it runs on and the case (see the
+[top-level README](../README.md) for the whole radio). It's a **bedside
+radio station** on a Raspberry Pi: an auto-DJ that plays your
 local music with an offline text-to-speech presenter between tracks —
 back-announcements and intros, 70s-style DJ hooks, station idents, jingles,
 and (when it's online) time checks and news bulletins. Plug it in and it's
@@ -14,9 +17,8 @@ edge-silence trim, voice EQ) is ported closely, with the Android app's unit
 test cases ported alongside. See [`docs/SCOPE.md`](docs/SCOPE.md).
 
 **Status:** running every day on a Pi Zero 2 W with a HiFiBerry MiniAmp
-and two 40 mm speakers in a 3D-printed cabinet (see the
-[appliance image repo](https://github.com/dylan7474/SleepRadioPi-OS), which
-also has the case). It starts at power-up, has been tested with pulled plugs
+and two 40 mm speakers in a 3D-printed cabinet (the image and the case are
+in the rest of [this repo](../README.md)). It starts at power-up, has been tested with pulled plugs
 and with no network, and is set up from its web page. See
 [`docs/ROADMAP.md`](docs/ROADMAP.md).
 
@@ -138,12 +140,20 @@ station must be in the `input` and `audio` groups.
 
 There are two ways:
 
-- **The appliance image** (for the finished radio): a separate,
-  Buildroot-based image that boots from a read-only root, keeps settings on
-  a small data partition and the music on a read-only one, starts the
-  station at power-up, and updates over Wi-Fi into a spare root slot:
-  [SleepRadioPi-OS](https://github.com/dylan7474/SleepRadioPi-OS).
+- **The appliance image** (for the finished radio), built by the rest of
+  this repo: it boots from a read-only root, keeps settings on a small data
+  partition and the music on a read-only one, starts the station at
+  power-up, and updates over Wi-Fi into a spare root slot. Change the code
+  here, then `make && scripts/update.sh` at the top of the repo (see the
+  [top-level README](../README.md)).
 - **Raspberry Pi OS** (development): see [`docs/PI_SETUP.md`](docs/PI_SETUP.md).
+- **On the desktop**, for the tests (from this folder):
+
+  ```bash
+  python3 -m venv .venv
+  .venv/bin/pip install numpy mutagen pytest sherpa-onnx
+  .venv/bin/python -m pytest
+  ```
 
 ```bash
 ./scripts/deploy.sh                 # on the desktop: sync to the Pi, run the tests there

@@ -2,13 +2,17 @@
 #
 # sleepradiopi
 #
-# To build from a local checkout while developing, put this in output/local.mk:
-#   SLEEPRADIOPI_OVERRIDE_SRCDIR = /path/to/SleepRadioPi
+# The radio software, from app/ in this repo. `make sleepradiopi-rebuild`
+# (or a plain `make` after `make sleepradiopi-dirclean`) picks up changes.
 #
 ################################################################################
 
-SLEEPRADIOPI_VERSION = b72de73c7897212d0b28782103c82e3c6587bda8
-SLEEPRADIOPI_SITE = $(call github,dylan7474,SleepRadioPi,$(SLEEPRADIOPI_VERSION))
+SLEEPRADIOPI_VERSION = local
+SLEEPRADIOPI_SITE = $(BR2_EXTERNAL_SLEEPRADIOPI_PATH)/app
+SLEEPRADIOPI_SITE_METHOD = local
+# Leave development leftovers out of the build copy
+SLEEPRADIOPI_OVERRIDE_SRCDIR_RSYNC_EXCLUSIONS = \
+	--exclude .venv --exclude __pycache__ --exclude .pytest_cache --exclude voices
 SLEEPRADIOPI_LICENSE = GPL-3.0-or-later
 SLEEPRADIOPI_LICENSE_FILES = LICENSE NOTICE
 SLEEPRADIOPI_DEPENDENCIES = python3

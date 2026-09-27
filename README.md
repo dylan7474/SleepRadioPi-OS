@@ -87,7 +87,9 @@ software, and the case to print.
 - **Fast boot, more free RAM.** No desktop, no systemd, no services you don't
   need: BusyBox init, eudev, Wi-Fi, mDNS, ssh, and the station.
 - **The radio software** is plain Python (sherpa-onnx for the voice, ffmpeg
-  for audio, numpy for the EQ), installed by `package/sleepradiopi`.
+  for audio, numpy for the EQ) in [`app/`](app/), with its own README (the
+  settings, the web page's API, how it's put together) and tests.
+  `package/sleepradiopi` installs it into the image from there.
 
 ## Building
 
@@ -121,6 +123,16 @@ same) or `--stereo` picks the model; a new config defaults to stereo.
 
 After a rebuild, the same `flash.sh` command on a provisioned card rewrites
 only boot and root, keeping `/data` and `/media`; `--full` wipes the card.
+
+### Changing the radio software
+
+The code is in `app/`. Run its tests on the PC (`cd app`, then as in
+[`app/README.md`](app/README.md#running-it)), rebuild just the app into the
+image, and update the Pi:
+
+```sh
+make sleepradiopi-dirclean && make && scripts/update.sh
+```
 
 ### Updating over Wi-Fi
 
@@ -287,12 +299,13 @@ anything else starts.
 
 | Path | What |
 |---|---|
+| `app/` | The radio software (Python): the station, the DJ, the web page and API, and its tests |
 | `buildroot/` | Buildroot 2026.02.x LTS, pinned as a submodule |
 | `configs/sleepradiopi_zero2w_defconfig` | The image config |
 | `board/sleepradiopi/` | Boot config, cmdline, genimage layout, build scripts |
 | `board/sleepradiopi/rootfs-overlay/` | Files copied into the root filesystem |
 | `board/sleepradiopi/linux.fragment` | Kernel options on top of `bcm2711_defconfig` (squashfs built in; unused drivers trimmed) |
-| `package/` | `python-sherpa-onnx` (PyPI wheels) and `sleepradiopi` (the app) |
+| `package/` | `python-sherpa-onnx` (PyPI wheels) and `sleepradiopi` (installs `app/`) |
 | `scripts/` | `flash.sh`, `provision-media.sh`, `update.sh`, `speaker-mode.sh`, `web-password.sh` (run on the PC) |
 | `hardware/case/` | The 3D-printed case (OpenSCAD source, STLs, assembly notes) |
 
@@ -319,5 +332,6 @@ the default voice when a radio has none; and a physical needle VU meter.
 ## Licence
 
 Build scripts, configs and the case design: GPL-2.0-or-later, the same as Buildroot. The radio
-software is GPL-3.0-or-later (its offline voice engine links eSpeak-NG, which is GPL). The image
+software in `app/` is GPL-3.0-or-later (`app/LICENSE`; its offline voice engine links eSpeak-NG,
+which is GPL). The image
 contains many packages under their own licences; `make legal-info` lists them.
