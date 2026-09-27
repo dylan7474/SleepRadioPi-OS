@@ -37,19 +37,23 @@ import zipfile
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
-STL = HERE / "stl" / "front_logo_sunburst.stl"
+FRONT = HERE / "stl" / "front_logo_sunburst.stl"
+TEST = HERE / "stl" / "twotone_test.stl"            # twotone_test.scad: a few minutes' print
 OUT = HERE / "twotone"
 PRESETS = {"printer": "Original Prusa i3 MK2.5", "print": "0.20mm NORMAL @MK2.5", "filament": "Sunlu PLA"}
 BLUE, WHITE = "#2F6FD6", "#F4F4F2"
 FACE_MM = 0.8                        # the letters' depth (sleepradiopi_box.scad: logo_depth)
 LAYER_MM = 0.2                       # 0.20mm NORMAL: first layer and every layer
 
-# name: (first colour, [(print_z of the first layer in the new colour, colour)], title)
+# The colour changes: [(print_z of the first layer in the new colour, colour)]
+BLUE_FACE = (BLUE, [(FACE_MM + LAYER_MM, WHITE)], "blue face, white letters")
+WHITE_FACE = (WHITE, [(FACE_MM + LAYER_MM, BLUE), (FACE_MM + 3 * LAYER_MM, WHITE)], "white face, blue letters")
+# name: (model, (first colour, changes, title)) -- a test tile of each, to try first
 VARIANTS = {
-    "front_blue_face_white_letters": (BLUE, [(FACE_MM + LAYER_MM, WHITE)],
-                                      "blue face, white letters"),
-    "front_white_face_blue_letters": (WHITE, [(FACE_MM + LAYER_MM, BLUE), (FACE_MM + 3 * LAYER_MM, WHITE)],
-                                      "white face, blue letters"),
+    "front_blue_face_white_letters": (FRONT, BLUE_FACE),
+    "front_white_face_blue_letters": (FRONT, WHITE_FACE),
+    "test_blue_face_white_letters": (TEST, BLUE_FACE),
+    "test_white_face_blue_letters": (TEST, WHITE_FACE),
 }
 
 
@@ -105,13 +109,13 @@ def colour_changes_xml(changes) -> str:
 
 
 def build(name: str, bundle: Path, work: Path) -> Path:
-    first, changes, _ = VARIANTS[name]
+    model, (first, changes, _) = VARIANTS[name]
     ini = work / f"{name}.ini"
     settings = config(bundle, first)
     ini.write_text(settings)
     project = OUT / f"{name}.3mf"
     subprocess.run(["prusa-slicer", "--load", str(ini), "--center", "125,105",       # the MK2.5 bed's middle
-                    "--export-3mf", "--output", str(project), str(STL)], check=True, capture_output=True)
+                    "--export-3mf", "--output", str(project), str(model)], check=True, capture_output=True)
     # Add the colour changes, and the settings: the command line saves only the
     # model, and a project without them opens on a generic printer.
     version = subprocess.run(["prusa-slicer", "--help"], capture_output=True, text=True).stdout.split()[0]
@@ -128,13 +132,16 @@ def build(name: str, bundle: Path, work: Path) -> Path:
     return project
 
 
-def check(project: Path, changes, work: Path) -> list[float]:
-    """Slice the project; return the Z of the layer that follows each M600."""
+def check(project: Path, changes, work: Path) -> tuple[list[float], str]:
+    """Slice the project; return the Z of the layer that follows each M600,
+    and the estimated printing time."""
     gcode = work / (project.stem + ".gcode")
     subprocess.run(["prusa-slicer", "--export-gcode", "--output", str(gcode), str(project)],
                    check=True, capture_output=True)
-    found, pending = [], False
+    found, pending, estimate = [], False, "?"
     for line in gcode.read_text().splitlines():
+        if line.startswith("; estimated printing time (normal mode)"):
+            estimate = line.split("=", 1)[1].strip()
         if line.startswith("M600"):
             pending = True
         m = re.match(r";Z:([\d.]+)", line)
@@ -144,7 +151,7 @@ def check(project: Path, changes, work: Path) -> list[float]:
     want = [round(z, 3) for z, _ in changes]
     if found != want:
         raise SystemExit(f"{project.name}: M600 before layers {found}, expected {want}")
-    return found
+    return found, estimate
 
 
 def main() -> int:
@@ -155,10 +162,10 @@ def main() -> int:
     OUT.mkdir(exist_ok=True)
     with tempfile.TemporaryDirectory() as tmp:
         work = Path(tmp)
-        for name, (first, changes, title) in VARIANTS.items():
+        for name, (model, (first, changes, title)) in VARIANTS.items():
             project = build(name, args.bundle, work)
-            zs = check(project, changes, work)
-            print(f"{project.relative_to(HERE)}: {title}; colour changes before the layers at {zs} mm -- checked")
+            zs, estimate = check(project, changes, work)
+            print(f"{project.relative_to(HERE)}: {title}; changes before the layers at {zs} mm (checked); {estimate}")
     return 0
 
 

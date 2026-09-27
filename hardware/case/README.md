@@ -23,6 +23,7 @@ slot in the back is a small vent. An optional **bass port** back panel is below.
 | `stl/front_logo_sunburst.stl`, `stl/front_plate_logo_sunburst.stl` | face down | the lettered front with **art deco sunburst** grilles instead of hex (`-D 'grille_style="sunburst"'`); the plate adds the **sunburst knob** and the 7 tabs, the complete matching set; see *Sunburst grilles* below |
 | `twotone/front_white_face_blue_letters.3mf` | face down (PrusaSlicer project) | the lettered sunburst front in **two colours**: white face, **blue letters** (two filament changes built in); see *Two-tone front* below |
 | `twotone/front_blue_face_white_letters.3mf` | face down (PrusaSlicer project) | the same front with a **blue face and white letters** (one filament change) |
+| `twotone/test_white_face_blue_letters.3mf`, `twotone/test_blue_face_white_letters.3mf` | face down (PrusaSlicer projects) | **try these first**: a 50 × 16 mm tile with "SLEEP" at the front's size and depth and the same filament changes, ~9 minutes (`twotone_test.scad` → `stl/twotone_test.stl`) |
 | `stl/rear.stl` | outside face down | back panel with the Pi posts and RTC rim |
 | `stl/rear_port.stl` | outside face down, no supports | the same back panel with a **bass port** (`-D rear_port=true`); see *Bass port* below |
 | `stl/grommet.stl` | flange down | closes the power cable slot round the cable; use it with the bass port |
@@ -119,13 +120,19 @@ single-extruder printer:
   after the face for **white**. A blue face with white letters, and a 0.8 mm
   blue band at the front edge.
 
+**Try it first:** `twotone/test_white_face_blue_letters.3mf` (or
+`test_blue_face_white_letters.3mf`) prints a small tile with "SLEEP" at the
+real size and depth and the same changes in about 9 minutes, so you can check
+the swaps and how the letters come out before the 3½-hour front.
+
 They're PrusaSlicer projects (an STL can't hold a colour change) with
 PrusaSlicer's own presets: Original Prusa i3 MK2.5, **0.20mm NORMAL @MK2.5**
 (so the face is exactly 4 layers — keep 0.2 mm layers, or the changes miss
 it) and Sunlu PLA; about 3½ hours. Open one, check it's on your printer,
 slice, and print: each change is an M600, and the printer beeps for the swap.
-`python3 make-twotone.py` rebuilds them from `stl/front_logo_sunburst.stl`
-and slices each one to check the changes land on the right layers.
+`python3 make-twotone.py` rebuilds them (from `stl/front_logo_sunburst.stl` and
+`stl/twotone_test.stl`) and slices each one to check the changes land on the
+right layers.
 
 ## Hardware
 
