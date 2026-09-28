@@ -97,9 +97,17 @@
           <tbody></tbody>
         </table>
         <ul id="recNotes" class="muted"></ul>
+        <div class="row">
+          <input id="radioAddr" type="text" value="sleepradiopi.local" aria-label="The radio's address"
+                 title="The radio's address: sleepradiopi.local, or its IP address (the knob's long press says it)"
+                 style="flex:1;min-width:9rem">
+          <button id="sendBtn" disabled>Send to radio</button>
+        </div>
+        <p class="muted">Opens the radio's page with these settings, ready to <b>Apply</b> (and <b>Undo</b>, to
+          compare by ear). The device must be on the radio's Wi-Fi.</p>
         <div class="row"><button id="dlBtn" disabled>Download settings file</button></div>
-        <p class="muted">Then on the radio's page: <b>⚙ Settings → Backup → Load settings…</b> and pick the file. It holds only
-          the speaker EQ and low cut, and the radio uses them at once. Or set the sliders by hand.</p>
+        <p class="muted">Or load the file on the radio's page: <b>⚙ Settings → Backup → Load settings…</b>. It holds only
+          the speaker EQ and low cut. Or set the sliders by hand.</p>
       </div>
     </div>
     <div class="card">
@@ -439,7 +447,7 @@ function showSuggestion(s) {
     `±${s.after.toFixed(1)} dB with these (${Math.round(s.from)} Hz to 12 kHz).`;
   $("recMsg").classList.toggle("bad", !!s.error);
   $("recTable").hidden = !!s.error;
-  $("dlBtn").disabled = !!s.error;
+  $("dlBtn").disabled = $("sendBtn").disabled = !!s.error;
   $("recNotes").replaceChildren(...(s.notes || []).map(n => Object.assign(document.createElement("li"), { textContent: n })));
   if (s.error) return;
   const rows = [["Bass", fmtDb(s.eq.bass)], ["Mid", fmtDb(s.eq.mid)], ["Treble", fmtDb(s.eq.treble)],
@@ -469,6 +477,19 @@ $("dlBtn").onclick = () => {
   a.download = "sleepradio-speaker-settings.json";
   a.click();
   setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+};
+
+// The radio's page takes the settings in its address (#tune=bass,mid,treble,lowcut) and asks before
+// applying them. A link, not a request: this page is HTTPS and the radio's is plain HTTP, so the
+// browser wouldn't let this page talk to it directly.
+const ADDR_STORE = "spectrum-analyser-radio";
+try { $("radioAddr").value = localStorage.getItem(ADDR_STORE) || $("radioAddr").value; } catch {}
+$("sendBtn").onclick = () => {
+  const s = lastSuggestion; if (!s) return;
+  const addr = $("radioAddr").value.trim().replace(/^https?:\/\//i, "").replace(/\/.*$/, "");
+  if (!/^[\w.:\[\]-]+$/.test(addr)) { setStatus("That isn't a radio address", true); return; }
+  try { localStorage.setItem(ADDR_STORE, addr); } catch {}
+  window.open(`http://${addr}/#tune=${s.eq.bass},${s.eq.mid},${s.eq.treble},${s.lowcut}`, "_blank", "noopener");
 };
 
 // --- drawing -------------------------------------------------------------------------------------

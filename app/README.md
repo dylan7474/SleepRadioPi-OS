@@ -338,9 +338,13 @@ phone. It listens through the device's microphone and suggests the speaker EQ an
    bypasses the EQ and low cut, so it's the bare box), then **Measure the
    radio**.
 3. It suggests bass / mid / treble and a low cut, and draws the curve it
-   predicts with them. **Download settings file** gives a file holding just
-   those two settings. Load it with ⚙ Settings → Backup → Load settings… and the radio
-   uses them at once.
+   predicts with them.
+4. **Send to radio** opens the radio's page (at the address you give it,
+   `sleepradiopi.local` by default) with the suggestion in the address,
+   `#tune=bass,mid,treble,lowcut`. The page shows it next to the current
+   settings, and nothing changes until you press **Apply**. **Undo** puts
+   the old ones back, so you can compare them by ear. Or **Download
+   settings file** and load it with ⚙ Settings → Backup → Load settings…
 
 How it decides:
 - **Sound** picks what it aims for: *Warm, like a radio* (the default: up
@@ -362,7 +366,9 @@ back a rough guess at what it misses. A measurement mic's calibration file
 (like a UMIK-1's) is exact.
 
 The page is on GitHub Pages rather than the radio because browsers only let
-an HTTPS page use the microphone, and the radio's page is plain HTTP.
+an HTTPS page use the microphone, and the radio's page is plain HTTP. For
+the same reason it can't send the settings to the radio itself. It opens
+the radio's page with them instead, and you apply them there.
 
 ### API
 

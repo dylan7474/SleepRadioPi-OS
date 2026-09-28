@@ -127,8 +127,9 @@ it beeps and reads out its network address.
 
 **Tuning the speakers:** the [spectrum analyser](https://dylan7474.github.io/SleepRadioPi-OS/) listens to the
 radio's pink noise through a laptop or phone mic. It suggests the bass /
-mid / treble and low cut, and gives you a settings file to load on the
-radio's page (details in [the app's README](app/README.md#tuning-the-speakers)).
+mid / treble and low cut. **Send to radio** then opens the radio's page
+with them, ready to **Apply**, with **Undo** to compare by ear (details in
+[the app's README](app/README.md#tuning-the-speakers)).
 
 ## Put it on a card
 
@@ -530,10 +531,15 @@ What's left to do (everything else described here is built and running):
   one 4-inch speaker and the VU meter as its dial. The design, the pictures and
   what to buy are on [its page](hardware/cathedral/README.md); the parts come
   once the speaker and meter are here to measure.
-- **Send the analyser's settings straight to the radio** — the spectrum
-  analyser gives a file to load today. If the radio's page is served over
-  HTTPS one day, the analyser could start the pink noise, set the EQ and
-  measure again by itself.
+- **Auto-tune with a USB mic** — a cheap USB mic in the Zero's data port,
+  where you sit, and an **Auto-tune** button on the radio's page:
+  - it plays the pink noise, records the box and works out the EQ and low
+    cut with the analyser's maths (and `audio/eq.py`);
+  - it applies them, measures again, and goes back to the old settings if
+    they didn't help;
+  - no phone or laptop needed; re-run it after changing the back panel or
+    moving the radio (a new cathedral box especially);
+  - needs USB audio in the trimmed kernel.
 - **A carry strap** — designed, still to print and fit: a leather strap
   through two printed side loops, with a drill guide for a case that's already
   printed (see [the case README](hardware/case/README.md#carry-strap)).

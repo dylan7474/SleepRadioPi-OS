@@ -161,6 +161,17 @@
 
   <div id="viewMain" hidden>
 
+  <section id="tuneOffer" class="card" hidden>
+    <h2>Speaker settings from the analyser</h2>
+    <p id="tuneText" style="margin:0"></p>
+    <p id="tuneNow" class="muted" style="margin:.3rem 0 0;font-size:.85rem"></p>
+    <div class="row" style="margin-top:.6rem">
+      <button id="tuneApply" type="button">Apply</button>
+      <button id="tuneUndo" type="button" hidden>Undo</button>
+      <button id="tuneClose" type="button">Not now</button>
+    </div>
+  </section>
+
   <section class="card" aria-live="polite">
     <div id="kind" class="kind">Ready</div>
     <p id="title" class="title">Nothing on air</p>
@@ -1327,12 +1338,62 @@ $("listsBtn").onclick = () => {
   setTimeout(() => $("lists").scrollIntoView({ behavior: "smooth" }), 50);
 };
 
+// Speaker settings sent by the spectrum analyser (tools/analyser): it opens this page as
+// #tune=bass,mid,treble,lowcut. Nothing changes until Apply is pressed here.
+let tuneOld = null;
+const tuneWords = t => `bass ${fmtDb(t.bass)}, mid ${fmtDb(t.mid)}, treble ${fmtDb(t.treble)}, ` +
+                       `low cut ${t.lowcut ? t.lowcut + " Hz" : "off"}`;
+function parseTune(hash) {
+  const m = /^#tune=(-?\d+),(-?\d+),(-?\d+),(\d+)$/.exec(hash);
+  if (!m) return null;
+  const [bass, mid, treble, lowcut] = m.slice(1).map(Number);
+  if ([bass, mid, treble].some(v => Math.abs(v) > 12) || lowcut > 300) return null;
+  return { bass, mid, treble, lowcut };
+}
+async function offerTune() {
+  const t = parseTune(location.hash);
+  if (!t) return;
+  history.replaceState(null, "", location.pathname);      // a reload doesn't offer it again
+  tuneOld = null;
+  $("tuneText").textContent = `The analyser suggests ${tuneWords(t)}.`;
+  $("tuneNow").textContent = "";
+  $("tuneApply").hidden = false; $("tuneApply").disabled = false; $("tuneApply").textContent = "Apply";
+  $("tuneUndo").hidden = true;
+  $("tuneClose").textContent = "Not now";
+  $("tuneOffer").hidden = false;
+  $("tuneApply").onclick = () => setTune(t, true);
+  try {
+    const sp = (await (await fetch("/api/status")).json()).speaker;
+    if (!sp || !sp.eq) { $("tuneNow").textContent = "This radio has no speaker of its own."; $("tuneApply").disabled = true; return; }
+    tuneOld = { ...sp.eq, lowcut: sp.highpass_hz || 0 };
+    $("tuneNow").textContent = `Now: ${tuneWords(tuneOld)}.`;
+  } catch {}
+}
+async function setTune(t, applying) {
+  try {
+    const r = await fetch("/api/speaker", { method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ eq: { bass: t.bass, mid: t.mid, treble: t.treble }, highpass: t.lowcut }) });
+    if (!r.ok) throw new Error();
+  } catch { $("tuneNow").textContent = "Couldn't reach the radio."; return; }
+  $("tuneApply").hidden = applying;
+  $("tuneUndo").hidden = !applying || !tuneOld;
+  $("tuneClose").textContent = "Done";
+  $("tuneNow").textContent = applying
+    ? "Applied and saved. Compare with Undo; change them any time under ⚙ Settings → Speakers."
+    : `Back to ${tuneWords(tuneOld)}.`;
+  if (!applying) { $("tuneApply").hidden = false; $("tuneApply").textContent = "Apply again"; }
+}
+$("tuneUndo").onclick = () => setTune(tuneOld, false);
+$("tuneClose").onclick = () => { $("tuneOffer").hidden = true; };
+window.addEventListener("hashchange", () => { if (started) offerTune(); });
+
 let started = false;
 function start() {
   if (started) return;
   started = true;
   $("login").hidden = true;
   showView();
+  offerTune();
   poll();
   setInterval(poll, 3000);
   loadArtists(); loadBirthdays(); loadDj();
