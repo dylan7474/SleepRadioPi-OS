@@ -348,7 +348,7 @@ Other targets are passed through to Buildroot: `make menuconfig`,
   speakers, the DJ (voice, how often it talks, hooks, jingles, news), **play next** (search the library and queue songs; the DJ
   introduces them), artist radio ("Beatles Radio") and your own lists of
   artists ("Friday List"; the "Sleep Radio" jingles only play on the main mix), birthdays the DJ wishes on the day, test sounds (sweeps,
-  pink noise, left/right and phase checks), a virtual knob, skip, save/load
+  pink noise, left/right (spoken) and phase checks), a virtual knob, skip, save/load
   settings and shut down (see *What it does*, above). Everything on it is a
   small JSON API too, e.g. `wget -qO- http://127.0.0.1/api/status` over
   ssh.
@@ -428,7 +428,7 @@ parts list) or a stacking header between the Pi and the amp.
   charging resistor (often marked 201) or diode.
 - Each speaker to its own channel's + and − on the MiniAmp; never join the
   two − terminals. A loose or reversed wire makes centred vocals vanish in
-  stereo: the web page's test sounds (left/right and a phase check) find it.
+  stereo: the web page's test sounds (left/right, *Left, then right* and a phase check) find it.
 
 `board/sleepradiopi/config.txt` sets the MiniAmp, encoder and switch
 overlays (and the encoder pull-ups), and the RTC overlay

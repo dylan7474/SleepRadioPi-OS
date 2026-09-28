@@ -10,6 +10,9 @@ but with the EQ and low cut bypassed, so what you hear is the box itself.
          app: play it with each panel and compare the curves
   left / right   pink noise on one speaker only: is each one working, and
          on the correct side?
+  sides  left, then right, twice: "Left speaker" in the DJ voice and 3 s of
+         pink noise on the left one only, then the same on the right. With
+         no voice ready it's the noise alone (the page says which side)
   phase  low pink noise that switches every 3 s between both speakers the
          same ("in phase") and the right one inverted ("out of phase"). With
          the speakers wired correctly, in phase sounds fuller and centred; if
@@ -33,6 +36,11 @@ NOISE_LOOP_S = 4             # noise made by FFT repeats seamlessly; keeps RAM l
 
 PHASE_STEP_S = 3.0
 
+SIDES_NOISE_S = 3.0          # "sides": each speaker's noise
+SIDES_GAP_S = 1.5            # silence after it
+SIDES_ORDER = ("left", "right", "left", "right")
+SIDE_WORDS = {"left": "Left speaker", "right": "Right speaker"}
+
 KINDS = {                    # name: (label, duration s, f0, f1); f0 None = noise
     "bass": ("Bass sweep", 24.0, 40.0, 600.0),
     "sweep": ("Full sweep", 24.0, 40.0, 16000.0),
@@ -40,6 +48,7 @@ KINDS = {                    # name: (label, duration s, f0, f1); f0 None = nois
     "left": ("Left speaker", 6.0, None, None),
     "right": ("Right speaker", 6.0, None, None),
     "phase": ("Phase check", 18.0, None, None),
+    "sides": ("Left, then right", 0.0, None, None),   # duration: from the parts
 }
 
 
@@ -57,7 +66,10 @@ def _pink(n: int, rate: int, seed: int = 7, f_hi: float = 20000) -> np.ndarray:
 class TestSignal:
     __test__ = False             # not a pytest test class
 
-    def __init__(self, kind: str, rate: int, channels: int) -> None:
+    def __init__(self, kind: str, rate: int, channels: int,
+                 speech: dict[str, np.ndarray] | None = None) -> None:
+        """speech (for "sides"): SIDE_WORDS' lines as int16-scaled (n, channels)
+        audio, keyed "left" / "right"; None or missing = noise only."""
         self.kind = kind
         self.label, self.duration_s, self.f0, self.f1 = KINDS[kind]
         self.rate, self.channels = rate, channels
@@ -66,6 +78,33 @@ class TestSignal:
         # The phase check uses low noise only: that's where polarity is easiest to hear.
         self._noise = None if self.f0 is not None else \
             _pink(int(NOISE_LOOP_S * rate), rate, f_hi=500 if kind == "phase" else 20000)
+        self._audio = self._sides = None
+        if kind == "sides":
+            self._build_sides(speech or {})
+
+    def _build_sides(self, speech: dict[str, np.ndarray]) -> None:
+        """The whole "sides" test made up front (about 25 s, 4 MB as int16)."""
+        n = int(SIDES_NOISE_S * self.rate)
+        t = np.arange(n) / self.rate
+        fade = np.clip(np.minimum(t, SIDES_NOISE_S - t) / FADE_S, 0, 1)
+        noise = self._noise[np.arange(n) % len(self._noise)] * fade * LEVEL * 32767
+        gap = np.zeros(int(SIDES_GAP_S * self.rate))
+        parts, self._sides, pos = [], [], 0
+        for side in SIDES_ORDER:
+            words = speech.get(side)
+            mono = np.concatenate([np.asarray(words, dtype=np.float32)[:, 0], np.zeros(self.rate // 4)]) \
+                if words is not None and len(words) else np.zeros(0)
+            part = np.concatenate([mono, noise, gap])
+            self._sides.append((pos, side))
+            parts.append((part, side))
+            pos += len(part)
+        self._audio = np.zeros((pos, self.channels), dtype=np.int16)
+        pos = 0
+        for part, side in parts:
+            self._audio[pos:pos + len(part), 0 if side == "left" else 1] = np.clip(part, -32768, 32767)
+            pos += len(part)
+        self.total = pos
+        self.duration_s = round(pos / self.rate, 1)
 
     @property
     def done(self) -> bool:
@@ -82,7 +121,10 @@ class TestSignal:
         return self.f0 * (self.f1 / self.f0) ** (self.elapsed_s / self.duration_s)
 
     def note(self) -> str | None:
-        """What's playing now, for the phase check."""
+        """What's playing now, for the phase check and the sides test."""
+        if self.kind == "sides":
+            side = next(side for start, side in reversed(self._sides) if start <= self.pos)
+            return SIDE_WORDS[side]
         if self.kind != "phase":
             return None
         if int(self.elapsed_s // PHASE_STEP_S) % 2 == 0:
@@ -91,6 +133,12 @@ class TestSignal:
 
     def next(self, n: int) -> np.ndarray:
         """The next n frames as int16-scaled float32, (n, channels); silence after the end."""
+        if self._audio is not None:
+            out = np.zeros((n, self.channels), dtype=np.float32)
+            part = self._audio[self.pos:self.pos + n]
+            out[:len(part)] = part
+            self.pos += n
+            return out
         i = np.arange(self.pos, self.pos + n)
         live = i < self.total
         t = i / self.rate

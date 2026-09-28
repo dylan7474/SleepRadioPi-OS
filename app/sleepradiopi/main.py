@@ -170,6 +170,8 @@ def main() -> None:
         announcer = Announcer(station.render_speech if station._has_voice else None, control.play_clip,
                               voice_ready=on_air, hotspot=_hotspot)
         announcer.start()
+        if station._has_voice:          # the sides test's "Left speaker" / "Right speaker"
+            control.speech = lambda text: station.render_speech(text) if on_air() else None
         threading.Thread(target=_announce_hotspot, args=(announcer,), name="hotspot-watch",
                          daemon=True).start()
         if station._has_voice:

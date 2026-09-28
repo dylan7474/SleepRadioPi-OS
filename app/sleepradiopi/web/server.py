@@ -632,7 +632,7 @@ def make_handler(station: Station, output: Mp3Output, speaker=None,
             {"mono": true | false} or
             {"eq": {"bass": dB, "mid": dB, "treble": dB}} (any of the three),
             {"highpass": Hz} (the low cut; 0 = off) or
-            {"test": "bass" | "sweep" | "pink" | "left" | "right" | "phase" | "stop"}
+            {"test": "bass" | "sweep" | "pink" | "left" | "right" | "sides" | "phase" | "stop"}
             (a test sound on the speaker; see audio/testsignal.py).
             Replies with the speaker's status."""
             try:

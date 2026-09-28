@@ -295,7 +295,9 @@ The cards:
   bypassed: a **bass sweep** (40–600 Hz) and a **full sweep** (40 Hz–16 kHz),
   24 s each with the frequency shown live, **pink noise** (for a phone
   spectrum-analyser app), noise on the **left** or **right** speaker only,
-  and a **phase check** (every 3 s: both speakers the same, then the right
+  **left, then right** (the DJ says "Left speaker" with noise on that side
+  only, then the same on the right, twice; noise alone if no voice is
+  ready), and a **phase check** (every 3 s: both speakers the same, then the right
   one inverted — if the inverted part sounds fuller, a speaker is wired the
   wrong way round, and vocals would vanish in stereo but not in mono).
 - **Wi-Fi** — the connection; saved networks (the card's, and ones added
@@ -331,7 +333,7 @@ everything but the page itself and the login needs the session cookie
 | `POST /api/login` / `/api/logout` | `{"password"}` → a session cookie (401 if wrong) / forget it |
 | `POST /api/password` | `{"password": "..." \| null}` — set, change or remove (needs to be logged in) |
 | `GET /api/status` | What's on air, next, history, the library, the voice, the speaker (volume, playing, mono, EQ, low cut, sleep timer, test sound), artist/list playing |
-| `POST /api/speaker` | Any of `{"volume": 0-100}`, `{"step": n}`, `{"pause": true \| false \| "toggle"}`, `{"sleep": minutes}` (0 = off), `{"mono": bool}`, `{"eq": {"bass": dB, ...}}`, `{"highpass": Hz}`, `{"test": "bass" \| "sweep" \| "pink" \| "left" \| "right" \| "phase" \| "stop"}` |
+| `POST /api/speaker` | Any of `{"volume": 0-100}`, `{"step": n}`, `{"pause": true \| false \| "toggle"}`, `{"sleep": minutes}` (0 = off), `{"mono": bool}`, `{"eq": {"bass": dB, ...}}`, `{"highpass": Hz}`, `{"test": "bass" \| "sweep" \| "pink" \| "left" \| "right" \| "sides" \| "phase" \| "stop"}` |
 | `POST /api/stream` | `{"enabled": bool}` — listening in a browser on/off (saved as `web_stream`) |
 | `POST /api/knob` | `{"press": "short" \| "long"}` — the knob's switch |
 | `POST /api/skip` | Skip what's on air (track, link, jingle or bulletin) |
@@ -378,7 +380,7 @@ sleepradiopi/
   broadcast/   The station: show clock, DJ scripts, track selection, news, library scan (+ tag cache),
                birthdays.py (wishes on the day), profiles.py (lists of artists)
   audio/       PCM via ffmpeg (decode, loudness, voice EQ); speaker.py (aplay, volume, mono, sleep fade),
-               eq.py (3-band EQ + low cut), testsignal.py (sweeps, noise, phase check)
+               eq.py (3-band EQ + low cut), testsignal.py (sweeps, noise, left/right, phase check)
   tts/         sherpa-onnx voice, run in a recycled worker process
   web/         MP3 stream, the web page (page.html) and the JSON API (server.py)
   config/      Settings (JSON), atomic file writes, settings backup (backup.py), the web password

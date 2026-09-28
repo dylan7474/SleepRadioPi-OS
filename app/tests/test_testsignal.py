@@ -119,6 +119,31 @@ def test_left_and_right_play_on_one_speaker_only() -> None:
     assert np.abs(right[:, 1]).max() > 1000 and not right[:, 0].any()
 
 
+def test_sides_says_each_side_then_plays_noise_on_it_only() -> None:
+    words = {"left": np.full((RATE // 2, 2), 1000.0, dtype=np.float32),
+             "right": np.full((RATE // 2, 2), 2000.0, dtype=np.float32)}
+    sig = TestSignal("sides", RATE, 2, speech=words)
+    assert sig.note() == "Left speaker"
+    x = sig.next(sig.total)
+    assert sig.done and not sig.next(100).any()
+    quarter = len(x) // 4                                     # left, right, left, right
+    for k, (on, off) in enumerate([(0, 1), (1, 0), (0, 1), (1, 0)]):
+        part = x[k * quarter:(k + 1) * quarter]
+        assert np.abs(part[:, on]).max() > 1000 and not part[:, off].any()
+    assert x[0, 0] == 1000 and x[quarter, 1] == 2000         # the words come first
+    half = TestSignal("sides", RATE, 2, speech=words)
+    half.next(quarter + RATE)
+    assert half.note() == "Right speaker"
+
+
+def test_sides_without_a_voice_is_noise_only() -> None:
+    sig = TestSignal("sides", RATE, 2)
+    x = sig.next(sig.total)
+    assert sig.duration_s == 4 * (3.0 + 1.5)
+    assert abs(x[0, 0]) < 1                                   # faded in: no click
+    assert np.abs(x[:RATE * 3, 0]).max() > 1000 and not x[:RATE * 3, 1].any()
+
+
 def test_phase_check_alternates_polarity_every_step() -> None:
     sig = TestSignal("phase", RATE, 2)
     x = sig.next(sig.total)

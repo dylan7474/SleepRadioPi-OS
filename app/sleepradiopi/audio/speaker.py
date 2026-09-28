@@ -24,7 +24,7 @@ import numpy as np
 
 from sleepradiopi.audio import pcm
 from sleepradiopi.audio.eq import Equalizer, clamp
-from sleepradiopi.audio.testsignal import KINDS, TestSignal
+from sleepradiopi.audio.testsignal import KINDS, SIDE_WORDS, TestSignal
 from sleepradiopi.config.atomic import write_atomic
 from sleepradiopi.config.settings import save_setting
 
@@ -195,6 +195,9 @@ class SpeakerControl:
         self._sleep_timer: threading.Timer | None = None
         self._sleep_min = 0
         self._pause_after_clip = False   # a clip started while paused: pause again after it
+        # Says a line in the DJ voice (int16 stereo), for the "sides" test's
+        # "Left speaker" / "Right speaker"; None (or returning None) = no voice.
+        self.speech: Callable[[str], np.ndarray | None] | None = None
         speaker.volume = self._load(default_volume)
         speaker.set_enabled(False)   # silent until play()
 
@@ -301,11 +304,24 @@ class SpeakerControl:
         show; starts the speaker if it was paused."""
         if kind not in KINDS:
             raise ValueError(f"unknown test sound {kind!r}")
-        signal = TestSignal(kind, pcm.SAMPLE_RATE, pcm.CHANNELS)
+        signal = TestSignal(kind, pcm.SAMPLE_RATE, pcm.CHANNELS,
+                            speech=self._side_words() if kind == "sides" else None)
         self.play()
         with self._lock:
             self.speaker.test = signal
         log.info("speaker: test sound %s", kind)
+
+    def _side_words(self) -> dict[str, np.ndarray]:
+        """'Left speaker' / 'Right speaker' in the DJ voice (blocking, a few
+        seconds on a Zero); empty if there's no voice, so the test is noise only."""
+        if self.speech is None:
+            return {}
+        try:
+            words = {side: self.speech(text) for side, text in SIDE_WORDS.items()}
+        except Exception:
+            log.exception("speaker: couldn't say the sides")
+            return {}
+        return {side: audio for side, audio in words.items() if audio is not None}
 
     def play_clip(self, clip) -> None:
         """Play ready-made audio (e.g. the spoken address) on the speaker instead
