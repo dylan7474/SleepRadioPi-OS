@@ -318,13 +318,15 @@ def make_handler(station: Station, output: Mp3Output, speaker=None,
                 return
             changed = backup.apply(config_file, settings)     # before the live ones save theirs
             dj_keys = {"broadcast_chattiness", "broadcast_dj_hooks", "broadcast_jingle_enabled",
-                       "broadcast_jingle_every", "news_enabled"}
+                       "broadcast_jingle_every", "news_enabled", "broadcast_announcer_speed", "news_speed"}
             if changed & dj_keys:
                 every = settings.get("broadcast_jingle_every", station.config.jingle_every or 4)
                 station.set_dj(chattiness=settings.get("broadcast_chattiness"),
                                dj_hooks=settings.get("broadcast_dj_hooks"),
                                jingle_every=every if settings.get("broadcast_jingle_enabled", True) else 0,
-                               news_enabled=settings.get("news_enabled"))
+                               news_enabled=settings.get("news_enabled"),
+                               dj_speed=settings.get("broadcast_announcer_speed"),
+                               news_speed=settings.get("news_speed"))
             if "profiles" in changed:
                 station.set_profiles(settings["profiles"])
             if changed & {"broadcast_artist", "broadcast_profile", "profiles"}:
@@ -450,7 +452,8 @@ def make_handler(station: Station, output: Mp3Output, speaker=None,
 
         def _set_dj(self) -> None:
             """POST /api/dj with any of {"voice", "chattiness", "dj_hooks",
-            "jingle_every" (0 = off), "news_enabled"}. All saved; all live except
+            "jingle_every" (0 = off), "news_enabled", "dj_speed", "news_speed"
+            (0.5-1.5, 1 = the voice's own pace)}. All saved; all live except
             the voice, which restarts the station (only one voice fits in RAM)."""
             try:
                 body = self._body()
@@ -466,7 +469,8 @@ def make_handler(station: Station, output: Mp3Output, speaker=None,
                 if voice is not None and voice not in station.voices():
                     raise ValueError(f"no voice called {voice!r}")
                 station.set_dj(chattiness=body.get("chattiness"), dj_hooks=body.get("dj_hooks"),
-                               jingle_every=every, news_enabled=body.get("news_enabled"))
+                               jingle_every=every, news_enabled=body.get("news_enabled"),
+                               dj_speed=body.get("dj_speed"), news_speed=body.get("news_speed"))
             except (ValueError, TypeError, AttributeError) as e:
                 self._error(str(e))
                 return
@@ -484,6 +488,10 @@ def make_handler(station: Station, output: Mp3Output, speaker=None,
                     save_setting(config_file, "news_enabled", body["news_enabled"])
                 if "startup_sound" in body:
                     save_setting(config_file, "startup_sound", body["startup_sound"])
+                if "dj_speed" in body:
+                    save_setting(config_file, "broadcast_announcer_speed", station.config.announcer_speed)
+                if "news_speed" in body:
+                    save_setting(config_file, "news_speed", station.config.news_speed)
                 if voice is not None and voice != station.dj_voice:
                     save_setting(config_file, "broadcast_voice", voice)
                     restarting = bool(os.environ.get(RESTART_ENV))

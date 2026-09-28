@@ -59,6 +59,7 @@ STARTUP_JINGLE_MAX_S = 20.0   # the opening ident: longer ones (most jingles) wa
 SPEECH_PAD_S = 0.25       # breath of silence either side of the DJ
 SPEECH_WAIT_S = 45.0      # give up on a line that still isn't synthesised after this
 PER_LINE_ESTIMATE_S = 4.0  # rough length of a spoken line, for wording a clock after one
+SPEED_MIN, SPEED_MAX = 0.5, 1.5   # DJ / news speech speed (x the voice's own pace), from the page
 
 
 class Output(Protocol):
@@ -654,7 +655,8 @@ class Station:
                 "chattiness_options": [c.ident for c in Chattiness],
                 "dj_hooks": self.builder.hooks is not None, "hooks_available": self._hook_pool is not None,
                 "jingle_every": self.config.jingle_every, "jingles_available": self._jingles_available(),
-                "news_enabled": self.config.news_enabled}
+                "news_enabled": self.config.news_enabled,
+                "dj_speed": self.config.announcer_speed, "news_speed": self.config.news_speed}
 
     def _jingles_available(self) -> bool:
         if self.jingles:
@@ -663,8 +665,19 @@ class Station:
         return folder.is_dir() and any(folder.iterdir())
 
     def set_dj(self, chattiness: str | None = None, dj_hooks: bool | None = None,
-               jingle_every: int | None = None, news_enabled: bool | None = None) -> None:
-        """Change the DJ live (from the next gap on). ValueError if a value is wrong."""
+               jingle_every: int | None = None, news_enabled: bool | None = None,
+               dj_speed: float | None = None, news_speed: float | None = None) -> None:
+        """Change the DJ live (from the next gap on). ValueError if a value is wrong.
+        The speeds (1 = the voice's own pace, higher = faster) apply to lines made
+        from now on; one or two may already be made at the old speed."""
+        for name, speed in (("dj_speed", dj_speed), ("news_speed", news_speed)):
+            if speed is not None and (isinstance(speed, bool) or not isinstance(speed, (int, float))
+                                      or not SPEED_MIN <= speed <= SPEED_MAX):
+                raise ValueError(f"{name} must be {SPEED_MIN}-{SPEED_MAX}")
+        if dj_speed is not None:
+            self.config.announcer_speed = round(float(dj_speed), 2)
+        if news_speed is not None:
+            self.config.news_speed = round(float(news_speed), 2)
         if chattiness is not None:
             c = next((c for c in Chattiness if c.ident == chattiness), None)
             if c is None:
@@ -687,8 +700,9 @@ class Station:
             self._tracks_since_jingle = 0
         if news_enabled is not None:
             self.config.news_enabled = bool(news_enabled)
-        log.info("DJ: chattiness %s, hooks %s, jingles every %s, news %s", self.chattiness,
-                 self.builder.hooks is not None, self.config.jingle_every or "off", self.config.news_enabled)
+        log.info("DJ: chattiness %s, hooks %s, jingles every %s, news %s, speed %s, news speed %s",
+                 self.chattiness, self.builder.hooks is not None, self.config.jingle_every or "off",
+                 self.config.news_enabled, self.config.announcer_speed, self.config.news_speed)
 
     @property
     def main_mix(self) -> bool:

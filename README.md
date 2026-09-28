@@ -73,7 +73,7 @@ software, and the case to print.
   that fades the speakers out, artist radio, play next (and, if you switch
   it on, listening in the browser too). Under ⚙ Settings: the
   speakers (stereo/mono, EQ, low cut), the DJ (voice, how often it talks,
-  hooks, jingles, news), voices (download the standard one, upload your
+  hooks, jingles, news, DJ and news speaking speeds), voices (download the standard one, upload your
   own), your artist lists, birthdays, test sounds for
   checking speakers and wiring, the password, a settings backup you can
   download and load back, and shut down.
@@ -345,7 +345,7 @@ Other targets are passed through to Buildroot: `make menuconfig`,
 - **The web page** (http://sleepradiopi.local/) is the control panel
   (everyday controls on the main page, the rest under ⚙ Settings):
   volume, stereo/mono, a 3-band EQ and low cut, a sleep timer that fades the
-  speakers, the DJ (voice, how often it talks, hooks, jingles, news), **play next** (search the library and queue songs; the DJ
+  speakers, the DJ (voice, how often it talks, hooks, jingles, news, speaking speeds), **play next** (search the library and queue songs; the DJ
   introduces them), artist radio ("Beatles Radio") and your own lists of
   artists ("Friday List"; the "Sleep Radio" jingles only play on the main mix), birthdays the DJ wishes on the day, test sounds (sweeps,
   pink noise, left/right (spoken) and phase checks), a virtual knob, skip, save/load

@@ -36,7 +36,8 @@ LOCAL = {"music_folder", "jingles_folder", "voices_folder", "hooks_file", "http_
 # Applied while the station runs; any other change needs a restart.
 LIVE = {"speaker_mono", "speaker_eq", "speaker_highpass_hz", "broadcast_artist", "birthdays",
         "profiles", "broadcast_profile", "broadcast_chattiness", "broadcast_dj_hooks",
-        "broadcast_jingle_enabled", "broadcast_jingle_every", "news_enabled", "startup_sound", "web_stream"}
+        "broadcast_jingle_enabled", "broadcast_jingle_every", "news_enabled", "startup_sound", "web_stream",
+        "broadcast_announcer_speed", "news_speed"}
 
 CHOICES = {
     "broadcast_voice": {None, "stock", "personal"},
@@ -46,8 +47,8 @@ CHOICES = {
 RANGES = {
     "broadcast_jingle_every": (1, 50),
     "broadcast_announcer_volume": (0, 4),
-    "broadcast_announcer_speed": (0.3, 3),
-    "news_speed": (0.3, 3),
+    "broadcast_announcer_speed": (0.5, 1.5),     # station.SPEED_MIN/MAX
+    "news_speed": (0.5, 1.5),
     "news_quiet_start_min": (0, 24 * 60 - 1),
     "news_quiet_end_min": (0, 24 * 60 - 1),
     "listener_grace_s": (0, 3600),

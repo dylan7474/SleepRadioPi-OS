@@ -204,7 +204,8 @@ Most of these are set from the web page; the rest are in the config file.
 | `birthdays` | `[]` | `[{"name", "day", "month", "year"?}]` |
 | `broadcast_chattiness` | `"maximum"` | `maximum` (a link before every song), `chatty`, `balanced`, `minimal` (every 5). |
 | `broadcast_dj_hooks`, `broadcast_jingle_enabled` / `broadcast_jingle_every`, `news_enabled` | on, on / 4, on | The DJ card sets these. |
-| `broadcast_announcer_speed`, `broadcast_announcer_volume`, `news_speed`, `news_quiet_hours`, ... | | Config file only for now; see `sleepradiopi/config/settings.py`. |
+| `broadcast_announcer_speed`, `news_speed` | `0.85`, `0.70` | Speech speed, 0.5–1.5 (1 = the voice's own pace, higher = faster). The DJ card sets these. |
+| `broadcast_announcer_volume`, `news_quiet_hours`, ... | | Config file only for now; see `sleepradiopi/config/settings.py`. |
 
 The "is the clock right?" check reads `SLEEPRADIOPI_CLOCK_FLAG`: a file that
 exists once the time is known (the appliance creates `/run/time-synced` when
@@ -258,8 +259,10 @@ The cards:
 - **The DJ** — the voice (your voice packs; changing it restarts the radio,
   about a minute, because only one voice fits in a Zero 2 W's memory), how
   often it talks (before every song, or every 2, 3 or 5), 70s hooks on/off,
-  jingles (off or every 2–8 songs), news on/off, and the start-up sound
-  (chime or silent). All but the voice are heard from the next gap.
+  jingles (off or every 2–8 songs), the **DJ speed** and **news speed**
+  (sliders, 0.5–1.5×; a line or two may already be made at the old speed),
+  news on/off, and the start-up sound (chime or silent). All but the voice
+  are heard from the next gap.
 - **Voices** — the voice packs on the radio; *Download the standard voice*
   (if it isn't there) and *Upload* your own (an archive — .zip, .tar.gz,
   .tar.bz2 or .tar.xz — of a Piper / sherpa-onnx voice folder: a .onnx
@@ -337,7 +340,7 @@ everything but the page itself and the login needs the session cookie
 | `POST /api/stream` | `{"enabled": bool}` — listening in a browser on/off (saved as `web_stream`) |
 | `POST /api/knob` | `{"press": "short" \| "long"}` — the knob's switch |
 | `POST /api/skip` | Skip what's on air (track, link, jingle or bulletin) |
-| `GET` / `POST /api/dj` | The DJ settings (and the voices there are) / any of `{"voice", "chattiness", "dj_hooks", "jingle_every", "news_enabled", "startup_sound"}` |
+| `GET` / `POST /api/dj` | The DJ settings (and the voices there are) / any of `{"voice", "chattiness", "dj_hooks", "jingle_every", "news_enabled", "startup_sound", "dj_speed", "news_speed"}` |
 | `GET /api/wifi` | Wi-Fi: mode (station / hotspot / connecting), network and address, saved networks, nearby ones |
 | `POST /api/wifi/add` / `remove` / `scan` / `hotspot` / `try` | `{"ssid", "password"}` / `{"ssid"}` / – / `{"ssid", "password"}` / – |
 | `GET /api/voices` | The voices, the one in use, and any download/upload/install under way |

@@ -304,6 +304,12 @@
       <option value="0">Off</option><option value="2">Every 2 songs</option><option value="3">Every 3 songs</option>
       <option value="4">Every 4 songs</option><option value="5">Every 5 songs</option>
       <option value="6">Every 6 songs</option><option value="8">Every 8 songs</option></select></div>
+    <div class="row"><label for="djSpeed">DJ speed</label>
+      <input id="djSpeed" type="range" min="0.5" max="1.5" step="0.05" value="1">
+      <output id="djSpeedNum" for="djSpeed" class="muted">1.00×</output></div>
+    <div class="row"><label for="newsSpeed">News speed</label>
+      <input id="newsSpeed" type="range" min="0.5" max="1.5" step="0.05" value="1">
+      <output id="newsSpeedNum" for="newsSpeed" class="muted">1.00×</output></div>
     <div class="row seg" id="djNews" role="group" aria-label="News bulletins">
       <label>News</label>
       <button type="button" data-v="true">On</button><button type="button" data-v="false">Off</button>
@@ -314,7 +320,7 @@
       <button type="button" data-v="false">Silent</button>
     </div>
     <p id="djNote" class="muted" style="margin:.6rem 0 0;font-size:.85rem">Changes are heard from the next gap
-      between songs. Jingles only play on the main mix (all artists). Changing the voice restarts the radio
+      between songs. Speed: 1× is the voice's own pace; a line or two may already be made at the old speed. Jingles only play on the main mix (all artists). Changing the voice restarts the radio
       (about a minute): only one voice fits in its memory.</p>
   </section>
 
@@ -811,6 +817,13 @@ function showDj(d) {
   $("djJingleRow").hidden = !d.jingles_available;
   pressSeg("djNews", d.news_enabled);
   pressSeg("djStartup", d.startup_sound);
+  showSpeed("djSpeed", d.dj_speed);
+  showSpeed("newsSpeed", d.news_speed);
+}
+function showSpeed(id, v) {
+  if (v == null) return;
+  $(id).value = v;
+  $(id + "Num").textContent = (+v).toFixed(2) + "×";
 }
 async function loadDj() {
   try { showDj(await (await fetch("/api/dj", { cache: "no-store" })).json()); } catch {}
@@ -837,6 +850,11 @@ document.querySelectorAll("#djHooks button").forEach(b => b.onclick = () => setD
 $("djJingles").onchange = e => setDj({ jingle_every: +e.target.value }, +e.target.value ? `A jingle every ${e.target.value} songs.` : "No jingles.");
 document.querySelectorAll("#djStartup button").forEach(b => b.onclick = () => setDj({ startup_sound: b.dataset.v === "true" },
   b.dataset.v === "true" ? "At power-on: a chime, then the DJ says it's warming up." : "Silent at power-on."));
+// Speeds: the number follows the slider; saved when it's let go.
+[["djSpeed", "dj_speed", "DJ"], ["newsSpeed", "news_speed", "News"]].forEach(([id, key, who]) => {
+  $(id).oninput = e => showSpeed(id, e.target.value);
+  $(id).onchange = e => setDj({ [key]: +e.target.value }, `${who} speed ${(+e.target.value).toFixed(2)}× from the next line.`);
+});
 document.querySelectorAll("#djNews button").forEach(b => b.onclick = () => setDj({ news_enabled: b.dataset.v === "true" }, `News ${b.textContent.toLowerCase()}.`));
 
 // Voices: what's there, download the standard one, upload your own. A job

@@ -56,6 +56,17 @@ def test_changes_apply_live(tmp_path: Path) -> None:
         st.set_dj(jingle_every=99)
 
 
+def test_speech_speeds_apply_live(tmp_path: Path) -> None:
+    st = _dj_station(tmp_path)
+    st.set_dj(dj_speed=0.9, news_speed=0.85)
+    assert (st.config.announcer_speed, st.config.news_speed) == (0.9, 0.85)
+    assert st.dj_settings()["dj_speed"] == 0.9 and st.dj_settings()["news_speed"] == 0.85
+    for bad in (0.2, 2, True, "1"):
+        with pytest.raises(ValueError):
+            st.set_dj(news_speed=bad)
+    assert st.config.news_speed == 0.85
+
+
 @pytest.fixture
 def radio(tmp_path: Path, monkeypatch):
     st = _dj_station(tmp_path)
@@ -88,6 +99,9 @@ def test_web_sets_and_saves_the_dj(radio) -> None:
     req({"jingle_every": 0})
     assert load(conf).broadcast_jingle_enabled is False and load(conf).broadcast_jingle_every == 6
     assert json.loads(conf.read_text())["music_folder"] == "/media/music" and not restarts
+    got = req({"dj_speed": 1.1, "news_speed": 0.95})
+    assert (got["dj_speed"], got["news_speed"]) == (1.1, 0.95)
+    assert (load(conf).broadcast_announcer_speed, load(conf).news_speed) == (1.1, 0.95)
 
 
 def test_web_voice_change_restarts_only_when_supervised(radio, monkeypatch) -> None:
@@ -105,7 +119,8 @@ def test_web_voice_change_restarts_only_when_supervised(radio, monkeypatch) -> N
 
 
 @pytest.mark.parametrize("bad", [{"voice": "robot"}, {"chattiness": "shouty"}, {"dj_hooks": "yes"},
-                                 {"jingle_every": "4"}, {"jingle_every": 99}, {"news_enabled": 1}])
+                                 {"jingle_every": "4"}, {"jingle_every": 99}, {"news_enabled": 1},
+                                 {"dj_speed": 3}, {"news_speed": "fast"}])
 def test_web_rejects_bad_values(radio, bad) -> None:
     req, *_ = radio
     with pytest.raises(urllib.error.HTTPError) as err:
