@@ -290,14 +290,16 @@ The cards:
   port). The MiniAmp has no EQ of its own, so it's done in software
   (`audio/eq.py`: one linear-phase FIR from the biquads, FFT per block, ~11%
   of one Zero 2 W core when not flat; changes are crossfaded, so no clicks).
-  Boosts lower the overall level so they can't clip.
+  Boosts lower the overall level so they can't clip. The
+  [spectrum analyser](https://dylan7474.github.io/SleepRadioPi-OS/) can suggest the settings (see *Tuning the
+  speakers*, below).
 - **Knob switch** — works like the real knob: tap to pause/play, hold 3 s to
   hear the address. If the radio was paused it speaks, then pauses again.
 - **Test sound** — for comparing speaker cabinets and checking wiring, on the
   speakers instead of the show for a moment, with the EQ and low cut
   bypassed: a **bass sweep** (40–600 Hz) and a **full sweep** (40 Hz–16 kHz),
-  24 s each with the frequency shown live, **pink noise** (for a phone
-  spectrum-analyser app), noise on the **left** or **right** speaker only,
+  24 s each with the frequency shown live, **pink noise** (for the
+  spectrum analyser, or a phone app), noise on the **left** or **right** speaker only,
   **left, then right** (the DJ says "Left speaker" with noise on that side
   only, then the same on the right, twice; noise alone if no voice is
   ready), and a **phase check** (every 3 s: both speakers the same, then the right
@@ -323,6 +325,38 @@ The cards:
 - **Shut down** — turns the radio off safely before unplugging (appliance
   image only: the station isn't root, so it creates the file named by
   `SLEEPRADIOPI_POWER_REQUEST`, which a root service watches).
+
+### Tuning the speakers
+
+The [spectrum analyser](https://dylan7474.github.io/SleepRadioPi-OS/) (source in
+[`tools/analyser/`](../tools/analyser/)) is a web page for a laptop or a
+phone. It listens through the device's microphone and suggests the speaker EQ and low cut:
+
+1. Put the laptop about 50 cm in front of the radio and press **Measure the
+   quiet room**.
+2. Press **Pink noise** on the radio's page (⚙ Settings → Test sound; it
+   bypasses the EQ and low cut, so it's the bare box), then **Measure the
+   radio**.
+3. It suggests bass / mid / treble and a low cut, and draws the curve it
+   predicts with them. **Download settings file** gives a file holding just
+   those two settings. Load it with ⚙ Settings → Backup → Load settings… and the radio
+   uses them at once.
+
+How it decides:
+- The low cut is where the box has fallen 10 dB below its mids. If the mic
+  can't hear the radio that low over the room's noise, it's set where the
+  mic stopped hearing it, to be safe.
+- The EQ is the whole-dB setting that makes the rest flattest. It is worked
+  out through the same filters the radio uses (`audio/eq.py`).
+- Boosts are kept small: at most +6 dB, and they cost more than cuts.
+- Only frequencies at least 10 dB above the room's noise count.
+
+A laptop mic hears little below ~150 Hz. **Mic → Typical laptop mic** adds
+back a rough guess at what it misses. A measurement mic's calibration file
+(like a UMIK-1's) is exact.
+
+The page is on GitHub Pages rather than the radio because browsers only let
+an HTTPS page use the microphone, and the radio's page is plain HTTP.
 
 ### API
 

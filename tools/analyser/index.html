@@ -1,0 +1,612 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Spectrum Analyser</title>
+<style>
+  :root {
+    --bg: #0f1115; --panel: #181b22; --fg: #e6e6e6; --muted: #8b93a1; --grid: #262b35; --grid2: #343a47;
+    --live: #5ec8ff; --avg: #ffd166; --bad: #ff6b6b; --good: #7cf29a; --btn: #232833; --btn-hi: #2e3542;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--fg); font: 14px/1.4 system-ui, sans-serif; }
+  header { display: flex; flex-wrap: wrap; gap: .5rem; align-items: center; padding: .6rem 1rem; background: var(--panel); }
+  header h1 { font-size: 1rem; margin: 0 1rem 0 0; }
+  button, select, input[type=text] {
+    background: var(--btn); color: var(--fg); border: 1px solid var(--grid2); border-radius: 6px;
+    padding: .35rem .7rem; font: inherit;
+  }
+  button:hover { background: var(--btn-hi); }
+  button:disabled { opacity: .45; cursor: default; }
+  button.on { border-color: var(--avg); color: var(--avg); }
+  label { color: var(--muted); display: inline-flex; align-items: center; gap: .3rem; }
+  main { display: grid; grid-template-columns: 1fr 24rem; gap: 1rem; padding: 1rem; }
+  @media (max-width: 900px) { main { grid-template-columns: 1fr; } }
+  #plotBox { position: relative; background: var(--panel); border-radius: 8px; height: 70vh; min-height: 320px; }
+  canvas { position: absolute; inset: 0; width: 100%; height: 100%; }
+  #readout { position: absolute; top: .5rem; right: .7rem; color: var(--muted); font-variant-numeric: tabular-nums;
+             text-align: right; pointer-events: none; white-space: pre; font-size: 12px; }
+  aside { display: flex; flex-direction: column; gap: 1rem; }
+  .card { background: var(--panel); border-radius: 8px; padding: .8rem; }
+  .card h2 { font-size: .9rem; margin: 0 0 .5rem; color: var(--muted); font-weight: 600; }
+  table { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
+  td, th { padding: .25rem .3rem; text-align: right; }
+  th { color: var(--muted); font-weight: 500; font-size: 12px; }
+  td:first-child, th:first-child { text-align: left; }
+  .sw { display: inline-block; width: .8rem; height: .8rem; border-radius: 2px; vertical-align: -1px; margin-right: .3rem; }
+  .x { background: none; border: none; color: var(--muted); padding: 0 .2rem; cursor: pointer; }
+  .hid { opacity: .35; }
+  .muted { color: var(--muted); font-size: 12px; }
+  #status { color: var(--muted); }
+  #status.bad { color: var(--bad); }
+  .row { display: flex; gap: .4rem; flex-wrap: wrap; align-items: center; }
+  ol.steps { margin: 0 0 .6rem; padding-left: 1.2rem; }
+  ol.steps li { margin-bottom: .5rem; }
+  ol.steps button { margin-top: .3rem; }
+  #rec table { margin: .3rem 0 .5rem; }
+  #rec td:last-child { color: var(--good); font-weight: 600; }
+  #recMsg.bad { color: var(--bad); }
+  #recNotes { margin: .3rem 0; padding-left: 1.1rem; }
+  a { color: var(--live); }
+</style>
+</head>
+<body>
+<header>
+  <h1>Spectrum Analyser</h1>
+  <button id="startBtn">Start microphone</button>
+  <select id="dev" title="Input device"></select>
+  <label>Average <select id="tau">
+    <option value="3">3 s</option><option value="10" selected>10 s</option>
+    <option value="30">30 s</option><option value="0">All (since reset)</option></select></label>
+  <button id="resetBtn" title="Start the average again">Reset average</button>
+  <button id="freezeBtn">Freeze</button>
+  <label title="Shift every curve so its mids (500 Hz–2 kHz) sit at 0 dB: compares the shape, whatever the volume">
+    <input id="align" type="checkbox" checked> Align at mids</label>
+  <label title="Tilt the curves up 3 dB per octave, so pink noise through a perfect speaker reads flat">
+    <input id="flat" type="checkbox" checked> Pink noise flat</label>
+  <label title="Smoothing of the curves"><select id="smooth">
+    <option value="3">1/3 octave</option><option value="6" selected>1/6 octave</option><option value="12">1/12 octave</option></select></label>
+  <label title="Undo the microphone's own frequency response">Mic <select id="mic">
+    <option value="none">No correction</option>
+    <option value="laptop">Typical laptop mic (approx.)</option>
+    <option value="file">Calibration file…</option></select></label>
+  <input id="calFile" type="file" accept=".txt,.cal,.frd,.csv,text/plain" hidden>
+  <span id="status">Not listening</span>
+</header>
+<main>
+  <div id="plotBox"><canvas id="plot"></canvas><div id="readout"></div></div>
+  <aside>
+    <div class="card">
+      <h2>Tune a Sleep Radio's speakers</h2>
+      <ol class="steps muted">
+        <li>Put the laptop (or phone) about 50 cm in front of the radio, at speaker height, and keep the room quiet.
+          Set the radio to a comfortable, fairly loud volume.<br>
+          <button id="floorBtn">1. Measure the quiet room (4 s)</button></li>
+        <li>On the radio's own page, press <b>⚙ Settings → Test sound → Pink noise</b>, then straight away:<br>
+          <button id="pinkBtn">2. Measure the radio (8 s)</button></li>
+      </ol>
+      <div id="rec">
+        <p id="recMsg" class="muted" style="margin:0">The suggested settings appear here.</p>
+        <table id="recTable" hidden>
+          <thead><tr><th></th><th>Suggested</th></tr></thead>
+          <tbody></tbody>
+        </table>
+        <ul id="recNotes" class="muted"></ul>
+        <div class="row"><button id="dlBtn" disabled>Download settings file</button></div>
+        <p class="muted">Then on the radio's page: <b>⚙ Settings → Backup → Load settings…</b> and pick the file. It holds only
+          the speaker EQ and low cut, and the radio uses them at once. Or set the sliders by hand.</p>
+      </div>
+    </div>
+    <div class="card">
+      <h2>Tone balance (from the average)</h2>
+      <table id="bands">
+        <thead><tr><th></th><th>Deep bass<br>60–120</th><th>Bass<br>120–250</th><th>Treble<br>4k–12k</th></tr></thead>
+        <tbody></tbody>
+      </table>
+      <p class="muted">dB relative to the mids (500 Hz–2 kHz). Higher = more of it. Compare the rows; the absolute
+        numbers depend on the mic.</p>
+    </div>
+    <div class="card">
+      <h2>Snapshots</h2>
+      <div class="row">
+        <input id="snapName" type="text" placeholder="e.g. bass 10, low cut 100" style="flex:1;min-width:10rem">
+        <button id="snapBtn">Save average</button>
+      </div>
+      <p class="muted">Play the same song (or the radio's pink noise) for each EQ setting, let the average settle,
+        then save it. Click a snapshot's colour to hide or show it.</p>
+    </div>
+    <div class="card">
+      <h2>Good to know</h2>
+      <p class="muted" style="margin:0">A laptop mic hears little below ~100–150 Hz, so the deep bass reads low for
+        everything. <b>Typical laptop mic</b> adds back a rough guess at what it misses; a measurement mic's
+        calibration file (frequency and dB per line, like a UMIK-1's) is exact. Either way, keep the mic in the
+        same place and the volume the same when comparing. The radio's pink noise skips its EQ and low cut, so
+        it measures the bare box. The browser's echo cancelling, noise suppression and auto gain are turned
+        off so they don't bend the curve. Made for
+        <a href="https://github.com/dylan7474/SleepRadioPi-OS">SleepRadioPi-OS</a>.</p>
+    </div>
+  </aside>
+</main>
+<script>
+const $ = id => document.getElementById(id);
+const FFT = 16384, F_MIN = 20, F_MAX = 20000, POINTS = 480;
+const BANDS = [["deep", 60, 120], ["bass", 120, 250], ["treble", 4000, 12000]];
+const MIDS = [500, 2000];
+const COLORS = ["#ff7ab6", "#7cf29a", "#b48cff", "#ff9f5a", "#5ef0e6", "#f5f56b", "#9fb4ff", "#ff5e5e"];
+const STORE = "spectrum-analyser-snapshots", MIC_STORE = "spectrum-analyser-mic";
+
+let ctx = null, analyser = null, stream = null, frame = null, avgPow = null, avgFrames = 0;
+let rate = 48000, frozen = false, lastT = 0, hoverX = null;
+let liveCurve = null, avgCurve = null;
+let snaps = [];
+try { snaps = JSON.parse(localStorage.getItem(STORE) || "[]"); } catch { snaps = []; }
+const saveSnaps = () => { try { localStorage.setItem(STORE, JSON.stringify(snaps)); } catch {} };
+
+// Display frequencies, log-spaced.
+const freqs = Float64Array.from({ length: POINTS }, (_, i) => F_MIN * Math.pow(F_MAX / F_MIN, i / (POINTS - 1)));
+const idxOf = f => Math.round((POINTS - 1) * Math.log(f / F_MIN) / Math.log(F_MAX / F_MIN));
+
+// The curves are the mean power per FFT bin, so pink noise (equal power per octave) slopes down
+// 3 dB/octave. PINK_TILT undoes that.
+const PINK_TILT = Float64Array.from(freqs, f => 10 * Math.log10(f / 1000));
+
+// --- microphone correction --------------------------------------------------------------------------
+// micDb: the mic's own response (dB) at each display frequency; subtracted from what it hears.
+// "Typical laptop mic" is a guess: a 2nd-order roll-off at 120 Hz. Never adds back more than 12 dB.
+const MIC_MAX_BOOST = 12;
+let micDb = new Float64Array(POINTS), micCal = null;          // micCal: [[Hz, dB], ...] from a file
+const laptopMic = () => Float64Array.from(freqs, f => -10 * Math.log10(1 + Math.pow(120 / f, 4)));
+
+function parseCal(text) {                  // "freq dB [phase]" lines; headers and comments skipped
+  const pts = [];
+  for (const line of text.split(/\r?\n/)) {
+    const m = line.trim().match(/^([0-9.eE+-]+)[\s,;]+([0-9.eE+-]+)/);
+    if (m && isFinite(+m[1]) && isFinite(+m[2]) && +m[1] > 0) pts.push([+m[1], +m[2]]);
+  }
+  if (pts.length < 5) throw new Error("no frequency / dB lines in it");
+  return pts.sort((a, b) => a[0] - b[0]);
+}
+function calCurve(pts) {                   // log-frequency interpolation; flat beyond the ends
+  return Float64Array.from(freqs, f => {
+    if (f <= pts[0][0]) return pts[0][1];
+    if (f >= pts[pts.length - 1][0]) return pts[pts.length - 1][1];
+    let i = 1; while (pts[i][0] < f) i++;
+    const [f0, d0] = pts[i - 1], [f1, d1] = pts[i];
+    return d0 + (d1 - d0) * Math.log(f / f0) / Math.log(f1 / f0);
+  });
+}
+function setMic(kind) {
+  if (kind === "laptop") micDb = laptopMic();
+  else if (kind === "file" && micCal) micDb = calCurve(micCal);
+  else { micDb = new Float64Array(POINTS); if (kind === "file") kind = "none"; }
+  $("mic").value = micKind = kind;
+  try { localStorage.setItem(MIC_STORE, JSON.stringify({ kind, cal: micCal })); } catch {}
+  updateBands();
+}
+const micCorr = k => -Math.max(micDb[k], -MIC_MAX_BOOST);
+
+// What's shown: the raw curve, plus the pink tilt (if ticked) and the mic correction.
+function view(curve) {
+  const flat = $("flat").checked;
+  return Float64Array.from(curve, (v, k) => v + (flat ? PINK_TILT[k] : 0) + micCorr(k));
+}
+
+// --- measuring --------------------------------------------------------------------------------------
+function setStatus(text, bad) { $("status").textContent = text; $("status").classList.toggle("bad", !!bad); }
+
+async function listDevices() {
+  const devs = (await navigator.mediaDevices.enumerateDevices()).filter(d => d.kind === "audioinput");
+  const sel = $("dev"), keep = sel.value;
+  sel.replaceChildren(...devs.map((d, i) => new Option(d.label || `Microphone ${i + 1}`, d.deviceId)));
+  if ([...sel.options].some(o => o.value === keep)) sel.value = keep;
+}
+
+async function start() {
+  stop();
+  try {
+    const id = $("dev").value;
+    stream = await navigator.mediaDevices.getUserMedia({ audio: {
+      deviceId: id ? { exact: id } : undefined, channelCount: 1,
+      echoCancellation: false, noiseSuppression: false, autoGainControl: false } });
+  } catch (e) { setStatus("No microphone: " + e.message, true); return false; }
+  ctx = new AudioContext();
+  rate = ctx.sampleRate;
+  analyser = ctx.createAnalyser();
+  analyser.fftSize = FFT;
+  analyser.smoothingTimeConstant = 0;
+  analyser.minDecibels = -160; analyser.maxDecibels = 0;
+  ctx.createMediaStreamSource(stream).connect(analyser);
+  frame = new Float32Array(analyser.frequencyBinCount);
+  resetAvg();
+  await listDevices();
+  const track = stream.getAudioTracks()[0];
+  $("dev").value = track.getSettings().deviceId || $("dev").value;
+  setStatus(`Listening: ${track.label} · ${rate} Hz`);
+  $("startBtn").textContent = "Restart microphone";
+  return true;
+}
+function stop() {
+  if (stream) stream.getTracks().forEach(t => t.stop());
+  if (ctx) ctx.close();
+  stream = ctx = analyser = null;
+}
+function resetAvg() { avgPow = null; avgFrames = 0; }
+
+// Power spectrum (linear) -> smoothed dB at the display frequencies, via prefix sums.
+function smoothCurve(pow, perOctave = +$("smooth").value) {
+  const n = pow.length, binHz = rate / FFT, prefix = new Float64Array(n + 1);
+  for (let i = 0; i < n; i++) prefix[i + 1] = prefix[i] + pow[i];
+  const half = Math.pow(2, 1 / (2 * perOctave));
+  const out = new Float32Array(POINTS);
+  for (let k = 0; k < POINTS; k++) {
+    let a = Math.floor(freqs[k] / half / binHz), b = Math.ceil(freqs[k] * half / binHz);
+    a = Math.max(1, Math.min(n - 1, a)); b = Math.max(a + 1, Math.min(n, b));
+    out[k] = 10 * Math.log10((prefix[b] - prefix[a]) / (b - a) + 1e-20);
+  }
+  return out;
+}
+function bandDb(curve, lo, hi) {           // power mean over display points in a band
+  let s = 0, c = 0;
+  for (let k = 0; k < POINTS; k++) if (freqs[k] >= lo && freqs[k] <= hi) { s += Math.pow(10, curve[k] / 10); c++; }
+  return c ? 10 * Math.log10(s / c) : NaN;
+}
+const midsDb = curve => bandDb(curve, MIDS[0], MIDS[1]);
+function balance(curve) {
+  const m = midsDb(curve);
+  return Object.fromEntries(BANDS.map(([k, lo, hi]) => [k, bandDb(curve, lo, hi) - m]));
+}
+
+// A timed capture for the tuning steps: a plain average over its whole length, whatever "Average" says.
+let capture = null;                        // { label, until, done(pow) }
+function startCapture(label, seconds, done) {
+  frozen = false; $("freezeBtn").classList.remove("on"); $("freezeBtn").textContent = "Freeze";
+  resetAvg();
+  capture = { label, until: performance.now() + seconds * 1000, done };
+}
+
+function tick(t) {
+  requestAnimationFrame(tick);
+  const dt = lastT ? (t - lastT) / 1000 : 0; lastT = t;
+  if (analyser && !frozen) {
+    analyser.getFloatFrequencyData(frame);
+    const pow = Float64Array.from(frame, d => Math.pow(10, d / 10));
+    const tau = capture ? 0 : +$("tau").value;
+    if (!avgPow) { avgPow = pow; avgFrames = 1; }
+    else {
+      avgFrames++;
+      const a = tau ? 1 - Math.exp(-dt / tau) : 1 / avgFrames;
+      for (let i = 0; i < pow.length; i++) avgPow[i] += a * (pow[i] - avgPow[i]);
+    }
+    liveCurve = smoothCurve(pow);
+    avgCurve = smoothCurve(avgPow);
+    updateBands();
+    if (capture) {
+      const left = (capture.until - t) / 1000;
+      if (left > 0) setStatus(`${capture.label}: ${Math.ceil(left)} s…`);
+      else { const c = capture; capture = null; setStatus("Listening"); c.done(Float64Array.from(avgPow)); }
+    }
+  }
+  draw();
+}
+
+// --- the radio's EQ, as the radio does it (sleepradiopi/audio/eq.py) ----------------------------------
+const RADIO_RATE = 44100, LOWCUTS = [0, 100, 120, 140, 160];
+const EQ_BANDS = { bass: ["lowshelf", 120], mid: ["peak", 1000], treble: ["highshelf", 6000] };
+const SEARCH = { bass: [-9, 6], mid: [-6, 6], treble: [-9, 6] };   // cautious: small speakers
+
+function biquad(kind, f0, db) {            // RBJ cookbook; shelves S = 1, peak Q = 0.7
+  const A = Math.pow(10, db / 40), w0 = 2 * Math.PI * f0 / RADIO_RATE, cw = Math.cos(w0), sw = Math.sin(w0);
+  if (kind === "peak") {
+    const al = sw / (2 * 0.7);
+    return [[1 + al * A, -2 * cw, 1 - al * A], [1 + al / A, -2 * cw, 1 - al / A]];
+  }
+  const al = sw / 2 * Math.SQRT2, k = 2 * Math.sqrt(A) * al;
+  if (kind === "lowshelf") return [
+    [A * ((A + 1) - (A - 1) * cw + k), 2 * A * ((A - 1) - (A + 1) * cw), A * ((A + 1) - (A - 1) * cw - k)],
+    [(A + 1) + (A - 1) * cw + k, -2 * ((A - 1) + (A + 1) * cw), (A + 1) + (A - 1) * cw - k]];
+  return [
+    [A * ((A + 1) + (A - 1) * cw + k), -2 * A * ((A - 1) + (A + 1) * cw), A * ((A + 1) + (A - 1) * cw - k)],
+    [(A + 1) - (A - 1) * cw + k, 2 * ((A - 1) - (A + 1) * cw), (A + 1) - (A - 1) * cw - k]];
+}
+function biquadDb([b, a], f) {
+  const w = 2 * Math.PI * f / RADIO_RATE, c1 = Math.cos(w), s1 = Math.sin(w), c2 = Math.cos(2 * w), s2 = Math.sin(2 * w);
+  const mag2 = p => (p[0] + p[1] * c1 + p[2] * c2) ** 2 + (p[1] * s1 + p[2] * s2) ** 2;
+  return 10 * Math.log10(mag2(b) / mag2(a));
+}
+const bandResp = {};                       // "bass:-3" -> dB at each display frequency
+function bandCurve(name, db) {
+  const key = name + ":" + db;
+  if (!bandResp[key]) {
+    const ba = db ? biquad(...EQ_BANDS[name], db) : null;
+    bandResp[key] = Float64Array.from(freqs, f => ba && f < RADIO_RATE / 2 ? biquadDb(ba, f) : 0);
+  }
+  return bandResp[key];
+}
+const lowcutCurve = hz => Float64Array.from(freqs, f => hz ? -10 * Math.log10(1 + Math.pow(hz / f, 8)) : 0);
+
+// --- the suggestion ---------------------------------------------------------------------------------
+// From the radio's pink noise (EQ and low cut bypassed) and the quiet room, both raw curves:
+//   low cut: where the box has fallen 10 dB below its mids (rounded down to the radio's choices);
+//   EQ: the bass / mid / treble setting that makes the rest flattest, trying every whole-dB setting
+//       through the radio's own filters. Boosts cost a little more than cuts, so small speakers
+//       aren't pushed. Only frequencies well above the room's noise count.
+const SNR_MIN = 10, FIT_HI = 12000;
+function suggest(pink, floor, micKind) {
+  const midsSnr = bandDb(pink, ...MIDS) - bandDb(floor, ...MIDS);
+  if (midsSnr < 15) return { error: `The radio was only ${midsSnr.toFixed(0)} dB above the room's noise. Turn it up ` +
+                                    `or move the mic closer (and check the pink noise was playing), then measure again.` };
+  const R0 = Float64Array.from(pink, (v, k) => v + PINK_TILT[k] + micCorr(k));
+  const m = midsDb(R0), R = R0.map(v => v - m);
+  const ok = Array.from(pink, (v, k) => v - floor[k] >= SNR_MIN);
+  const notes = [];
+
+  let cutAt = null, heardTo = null;
+  for (let k = idxOf(250); k >= idxOf(40); k--) {
+    if (!ok[k]) { heardTo = freqs[k]; break; }
+    if (R[k] < -10) { cutAt = freqs[k]; break; }
+  }
+  const down = f => LOWCUTS.filter(c => c <= f).pop();
+  let lowcut = 0;
+  if (cutAt) {
+    lowcut = down(cutAt);
+    notes.push(`The box is 10 dB down at ${Math.round(cutAt)} Hz; below that, bass only makes the cones flap.`);
+  } else if (heardTo) {
+    lowcut = down(heardTo);
+    notes.push(`The mic couldn't hear the radio below ${Math.round(heardTo)} Hz over the room's noise, so the low ` +
+               `cut is set there to be safe.`);
+  }
+  if (micKind === "none")
+    notes.push("No mic correction: a laptop mic hears the bass low, so this may suggest more bass (and a higher low cut) than the box needs.");
+
+  const lo = Math.max(150, lowcut * 1.25);
+  const use = []; for (let k = 0; k < POINTS; k++) if (freqs[k] >= lo && freqs[k] <= FIT_HI && ok[k]) use.push(k);
+  if (use.length < 60) return { error: "Too little of the range was heard over the room's noise to suggest anything. Turn the radio up and measure again." };
+  const heard = (a, b) => use.filter(k => freqs[k] >= a && freqs[k] <= b).length >= 8;
+  const span = ([a, b]) => Array.from({ length: b - a + 1 }, (_, i) => a + i);
+  const ranges = { bass: span(SEARCH.bass), mid: span(SEARCH.mid), treble: span(SEARCH.treble) };
+  if (!heard(lo, 300)) { ranges.bass = [0]; notes.push("Couldn't hear the bass clearly: bass left at 0."); }
+  if (!heard(4000, FIT_HI)) { ranges.treble = [0]; notes.push("Couldn't hear the treble clearly: treble left at 0."); }
+
+  const hp = lowcutCurve(lowcut);
+  const spread = extra => {                // root-mean-square wobble around the average level, dB
+    let s = 0, s2 = 0;
+    for (const k of use) { const e = R[k] + hp[k] + (extra ? extra[k] : 0); s += e; s2 += e * e; }
+    const mean = s / use.length;
+    return Math.sqrt(Math.max(0, s2 / use.length - mean * mean));
+  };
+  let best = null;
+  const sum = new Float64Array(POINTS);
+  for (const b of ranges.bass) for (const md of ranges.mid) for (const t of ranges.treble) {
+    const cb = bandCurve("bass", b), cm = bandCurve("mid", md), ct = bandCurve("treble", t);
+    for (const k of use) sum[k] = cb[k] + cm[k] + ct[k];
+    const s = spread(sum);
+    const cost = s * s + [b, md, t].reduce((c, g) => c + 0.02 * g * g + (g > 0 ? 0.04 * g * g : 0), 0);
+    if (!best || cost < best.cost) best = { cost, eq: { bass: b, mid: md, treble: t }, after: s };
+  }
+  const eqDb = Float64Array.from(freqs, (_, k) =>
+    bandCurve("bass", best.eq.bass)[k] + bandCurve("mid", best.eq.mid)[k] + bandCurve("treble", best.eq.treble)[k]);
+  return {
+    eq: best.eq, lowcut, notes, from: lo,
+    before: spread(null), after: best.after,
+    predicted: Float32Array.from(pink, (v, k) => v + eqDb[k] + hp[k]),
+  };
+}
+
+let floorPow = null, lastSuggestion = null;
+async function ensureMic() { return analyser || await start(); }
+
+$("floorBtn").onclick = async () => {
+  if (!await ensureMic()) return;
+  startCapture("Measuring the quiet room", 4, pow => {
+    floorPow = pow;
+    setStatus("Room measured. Now start the pink noise on the radio and press step 2.");
+  });
+};
+$("pinkBtn").onclick = async () => {
+  if (!await ensureMic()) return;
+  if (!floorPow) { setStatus("Measure the quiet room first (step 1)", true); return; }
+  startCapture("Measuring the radio", 8, pow => {
+    frozen = true; $("freezeBtn").classList.add("on"); $("freezeBtn").textContent = "Frozen";
+    const pink = smoothCurve(pow, 6), floor = smoothCurve(floorPow, 6);
+    const s = suggest(pink, floor, $("mic").value);
+    showSuggestion(s);
+    if (s.error) return;
+    snaps = snaps.filter(x => !x.auto);
+    const stamp = new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+    snaps.push({ name: `Radio, no EQ (${stamp})`, color: "#ff9f5a", curve: Array.from(pink, v => +v.toFixed(2)), auto: true });
+    snaps.push({ name: "With the suggestion (predicted)", color: "#7cf29a", curve: Array.from(s.predicted, v => +v.toFixed(2)), auto: true });
+    saveSnaps(); updateBands();
+  });
+};
+
+const fmtDb = v => (v > 0 ? "+" : "") + v + " dB";
+function showSuggestion(s) {
+  lastSuggestion = s.error ? null : s;
+  $("recMsg").textContent = s.error || `Flatness: ±${s.before.toFixed(1)} dB now, ±${s.after.toFixed(1)} dB with these ` +
+    `(${Math.round(s.from)} Hz to 12 kHz).`;
+  $("recMsg").classList.toggle("bad", !!s.error);
+  $("recTable").hidden = !!s.error;
+  $("dlBtn").disabled = !!s.error;
+  $("recNotes").replaceChildren(...(s.notes || []).map(n => Object.assign(document.createElement("li"), { textContent: n })));
+  if (s.error) return;
+  const rows = [["Bass", fmtDb(s.eq.bass)], ["Mid", fmtDb(s.eq.mid)], ["Treble", fmtDb(s.eq.treble)],
+                ["Low cut", s.lowcut ? s.lowcut + " Hz" : "Off"]];
+  $("recTable").tBodies[0].replaceChildren(...rows.map(([a, b]) => {
+    const tr = document.createElement("tr");
+    tr.append(Object.assign(document.createElement("td"), { textContent: a }),
+              Object.assign(document.createElement("td"), { textContent: b }));
+    return tr;
+  }));
+}
+
+// The radio's Load settings takes a file with only some settings in it (sleepradiopi/config/backup.py).
+function settingsFile(s) {
+  return {
+    format: "sleepradiopi-settings", version: 1, saved: new Date().toISOString(),
+    source: "spectrum analyser suggestion",
+    settings: { speaker_eq: s.eq, speaker_highpass_hz: s.lowcut },
+    volume: null,
+  };
+}
+$("dlBtn").onclick = () => {
+  if (!lastSuggestion) return;
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(new Blob([JSON.stringify(settingsFile(lastSuggestion), null, 2) + "\n"],
+                                        { type: "application/json" }));
+  a.download = "sleepradio-speaker-settings.json";
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+};
+
+// --- drawing -------------------------------------------------------------------------------------
+const canvas = $("plot"), g = canvas.getContext("2d");
+const PAD = { l: 44, r: 12, t: 12, b: 26 };
+function xOf(f, w) { return PAD.l + (w - PAD.l - PAD.r) * Math.log(f / F_MIN) / Math.log(F_MAX / F_MIN); }
+function fOf(x, w) { return F_MIN * Math.pow(F_MAX / F_MIN, (x - PAD.l) / (w - PAD.l - PAD.r)); }
+
+function offsetOf(shown) { return $("align").checked ? -midsDb(shown) : 0; }
+
+function draw() {
+  const dpr = window.devicePixelRatio || 1, w = canvas.clientWidth, h = canvas.clientHeight;
+  if (canvas.width !== Math.round(w * dpr) || canvas.height !== Math.round(h * dpr)) {
+    canvas.width = Math.round(w * dpr); canvas.height = Math.round(h * dpr);
+  }
+  g.setTransform(dpr, 0, 0, dpr, 0, 0);
+  g.clearRect(0, 0, w, h);
+
+  const avgShown = avgCurve && view(avgCurve), liveShown = liveCurve && view(liveCurve);
+  // dB range: aligned = fixed around the mids; else follow the average's peak.
+  let top, span = 60;
+  if ($("align").checked) top = 24;
+  else {
+    const ref = avgShown || liveShown;
+    top = ref ? Math.ceil((Math.max(...ref) + 6) / 10) * 10 : -20;
+  }
+  const bottom = top - span;
+  const yOf = db => PAD.t + (h - PAD.t - PAD.b) * (top - db) / span;
+
+  // grid
+  g.font = "11px system-ui, sans-serif"; g.textBaseline = "middle";
+  for (let db = Math.ceil(bottom / 6) * 6; db <= top; db += 6) {
+    g.strokeStyle = db === 0 && $("align").checked ? "#4a5163" : "#262b35";
+    g.beginPath(); g.moveTo(PAD.l, yOf(db)); g.lineTo(w - PAD.r, yOf(db)); g.stroke();
+    g.fillStyle = "#8b93a1"; g.textAlign = "right"; g.fillText(db, PAD.l - 6, yOf(db));
+  }
+  const decades = [20, 30, 40, 50, 60, 80, 100, 150, 200, 300, 400, 500, 700, 1000, 1500, 2000, 3000, 4000, 5000, 7000,
+                   10000, 15000, 20000];
+  const labelled = new Set([20, 50, 100, 200, 500, 1000, 2000, 5000, 10000, 20000]);
+  g.textAlign = "center"; g.textBaseline = "top";
+  for (const f of decades) {
+    const x = xOf(f, w);
+    g.strokeStyle = labelled.has(f) ? "#343a47" : "#20242d";
+    g.beginPath(); g.moveTo(x, PAD.t); g.lineTo(x, h - PAD.b); g.stroke();
+    if (labelled.has(f)) { g.fillStyle = "#8b93a1"; g.fillText(f >= 1000 ? f / 1000 + "k" : f, x, h - PAD.b + 6); }
+  }
+  // band shading
+  g.fillStyle = "rgba(255,255,255,0.025)";
+  for (const [, lo, hi] of [...BANDS, ["mids", ...MIDS]]) g.fillRect(xOf(lo, w), PAD.t, xOf(hi, w) - xOf(lo, w), h - PAD.t - PAD.b);
+
+  const line = (shown, color, width, alpha = 1) => {
+    if (!shown) return;
+    const off = offsetOf(shown);
+    g.save(); g.beginPath();
+    g.rect(PAD.l, PAD.t, w - PAD.l - PAD.r, h - PAD.t - PAD.b); g.clip();
+    g.beginPath(); g.globalAlpha = alpha; g.strokeStyle = color; g.lineWidth = width; g.lineJoin = "round";
+    for (let k = 0; k < POINTS; k++) {
+      const x = xOf(freqs[k], w), y = yOf(shown[k] + off);
+      k ? g.lineTo(x, y) : g.moveTo(x, y);
+    }
+    g.stroke(); g.restore();
+  };
+  const snapShown = snaps.map(s => s.hidden ? null : view(s.curve));
+  snaps.forEach((s, i) => line(snapShown[i], s.color, 2));
+  line(liveShown, "#5ec8ff", 1, 0.45);
+  line(avgShown, "#ffd166", 2.5);
+
+  // hover readout
+  if (hoverX != null && hoverX >= PAD.l && hoverX <= w - PAD.r) {
+    g.strokeStyle = "#8b93a1"; g.setLineDash([3, 3]);
+    g.beginPath(); g.moveTo(hoverX, PAD.t); g.lineTo(hoverX, h - PAD.b); g.stroke(); g.setLineDash([]);
+    const f = fOf(hoverX, w), k = idxOf(f);
+    const val = c => (c[k] + offsetOf(c)).toFixed(1).padStart(6) + " dB";
+    const lines = [(f >= 1000 ? (f / 1000).toFixed(2) + " kHz" : Math.round(f) + " Hz")];
+    if (avgShown) lines.push("average " + val(avgShown));
+    snaps.forEach((s, i) => { if (snapShown[i]) lines.push(`${s.name} ${val(snapShown[i])}`); });
+    $("readout").textContent = lines.join("\n");
+  } else $("readout").textContent = "";
+}
+canvas.addEventListener("mousemove", e => { hoverX = e.offsetX; });
+canvas.addEventListener("mouseleave", () => { hoverX = null; });
+
+// --- tone balance table + snapshots ---------------------------------------------------------------
+const fmt = v => isFinite(v) ? (v >= 0 ? "+" : "") + v.toFixed(1) : "–";
+function updateBands() {
+  const rows = [];
+  const add = (name, color, curve, i, hidden) => {
+    const b = balance(view(curve)), tr = document.createElement("tr");
+    if (hidden) tr.className = "hid";
+    const td0 = document.createElement("td");
+    const sw = document.createElement("span"); sw.className = "sw"; sw.style.background = color;
+    td0.append(sw, name);
+    if (i != null) {
+      sw.style.cursor = "pointer"; sw.title = "Hide / show";
+      sw.onclick = () => { snaps[i].hidden = !snaps[i].hidden; saveSnaps(); updateBands(); };
+      const x = document.createElement("button"); x.className = "x"; x.textContent = "✕"; x.title = "Delete";
+      x.onclick = () => { snaps.splice(i, 1); saveSnaps(); updateBands(); };
+      td0.append(" ", x);
+    }
+    tr.append(td0, ...BANDS.map(([k]) => Object.assign(document.createElement("td"), { textContent: fmt(b[k]) })));
+    rows.push(tr);
+  };
+  if (avgCurve) add(frozen ? "Average (frozen)" : "Average now", "#ffd166", avgCurve);
+  snaps.forEach((s, i) => add(s.name, s.color, s.curve, i, s.hidden));
+  $("bands").tBodies[0].replaceChildren(...rows);
+}
+
+$("snapBtn").onclick = () => {
+  if (!avgCurve) { setStatus("Start the microphone first", true); return; }
+  const used = new Set(snaps.map(s => s.color));
+  const color = COLORS.find(c => !used.has(c)) || COLORS[snaps.length % COLORS.length];
+  const name = $("snapName").value.trim() || `Snapshot ${snaps.length + 1}`;
+  snaps.push({ name, color, curve: Array.from(avgCurve, v => +v.toFixed(2)), at: Date.now() });
+  $("snapName").value = "";
+  saveSnaps(); updateBands();
+};
+$("snapName").addEventListener("keydown", e => { if (e.key === "Enter") $("snapBtn").click(); });
+
+$("startBtn").onclick = start;
+$("dev").onchange = () => { if (stream) start(); };
+$("resetBtn").onclick = resetAvg;
+$("tau").onchange = resetAvg;
+$("freezeBtn").onclick = () => {
+  frozen = !frozen;
+  $("freezeBtn").classList.toggle("on", frozen);
+  $("freezeBtn").textContent = frozen ? "Frozen" : "Freeze";
+  updateBands();
+};
+$("align").onchange = updateBands;
+$("flat").onchange = updateBands;
+$("smooth").onchange = () => { if (avgPow) { avgCurve = smoothCurve(avgPow); updateBands(); } };
+// Snapshots keep the smoothing they were saved with.
+let micKind = "none";                      // back to it if the file picker is cancelled
+$("mic").onchange = () => {
+  if ($("mic").value === "file") { $("mic").value = micKind; $("calFile").click(); } else setMic($("mic").value);
+};
+$("calFile").onchange = async () => {
+  const f = $("calFile").files[0]; $("calFile").value = "";
+  if (!f) return;
+  try { micCal = parseCal(await f.text()); setMic("file"); setStatus(`Mic calibration: ${f.name}`); }
+  catch (e) { setStatus(`Couldn't read ${f.name}: ${e.message}`, true); }
+};
+try {
+  const m = JSON.parse(localStorage.getItem(MIC_STORE) || "null");
+  if (m) { micCal = m.cal || null; setMic(m.kind); }
+} catch {}
+
+listDevices().catch(() => {});
+updateBands();
+requestAnimationFrame(tick);
+</script>
+</body>
+</html>

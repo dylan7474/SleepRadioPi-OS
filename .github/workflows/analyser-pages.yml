@@ -1,0 +1,34 @@
+# Publishes the spectrum analyser (tools/analyser/) to GitHub Pages:
+# https://dylan7474.github.io/SleepRadioPi-OS/
+# It needs HTTPS for the microphone, which the radio's own page can't give.
+name: Analyser page
+
+on:
+  push:
+    branches: [main]
+    paths: ["tools/analyser/**", ".github/workflows/analyser-pages.yml"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: tools/analyser
+      - id: deployment
+        uses: actions/deploy-pages@v4

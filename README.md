@@ -125,6 +125,11 @@ the web page moves with it (if it goes the wrong way, swap CLK and DT);
 press and let go — it pauses, and again — it plays; hold it for 3 seconds —
 it beeps and reads out its network address.
 
+**Tuning the speakers:** the [spectrum analyser](https://dylan7474.github.io/SleepRadioPi-OS/) listens to the
+radio's pink noise through a laptop or phone mic. It suggests the bass /
+mid / treble and low cut, and gives you a settings file to load on the
+radio's page (details in [the app's README](app/README.md#tuning-the-speakers)).
+
 ## Put it on a card
 
 You need a microSD card (16 GB or more, depending on your music) and, for
@@ -473,6 +478,7 @@ anything else starts.
 | `board/sleepradiopi/linux.fragment` | Kernel options on top of `bcm2711_defconfig` (squashfs built in; unused drivers trimmed) |
 | `package/` | `python-sherpa-onnx` (PyPI wheels) and `sleepradiopi` (installs `app/`) |
 | `scripts/` | `flash.sh`, `provision-media.sh`, `update.sh`, `release.sh`, `speaker-mode.sh`, `web-password.sh` (run on the PC) |
+| `tools/analyser/` | The spectrum analyser web page that suggests speaker settings (published to GitHub Pages) |
 | `hardware/case/` | The 3D-printed case (OpenSCAD source, STLs, assembly notes) |
 | `hardware/wiring/` | The wiring diagram (`wiring.svg`) and the script that draws it |
 
@@ -524,6 +530,10 @@ What's left to do (everything else described here is built and running):
   one 4-inch speaker and the VU meter as its dial. The design, the pictures and
   what to buy are on [its page](hardware/cathedral/README.md); the parts come
   once the speaker and meter are here to measure.
+- **Send the analyser's settings straight to the radio** — the spectrum
+  analyser gives a file to load today. If the radio's page is served over
+  HTTPS one day, the analyser could start the pink noise, set the EQ and
+  measure again by itself.
 - **A carry strap** — designed, still to print and fit: a leather strap
   through two printed side loops, with a drill guide for a case that's already
   printed (see [the case README](hardware/case/README.md#carry-strap)).
