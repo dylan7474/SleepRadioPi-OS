@@ -343,13 +343,19 @@ phone. It listens through the device's microphone and suggests the speaker EQ an
    uses them at once.
 
 How it decides:
+- **Sound** picks what it aims for: *Warm, like a radio* (the default: up
+  to +6 dB of bass below ~350 Hz and a little treble) or *Neutral*
+  (flat). Flat sounds thin on small speakers.
 - The low cut is where the box has fallen 10 dB below its mids. If the mic
-  can't hear the radio that low over the room's noise, it's set where the
-  mic stopped hearing it, to be safe.
-- The EQ is the whole-dB setting that makes the rest flattest. It is worked
-  out through the same filters the radio uses (`audio/eq.py`).
-- Boosts are kept small: at most +6 dB, and they cost more than cuts.
-- Only frequencies at least 10 dB above the room's noise count.
+  can't hear the radio that low over the room's noise, it can't tell, so
+  it suggests the gentlest (100 Hz) and says so. Try 120 or 140 Hz by ear.
+- The EQ is the whole-dB setting that gets closest to the target. It is
+  worked out through the same filters the radio uses (`audio/eq.py`).
+- Boosts cost more than cuts, so small speakers aren't pushed.
+- Only frequencies at least 10 dB above the room's noise count, from
+  150 Hz (or just above the low cut) to 12 kHz. The bass shelf (120 Hz)
+  mostly works below that, so how much of the deepest bass you want is
+  still for your ears.
 
 A laptop mic hears little below ~150 Hz. **Mic → Typical laptop mic** adds
 back a rough guess at what it misses. A measurement mic's calibration file

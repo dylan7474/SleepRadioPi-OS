@@ -86,6 +86,10 @@
         <li>On the radio's own page, press <b>⚙ Settings → Test sound → Pink noise</b>, then straight away:<br>
           <button id="pinkBtn">2. Measure the radio (8 s)</button></li>
       </ol>
+      <div class="row" style="margin-bottom:.5rem"><label title="What the suggestion aims for">Sound
+        <select id="target">
+          <option value="warm" selected>Warm, like a radio</option>
+          <option value="neutral">Neutral (flat)</option></select></label></div>
       <div id="rec">
         <p id="recMsg" class="muted" style="margin:0">The suggested settings appear here.</p>
         <table id="recTable" hidden>
@@ -183,6 +187,7 @@ function setMic(kind) {
   $("mic").value = micKind = kind;
   try { localStorage.setItem(MIC_STORE, JSON.stringify({ kind, cal: micCal })); } catch {}
   updateBands();
+  if (typeof resuggest === "function") resuggest();
 }
 const micCorr = k => -Math.max(micDb[k], -MIC_MAX_BOOST);
 
@@ -293,7 +298,7 @@ function tick(t) {
 // --- the radio's EQ, as the radio does it (sleepradiopi/audio/eq.py) ----------------------------------
 const RADIO_RATE = 44100, LOWCUTS = [0, 100, 120, 140, 160];
 const EQ_BANDS = { bass: ["lowshelf", 120], mid: ["peak", 1000], treble: ["highshelf", 6000] };
-const SEARCH = { bass: [-9, 6], mid: [-6, 6], treble: [-9, 6] };   // cautious: small speakers
+const SEARCH = { bass: [-9, 9], mid: [-6, 6], treble: [-9, 6] };   // cautious: small speakers
 
 function biquad(kind, f0, db) {            // RBJ cookbook; shelves S = 1, peak Q = 0.7
   const A = Math.pow(10, db / 40), w0 = 2 * Math.PI * f0 / RADIO_RATE, cw = Math.cos(w0), sw = Math.sin(w0);
@@ -331,8 +336,14 @@ const lowcutCurve = hz => Float64Array.from(freqs, f => hz ? -10 * Math.log10(1 
 //   EQ: the bass / mid / treble setting that makes the rest flattest, trying every whole-dB setting
 //       through the radio's own filters. Boosts cost a little more than cuts, so small speakers
 //       aren't pushed. Only frequencies well above the room's noise count.
-const SNR_MIN = 10, FIT_HI = 12000;
-function suggest(pink, floor, micKind) {
+const SNR_MIN = 10, FIT_HI = 12000, SAFE_LOWCUT = 100;
+// What the suggestion aims for, dB at each frequency (pink noise flat). "Warm": up to +6 dB of
+// bass below ~350 Hz and +2 dB of treble, like a radio; flat sounds thin on small speakers.
+const TARGETS = {
+  neutral: () => new Float64Array(POINTS),
+  warm: () => Float64Array.from(freqs, f => 6 / (1 + (f / 350) ** 2) + 2 / (1 + (6000 / f) ** 2)),
+};
+function suggest(pink, floor, micKind, targetKind = "warm") {
   const midsSnr = bandDb(pink, ...MIDS) - bandDb(floor, ...MIDS);
   if (midsSnr < 15) return { error: `The radio was only ${midsSnr.toFixed(0)} dB above the room's noise. Turn it up ` +
                                     `or move the mic closer (and check the pink noise was playing), then measure again.` };
@@ -352,9 +363,9 @@ function suggest(pink, floor, micKind) {
     lowcut = down(cutAt);
     notes.push(`The box is 10 dB down at ${Math.round(cutAt)} Hz; below that, bass only makes the cones flap.`);
   } else if (heardTo) {
-    lowcut = down(heardTo);
-    notes.push(`The mic couldn't hear the radio below ${Math.round(heardTo)} Hz over the room's noise, so the low ` +
-               `cut is set there to be safe.`);
+    lowcut = Math.min(SAFE_LOWCUT, down(heardTo));
+    notes.push(`The mic couldn't hear the radio below ${Math.round(heardTo)} Hz over the room's noise, so it can't ` +
+               `tell where the box runs out: the low cut is the gentlest (${lowcut} Hz). Try 120 or 140 Hz by ear.`);
   }
   if (micKind === "none")
     notes.push("No mic correction: a laptop mic hears the bass low, so this may suggest more bass (and a higher low cut) than the box needs.");
@@ -368,10 +379,10 @@ function suggest(pink, floor, micKind) {
   if (!heard(lo, 300)) { ranges.bass = [0]; notes.push("Couldn't hear the bass clearly: bass left at 0."); }
   if (!heard(4000, FIT_HI)) { ranges.treble = [0]; notes.push("Couldn't hear the treble clearly: treble left at 0."); }
 
-  const hp = lowcutCurve(lowcut);
-  const spread = extra => {                // root-mean-square wobble around the average level, dB
+  const hp = lowcutCurve(lowcut), T = TARGETS[targetKind]();
+  const spread = extra => {                // root-mean-square distance from the target, level aside, dB
     let s = 0, s2 = 0;
-    for (const k of use) { const e = R[k] + hp[k] + (extra ? extra[k] : 0); s += e; s2 += e * e; }
+    for (const k of use) { const e = R[k] + hp[k] + (extra ? extra[k] : 0) - T[k]; s += e; s2 += e * e; }
     const mean = s / use.length;
     return Math.sqrt(Math.max(0, s2 / use.length - mean * mean));
   };
@@ -393,7 +404,7 @@ function suggest(pink, floor, micKind) {
   };
 }
 
-let floorPow = null, lastSuggestion = null;
+let floorPow = null, lastSuggestion = null, lastMeasure = null;
 async function ensureMic() { return analyser || await start(); }
 
 $("floorBtn").onclick = async () => {
@@ -409,7 +420,8 @@ $("pinkBtn").onclick = async () => {
   startCapture("Measuring the radio", 8, pow => {
     frozen = true; $("freezeBtn").classList.add("on"); $("freezeBtn").textContent = "Frozen";
     const pink = smoothCurve(pow, 6), floor = smoothCurve(floorPow, 6);
-    const s = suggest(pink, floor, $("mic").value);
+    lastMeasure = { pink, floor };
+    const s = suggest(pink, floor, $("mic").value, $("target").value);
     showSuggestion(s);
     if (s.error) return;
     snaps = snaps.filter(x => !x.auto);
@@ -423,8 +435,8 @@ $("pinkBtn").onclick = async () => {
 const fmtDb = v => (v > 0 ? "+" : "") + v + " dB";
 function showSuggestion(s) {
   lastSuggestion = s.error ? null : s;
-  $("recMsg").textContent = s.error || `Flatness: ±${s.before.toFixed(1)} dB now, ±${s.after.toFixed(1)} dB with these ` +
-    `(${Math.round(s.from)} Hz to 12 kHz).`;
+  $("recMsg").textContent = s.error || `Distance from the target sound: ±${s.before.toFixed(1)} dB now, ` +
+    `±${s.after.toFixed(1)} dB with these (${Math.round(s.from)} Hz to 12 kHz).`;
   $("recMsg").classList.toggle("bad", !!s.error);
   $("recTable").hidden = !!s.error;
   $("dlBtn").disabled = !!s.error;
@@ -585,6 +597,14 @@ $("freezeBtn").onclick = () => {
   $("freezeBtn").textContent = frozen ? "Frozen" : "Freeze";
   updateBands();
 };
+function resuggest() {
+  if (!lastMeasure) return;
+  const s = suggest(lastMeasure.pink, lastMeasure.floor, $("mic").value, $("target").value);
+  showSuggestion(s);
+  const p = snaps.find(x => x.auto && x.name.startsWith("With the suggestion"));
+  if (p && !s.error) { p.curve = Array.from(s.predicted, v => +v.toFixed(2)); saveSnaps(); updateBands(); }
+}
+$("target").onchange = resuggest;
 $("align").onchange = updateBands;
 $("flat").onchange = updateBands;
 $("smooth").onchange = () => { if (avgPow) { avgCurve = smoothCurve(avgPow); updateBands(); } };
