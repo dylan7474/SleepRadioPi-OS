@@ -49,6 +49,21 @@ def test_pink_noise_falls_3_db_per_octave() -> None:
     assert sig.hz() is None and not sig.next(100).any()                 # silent after the end
 
 
+def test_tune_is_quiet_then_noise_three_times() -> None:
+    sig = TestSignal("tune", RATE, 2)
+    assert sig.duration_s == 45 and sig.note().startswith("Quiet")
+    x = sig.next(sig.total)[:, 0]
+    rms = lambda a, b: np.sqrt(np.mean(x[int(a * RATE):int(b * RATE)] ** 2))
+    for c in range(3):
+        start = c * 15
+        assert rms(start, start + 5) == 0                             # the room, measured
+        assert rms(start + 5.5, start + 14.5) > LEVEL * 32767 * 0.1   # the noise
+    assert np.max(np.abs(x)) <= LEVEL * 32767 + 1
+    mid = TestSignal("tune", RATE, 2)
+    mid.next(int(7 * RATE))
+    assert mid.note().startswith("Noise")
+
+
 def test_speaker_plays_the_test_raw_then_goes_back_to_the_show(tmp_path: Path) -> None:
     out = tmp_path / "played.raw"
     spk = SpeakerOutput(command=["sh", "-c", f"cat >> {out}"], mono=True,

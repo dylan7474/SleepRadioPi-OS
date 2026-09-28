@@ -49,6 +49,16 @@
   #recMsg.bad { color: var(--bad); }
   #recNotes { margin: .3rem 0; padding-left: 1.1rem; }
   a { color: var(--live); }
+  #auto { margin: 1rem 1rem 0; border: 1px solid var(--grid2); }
+  #auto h2 { font-size: 1.05rem; color: var(--fg); }
+  #autoMsg { font-size: 1.1rem; margin: 0 0 .6rem; }
+  #autoMsg.bad { color: var(--bad); }
+  #autoSteps { margin: 0 0 .7rem; padding-left: 1.3rem; color: var(--muted); }
+  #autoSteps li.now { color: var(--avg); }
+  #autoSteps li.ok { color: var(--good); }
+  #autoSteps li.ok::after { content: " ✓"; }
+  .bigbtn { font-size: 1.1rem; padding: .6rem 1.2rem; }
+  .bigbtn.go { border-color: var(--good); color: var(--good); }
 </style>
 </head>
 <body>
@@ -74,6 +84,22 @@
   <input id="calFile" type="file" accept=".txt,.cal,.frd,.csv,text/plain" hidden>
   <span id="status">Not listening</span>
 </header>
+<section id="auto" class="card" hidden>
+  <h2>Tuning your Sleep Radio</h2>
+  <p id="autoMsg">Hold this phone about 50 cm in front of the radio, at speaker height, and tap Start.</p>
+  <ol id="autoSteps">
+    <li id="stRoom">Listen to the quiet room</li>
+    <li id="stRadio">Listen to the radio's hiss</li>
+    <li id="stDone">Work out the settings</li>
+  </ol>
+  <div class="row">
+    <button id="autoStart" class="bigbtn go">Start</button>
+    <button id="autoApply" class="bigbtn go" hidden>Apply on the radio</button>
+    <button id="autoAgain" class="bigbtn" hidden>Measure again</button>
+  </div>
+  <p class="muted" style="margin:.6rem 0 0">The radio plays bursts of hiss for about 45 seconds; keep the room quiet
+    and the phone still. The graph and the details are below.</p>
+</section>
 <main>
   <div id="plotBox"><canvas id="plot"></canvas><div id="readout"></div></div>
   <aside>
@@ -294,6 +320,7 @@ function tick(t) {
     liveCurve = smoothCurve(pow);
     avgCurve = smoothCurve(avgPow);
     updateBands();
+    if (auto) autoFrame(pow, t);
     if (capture) {
       const left = (capture.until - t) / 1000;
       if (left > 0) setStatus(`${capture.label}: ${Math.ceil(left)} s…`);
@@ -376,7 +403,7 @@ function suggest(pink, floor, micKind, targetKind = "warm") {
                `tell where the box runs out: the low cut is the gentlest (${lowcut} Hz). Try 120 or 140 Hz by ear.`);
   }
   if (micKind === "none")
-    notes.push("No mic correction: a laptop mic hears the bass low, so this may suggest more bass (and a higher low cut) than the box needs.");
+    notes.push("No mic correction: many mics (laptops especially) hear the deepest bass low, so this may suggest more bass (and a higher low cut) than the box needs.");
 
   const lo = Math.max(150, lowcut * 1.25);
   const use = []; for (let k = 0; k < POINTS; k++) if (freqs[k] >= lo && freqs[k] <= FIT_HI && ok[k]) use.push(k);
@@ -431,12 +458,7 @@ $("pinkBtn").onclick = async () => {
     lastMeasure = { pink, floor };
     const s = suggest(pink, floor, $("mic").value, $("target").value);
     showSuggestion(s);
-    if (s.error) return;
-    snaps = snaps.filter(x => !x.auto);
-    const stamp = new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
-    snaps.push({ name: `Radio, no EQ (${stamp})`, color: "#ff9f5a", curve: Array.from(pink, v => +v.toFixed(2)), auto: true });
-    snaps.push({ name: "With the suggestion (predicted)", color: "#7cf29a", curve: Array.from(s.predicted, v => +v.toFixed(2)), auto: true });
-    saveSnaps(); updateBands();
+    if (!s.error) addTuneSnaps(pink, s);
   });
 };
 
@@ -491,6 +513,103 @@ $("sendBtn").onclick = () => {
   try { localStorage.setItem(ADDR_STORE, addr); } catch {}
   window.open(`http://${addr}/#tune=${s.eq.bass},${s.eq.mid},${s.eq.treble},${s.lowcut}`, "_blank", "noopener");
 };
+
+// --- Tune speakers: the automatic sequence ---------------------------------------------------------
+// The radio's page (Tune speakers…) opens this page as #auto&radio=<address> and plays its "tune"
+// test sound: 5 s quiet, 10 s pink noise, three times. Here it listens for a steady quiet stretch
+// followed by a jump of 12 dB or more (the noise starting), takes the room from the quiet, then 8 s
+// of the noise, and suggests. If the noise stops early it waits for the next burst.
+const AUTO_HASH = new URLSearchParams(location.hash.slice(1));
+const AUTO_JUMP_DB = 12, AUTO_QUIET_S = 2.9, AUTO_SKIP_S = 0.6, AUTO_NOISE_S = 8, AUTO_GIVE_UP_S = 55;
+let auto = null;                           // { phase, t0, hist, floor, onsetLvl, sum, n, start }
+const median = a => { const b = [...a].sort((x, y) => x - y); return b.length ? b[b.length >> 1] : NaN; };
+const pct = (a, q) => { const b = [...a].sort((x, y) => x - y); return b[Math.min(b.length - 1, Math.floor(q * b.length))]; };
+
+function autoSay(text, bad) { $("autoMsg").textContent = text; $("autoMsg").classList.toggle("bad", !!bad); }
+function autoStep(now) {                   // "room" | "radio" | "done" | null
+  const order = ["stRoom", "stRadio", "stDone"], i = { room: 0, radio: 1, done: 2 }[now] ?? -1;
+  order.forEach((id, k) => { $(id).className = k < i ? "ok" : k === i ? "now" : ""; });
+}
+function autoBegin() {
+  frozen = false; $("freezeBtn").classList.remove("on"); $("freezeBtn").textContent = "Freeze";
+  auto = { phase: "listen", t0: performance.now(), hist: [] };
+  $("autoStart").hidden = $("autoApply").hidden = $("autoAgain").hidden = true;
+  autoSay("Listening… keep still and quiet."); autoStep("room");
+}
+function autoFail(text) {
+  auto = null; autoSay(text, true); autoStep(null);
+  $("autoAgain").hidden = false;
+}
+function autoFrame(pow, t) {
+  const a = auto, el = (t - a.t0) / 1000;
+  if (el < 1) return;                      // the mic's first moments aren't the room
+  const c6 = smoothCurve(pow, 6), lvl = midsDb(c6);
+  if (a.phase === "listen") {
+    a.hist.push({ t, lvl, c6 });
+    while (a.hist.length && a.hist[0].t < t - 6000) a.hist.shift();
+    const before = a.hist.filter(h => h.t > t - (AUTO_QUIET_S + AUTO_SKIP_S) * 1000 && h.t < t - AUTO_SKIP_S * 1000);
+    const recent = a.hist.filter(h => h.t >= t - 400);
+    const span = a.hist.length ? (t - a.hist[0].t) / 1000 : 0;
+    if (span >= AUTO_QUIET_S + AUTO_SKIP_S && before.length > 10 && recent.length > 2) {
+      const quiet = median(before.map(h => h.lvl));
+      const steady = pct(before.map(h => h.lvl), 0.9) < quiet + 6;
+      if (steady && median(recent.map(h => h.lvl)) - quiet >= AUTO_JUMP_DB) {
+        const lin = new Float64Array(POINTS);
+        for (const h of before) for (let k = 0; k < POINTS; k++) lin[k] += Math.pow(10, h.c6[k] / 10) / before.length;
+        Object.assign(a, { phase: "noise", floor: Float32Array.from(lin, v => 10 * Math.log10(v + 1e-20)),
+                           onsetLvl: median(recent.map(h => h.lvl)), sum: null, n: 0, start: t + AUTO_SKIP_S * 1000 });
+        autoSay("Heard the radio. Measuring… keep still."); autoStep("radio");
+        return;
+      }
+    }
+    if (el > AUTO_GIVE_UP_S)
+      autoFail("Didn't hear the radio's hiss. Turn the radio up, press Tune speakers… on its page again, " +
+               "then Measure again here.");
+    else if (el > 4 && span > 3) autoSay("Listening for the radio's hiss…");
+    return;
+  }
+  if (a.phase === "noise") {
+    if (t < a.start) return;
+    if (lvl < a.onsetLvl - 10) {           // the burst ended under us: wait for the next one
+      Object.assign(a, { phase: "listen", hist: [] });
+      autoSay("Missed part of it; waiting for the next burst…"); autoStep("room");
+      return;
+    }
+    if (!a.sum) a.sum = Float64Array.from(pow); else for (let i = 0; i < pow.length; i++) a.sum[i] += pow[i];
+    a.n++;
+    const left = Math.ceil(AUTO_NOISE_S - (t - a.start) / 1000);
+    if (left > 0) { autoSay(`Heard the radio. Measuring… ${left} s`); return; }
+    const pink = smoothCurve(a.sum.map(v => v / a.n), 6);
+    auto = null;
+    frozen = true; $("freezeBtn").classList.add("on"); $("freezeBtn").textContent = "Frozen";
+    lastMeasure = { pink, floor: a.floor };
+    const s = suggest(pink, a.floor, $("mic").value, $("target").value);
+    showSuggestion(s);
+    if (s.error) { autoFail(s.error + " Then press Tune speakers… on the radio's page again, and Measure again here."); return; }
+    addTuneSnaps(pink, s);
+    autoStep("done"); $("stDone").className = "ok";
+    autoSay(`Suggested: ${tuneText(s)}.`);
+    $("autoApply").hidden = false; $("autoAgain").hidden = false;
+  }
+}
+const tuneText = s => `bass ${fmtDb(s.eq.bass)}, mid ${fmtDb(s.eq.mid)}, treble ${fmtDb(s.eq.treble)}, ` +
+                      `low cut ${s.lowcut ? s.lowcut + " Hz" : "off"}`;
+function addTuneSnaps(pink, s) {
+  snaps = snaps.filter(x => !x.auto);
+  const stamp = new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  snaps.push({ name: `Radio, no EQ (${stamp})`, color: "#ff9f5a", curve: Array.from(pink, v => +v.toFixed(2)), auto: true });
+  snaps.push({ name: "With the suggestion (predicted)", color: "#7cf29a", curve: Array.from(s.predicted, v => +v.toFixed(2)), auto: true });
+  saveSnaps(); updateBands();
+}
+
+$("autoStart").onclick = async () => { if (await ensureMic()) autoBegin(); else autoSay("The microphone is needed: allow it, then tap Start.", true); };
+$("autoAgain").onclick = async () => { if (await ensureMic()) autoBegin(); };
+$("autoApply").onclick = () => $("sendBtn").click();
+if (AUTO_HASH.has("auto")) {
+  $("auto").hidden = false;
+  const r = AUTO_HASH.get("radio");
+  if (r) $("radioAddr").value = r;
+}
 
 // --- drawing -------------------------------------------------------------------------------------
 const canvas = $("plot"), g = canvas.getContext("2d");

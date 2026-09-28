@@ -125,10 +125,12 @@ the web page moves with it (if it goes the wrong way, swap CLK and DT);
 press and let go — it pauses, and again — it plays; hold it for 3 seconds —
 it beeps and reads out its network address.
 
-**Tuning the speakers:** the [spectrum analyser](https://dylan7474.github.io/SleepRadioPi-OS/) listens to the
-radio's pink noise through a laptop or phone mic. It suggests the bass /
-mid / treble and low cut. **Send to radio** then opens the radio's page
-with them, ready to **Apply**, with **Undo** to compare by ear (details in
+**Tuning the speakers:** on the radio's page, from a phone, ⚙ Settings →
+Speakers → **Tune speakers…**. The radio plays bursts of hiss, and the
+[spectrum analyser](https://dylan7474.github.io/SleepRadioPi-OS/) opens and listens to them through the
+phone's mic. It suggests the bass / mid / treble and low cut, and
+**Apply on the radio** brings them back to the radio's page, ready to
+**Apply**, with **Undo** to compare by ear (details in
 [the app's README](app/README.md#tuning-the-speakers)).
 
 ## Put it on a card

@@ -54,7 +54,7 @@
   #eq output { width: 3.2rem; text-align: right; font-variant-numeric: tabular-nums; }
   .card-head { display: flex; align-items: center; justify-content: space-between; }
   .card-head h2 { margin: 0; }
-  #eqFlat { padding: .3rem .7rem; font-size: .85rem; }
+  #eqFlat, #tuneBtn { padding: .3rem .7rem; font-size: .85rem; }
   a.btn { font: inherit; font-size: .9rem; border-radius: .6rem; border: 1px solid var(--line);
           color: var(--text); padding: .45rem .9rem; text-decoration: none; display: inline-block; }
   a.btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
@@ -256,7 +256,10 @@
   <section id="eq" class="card" hidden>
     <div class="card-head">
       <h2>Speakers</h2>
-      <button id="eqFlat" type="button">Flat EQ</button>
+      <div class="row" style="margin:0">
+        <button id="tuneBtn" type="button" title="Measure the speakers with a phone and set the EQ for them">Tune speakers…</button>
+        <button id="eqFlat" type="button">Flat EQ</button>
+      </div>
     </div>
     <div id="mode" class="row seg" role="group" aria-label="Radio speakers" hidden>
       <label>Speakers</label>
@@ -282,9 +285,10 @@
     </div>
     <p class="muted" style="margin:.6rem 0 0;font-size:.85rem">The radio's own speakers only; saved on the radio.
       A boost lowers the overall level a little, so it can't distort. With the bass port
-      back panel, set the low cut to 140 Hz. Or let the <a href="https://dylan7474.github.io/SleepRadioPi-OS/" target="_blank" rel="noopener">spectrum
-      analyser</a> suggest settings: it listens to the pink noise (the Test sound card, below) through a laptop
-      or phone mic and gives you a file for Load settings.</p>
+      back panel, set the low cut to 140 Hz. Or press <b>Tune speakers…</b>: it opens the
+      <a href="https://dylan7474.github.io/SleepRadioPi-OS/" target="_blank" rel="noopener">spectrum analyser</a>
+      and the radio plays bursts of hiss for it to measure. Hold the phone about 50 cm in front of the radio and
+      tap Start; it brings the settings back here for you to Apply.</p>
   </section>
 
   <section id="streamCard" class="card">
@@ -594,6 +598,14 @@ function queueEq() {
 }
 BANDS.forEach(b => $("eq-" + b).oninput = e => { eq = { ...eq, [b]: parseInt(e.target.value, 10) }; queueEq(); });
 $("eqFlat").onclick = () => { eq = { bass: 0, mid: 0, treble: 0 }; queueEq(); };
+// Tune speakers: the analyser (an HTTPS page, for the mic) listens to the radio's "tune" test
+// sound and sends its suggestion back to this tab as #tune=... (see offerTune). Opened first,
+// inside the click, so the browser doesn't block it; it keeps window.opener to come back here.
+const ANALYSER_URL = "https://dylan7474.github.io/SleepRadioPi-OS/";
+$("tuneBtn").onclick = () => {
+  window.open(`${ANALYSER_URL}#auto&radio=${encodeURIComponent(location.host)}`, "_blank");
+  sendTest("tune");
+};
 
 // Test sounds on the radio's speakers. While one plays the page asks the
 // radio every half second, so the frequency readout keeps up with the sweep.
@@ -1366,6 +1378,7 @@ async function offerTune() {
     const sp = (await (await fetch("/api/status")).json()).speaker;
     if (!sp || !sp.eq) { $("tuneNow").textContent = "This radio has no speaker of its own."; $("tuneApply").disabled = true; return; }
     tuneOld = { ...sp.eq, lowcut: sp.highpass_hz || 0 };
+    if (sp.test && sp.test.kind === "tune") sendTest("stop");   // measured: no more hiss
     $("tuneNow").textContent = `Now: ${tuneWords(tuneOld)}.`;
   } catch {}
 }

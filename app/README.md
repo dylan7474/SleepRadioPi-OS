@@ -302,7 +302,8 @@ The cards:
   spectrum analyser, or a phone app), noise on the **left** or **right** speaker only,
   **left, then right** (the DJ says "Left speaker" with noise on that side
   only, then the same on the right, twice; noise alone if no voice is
-  ready), and a **phase check** (every 3 s: both speakers the same, then the right
+  ready), **tune** (quiet then hiss, three times, for *Tune speakers…*;
+  see below), and a **phase check** (every 3 s: both speakers the same, then the right
   one inverted — if the inverted part sounds fuller, a speaker is wired the
   wrong way round, and vocals would vanish in stereo but not in mono).
 - **Wi-Fi** — the connection; saved networks (the card's, and ones added
@@ -330,7 +331,23 @@ The cards:
 
 The [spectrum analyser](https://dylan7474.github.io/SleepRadioPi-OS/) (source in
 [`tools/analyser/`](../tools/analyser/)) is a web page for a laptop or a
-phone. It listens through the device's microphone and suggests the speaker EQ and low cut:
+phone. It listens through the device's microphone and suggests the speaker EQ and low cut.
+
+**The easy way:** on the radio's page, ⚙ Settings → Speakers → **Tune
+speakers…**, from the phone:
+
+1. It opens the analyser in a new tab and the radio plays its **tune** test
+   sound: 5 s of quiet, then 10 s of hiss, three times.
+2. Hold the phone about 50 cm in front of the radio and tap **Start**.
+3. The analyser listens for a quiet stretch followed by the hiss starting,
+   measures both, and shows its suggestion.
+4. **Apply on the radio** opens the radio's page with it, ready to
+   **Apply** or **Undo** (the hiss stops).
+
+Because it detects the hiss by ear, it doesn't matter when you tap Start.
+If it starts listening in the middle of a burst, it waits for the next.
+
+**By hand** (any test sound, any timing):
 
 1. Put the laptop about 50 cm in front of the radio and press **Measure the
    quiet room**.
@@ -382,7 +399,7 @@ everything but the page itself and the login needs the session cookie
 | `POST /api/login` / `/api/logout` | `{"password"}` → a session cookie (401 if wrong) / forget it |
 | `POST /api/password` | `{"password": "..." \| null}` — set, change or remove (needs to be logged in) |
 | `GET /api/status` | What's on air, next, history, the library, the voice, the speaker (volume, playing, mono, EQ, low cut, sleep timer, test sound), artist/list playing |
-| `POST /api/speaker` | Any of `{"volume": 0-100}`, `{"step": n}`, `{"pause": true \| false \| "toggle"}`, `{"sleep": minutes}` (0 = off), `{"mono": bool}`, `{"eq": {"bass": dB, ...}}`, `{"highpass": Hz}`, `{"test": "bass" \| "sweep" \| "pink" \| "left" \| "right" \| "sides" \| "phase" \| "stop"}` |
+| `POST /api/speaker` | Any of `{"volume": 0-100}`, `{"step": n}`, `{"pause": true \| false \| "toggle"}`, `{"sleep": minutes}` (0 = off), `{"mono": bool}`, `{"eq": {"bass": dB, ...}}`, `{"highpass": Hz}`, `{"test": "bass" \| "sweep" \| "pink" \| "left" \| "right" \| "sides" \| "phase" \| "tune" \| "stop"}` |
 | `POST /api/stream` | `{"enabled": bool}` — listening in a browser on/off (saved as `web_stream`) |
 | `POST /api/knob` | `{"press": "short" \| "long"}` — the knob's switch |
 | `POST /api/skip` | Skip what's on air (track, link, jingle or bulletin) |

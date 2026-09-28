@@ -13,6 +13,10 @@ but with the EQ and low cut bypassed, so what you hear is the box itself.
   sides  left, then right, twice: "Left speaker" in the DJ voice and 3 s of
          pink noise on the left one only, then the same on the right. With
          no voice ready it's the noise alone (the page says which side)
+  tune   for the spectrum analyser's Tune speakers (tools/analyser): 5 s of
+         quiet (it measures the room), then 10 s of pink noise (it measures
+         the box), three times over, so the phone can start listening at
+         any point and still hear a whole quiet-then-noise
   phase  low pink noise that switches every 3 s between both speakers the
          same ("in phase") and the right one inverted ("out of phase"). With
          the speakers wired correctly, in phase sounds fuller and centred; if
@@ -36,6 +40,10 @@ NOISE_LOOP_S = 4             # noise made by FFT repeats seamlessly; keeps RAM l
 
 PHASE_STEP_S = 3.0
 
+TUNE_QUIET_S = 5.0           # "tune": quiet, then noise, TUNE_CYCLES times
+TUNE_NOISE_S = 10.0
+TUNE_CYCLES = 3
+
 SIDES_NOISE_S = 3.0          # "sides": each speaker's noise
 SIDES_GAP_S = 1.5            # silence after it
 SIDES_ORDER = ("left", "right", "left", "right")
@@ -48,6 +56,7 @@ KINDS = {                    # name: (label, duration s, f0, f1); f0 None = nois
     "left": ("Left speaker", 6.0, None, None),
     "right": ("Right speaker", 6.0, None, None),
     "phase": ("Phase check", 18.0, None, None),
+    "tune": ("Speaker tuning", TUNE_CYCLES * (TUNE_QUIET_S + TUNE_NOISE_S), None, None),
     "sides": ("Left, then right", 0.0, None, None),   # duration: from the parts
 }
 
@@ -125,6 +134,9 @@ class TestSignal:
         if self.kind == "sides":
             side = next(side for start, side in reversed(self._sides) if start <= self.pos)
             return SIDE_WORDS[side]
+        if self.kind == "tune":
+            quiet = self.elapsed_s % (TUNE_QUIET_S + TUNE_NOISE_S) < TUNE_QUIET_S
+            return "Quiet (measuring the room)" if quiet else "Noise (measuring the speakers)"
         if self.kind != "phase":
             return None
         if int(self.elapsed_s // PHASE_STEP_S) % 2 == 0:
@@ -152,6 +164,9 @@ class TestSignal:
         if self.kind == "phase":                   # fade in and out of every step
             ts = t % PHASE_STEP_S
             fade = np.clip(np.minimum(ts, PHASE_STEP_S - ts) / FADE_S, 0, 1)
+        elif self.kind == "tune":                  # each burst fades in and out; quiet between
+            ts = t % (TUNE_QUIET_S + TUNE_NOISE_S) - TUNE_QUIET_S
+            fade = np.clip(np.minimum(ts, TUNE_NOISE_S - ts) / FADE_S, 0, 1)
         else:
             fade = np.clip(np.minimum(t, self.duration_s - t) / FADE_S, 0, 1)
         self.pos += n
