@@ -1,8 +1,12 @@
 // SleepRadioPi box: a coloured mock-up of the finished radio, for pictures only.
-// Reuses the real parts from sleepradiopi_box.scad unchanged.
+// Reuses the real parts from sleepradiopi_box.scad unchanged (included, not
+// used, so its settings -- the buttons -- can be set here; part = "none" stops
+// it drawing anything itself).
 // Render with make-mockup.sh, which also turns it into a JPEG.
 
-use <sleepradiopi_box.scad>
+include <sleepradiopi_box.scad>
+part = "none";
+buttons = mockup_buttons;     // the four preset buttons in the top (and the knob moved back)
 
 body_colour    = "#2f6fd6";   // tube (top, bottom, sides)
 panel_colour   = "#fbfbf8";   // front and rear panels
@@ -15,6 +19,8 @@ mockup_logo    = false;       // show the SLEEP RADIO lettering on the front
 mockup_grille  = "hex";       // "hex" or "sunburst"
 mockup_knob    = "plain";     // "plain" or "sunburst"
 mockup_handle  = false;       // the leather carry strap and its side loops
+mockup_buttons = true;        // the four preset buttons along the front of the top
+button_colour  = "#c9ccd1";   // brushed stainless
 strap_colour   = "#6b4226";   // leather
 stud_colour    = "#b08d57";   // brass Chicago screws
 
@@ -32,12 +38,13 @@ if (mockup_logo) {
 color(panel_colour) rear();
 color(speaker_colour) speakers_placed();
 color(knob_colour) knob_placed(mockup_knob);
+// The buttons' flat stainless heads (the rest is inside)
+if (mockup_buttons) color(button_colour) for (x = btn_x) translate([x, btn_y, H])
+    cylinder(d = btn_head_d, h = btn_head_h);
 
 // The carry strap, as it hangs when carried: up from each loop and over the top
-// in an arch. (The sizes repeat sleepradiopi_box.scad's; a mock-up can't
-// read another file's variables.)
-W = 152; H = 91; D = 100;
-strap_w = 20; strap_t = 4; loop_h = 22; loop_top = 11; loop_gap = 4.5; loop_t = 8.5;
+// in an arch. (W, H, D and the loop sizes come from sleepradiopi_box.scad.)
+
 s_ztop = H - loop_top; s_zbot = s_ztop - loop_h;
 s_x = W / 2 + loop_gap / 2;                       // strap centre, in the channel
 s_xo = W / 2 + loop_t + strap_t / 2;              // ...folded back up over the bar
