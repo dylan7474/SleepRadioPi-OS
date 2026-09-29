@@ -46,27 +46,44 @@ log = logging.getLogger(__name__)
 TTS_THREADS = 2  # leaves the other cores for ffmpeg decode/encode
 RECYCLE_MB = 250     # (with the image's zram swap, S01zram; it was 200 without)
 HARD_MB = 280        # mid-line: stop, and let a fresh worker say the rest
-MAX_WORDS = 12       # a longer clause is split at spaces (bounds the largest buffer)
-_CLAUSE = re.compile(r"(?<=[.!?,;:—])\s+")
+MAX_WORDS = 12       # a piece longer than this is split (bounds the largest buffer)
+_SENTENCE = re.compile(r"(?<=[.!?])\s+")
+_CLAUSE = re.compile(r"(?<=[,;:—])\s+")
 PAUSE_S = {",": 0.12, ";": 0.18, ":": 0.18, "—": 0.18}
 SENTENCE_PAUSE_S = 0.30
 
 
 def clauses(text: str) -> list[tuple[str, float]]:
-    """Split text into (clause, pause-after-seconds), keeping the punctuation."""
-    parts = []
-    for p in (p.strip() for p in _CLAUSE.split(text)):
-        words = p.split()
-        while len(words) > MAX_WORDS:
-            parts.append(" ".join(words[:MAX_WORDS]))
-            words = words[MAX_WORDS:]
-        if words:
-            parts.append(" ".join(words))
-    out = []
-    for i, p in enumerate(parts):
-        last = i == len(parts) - 1
-        out.append((p, 0.0 if last else PAUSE_S.get(p[-1], SENTENCE_PAUSE_S)))
-    return out
+    """Split text into pieces to synthesise one at a time, with the pause after
+    each. A sentence of up to MAX_WORDS is one piece (the voice pauses at its
+    own commas); a longer one is split at its commas, the parts joined back up
+    to MAX_WORDS (so "one nine two, dot, one six eight, dot..." isn't a dozen
+    tiny pieces: every new piece length grows the voice's memory), and a part
+    still too long is split at spaces."""
+    parts: list[tuple[str, float]] = []
+    sentences = [x.strip() for x in _SENTENCE.split(text) if x.strip()]
+    for si, sentence in enumerate(sentences):
+        end_pause = 0.0 if si == len(sentences) - 1 else SENTENCE_PAUSE_S
+        if len(sentence.split()) <= MAX_WORDS:
+            parts.append((sentence, end_pause))
+            continue
+        pieces, cur = [], []
+        for clause in (c.strip() for c in _CLAUSE.split(sentence) if c.strip()):
+            words = clause.split()
+            if cur and len(cur) + len(words) > MAX_WORDS:
+                pieces.append(cur)
+                cur = []
+            cur = cur + words
+            while len(cur) > MAX_WORDS:
+                pieces.append(cur[:MAX_WORDS])
+                cur = cur[MAX_WORDS:]
+        if cur:
+            pieces.append(cur)
+        for pi, words in enumerate(pieces):
+            piece = " ".join(words)
+            pause = end_pause if pi == len(pieces) - 1 else PAUSE_S.get(piece[-1], 0.05)
+            parts.append((piece, pause))
+    return parts
 
 
 def _rss_mb() -> int:
@@ -170,6 +187,8 @@ class TtsWorker:
             if not self._ready.wait(timeout=120):
                 raise RuntimeError("TTS worker not ready")
             with self._lock:
+                if not self._ready.is_set():     # (being replaced since we waited: wait for the new one)
+                    continue
                 self._conn.send((text, speed, self.hard_mb))
                 status, payload, rate, rss, rest = self._conn.recv()
                 self.last_rss_mb = rss

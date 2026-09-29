@@ -178,8 +178,12 @@ def _service_menu(station: Station, control, presets, config_file: Path, ready=l
     was_playing = [False]
     said = [0]                        # the latest say(): an older one's words aren't played
 
+    def is_status(text):
+        return text.startswith("Status report.")
+
     def kept(text):
-        return cache / f"{station.dj_voice}-{hashlib.sha1(text.encode()).hexdigest()[:16]}.raw"
+        name = f"{station.dj_voice}-{hashlib.sha1(text.encode()).hexdigest()[:16]}.raw"
+        return cache / (f"status-{name}" if is_status(text) else name)
 
     def render(text):
         path = kept(text)
@@ -191,9 +195,12 @@ def _service_menu(station: Station, control, presets, config_file: Path, ready=l
             if text in made:
                 return made[text]
             audio = station.render_speech(text)
-            if text in service_mod.FIXED:
+            if text in service_mod.FIXED or is_status(text):
                 try:
                     cache.mkdir(parents=True, exist_ok=True)
+                    if is_status(text):          # (only the latest status report is kept)
+                        for old in cache.glob("status-*.raw"):
+                            old.unlink(missing_ok=True)
                     tmp = path.with_suffix(".tmp")
                     tmp.write_bytes(audio.astype("<i2").tobytes())
                     os.replace(tmp, path)
@@ -205,7 +212,9 @@ def _service_menu(station: Station, control, presets, config_file: Path, ready=l
             return audio
 
     def make_fixed_lines():
-        """Once per voice: the fixed lines, made while the show plays."""
+        """Once per voice: the fixed lines, made while the show plays; then the
+        status report, remade whenever what it says changes (checked every
+        10 minutes), so pressing 3 answers at once."""
         while not ready():
             time.sleep(10)
         for text in service_mod.FIXED:
@@ -216,9 +225,14 @@ def _service_menu(station: Station, control, presets, config_file: Path, ready=l
                 except Exception:
                     logging.exception("service menu: couldn't make a line")
                     return
-
-    if station._has_voice:
-        threading.Thread(target=make_fixed_lines, name="service-lines", daemon=True).start()
+        while True:
+            try:
+                text = f"{status()} {service_mod.ROLLBACK_ASK}"
+                if not kept(text).is_file():
+                    render(text)
+            except Exception:
+                logging.exception("service menu: couldn't make the status report")
+            time.sleep(600)
 
     def say(text):
         logging.info("service menu: %s", text)
@@ -322,6 +336,8 @@ def _service_menu(station: Station, control, presets, config_file: Path, ready=l
             pass
         os._exit(75)                  # the supervisor restarts the station with the settings as they came
 
+    if station._has_voice:
+        threading.Thread(target=make_fixed_lines, name="service-lines", daemon=True).start()
     return service_mod.ServiceMenu(say, {"restart": restart, "wifi": forget_wifi, "status": status,
                                          "rollback": rollback, "reset": factory_reset}, prepare=prepare, busy=busy,
                                    on_open=on_open, on_close=on_close)

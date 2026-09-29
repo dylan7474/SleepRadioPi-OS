@@ -168,6 +168,7 @@ def test_a_card_that_wont_open_is_retried_ever_more_slowly_then_reported(monkeyp
     t0 = sp.time.monotonic()
     while sp.time.monotonic() - t0 < 1.0:
         out.write(np.zeros((1024, 2), np.int16))
-    assert naps[:4] == [0.1, 0.2, 0.4, 0.8] and max(naps) <= 5.0
+    backoff = [n for n in naps if n >= 0.1]                 # (other threads nap too)
+    assert backoff[:4] == [0.1, 0.2, 0.4, 0.8] and max(backoff) <= 5.0
     assert stuck == [1]                                     # once
     out.stop()

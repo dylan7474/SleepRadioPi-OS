@@ -33,8 +33,10 @@ def test_soft_limit_compresses_instead_of_clipping():
 
 def test_clauses_split_with_pauses():
     parts = clauses("That was Pink Moon, by Nick Drake. Coming up, Money.")
-    assert [p for p, _ in parts] == ["That was Pink Moon,", "by Nick Drake.", "Coming up,", "Money."]
-    assert [pause for _, pause in parts] == [0.12, 0.30, 0.12, 0.0]
+    assert [p for p, _ in parts] == ["That was Pink Moon, by Nick Drake.", "Coming up, Money."]
+    assert [pause for _, pause in parts] == [0.30, 0.0]
+    ip = "My address is one nine two, dot, one six eight, dot, five zero, dot, one three zero."
+    assert [len(p.split()) for p, _ in clauses(ip)] == [11, 6]       # not a dozen tiny pieces
 
 
 def test_long_clauses_are_split_at_spaces() -> None:
@@ -63,9 +65,9 @@ def test_a_worker_past_its_limit_hands_the_rest_to_a_fresh_one(monkeypatch) -> N
     t = th.Thread(target=worker_mod._serve, args=(child, "x", "v"), daemon=True)
     t.start()
     assert parent.recv()[0] == "ready"
-    parent.send(("One, two, three, four.", 1.0, 240))
+    parent.send(("One two. Three four. Five six. Seven eight.", 1.0, 240))
     status, payload, rate, rss_mb, rest = parent.recv()
-    assert status == "ok" and rest == "three, four."             # these go to a fresh worker
+    assert status == "ok" and rest == "Five six. Seven eight."   # these go to a fresh worker
     parent.send(None)
 
     w = worker_mod.TtsWorker.__new__(worker_mod.TtsWorker)          # (no real process)
