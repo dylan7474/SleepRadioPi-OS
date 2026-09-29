@@ -29,6 +29,8 @@ slot in the back is a small vent. An optional **bass port** back panel is below.
 | `stl/grommet.stl` | flange down | closes the power cable slot round the cable; use it with the bass port |
 | `stl/strap_loops.stl` | bar down, no supports | two **carry strap loops**, screwed to the sides from inside; see *Carry strap* below |
 | `stl/strap_guide.stl` | side down, no supports | a **drill guide** for the loops' screw holes in a tube printed without them |
+| `stl/button_guide.stl` | top face down, no supports | a **drill guide** for the four preset buttons' holes in the top of a tube printed without them; see *Preset buttons* below |
+| `stl/tube_buttons.stl` | as the tube | the tube **with the preset buttons' holes** (`-D buttons=true`), for a new print |
 | `stl/tube_handle.stl` | as the tube | the tube **with the loops' screw holes** (`-D handle=true`), for a new print |
 | `stl/front.stl`, `knob.stl`, `tabs.stl` | | the same parts, separately |
 | `stl/knob_sunburst.stl` | top face down, no supports | the knob with the grilles' **sunburst fan** engraved 0.8 mm into its top instead of the pointer groove; the fan rises towards where the groove pointed, so it still shows the knob's position (`knob_style="sunburst"` in either `.scad`) |
@@ -186,6 +188,37 @@ The whole radio weighs about half a kilogram. Each loop's two screws take the
 load sideways, and the bar prints flat, so the load is along its layers, not
 across them.
 
+## Preset buttons
+
+Four 12 mm momentary push buttons in the top, two each side of the knob:
+**1 2 (knob) 3 4**, like an old radio's presets. They sit at the knob's depth,
+where nothing is underneath: the speakers stop about 27 mm in from the front,
+and the Pi stack starts about 25 mm in from the back. The checks put them
+clear of everything, with room below for ~24 mm of switch body and tags.
+Wiring and what they do: the main [README](../../README.md#build-one).
+
+**You need:** 4 momentary (not latching) panel push buttons with a **12 mm**
+threaded body and a nut, for a panel up to 3 mm thick (the top wall). Some
+"12 mm" listings mean the cap; the hole is 12.4 mm for a 12 mm thread.
+Measure yours and change `btn_hole_d` if it's different (16 mm buttons need
+`btn_x` further apart too).
+
+**The holes:**
+
+- **New tube:** print `stl/tube_buttons.stl`, the tube with the four holes.
+  They print sideways like the knob's hole; `enc_teardrop=true` makes them
+  all pointed if yours sag.
+- **Tube already printed:** use `stl/button_guide.stl`. Take the knob off
+  (leave the encoder's nut on). Lay the guide on the top, with its ring over
+  the nut and its lip down over the front panel's top edge. Drill 3.5 mm
+  through its four holes, then open each one to 12 mm with a step drill (slowly:
+  PLA melts). Take the back panel off first and blow out the swarf.
+
+**Fitting:** push each button up through its hole from inside. Fit the nut on
+top, or inside if the button has a flange, and wire it as the README says.
+The numbers on the guide show which is which: 1 and 2 on the left, seen from
+the front.
+
 ## Hardware
 
 - 4x M3 x 12 countersunk self-tapping screws per panel (8 in total), into the corner bosses of the tube.
@@ -221,7 +254,9 @@ The back panel comes off with all the electronics on it, so you don't need to re
 on it slides straight out past the encoder. The same with `-D rear_port=true` (the port tube is clear of
 everything), and the grommet in its slot only touches the panel's outside face. With `-D handle=true` it
 also checks that the strap loops only touch the tube, and that the screws inside miss the corner bosses, the
-speakers and the electronics.
+speakers and the electronics. With `-D buttons=true`, the four preset buttons (cap, thread, nut and a 24 mm
+switch body) miss the speakers, the electronics, the encoder, the knob, the corner bosses and the panels, and
+the back panel's Pi stack slides out past them; the nut only touches the inside of the top.
 
 ## To measure (unverified)
 

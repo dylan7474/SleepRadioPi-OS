@@ -3,13 +3,13 @@
     python3 hardware/wiring/make_wiring.py      (writes hardware/wiring/wiring.svg)
 
 The pins match board/sleepradiopi/config.txt: the MiniAmp's I2S (hifiberry-dac),
-the rotary encoder on GPIO17/27 with its switch on GPIO22, and the DS3231 on
-I2C (GPIO2/3). Keep the two in step.
+the rotary encoder on GPIO17/27 with its switch on GPIO22, the DS3231 on
+I2C (GPIO2/3), and the four preset buttons on GPIO5/6/16/26. Keep the two in step.
 """
 
 from pathlib import Path
 
-W, H = 1160, 930
+W, H = 1160, 1030
 ROW = 24                      # header pin pitch in the drawing
 HX, HY = 560, 150             # header: left column centre x, pin 1 centre y
 COL = 180                     # distance between the two columns (pin names go between them)
@@ -150,6 +150,16 @@ for term, pin, colour, dip in ((amp_t["LRCLK (GPIO19)"], 35, YELLOW, 18), (amp_t
     lane_l = HX - 30 - dip / 2
     wire([(tx - 5, ty), (lane_r, ty), (lane_r, low), (lane_l, low), (lane_l, py), (px, py)], colour)
 
+# Preset buttons: gold rings on their pins (wired as in the box below the header)
+BUTTONS = {29: "B1", 31: "B2", 36: "B3", 37: "B4"}
+GOLD = "#c99a06"
+for n, tag in BUTTONS.items():
+    x, y = pin_xy(n)
+    add(f'<circle cx="{x}" cy="{y}" r="11" fill="none" stroke="{GOLD}" stroke-width="3"/>')
+    tx, anchor = (x - 16, "end") if n % 2 else (x + 16, "start")
+    add(f'<text x="{tx}" y="{y + 4}" font-size="11" font-weight="bold" fill="{GOLD}" '
+        f'text-anchor="{anchor}">{tag}</text>')
+
 # Header pins (drawn over the wire ends) and their names
 for n, (label, kind) in PINS.items():
     x, y = pin_xy(n)
@@ -181,8 +191,23 @@ box(AMP[0], SPK_Y + 76, AMP[2], 112, "Speakers (4–8 Ω)", ["Each to its own ch
 box(60, 700, 470, 90, "Power", ["5 V, 2.5 A or more, micro-USB into the Pi's PWR IN", "port (the one at the end of the board). The MiniAmp",
                                 "takes its power from the Pi's 5 V pins."], "#fff")
 
+BX, BY = 575, 700
+box(BX, BY, 290, 190, "Preset buttons (optional)", [
+    "Momentary push buttons. Each: one leg",
+    "to its pin, the other to any GND pin.",
+    "B1 → pin 29 (GPIO5)",
+    "B2 → pin 31 (GPIO6)",
+    "B3 → pin 36 (GPIO16)",
+    "B4 → pin 37 (GPIO26)",
+    "GND: pins 30, 34 or 39 (one wire can",
+    "loop from button to button)."], "#fffbea")
+for i in range(4):                         # the four buttons, beside the list
+    cx, cy = BX + 250, BY + 83 + i * 17
+    add(f'<circle cx="{cx}" cy="{cy - 4}" r="7" fill="#333"/>')
+    add(f'<circle cx="{cx}" cy="{cy - 4}" r="4" fill="{GOLD}"/>')
+
 # Legend
-LY = 845
+LY = 945
 add(f'<text x="60" y="{LY}" font-size="13" fill="#222" font-weight="bold">Pin colours:</text>')
 for (kind, text), x in zip((("p5", "5 V"), ("p3", "3.3 V"), ("g", "Ground (any GND pin will do)"),
                            ("io", "GPIO")), (170, 250, 350, 590)):

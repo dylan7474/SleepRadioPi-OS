@@ -71,12 +71,19 @@ software, and the case to print.
 - **One knob.** Turn for volume; press to pause or play; **hold it for 3
   seconds** and the radio reads out its network address (handy away from
   home).
+- **Four preset buttons** (optional), like a car radio's: each plays what
+  it holds — Sleep Radio, an artist or list, an internet station, an album
+  straight through — or does something: say the time, read the news now,
+  a 30-minute sleep timer, say the address. Press the one that's playing to
+  pause. **Hold one for 3 seconds** to keep what's playing on it (a beep, then
+  "Button two: BBC Radio 4"). The same four are on the web page's front.
 - **The web page** — http://sleepradiopi.local/ from any phone or computer
   on your network (optionally with a password) is its remote control.
   Everyday controls up front: now playing and skip, volume and a sleep timer
   that fades the speakers out, artist radio, play next (and, if you switch
-  it on, listening in the browser too). Under 📻 Streaming: internet radio
-  stations, saved or found by name. Under ⚙ Settings: the
+  it on, listening in the browser too), and the four preset buttons. Under
+  📻 Streaming: what the buttons hold, albums straight through, and internet
+  radio stations, saved or found by name. Under ⚙ Settings: the
   speakers (stereo/mono, EQ, low cut), the DJ (voice, how often it talks,
   hooks, jingles, news, DJ and news speaking speeds), voices (download the standard one, upload your
   own), your artist lists, birthdays, test sounds for
@@ -106,7 +113,7 @@ software, and the case to print.
 You need a Raspberry Pi Zero 2 W, a HiFiBerry MiniAmp, one or two small
 speakers (4–8 Ω), a rotary encoder with a push switch (a KY-040 module is
 easiest), a 5 V 2.5 A micro-USB supply and a microSD card; a DS3231 clock
-module is optional. The case is in [`hardware/case/`](hardware/case/).
+module and four 12 mm momentary push buttons (the presets) are optional. The case is in [`hardware/case/`](hardware/case/).
 
 ![Wiring diagram: the Pi's header, the MiniAmp, the rotary encoder, the optional RTC, speakers and power](hardware/wiring/wiring.svg)
 
@@ -117,6 +124,7 @@ module is optional. The case is in [`hardware/case/`](hardware/case/).
 | Encoder GND | pin 25 (any GND pin) |
 | Encoder + (KY-040 only) | pin 17 (3.3 V — **never 5 V**) |
 | RTC VCC / SDA / SCL / GND (optional) | pins 1 / 3 / 5 / 9 (3.3 V only) |
+| Preset buttons 1 / 2 / 3 / 4 (optional) | pins 29 / 31 / 36 / 37 (GPIO5 / 6 / 16 / 26); each button's other leg to GND (pin 30, 34 or 39) |
 | Speakers | the MiniAmp's terminal: left + and −, right + and − |
 
 The knob and RTC pins are under the MiniAmp. Either solder their wires to
@@ -431,6 +439,7 @@ parts list) or a stacking header between the Pi and the amp.
 | MiniAmp I2S | 18, 19, 21 | 12, 35, 40 (+ 5 V on 2/4, GND 6) |
 | Encoder A / B / switch | 17 / 27 / 22 | 11 / 13 / 15 (GND: any, e.g. 25) |
 | RTC SDA / SCL | 2 / 3 | 3 / 5 (3.3 V on 1, GND 9) |
+| Preset buttons 1–4 | 5 / 6 / 16 / 26 | 29 / 31 / 36 / 37 (GND: 30, 34 or 39) |
 
 - The encoder pins have the Pi's internal pull-ups on, so a bare encoder
   works. A module with its own pull-ups (KY-040) has a `+` pin: put it on
@@ -444,7 +453,8 @@ parts list) or a stacking header between the Pi and the amp.
   stereo: the web page's test sounds (left/right, *Left, then right* and a phase check) find it.
 
 `board/sleepradiopi/config.txt` sets the MiniAmp, encoder and switch
-overlays (and the encoder pull-ups), and the RTC overlay
+overlays (and the encoder pull-ups), the preset buttons (`gpio-key`, with
+pull-ups, sending KEY_1–KEY_4; harmless with none fitted), and the RTC overlay
 (`dtoverlay=i2c-rtc,ds3231`, which also turns I2C on; harmless with no RTC
 fitted). A new RTC is set from NTP the first time the Pi is online. `update.sh` brings `config.txt` up to date on
 the Pi, so none of this needs the card reader.

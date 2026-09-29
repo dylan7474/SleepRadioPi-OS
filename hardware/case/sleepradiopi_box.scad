@@ -17,11 +17,13 @@
 //   strap_loops - two loops for a leather carry strap, screwed to the sides
 //           from inside; strap_guide - a drill guide that clips over the box
 //           to put the loops' screw holes in a tube printed without them
+//   button_guide - a drill guide for the four preset buttons' holes in the
+//           top of a tube printed without them (-D buttons=true adds them)
 //
 // Render a part:
 //   openscad --backend=manifold -D 'part="tube"' -o tube.stl sleepradiopi_box.scad
 // part = "tube" | "tube_ring" | "front" | "rear" | "knob" | "tabs" | "grommet" | "front_plate" |
-//        "strap_loops" | "strap_guide" |
+//        "strap_loops" | "strap_guide" | "button_guide" |
 //        "front_plate_noknob" |
 //        "assembly" | "exploded" | "rear_inside" | "front_inside" | "check" | "check_pull"
 //
@@ -162,6 +164,24 @@ shaft_d     = 6.15;
 shaft_flat  = 4.65;
 shaft_len   = 12;
 
+/* ---------- Preset buttons ---------- */
+// Four momentary panel buttons in the top, two each side of the knob --
+// "1 2 (knob) 3 4" -- like an old radio's presets (wiring: hardware/wiring).
+// -D buttons=true puts the holes in the tube; for a tube printed without
+// them, drill through button_guide.
+buttons     = false;
+btn_hole_d  = 12.4;      // 12 mm threaded body (CHECK the buttons: some are 16 mm)
+btn_x       = [-50, -28, 28, 50];   // from the centre; the knob is 30 mm across
+btn_nut_d   = 16;        // the nut inside, for the checks
+btn_body_d  = 14;        // below the nut: the switch body and its tags
+btn_body_h  = 24;        // top of the wall to the ends of the tags
+btn_head_d  = 14;        // the cap above the top
+btn_head_h  = 5;
+bguide_t    = 3;         // the guide plate
+bguide_hole = 3.5;       // pilot holes: drill 3.5 mm, then open to btn_hole_d (step drill)
+bguide_nut  = 13.5;      // fits over the encoder's nut (knob off, nut on)
+bguide_lip  = 8;         // hangs down over the front face, to square it up
+
 /* ---------- Carry strap ---------- */
 // A leather strap over the top, through a loop on each side: the strap goes
 // down behind the loop's bar, folds back up over it and is fixed to itself
@@ -291,6 +311,8 @@ module tube() {
             ycyl(b[0], b[1], to - pilot_len, to + 1, pilot_d);
         }
         if (handle) strap_holes(loop_hole_d);
+        if (buttons) for (x = btn_x)
+            translate([x, enc_y, H - wall - 1]) linear_extrude(wall + 2) enc2d(btn_hole_d);
         // Encoder hole in the top, with a thinner patch of wall around it.
         translate([0, enc_y, H - wall - 1]) linear_extrude(wall + 2) enc2d(enc_hole_d);
         translate([0, enc_y, H - wall - 1]) linear_extrude(1 + enc_pocket) enc2d(enc_pocket_d);
@@ -530,6 +552,26 @@ module strap_guide() {
     }
 }
 
+// Drill guide for the preset buttons in a tube printed without them: lies on
+// the top (knob off), locates over the encoder's nut and hooks over the top of
+// the front panel. Drill 3.5 mm through it, then open each hole to size.
+module button_guide() {
+    x0 = btn_x[0] - 10;  x1 = btn_x[len(btn_x) - 1] + 10;
+    difference() {
+        union() {
+            translate([x0, enc_y - 10, H]) cube([x1 - x0, 20, bguide_t]);            // the strip
+            translate([-8, -guide_clr, H]) cube([16, enc_y - 10 + guide_clr, bguide_t]);  // stem to the front
+            translate([-8, -guide_clr - guide_t, H - bguide_lip])                     // lip over the front face
+                cube([16, guide_t, bguide_lip + bguide_t]);
+        }
+        translate([0, enc_y, H - 1]) cylinder(d = bguide_nut, h = bguide_t + 2);
+        for (x = btn_x) translate([x, enc_y, H - 1]) cylinder(d = bguide_hole, h = bguide_t + 2);
+        for (i = [0 : len(btn_x) - 1])                                               // 1 2 . 3 4
+            translate([btn_x[i], enc_y - 6.5, H + bguide_t - 0.6]) linear_extrude(1)
+                text(str(i + 1), size = 4, halign = "center", valign = "center");
+    }
+}
+
 module knob(style = knob_style) {
     difference() {
         union() {
@@ -598,6 +640,14 @@ module encoder_model() color("gray") translate([0, enc_y, 0]) {
 
 module knob_in_place() color("orange") translate([0, enc_y, H + 2]) knob();
 
+// The preset buttons, fitted: cap above the top, thread through it, nut and body below.
+module buttons_model() color("goldenrod") for (x = btn_x) translate([x, enc_y, 0]) {
+    translate([0, 0, H]) cylinder(d = btn_head_d, h = btn_head_h);
+    translate([0, 0, H - wall]) cylinder(d = 11.9, h = wall);
+    translate([0, 0, H - wall - 2]) cylinder(d = btn_nut_d, h = 2, $fn = 6);
+    translate([0, 0, H - btn_body_h]) cylinder(d = btn_body_d, h = btn_body_h - wall - 2);
+}
+
 // Uncoloured versions for mockup.scad (it picks its own colours)
 module knob_placed(style = knob_style) translate([0, enc_y, H + 2]) knob(style);
 module speakers_placed() for (p = spk_pos) translate([p[0], 0, p[1]]) {
@@ -609,6 +659,7 @@ module models() {
     for (p = spk_pos) speaker_model(p);
     pi_stack_model();
     encoder_model();
+    if (buttons) buttons_model();
 }
 
 /* ---------- Print orientation ---------- */
@@ -618,6 +669,7 @@ module rear_print()  translate([0, 0, D]) rotate([-90, 0, 0]) rear();          /
 module knob_print()  translate([0, 0, knob_h]) rotate([180, 0, 0]) knob();
 module strap_loops_print() for (i = [0, 1]) translate([0, i * (loop_h + 6), loop_t]) mirror([0, 0, 1]) strap_loop();  // bar down
 module strap_guide_print() translate([0, 0, W / 2 + guide_clr + guide_t]) rotate([0, 90, 0]) translate([0, -D / 2, 0]) strap_guide();  // side down
+module button_guide_print() translate([0, 0, H + bguide_t]) rotate([180, 0, 0]) button_guide();  // top face down
 module tabs_print()  for (i = [0 : 6]) translate([i * (clamp_boss_d + 3), 0, 0]) rotate(90) tab_print();
 
 if (part == "tube" || part == "tube_ring") tube_print();
@@ -628,6 +680,7 @@ else if (part == "tabs") tabs_print();
 else if (part == "grommet") grommet();
 else if (part == "strap_loops") strap_loops_print();
 else if (part == "strap_guide") strap_guide_print();
+else if (part == "button_guide") button_guide_print();
 else if (part == "draft_plate") {   // run with -D draft=true: both panels + tabs
     front_print();
     translate([0, 6, 0]) rear_print();
@@ -671,6 +724,13 @@ else if (part == "check") {
     intersection() { union() { tube(); front(); rear(); } models(); }
     intersection() { union() { for (p = spk_pos) speaker_model(p); } union() { pi_stack_model(); encoder_model(); } }
     intersection() { pi_stack_model(); encoder_model(); }
+    if (buttons) {
+        // the buttons: clear of the speakers, the electronics, the knob and the corner bosses
+        intersection() { buttons_model(); union() { for (p = spk_pos) speaker_model(p); pi_stack_model();
+                                                    encoder_model(); knob_in_place();
+                                                    for (b = bosses) yext(ti, to) boss2d(b); } }
+        intersection() { buttons_model(); union() { front(); rear(); } }
+    }
     if (clamp) intersection() { tabs_in_place(); union() { tube(); front(); for (p = spk_pos) speaker_model(p); } }
     if (handle) {
         intersection() { strap_loops_placed(); union() { tube(); front(); rear(); } }

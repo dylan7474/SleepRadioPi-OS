@@ -29,6 +29,7 @@ from sleepradiopi import wifi as wifi_mod
 from sleepradiopi.config import backup
 from sleepradiopi.config.settings import load as load_settings, save_setting
 from sleepradiopi.playback import radio as radio_mod
+from sleepradiopi.io import presets as presets_mod
 from sleepradiopi.config.power import can_power_off, request_power_off
 
 from .stream import Mp3Output
@@ -56,8 +57,16 @@ def _restart_soon(speaker) -> None:
     threading.Thread(target=go, daemon=True).start()
 
 
+def _quietly(job) -> None:
+    try:
+        job()
+    except Exception:            # (logged where it failed)
+        pass
+
+
 def make_handler(station: Station, output: Mp3Output, speaker=None,
-                 config_file: Path | None = None, announcer=None, voice_jobs=None, updates=None):
+                 config_file: Path | None = None, announcer=None, voice_jobs=None, updates=None,
+                 presets=None, directory=None):
     auth = Auth(config_file)
     open_paths = {"/", "/index.html", "/api/auth", "/api/login"}
 
@@ -194,16 +203,20 @@ def make_handler(station: Station, output: Mp3Output, speaker=None,
             elif path == "/api/artists":
                 self._send(json.dumps({**self._selection(), "artists": station.artists(),
                                        "profiles": station.profiles}).encode(), "application/json")
+            elif path == "/api/buttons" and presets is not None:
+                self._send(json.dumps(presets.status()).encode(), "application/json")
             elif path == "/api/radio":
                 self._send(json.dumps(self._radio_state()).encode(), "application/json")
             elif path == "/api/radio/search":
                 q = parse_qs(urlparse(self.path).query).get("q", [""])[0][:200]
                 try:
-                    found = radio_mod.search(q)
+                    found, where = directory.search(q) if directory is not None else (radio_mod.search(q), "online")
                 except radio_mod.StreamError as e:
                     self._error(str(e))
                     return
-                self._send(json.dumps({"results": found}).encode(), "application/json")
+                self._send(json.dumps({"results": found, "from": where,
+                                       "directory": directory.status() if directory else None}).encode(),
+                           "application/json")
             elif path == "/stream":
                 if output is None or not output.enabled:
                     self.send_error(404, "listening in a browser is switched off")
@@ -245,6 +258,10 @@ def make_handler(station: Station, output: Mp3Output, speaker=None,
                 self._request()
             elif path == "/api/album":
                 self._album()
+            elif path in ("/api/buttons", "/api/buttons/press") and presets is not None:
+                self._buttons(path.endswith("press"))
+            elif path == "/api/album/play":
+                self._play_album()
             elif path == "/api/album/stop":
                 self._body()
                 self._send(json.dumps({"stopped": station.stop_album(), "requests": station.requests()}).encode(),
@@ -253,6 +270,12 @@ def make_handler(station: Station, output: Mp3Output, speaker=None,
                 self._set_dj()
             elif path == "/api/stream":
                 self._set_stream()
+            elif path == "/api/radio/directory" and directory is not None:
+                self._body()
+                if not directory.refreshing:          # fetch a fresh copy now, in the background
+                    threading.Thread(target=lambda: _quietly(directory.refresh), name="station-directory",
+                                     daemon=True).start()
+                self._send(json.dumps({**directory.status(), "refreshing": True}).encode(), "application/json")
             elif path in ("/api/radio/play", "/api/radio/stop", "/api/radio/stations"):
                 self._radio(path.rsplit("/", 1)[1])
             elif path == "/api/voices/standard" and voice_jobs is not None:
@@ -349,6 +372,8 @@ def make_handler(station: Station, output: Mp3Output, speaker=None,
                     station.set_artist(settings.get("broadcast_artist"))
             if "birthdays" in changed:
                 station.set_birthdays(settings["birthdays"])
+            if "buttons" in changed and presets is not None:
+                presets.set_all(settings["buttons"])
             if speaker is not None:
                 if "speaker_mono" in settings:
                     speaker.set_mono(settings["speaker_mono"])
@@ -539,13 +564,14 @@ def make_handler(station: Station, output: Mp3Output, speaker=None,
 
         def _radio_state(self) -> dict:
             st = station.status()
-            return {"stations": self._radio_stations(), "radio": st.get("radio"),
-                    "radio_error": st.get("radio_error")}
+            return {"stations": self._radio_stations(), "source": st.get("source"),
+                    "source_error": st.get("source_error"),
+                    "directory": directory.status() if directory is not None else None}
 
         def _radio(self, action: str) -> None:
             """POST /api/radio/play {"name", "url"}: play that internet radio station
-            instead of the show; /api/radio/stop: back to the show; /api/radio/stations
-            {"stations": [...]}: the saved list. All saved."""
+            instead of the show; /api/radio/stop: back to the show (from a station or
+            an album); /api/radio/stations {"stations": [...]}: the saved list. All saved."""
             try:
                 body = self._body()
                 if action == "play":
@@ -560,11 +586,45 @@ def make_handler(station: Station, output: Mp3Output, speaker=None,
                     save_setting(config_file, "radio_stations", stations)
             else:
                 tuned = tuned if action == "play" else None
-                station.tune(tuned)
-                if config_file is not None:
-                    save_setting(config_file, "radio_tuned", tuned)
+                station.tune(tuned)                  # (the station saves it: on_source)
                 if tuned is not None and speaker is not None:
                     speaker.play()               # choosing a station means "play it"
+            self._send(json.dumps(self._radio_state()).encode(), "application/json")
+
+        def _buttons(self, press: bool) -> None:
+            """POST /api/buttons {"button": 1-4, "preset": {...} | null} (null
+            empties it) or {"button", "now": true} (keep what's playing on it);
+            /api/buttons/press {"button", "hold": bool}: as if pressed on the case."""
+            try:
+                body = self._body()
+                n = body["button"]
+                if isinstance(n, bool) or not isinstance(n, int) or not 1 <= n <= presets_mod.N:
+                    raise ValueError(f"button is 1 to {presets_mod.N}")
+                if press:
+                    (presets.hold if body.get("hold") else presets.press)(n - 1)
+                elif body.get("now"):
+                    presets.set(n - 1, presets.current())
+                else:
+                    presets.set(n - 1, body["preset"])
+            except (ValueError, TypeError, KeyError, AttributeError) as e:
+                self._error(str(e) if isinstance(e, ValueError) else
+                            "send {\"button\": 1-4, \"preset\": ...} or {\"button\", \"now\": true}")
+                return
+            self._send(json.dumps(presets.status()).encode(), "application/json")
+
+        def _play_album(self) -> None:
+            """POST /api/album/play {"id": n} (from /api/search's albums): play it
+            straight through instead of the show -- no DJ -- then back to the show."""
+            try:
+                album_id = self._body()["id"]
+                if isinstance(album_id, bool) or not isinstance(album_id, int):
+                    raise ValueError("id must be a number from /api/search")
+                station.play_album(album_id)
+            except (ValueError, TypeError, KeyError, AttributeError) as e:
+                self._error(str(e) if isinstance(e, ValueError) else "send {\"id\": n}")
+                return
+            if speaker is not None:
+                speaker.play()
             self._send(json.dumps(self._radio_state()).encode(), "application/json")
 
         def _wifi_state(self) -> dict:
@@ -766,10 +826,11 @@ def make_handler(station: Station, output: Mp3Output, speaker=None,
 
 
 def serve(station: Station, output: Mp3Output, port: int, speaker=None,
-          config_file: Path | None = None, announcer=None, voice_jobs=None, updates=None) -> None:
+          config_file: Path | None = None, announcer=None, voice_jobs=None, updates=None,
+          presets=None, directory=None) -> None:
     server = ThreadingHTTPServer(("0.0.0.0", port),
                                  make_handler(station, output, speaker, config_file, announcer, voice_jobs,
-                                              updates))
+                                              updates, presets, directory))
     server.daemon_threads = True
     log.info("Sleep Radio on http://0.0.0.0:%d/", port)
     server.serve_forever()

@@ -33,6 +33,7 @@ from concurrent.futures import Future, ThreadPoolExecutor
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from pathlib import Path
+from collections.abc import Callable
 from typing import Protocol
 
 import numpy as np
@@ -44,7 +45,7 @@ from sleepradiopi.tts.worker import TtsWorker
 
 from .library import scan_jingles, scan_music
 from .models import BroadcastConfig, BroadcastTrack, Chattiness, JingleClip, LinkKind
-from .news import DueNews, NewsRepository, NewsSchedule, QuietHours, build_bulletin_body, bulletin_time_line
+from .news import DueNews, NewsRepository, NewsSlot, NewsSchedule, QuietHours, build_bulletin_body, bulletin_time_line
 from . import profiles as profiles_mod
 from .birthdays import BirthdayWishes, wish_text
 from .script_builder import DjScriptBuilder, ShowClock, artist_station_name
@@ -222,18 +223,23 @@ class Station:
         self._skip_for: OnAir | None = None
 
         self.on_air: OnAir | None = None
-        # Internet radio: a station ({"name", "url"}) played instead of the show.
-        self._tuned: dict | None = None
+        # Streaming: a source played instead of the show -- an internet radio
+        # station {"kind": "radio", "name", "url"} or one of the library's albums
+        # straight through {"kind": "album", "folder", "title", "artist", "track"}.
+        self._source: dict | None = None
         self._switch = threading.Event()     # the source changed: whatever plays gives way
         self._radio_heard = False            # a station has made a sound since start-up
         self.radio_title: str | None = None  # the station's now-playing, if it sends one
         self.radio_playing = False           # its sound is on air (not tuning in / reconnecting)
-        self.radio_error: str | None = None  # why the last station stopped
-        if cfg.get("radio_tuned"):
+        self.source_error: str | None = None # why the last source stopped
+        # Called with the source (or None) when it changes, so it can be saved
+        # and resumed after a restart (an album at the track it was on).
+        self.on_source: Callable[[dict | None], None] | None = None
+        if cfg.get("stream_source"):
             try:
-                self._tuned = radio_mod.validate_station(cfg["radio_tuned"])
+                self._source = self._check_source(cfg["stream_source"])
             except ValueError as e:
-                log.warning("radio_tuned ignored: %s", e)
+                log.warning("stream_source ignored: %s", e)
         self.next_track: BroadcastTrack | None = None
         self.gap_plan: list[str] = []
         self.history: deque[dict] = deque(maxlen=12)
@@ -299,11 +305,13 @@ class Station:
         try:
             while not self._stop.is_set():
                 self._switch.clear()
-                tuned = self._tuned
-                if tuned is not None:
-                    self._run_radio(tuned)
-                else:
+                source = self._source
+                if source is None:
                     self._run_music()
+                elif source["kind"] == "album":
+                    self._run_album(source)
+                else:
+                    self._run_radio(source)
         except Exception:
             log.exception("show crashed")
         finally:
@@ -354,21 +362,57 @@ class Station:
                 else:
                     self._prepare_opening()   # ready for coming back from the station
 
-    # --- internet radio ----------------------------------------------------------------
+    # --- streaming: internet radio and albums ---------------------------------------------
 
-    def tune(self, station: dict | None) -> None:
-        """Play an internet radio station ({"name", "url"}) instead of the show,
-        or None to go back to the show. Heard at once if the radio is playing."""
-        station = radio_mod.validate_station(station) if station is not None else None
+    def _check_source(self, source: dict) -> dict:
+        """A clean copy of a source; ValueError if it isn't one (or the album isn't here)."""
+        if not isinstance(source, dict):
+            raise ValueError("a source is a station or an album")
+        if source.get("kind", "radio") == "radio":
+            return {"kind": "radio", **radio_mod.validate_station(source)}
+        if source["kind"] == "album":
+            album = self._album_by_folder(source.get("folder"))
+            if album is None:
+                raise ValueError("that album isn't in the library")
+            track = source.get("track", 0)
+            track = track if isinstance(track, int) and not isinstance(track, bool) else 0
+            return {"kind": "album", "folder": album["folder"], "title": album["title"],
+                    "artist": album["artist"], "track": max(0, min(track, len(album["tracks"]) - 1))}
+        raise ValueError(f"unknown kind of source {source.get('kind')!r}")
+
+    def tune(self, source: dict | None) -> None:
+        """Play a source instead of the show -- an internet radio station
+        ({"name", "url"}, kind "radio" by default) or an album straight through
+        ({"kind": "album", "folder"}) -- or None to go back to the show. Heard at
+        once if the radio is playing. ValueError if it isn't one."""
+        source = self._check_source(source) if source is not None else None
         with self._lock:
-            self._tuned = station
-            self.radio_error = None
+            self._source = source
+            self.source_error = None
             self._switch.set()
-        log.info("radio: %s", f"tuned to {station['name']} ({station['url']})" if station else "back to the show")
+        log.info("streaming: %s", "back to the show" if source is None else
+                 f"{source['kind']} {source.get('name') or source['title']}")
+        self._notify_source()
+
+    def play_album(self, album_id: int) -> dict:
+        """Play an album (an id from the search) straight through instead of the
+        show: no DJ, jingles or news. Back to the show when it ends."""
+        albums = self.albums()
+        if not 0 <= album_id < len(albums):
+            raise ValueError("no such album")
+        self.tune({"kind": "album", "folder": albums[album_id]["folder"]})
+        return self._source
 
     @property
-    def radio_tuned(self) -> dict | None:
-        return self._tuned
+    def source(self) -> dict | None:
+        return self._source
+
+    def _notify_source(self) -> None:
+        if self.on_source is not None:
+            try:
+                self.on_source(dict(self._source) if self._source else None)
+            except Exception:
+                log.exception("couldn't save the source")
 
     @property
     def music_started(self) -> bool:
@@ -377,10 +421,53 @@ class Station:
 
     def _give_up_radio(self, tuned: dict, why: str) -> None:
         with self._lock:
-            if self._tuned is tuned:
-                self._tuned = None
-                self.radio_error = f"{tuned['name']}: {why}"
+            if self._source is tuned:
+                self._source = None
+                self.source_error = f"{tuned['name']}: {why}"
         log.warning("radio: giving up on %s (%s): back to the show", tuned["name"], why)
+        # (still saved: after a restart, e.g. with the Wi-Fi back, it's tried again)
+
+    def _album_by_folder(self, folder) -> dict | None:
+        if not isinstance(folder, str):
+            return None
+        return next((a for a in self.albums() if a["folder"] == folder), None)
+
+    def _run_album(self, source: dict) -> None:
+        """Play an album from source["track"] to the end, like a record: no DJ,
+        jingles or news; Skip goes to the next track. Then back to the show."""
+        album = self._album_by_folder(source["folder"])
+        if album is None:                       # (checked when tuned; the library doesn't change)
+            with self._lock:
+                if self._source is source:
+                    self._source = None
+            return
+        tracks = album["tracks"]
+        self.gap_plan = []
+        self.history.appendleft({"kind": "album", "text": f"{album['title']} — {album['artist']}",
+                                 "at": time.time()})
+        for i in range(source.get("track", 0), len(tracks)):
+            if self._halted():
+                return
+            t = tracks[i]
+            if i + 1 < len(tracks):
+                self._scan(tracks[i + 1].path)      # measured while this one plays
+            self.next_track = tracks[i + 1] if i + 1 < len(tracks) else None
+            with self._lock:
+                if self._source is not source:
+                    return
+                source["track"] = i
+            self._notify_source()                   # resumes at this track after a restart
+            self.current_track = t
+            self.history.appendleft({"kind": "track", "text": f"{t.title} — {t.artist}", "at": time.time()})
+            self._play_file(t.path, OnAir("track", t.title, t.artist, t.album))
+        if self._halted():
+            return
+        log.info("album finished: %s; back to the show", album["title"])
+        with self._lock:
+            if self._source is source:
+                self._source = None
+        self.next_track = None
+        self._notify_source()
 
     def _run_radio(self, tuned: dict) -> None:
         """Play a station until the source changes, the show ends, or it stays
@@ -476,6 +563,21 @@ class Station:
             return out
 
         return Speech(text, voice, self._tts_pool.submit(job))
+
+    def news_now(self) -> np.ndarray | None:
+        """The latest top stories read now (a preset button), in the news voice,
+        as int16 stereo; None if there are none (e.g. offline). Blocking: a
+        minute or so on a Zero."""
+        if not self._has_voice:
+            return None
+        headlines = self.news_repo.headlines_for(NewsSlot.TOP_OF_HOUR)
+        body = build_bulletin_body(NewsSlot.TOP_OF_HOUR, headlines)
+        if body is None:
+            return None
+        samples, rate = self.tts.synth(self.news_voice, body, self.config.news_speed)
+        self.news_repo.mark_read(headlines)
+        self.history.appendleft({"kind": "news", "text": "The news, by request", "at": time.time()})
+        return pcm.speech_pcm(samples, rate, self.announcer_volume)
 
     def render_speech(self, text: str) -> np.ndarray:
         """Say text in the DJ voice, as int16 stereo, now (blocking): for things
@@ -601,7 +703,11 @@ class Station:
                 titles = Counter(t.album.strip() for t in tracks if t.album.strip())
                 artists = Counter(t.artist.strip() for t in tracks if t.artist.strip())
                 artist, n = artists.most_common(1)[0] if artists else ("", 0)
-                index.append({"title": titles.most_common(1)[0][0] if titles else folder.name,
+                try:
+                    rel = str(folder.relative_to(self.music_dir))
+                except ValueError:
+                    rel = str(folder)
+                index.append({"folder": rel, "title": titles.most_common(1)[0][0] if titles else folder.name,
                               "artist": artist if n >= 0.6 * len(tracks) else "Various artists",
                               "tracks": tracks})
             index.sort(key=lambda a: (artist_key(a["artist"]), a["title"].lower()))
@@ -1137,6 +1243,17 @@ class Station:
 
     # --- status ----------------------------------------------------------------------
 
+    def _source_status(self, on_air: OnAir | None) -> dict | None:
+        src = self._source
+        if src is None:
+            return None
+        if src["kind"] == "radio":
+            return {**src, "title": self.radio_title,
+                    "playing": self.radio_playing and on_air is not None and on_air.kind == "radio"}
+        album = self._album_by_folder(src["folder"])
+        return {**src, "tracks": len(album["tracks"]) if album else 0,
+                "playing": on_air is not None and on_air.kind == "track"}
+
     def status(self) -> dict:
         on_air = self.on_air
         nxt = self.next_track
@@ -1149,7 +1266,8 @@ class Station:
                 "album": on_air.album, "elapsed_s": round(time.time() - on_air.started, 1),
                 "duration_s": round(on_air.duration_s, 1),
             },
-            "next": None if nxt is None or self._tuned is not None else {"title": nxt.title, "artist": nxt.artist},
+            "next": None if nxt is None or (self._source or {}).get("kind") == "radio"
+            else {"title": nxt.title, "artist": nxt.artist},
             "gap_plan": self.gap_plan,
             "can_skip": self.is_on_air and on_air is not None and on_air.kind != "radio",
             "news_ready": None if news is None else news.due.mark.strftime("%H:%M"),
@@ -1159,10 +1277,8 @@ class Station:
             "profile": self.profile,
             "requests": self.requests(),
             "album": self.album_status(),
-            "radio": None if self._tuned is None else {
-                **self._tuned, "title": self.radio_title,
-                "playing": self.radio_playing and on_air is not None and on_air.kind == "radio"},
-            "radio_error": self.radio_error,
+            "source": self._source_status(on_air),
+            "source_error": self.source_error,
             "station_name": self.builder.station,
             "voices_ready": bool(self.tts and self.tts.ready),
             "voice": {"name": self.dj_voice, "rss_mb": self.tts.last_rss_mb, "restarts": self.tts.restarts}

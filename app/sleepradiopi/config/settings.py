@@ -31,7 +31,8 @@ class Settings:
     broadcast_profile: str | None = None  # the profile playing (instead of an artist); None = none
     broadcast_chattiness: str = "maximum"
     radio_stations: list | None = None    # internet radio: [{"name", "url", "info"?}]; None = the starter set
-    radio_tuned: dict | None = None       # the station playing instead of the show; None = the show
+    buttons: list = field(default_factory=list)   # the 4 preset buttons (io/presets.py); null = empty
+    stream_source: dict | None = None     # a station or album playing instead of the show; None = the show
     birthdays: list = field(default_factory=list)  # [{"name", "day", "month", "year"?}]: the DJ wishes them on the day
     broadcast_jingle_enabled: bool = True
     broadcast_jingle_every: int = 4

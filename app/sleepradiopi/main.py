@@ -20,13 +20,15 @@ from sleepradiopi.audio import pcm
 from sleepradiopi.audio.eq import Equalizer
 from sleepradiopi.audio.speaker import SpeakerControl, SpeakerOutput, TeeOutput
 from sleepradiopi.broadcast.station import Station
-from sleepradiopi.config.settings import DEFAULT_PATH, load, save
+from sleepradiopi.config.settings import DEFAULT_PATH, load, save, save_setting
 from sleepradiopi import startup_sound
 from sleepradiopi import wifi
 from sleepradiopi.updater import Updates
 from sleepradiopi.voices import STANDARD_NAME, VoiceJobs
 from sleepradiopi.io.announce import Announcer
 from sleepradiopi.io.knob import Knob
+from sleepradiopi.io import presets as presets_mod
+from sleepradiopi.playback import radio as radio_mod
 from sleepradiopi.tts.worker import TtsWorker
 from sleepradiopi.web.server import serve
 from sleepradiopi.web.stream import Mp3Output
@@ -177,11 +179,17 @@ def main() -> None:
         if station._has_voice:
             threading.Thread(target=_make_warming_up, args=(station, on_air), name="warming-up",
                              daemon=True).start()
+        presets = presets_mod.Presets(station, control, args.config, settings.buttons, announcer)
+        buttons = {code: (lambda i=i: presets.press(i), lambda i=i: presets.hold(i))
+                   for code, i in presets_mod.KEYCODES.items()}
         Knob(lambda clicks: control.step(clicks * settings.knob_step), control.toggle,
-             on_long_press=announcer.speak).start()
+             on_long_press=announcer.speak, buttons=buttons).start()
         control.play()   # a bedside radio plays as soon as it's powered
     else:
         station = Station(cfg, tts, stream)
+        presets = presets_mod.Presets(station, None, args.config, settings.buttons)
+    # A station or album playing instead of the show is kept over a restart.
+    station.on_source = lambda source: save_setting(args.config, "stream_source", source)
     updates = Updates(settings.update_source, say=lambda text: _say_now(station, control, text))
     threading.Thread(target=_after_first_song, args=(station, updates), name="update-confirm",
                      daemon=True).start()
@@ -189,7 +197,11 @@ def main() -> None:
                      on_installed=lambda name: _voice_installed(station, args.config, control, name))
     if not station.voices():
         threading.Thread(target=_fetch_standard_voice, args=(jobs,), name="voice-fetch", daemon=True).start()
-    serve(station, stream, args.port or settings.http_port, control, args.config, announcer, jobs, updates)
+    # Internet radio's station search: a copy of the directory, kept fresh.
+    directory = radio_mod.Directory(Path.home() / ".cache" / "sleepradiopi" / "stations.tsv")
+    directory.keep_fresh()
+    serve(station, stream, args.port or settings.http_port, control, args.config, announcer, jobs, updates,
+          presets, directory)
 
 
 if __name__ == "__main__":

@@ -30,6 +30,15 @@ gpio=17,27=ip,pu
 dtoverlay=rotary-encoder,pin_a=17,pin_b=27,relative_axis=1
 dtoverlay=gpio-key,gpio=22,active_low=1,gpio_pull=up,keycode=164,label="PLAYPAUSE"
 
+# Preset buttons 1-4 (like a car radio's): momentary push buttons, each
+# between its GPIO and GND -- 1: GPIO5 (pin 29), 2: GPIO6 (pin 31),
+# 3: GPIO16 (pin 36), 4: GPIO26 (pin 37); GND pins 30, 34 and 39. They send
+# KEY_1..KEY_4 to the station (io/presets.py). With none fitted: harmless.
+dtoverlay=gpio-key,gpio=5,active_low=1,gpio_pull=up,keycode=2,label="PRESET1"
+dtoverlay=gpio-key,gpio=6,active_low=1,gpio_pull=up,keycode=3,label="PRESET2"
+dtoverlay=gpio-key,gpio=16,active_low=1,gpio_pull=up,keycode=4,label="PRESET3"
+dtoverlay=gpio-key,gpio=26,active_low=1,gpio_pull=up,keycode=5,label="PRESET4"
+
 # Real-time clock: a DS3231 (e.g. ZS-042) on I2C -- 3.3 V pin 1, SDA pin 3,
 # SCL pin 5, GND pin 9. This also turns the I2C bus on. With no RTC fitted
 # it's harmless. S12rtc sets the clock from it at boot; clock-save sets it

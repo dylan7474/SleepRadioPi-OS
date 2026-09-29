@@ -10,13 +10,21 @@ station's PCM (16-bit stereo, 44.1 kHz). On the way it:
   * plays HLS (.m3u8, e.g. the BBC) by fetching its segments in turn.
 
 Stations are found with the Radio Browser directory (radio-browser.info),
-as the Android app does; the starter set is the Android app's.
+as the Android app does; the starter set is the Android app's. Its servers
+come and go (all.api... often points at one that's down), so the radio keeps
+a compact copy of the whole directory (Directory: ~60,000 stations, ~7 MB,
+refreshed weekly in the background, trying each mirror in turn) and searches
+that: instant, and it works when the servers don't.
 """
 
 from __future__ import annotations
 
+import csv
+import io
 import json
 import logging
+import os
+import time
 import math
 import queue
 import re
@@ -25,6 +33,7 @@ import threading
 import urllib.error
 import urllib.request
 from collections.abc import Callable
+from pathlib import Path
 from urllib.parse import quote, urljoin, urlparse
 
 import numpy as np
@@ -33,7 +42,13 @@ from sleepradiopi.audio import pcm
 
 log = logging.getLogger(__name__)
 
-DIRECTORY = "https://all.api.radio-browser.info"   # round-robin DNS over the public mirrors
+# The app's round-robin name first, then mirrors by name (all.api... can land
+# on one that's down). The first that answers is tried first next time.
+MIRRORS = ["https://all.api.radio-browser.info", "https://de1.api.radio-browser.info",
+           "https://de2.api.radio-browser.info"]
+MIRROR_TIMEOUT_S = 8.0
+REFRESH_S = 7 * 24 * 3600    # the directory copy is refreshed weekly
+RETRY_S = 3600               # ...or an hour after a failed try
 USER_AGENT = "SleepRadioPi/1.0 (+https://github.com/dylan7474/SleepRadioPi-OS)"
 TIMEOUT_S = 10.0
 MAX_STATIONS = 100
@@ -104,23 +119,42 @@ def validate_stations(stations) -> list[dict]:
     return out
 
 
-def _get(url: str, headers: dict | None = None):
+def _get(url: str, headers: dict | None = None, timeout: float = TIMEOUT_S):
     req = urllib.request.Request(url, headers={"User-Agent": USER_AGENT, **(headers or {})})
-    return urllib.request.urlopen(req, timeout=TIMEOUT_S)
+    return urllib.request.urlopen(req, timeout=timeout)
+
+
+def _mirrored(path: str, fetch: Callable, headers: dict | None = None, timeout: float = MIRROR_TIMEOUT_S):
+    """Open path on the first Radio Browser mirror that answers (and try that
+    one first next time). StreamError if none does."""
+    last = None
+    for base in list(MIRRORS):
+        try:
+            resp = fetch(base + path, headers=headers, timeout=timeout)
+        except (OSError, ValueError) as e:     # URLError, timeouts, HTTP errors
+            log.info("station directory: %s didn't answer (%s)", base, e)
+            last = e
+            continue
+        if MIRRORS[0] != base:
+            MIRRORS.remove(base)
+            MIRRORS.insert(0, base)
+        return resp
+    log.warning("station directory: no mirror answered (%s)", last)
+    raise StreamError("couldn't reach the station directory (is the radio online?)")
 
 
 def search(query: str, limit: int = 40, fetch: Callable = _get) -> list[dict]:
-    """Stations whose name matches, best known first (Radio Browser, as the
-    Android app searches it). StreamError if the directory can't be reached."""
+    """Stations whose name matches, best known first (Radio Browser online, as
+    the Android app searches it). StreamError if the directory can't be reached."""
     q = query.strip()
     if not q:
         return []
-    url = (f"{DIRECTORY}/json/stations/search?name={quote(q)}&limit={int(limit)}"
-           "&hidebroken=true&order=clickcount&reverse=true")
+    path = (f"/json/stations/search?name={quote(q)}&limit={int(limit)}"
+            "&hidebroken=true&order=clickcount&reverse=true")
     try:
-        with fetch(url, headers={"Accept": "application/json"}) as r:
+        with _mirrored(path, fetch, {"Accept": "application/json"}) as r:
             rows = json.loads(r.read(4_000_000))
-    except (OSError, ValueError) as e:        # URLError and timeouts are OSErrors
+    except (OSError, ValueError) as e:
         log.warning("station search %r failed: %s", q, e)
         raise StreamError("couldn't reach the station directory (is the radio online?)") from None
     out, seen = [], set()
@@ -142,6 +176,152 @@ def search(query: str, limit: int = 40, fetch: Callable = _get) -> list[dict]:
             seen.add(s["url"])
             out.append(s)
     return out
+
+
+class Directory:
+    """A copy of the whole Radio Browser directory on the radio, searched
+    locally. One station per line, most listened-to first:
+    name, stream address, codec, bitrate, country, clicks, tags (tab-separated).
+    Until the first copy is made (or if it can't be), searches go online."""
+
+    FIELDS = ("name", "url", "codec", "bitrate", "country", "clicks", "tags")
+
+    def __init__(self, path: Path, fetch: Callable = _get) -> None:
+        self.path = path
+        self.fetch = fetch
+        self.refreshing = False
+        self.last_error: str | None = None
+        self._lock = threading.Lock()
+
+    def status(self) -> dict:
+        try:
+            meta = json.loads(self.path.with_suffix(".json").read_text())
+        except (OSError, ValueError):
+            meta = {}
+        return {"stations": meta.get("stations", 0) if self.path.is_file() else 0,
+                "updated": meta.get("updated") if self.path.is_file() else None,
+                "refreshing": self.refreshing, "error": self.last_error}
+
+    def age_s(self) -> float | None:
+        try:
+            return time.time() - self.path.stat().st_mtime
+        except OSError:
+            return None
+
+    def refresh(self) -> int:
+        """Download the directory (~35 MB of CSV, read as it arrives) and keep
+        the working stations. Returns how many. StreamError if it can't."""
+        with self._lock:
+            if self.refreshing:
+                raise StreamError("already being fetched")
+            self.refreshing = True
+        tmp = self.path.with_suffix(".tmp")
+        try:
+            t0 = time.monotonic()
+            self.path.parent.mkdir(parents=True, exist_ok=True)
+            n = 0
+            with _mirrored("/csv/stations/search?hidebroken=true&limit=500000&order=clickcount&reverse=true",
+                           self.fetch, timeout=30) as resp, open(tmp, "w", encoding="utf-8") as out:
+                for row in csv.DictReader(io.TextIOWrapper(resp, encoding="utf-8", errors="replace", newline="")):
+                    line = _directory_line(row)
+                    if line:
+                        out.write(line + "\n")
+                        n += 1
+                out.flush()
+                os.fsync(out.fileno())
+            if n < 1000:                        # a cut-off download: keep the old copy
+                raise StreamError(f"the directory came back with only {n} stations")
+            os.replace(tmp, self.path)
+            meta = self.path.with_suffix(".json")
+            meta.write_text(json.dumps({"stations": n, "updated": time.time()}))
+            self.last_error = None
+            log.info("station directory: %d stations saved in %.0f s", n, time.monotonic() - t0)
+            return n
+        except (OSError, ValueError, csv.Error, StreamError) as e:
+            self.last_error = str(e) if isinstance(e, StreamError) else _reason(e)
+            log.warning("station directory: refresh failed: %s", e)
+            raise StreamError(self.last_error) from None
+        finally:
+            self.refreshing = False
+            try:
+                tmp.unlink()
+            except OSError:
+                pass
+
+    def keep_fresh(self, start_delay_s: float = 120.0) -> None:
+        """Refresh when there's no copy or it's a week old (a background thread,
+        at low priority, starting after the show has had time to get going)."""
+        def run():
+            try:
+                os.setpriority(os.PRIO_PROCESS, threading.get_native_id(), 10)
+            except (AttributeError, OSError):
+                pass
+            time.sleep(start_delay_s)
+            while True:
+                age = self.age_s()
+                if age is None or age > REFRESH_S:
+                    try:
+                        self.refresh()
+                    except StreamError:
+                        time.sleep(RETRY_S)
+                        continue
+                time.sleep(min(REFRESH_S, RETRY_S * 6))
+        threading.Thread(target=run, name="station-directory", daemon=True).start()
+
+    def search(self, query: str, limit: int = 40) -> tuple[list[dict], str]:
+        """(stations, "copy" | "online"): every word in the name (or its tags),
+        most listened-to first."""
+        words = query.lower().split()
+        if not words:
+            return [], "copy"
+        if not self.path.is_file():
+            return search(query, limit, self.fetch), "online"
+        by_name, by_tag = [], []
+        with open(self.path, encoding="utf-8", errors="replace") as f:
+            for line in f:
+                parts = line.rstrip("\n").split("\t")
+                if len(parts) != len(self.FIELDS):
+                    continue
+                name = parts[0].lower()
+                if all(w in name for w in words) and _starts_words(words, name):
+                    by_name.append(parts)
+                    if len(by_name) >= limit:
+                        break
+                elif len(by_tag) < limit and all(w in name or w in parts[6].lower() for w in words) \
+                        and _starts_words(words, f"{name} {parts[6].lower()}"):
+                    by_tag.append(parts)
+        out, seen = [], set()
+        for p in (by_name + by_tag):
+            if p[1] in seen:
+                continue
+            seen.add(p[1])
+            info = " · ".join(x for x in (p[2] if p[2].upper() != "UNKNOWN" else "",
+                                          f"{p[3]}k" if p[3] not in ("", "0") else "", p[4]) if x)
+            out.append({"name": p[0], "url": p[1], "info": info or "Internet radio"})
+            if len(out) >= limit:
+                break
+        return out, "copy"
+
+
+def _starts_words(words: list[str], text: str) -> bool:
+    """Every query word starts a word of text ("radio 4": not "Radio 24")."""
+    tokens = re.split(r"[^\w]+", text)
+    return all(any(t.startswith(w) for t in tokens) for w in words)
+
+
+def _directory_line(row: dict) -> str | None:
+    """A Radio Browser CSV row -> one line of the copy (None: skip it)."""
+    if row.get("lastcheckok") != "1":
+        return None
+    url = (row.get("url_resolved") or row.get("url") or "").strip()
+    name = " ".join((row.get("name") or "").split())[:MAX_NAME]
+    if not name or not url.startswith(("http://", "https://")) or len(url) > MAX_URL or "\t" in url:
+        return None
+    clean = lambda x, n: " ".join((x or "").split())[:n]
+    bitrate = row.get("bitrate") or "0"
+    return "\t".join([name, url, clean(row.get("codec"), 10), bitrate if bitrate.isdigit() else "0",
+                      clean(row.get("country"), 40), clean(row.get("clickcount"), 10),
+                      clean(row.get("tags"), 100)])
 
 
 # --- playlists and HLS -------------------------------------------------------------------

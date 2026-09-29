@@ -6,7 +6,8 @@ The kernel does the GPIO work (config.txt on the Pi):
 Both show up as /dev/input/event* devices, read here without extra
 libraries: each click of the knob is a relative-axis event (+1/-1) and the
 push is a key press. Any relative axis or key works, so a different encoder
-or button needs no code change.
+or button needs no code change -- except the preset buttons' keys (KEY_1 to
+KEY_4, io/presets.py), which go to their own button.
 
 With a long-press action, a press acts when it's let go (pause/play), and
 holding it for LONG_PRESS_S does the long-press action instead (say the
@@ -35,12 +36,18 @@ RESCAN_S = 10.0   # look for new input devices (modules can load after we start)
 
 
 def handle(data: bytes, on_turn: Callable[[int], None], on_press: Callable[[], None],
-           on_release: Callable[[], None] | None = None) -> None:
-    """Dispatch every complete event in data (key repeats are ignored)."""
+           on_release: Callable[[], None] | None = None, keys: dict | None = None) -> None:
+    """Dispatch every complete event in data (key repeats are ignored). keys:
+    keycode -> (on_down, on_up) for keys with a job of their own."""
     for i in range(0, len(data) - EVENT.size + 1, EVENT.size):
-        _, _, etype, _, value = EVENT.unpack_from(data, i)
+        _, _, etype, code, value = EVENT.unpack_from(data, i)
         if etype == EV_REL and value:
             on_turn(value)
+        elif etype == EV_KEY and keys and code in keys:
+            if value == KEY_DOWN:
+                keys[code][0]()
+            elif value == KEY_UP:
+                keys[code][1]()
         elif etype == EV_KEY and value == KEY_DOWN:
             on_press()
         elif etype == EV_KEY and value == KEY_UP and on_release is not None:
@@ -51,8 +58,8 @@ class PressTimer:
     """Tells a short press (on release) from a long one (fires while held)."""
 
     def __init__(self, on_short: Callable[[], None], on_long: Callable[[], None],
-                 long_s: float = LONG_PRESS_S) -> None:
-        self.on_short, self.on_long, self.long_s = on_short, on_long, long_s
+                 long_s: float = LONG_PRESS_S, name: str = "knob") -> None:
+        self.on_short, self.on_long, self.long_s, self.name = on_short, on_long, long_s, name
         self._timer: threading.Timer | str | None = None
         self._lock = threading.Lock()
 
@@ -69,7 +76,7 @@ class PressTimer:
             if self._timer is None:
                 return
             self._timer = "fired"     # the release that follows does nothing
-        log.info("knob: long press")
+        log.info("%s: long press", self.name)
         self.on_long()
 
     def up(self) -> None:
@@ -83,8 +90,14 @@ class PressTimer:
 class Knob:
     def __init__(self, on_turn: Callable[[int], None], on_press: Callable[[], None],
                  devices: Path = Path("/dev/input"),
-                 on_long_press: Callable[[], None] | None = None) -> None:
+                 on_long_press: Callable[[], None] | None = None,
+                 buttons: dict | None = None) -> None:
+        """buttons: keycode -> (on_short, on_long) for the preset buttons."""
         self.on_turn = on_turn
+        self.keys = {}
+        for code, (short, long_) in (buttons or {}).items():
+            t = PressTimer(short, long_, name=f"button {code - 1}")
+            self.keys[code] = (t.down, t.up)
         if on_long_press is None:            # act as soon as it's pressed
             self.on_press, self.on_release = on_press, None
         else:
@@ -130,6 +143,6 @@ class Knob:
                     self._fds = {k: v for k, v in self._fds.items() if v != fd}
                     continue
                 try:
-                    handle(data, self.on_turn, self.on_press, self.on_release)
+                    handle(data, self.on_turn, self.on_press, self.on_release, self.keys)
                 except Exception:
                     log.exception("knob: handler failed")

@@ -105,7 +105,7 @@ def test_search_reads_radio_browser_like_the_app() -> None:
     ]
     asked = []
 
-    def fetch(url, headers=None):
+    def fetch(url, headers=None, timeout=None):
         asked.append(url)
         return _Reply(json.dumps(rows).encode())
 
@@ -119,7 +119,7 @@ def test_search_reads_radio_browser_like_the_app() -> None:
 
 
 def test_search_offline() -> None:
-    def fetch(url, headers=None):
+    def fetch(url, headers=None, timeout=None):
         raise urllib.error.URLError(OSError("Name or service not known"))
     with pytest.raises(radio.StreamError, match="online"):
         radio.search("x", fetch=fetch)
@@ -265,13 +265,13 @@ def test_a_station_plays_until_the_source_changes(tmp_path: Path, monkeypatch) -
     st.tts = None
     tuned = {"name": "Groove Salad", "url": "http://soma/gs"}
     st.tune(tuned)
-    assert st.radio_tuned == {**tuned, "info": ""}
+    assert st.source == {"kind": "radio", **tuned, "info": ""}
     st.output = Counting(after=50, then=lambda: st.tune(None))
     st._switch.clear()
-    st._run_radio(st.radio_tuned)
+    st._run_radio(st.source)
     assert st.output.blocks == 50 and st.music_started
     status = st.status()
-    assert status["radio"] is None and not status["can_skip"]
+    assert status["source"] is None and not status["can_skip"]
     assert any("Now - This" in h["text"] for h in st.history)
 
 
@@ -288,8 +288,8 @@ def test_status_while_a_station_plays(tmp_path: Path, monkeypatch) -> None:
     st.output = Counting(after=20, then=look)
     st._switch.clear()
     monkeypatch.setattr(st, "_thread", type("T", (), {"is_alive": lambda self: True})())
-    st._run_radio(st.radio_tuned)
-    assert seen["radio"]["name"] == "RP" and seen["radio"]["playing"] and seen["radio"]["title"] == "Now - This"
+    st._run_radio(st.source)
+    assert seen["source"]["name"] == "RP" and seen["source"]["playing"] and seen["source"]["title"] == "Now - This"
     assert seen["now"]["kind"] == "radio" and seen["now"]["title"] == "Now - This" and seen["now"]["artist"] == "RP"
     assert seen["next"] is None and not seen["can_skip"] and not st.skip()
 
@@ -303,8 +303,8 @@ def test_a_dropped_stream_reconnects(tmp_path: Path, monkeypatch) -> None:
     out = st.output = Counting()
     out.write = lambda block: len(FakeStream.made) >= 3 and st.tune(None)
     st._switch.clear()
-    st._run_radio(st.radio_tuned)
-    assert len(FakeStream.made) == 3 and st.radio_error is None
+    st._run_radio(st.source)
+    assert len(FakeStream.made) == 3 and st.source_error is None
 
 
 def test_a_silent_station_gives_way_to_the_show(tmp_path: Path, monkeypatch) -> None:
@@ -315,9 +315,9 @@ def test_a_silent_station_gives_way_to_the_show(tmp_path: Path, monkeypatch) -> 
     st.tune({"name": "Gone FM", "url": "http://gone/"})
     st.output = Counting()
     st._switch.clear()
-    st._run_radio(st.radio_tuned)
-    assert st.radio_tuned is None
-    assert st.radio_error.startswith("Gone FM: ")
+    st._run_radio(st.source)
+    assert st.source is None
+    assert st.source_error.startswith("Gone FM: ")
     assert not st.music_started
 
 
@@ -362,11 +362,11 @@ def test_the_radio_resumes_its_station_at_start_up(tmp_path: Path) -> None:
     cfg = asdict(Settings())
     cfg.update(music_folder=tmp_path / "music", jingles_folder=tmp_path / "none", hooks_file="",
                scan_cache=tmp_path / "scans.json", tag_cache=None,
-               radio_tuned={"name": "RP", "url": "http://rp/"})
+               stream_source={"name": "RP", "url": "http://rp/"})
     st = station_mod.Station(cfg, FakeTts(), NullOutput())
-    assert st.radio_tuned["name"] == "RP"
-    cfg["radio_tuned"] = {"name": "Bad", "url": "nope"}
-    assert station_mod.Station(cfg, FakeTts(), NullOutput()).radio_tuned is None
+    assert st.source["name"] == "RP"
+    cfg["stream_source"] = {"name": "Bad", "url": "nope"}
+    assert station_mod.Station(cfg, FakeTts(), NullOutput()).source is None
 
 
 # --- the web page's API ----------------------------------------------------------------------
@@ -379,7 +379,7 @@ class FakeStation:
         self.tuned = s
 
     def status(self):
-        return {"on_air": True, "radio": self.tuned, "radio_error": None}
+        return {"on_air": True, "source": self.tuned, "source_error": None}
 
 
 class FakeSpeaker:
@@ -411,11 +411,10 @@ def test_web_api(tmp_path: Path, monkeypatch) -> None:
 
     try:
         code, reply = call("/api/radio")
-        assert code == 200 and reply["stations"] == radio.DEFAULT_STATIONS and reply["radio"] is None
+        assert code == 200 and reply["stations"] == radio.DEFAULT_STATIONS and reply["source"] is None
 
         code, reply = call("/api/radio/play", {"name": "RP", "url": "http://rp/"})
         assert code == 200 and st.tuned["name"] == "RP" and FakeSpeaker.played == 1
-        assert load(conf).radio_tuned == {"name": "RP", "url": "http://rp/", "info": ""}
 
         code, reply = call("/api/radio/play", {"name": "x", "url": "file:///etc/passwd"})
         assert code == 400 and "http" in reply["error"]
@@ -427,7 +426,7 @@ def test_web_api(tmp_path: Path, monkeypatch) -> None:
         assert reply["stations"] == []                         # an empty list stays empty
 
         code, reply = call("/api/radio/stop", {})
-        assert code == 200 and st.tuned is None and load(conf).radio_tuned is None
+        assert code == 200 and st.tuned is None
 
         monkeypatch.setattr(radio, "search", lambda q: [{"name": q, "url": "http://q/", "info": ""}])
         code, reply = call("/api/radio/search?q=jazz%20fm")
@@ -445,10 +444,10 @@ def test_web_api(tmp_path: Path, monkeypatch) -> None:
 def test_backups_keep_the_stations_but_not_whats_on(tmp_path: Path) -> None:
     conf = tmp_path / "config.json"
     conf.write_text(json.dumps({"radio_stations": [{"name": "A", "url": "http://a/", "info": ""}],
-                                "radio_tuned": {"name": "A", "url": "http://a/"}}))
+                                "stream_source": {"name": "A", "url": "http://a/"}}))
     saved = backup.export(conf, 50)
     assert saved["settings"]["radio_stations"][0]["name"] == "A"
-    assert "radio_tuned" not in saved["settings"]
+    assert "stream_source" not in saved["settings"]
     settings, _ = backup.parse(saved)
     assert settings["radio_stations"][0]["url"] == "http://a/"
     saved["settings"]["radio_stations"] = [{"name": "B", "url": "gopher://b/"}]
@@ -478,3 +477,69 @@ def test_an_opening_cut_short_is_kept_for_coming_back(tmp_path: Path, monkeypatc
     st.output = out
     st._run_show()
     assert st._opening[1][0].speech is welcome and st._opening[2] is first
+
+
+# --- the directory copy -----------------------------------------------------------------------
+
+CSV_HEAD = "name,url,url_resolved,codec,bitrate,country,clickcount,tags,lastcheckok\n"
+
+
+def _csv_rows(n):
+    rows = [f"Station {i},http://s{i}/,,MP3,128,UK,{n - i},pop,1\n" for i in range(n)]
+    rows += ["BBC Radio 4,http://r4/list.pls,http://r4/live,AAC,0,The United Kingdom,99999,\"news,talk\",1\n",
+             "Dead FM,http://dead/,,MP3,64,UK,5,,0\n",
+             "Jazz Café,http://jc/,,OGG,96,France,7,\"jazz,smooth\",1\n"]
+    return CSV_HEAD + "".join(rows)
+
+
+def test_mirrors_are_tried_in_turn_and_the_good_one_remembered(monkeypatch) -> None:
+    monkeypatch.setattr(radio, "MIRRORS", ["https://down", "https://up", "https://other"])
+    asked = []
+
+    def fetch(url, headers=None, timeout=None):
+        asked.append(url.split("/json")[0])
+        if url.startswith("https://down"):
+            raise TimeoutError("timed out")
+        return _Reply(b"[]")
+    radio.search("x", fetch=fetch)
+    radio.search("y", fetch=fetch)
+    assert asked == ["https://down", "https://up", "https://up"]
+
+
+def test_the_directory_copy(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setattr(radio, "MIRRORS", ["https://m"])
+    body = _csv_rows(2000).encode()
+
+    def fetch(url, headers=None, timeout=None):
+        assert "/csv/stations/search" in url
+        return _Reply(body)
+    d = radio.Directory(tmp_path / "stations.tsv", fetch)
+    assert d.status()["stations"] == 0
+    assert d.refresh() == 2002                               # the dead one's left out
+    st = d.status()
+    assert st["stations"] == 2002 and st["updated"] and not st["refreshing"]
+    found, where = d.search("radio 4")
+    assert where == "copy" and found == [{"name": "BBC Radio 4", "url": "http://r4/live",
+                                          "info": "AAC · The United Kingdom"}]
+    assert d.search("jazz")[0][0]["name"] == "Jazz Café"   # by name
+    assert d.search("smooth")[0][0]["name"] == "Jazz Café" # or by its tags
+    assert d.search("dead")[0] == []
+    assert len(d.search("station")[0]) == 40
+
+
+def test_a_cut_off_download_keeps_the_old_copy(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setattr(radio, "MIRRORS", ["https://m"])
+    good = _csv_rows(1500).encode()
+    d = radio.Directory(tmp_path / "stations.tsv", lambda url, headers=None, timeout=None: _Reply(good))
+    d.refresh()
+    d.fetch = lambda url, headers=None, timeout=None: _Reply(good[:3000])
+    with pytest.raises(radio.StreamError, match="only"):
+        d.refresh()
+    assert d.status()["stations"] == 1502 and d.status()["error"]
+
+
+def test_without_a_copy_the_search_goes_online(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setattr(radio, "MIRRORS", ["https://m"])
+    rows = [{"name": "Online FM", "url_resolved": "http://o/"}]
+    d = radio.Directory(tmp_path / "none.tsv", lambda url, headers=None, timeout=None: _Reply(json.dumps(rows).encode()))
+    assert d.search("online") == ([{"name": "Online FM", "url": "http://o/", "info": "Internet radio"}], "online")

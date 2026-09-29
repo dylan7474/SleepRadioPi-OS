@@ -147,6 +147,28 @@
   #rq { flex: 1; }
   #rAddName { flex: 1 1 8rem; }
   #rAddUrl { flex: 2 1 12rem; }
+  #bList li, #aResults li { align-items: center; flex-wrap: wrap; }
+  #bList .n { flex: none; width: 1.6rem; height: 1.6rem; border-radius: 50%; border: 1px solid var(--line);
+    display: inline-flex; align-items: center; justify-content: center; font-weight: 600; font-size: .9rem; }
+  #bList li.on .n { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+  #bList .t, #aResults .t { flex: 1; min-width: 8rem; overflow-wrap: anywhere; }
+  #aResults .t small { color: var(--muted); display: block; }
+  #bList button, #aResults button { flex: none; padding: .3rem .6rem; font-size: .85rem; }
+  #bList select { font: inherit; font-size: .85rem; color: var(--text); background: var(--bg); max-width: 9rem;
+    border: 1px solid var(--line); border-radius: .5rem; padding: .3rem .4rem; }
+  #aResults { max-height: 20rem; overflow-y: auto; margin-top: .5rem; }
+  #aq { flex: 1; font: inherit; color: var(--text); background: var(--bg); border: 1px solid var(--line);
+    border-radius: .6rem; padding: .55rem .7rem; min-width: 0; }
+  #bNote.bad, #aNote.bad { color: var(--live); }
+  #presets { display: grid; grid-template-columns: repeat(4, 1fr); gap: .5rem; }
+  #presets button { display: flex; flex-direction: column; align-items: center; gap: .2rem; padding: .6rem .3rem;
+    min-width: 0; font-size: .8rem; line-height: 1.2; }
+  #presets button b { font-size: 1.2rem; }
+  #presets button span { overflow: hidden; max-width: 100%; color: var(--muted); overflow-wrap: anywhere;
+    display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; min-height: 2.4em; }
+  #presets button.on { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+  #presets button.on span { color: var(--accent-ink); }
+  #presetsCard .card-head a { font-size: .85rem; color: var(--muted); }
   #rNowTitle { font-size: 1.15rem; margin: .2rem 0 0; overflow-wrap: anywhere; }
   #rNote.bad, #rFindNote.bad, #rAddNote.bad { color: var(--live); }
   footer { margin-top: 2rem; font-size: .8rem; color: var(--muted); }
@@ -198,8 +220,16 @@
     <div class="now-foot">
       <p id="next" class="muted"></p>
       <button id="skip" type="button" hidden title="Skip to what's next">Skip ⏭︎</button>
-      <button id="radioOff" type="button" hidden title="Stop the internet radio station">Back to Sleep Radio</button>
+      <button id="radioOff" type="button" hidden title="Stop streaming">Back to Sleep Radio</button>
     </div>
+  </section>
+
+  <section id="presetsCard" class="card" hidden>
+    <div class="card-head" style="margin-bottom:.6rem">
+      <h2>Buttons</h2>
+      <a href="#radio" title="Change what the buttons play (📻 Streaming)">Change</a>
+    </div>
+    <div id="presets"></div>
   </section>
 
   <button id="tune" type="button" hidden>▶ Listen here</button>
@@ -244,8 +274,8 @@
     </div>
     <ul id="results"></ul>
     <p id="qNote" class="muted" style="margin:.4rem 0 0;font-size:.85rem" hidden></p>
-    <p id="qRadio" class="muted" style="margin:.4rem 0 0;font-size:.85rem" hidden>An internet radio station is
-      on: songs you pick play when you go back to Sleep Radio.</p>
+    <p id="qRadio" class="muted" style="margin:.4rem 0 0;font-size:.85rem" hidden>Streaming is on (📻): songs you
+      pick play when you go back to Sleep Radio.</p>
     <div id="albumBox" class="row" hidden>
       <span id="albumNow" class="t" style="flex:1"></span>
       <button id="albumStop" type="button">Stop album</button>
@@ -282,6 +312,28 @@
     <p id="rNote" class="muted" style="margin:.6rem 0 0;font-size:.85rem" hidden></p>
   </section>
 
+  <section class="card" id="bCard">
+    <h2>Buttons</h2>
+    <ul id="bList"><li class="muted">Loading…</li></ul>
+    <p id="bNote" class="muted" style="margin:.5rem 0 0;font-size:.85rem">The four buttons on the radio, like a
+      car radio's: press to play (press again to pause); <b>hold one for 3 seconds</b> to keep what's playing
+      on it. Here, <i>Set to now</i> does the same, or choose from the list. For an album, play it first.</p>
+  </section>
+
+  <h3 class="group">Albums</h3>
+
+  <section class="card">
+    <h2>Play an album</h2>
+    <form id="aFind" class="row" style="margin-top:0">
+      <input id="aq" type="search" placeholder="Album or artist" aria-label="Find an album" autocomplete="off">
+      <button type="submit">Search</button>
+    </form>
+    <ul id="aResults"></ul>
+    <p id="aNote" class="muted" style="margin:.5rem 0 0;font-size:.85rem">From the radio's own music, start
+      to finish with no DJ (Skip goes to the next track); then back to Sleep Radio. (For an album with the
+      DJ's introduction, use Play next on the main page.)</p>
+  </section>
+
   <h3 class="group">Internet radio</h3>
 
   <section class="card">
@@ -305,6 +357,8 @@
     <ul id="rResults"></ul>
     <p id="rFindNote" class="muted" style="margin:.5rem 0 0;font-size:.85rem">From the
       <a href="https://www.radio-browser.info/" style="color:inherit">Radio Browser</a> directory.</p>
+    <div class="row" style="margin-top:.4rem"><button id="rDirUpdate" type="button" hidden
+      style="font-size:.85rem;padding:.3rem .7rem" title="Fetch a fresh copy of the station directory now">Update the list</button></div>
   </section>
   </div>
 
@@ -1308,7 +1362,7 @@ async function poll() {
       showSelection(s.artist, s.profile, s.station_name);    // changed on another phone
     showRequests(s.requests);
     showAlbum(s.album);
-    showRadio(s.radio, s.radio_error);
+    showRadio(s.source, s.source_error);
     const badge = $("badge");
     badge.textContent = s.on_air ? "On air" : (s.voices_ready ? "Off air" : "Warming up");
     badge.classList.toggle("live", s.on_air);
@@ -1401,19 +1455,31 @@ $("off").onclick = async () => {
 // A station plays instead of the show (the speakers, volume and sleep timer as
 // usual); the radio remembers it over a restart. Stations are found with the
 // Radio Browser directory, as the Android app does.
-let rStations = [], rTuned = null;
+let rStations = [], rTuned = null, lastSrcKey = "null";
 function rNote(id, text, bad) {
   const n = $(id);
   n.textContent = text; n.hidden = !text; n.classList.toggle("bad", !!bad);
 }
-function showRadio(r, err) {
+function showRadio(src, err) {
+  const r = src && src.kind === "radio" ? src : null, album = src && src.kind === "album" ? src : null;
   rTuned = r;
-  $("radioOff").hidden = !r;
-  $("qRadio").hidden = !r;
-  $("rStopRow").hidden = !r;
-  $("rKind").textContent = r ? (r.playing ? "Internet radio" : "Tuning in") : "Sleep Radio";
-  $("rNowTitle").textContent = r ? (r.title || r.name) : "The radio's own show is on.";
-  $("rNowSub").textContent = r && r.title ? r.name : "";
+  $("radioOff").hidden = !src;
+  $("qRadio").hidden = !src;
+  $("rStopRow").hidden = !src;
+  if (album) {
+    $("rKind").textContent = `Album · track ${album.track + 1} of ${album.tracks}`;
+    $("rNowTitle").textContent = album.title;
+    $("rNowSub").textContent = album.artist;
+  } else {
+    $("rKind").textContent = r ? (r.playing ? "Internet radio" : "Tuning in") : "Sleep Radio";
+    $("rNowTitle").textContent = r ? (r.title || r.name) : "The radio's own show is on.";
+    $("rNowSub").textContent = r && r.title ? r.name : "";
+  }
+  const key = JSON.stringify(src ? [src.kind, src.folder || src.url] : [selNow]);
+  if (key !== lastSrcKey) {                       // what's playing changed: which button is lit
+    lastSrcKey = key;
+    loadButtons();
+  }
   if (err && !r) rNote("rNote", "Stopped " + err + ". Back on Sleep Radio.", true);
   else if (!r || !$("rNote").classList.contains("bad")) rNote("rNote", "");
   for (const b of document.querySelectorAll("#rStations button[data-url]")) markPlay(b);
@@ -1423,12 +1489,31 @@ function markPlay(b) {
   b.setAttribute("aria-pressed", String(on));
   b.textContent = on ? "Playing" : "▶ Play";
 }
+// The station search uses the radio's own copy of the directory (made in the
+// background, refreshed weekly), or Radio Browser online until there is one.
+function dirWords(dir, from, verb = "Searched") {
+  if (!dir) return "From the Radio Browser directory.";
+  if (dir.refreshing) return "Fetching a fresh copy of the Radio Browser directory…";
+  if (!dir.stations || from === "online") return `${verb} Radio Browser online (the radio makes its own copy soon).`;
+  const days = Math.floor((Date.now() / 1000 - dir.updated) / 86400);
+  return `${verb} the radio's copy of Radio Browser: ${dir.stations.toLocaleString()} stations, updated ` +
+         (days < 1 ? "today." : days === 1 ? "yesterday." : `${days} days ago.`);
+}
+function showDirectory(dir) {
+  if (!$("rFindNote").classList.contains("bad")) rNote("rFindNote", dirWords(dir, null, "Searches"));
+  $("rDirUpdate").hidden = !dir || dir.refreshing;
+}
+$("rDirUpdate").onclick = async () => {
+  try { showDirectory(await radioPost("/api/radio/directory")); } catch (e) { rNote("rFindNote", "Couldn't: " + e.message, true); }
+};
 async function loadRadio() {
   try {
     const d = await (await fetch("/api/radio", { cache: "no-store" })).json();
+    showDirectory(d.directory);
     rStations = d.stations;
     showStations();
-    showRadio(d.radio, d.radio_error);
+    showRadio(d.source, d.source_error);
+    loadButtons();
   } catch { $("rStations").replaceChildren(Object.assign(document.createElement("li"),
                                            { className: "muted", textContent: "Couldn't reach the radio." })); }
 }
@@ -1471,7 +1556,7 @@ async function tuneTo(st) {
   try {
     const d = await radioPost("/api/radio/play", { name: st.name, url: st.url, info: st.info || "" });
     rNote("rNote", "");
-    showRadio(d.radio, null);
+    showRadio(d.source, null);
     setTimeout(poll, 800);
   } catch (e) { rNote("rNote", "Couldn't play it: " + e.message + ".", true); }
 }
@@ -1479,7 +1564,7 @@ async function stopRadio() {
   try {
     const d = await radioPost("/api/radio/stop");
     rNote("rNote", "");
-    showRadio(d.radio, null);
+    showRadio(d.source, null);
     setTimeout(poll, 800);
   } catch (e) { rNote("rNote", "Couldn't: " + e.message + ".", true); }
 }
@@ -1523,9 +1608,112 @@ $("rFind").onsubmit = async e => {
     if (!r.ok) throw new Error(d.error || r.status);
     rFound = d.results;
     showFound();
-    rNote("rFindNote", rFound.length ? `${rFound.length} found, most listened-to first.` : "Nothing found by that name.");
+    rNote("rFindNote", (rFound.length ? `${rFound.length} found, most listened-to first. ` : "Nothing found by that name. ")
+                       + dirWords(d.directory, d.from));
   } catch (e) { rNote("rFindNote", "Couldn't search: " + e.message + ".", true); }
 };
+
+// The preset buttons (io/presets.py): what each holds, and changing it.
+let bState = null, bLists = [];
+async function loadButtons() {
+  try {
+    const r = await fetch("/api/buttons", { cache: "no-store" });
+    if (!r.ok) { $("bCard").hidden = $("presetsCard").hidden = true; return; }
+    bState = await r.json();
+    try { bLists = (await (await fetch("/api/artists", { cache: "no-store" })).json()).profiles || []; } catch {}
+    showButtons();
+  } catch {}
+}
+function buttonChoices() {
+  const groups = [["Sleep Radio", [["Sleep Radio (all artists)", { kind: "show", artist: null, profile: null }],
+                                   ...bLists.map(l => [l.name, { kind: "show", profile: l.name }])]],
+                  ["My stations", rStations.map(st => [st.name, { kind: "radio", ...st }])],
+                  ["Actions", Object.entries(bState.actions).map(([a, text]) => [text, { kind: "action", action: a }])],
+                  ["", [["Empty", null]]]];
+  return groups;
+}
+function showPresets() {
+  $("presetsCard").hidden = !bState;
+  if (!bState) return;
+  $("presets").replaceChildren(...bState.buttons.map((b, i) => {
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = b.playing ? "on" : "";
+    btn.title = b.preset ? `${b.label}${b.playing ? " (playing: press to pause or play)" : ""}`
+                         : "Empty: hold the radio's button 3 s to keep what's playing on it";
+    btn.append(Object.assign(document.createElement("b"), { textContent: i + 1 }),
+               Object.assign(document.createElement("span"), { textContent: b.preset ? b.label : "Empty" }));
+    btn.onclick = () => pressButton(i + 1);
+    return btn;
+  }));
+}
+function showButtons() {
+  showPresets();
+  if (!bState) return;
+  $("bList").replaceChildren(...bState.buttons.map((b, i) => {
+    const li = document.createElement("li");
+    li.classList.toggle("on", b.playing);
+    const n = Object.assign(document.createElement("span"), { className: "n", textContent: i + 1 });
+    const t = Object.assign(document.createElement("span"), { className: "t", textContent: b.label });
+    if (b.playing) t.title = "Playing now";
+    const play = button("▶", "Press button " + (i + 1), () => pressButton(i + 1));
+    play.setAttribute("aria-label", "Press button " + (i + 1));
+    const now = button("Set to now", "Keep what's playing (" + bState.now.label + ") on button " + (i + 1),
+                       () => setButton(i + 1, { now: true }));
+    const sel = document.createElement("select");
+    sel.setAttribute("aria-label", "Choose what button " + (i + 1) + " plays");
+    sel.append(new Option("Change…", ""));
+    const values = [];
+    for (const [label, items] of buttonChoices()) {
+      const g = label ? document.createElement("optgroup") : sel;
+      if (label) { g.label = label; sel.append(g); }
+      for (const [text, preset] of items) { values.push(preset); g.append(new Option(text, String(values.length - 1))); }
+    }
+    sel.onchange = () => { if (sel.value !== "") setButton(i + 1, { preset: values[+sel.value] }); };
+    li.append(n, t, play, now, sel);
+    return li;
+  }));
+}
+async function setButton(n, body) {
+  try {
+    bState = await radioPost("/api/buttons", { button: n, ...body });
+    showButtons();
+    rNote("bNote", `Button ${n}: ${bState.buttons[n - 1].label}.`);
+  } catch (e) { rNote("bNote", "Not changed: " + e.message + ".", true); }
+}
+async function pressButton(n) {
+  try {
+    bState = await radioPost("/api/buttons/press", { button: n });
+    showButtons();
+    setTimeout(() => { poll(); loadButtons(); }, 1000);
+  } catch (e) { rNote("bNote", "Couldn't: " + e.message + ".", true); }
+}
+
+// Albums straight through (no DJ), from the same search as Play next.
+$("aFind").onsubmit = async e => {
+  e.preventDefault();
+  const q = $("aq").value.trim();
+  if (!q) return;
+  try {
+    const d = await (await fetch("/api/search?q=" + encodeURIComponent(q), { cache: "no-store" })).json();
+    $("aResults").replaceChildren(...d.albums.map(a => {
+      const li = document.createElement("li");
+      const t = Object.assign(document.createElement("span"), { className: "t", textContent: a.title });
+      t.append(Object.assign(document.createElement("small"), { textContent: `${a.artist} · ${a.tracks} tracks` }));
+      li.append(t, button("▶ Play", "Play " + a.title + " straight through", () => playAlbum(a)));
+      return li;
+    }));
+    rNote("aNote", d.albums.length ? "" : "No albums found by that name.");
+  } catch { rNote("aNote", "Couldn't reach the radio.", true); }
+};
+async function playAlbum(a) {
+  try {
+    const d = await radioPost("/api/album/play", { id: a.id });
+    showRadio(d.source, null);
+    rNote("aNote", `Playing ${a.title}.`);
+    setTimeout(poll, 800);
+  } catch (e) { rNote("aNote", "Couldn't play it: " + e.message + ".", true); }
+}
 
 // --- Views, login and the password ------------------------------------------------
 // The main page has the everyday controls; ⚙ opens Settings (#settings).
@@ -1609,7 +1797,7 @@ function start() {
   offerTune();
   poll();
   setInterval(poll, 3000);
-  loadArtists(); loadBirthdays(); loadDj();
+  loadArtists(); loadBirthdays(); loadDj(); loadButtons();
 }
 function showLogin() {
   if (started) { location.reload(); return; }   // logged out while using it: start clean

@@ -199,8 +199,9 @@ Most of these are set from the web page; the rest are in the config file.
 | `speaker_highpass_hz` | `0` | Low cut for the speaker (~140 with the case's bass port); 0 = off. |
 | `knob_step` | `2` | Volume steps per click (1 dB). |
 | `broadcast_voice` | `"stock"` | `"stock"` or `"personal"` (a folder in the voices folder). |
+| `buttons` | `[]` | The four preset buttons: `[preset or null, ...]`, each `{"kind": "show", "artist", "profile"}`, `{"kind": "radio", "name", "url"}`, `{"kind": "album", "folder", "title", "artist"}` or `{"kind": "action", "action": "time" \| "news" \| "sleep" \| "address"}`. |
 | `radio_stations` | the starter set | Internet radio: your saved stations, `[{"name", "url", "info"?}]`. |
-| `radio_tuned` | `null` | The internet radio station playing instead of the show (kept over a restart); `null` = the show. Not in the settings backup. |
+| `stream_source` | `null` | What's playing instead of the show — a station, or an album and the track it's on — kept over a restart; `null` = the show. Not in the settings backup. |
 | `broadcast_artist` / `broadcast_profile` | `null` | Artist radio, or one of your `profiles` (lists of artists); `null` = everything. |
 | `profiles` | `[]` | `[{"name": "Friday List", "artists": [...]}]` |
 | `birthdays` | `[]` | `[{"name", "day", "month", "year"?}]` |
@@ -216,9 +217,10 @@ NTP sets the clock). If the variable isn't set, the clock is trusted.
 ### The web page
 
 **http://sleepradiopi.local/** (or the address the knob reads out). The
-main page is the radio's remote control — now playing, volume and sleep
-timer, artist radio, play next, recently on air — **📻 Streaming** has
-internet radio, and **⚙ Settings** has the rest, grouped as Sound, Music and the DJ, and The radio. Cards that need a
+main page is the radio's remote control — now playing, the four preset
+buttons, volume and sleep timer, artist radio, play next, recently on air —
+**📻 Streaming** has the buttons' settings, albums and internet radio, and
+**⚙ Settings** has the rest, grouped as Sound, Music and the DJ, and The radio. Cards that need a
 speaker only appear when the station has one.
 
 **Password (optional).** Off to start with; set, change or remove it under
@@ -250,11 +252,35 @@ The cards:
   like a record, with no talk, jingles or news between tracks, and a
   back-announcement at the end. *Stop album* goes back to the usual mix
   after the song playing.
+- **Buttons** (main page, and 📻 Streaming to change them) — the four preset
+  buttons on the case (`io/presets.py`), like a car radio's. A press plays
+  what the button holds: the show (all artists, an artist or a list), an
+  internet station or an album straight through; pressing the one that's
+  playing pauses and plays. Or an action: *Say the time*, *The news now* (the
+  latest top stories, made on the spot — about a minute on a Zero), *Sleep
+  timer* (30 minutes; again to cancel) or *Say the address*. **Holding a
+  button for 3 seconds keeps what's playing on it** (a beep, then the DJ:
+  "Button two: BBC Radio 4"); an empty button says how. On the page, each
+  button has *Set to now* and a list to choose from (Sleep Radio, your lists,
+  your stations, the actions); tapping one on the main page is the same as
+  pressing it on the case. Wired as GPIO keys (KEY_1–KEY_4, config.txt), read
+  alongside the knob.
+- **📻 Streaming: albums** — search the library's albums and play one start
+  to finish **instead of the show**: no DJ, jingles or news; Skip goes to the
+  next track; then back to Sleep Radio. The radio remembers the album and
+  track over a restart. (Play next on the main page queues an album *in* the
+  show, with the DJ's introduction.)
 - **📻 Streaming: internet radio** — *My stations* (starting with the
   Android app's set: BBC Radio 4 and World Service, Radio Paradise, SomaFM)
   with ▶ Play, remove, and add one by its stream address; *Find stations*
   searches the [Radio Browser](https://www.radio-browser.info/) directory by
-  name (most listened-to first, as the Android app does) to play or save.
+  name or tag (most listened-to first, as the Android app does) to play or
+  save. Its servers often time out, so the radio **keeps its own copy of the
+  directory** (~60,000 working stations, ~7 MB in `~/.cache/sleepradiopi/`),
+  made in the background two minutes after start-up and refreshed weekly
+  (*Update the list* does it now), trying each mirror in turn; searches use
+  the copy (instant, and they work when the servers don't), or go online
+  until there is one.
   A station plays **instead of the show**, through the same speakers, EQ,
   volume, knob and sleep timer (and the browser stream); the main page then
   shows the station and what it's playing (Icecast/Shoutcast titles), with
@@ -433,9 +459,14 @@ everything but the page itself and the login needs the session cookie
 | `GET /api/search?q=` | Up to 40 tracks and 20 albums matching every word, each with an `id` |
 | `POST /api/album` / `/api/album/stop` | `{"id": n}` from the search's `albums` — play it next, start to finish / drop the rest of it |
 | `POST /api/request` | `{"id": n}` — play that track next; the status's `requests` lists what's queued |
-| `GET /api/radio` | Internet radio: the saved stations, the one playing (`name`, `url`, `title`, `playing`), and why the last one stopped |
-| `GET /api/radio/search?q=` | Stations by name from Radio Browser (400 with `{"error"}` if it can't be reached) |
-| `POST /api/radio/play` / `/api/radio/stop` | `{"name", "url"}` — play that station instead of the show (starts the speaker if paused) / back to the show |
+| `GET /api/radio` | Streaming: the saved stations, what's playing instead of the show (`source`: a station with its `title`, or an album with its `track`), why the last one stopped, and the directory copy's state |
+| `GET /api/radio/search?q=` | Stations by name or tag (`from`: `copy` or `online`; 400 with `{"error"}` if there's no copy and Radio Browser can't be reached) |
+| `POST /api/radio/directory` | Fetch a fresh copy of the station directory now (in the background) |
+| `POST /api/radio/play` / `/api/radio/stop` | `{"name", "url"}` — play that station instead of the show (starts the speaker if paused) / back to the show (from a station or an album) |
+| `POST /api/album/play` | `{"id": n}` from the search's `albums` — play it straight through instead of the show |
+| `GET /api/buttons` | The four preset buttons (`preset`, `label`, `playing`), what's playing now as a preset, and the actions |
+| `POST /api/buttons` | `{"button": 1-4, "preset": {...} \| null}` or `{"button", "now": true}` (keep what's playing on it) |
+| `POST /api/buttons/press` | `{"button": 1-4, "hold"?: bool}` — as if pressed (or held) on the case |
 | `POST /api/radio/stations` | `{"stations": [...]}` — replace the saved list |
 | `GET /api/artists` | Every artist with a track count, your lists, and what's playing |
 | `POST /api/station` | `{"artist": name \| null}` or `{"profile": name}` |
