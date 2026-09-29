@@ -708,5 +708,9 @@ clause at a time (at most 12 words), and the TTS worker process is recycled
 when it passes 250 MB after a line, or 280 MB partway through one (a fresh
 worker says the rest) -- its buffers grow and never shrink. The appliance
 image adds 256 MB of compressed swap in RAM (zram, lz4: `S01zram`), without
-which the personal voice's ~300 MB peaks left the Zero thrashing. See `sleepradiopi/tts/worker.py`
+which the personal voice's ~300 MB peaks left the Zero thrashing. The CPU
+is shared the same way: on the radio the station runs at nice -5 (the
+speaker feed, aplay and the music decoder inherit it) and the voice worker
+and library scan lower themselves to +5, with a 350 ms speaker buffer, so
+making a line doesn't cause drop-outs. See `sleepradiopi/tts/worker.py`
 and the "Lessons" section of `docs/PI_SETUP.md`.

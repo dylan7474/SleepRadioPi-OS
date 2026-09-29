@@ -78,7 +78,7 @@ def _rss_mb() -> int:
 
 
 def _serve(conn, voice_dir: str, voice: str) -> None:
-    os.nice(5)
+    os.nice(10)      # (the station runs at -5 on the radio: this is +5, below the music)
     from sleepradiopi.tts.engine import OfflineTtsEngine
 
     engine = OfflineTtsEngine(num_threads=TTS_THREADS)
