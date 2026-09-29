@@ -40,7 +40,7 @@ software, and the case to print.
 - **Play next** — search the library from your phone and queue songs; the
   DJ introduces them.
 - **Internet radio** — when it's online, play a station instead of the show
-  (📻 on the web page): your saved stations, or search thousands in the
+  (the web page's Find tab): your saved stations, or search thousands in the
   [Radio Browser](https://www.radio-browser.info/) directory. What's playing
   shows on the page; same speakers, knob and sleep timer.
 - **Album mode** — or pick a whole album: the DJ introduces it, then it plays
@@ -81,9 +81,10 @@ software, and the case to print.
   on your network (optionally with a password) is its remote control.
   Everyday controls up front: now playing and skip, volume and a sleep timer
   that fades the speakers out, artist radio, play next (and, if you switch
-  it on, listening in the browser too), and the four preset buttons. Under
-  📻 Streaming: what the buttons hold, albums straight through, and internet
-  radio stations, saved or found by name. Under ⚙ Settings: the music
+  it on, listening in the browser too), and the four preset buttons, on a
+  **Radio** tab drawn like the radio itself. **Find** searches everything at
+  once: artists and lists, albums, songs and internet stations. Under
+  **Settings**: the music
   library (add and delete music and jingles from the page), the
   speakers (stereo/mono, EQ, low cut), the DJ (voice, how often it talks,
   hooks, jingles, news, DJ and news speaking speeds), voices (download the standard one, upload your
@@ -139,7 +140,7 @@ the web page moves with it (if it goes the wrong way, swap CLK and DT);
 press and let go — it pauses, and again — it plays; hold it for 3 seconds —
 it beeps and reads out its network address.
 
-**Tuning the speakers:** on the radio's page, from a phone, ⚙ Settings →
+**Tuning the speakers:** on the radio's page, from a phone, Settings →
 Speakers → **Tune speakers…**. The radio plays bursts of hiss, and the
 [spectrum analyser](https://dylan7474.github.io/SleepRadioPi-OS/) opens and listens to them through the
 phone's mic. It suggests the bass / mid / treble and low cut, and
@@ -365,7 +366,7 @@ Other targets are passed through to Buildroot: `make menuconfig`,
   beeps and reads out its IP address (or says it isn't connected), for
   finding the web page away from home.
 - **The web page** (http://sleepradiopi.local/) is the control panel
-  (everyday controls on the main page, the rest under ⚙ Settings):
+  (the Radio, Find and Settings tabs):
   volume, stereo/mono, a 3-band EQ and low cut, a sleep timer that fades the
   speakers, the DJ (voice, how often it talks, hooks, jingles, news, speaking speeds), **play next** (search the library and queue songs; the DJ
   introduces them), artist radio ("Beatles Radio") and your own lists of

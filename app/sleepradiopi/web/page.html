@@ -2,244 +2,288 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="theme-color" content="#121316">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#11131c">
 <title>Sleep Radio</title>
 <style>
+  /* One phone-width column; three tabs (Radio · Find · Settings) in a bar at the
+     bottom. The radio itself -- a glowing dial window, the knob and the preset
+     buttons -- is the home screen. A bedside, night-time object: night-blue
+     ground, the radio's cream case and blue knob, the amber of a lit dial.
+     System fonts only: the page must work with no internet (e.g. on the hotspot). */
   :root {
-    --bg: #121316; --panel: #1b1d22; --line: #2a2d34; --text: #e8e2d4;
-    --muted: #9c968a; --accent: #f0b44c; --accent-ink: #1a1405; --live: #e0604c;
+    color-scheme: dark;
+    --night: #11131c; --panel: #1a1d29; --panel-2: #222637; --line: #2a2f40;
+    --ink: #ece6d6; --dim: #9b968a;
+    --amber: #f2b24a; --amber-ink: #231703;
+    --blue: #2f5cb4; --case: #efebe1; --case-ink: #2b2a26; --case-line: #d4cdbd; --steel: #c8ccd2;
+    --red: #e0664f;
+    --display: "Futura", "Century Gothic", "Avenir Next", "Trebuchet MS", system-ui, sans-serif;
+    --body: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    --r: .9rem;
+    /* old names, still used by a few inline styles */
+    --text: var(--ink); --muted: var(--dim); --accent: var(--amber); --accent-ink: var(--amber-ink); --live: var(--red); --bg: var(--night);
   }
   * { box-sizing: border-box; }
   [hidden] { display: none !important; }
-  body { margin: 0; background: var(--bg); color: var(--text);
-         font: 16px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; }
-  main { max-width: 34rem; margin: 0 auto; padding: 2rem 1rem 3rem; }
-  header { display: flex; align-items: baseline; justify-content: space-between; gap: 1rem; }
-  h1 { font-size: 1.5rem; margin: 0; letter-spacing: .02em; }
-  h1 span { color: var(--accent); }
-  .badge { font-size: .75rem; letter-spacing: .12em; text-transform: uppercase; color: var(--muted); }
-  .badge.live { color: var(--live); }
-  .badge.live::before { content: "● "; }
-  .card { background: var(--panel); border: 1px solid var(--line); border-radius: .8rem;
-          padding: 1.25rem; margin-top: 1.25rem; }
-  .kind { font-size: .75rem; letter-spacing: .12em; text-transform: uppercase; color: var(--accent); }
-  .title { font-size: 1.35rem; margin: .25rem 0 0; overflow-wrap: anywhere; }
-  .artist { color: var(--muted); margin: .1rem 0 0; }
-  .bar { height: 4px; background: var(--line); border-radius: 2px; margin-top: 1rem; overflow: hidden; }
-  .bar > div { height: 100%; width: 0; background: var(--accent); transition: width 1s linear; }
-  button { font: inherit; cursor: pointer; border-radius: .6rem; border: 1px solid var(--line);
-           background: transparent; color: var(--text); padding: .5rem .9rem; }
-  button:focus-visible, input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
-  #tune { width: 100%; margin-top: 1.25rem; padding: 1rem; font-size: 1.15rem; font-weight: 600;
-          background: var(--accent); color: var(--accent-ink); border: 0; }
-  .row { display: flex; align-items: center; gap: .75rem; flex-wrap: wrap; margin-top: 1rem; }
-  .row label { color: var(--muted); font-size: .9rem; }
-  input[type=range] { flex: 1; min-width: 8rem; accent-color: var(--accent); }
-  .sleep button, .seg button { padding: .35rem .7rem; font-size: .9rem; }
-  .sleep button[aria-pressed=true], .seg button[aria-pressed=true] { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
-  h2 { font-size: .8rem; letter-spacing: .12em; text-transform: uppercase; color: var(--muted);
-       margin: 0 0 .5rem; font-weight: 600; }
-  ul { list-style: none; margin: 0; padding: 0; }
-  li { padding: .4rem 0; border-top: 1px solid var(--line); display: flex; gap: .75rem; }
-  li:first-child { border-top: 0; }
-  li time { color: var(--muted); font-variant-numeric: tabular-nums; flex: none; }
-  li .k { color: var(--accent); flex: none; width: 1.2rem; text-align: center; }
-  .muted { color: var(--muted); }
-  .now-foot { display: flex; align-items: center; justify-content: space-between; gap: .75rem; margin-top: .8rem; }
-  .now-foot #next { margin: 0; }
-  #skip { flex: none; padding: .35rem .8rem; font-size: .9rem; }
-  #power .row { margin-top: 0; justify-content: space-between; }
-  #eq .row label { width: 3.6rem; }
-  #eq output { width: 3.2rem; text-align: right; font-variant-numeric: tabular-nums; }
-  .card-head { display: flex; align-items: center; justify-content: space-between; }
+  html { -webkit-text-size-adjust: 100%; }
+  body { margin: 0; background: var(--night); color: var(--ink); font: 16px/1.45 var(--body); }
+  main { max-width: 32rem; margin: 0 auto; padding-inline: 16px;
+         padding-block: env(safe-area-inset-top, 0px) calc(6rem + env(safe-area-inset-bottom, 0px)); }
+  button, input, select, textarea { font: inherit; color: inherit; }
+  button { cursor: pointer; border: 1px solid var(--line); background: var(--panel-2); border-radius: 99px;
+           padding: .45rem .9rem; }
+  button:disabled { opacity: .5; cursor: default; }
+  button:focus-visible, input:focus-visible, select:focus-visible, a:focus-visible, [tabindex]:focus-visible,
+  summary:focus-visible { outline: 2px solid var(--amber); outline-offset: 2px; }
+  a { color: var(--amber); }
+  input:not([type=range]):not([type=checkbox]):not([type=file]), select {
+    background: var(--night); border: 1px solid var(--line); border-radius: .6rem; padding: .55rem .7rem;
+    min-width: 0; color: var(--ink); }
+  input[type=file] { min-width: 0; max-width: 100%; font-size: .9rem; color: var(--dim); }
+  input[type=range] { accent-color: var(--amber); flex: 1; min-width: 7rem; }
+  input[type=checkbox] { accent-color: var(--amber); }
+  code { font-size: .85em; color: var(--ink); }
+  .muted { color: var(--dim); }
+  .bad { color: var(--red) !important; }
+
+  /* --- top bar --- */
+  .top { display: flex; align-items: center; justify-content: space-between; gap: 1rem; padding-block: 1rem .8rem; }
+  #stationName { margin: 0; font-family: var(--display); font-weight: 700; letter-spacing: .18em; font-size: 1.05rem;
+                 text-transform: uppercase; overflow-wrap: anywhere; }
+  #stationName span { color: var(--amber); }
+  #version { font-size: .72rem; color: var(--dim); letter-spacing: .04em; margin-top: .1rem; }
+  .badge { flex: none; font-size: .72rem; letter-spacing: .14em; text-transform: uppercase; color: var(--dim);
+           border: 1px solid var(--line); border-radius: 99px; padding: .25rem .65rem; display: inline-flex; gap: .4rem;
+           align-items: center; }
+  .badge.live { color: var(--red); border-color: color-mix(in srgb, var(--red) 45%, var(--line)); }
+  .badge.live::before { content: ""; width: .45rem; height: .45rem; border-radius: 50%; background: var(--red);
+                        animation: pulse 2s ease-in-out infinite; }
+  @keyframes pulse { 50% { opacity: .35; } }
+
+  /* --- views and cards --- */
+  .view { display: grid; gap: 1rem; }
+  .eyebrow { margin: .4rem 0 -.3rem; font-family: var(--display); font-size: .72rem; font-weight: 600;
+             letter-spacing: .18em; text-transform: uppercase; color: var(--dim); }
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: var(--r); padding: 1rem; min-width: 0; }
+  .card h2 { margin: 0 0 .6rem; font-family: var(--display); font-size: .78rem; font-weight: 600; letter-spacing: .16em;
+             text-transform: uppercase; color: var(--dim); }
+  .card-head { display: flex; align-items: center; justify-content: space-between; gap: .6rem; flex-wrap: wrap; }
   .card-head h2 { margin: 0; }
-  #eqFlat, #tuneBtn { padding: .3rem .7rem; font-size: .85rem; }
-  a.btn { font: inherit; font-size: .9rem; border-radius: .6rem; border: 1px solid var(--line);
-          color: var(--text); padding: .45rem .9rem; text-decoration: none; display: inline-block; }
-  a.btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
-  #settings button { font-size: .9rem; padding: .45rem .9rem; }
-  #settingsNote { margin: .75rem 0 0; font-size: .85rem; }
-  #test button { font-size: .9rem; padding: .45rem .8rem; }
-  #artistRadio { flex: 1; min-width: 0; font: inherit; color: var(--text); background: var(--bg);
-            border: 1px solid var(--line); border-radius: .6rem; padding: .5rem .6rem; }
-  #artistRadio:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
-  #dj select { font: inherit; font-size: .95rem; color: var(--text); background: var(--bg);
-    border: 1px solid var(--line); border-radius: .5rem; padding: .4rem .5rem; }
-  #dj .row label { width: 6.5rem; flex: none; }
-  #djNote.bad { color: var(--live); }
-  #q { width: 100%; font: inherit; color: var(--text); background: var(--bg); border: 1px solid var(--line);
-       border-radius: .6rem; padding: .55rem .7rem; }
-  #q:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
-  #results, #albumResults { max-height: 20rem; overflow-y: auto; margin-top: .5rem; }
-  #results li, #reqList li, #albumResults li { align-items: center; }
-  #results .t, #reqList .t, #albumResults .t { flex: 1; min-width: 0; overflow-wrap: anywhere; }
-  #results .t small, #albumResults .t small { color: var(--muted); display: block; }
-  #results button, #albumResults button, #albumStop { flex: none; padding: .3rem .7rem; font-size: .85rem; }
-  #albumBox { margin-top: .75rem; }
-  #albumNow b { color: var(--accent); font-weight: 600; }
-  #reqBox { margin-top: .75rem; }
-  #listEd { margin-top: .75rem; border-top: 1px solid var(--line); padding-top: .25rem; }
-  #listEd select, #listEd input:not([type=checkbox]) { font: inherit; font-size: .95rem; color: var(--text);
-    background: var(--bg); border: 1px solid var(--line); border-radius: .5rem; padding: .45rem .5rem; min-width: 0; }
-  #listName { flex: 1 1 10rem; }
-  #listFilter { width: 100%; margin-top: .75rem; }
-  #listArtists { max-height: 16rem; overflow-y: auto; margin-top: .5rem; border: 1px solid var(--line);
-    border-radius: .5rem; padding: .25rem .5rem; }
+  .row { display: flex; align-items: center; gap: .6rem; flex-wrap: wrap; margin-top: .8rem; min-width: 0; }
+  .row > label { color: var(--dim); font-size: .9rem; min-width: 5.5rem; }
+  .row > output { font-variant-numeric: tabular-nums; min-width: 3.3rem; text-align: right; }
+  .seg button { padding: .4rem .8rem; font-size: .9rem; }
+  .seg button[aria-pressed=true], .chip[aria-pressed=true] { background: var(--amber); color: var(--amber-ink);
+    border-color: var(--amber); font-weight: 600; }
+  .card ul { list-style: none; margin: .4rem 0 0; padding: 0; }
+  .card li { display: flex; align-items: center; gap: .6rem; padding: .55rem 0; border-top: 1px solid var(--line); min-width: 0; }
+  .card li:first-child { border-top: 0; }
+  .card li .t, .card li .who { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+  .card li small { display: block; color: var(--dim); font-size: .8rem; }
+  .card li button { flex: none; padding: .3rem .7rem; font-size: .85rem; }
+  .card li button.rm { border-color: transparent; background: none; color: var(--dim); }
+  .card p { overflow-wrap: anywhere; }
+  .bar { height: 4px; background: var(--line); border-radius: 2px; margin-top: .8rem; overflow: hidden; }
+  .bar > div { height: 100%; width: 0; background: var(--amber); transition: width 1s linear; }
+  a.btn { font-size: .9rem; border-radius: 99px; border: 1px solid var(--line); background: var(--panel-2);
+          color: var(--ink); padding: .45rem .9rem; text-decoration: none; display: inline-block; }
+  details summary { cursor: pointer; }
+  .primary { background: var(--amber); color: var(--amber-ink); border-color: var(--amber); font-weight: 600; }
+  .big { width: 100%; padding: .95rem; font-size: 1.05rem; font-weight: 700; border-radius: var(--r); }
+
+  /* --- the dial window: what's on, behind glowing glass --- */
+  #nowCard { border-radius: var(--r); padding: 1rem 1.1rem 1rem; color: var(--amber-ink);
+    background: radial-gradient(120% 90% at 50% 0%, #ffd98a, var(--amber) 55%, #c9862a);
+    box-shadow: inset 0 0 0 1px rgba(255,255,255,.35), inset 0 -10px 24px rgba(120,60,0,.25), 0 10px 30px -12px rgba(242,178,74,.45);
+    transition: filter .4s; }
+  #nowCard.paused { filter: saturate(.25) brightness(.72); }
+  #kind { font-size: .7rem; letter-spacing: .16em; text-transform: uppercase; font-weight: 700; opacity: .75; }
+  #title { font-family: var(--display); font-size: 1.55rem; line-height: 1.15; font-weight: 700; margin: .2rem 0 0;
+           text-wrap: balance; overflow-wrap: anywhere; }
+  #nowCard.talk #title { font-family: var(--body); font-size: 1.1rem; font-weight: 600; line-height: 1.35; }
+  #artist { margin: .15rem 0 0; opacity: .85; overflow-wrap: anywhere; }
+  #nowCard .bar { background: rgba(35,23,3,.18); }
+  #nowCard .bar > div { background: var(--amber-ink); opacity: .7; }
+  .scale { position: relative; height: 2.1rem; margin-top: .9rem; border-top: 1px solid rgba(35,23,3,.35); }
+  .scale::before { content: ""; position: absolute; inset: 0 0 auto; height: .5rem;
+    background: repeating-linear-gradient(90deg, rgba(35,23,3,.45) 0 1px, transparent 1px 10%),
+                repeating-linear-gradient(90deg, rgba(35,23,3,.25) 0 1px, transparent 1px 2.5%); }
+  .scale span { position: absolute; top: .7rem; transform: translateX(-50%); font-size: .7rem; font-weight: 700; opacity: .55; }
+  .scale span.on { opacity: 1; }
+  #needle { position: absolute; top: -.55rem; width: 3px; height: 1.6rem; margin-left: -1.5px; background: #b3261e;
+            border-radius: 2px; box-shadow: 0 0 6px rgba(179,38,30,.6); transition: left .5s cubic-bezier(.3,1.4,.5,1); }
+  .now-foot { display: flex; align-items: center; gap: .6rem; flex-wrap: wrap; margin-top: .3rem; }
+  #next { flex: 1; min-width: 8rem; margin: 0; font-size: .85rem; opacity: .85; overflow-wrap: anywhere; }
+  #nowCard button { border: 1px solid rgba(35,23,3,.35); background: rgba(255,255,255,.28); color: var(--amber-ink);
+                    font-size: .88rem; font-weight: 600; padding: .4rem .85rem; }
+  #rNote { margin: .5rem 0 0; font-size: .85rem; font-weight: 600; }
+  #tune { width: 100%; }
+
+  /* --- the radio: its top from above, then its front --- */
+  #radioCard { display: grid; gap: .5rem; }
+  #radioBox { border-radius: 1rem; overflow: hidden; border: 1px solid var(--case-line); color: var(--case-ink);
+              box-shadow: 0 16px 40px -18px rgba(0,0,0,.8); }
+  #radioTop { background: linear-gradient(#f7f4ec, var(--case)); padding: 1.1rem .8rem 1rem; }
+  #dialRow { display: flex; align-items: center; justify-content: center; gap: 1.1rem; }
+  .nudge { width: 2.7rem; height: 2.7rem; border-radius: 50%; font-size: 1.4rem; line-height: 1; padding: 0;
+           color: var(--case-ink); border: 1px solid var(--case-line); background: #fbf9f3; }
+  #dial { position: relative; width: 6.4rem; height: 6.4rem; border-radius: 50%; cursor: grab; touch-action: none;
+          user-select: none; -webkit-user-select: none; outline-offset: 5px;
+          background: repeating-conic-gradient(#244a93 0deg 4deg, #3263c0 4deg 8deg);
+          box-shadow: 0 4px 0 #1b376d, 0 7px 12px rgba(0,0,0,.35); }
+  #dial:active { cursor: grabbing; }
+  #dialCap { position: absolute; inset: .45rem; border-radius: 50%;
+             background: radial-gradient(circle at 35% 30%, #5585dc, var(--blue) 60%, #22478c); transition: filter .3s; }
+  #dialPointer { position: absolute; left: 50%; top: 50%; width: .3rem; height: 44%; margin-left: -.15rem;
+                 border-radius: .15rem; background: var(--case); transform-origin: 50% 0; }
+  #dial.paused #dialCap { filter: saturate(.3) brightness(.8); }
+  #dialLabel { text-align: center; margin-top: .7rem; font-size: .85rem; color: #5d594f; }
+  #dialLabel b { color: var(--case-ink); font-size: 1.05rem; font-variant-numeric: tabular-nums; }
+  #presets { display: grid; grid-template-columns: repeat(4, 1fr); gap: .3rem; margin-top: 1.1rem; padding-top: .9rem;
+             border-top: 1px dashed var(--case-line); }
+  #presets button { display: flex; flex-direction: column; align-items: center; gap: .4rem; min-width: 0; border: 0;
+    background: none; border-radius: .5rem; padding: .15rem .1rem; color: var(--case-ink); font-size: .76rem; line-height: 1.2; }
+  #presets .cap { width: 3.2rem; height: 3.2rem; border-radius: 50%; display: grid; place-items: center; font-weight: 700;
+    font-size: 1.15rem; color: #3b3f45; background: radial-gradient(circle at 35% 30%, #fff, var(--steel) 55%, #8d929a);
+    box-shadow: 0 3px 0 #7c8189, 0 5px 8px rgba(0,0,0,.28); transition: transform .06s, box-shadow .2s; }
+  #presets button:active .cap { transform: translateY(2px); box-shadow: 0 1px 0 #7c8189; }
+  #presets button.on .cap { box-shadow: 0 3px 0 #7c8189, 0 0 0 3px var(--amber), 0 0 16px 4px rgba(242,178,74,.75); }
+  #presets .lbl { max-width: 100%; overflow-wrap: anywhere; min-height: 2.4em; display: -webkit-box;
+                  -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+  #presets button.on .lbl { font-weight: 700; }
+  #presets button.empty .lbl { color: #8b877d; font-style: italic; }
+  #radioFace { background: linear-gradient(var(--case), #e3ddcf); border-top: 1px solid var(--case-line);
+               display: flex; align-items: center; justify-content: space-between; padding: .65rem 1.1rem; }
+  .grille { width: 3.3rem; height: 3.3rem; border-radius: 50%;
+            background: radial-gradient(circle, #878174 1.1px, transparent 1.7px) 0 0 / 7px 7px, #d8d1c2;
+            box-shadow: inset 0 1px 3px rgba(0,0,0,.35); }
+  .word { color: var(--blue); font-family: var(--display); font-weight: 800; letter-spacing: .16em; text-align: center;
+          line-height: 1.05; font-size: .95rem; }
+  .linkish { background: none; border: 0; padding: .2rem 0; color: var(--dim); font-size: .85rem; text-decoration: underline;
+             text-underline-offset: 3px; justify-self: end; border-radius: .3rem; }
+  #volNote { margin: 0; font-size: .85rem; }
+
+  /* --- chips (sleep timer, filters) --- */
+  .chips { display: flex; gap: .4rem; flex-wrap: wrap; align-items: center; }
+  .chip { background: var(--panel); padding: .45rem .85rem; font-size: .9rem; }
+  #sleepLeft { color: var(--amber); font-size: .85rem; font-variant-numeric: tabular-nums; }
+
+  /* --- plain lists (history, results) --- */
+  .list { list-style: none; margin: 0; padding: 0; background: var(--panel); border: 1px solid var(--line);
+          border-radius: var(--r); overflow: hidden; }
+  .list li { display: flex; align-items: center; gap: .7rem; padding: .65rem .9rem; border-top: 1px solid var(--line); min-width: 0; }
+  .list li:first-child { border-top: 0; }
+  .list .t { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+  .list .t small { display: block; color: var(--dim); font-size: .8rem; }
+  .list time { color: var(--dim); font-size: .8rem; font-variant-numeric: tabular-nums; flex: none; width: 2.9rem; }
+  .list button { flex: none; padding: .35rem .75rem; font-size: .85rem; white-space: nowrap; }
+  .list li.muted { color: var(--dim); }
+  #histMore { justify-self: center; }
+
+  /* --- find --- */
+  .search { display: flex; align-items: center; gap: .6rem; background: var(--panel); border: 1px solid var(--line);
+            border-radius: 99px; padding: .15rem .4rem .15rem 1rem; }
+  .search:focus-within { border-color: var(--amber); }
+  .search svg { width: 1.1rem; height: 1.1rem; color: var(--dim); flex: none; }
+  .search input#q { flex: 1; min-width: 0; border: 0; background: transparent; font-size: 1.05rem; padding: .7rem 0; }
+  .search input#q:focus-visible { outline: none; }
+  .tiles { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .6rem; }
+  .tile { text-align: left; border: 1px solid var(--line); background: var(--panel); border-radius: var(--r);
+          padding: .8rem .9rem; display: grid; gap: .15rem; min-width: 0; }
+  .tile b { font-weight: 600; overflow-wrap: anywhere; }
+  .tile small { color: var(--dim); font-size: .8rem; }
+  .tile.on { border-color: var(--amber); box-shadow: inset 0 0 0 1px var(--amber); }
+  .tile.on small { color: var(--amber); }
+  .sel-row { display: flex; gap: .6rem; align-items: center; }
+  .sel-row select { flex: 1; }
+  .group-title { margin: .2rem 0 -.5rem; font-size: .8rem; color: var(--dim); }
+  #qNote { margin: 0; font-size: .85rem; color: var(--dim); }
+
+  /* --- settings --- */
+  .rows { background: var(--panel); border: 1px solid var(--line); border-radius: var(--r); overflow: hidden; }
+  .rowbtn { width: 100%; display: flex; align-items: center; gap: .8rem; text-align: left; border: 0; border-radius: 0;
+            background: none; padding: .75rem .9rem; border-top: 1px solid var(--line); min-width: 0; }
+  .rows > .rowbtn:first-child { border-top: 0; }
+  .rowbtn .t { flex: 1; min-width: 0; }
+  .rowbtn .t small { display: block; color: var(--dim); font-size: .8rem; overflow-wrap: anywhere; }
+  .rowbtn .chev { color: var(--dim); flex: none; font-size: 1.2rem; }
+  .rowbtn.danger .t { color: var(--red); }
+  .ico { flex: none; width: 2.2rem; height: 2.2rem; border-radius: .6rem; display: grid; place-items: center;
+         background: var(--panel-2); color: var(--amber); }
+  .ico svg { width: 1.15rem; height: 1.15rem; }
+  .page { display: grid; gap: 1rem; }
+  .page-head { display: grid; gap: .3rem; }
+  .page-head h1 { margin: 0; font-family: var(--display); font-size: 1.4rem; letter-spacing: .02em; }
+  .back { background: none; border: 0; padding: .2rem 0; color: var(--amber); font-size: .95rem; justify-self: start; }
+  #mCrumbs { display: flex; flex-wrap: wrap; gap: .3rem; align-items: center; margin: 0 0 .4rem; }
+  #mCrumbs a { text-decoration: none; }
+  #mList a.open { color: var(--ink); text-decoration: none; }
+  #mUploads progress { width: 5rem; accent-color: var(--amber); }
+  #listArtists { max-height: 16rem; overflow-y: auto; margin-top: .6rem; border: 1px solid var(--line);
+                 border-radius: .6rem; padding: .3rem .6rem; }
   #listArtists label { display: block; padding: .25rem 0; overflow-wrap: anywhere; }
-  #listArtists input { accent-color: var(--accent); }
-  #listDelete { border-color: var(--live); color: var(--live); }
-  #bdList li { align-items: center; }
-  #voiceList li { align-items: center; }
-  #wifiSaved li, #wifiNearby li { align-items: center; }
-  #wifiSaved .who, #wifiNearby .who { flex: 1; min-width: 0; overflow-wrap: anywhere; }
-  #wifiSaved button, #wifiNearby button { padding: .25rem .6rem; font-size: .85rem; }
-  #wifiAdd input, #spotForm input { flex: 1 1 9rem; min-width: 0; font: inherit; font-size: .95rem; color: var(--text);
-    background: var(--bg); border: 1px solid var(--line); border-radius: .5rem; padding: .45rem .5rem; }
-  #wifiNow b { color: var(--accent); }
-  #wifiNote.bad { color: var(--live); }
-  #voiceUpload input { font: inherit; font-size: .95rem; color: var(--text); background: var(--bg);
-    border: 1px solid var(--line); border-radius: .5rem; padding: .45rem .5rem; min-width: 0; }
-  #voiceName { flex: 1 1 8rem; }
-  #voiceFile { flex: 2 1 12rem; }
-  #voiceNote.bad { color: var(--live); }
-  #bdList .who { flex: 1; min-width: 0; overflow-wrap: anywhere; }
-  #bdList button { padding: .25rem .6rem; font-size: .85rem; }
-  #bdForm { display: flex; flex-wrap: wrap; gap: .5rem; margin-top: .75rem; }
-  #bdForm input, #bdForm select { font: inherit; font-size: .95rem; color: var(--text); background: var(--bg);
-    border: 1px solid var(--line); border-radius: .5rem; padding: .45rem .5rem; min-width: 0; }
+  #listFilter { width: 100%; margin-top: .6rem; }
+  #listDelete, #off, #testStop { border-color: var(--red); color: var(--red); background: none; }
+  #bdForm { display: flex; flex-wrap: wrap; gap: .5rem; margin-top: .8rem; }
   #bdName { flex: 1 1 9rem; }
   #bdYear { width: 5.5rem; }
-  #bdToday { margin: 0 0 .6rem; color: var(--accent); }
-  #bdNote.bad { color: var(--live); }
-  #knobBtn { position: relative; overflow: hidden; width: 100%; padding: .9rem; font-size: 1rem;
+  #bdToday { margin: 0 0 .6rem; color: var(--amber); }
+  #knobBtn { position: relative; overflow: hidden; width: 100%; padding: .9rem; border-radius: var(--r);
              touch-action: none; user-select: none; -webkit-user-select: none; }
   #knobBtn span { position: relative; }
-  #knobFill { position: absolute; inset: 0 auto 0 0; width: 0; background: var(--accent); opacity: .35; }
+  #knobFill { position: absolute; inset: 0 auto 0 0; width: 0; background: var(--amber); opacity: .35; }
   #knobBtn.holding #knobFill { width: 100%; transition: width 3s linear; }
-  #testStop { border-color: var(--live); color: var(--live); }
   #testNow { margin: .75rem 0 0; font-variant-numeric: tabular-nums; }
-  #testNow b { color: var(--accent); font-size: 1.4rem; }
-  #settingsNote.bad { color: var(--live); }
-  #off { border-color: var(--live); color: var(--live); }
-  .head-right { display: flex; align-items: center; gap: .75rem; }
-  #version { font-size: .75rem; letter-spacing: .04em; margin-top: .15rem; }
-  button.icon { font-size: 1.25rem; line-height: 1; padding: .35rem .55rem; }
-  .view-head { display: flex; align-items: center; justify-content: space-between; gap: 1rem; margin-top: 1.25rem; }
-  .view-head h2 { margin: 0; }
-  h3.group { font-size: .8rem; letter-spacing: .12em; text-transform: uppercase; color: var(--accent);
-             margin: 2rem 0 -.4rem; font-weight: 600; }
-  #pwForm input, #loginForm input { flex: 1 1 9rem; min-width: 0; font: inherit; color: var(--text);
-    background: var(--bg); border: 1px solid var(--line); border-radius: .5rem; padding: .5rem .6rem; }
-  #pwRemove, #pwLogout { font-size: .9rem; }
-  code { font-size: .85em; color: var(--text); }
-  #radioBtn { font-size: 1.1rem; }
-  #radioOff { flex: none; padding: .35rem .8rem; font-size: .9rem; }
-  #rStations li, #rResults li { align-items: center; }
-  #rStations .t, #rResults .t { flex: 1; min-width: 0; overflow-wrap: anywhere; }
-  #rStations .t small, #rResults .t small { color: var(--muted); display: block; }
-  #rStations button, #rResults button { flex: none; padding: .3rem .7rem; font-size: .85rem; }
-  #rStations button[aria-pressed=true] { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
-  #rStations .rm { border-color: transparent; color: var(--muted); }
-  #rResults { max-height: 24rem; overflow-y: auto; margin-top: .5rem; }
-  #rq, #rAdd input { font: inherit; color: var(--text); background: var(--bg); border: 1px solid var(--line);
-    border-radius: .6rem; padding: .55rem .7rem; min-width: 0; }
-  #rq { flex: 1; }
-  #rAddName { flex: 1 1 8rem; }
-  #rAddUrl { flex: 2 1 12rem; }
-  #bList li, #aResults li { align-items: center; flex-wrap: wrap; }
-  #bList .n { flex: none; width: 1.6rem; height: 1.6rem; border-radius: 50%; border: 1px solid var(--line);
-    display: inline-flex; align-items: center; justify-content: center; font-weight: 600; font-size: .9rem; }
-  #bList li.on .n { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
-  #bList .t, #aResults .t { flex: 1; min-width: 8rem; overflow-wrap: anywhere; }
-  #aResults .t small { color: var(--muted); display: block; }
-  #bList button, #aResults button { flex: none; padding: .3rem .6rem; font-size: .85rem; }
-  #bList select { font: inherit; font-size: .85rem; color: var(--text); background: var(--bg); max-width: 9rem;
-    border: 1px solid var(--line); border-radius: .5rem; padding: .3rem .4rem; }
-  #aResults { max-height: 20rem; overflow-y: auto; margin-top: .5rem; }
-  #aq { flex: 1; font: inherit; color: var(--text); background: var(--bg); border: 1px solid var(--line);
-    border-radius: .6rem; padding: .55rem .7rem; min-width: 0; }
-  #bNote.bad, #aNote.bad { color: var(--live); }
-  /* The radio, drawn from above: the knob at the back, the preset buttons along
-     the front edge, and the front face below (two grilles, blue lettering). */
-  :root { --case: #efece4; --case-edge: #d6d0c2; --case-shade: #c9c2b2; --blue: #2d5bb0; --steel: #c9ccd1; }
-  #radioTop { background: linear-gradient(#f6f4ee, var(--case)); border: 1px solid var(--case-edge);
-    border-radius: .9rem .9rem .25rem .25rem; padding: 1.1rem .8rem 1rem; color: #2a2a2a; }
-  #dialRow { display: flex; align-items: center; justify-content: center; gap: 1.1rem; }
-  .nudge { width: 2.6rem; height: 2.6rem; border-radius: 50%; font-size: 1.4rem; line-height: 1; padding: 0;
-    color: #3a3a3a; border: 1px solid var(--case-shade); background: #fbfaf6; }
-  #dial { position: relative; width: 6.2rem; height: 6.2rem; border-radius: 50%; cursor: grab;
-    touch-action: none; user-select: none; -webkit-user-select: none; outline-offset: 4px;
-    background: repeating-conic-gradient(from 0deg, #244a93 0deg 4deg, #3264c0 4deg 8deg);
-    box-shadow: 0 4px 0 #1b376d, 0 6px 10px rgba(0,0,0,.35); }
-  #dial:active { cursor: grabbing; }
-  #dial:focus-visible { outline: 3px solid var(--accent); }
-  #dialCap { position: absolute; inset: .45rem; border-radius: 50%;
-    background: radial-gradient(circle at 35% 30%, #4f80d8, var(--blue) 60%, #234a91); }
-  #dialPointer { position: absolute; left: 50%; top: 50%; width: .3rem; height: 44%; margin-left: -.15rem;
-    border-radius: .15rem; background: #f3f1ea; transform-origin: 50% 0; }
-  #dial.paused #dialCap { filter: saturate(.35) brightness(.85); }
-  #dialLabel { text-align: center; margin-top: .65rem; font-size: .85rem; color: #555; }
-  #dialLabel b { color: #222; font-size: 1rem; }
-  #presets { display: grid; grid-template-columns: repeat(4, 1fr); gap: .4rem; margin-top: 1.1rem;
-    padding-top: .9rem; border-top: 1px dashed var(--case-shade); }
-  #presets button { display: flex; flex-direction: column; align-items: center; gap: .35rem; min-width: 0;
-    border: 0; background: none; padding: .2rem .1rem; color: #333; font-size: .78rem; line-height: 1.2; }
-  #presets .cap { width: 3.1rem; height: 3.1rem; border-radius: 50%; display: grid; place-items: center;
-    font-weight: 700; font-size: 1.15rem; color: #3b3f45;
-    background: radial-gradient(circle at 35% 30%, #fff, var(--steel) 55%, #8f949c);
-    box-shadow: 0 3px 0 #7d828a, 0 4px 6px rgba(0,0,0,.3); transition: transform .06s; }
-  #presets button:active .cap { transform: translateY(2px); box-shadow: 0 1px 0 #7d828a; }
-  #presets button:focus-visible { outline: 2px solid var(--accent); border-radius: .5rem; }
-  #presets button.on .cap { box-shadow: 0 3px 0 #7d828a, 0 0 0 3px var(--accent), 0 0 14px 3px rgba(240,180,76,.8); }
-  #presets .lbl { overflow: hidden; max-width: 100%; overflow-wrap: anywhere; min-height: 2.4em;
-    display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
-  #presets button.on .lbl { font-weight: 700; color: #000; }
-  #presets button.empty .lbl { color: #888; font-style: italic; }
-  #radioFace { background: linear-gradient(var(--case), #e4dfd3); border: 1px solid var(--case-edge); border-top: 0;
-    border-radius: 0 0 .9rem .9rem; display: flex; align-items: center; justify-content: space-between;
-    padding: .6rem 1.1rem; }
-  .grille { width: 3.2rem; height: 3.2rem; border-radius: 50%;
-    background: radial-gradient(circle, #8a857a 1.1px, transparent 1.6px) 0 0 / 7px 7px, #d9d3c5;
-    box-shadow: inset 0 1px 3px rgba(0,0,0,.35); }
-  #radioFace .word { color: var(--blue); font-weight: 800; letter-spacing: .12em; text-align: center;
-    line-height: 1.05; font-size: .95rem; }
-  #radioHead { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: .6rem; }
-  #radioHead a { font-size: .85rem; color: var(--muted); }
-  #mList li { align-items: center; }
-  #mList .t { flex: 1; min-width: 0; overflow-wrap: anywhere; }
-  #mList .t small { color: var(--muted); display: block; }
-  #mList a.open { color: var(--text); text-decoration: none; }
-  #mList a.open:hover, #mList a.open:focus-visible { color: var(--accent); }
-  #mList .rm { flex: none; border-color: transparent; color: var(--muted); padding: .25rem .5rem; }
-  #mCrumbs { display: flex; flex-wrap: wrap; gap: .25rem; align-items: center; margin: 0 0 .6rem; font-size: .95rem; }
-  #mCrumbs a { color: var(--accent); text-decoration: none; }
-  #mTools button, #mNewFolder button { font-size: .9rem; padding: .4rem .8rem; }
-  #mNewFolder input { flex: 1; min-width: 0; font: inherit; color: var(--text); background: var(--bg);
-    border: 1px solid var(--line); border-radius: .5rem; padding: .45rem .5rem; }
-  #mUploads li { font-size: .85rem; align-items: center; }
-  #mUploads .t { flex: 1; min-width: 0; overflow-wrap: anywhere; }
-  #mUploads progress { width: 5rem; accent-color: var(--accent); }
-  #mUploads .bad, #mNote.bad { color: var(--live); }
-  #rNowTitle { font-size: 1.15rem; margin: .2rem 0 0; overflow-wrap: anywhere; }
-  #rNote.bad, #rFindNote.bad, #rAddNote.bad { color: var(--live); }
-  footer { margin-top: 2rem; font-size: .8rem; color: var(--muted); }
-  footer a { color: var(--muted); }
+  #testNow b { color: var(--amber); font-size: 1.4rem; }
+  #wifiNow b { color: var(--amber); }
+  #pwForm input, #wifiAdd input, #spotForm input, #voiceUpload input, #rAdd input { flex: 1 1 9rem; }
+  #eq .row > label { min-width: 3.6rem; }
+  #dj .row > label { min-width: 6.5rem; }
+  #login { margin-top: 2rem; }
+  #loginForm input { flex: 1 1 9rem; }
+
+  /* --- bottom tabs --- */
+  #tabs { position: fixed; left: 0; right: 0; bottom: 0; z-index: 5; border-top: 1px solid var(--line);
+          background: color-mix(in srgb, var(--night) 90%, transparent); backdrop-filter: blur(10px);
+          padding-bottom: env(safe-area-inset-bottom, 0px); }
+  #tabs > div { max-width: 32rem; margin: 0 auto; display: grid; grid-template-columns: repeat(3, 1fr); }
+  .tab { border: 0; border-radius: 0; background: none; display: grid; justify-items: center; gap: .15rem;
+         padding: .55rem 0 .6rem; color: var(--dim); font-size: .72rem; letter-spacing: .12em; text-transform: uppercase;
+         font-family: var(--display); }
+  .tab svg { width: 1.45rem; height: 1.45rem; }
+  .tab[aria-selected=true] { color: var(--amber); }
+
+  /* --- bottom sheet (the buttons) and toast --- */
+  #scrim { position: fixed; inset: 0; background: rgba(5,6,10,.6); z-index: 8; }
+  #sheet { position: fixed; left: 0; right: 0; bottom: 0; z-index: 9; max-width: 32rem; margin: 0 auto;
+           background: var(--panel); border: 1px solid var(--line); border-bottom: 0; border-radius: 1.2rem 1.2rem 0 0;
+           padding: .6rem 16px calc(1.2rem + env(safe-area-inset-bottom, 0px)); display: grid; gap: .8rem;
+           max-height: 88%; overflow: auto; }
+  #sheet .grab { width: 2.6rem; height: .3rem; border-radius: 99px; background: var(--line); justify-self: center; }
+  #sheet h3 { margin: 0; font-family: var(--display); letter-spacing: .04em; }
+  #bList li { flex-wrap: wrap; }
+  #bList .n { flex: none; width: 2.2rem; height: 2.2rem; border-radius: 50%; display: grid; place-items: center;
+              font-weight: 700; color: #3b3f45; background: radial-gradient(circle at 35% 30%, #fff, var(--steel) 55%, #8d929a); }
+  #bList li.on .n { box-shadow: 0 0 0 2px var(--amber); }
+  #bList select { font-size: .85rem; padding: .35rem .5rem; max-width: 10rem; }
+  #toast { position: fixed; left: 50%; bottom: calc(5.4rem + env(safe-area-inset-bottom, 0px)); transform: translateX(-50%);
+           z-index: 10; background: var(--case); color: var(--case-ink); border-radius: 99px; padding: .55rem 1rem;
+           font-size: .9rem; box-shadow: 0 8px 24px rgba(0,0,0,.5); max-width: calc(100% - 32px); text-align: center; }
+  footer { font-size: .8rem; color: var(--dim); }
+  footer a { color: var(--dim); }
+  @media (prefers-reduced-motion: reduce) { *, *::before { animation: none !important; transition: none !important; } }
+  @media (min-width: 48rem) { #title { font-size: 1.8rem; } }
 </style>
 </head>
 <body>
 <main>
-  <header>
+  <header class="top">
     <div>
       <h1 id="stationName">Sleep <span>Radio</span></h1>
-      <div id="version" class="muted" title="The radio's software version (Settings → Updates)"></div>
+      <div id="version" title="The radio's software version (Settings → Updates)"></div>
     </div>
-    <div class="head-right">
-      <span id="badge" class="badge">Off air</span>
-      <button id="radioBtn" class="icon" type="button" aria-label="Streaming: internet radio"
-              title="Streaming: internet radio" hidden>📻</button>
-      <button id="gear" class="icon" type="button" aria-label="Settings" title="Settings" hidden>⚙</button>
-    </div>
+    <span id="badge" class="badge">Off air</span>
   </header>
 
   <section id="login" class="card" hidden>
@@ -251,8 +295,8 @@
     <p id="loginNote" class="muted" style="margin:.5rem 0 0;font-size:.85rem">This radio's page has a password.</p>
   </section>
 
-  <div id="viewMain" hidden>
-
+  <!-- ============================== RADIO ============================== -->
+  <div id="viewMain" class="view" hidden>
   <section id="tuneOffer" class="card" hidden>
     <h2>Speaker settings from the analyser</h2>
     <p id="tuneText" style="margin:0"></p>
@@ -264,204 +308,114 @@
     </div>
   </section>
 
-  <section class="card" aria-live="polite">
-    <div id="kind" class="kind">Ready</div>
-    <p id="title" class="title">Nothing on air</p>
-    <p id="artist" class="artist"></p>
-    <div class="bar"><div id="progress"></div></div>
-    <div class="now-foot">
-      <p id="next" class="muted"></p>
-      <button id="skip" type="button" hidden title="Skip to what's next">Skip ⏭︎</button>
-      <button id="radioOff" type="button" hidden title="Stop streaming">Back to Sleep Radio</button>
-    </div>
-  </section>
-
-  <button id="tune" type="button" hidden>▶ Listen here</button>
-
-  <section class="card" id="radioCard">
-    <div id="radioHead">
-      <h2 style="margin:0">The radio</h2>
-      <a id="presetsEdit" href="#radio" title="Change what the buttons play (📻 Streaming)" hidden>Change buttons</a>
-    </div>
-    <div id="radioTop">
-      <div id="dialRow">
-        <button id="volDown" class="nudge" type="button" aria-label="Quieter" title="Quieter">−</button>
-        <div id="dial" role="slider" tabindex="0" aria-label="Volume" aria-valuemin="0" aria-valuemax="100"
-             aria-valuenow="80" title="Turn for volume · tap to pause or play"><div id="dialCap"><i id="dialPointer"></i></div></div>
-        <button id="volUp" class="nudge" type="button" aria-label="Louder" title="Louder">+</button>
+    <section id="nowCard" aria-live="polite">
+      <div id="kind">Ready</div>
+      <p id="title">Nothing on air</p>
+      <p id="artist"></p>
+      <div class="bar"><div id="progress"></div></div>
+      <div class="scale" id="scale" aria-hidden="true">
+        <span style="left:12.5%">1</span><span style="left:37.5%">2</span><span style="left:62.5%">3</span><span style="left:87.5%">4</span>
+        <div id="needle" hidden></div>
       </div>
-      <div id="dialLabel">Volume <b id="volNum">80</b> · <span id="dialState">turn the knob, or tap it to pause</span></div>
-      <div id="presets" hidden></div>
-    </div>
-    <div id="radioFace" aria-hidden="true">
-      <span class="grille"></span><span class="word">SLEEP<br>RADIO</span><span class="grille"></span>
-    </div>
-    <p id="volNote" class="muted" style="margin:.4rem 0 0;font-size:.85rem" hidden>Also sets the radio's own speaker.</p>
-    <div class="row sleep" role="group" aria-label="Sleep timer">
-      <label>Sleep</label>
-      <button type="button" data-min="0" aria-pressed="true">Off</button>
-      <button type="button" data-min="15" aria-pressed="false">15m</button>
-      <button type="button" data-min="30" aria-pressed="false">30m</button>
-      <button type="button" data-min="60" aria-pressed="false">1h</button>
-      <button type="button" data-min="90" aria-pressed="false">1½h</button>
-      <span id="sleepLeft" class="muted"></span>
-    </div>
-  </section>
+      <div class="now-foot">
+        <p id="next"></p>
+        <button id="skip" type="button" hidden title="Skip to what's next">Skip ⏭︎</button>
+        <button id="radioOff" type="button" hidden title="Stop streaming">Back to Sleep Radio</button>
+      </div>
+      <p id="rNote" hidden></p>
+    </section>
 
-  <section class="card">
-    <h2>Artist radio</h2>
-    <div class="row" style="margin-top:0">
-      <select id="artistRadio" aria-label="Artist radio">
-        <option value="">All artists (Sleep Radio)</option>
-      </select>
-      <button id="listsBtn" type="button" title="Make lists of artists, e.g. a Friday List">Edit lists</button>
-    </div>
-    <p id="artistNote" class="muted" style="margin:.5rem 0 0;font-size:.85rem">Play one artist only (e.g. Beatles
-      Radio), or one of your lists of artists.</p>
-  </section>
+    <button id="tune" class="primary big" type="button" hidden>▶ Listen here</button>
 
-  <section class="card">
-    <h2>Play next</h2>
-    <input id="q" type="search" placeholder="Find a song, artist or album" aria-label="Find a song" autocomplete="off">
-    <div id="albumHits" hidden>
-      <h2 style="margin-top:.9rem">Albums</h2>
-      <ul id="albumResults"></ul>
-      <h2 style="margin-top:.9rem" id="songsHead">Songs</h2>
-    </div>
-    <ul id="results"></ul>
-    <p id="qNote" class="muted" style="margin:.4rem 0 0;font-size:.85rem" hidden></p>
-    <p id="qRadio" class="muted" style="margin:.4rem 0 0;font-size:.85rem" hidden>Streaming is on (📻): songs you
-      pick play when you go back to Sleep Radio.</p>
-    <div id="albumBox" class="row" hidden>
-      <span id="albumNow" class="t" style="flex:1"></span>
-      <button id="albumStop" type="button">Stop album</button>
-    </div>
-    <div id="reqBox" hidden>
-      <h2>By request</h2>
-      <ul id="reqList"></ul>
-    </div>
-  </section>
+    <section id="radioCard" aria-label="The radio">
+      <div id="radioBox">
+        <div id="radioTop">
+          <div id="dialRow">
+            <button id="volDown" class="nudge" type="button" aria-label="Quieter" title="Quieter">−</button>
+            <div id="dial" role="slider" tabindex="0" aria-label="Volume" aria-valuemin="0" aria-valuemax="100"
+                 aria-valuenow="80" title="Turn for volume · tap to pause or play"><div id="dialCap"><i id="dialPointer"></i></div></div>
+            <button id="volUp" class="nudge" type="button" aria-label="Louder" title="Louder">+</button>
+          </div>
+          <div id="dialLabel">Volume <b id="volNum">80</b> · <span id="dialState">turn the knob, or tap it to pause</span></div>
+          <div id="presets" hidden></div>
+        </div>
+        <div id="radioFace" aria-hidden="true">
+          <span class="grille"></span><span class="word">SLEEP<br>RADIO</span><span class="grille"></span>
+        </div>
+      </div>
+      <button id="presetsEdit" class="linkish" type="button" hidden>Change what the buttons play</button>
+      <p id="volNote" class="muted" hidden>The knob also sets the volume in this browser.</p>
+    </section>
 
-  <section class="card">
-    <h2>Recently on air</h2>
-    <ul id="history"><li class="muted">Nothing yet.</li></ul>
-  </section>
+    <h2 class="eyebrow">Sleep timer</h2>
+    <div class="chips sleep" role="group" aria-label="Sleep timer">
+      <button class="chip" type="button" data-min="0" aria-pressed="true">Off</button>
+      <button class="chip" type="button" data-min="15" aria-pressed="false">15 min</button>
+      <button class="chip" type="button" data-min="30" aria-pressed="false">30 min</button>
+      <button class="chip" type="button" data-min="60" aria-pressed="false">1 hour</button>
+      <button class="chip" type="button" data-min="90" aria-pressed="false">1½ hours</button>
+      <span id="sleepLeft"></span>
+    </div>
 
-  <footer>News bulletins from <a href="https://www.bbc.co.uk/news">BBC News</a>.
-    The sleep timer fades out over the last minute (the radio's speakers too).</footer>
+    <h2 class="eyebrow">Recently on air</h2>
+    <ul id="history" class="list"><li class="muted">Nothing yet.</li></ul>
+    <button id="histMore" type="button" hidden>Show more</button>
 
+    <footer>News bulletins from <a href="https://www.bbc.co.uk/news">BBC News</a>. Stations found with
+      <a href="https://www.radio-browser.info/">Radio Browser</a>. The sleep timer fades the radio out over its last minute.</footer>
   </div>
 
-  <div id="viewRadio" hidden>
-  <div class="view-head">
-    <button id="radioBack" type="button">‹ Back to the radio</button>
-    <h2>Streaming</h2>
-  </div>
-
-  <section class="card" aria-live="polite">
-    <div id="rKind" class="kind">Sleep Radio</div>
-    <p id="rNowTitle">The radio's own show is on.</p>
-    <p id="rNowSub" class="artist"></p>
-    <div class="row" id="rStopRow" hidden>
-      <button id="rStop" type="button">Back to Sleep Radio</button>
+  <!-- ============================== FIND ============================== -->
+  <div id="viewFind" class="view" hidden>
+    <label class="search" for="q">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+      <input id="q" type="search" placeholder="A song, artist, album or station" autocomplete="off" aria-label="Find something to play">
+    </label>
+    <div class="chips" id="filters" role="group" aria-label="Show">
+      <button class="chip" type="button" data-f="all" aria-pressed="true">Everything</button>
+      <button class="chip" type="button" data-f="artist" aria-pressed="false">Artists</button>
+      <button class="chip" type="button" data-f="album" aria-pressed="false">Albums</button>
+      <button class="chip" type="button" data-f="song" aria-pressed="false">Songs</button>
+      <button class="chip" type="button" data-f="station" aria-pressed="false">Stations</button>
     </div>
-    <p id="rNote" class="muted" style="margin:.6rem 0 0;font-size:.85rem" hidden></p>
-  </section>
+    <p id="qNote" hidden></p>
 
-  <section class="card" id="bCard">
-    <h2>Buttons</h2>
-    <ul id="bList"><li class="muted">Loading…</li></ul>
-    <p id="bNote" class="muted" style="margin:.5rem 0 0;font-size:.85rem">The four buttons on the radio, like a
-      car radio's: press to play (press again to pause); <b>hold one for 3 seconds</b> to keep what's playing
-      on it. Here, <i>Set to now</i> does the same, or choose from the list. For an album, play it first.</p>
-  </section>
+    <div id="findHome" class="view">
+      <h2 class="eyebrow">Sleep Radio</h2>
+      <div class="tiles" id="mixTiles"></div>
+      <div class="sel-row">
+        <select id="artistRadio" aria-label="Artist radio: play one artist or list">
+          <option value="">All artists (Sleep Radio)</option>
+        </select>
+        <button id="listsBtn" type="button" title="Make lists of artists, e.g. a Friday List">Lists…</button>
+      </div>
+      <p id="artistNote" class="muted" style="margin:-.4rem 0 0;font-size:.85rem">Play one artist only (e.g. Beatles
+        Radio), or one of your lists of artists.</p>
 
-  <h3 class="group">Albums</h3>
+      <h2 class="eyebrow">Your stations</h2>
+      <div class="tiles" id="stationTiles"></div>
+      <button id="stationsManage" class="linkish" type="button">Add or remove stations</button>
 
-  <section class="card">
-    <h2>Play an album</h2>
-    <form id="aFind" class="row" style="margin-top:0">
-      <input id="aq" type="search" placeholder="Album or artist" aria-label="Find an album" autocomplete="off">
-      <button type="submit">Search</button>
-    </form>
-    <ul id="aResults"></ul>
-    <p id="aNote" class="muted" style="margin:.5rem 0 0;font-size:.85rem">From the radio's own music, start
-      to finish with no DJ (Skip goes to the next track); then back to Sleep Radio. (For an album with the
-      DJ's introduction, use Play next on the main page.)</p>
-  </section>
-
-  <h3 class="group">Internet radio</h3>
-
-  <section class="card">
-    <h2>My stations</h2>
-    <ul id="rStations"><li class="muted">Loading…</li></ul>
-    <form id="rAdd" class="row">
-      <input id="rAddName" placeholder="Name" aria-label="Station name" maxlength="120" required>
-      <input id="rAddUrl" type="url" placeholder="https://… stream address" aria-label="Stream address" required>
-      <button type="submit">Add</button>
-    </form>
-    <p id="rAddNote" class="muted" style="margin:.5rem 0 0;font-size:.85rem">Needs the radio online. A station
-      plays instead of the Sleep Radio show, through the speakers, volume and sleep timer as usual.</p>
-  </section>
-
-  <section class="card">
-    <h2>Find stations</h2>
-    <form id="rFind" class="row" style="margin-top:0">
-      <input id="rq" type="search" placeholder="Station name, e.g. Radio 4, jazz" aria-label="Find a station" autocomplete="off">
-      <button type="submit">Search</button>
-    </form>
-    <ul id="rResults"></ul>
-    <p id="rFindNote" class="muted" style="margin:.5rem 0 0;font-size:.85rem">From the
-      <a href="https://www.radio-browser.info/" style="color:inherit">Radio Browser</a> directory.</p>
-    <div class="row" style="margin-top:.4rem"><button id="rDirUpdate" type="button" hidden
-      style="font-size:.85rem;padding:.3rem .7rem" title="Fetch a fresh copy of the station directory now">Update the list</button></div>
-  </section>
-  </div>
-
-  <div id="viewMedia" hidden>
-  <div class="view-head">
-    <button id="mediaBack" type="button">‹ Settings</button>
-    <h2>Music library</h2>
-  </div>
-
-  <section class="card">
-    <div class="row seg" role="group" aria-label="Music or jingles" style="margin-top:0">
-      <button type="button" data-kind="music" aria-pressed="true">Music</button>
-      <button type="button" data-kind="jingles" aria-pressed="false">Jingles</button>
-      <span id="mSpace" class="muted" style="font-size:.85rem;margin-left:auto"></span>
+      <div id="upNext" class="view" hidden>
+        <h2 class="eyebrow">Coming up</h2>
+        <div id="albumBox" class="card" hidden>
+          <div class="card-head"><span id="albumNow" style="flex:1;min-width:0"></span>
+            <button id="albumStop" type="button">Stop album</button></div>
+        </div>
+        <div id="reqBox" hidden><ul id="reqList" class="list"></ul></div>
+        <p id="qRadio" class="muted" style="margin:0;font-size:.85rem" hidden>Something is streaming: songs you pick
+          play when you go back to Sleep Radio.</p>
+      </div>
     </div>
-  </section>
-
-  <section class="card">
-    <div id="mCrumbs"></div>
-    <ul id="mList"><li class="muted">Loading…</li></ul>
-    <div id="mTools" class="row">
-      <button id="mAddFiles" type="button">Add files</button>
-      <button id="mAddFolder" type="button" title="A whole folder, e.g. an album, keeping its folders">Add a folder</button>
-      <button id="mMkdir" type="button">New folder</button>
-    </div>
-    <form id="mNewFolder" class="row" hidden>
-      <input id="mFolderName" placeholder="Folder name, e.g. the artist" aria-label="New folder's name" maxlength="200" required>
-      <button type="submit">Make it</button>
-      <button id="mFolderCancel" type="button">Cancel</button>
-    </form>
-    <input id="mFiles" type="file" multiple accept="audio/*,.mp3,.flac,.m4a,.ogg,.opus,.wav" hidden>
-    <input id="mFolder" type="file" webkitdirectory multiple hidden>
-    <ul id="mUploads" style="margin-top:.6rem"></ul>
-    <p id="mNote" class="muted" style="margin:.6rem 0 0;font-size:.85rem">Files go into the folder shown above;
-      a folder keeps its own folders. Music is laid out as Artist / Album / "NN - Title". The radio plays
-      mp3, flac, m4a, ogg, opus and wav (album cover pictures can come too). Deleting can't be undone.</p>
-  </section>
+    <div id="findResults" class="view" hidden></div>
   </div>
 
-  <div id="viewSettings" hidden>
-  <div class="view-head">
-    <button id="back" type="button">‹ Back to the radio</button>
-    <h2>Settings</h2>
-  </div>
+  <!-- ============================== SETTINGS ============================== -->
+  <div id="viewSettings" class="view" hidden>
+    <div id="setHome" class="view"></div>
 
-  <h3 class="group">Sound</h3>
-
+    <div class="page" id="page-speakers" hidden>
+      <div class="page-head"><button class="back" type="button">‹ Settings</button><h1>Speakers</h1></div>
   <section id="eq" class="card" hidden>
     <div class="card-head">
       <h2>Speakers</h2>
@@ -499,9 +453,11 @@
       and the radio plays bursts of hiss for it to measure. Hold the phone about 50 cm in front of the radio and
       tap Start; it brings the settings back here for you to Apply.</p>
   </section>
-
+      <p id="noSpeaker" class="muted" hidden>This radio has no speaker of its own (it only plays in a browser), so there's nothing to set here.</p>
+    </div>
+    <div class="page" id="page-stream" hidden>
+      <div class="page-head"><button class="back" type="button">‹ Settings</button><h1>Listen in a browser</h1></div>
   <section id="streamCard" class="card">
-    <h2>Listen in a browser</h2>
     <div class="row seg" id="streamSeg" role="group" aria-label="Listen in a browser" style="margin-top:0">
       <button type="button" data-v="true">On</button><button type="button" data-v="false">Off</button>
     </div>
@@ -509,11 +465,43 @@
       <i>Listen here</i> button that plays the show on your phone or computer too. Off, the page is just the
       radio's remote control, and the radio saves the work of making the stream.</p>
   </section>
-
-  <h3 class="group">Music and the DJ</h3>
-
+    </div>
+    <div class="page" id="page-tests" hidden>
+      <div class="page-head"><button class="back" type="button">‹ Settings</button><h1>Test sounds and the knob</h1></div>
+  <section id="test" class="card" hidden>
+    <h2>Test sound</h2>
+    <p class="muted" style="margin:0;font-size:.85rem">To compare back panels: plays on the radio's own speakers
+      at the current volume, with the EQ and low cut off, instead of the show for a moment. Turn the volume
+      down first.</p>
+    <div class="row">
+      <button type="button" data-test="bass" title="40-600 Hz in 24 s">Bass sweep</button>
+      <button type="button" data-test="sweep" title="40 Hz-16 kHz in 24 s">Full sweep</button>
+      <button type="button" data-test="pink" title="15 s, for a phone spectrum app">Pink noise</button>
+      <button id="testStop" type="button" hidden>Stop</button>
+    </div>
+    <div class="row">
+      <label>Speaker check</label>
+      <button type="button" data-test="left" title="Noise on the left speaker only">Left</button>
+      <button type="button" data-test="right" title="Noise on the right speaker only">Right</button>
+      <button type="button" data-test="sides" title="Says &quot;Left speaker&quot; with noise on the left only, then the same on the right, twice (about 25 s)">Left, then right</button>
+      <button type="button" data-test="phase" title="Switches every 3 s: both the same, then the right one inverted">Phase check</button>
+    </div>
+    <p class="muted" style="margin:.5rem 0 0;font-size:.85rem">Phase check: <i>in phase</i> should sound fuller
+      and centred. If <i>out of phase</i> sounds fuller, one speaker's wires are the wrong way round at the amp
+      (swap its + and −).</p>
+    <p id="testNow" class="muted" hidden></p>
+  </section>
+  <section id="knob" class="card" hidden>
+    <h2>Knob switch</h2>
+    <button id="knobBtn" type="button"><i id="knobFill"></i><span>Tap: pause / play · Hold 3 s: say the address</span></button>
+    <p id="knobNote" class="muted" style="margin:.5rem 0 0;font-size:.85rem">The same as pressing the radio's knob.
+      Holding it for 3 seconds makes the radio beep and then read out its network address, or say it isn't
+      connected.</p>
+  </section>
+    </div>
+    <div class="page" id="page-dj" hidden>
+      <div class="page-head"><button class="back" type="button">‹ Settings</button><h1>The DJ</h1></div>
   <section id="dj" class="card" hidden>
-    <h2>The DJ</h2>
     <div class="row" style="margin-top:0"><label for="djVoice">Voice</label><select id="djVoice"></select></div>
     <div class="row seg" id="djChat" role="group" aria-label="How chatty">
       <label>Talks</label>
@@ -549,9 +537,10 @@
       between songs. Speed: 1× is the voice's own pace; a line or two may already be made at the old speed. Jingles only play on the main mix (all artists). Changing the voice restarts the radio
       (about a minute): only one voice fits in its memory.</p>
   </section>
-
+    </div>
+    <div class="page" id="page-voices" hidden>
+      <div class="page-head"><button class="back" type="button">‹ Settings</button><h1>Voices</h1></div>
   <section id="voicesCard" class="card">
-    <h2>Voices</h2>
     <ul id="voiceList"></ul>
     <div class="row">
       <button id="getStandard" type="button" hidden>Download the standard voice</button>
@@ -567,18 +556,10 @@
       Then pick it as the DJ's voice above.</p>
     <p id="voiceCredit" class="muted" style="margin:.4rem 0 0;font-size:.8rem"></p>
   </section>
-
-  <section id="libCard" class="card">
-    <div class="card-head">
-      <h2>Music library</h2>
-      <button id="libManage" type="button" style="font-size:.9rem;padding:.4rem .8rem">Manage…</button>
     </div>
-    <p id="libNote" class="muted" style="margin:.5rem 0 0;font-size:.85rem">Add or delete music and jingles
-      on the radio from here.</p>
-  </section>
-
+    <div class="page" id="page-lists" hidden>
+      <div class="page-head"><button class="back" type="button">‹ Settings</button><h1>Artist lists</h1></div>
   <section id="lists" class="card">
-    <h2>Artist lists</h2>
     <p class="muted" style="margin:0;font-size:.85rem">Your own lists of artists, e.g. a Friday List: choose
       one under Artist radio on the main page.</p>
     <div id="listEd">
@@ -595,9 +576,10 @@
       </div>
     </div>
   </section>
-
+    </div>
+    <div class="page" id="page-birthdays" hidden>
+      <div class="page-head"><button class="back" type="button">‹ Settings</button><h1>Birthdays</h1></div>
   <section id="bd" class="card">
-    <h2>Birthdays</h2>
     <p id="bdToday" hidden></p>
     <ul id="bdList"><li class="muted">No birthdays yet.</li></ul>
     <form id="bdForm" autocomplete="off">
@@ -611,11 +593,62 @@
       happy one between songs, a few times through the day (not in the night-time quiet hours). The year is
       optional: with it the DJ says which birthday.</p>
   </section>
+    </div>
+    <div class="page" id="page-library" hidden>
+      <div class="page-head"><button class="back" type="button">‹ Settings</button><h1>Music library</h1></div>
+  <section class="card">
+    <div class="row seg" role="group" aria-label="Music or jingles" style="margin-top:0">
+      <button type="button" data-kind="music" aria-pressed="true">Music</button>
+      <button type="button" data-kind="jingles" aria-pressed="false">Jingles</button>
+      <span id="mSpace" class="muted" style="font-size:.85rem;margin-left:auto"></span>
+    </div>
+  </section>
 
-  <h3 class="group">The radio</h3>
-
+  <section class="card">
+    <div id="mCrumbs"></div>
+    <ul id="mList"><li class="muted">Loading…</li></ul>
+    <div id="mTools" class="row">
+      <button id="mAddFiles" type="button">Add files</button>
+      <button id="mAddFolder" type="button" title="A whole folder, e.g. an album, keeping its folders">Add a folder</button>
+      <button id="mMkdir" type="button">New folder</button>
+    </div>
+    <form id="mNewFolder" class="row" hidden>
+      <input id="mFolderName" placeholder="Folder name, e.g. the artist" aria-label="New folder's name" maxlength="200" required>
+      <button type="submit">Make it</button>
+      <button id="mFolderCancel" type="button">Cancel</button>
+    </form>
+    <input id="mFiles" type="file" multiple accept="audio/*,.mp3,.flac,.m4a,.ogg,.opus,.wav" hidden>
+    <input id="mFolder" type="file" webkitdirectory multiple hidden>
+    <ul id="mUploads" style="margin-top:.6rem"></ul>
+    <p id="mNote" class="muted" style="margin:.6rem 0 0;font-size:.85rem">Files go into the folder shown above;
+      a folder keeps its own folders. Music is laid out as Artist / Album / "NN - Title". The radio plays
+      mp3, flac, m4a, ogg, opus and wav (album cover pictures can come too). Deleting can't be undone.</p>
+  </section>
+    </div>
+    <div class="page" id="page-stations" hidden>
+      <div class="page-head"><button class="back" type="button">‹ Settings</button><h1>Internet stations</h1></div>
+      <section class="card">
+        <h2>Your stations</h2>
+        <ul id="rStations"><li class="muted">Loading…</li></ul>
+        <form id="rAdd" class="row" autocomplete="off">
+          <input id="rAddName" placeholder="Name" aria-label="Station name" maxlength="120" required>
+          <input id="rAddUrl" type="url" placeholder="https://… stream address" aria-label="Stream address" required>
+          <button type="submit">Add</button>
+        </form>
+        <p id="rAddNote" class="muted" style="margin:.6rem 0 0;font-size:.85rem">Find new stations with the search
+          on the Find tab, or add one by its stream address here. A station plays instead of the Sleep Radio show,
+          through the speakers, knob and sleep timer as usual. Needs the radio online.</p>
+      </section>
+      <section class="card">
+        <h2>Station directory</h2>
+        <p id="rFindNote" class="muted" style="margin:0;font-size:.85rem">From the
+          <a href="https://www.radio-browser.info/">Radio Browser</a> directory.</p>
+        <div class="row"><button id="rDirUpdate" type="button" hidden title="Fetch a fresh copy of the station directory now">Update the list now</button></div>
+      </section>
+    </div>
+    <div class="page" id="page-wifi" hidden>
+      <div class="page-head"><button class="back" type="button">‹ Settings</button><h1>Wi-Fi</h1></div>
   <section id="wifiCard" class="card">
-    <h2>Wi-Fi</h2>
     <p id="wifiNow" style="margin:0"></p>
     <ul id="wifiSaved"></ul>
     <div class="row">
@@ -640,41 +673,10 @@
       see. If none is in range when it starts, it makes its own network (the hotspot): join it on your phone and
       open http://192.168.4.1 to add yours. Holding the knob for 3 s says how.</p>
   </section>
-
-  <section id="knob" class="card" hidden>
-    <h2>Knob switch</h2>
-    <button id="knobBtn" type="button"><i id="knobFill"></i><span>Tap: pause / play · Hold 3 s: say the address</span></button>
-    <p id="knobNote" class="muted" style="margin:.5rem 0 0;font-size:.85rem">The same as pressing the radio's knob.
-      Holding it for 3 seconds makes the radio beep and then read out its network address, or say it isn't
-      connected.</p>
-  </section>
-
-  <section id="test" class="card" hidden>
-    <h2>Test sound</h2>
-    <p class="muted" style="margin:0;font-size:.85rem">To compare back panels: plays on the radio's own speakers
-      at the current volume, with the EQ and low cut off, instead of the show for a moment. Turn the volume
-      down first.</p>
-    <div class="row">
-      <button type="button" data-test="bass" title="40-600 Hz in 24 s">Bass sweep</button>
-      <button type="button" data-test="sweep" title="40 Hz-16 kHz in 24 s">Full sweep</button>
-      <button type="button" data-test="pink" title="15 s, for a phone spectrum app">Pink noise</button>
-      <button id="testStop" type="button" hidden>Stop</button>
     </div>
-    <div class="row">
-      <label>Speaker check</label>
-      <button type="button" data-test="left" title="Noise on the left speaker only">Left</button>
-      <button type="button" data-test="right" title="Noise on the right speaker only">Right</button>
-      <button type="button" data-test="sides" title="Says &quot;Left speaker&quot; with noise on the left only, then the same on the right, twice (about 25 s)">Left, then right</button>
-      <button type="button" data-test="phase" title="Switches every 3 s: both the same, then the right one inverted">Phase check</button>
-    </div>
-    <p class="muted" style="margin:.5rem 0 0;font-size:.85rem">Phase check: <i>in phase</i> should sound fuller
-      and centred. If <i>out of phase</i> sounds fuller, one speaker's wires are the wrong way round at the amp
-      (swap its + and −).</p>
-    <p id="testNow" class="muted" hidden></p>
-  </section>
-
+    <div class="page" id="page-updates" hidden>
+      <div class="page-head"><button class="back" type="button">‹ Settings</button><h1>Updates</h1></div>
   <section id="upd" class="card">
-    <h2>Updates</h2>
     <p id="updVersion" class="muted" style="margin:0;font-size:.85rem">This radio: …</p>
     <div class="row">
       <button id="updCheck" type="button">Check for updates</button>
@@ -685,9 +687,10 @@
       on GitHub. The music carries on while one downloads; then the radio restarts (about a minute) and says
       how it went. If a new version doesn't come on air, it goes back to the old one by itself.</p>
   </section>
-
+    </div>
+    <div class="page" id="page-password" hidden>
+      <div class="page-head"><button class="back" type="button">‹ Settings</button><h1>Password</h1></div>
   <section id="pw" class="card">
-    <h2>Password</h2>
     <p id="pwState" class="muted" style="margin:0;font-size:.85rem">No password: anyone on your network can use this page.</p>
     <form id="pwForm" class="row" autocomplete="off">
       <input id="pwNew" type="password" placeholder="New password" minlength="4" maxlength="128" aria-label="New password" autocomplete="new-password">
@@ -701,7 +704,9 @@
     <p id="pwNote" class="muted" style="margin:.5rem 0 0;font-size:.85rem">Forgotten it? Over ssh:
       <code>sleepradio-password clear</code>. The radio itself never needs it.</p>
   </section>
-
+    </div>
+    <div class="page" id="page-backup" hidden>
+      <div class="page-head"><button class="back" type="button">‹ Settings</button><h1>Save or load settings</h1></div>
   <section id="settings" class="card">
     <h2>Backup</h2>
     <p class="muted" style="margin:0;font-size:.85rem">Keep a copy of the radio's settings on this device,
@@ -713,20 +718,49 @@
     </div>
     <p id="settingsNote" class="muted" hidden></p>
   </section>
-
+    </div>
+    <div class="page" id="page-power" hidden>
+      <div class="page-head"><button class="back" type="button">‹ Settings</button><h1>Shut down</h1></div>
   <section id="power" class="card" hidden>
     <div class="row">
       <span id="powerNote" class="muted">Turn the radio off before unplugging it.</span>
       <button id="off" type="button">Shut down</button>
     </div>
   </section>
-
+    </div>
   </div>
 </main>
 
+<nav id="tabs" aria-label="Sections" hidden><div role="tablist">
+  <button class="tab" role="tab" data-tab="radio" aria-selected="true" type="button">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><rect x="3" y="8" width="18" height="12" rx="2.5"/><circle cx="15.5" cy="14" r="3"/><path d="M6.5 12.5h4M6.5 15.5h4M7 8l9-4"/></svg>Radio</button>
+  <button class="tab" role="tab" data-tab="find" aria-selected="false" type="button">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>Find</button>
+  <button class="tab" role="tab" data-tab="settings" aria-selected="false" type="button">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M4 6h10M18 6h2M4 12h4M12 12h8M4 18h12"/><circle cx="16" cy="6" r="2"/><circle cx="10" cy="12" r="2"/><circle cx="18" cy="18" r="2"/></svg>Settings</button>
+</div></nav>
+
+<div id="scrim" hidden></div>
+<div id="sheet" role="dialog" aria-modal="true" aria-labelledby="sheetTitle" hidden>
+  <div class="grab"></div>
+  <h3 id="sheetTitle">The radio's buttons</h3>
+  <section class="card" id="bCard" style="padding:.4rem .9rem">
+    <ul id="bList"><li class="muted">Loading…</li></ul>
+  </section>
+  <p id="bNote" class="muted" style="margin:0;font-size:.85rem">Like a car radio's: press a button to play it
+    (press again to pause). <b>Set to now</b> keeps what's playing on a button, the same as holding it on the
+    radio for 3 seconds; or choose from the list. For an album, play it first.</p>
+  <button id="sheetDone" class="primary big" type="button">Done</button>
+</div>
+<div id="toast" role="status" hidden></div>
 <audio id="audio" preload="none"></audio>
 <script>
 const $ = id => document.getElementById(id);
+function toast(text) {
+  const t = $("toast");
+  t.textContent = text; t.hidden = false;
+  clearTimeout(t._h); t._h = setTimeout(() => { t.hidden = true; }, 3200);
+}
 const audio = $("audio");
 let wanted = false, sleepEnd = 0, shuttingDown = false;
 
@@ -817,6 +851,7 @@ function knobTap() {
 })();
 function showKnobState(playing) {
   $("dial").classList.toggle("paused", !playing);
+  $("nowCard").classList.toggle("paused", !playing);
   $("dialState").textContent = playing ? "turn the knob, or tap it to pause" : "paused: tap the knob to play";
 }
 async function sendSpeakerVol() {
@@ -917,6 +952,7 @@ async function loadArtists() {
     sel.append(g);
     showSelection(data.artist, data.profile, data.station_name);
     fillListPick();
+    drawHome(); drawSettings();
   } catch {}
 }
 function showSelection(artist, profile, name) {
@@ -998,55 +1034,106 @@ $("listDelete").onclick = async () => {
   if (await saveLists(allLists.filter(p => p.name !== old), `Deleted “${old}”.`)) { await loadArtists(); fillListPick(""); showListEditor(); }
 };
 
-// Play next: search the library, and a pick plays after the current song
-// (after any earlier requests). The DJ introduces it.
-let qTimer = null;
+// Find: one search over artists (and your lists), albums, songs and internet
+// stations. Artists and lists play as the show (artist radio); albums play
+// straight through or in the show with the DJ; songs play next; stations play
+// instead of the show. With nothing typed: quick picks.
+let qTimer = null, fFilter = "all", fSeq = 0, fData = null;
 function qNote(text) { $("qNote").textContent = text; $("qNote").hidden = !text; }
-$("q").oninput = () => {
-  clearTimeout(qTimer);
-  qTimer = setTimeout(search, 300);
-};
-async function search() {
-  const q = $("q").value.trim();
-  if (q.length < 2) { $("results").replaceChildren(); $("albumResults").replaceChildren(); $("albumHits").hidden = true; qNote(""); return; }
-  try {
-    const { results, albums } = await (await fetch("/api/search?q=" + encodeURIComponent(q), { cache: "no-store" })).json();
-    if (q !== $("q").value.trim()) return;            // typed on since
-    qNote(results.length || albums.length ? (results.length >= 40 ? "Showing the first 40 songs: add a word to narrow it." : "") : "Nothing found.");
-    $("albumHits").hidden = !albums.length;
-    $("albumResults").replaceChildren(...albums.map(a => {
-      const li = document.createElement("li");
-      const t = document.createElement("span"); t.className = "t";
-      t.append(a.title, Object.assign(document.createElement("small"), { textContent: `${a.artist} · ${a.tracks} tracks` }));
-      const b = document.createElement("button"); b.type = "button"; b.textContent = "Play album";
-      b.onclick = () => requestAlbum(a, b);
-      li.append(t, b);
-      return li;
-    }));
-    $("results").replaceChildren(...results.map(r => {
-      const li = document.createElement("li");
-      const t = document.createElement("span"); t.className = "t";
-      t.append(r.title, Object.assign(document.createElement("small"), { textContent: [r.artist, r.album].filter(Boolean).join(" · ") }));
-      const b = document.createElement("button"); b.type = "button"; b.textContent = "Play next";
-      b.onclick = () => requestTrack(r, b);
-      li.append(t, b);
-      return li;
-    }));
-  } catch { qNote("Couldn't reach the radio."); }
+$("q").oninput = () => { clearTimeout(qTimer); qTimer = setTimeout(find, 300); };
+document.querySelectorAll("#filters .chip").forEach(c => c.onclick = () => {
+  fFilter = c.dataset.f;
+  document.querySelectorAll("#filters .chip").forEach(x => x.setAttribute("aria-pressed", String(x === c)));
+  find();
+});
+const words = q => q.toLowerCase().split(/\s+/).filter(Boolean);
+const hasAll = (text, ws) => ws.every(w => text.toLowerCase().includes(w));
+async function find() {
+  const q = $("q").value.trim(), seq = ++fSeq, ws = words(q);
+  const on = q.length >= 2;
+  $("findHome").hidden = on; $("findResults").hidden = !on;
+  if (!on) { qNote(""); fData = null; return; }
+  const want = f => fFilter === "all" || fFilter === f;
+  fData = { q, artists: [], lists: [], albums: [], songs: [], saved: [], stations: null, busy: true };
+  if (want("artist")) {
+    fData.lists = allLists.filter(p => hasAll(p.name, ws));
+    fData.artists = allArtists.filter(a => hasAll(a.name, ws)).slice(0, fFilter === "artist" ? 50 : 6);
+  }
+  if (want("station")) fData.saved = rStations.filter(st => hasAll(st.name, ws));
+  renderFind();
+  const jobs = [];
+  if (want("song") || want("album")) jobs.push(fetch("/api/search?q=" + encodeURIComponent(q), { cache: "no-store" })
+    .then(r => r.json()).then(d => { if (seq !== fSeq) return; fData.albums = want("album") ? d.albums : [];
+      fData.songs = want("song") ? d.results : []; renderFind(); }).catch(() => {}));
+  if (want("station") && q.length >= 3) jobs.push(fetch("/api/radio/search?q=" + encodeURIComponent(q), { cache: "no-store" })
+    .then(async r => { const d = await r.json(); if (seq !== fSeq) return;
+      fData.stations = r.ok ? d.results.filter(st => !rStations.some(x => x.url === st.url)) : [];
+      fData.dirError = r.ok ? "" : d.error; renderFind(); }).catch(() => {}));
+  await Promise.all(jobs);
+  if (seq === fSeq) { fData.busy = false; renderFind(); }
 }
+function resultRow(title, sub, actions) {
+  const li = document.createElement("li");
+  const t = Object.assign(document.createElement("span"), { className: "t", textContent: title });
+  if (sub) t.append(Object.assign(document.createElement("small"), { textContent: sub }));
+  li.append(t, ...actions);
+  return li;
+}
+function act(text, primary, onclick, title) {
+  const b = button(text, title || text, onclick);
+  if (primary) b.className = "primary";
+  return b;
+}
+function renderFind() {
+  if (!fData) return;
+  const d = fData, out = [];
+  const group = (name, rows) => { if (rows.length) out.push(Object.assign(document.createElement("p"),
+    { className: "group-title", textContent: name }), Object.assign(document.createElement("ul"), { className: "list" }));
+    if (rows.length) out[out.length - 1].append(...rows); };
+  group("Artists and lists", [
+    ...d.lists.map(p => resultRow(p.name, `Your list · ${p.artists.length} artists`,
+      [act("Play", true, () => playShow({ profile: p.name }))])),
+    ...d.artists.map(a => resultRow(a.name, `${a.tracks} song${a.tracks === 1 ? "" : "s"}`,
+      [act("Artist radio", true, () => playShow({ artist: a.name }))]))]);
+  group("Albums", d.albums.map(a => resultRow(a.title, `${a.artist} · ${a.tracks} tracks`,
+    [act("Play", true, () => playAlbum(a), "Play it start to finish, no DJ"),
+     act("With the DJ", false, b => requestAlbum(a, b.currentTarget), "Play it next in the show, introduced by the DJ")])));
+  const songs = fFilter === "song" ? d.songs : d.songs.slice(0, 8);
+  group("Songs", songs.map(r => resultRow(r.title, [r.artist, r.album].filter(Boolean).join(" · "),
+    [act("Play next", true, b => requestTrack(r, b.currentTarget))])));
+  const stationRow = (st, saved) => resultRow(st.name, st.info, [act("Play", true, () => tuneTo(st)),
+    ...(saved ? [] : [act("Save", false, b => { b.currentTarget.disabled = true; saveStations([...rStations, st]); })])]);
+  group("Internet stations", [...d.saved.map(st => stationRow(st, true)),
+                              ...(d.stations || []).slice(0, fFilter === "station" ? 40 : 8).map(st => stationRow(st, false))]);
+  $("findResults").replaceChildren(...out);
+  const n = d.artists.length + d.lists.length + d.albums.length + d.songs.length + d.saved.length + (d.stations || []).length;
+  qNote(d.busy ? "Searching…" : n ? (d.dirError ? `Stations: ${d.dirError}.` : "")
+       : "Nothing found by that name. Try fewer words, or another spelling.");
+}
+async function playShow(sel) {
+  try {
+    if (rTuned || lastSource) await radioPost("/api/radio/stop");
+    const r = await radioPost("/api/station", { artist: null, ...sel });
+    showSelection(r.artist, r.profile, r.station_name);
+    toast(!r.found ? "Nothing to play for that here: playing everything."
+          : `${r.station_name}: after the song that's lined up next.`);
+    setTimeout(poll, 800); drawHome();
+  } catch (e) { toast("Couldn't: " + e.message + "."); }
+}
+
 async function requestTrack(r, button) {
   button.disabled = true;
   try {
     const resp = await fetch("/api/request", { method: "POST", headers: { "Content-Type": "application/json" },
                                               body: JSON.stringify({ id: r.id }) });
     const reply = await resp.json();
-    if (!resp.ok) { qNote("Couldn't: " + reply.error + "."); button.disabled = false; return; }
+    if (!resp.ok) { toast("Couldn't: " + reply.error + "."); button.disabled = false; return; }
     button.textContent = "Queued ✓";
-    qNote(reply.after_announced ? `“${r.title}” plays after the song that's just been introduced.`
+    toast(reply.after_announced ? `“${r.title}” plays after the song that's just been introduced.`
       : reply.position > 0 ? `“${r.title}” is queued: ${reply.position} request${reply.position === 1 ? "" : "s"} before it.`
       : `“${r.title}” plays next.`);
     showRequests(reply.requests);
-  } catch { qNote("Couldn't reach the radio."); button.disabled = false; }
+  } catch { toast("Couldn't reach the radio."); button.disabled = false; }
 }
 async function requestAlbum(a, button) {
   button.disabled = true;
@@ -1054,14 +1141,15 @@ async function requestAlbum(a, button) {
     const resp = await fetch("/api/album", { method: "POST", headers: { "Content-Type": "application/json" },
                                             body: JSON.stringify({ id: a.id }) });
     const reply = await resp.json();
-    if (!resp.ok) { qNote("Couldn't: " + reply.error + "."); button.disabled = false; return; }
+    if (!resp.ok) { toast("Couldn't: " + reply.error + "."); button.disabled = false; return; }
     button.textContent = "Queued ✓";
-    qNote(`“${a.title}” plays next, start to finish: the DJ introduces it, then it's straight through.`);
+    toast(`“${a.title}” plays next, start to finish: the DJ introduces it, then it's straight through.`);
     showAlbum(reply.album); showRequests(reply.requests);
-  } catch { qNote("Couldn't reach the radio."); button.disabled = false; }
+  } catch { toast("Couldn't reach the radio."); button.disabled = false; }
 }
 function showAlbum(album) {
   $("albumBox").hidden = !album;
+  upNextShown();
   if (!album) return;
   const b = document.createElement("b"); b.textContent = "Album: ";
   $("albumNow").replaceChildren(b, `${album.title} — ${album.artist} ` +
@@ -1070,20 +1158,16 @@ function showAlbum(album) {
 $("albumStop").onclick = async () => {
   try {
     const reply = await (await fetch("/api/album/stop", { method: "POST" })).json();
-    qNote("Album stopped: back to the usual mix after this song.");
+    toast("Album stopped: back to the usual mix after this song.");
     showAlbum(null); showRequests(reply.requests);
-  } catch { qNote("Couldn't reach the radio."); }
+  } catch { toast("Couldn't reach the radio."); }
 };
+function upNextShown() { $("upNext").hidden = $("albumBox").hidden && $("reqBox").hidden && $("qRadio").hidden; }
 function showRequests(list) {
   list = (list || []).filter(r => !r.album);        // an album shows as one line above
   $("reqBox").hidden = !list.length;
-  $("reqList").replaceChildren(...list.map((r, i) => {
-    const li = document.createElement("li");
-    const k = document.createElement("span"); k.className = "k"; k.textContent = i + 1;
-    const t = document.createElement("span"); t.className = "t"; t.textContent = `${r.title} — ${r.artist}`;
-    li.append(k, t);
-    return li;
-  }));
+  $("reqList").replaceChildren(...list.map((r, i) => resultRow(r.title, `${r.artist} · by request${i ? "" : ", next"}`, [])));
+  upNextShown();
 }
 
 // The DJ: voice, how often it talks, 70s hooks, jingles, news.
@@ -1091,7 +1175,10 @@ function djNote(text, bad) { $("djNote").textContent = text; $("djNote").classLi
 function pressSeg(id, value) {
   document.querySelectorAll(`#${id} button`).forEach(b => b.setAttribute("aria-pressed", String(b.dataset.v === String(value))));
 }
+let lastDj = null, lastVoices = null, lastWifi = null, lastUpd = null, lastAuth = null, lastStatus = null,
+    lastDir = null, lastSource = null;
 function showDj(d) {
+  lastDj = d; drawSettings();
   $("dj").hidden = false;
   const v = $("djVoice");
   v.replaceChildren(...d.voices.map(n => new Option(n[0].toUpperCase() + n.slice(1), n)));
@@ -1152,6 +1239,7 @@ document.querySelectorAll("#djNews button").forEach(b => b.onclick = () => setDj
 let voiceTimer = null;
 function voiceNote(text, bad) { $("voiceNote").textContent = text; $("voiceNote").classList.toggle("bad", !!bad); }
 function showVoices(v) {
+  lastVoices = v; drawSettings();
   $("voiceList").replaceChildren(...(v.voices.length ? v.voices.map(n => {
     const li = document.createElement("li");
     const t = document.createElement("span"); t.className = "who";
@@ -1211,6 +1299,7 @@ $("voiceUpload").onsubmit = e => {
 let updTimer = null;
 function updNote(text) { $("updNote").textContent = text; }
 function showUpdate(u) {
+  lastUpd = u; drawSettings();
   $("updVersion").textContent = "This radio: version " + u.version;
   const job = u.job || {}, busy = ["requested", "downloading", "verifying", "ready"].includes(job.state);
   $("updInstall").hidden = !u.available || busy;
@@ -1260,6 +1349,7 @@ function li(text, button, onclick) {
   return l;
 }
 function showWifi(w) {
+  lastWifi = w; drawSettings();
   const now = $("wifiNow");
   if (w.mode === "station") now.replaceChildren("Connected to ", Object.assign(document.createElement("b"), { textContent: w.ssid }), ` (${w.ip})`);
   else if (w.mode === "hotspot") now.replaceChildren("Hotspot on: join ", Object.assign(document.createElement("b"), { textContent: w.hotspot.ssid }),
@@ -1334,6 +1424,7 @@ function showBirthdays(state) {
   const today = state.today || [];
   $("bdToday").hidden = !today.length;
   $("bdToday").textContent = today.length ? "🎂 Today: " + today.map(t => t.name + (t.age ? ` (${t.age})` : "")).join(", ") : "";
+  drawSettings();
   if (!state.clock_trusted) bdNote("The radio's clock isn't set yet (no internet), so no birthday wishes until it is.");
 }
 async function loadBirthdays() {
@@ -1475,6 +1566,7 @@ async function poll() {
     const s = await r.json();
     // Follow the speaker (the knob, or another page), except mid-drag.
     hasSpeaker = !!s.speaker;
+    lastStatus = s;
     $("power").hidden = !s.can_power_off;
     if (s.version) $("version").textContent = /^\d/.test(s.version) ? "v" + s.version : "build " + s.version;
     streamOn = !!s.stream;
@@ -1488,7 +1580,10 @@ async function poll() {
     if (hasSpeaker) showTest(s.speaker.test);
     if (hasSpeaker) followSleep(s.speaker);
     if (hasSpeaker) showKnobState(s.speaker.playing);
-    else $("dialState").textContent = wanted ? "tap the knob to stop listening here" : "tap the knob to listen here";
+    else {
+      $("nowCard").classList.remove("paused");
+      $("dialState").textContent = wanted ? "tap the knob to stop listening here" : "tap the knob to listen here";
+    }
     $("eq").hidden = !(hasSpeaker && s.speaker.eq);
     if (hasSpeaker && s.speaker.eq && !eqTimer && Date.now() - eqInput > 2000 &&
         BANDS.some(b => s.speaker.eq[b] !== eq[b])) {
@@ -1517,30 +1612,47 @@ async function poll() {
     badge.textContent = s.on_air ? "On air" : (s.voices_ready ? "Off air" : "Warming up");
     badge.classList.toggle("live", s.on_air);
     if (s.now) {
-      $("kind").textContent = KIND[s.now.kind] || s.now.kind;
+      $("kind").textContent = hasSpeaker && !s.speaker.playing ? "Paused · tap the knob to play"
+        : s.source && s.source.kind === "album" ? `Album · track ${s.source.track + 1} of ${s.source.tracks}`
+        : KIND[s.now.kind] || s.now.kind;
       $("title").textContent = s.now.title;
       $("artist").textContent = s.now.artist || "";
       const pct = s.now.duration_s ? Math.min(100, 100 * s.now.elapsed_s / s.now.duration_s) : 0;
       $("progress").style.width = pct + "%";
     } else if (!s.on_air) {
-      $("kind").textContent = "Ready";
-      $("title").textContent = wanted ? "Starting the show…" : "Nothing on air";
+      $("kind").textContent = hasSpeaker && !s.speaker.playing ? "Paused" : "Ready";
+      $("title").textContent = wanted ? "Starting the show…"
+        : hasSpeaker && !s.speaker.playing ? "Tap the knob to play" : "Nothing on air";
       $("artist").textContent = "";
       $("progress").style.width = "0";
     }
     $("skip").hidden = !s.can_skip;
+    $("noSpeaker").hidden = hasSpeaker;
+    $("nowCard").classList.toggle("talk", !!s.now && ["dj", "news", "wait"].includes(s.now.kind));
+    $("progress").parentElement.hidden = !(s.now && s.now.duration_s);
     $("next").textContent = s.on_air && s.next ? `Next: ${s.next.title}${s.next.artist ? " — " + s.next.artist : ""}` : "";
-    const hist = $("history");
-    hist.replaceChildren(...(s.history.length ? s.history.map(h => {
-      const li = document.createElement("li");
-      const t = document.createElement("time"); t.textContent = hhmm(h.at);
-      const k = document.createElement("span"); k.className = "k"; k.textContent = ICON[h.kind] || "·";
-      const x = document.createElement("span"); x.textContent = h.text;
-      li.append(t, k, x);
-      return li;
-    }) : [Object.assign(document.createElement("li"), { className: "muted", textContent: "Nothing yet." })]));
+    showHistory(s.history);
+    drawSettings();
   } catch {}
 }
+
+let histAll = false;
+function showHistory(items) {
+  const kinds = { track: "Sleep Radio", dj: "The DJ", jingle: "Station ident", news: "News", radio: "Internet radio",
+                  album: "Album" };
+  const shown = histAll ? items : items.slice(0, 5);
+  $("history").replaceChildren(...(items.length ? shown.map(h => {
+    const li = document.createElement("li");
+    const t = document.createElement("time"); t.textContent = hhmm(h.at);
+    const x = Object.assign(document.createElement("span"), { className: "t", textContent: h.text });
+    x.append(Object.assign(document.createElement("small"), { textContent: kinds[h.kind] || "" }));
+    li.append(t, x);
+    return li;
+  }) : [Object.assign(document.createElement("li"), { className: "muted", textContent: "Nothing yet." })]));
+  $("histMore").hidden = items.length <= 5;
+  $("histMore").textContent = histAll ? "Show less" : `Show all ${items.length}`;
+}
+$("histMore").onclick = () => { histAll = !histAll; if (lastStatus) showHistory(lastStatus.history); };
 
 // Skip applies to the station itself, so the speaker and every listener hear
 // it; a browser hears it a few seconds later (its stream buffer).
@@ -1611,27 +1723,19 @@ function rNote(id, text, bad) {
   n.textContent = text; n.hidden = !text; n.classList.toggle("bad", !!bad);
 }
 function showRadio(src, err) {
-  const r = src && src.kind === "radio" ? src : null, album = src && src.kind === "album" ? src : null;
-  rTuned = r;
+  const r = src && src.kind === "radio" ? src : null;
+  rTuned = r; lastSource = src;
   $("radioOff").hidden = !src;
   $("qRadio").hidden = !src;
-  $("rStopRow").hidden = !src;
-  if (album) {
-    $("rKind").textContent = `Album · track ${album.track + 1} of ${album.tracks}`;
-    $("rNowTitle").textContent = album.title;
-    $("rNowSub").textContent = album.artist;
-  } else {
-    $("rKind").textContent = r ? (r.playing ? "Internet radio" : "Tuning in") : "Sleep Radio";
-    $("rNowTitle").textContent = r ? (r.title || r.name) : "The radio's own show is on.";
-    $("rNowSub").textContent = r && r.title ? r.name : "";
-  }
+  upNextShown();
   const key = JSON.stringify(src ? [src.kind, src.folder || src.url] : [selNow]);
   if (key !== lastSrcKey) {                       // what's playing changed: which button is lit
     lastSrcKey = key;
     loadButtons();
+    drawHome();
   }
-  if (err && !r) rNote("rNote", "Stopped " + err + ". Back on Sleep Radio.", true);
-  else if (!r || !$("rNote").classList.contains("bad")) rNote("rNote", "");
+  if (err && !src) rNote("rNote", "Stopped " + err + ". Back on Sleep Radio.", true);
+  else if (src || !$("rNote").classList.contains("bad")) rNote("rNote", "");
   for (const b of document.querySelectorAll("#rStations button[data-url]")) markPlay(b);
 }
 function markPlay(b) {
@@ -1650,6 +1754,7 @@ function dirWords(dir, from, verb = "Searched") {
          (days < 1 ? "today." : days === 1 ? "yesterday." : `${days} days ago.`);
 }
 function showDirectory(dir) {
+  lastDir = dir; drawSettings();
   if (!$("rFindNote").classList.contains("bad")) rNote("rFindNote", dirWords(dir, null, "Searches"));
   $("rDirUpdate").hidden = !dir || dir.refreshing;
 }
@@ -1662,6 +1767,7 @@ async function loadRadio() {
     showDirectory(d.directory);
     rStations = d.stations;
     showStations();
+    drawHome();
     showRadio(d.source, d.source_error);
     loadButtons();
   } catch { $("rStations").replaceChildren(Object.assign(document.createElement("li"),
@@ -1707,26 +1813,30 @@ async function tuneTo(st) {
     const d = await radioPost("/api/radio/play", { name: st.name, url: st.url, info: st.info || "" });
     rNote("rNote", "");
     showRadio(d.source, null);
+    toast(`Tuning in to ${st.name}…`);
     setTimeout(poll, 800);
-  } catch (e) { rNote("rNote", "Couldn't play it: " + e.message + ".", true); }
+  } catch (e) { toast("Couldn't play it: " + e.message + "."); }
 }
 async function stopRadio() {
   try {
     const d = await radioPost("/api/radio/stop");
     rNote("rNote", "");
     showRadio(d.source, null);
+    toast("Back to Sleep Radio");
     setTimeout(poll, 800);
   } catch (e) { rNote("rNote", "Couldn't: " + e.message + ".", true); }
 }
-$("rStop").onclick = stopRadio;
 $("radioOff").onclick = stopRadio;
 async function saveStations(list) {
   try {
     rStations = (await radioPost("/api/radio/stations", { stations: list })).stations;
     showStations();
-    showFound();
+    drawHome(); drawSettings();
+    if (fData) { fData.saved = rStations.filter(st => hasAll(st.name, words(fData.q)));
+                 if (fData.stations) fData.stations = fData.stations.filter(st => !rStations.some(x => x.url === st.url));
+                 renderFind(); }
     return true;
-  } catch (e) { rNote("rAddNote", "Not saved: " + e.message + ".", true); return false; }
+  } catch (e) { toast("Not saved: " + e.message + "."); return false; }
 }
 $("rAdd").onsubmit = async e => {
   e.preventDefault();
@@ -1737,32 +1847,6 @@ $("rAdd").onsubmit = async e => {
     rNote("rAddNote", "Added " + st.name + ".");
   }
 };
-let rFound = [];
-function showFound() {
-  $("rResults").replaceChildren(...rFound.map(st => {
-    const saved = rStations.some(x => x.url === st.url);
-    const add = button(saved ? "Saved" : "+ Save", "Keep it in My stations",
-                       () => saveStations([...rStations, st]));
-    add.disabled = saved;
-    return stationItem(st, [button("▶ Play", "Play " + st.name, () => tuneTo(st)), add]);
-  }));
-}
-$("rFind").onsubmit = async e => {
-  e.preventDefault();
-  const q = $("rq").value.trim();
-  if (!q) return;
-  rNote("rFindNote", "Searching…");
-  try {
-    const r = await fetch("/api/radio/search?q=" + encodeURIComponent(q), { cache: "no-store" });
-    const d = await r.json();
-    if (!r.ok) throw new Error(d.error || r.status);
-    rFound = d.results;
-    showFound();
-    rNote("rFindNote", (rFound.length ? `${rFound.length} found, most listened-to first. ` : "Nothing found by that name. ")
-                       + dirWords(d.directory, d.from));
-  } catch (e) { rNote("rFindNote", "Couldn't search: " + e.message + ".", true); }
-};
-
 // The preset buttons (io/presets.py): what each holds, and changing it.
 let bState = null, bLists = [];
 async function loadButtons() {
@@ -1800,6 +1884,11 @@ function showPresets() {
 }
 function showButtons() {
   showPresets();
+  drawSettings();
+  const playing = bState ? bState.buttons.findIndex(b => b.playing) : -1;
+  $("needle").hidden = playing < 0;
+  if (playing >= 0) $("needle").style.left = (12.5 + 25 * playing) + "%";
+  document.querySelectorAll("#scale span").forEach((sp, j) => sp.classList.toggle("on", j === playing));
   if (!bState) return;
   $("bList").replaceChildren(...bState.buttons.map((b, i) => {
     const li = document.createElement("li");
@@ -1829,41 +1918,28 @@ async function setButton(n, body) {
   try {
     bState = await radioPost("/api/buttons", { button: n, ...body });
     showButtons();
+    drawSettings();
     rNote("bNote", `Button ${n}: ${bState.buttons[n - 1].label}.`);
+    toast(`Button ${n}: ${bState.buttons[n - 1].label}`);
   } catch (e) { rNote("bNote", "Not changed: " + e.message + ".", true); }
 }
 async function pressButton(n) {
   try {
     bState = await radioPost("/api/buttons/press", { button: n });
     showButtons();
+    const b = bState.buttons[n - 1];
+    if (!b.preset) toast(`Button ${n} is empty: Set to now in "Change what the buttons play" keeps what's playing on it.`);
     setTimeout(() => { poll(); loadButtons(); }, 1000);
   } catch (e) { rNote("bNote", "Couldn't: " + e.message + ".", true); }
 }
 
-// Albums straight through (no DJ), from the same search as Play next.
-$("aFind").onsubmit = async e => {
-  e.preventDefault();
-  const q = $("aq").value.trim();
-  if (!q) return;
-  try {
-    const d = await (await fetch("/api/search?q=" + encodeURIComponent(q), { cache: "no-store" })).json();
-    $("aResults").replaceChildren(...d.albums.map(a => {
-      const li = document.createElement("li");
-      const t = Object.assign(document.createElement("span"), { className: "t", textContent: a.title });
-      t.append(Object.assign(document.createElement("small"), { textContent: `${a.artist} · ${a.tracks} tracks` }));
-      li.append(t, button("▶ Play", "Play " + a.title + " straight through", () => playAlbum(a)));
-      return li;
-    }));
-    rNote("aNote", d.albums.length ? "" : "No albums found by that name.");
-  } catch { rNote("aNote", "Couldn't reach the radio.", true); }
-};
 async function playAlbum(a) {
   try {
     const d = await radioPost("/api/album/play", { id: a.id });
     showRadio(d.source, null);
-    rNote("aNote", `Playing ${a.title}.`);
+    toast(`Playing ${a.title}, start to finish`);
     setTimeout(poll, 800);
-  } catch (e) { rNote("aNote", "Couldn't play it: " + e.message + ".", true); }
+  } catch (e) { toast("Couldn't play it: " + e.message + "."); }
 }
 
 // --- Music library: browse, upload, delete (media.py) -------------------------------
@@ -1871,12 +1947,10 @@ let mKind = "music", mPath = "", mediaDirty = false, uploading = false;
 const fmtSize = n => n >= 1e9 ? (n / 1e9).toFixed(1) + " GB" : n >= 1e6 ? (n / 1e6).toFixed(1) + " MB"
                    : Math.max(1, Math.round(n / 1e3)) + " kB";
 function mNote(text, bad) { const n = $("mNote"); n.textContent = text; n.classList.toggle("bad", !!bad); }
-$("libManage").onclick = () => { location.hash = "#media"; };
-$("mediaBack").onclick = () => { location.hash = "#settings"; };
-for (const b of document.querySelectorAll("#viewMedia [data-kind]"))
+for (const b of document.querySelectorAll("#page-library [data-kind]"))
   b.onclick = () => { mKind = b.dataset.kind; mPath = ""; loadMedia(); };
 async function loadMedia() {
-  for (const b of document.querySelectorAll("#viewMedia [data-kind]"))
+  for (const b of document.querySelectorAll("#page-library [data-kind]"))
     b.setAttribute("aria-pressed", String(b.dataset.kind === mKind));
   $("mAddFolder").hidden = mKind !== "music";
   try {
@@ -1944,7 +2018,7 @@ async function mediaDone(before = "") {
     const d = await radioPost("/api/media/done");
     if (d.changed) {
       const text = `${before}Library updated: ${d.library.tracks.toLocaleString()} songs, ${d.library.jingles} jingles.`;
-      if (!$("viewMedia").hidden) mNote(text); else rNote("libNote", text);
+      if (!$("page-library").hidden) mNote(text); else toast(text);
       loadArtists();                              // new (or gone) artists in Artist radio and the lists
     }
   } catch {}
@@ -2013,32 +2087,146 @@ function uploadOne(file, name, folder, progress) {
   });
 }
 
-// --- Views, login and the password ------------------------------------------------
-// The main page has the everyday controls; ⚙ opens Settings (#settings).
+// --- Views: Radio · Find · Settings (and a page per setting), login -------------------
+// Links: "" (the radio), #find, #settings, #set-<page>. Old ones still work:
+// #radio (the old Streaming view) opens Find, #media the music library.
+const PAGES = ["speakers", "stream", "tests", "dj", "voices", "lists", "birthdays", "library", "stations",
+               "wifi", "updates", "password", "backup", "power"];
+function route() {
+  const h = location.hash.slice(1);
+  if (h === "radio" || h === "find") return ["find", null];
+  if (h === "media") return ["settings", "library"];
+  if (h === "settings") return ["settings", null];
+  if (h.startsWith("set-") && PAGES.includes(h.slice(4))) return ["settings", h.slice(4)];
+  return ["radio", null];
+}
+let pageNow = null;
 function showView() {
-  const settings = location.hash === "#settings", streaming = location.hash === "#radio",
-        library = location.hash === "#media";
-  if (!library && mediaDirty) mediaDone();          // leaving the manager: rescan now
-  $("viewMain").hidden = settings || streaming || library;
-  $("viewSettings").hidden = !settings;
-  $("viewRadio").hidden = !streaming;
-  $("viewMedia").hidden = !library;
-  $("gear").hidden = settings || library;
-  $("radioBtn").hidden = streaming || library;
-  if (streaming) loadRadio();
-  if (library) loadMedia();
-  if (settings) { fillListPick(); showListEditor(); loadAuth(); loadVoices(); loadUpdate(); loadWifi(); }
+  const [tab, page] = route();
+  if (page !== "library" && mediaDirty) mediaDone();          // leaving the manager: rescan now
+  $("viewMain").hidden = tab !== "radio";
+  $("viewFind").hidden = tab !== "find";
+  $("viewSettings").hidden = tab !== "settings";
+  document.querySelectorAll(".tab").forEach(t => t.setAttribute("aria-selected", String(t.dataset.tab === tab)));
+  $("setHome").hidden = !!page;
+  for (const p of PAGES) $("page-" + p).hidden = p !== page;
+  pageNow = page;
+  if (tab === "find") { loadRadio(); drawHome(); }
+  if (tab === "settings" && !page) { loadAuth(); loadVoices(); loadUpdate(); loadWifi(); loadRadio(); drawSettings(); }
+  if (page === "lists") { fillListPick(); showListEditor(); }
+  if (page === "voices") loadVoices();
+  if (page === "updates") loadUpdate();
+  if (page === "wifi") loadWifi();
+  if (page === "password") loadAuth();
+  if (page === "stations") loadRadio();
+  if (page === "library") loadMedia();
   window.scrollTo(0, 0);
 }
 window.addEventListener("hashchange", () => { if (started) showView(); });
-$("gear").onclick = () => { location.hash = "#settings"; };
-$("back").onclick = () => { location.hash = ""; };
-$("radioBtn").onclick = () => { location.hash = "#radio"; };
-$("radioBack").onclick = () => { location.hash = ""; };
-$("listsBtn").onclick = () => {
-  location.hash = "#settings";
-  setTimeout(() => $("lists").scrollIntoView({ behavior: "smooth" }), 50);
+const go = hash => { if (location.hash === hash || (!hash && !location.hash)) showView(); else location.hash = hash; };
+document.querySelectorAll(".tab").forEach(t => t.onclick = () =>
+  go(t.dataset.tab === "radio" ? "" : "#" + t.dataset.tab));
+document.querySelectorAll(".page .back").forEach(b => b.onclick = () => go("#settings"));
+$("listsBtn").onclick = () => go("#set-lists");
+$("stationsManage").onclick = () => go("#set-stations");
+
+// The buttons' sheet: from the radio panel or Settings.
+function openSheet() { loadButtons(); $("sheet").hidden = $("scrim").hidden = false; $("sheetDone").focus(); }
+function closeSheet() { $("sheet").hidden = $("scrim").hidden = true; }
+$("presetsEdit").onclick = openSheet;
+$("sheetDone").onclick = closeSheet;
+$("scrim").onclick = closeSheet;
+document.addEventListener("keydown", e => { if (e.key === "Escape" && !$("sheet").hidden) closeSheet(); });
+
+// Find with nothing typed: Sleep Radio (everything, your lists, the artist
+// playing) and your saved stations, as tiles; the one playing is lit.
+function tile(title, sub, on, onclick) {
+  const t = document.createElement("button");
+  t.type = "button"; t.className = "tile" + (on ? " on" : "");
+  t.append(Object.assign(document.createElement("b"), { textContent: title }),
+           Object.assign(document.createElement("small"), { textContent: on ? "Playing now" : sub }));
+  t.onclick = onclick;
+  return t;
+}
+function drawHome() {
+  const showOn = !lastSource, [kind, name] = selNow ? [selNow[0], selNow.slice(2)] : ["", ""];
+  const tiles = [tile("All artists", "The whole library", showOn && !selNow, () => playShow({}))];
+  for (const p of allLists) tiles.push(tile(p.name, `Your list · ${p.artists.length} artists`,
+                                            showOn && kind === "p" && name === p.name, () => playShow({ profile: p.name })));
+  if (kind === "a") tiles.push(tile(`${name}`, "Artist radio", showOn, () => playShow({ artist: name })));
+  $("mixTiles").replaceChildren(...tiles);
+  $("stationTiles").replaceChildren(...(rStations.length ? rStations.map(st =>
+    tile(st.name, st.info || "Internet radio", !!rTuned && rTuned.url === st.url, () => tuneTo(st)))
+    : [Object.assign(document.createElement("p"), { className: "muted", style: "margin:0;font-size:.9rem",
+                                                   textContent: "No stations saved yet: search for one above." })]));
+}
+
+// Settings: a list with what each is set to now; each opens its own page.
+const ICONS = {
+  speaker: '<rect x="5" y="3" width="14" height="18" rx="2"/><circle cx="12" cy="14" r="3.5"/><circle cx="12" cy="7" r="1"/>',
+  browser: '<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 9h18M10 13l4 2.5-4 2.5z"/>',
+  test: '<path d="M3 12h3l3-7 4 14 3-7h5"/>',
+  mic: '<rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/>',
+  voice: '<path d="M4 12h2M8 8v8M12 5v14M16 9v6M20 11v2"/>',
+  list: '<path d="M8 6h12M8 12h12M8 18h12M4 6h.01M4 12h.01M4 18h.01"/>',
+  cake: '<path d="M4 21h16v-8H4zM4 16c2 1.5 4 1.5 6 0s4-1.5 6 0 3 1 4 0M12 13V9M12 6v.01"/>',
+  buttons: '<circle cx="6" cy="12" r="2.5"/><circle cx="12" cy="12" r="2.5"/><circle cx="18" cy="12" r="2.5"/><path d="M3 7h18M3 17h18"/>',
+  music: '<path d="M9 18V5l11-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="17" cy="16" r="3"/>',
+  globe: '<circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c3 3.5 3 14.5 0 18M12 3c-3 3.5-3 14.5 0 18"/>',
+  wifi: '<path d="M2 9a15 15 0 0 1 20 0M5 12.5a10 10 0 0 1 14 0M8.5 16a5 5 0 0 1 7 0M12 19.5h.01"/>',
+  update: '<path d="M21 12a9 9 0 1 1-3-6.7L21 8M21 3v5h-5"/>',
+  lock: '<rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/>',
+  save: '<path d="M12 3v12m0 0-4-4m4 4 4-4M4 17v3h16v-3"/>',
+  power: '<path d="M12 3v9M6.3 6.3a8 8 0 1 0 11.4 0"/>',
 };
+const signed = v => (v > 0 ? "+" : v < 0 ? "−" : "") + Math.abs(v);
+function settingRows() {
+  const s = lastStatus, sp = s && s.speaker, dj = lastDj, w = lastWifi;
+  const cap = t => t ? t[0].toUpperCase() + t.slice(1) : t;
+  return [
+    ["Sound", [
+      sp && sp.eq ? ["speaker", "Speakers", `${sp.mono ? "Mono" : "Stereo"} · bass ${signed(sp.eq.bass)}, mid ${signed(sp.eq.mid)}, ` +
+        `treble ${signed(sp.eq.treble)} · low cut ${sp.highpass_hz ? sp.highpass_hz + " Hz" : "off"}`, "speakers"] : null,
+      ["browser", "Listen in a browser", s ? (s.stream ? "On: Listen here on the Radio tab" : "Off") : "…", "stream"],
+      sp ? ["test", "Test sounds and the knob", "Left, then right · sweeps · pink noise · the knob's switch", "tests"] : null]],
+    ["The show", [
+      ["mic", "The DJ", dj ? `Talks ${CHAT[dj.chattiness] || dj.chattiness} · news ${dj.news_enabled ? "on" : "off"} · ` +
+        `jingles ${dj.jingle_every ? "every " + dj.jingle_every : "off"}` : "…", "dj"],
+      ["voice", "Voices", lastVoices ? (lastVoices.current ? `${cap(lastVoices.current)} voice in use` : "No voice: the DJ is silent")
+        : dj && dj.voice ? `${cap(dj.voice)} voice in use` : "…", "voices"],
+      ["buttons", "The radio's buttons", bState ? bState.buttons.map((b, i) => `${i + 1} ${b.preset ? b.label : "empty"}`).join(" · ") : "…", "sheet"],
+      ["list", "Artist lists", allLists.length ? allLists.map(p => p.name).join(", ") : "None yet: make one", "lists"],
+      ["cake", "Birthdays", bdList.length ? `${bdList.length} ${bdList.length === 1 ? "person" : "people"}` : "None yet", "birthdays"]]],
+    ["Music", [
+      ["music", "Music library", s ? `${s.library.tracks.toLocaleString()} songs, ${s.library.jingles} jingles · add or delete` : "…", "library"],
+      ["globe", "Internet stations", `${rStations.length} saved` + (lastDir && lastDir.stations
+        ? ` · directory of ${lastDir.stations.toLocaleString()}` : ""), "stations"]]],
+    ["The radio", [
+      ["wifi", "Wi-Fi", !w ? "…" : w.mode === "station" ? `Connected to ${w.ssid} · ${w.ip}`
+        : w.mode === "hotspot" ? `Hotspot on: ${w.hotspot.ssid}` : w.mode === "connecting" ? "Joining a saved network…" : "Unknown", "wifi"],
+      ["update", "Updates", s ? (lastUpd && lastUpd.available ? `Version ${lastUpd.available.version} available`
+        : `${$("version").textContent || "…"}${lastUpd && lastUpd.job && lastUpd.job.state === "checked" ? " · up to date" : ""}`) : "…", "updates"],
+      ["lock", "Password", lastAuth ? (lastAuth.protected ? "On" : "Off: anyone on your network can use this page") : "…", "password"],
+      ["save", "Save or load settings", "A backup of everything, as a file", "backup"],
+      s && s.can_power_off ? ["power", "Shut down", "Safe to unplug about 20 seconds later", "power", true] : null]],
+  ];
+}
+function drawSettings() {
+  if ($("viewSettings").hidden || pageNow) return;            // only the list shows them
+  $("setHome").replaceChildren(...settingRows().flatMap(([group, rows]) => [
+    Object.assign(document.createElement("h2"), { className: "eyebrow", textContent: group }),
+    Object.assign(document.createElement("div"), { className: "rows" }),
+  ].map((el, i, a) => { if (i === 1) el.append(...rows.filter(Boolean).map(([ic, title, sub, page, danger]) => {
+      const b = document.createElement("button");
+      b.type = "button"; b.className = "rowbtn" + (danger ? " danger" : "");
+      b.innerHTML = `<span class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true">${ICONS[ic]}</svg></span>`;
+      b.append(Object.assign(document.createElement("span"), { className: "t", textContent: title }),
+               Object.assign(document.createElement("span"), { className: "chev", textContent: "›" }));
+      b.querySelector(".t").append(Object.assign(document.createElement("small"), { textContent: sub }));
+      b.onclick = () => page === "sheet" ? openSheet() : go("#set-" + page);
+      return b;
+    })); return el; })));
+}
 
 // Speaker settings sent by the spectrum analyser (tools/analyser): it opens this page as
 // #tune=bass,mid,treble,lowcut. Nothing changes until Apply is pressed here.
@@ -2082,7 +2270,7 @@ async function setTune(t, applying) {
   $("tuneUndo").hidden = !applying || !tuneOld;
   $("tuneClose").textContent = "Done";
   $("tuneNow").textContent = applying
-    ? "Applied and saved. Compare with Undo; change them any time under ⚙ Settings → Speakers."
+    ? "Applied and saved. Compare with Undo; change them any time under Settings → Speakers."
     : `Back to ${tuneWords(tuneOld)}.`;
   if (!applying) { $("tuneApply").hidden = false; $("tuneApply").textContent = "Apply again"; }
 }
@@ -2095,17 +2283,17 @@ function start() {
   if (started) return;
   started = true;
   $("login").hidden = true;
+  $("tabs").hidden = false;
   showView();
   offerTune();
   poll();
   setInterval(poll, 3000);
-  loadArtists(); loadBirthdays(); loadDj(); loadButtons();
+  loadArtists(); loadBirthdays(); loadDj(); loadButtons(); loadRadio();
 }
 function showLogin() {
   if (started) { location.reload(); return; }   // logged out while using it: start clean
   $("login").hidden = false;
-  $("viewMain").hidden = $("viewSettings").hidden = $("viewRadio").hidden = $("viewMedia").hidden = $("gear").hidden = true;
-  $("radioBtn").hidden = true;
+  $("viewMain").hidden = $("viewSettings").hidden = $("viewFind").hidden = $("tabs").hidden = true;
   $("loginPw").focus();
 }
 $("loginForm").onsubmit = async e => {
@@ -2120,6 +2308,7 @@ $("loginForm").onsubmit = async e => {
 };
 
 function showAuth(a) {
+  lastAuth = a; drawSettings();
   $("pwState").textContent = a.protected
     ? "This page has a password; this device stays logged in for 30 days."
     : "No password: anyone on your network can use this page.";

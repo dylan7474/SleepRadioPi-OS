@@ -216,13 +216,26 @@ NTP sets the clock). If the variable isn't set, the clock is trusted.
 
 ### The web page
 
-**http://sleepradiopi.local/** (or the address the knob reads out). The
-main page is the radio's remote control — now playing, **the radio** (the
-knob and the four preset buttons, drawn like the real one), the sleep timer,
-artist radio, play next, recently on air —
-**📻 Streaming** has the buttons' settings, albums and internet radio, and
-**⚙ Settings** has the rest, grouped as Sound, Music and the DJ, and The radio. Cards that need a
-speaker only appear when the station has one.
+**http://sleepradiopi.local/** (or the address the knob reads out). Designed
+for a phone, with three tabs along the bottom (and plain links: `#find`,
+`#settings`, `#set-<page>`; the old `#radio` and `#media` still work):
+
+- **Radio** — a glowing **dial window** with what's on (its needle points at
+  the preset button that's playing; *Skip* or *Back to Sleep Radio*; greyed
+  and "Paused" when paused), **the radio** itself (the knob and the four
+  preset buttons, drawn like the real one), the sleep timer and what's been
+  on air.
+- **Find** — one search over **artists and your lists** (*Artist radio*),
+  **albums** (*Play* start to finish, or *With the DJ*), **songs** (*Play
+  next*) and **internet stations** (your saved ones and the whole directory:
+  *Play*, *Save*), narrowed with Everything / Artists / Albums / Songs /
+  Stations. With nothing typed: tiles for Sleep Radio (everything, your lists,
+  the artist playing) and your saved stations, and what's coming up.
+- **Settings** — a list grouped as Sound, The show, Music and The radio, each
+  row showing what it's set to now; a row opens that setting's own page. Rows
+  that need a speaker only appear when the station has one.
+
+It works with no internet (system fonts, nothing loaded from elsewhere).
 
 **Password (optional).** Off to start with; set, change or remove it under
 Settings → Password. Other phones and computers then get a login screen, and
@@ -277,7 +290,8 @@ The cards:
   then rescanned while it plays (only new files' tags are read); songs lined
   up whose files were deleted are dropped (`media.py`,
   `Station.reload_library`).
-- **Buttons** (main page, and 📻 Streaming to change them) — the four preset
+- **Buttons** (the Radio tab; *Change what the buttons play*, or Settings →
+  The radio's buttons, opens a panel to change them) — the four preset
   buttons on the case (`io/presets.py`), like a car radio's. A press plays
   what the button holds: the show (all artists, an artist or a list), an
   internet station or an album straight through; pressing the one that's
@@ -290,12 +304,12 @@ The cards:
   your stations, the actions); tapping one on the main page is the same as
   pressing it on the case. Wired as GPIO keys (KEY_1–KEY_4, config.txt), read
   alongside the knob.
-- **📻 Streaming: albums** — search the library's albums and play one start
+- **Albums** (Find) — search the library's albums and play one start
   to finish **instead of the show**: no DJ, jingles or news; Skip goes to the
   next track; then back to Sleep Radio. The radio remembers the album and
   track over a restart. (Play next on the main page queues an album *in* the
   show, with the DJ's introduction.)
-- **📻 Streaming: internet radio** — *My stations* (starting with the
+- **Internet radio** (Find, and Settings → Internet stations) — *My stations* (starting with the
   Android app's set: BBC Radio 4 and World Service, Radio Paradise, SomaFM)
   with ▶ Play, remove, and add one by its stream address; *Find stations*
   searches the [Radio Browser](https://www.radio-browser.info/) directory by
@@ -403,7 +417,7 @@ The [spectrum analyser](https://dylan7474.github.io/SleepRadioPi-OS/) (source in
 [`tools/analyser/`](../tools/analyser/)) is a web page for a laptop or a
 phone. It listens through the device's microphone and suggests the speaker EQ and low cut.
 
-**The easy way:** on the radio's page, ⚙ Settings → Speakers → **Tune
+**The easy way:** on the radio's page, Settings → Speakers → **Tune
 speakers…**, from the phone:
 
 1. It opens the analyser in a new tab and the radio plays its **tune** test
@@ -421,7 +435,7 @@ If it starts listening in the middle of a burst, it waits for the next.
 
 1. Put the laptop about 50 cm in front of the radio and press **Measure the
    quiet room**.
-2. Press **Pink noise** on the radio's page (⚙ Settings → Test sound; it
+2. Press **Pink noise** on the radio's page (Settings → Test sounds and the knob; it
    bypasses the EQ and low cut, so it's the bare box), then **Measure the
    radio**.
 3. It suggests bass / mid / treble and a low cut, and draws the curve it
@@ -431,7 +445,7 @@ If it starts listening in the middle of a burst, it waits for the next.
    `#tune=bass,mid,treble,lowcut`. The page shows it next to the current
    settings, and nothing changes until you press **Apply**. **Undo** puts
    the old ones back, so you can compare them by ear. Or **Download
-   settings file** and load it with ⚙ Settings → Backup → Load settings…
+   settings file** and load it with Settings → Save or load settings → Load settings…
 
 How it decides:
 - **Sound** picks what it aims for: *Warm, like a radio* (the default: up
