@@ -196,6 +196,7 @@ Most of these are set from the web page; the rest are in the config file.
 | `web_stream` | `false` | Listen in a browser too (always on without a speaker). |
 | `speaker_mono` | `false` | Both speakers play left + right mixed (the web stream stays stereo). |
 | `speaker_eq` | flat | `{"bass", "mid", "treble"}` in dB, -12 to 12. |
+| `noise_on`, `noise_kind`, `noise_mix` | off, `pink`, `50` | The noise layer: on/off, its colour, and the balance with the programme (0 programme only, 50 both full, 100 noise only). |
 | `speaker_highpass_hz` | `0` | Low cut for the speaker (~140 with the case's bass port); 0 = off. |
 | `knob_step` | `2` | Volume steps per click (1 dB). |
 | `broadcast_voice` | `"stock"` | `"stock"` or `"personal"` (a folder in the voices folder). |
@@ -304,6 +305,18 @@ The cards:
   your stations, the actions); tapping one on the main page is the same as
   pressing it on the case. Wired as GPIO keys (KEY_1–KEY_4, config.txt), read
   alongside the knob.
+- **Noise** (the Radio tab's Noise toggle, Settings → Noise, or a preset button
+  set to *Noise on/off*) — coloured noise to sleep to, as in the SleepRadio app:
+  White, Pink, Brown, Deep brown, Blue, Violet, or Ambient (pink with a slow
+  swell), each at the music's loudness (`audio/noise.py`: FFT-shaped blocks,
+  overlapped so it never repeats, fading in when switched on). It plays **on top
+  of whatever's on** -- the show, a station, an album or a book -- set against it
+  by a **balance** (the middle = both at full level; towards one side turns the
+  other down). The **sleep timer fades and pauses the programme, not the
+  noise**, and a knob pause only pauses the programme: the noise stays on until
+  it's switched off (a small pump thread feeds the speaker while the programme
+  is paused). Only on the radio's own speakers (not the browser stream).
+  Remembered over a restart (`noise_on`, `noise_kind`, `noise_mix`).
 - **Audiobooks** (Find, and the Radio tab while one plays) — books go in their
   own folder, next to the music (`/media/audiobooks` on the radio; upload them
   under Settings → Media library → Audiobooks): a folder of mp3s is one book
@@ -512,7 +525,7 @@ everything but the page itself and the login needs the session cookie
 | `POST /api/login` / `/api/logout` | `{"password"}` → a session cookie (401 if wrong) / forget it |
 | `POST /api/password` | `{"password": "..." \| null}` — set, change or remove (needs to be logged in) |
 | `GET /api/status` | What's on air, next, history, the library, the voice, the speaker (volume, playing, mono, EQ, low cut, sleep timer, test sound), artist/list playing |
-| `POST /api/speaker` | Any of `{"volume": 0-100}`, `{"step": n}`, `{"pause": true \| false \| "toggle"}`, `{"sleep": minutes}` (0 = off), `{"mono": bool}`, `{"eq": {"bass": dB, ...}}`, `{"highpass": Hz}`, `{"test": "bass" \| "sweep" \| "pink" \| "left" \| "right" \| "sides" \| "phase" \| "tune" \| "stop"}` |
+| `POST /api/speaker` | Any of `{"volume": 0-100}`, `{"step": n}`, `{"pause": true \| false \| "toggle"}`, `{"sleep": minutes}` (0 = off), `{"mono": bool}`, `{"noise": true \| false \| "toggle", "noise_kind": "pink", "noise_mix": 0-100}`, `{"eq": {"bass": dB, ...}}`, `{"highpass": Hz}`, `{"test": "bass" \| "sweep" \| "pink" \| "left" \| "right" \| "sides" \| "phase" \| "tune" \| "stop"}` |
 | `POST /api/stream` | `{"enabled": bool}` — listening in a browser on/off (saved as `web_stream`) |
 | `POST /api/knob` | `{"press": "short" \| "long"}` — the knob's switch |
 | `POST /api/skip` | Skip what's on air (track, link, jingle or bulletin) |

@@ -32,7 +32,7 @@ N = 4
 KEYCODES = {2: 0, 3: 1, 4: 2, 5: 3}          # KEY_1..KEY_4 -> button index
 WORDS = ("one", "two", "three", "four")
 ACTIONS = {"time": "Say the time", "news": "The news now", "sleep": "Sleep timer (30 min)",
-           "address": "Say the address"}
+           "address": "Say the address", "noise": "Noise on/off"}
 SLEEP_MIN = 30
 MAX_TEXT = 200
 
@@ -214,12 +214,12 @@ class Presets:
     def apply(self, preset: dict) -> None:
         """Play a (non-action) preset. ValueError if it can't be played here."""
         if preset["kind"] == "show":
-            if self.station.source is not None:
-                self.station.tune(None)
-            if preset["profile"]:
+            if preset["profile"]:                # the choice first, so the show starts with it
                 self.station.set_profile(preset["profile"])
             else:
                 self.station.set_artist(preset["artist"])
+            if self.station.source is not None:
+                self.station.tune(None)
             if self.config_file is not None:
                 save_setting(self.config_file, "broadcast_artist", self.station.artist)
                 save_setting(self.config_file, "broadcast_profile", self.station.profile)
@@ -244,6 +244,8 @@ class Presets:
             self._say(f"Sleep timer, {SLEEP_MIN} minutes." if on else "Sleep timer off.")
         elif action == "address" and self.announcer is not None:
             self.announcer.speak()
+        elif action == "noise" and self.control is not None:
+            self.control.toggle_noise()          # (the noise itself says it's on: no beep)
 
     def _news(self) -> None:
         try:

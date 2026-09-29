@@ -43,6 +43,9 @@ software, and the case to print.
   (the web page's Find tab): your saved stations, or search thousands in the
   [Radio Browser](https://www.radio-browser.info/) directory. What's playing
   shows on the page; same speakers, knob and sleep timer.
+- **Noise to sleep to** — white, pink, brown, blue and more, played on top of
+  whatever's on, with a balance control; the sleep timer fades the programme
+  but leaves the noise playing. A preset button can switch it on and off.
 - **Audiobooks** — mp3 folders or m4b files in their own folder, read with
   nothing from the DJ; each book remembers its place (a minute back after the
   sleep timer, for when you drifted off), with a whole-book progress bar and

@@ -170,7 +170,8 @@ def main() -> None:
         control = SpeakerControl(
             speaker, station.listener_joined, station.listener_left,
             state_file=Path.home() / ".local" / "state" / "sleepradiopi" / "speaker.json",
-            default_volume=settings.speaker_volume, config_file=args.config)
+            default_volume=settings.speaker_volume, config_file=args.config,
+            noise=(settings.noise_on, settings.noise_kind, settings.noise_mix))
         # A long press says the radio's address (for finding the web page away from home).
         # Made only once the show is playing music, so it never holds up the opening.
         on_air = lambda: bool(tts and tts.ready) and station.music_started
@@ -190,7 +191,10 @@ def main() -> None:
         station.on_book_end = control.pause
         buttons = {code: (lambda i=i: presets.press(i), lambda i=i: presets.hold(i))
                    for code, i in presets_mod.KEYCODES.items()}
+        # (SLEEPRADIOPI_INPUT_DIR: somewhere else to look for the knob and buttons -- e.g. an empty
+        # folder for a test run on a desktop, whose keyboard would otherwise count as buttons 1-4)
         Knob(lambda clicks: control.step(clicks * settings.knob_step), control.toggle,
+             devices=Path(os.environ.get("SLEEPRADIOPI_INPUT_DIR", "/dev/input")),
              on_long_press=announcer.speak, buttons=buttons).start()
         control.play()   # a bedside radio plays as soon as it's powered
     else:

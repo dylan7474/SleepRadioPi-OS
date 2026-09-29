@@ -252,3 +252,33 @@ def test_web_api_and_backups(tmp_path: Path) -> None:
     saved["settings"]["buttons"] = [{"kind": "action", "action": "nope"}]
     with pytest.raises(backup.BadSettings, match="buttons"):
         backup.parse(saved)
+
+
+def test_a_list_chosen_while_something_else_plays_starts_with_its_own_songs(tmp_path: Path) -> None:
+    """The Dad list, pressed while an audiobook played, opened with a song that
+    wasn't on it: the song the old choice had lined up."""
+    from dataclasses import asdict
+    from sleepradiopi.broadcast import station as station_mod
+    from sleepradiopi.config.settings import Settings
+    from test_offline import FakeTts, NullOutput
+    for artist in ("ABBA", "Frank Sinatra", "The Beatles"):
+        d = tmp_path / "music" / artist / "Hits"
+        d.mkdir(parents=True)
+        for n in range(1, 6):
+            (d / f"0{n} - {artist} song {n}.mp3").write_bytes(b"x")
+    cfg = asdict(Settings())
+    cfg.update(music_folder=tmp_path / "music", jingles_folder=tmp_path / "none", hooks_file="",
+               scan_cache=tmp_path / "scans.json", tag_cache=None,
+               profiles=[{"name": "Dad", "artists": ["Frank Sinatra"]}])
+    for _ in range(20):                                     # (the lined-up song is random: try often)
+        st = station_mod.Station(cfg, FakeTts(), NullOutput())
+        st.tts = None
+        st._refill()
+        st._in_music = False                                # a station / album / book is on instead
+        st._source = RP
+        p = Presets(st, None, None, [{"kind": "show", "profile": "Dad"}])
+        p.press(0)
+        assert st.source is None and st.profile == "Dad"
+        steps, first = st._take_opening()
+        assert first.artist == "Frank Sinatra"
+        assert all(t.artist == "Frank Sinatra" for t in list(st._queue)[:3])

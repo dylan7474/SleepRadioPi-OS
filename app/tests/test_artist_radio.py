@@ -68,6 +68,7 @@ def test_artist_radio_plays_only_that_artist(tmp_path: Path) -> None:
 def test_on_air_the_announced_next_track_still_plays(tmp_path: Path, monkeypatch) -> None:
     st = _station(tmp_path)
     monkeypatch.setattr(st, "_thread", type("T", (), {"is_alive": lambda self: True})())
+    st._in_music = True                      # the music show is what's on
     st._refill()
     announced = st._queue[0]
     st.set_artist("beatles")                            # any spelling

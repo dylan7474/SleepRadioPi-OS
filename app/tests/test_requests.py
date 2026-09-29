@@ -24,6 +24,7 @@ def _speech(text, *a):
 
 def _on_air(st, monkeypatch):
     monkeypatch.setattr(st, "_thread", type("T", (), {"is_alive": lambda self: True})())
+    st._in_music = True                      # the music show is what's on
     monkeypatch.setattr(st, "_say", _speech)
 
 

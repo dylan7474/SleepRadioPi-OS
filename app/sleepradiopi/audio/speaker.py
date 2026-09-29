@@ -24,6 +24,7 @@ import numpy as np
 
 from sleepradiopi.audio import pcm
 from sleepradiopi.audio.eq import Equalizer, clamp
+from sleepradiopi.audio.noise import KINDS as NOISE_KINDS, NoiseGen
 from sleepradiopi.audio.testsignal import KINDS, SIDE_WORDS, TestSignal
 from sleepradiopi.config.atomic import write_atomic
 from sleepradiopi.config.settings import save_setting
@@ -48,7 +49,15 @@ def gain(volume: int) -> float:
 
 
 class SpeakerOutput:
-    """An Output (start/write/stop) that plays through aplay."""
+    """An Output (start/write/stop) that plays through aplay.
+
+    It also carries the noise layer (audio/noise.py): coloured noise mixed on
+    top of whatever plays, set against it by a balance (0 = programme only,
+    50 = both full, 100 = noise only). The sleep timer fades the programme,
+    not the noise; and while the programme is paused -- the knob, the sleep
+    timer, or no show at all -- a small pump thread keeps the noise going on
+    its own. One writer at a time (the show or the pump), so the EQ sees one
+    stream."""
 
     def __init__(self, device: str = "default", volume: int = 30,
                  command: list[str] | None = None, mono: bool = False,
@@ -61,17 +70,23 @@ class SpeakerOutput:
         self.volume = volume
         self.mono = mono                 # both speakers play (L + R) / 2
         self.eq = eq                     # bass/mid/treble, the speaker only
-        self.fade_end: float | None = None  # sleep timer: silent at this time.monotonic()
-        self.test: TestSignal | None = None  # a test sound, played instead of the show
+        self.fade_end: float | None = None  # sleep timer: the programme silent at this time.monotonic()
+        self.test: TestSignal | None = None  # a test sound, played instead of everything
+        self.noise = None                # the noise layer (a NoiseGen), None = off
+        self.noise_mix = 50              # balance: 0 = programme only, 50 = both full, 100 = noise only
         self.enabled = True
         self._running = False            # between the show's start() and stop()
         self._proc: subprocess.Popen | None = None
         self._lock = threading.Lock()
+        self._io = threading.Lock()      # one writer at a time: the show, or the noise pump
+        self._pump: threading.Thread | None = None
 
     def _open(self) -> None:
         if self.eq is not None:
             self.eq.reset()              # don't replay the end of the last session
-        self._proc = subprocess.Popen(self.command, stdin=subprocess.PIPE)
+        # Unbuffered: Python 3.14 buffers pipes 128 KB (~0.75 s of audio), which would
+        # delay every knob turn and pause by that much on top of the small pipe below.
+        self._proc = subprocess.Popen(self.command, stdin=subprocess.PIPE, bufsize=0)
         try:
             fcntl.fcntl(self._proc.stdin, F_SETPIPE_SZ, PIPE_BYTES)
         except OSError:
@@ -92,27 +107,61 @@ class SpeakerOutput:
             proc.kill()
         log.info("speaker off")
 
+    @property
+    def _show_on(self) -> bool:
+        return self._running and self.enabled
+
+    def _sync(self) -> None:
+        """(Under _lock.) aplay open while the show plays or the noise is on; the
+        pump running while the noise is on and the show isn't."""
+        want = self._show_on or self.noise is not None
+        if want and self._proc is None:
+            self._open()
+        elif not want and self._proc is not None:
+            self._close()
+        if self.noise is not None and not self._show_on and (self._pump is None or not self._pump.is_alive()):
+            self._pump = threading.Thread(target=self._pump_run, name="noise", daemon=True)
+            self._pump.start()
+
+    def _pump_run(self) -> None:
+        while True:
+            with self._lock:
+                if self.noise is None or self._show_on or self._proc is None:
+                    return
+            if not self._emit(None, SLICE_FRAMES):   # blocks on aplay: real time
+                time.sleep(0.1)
+
     # --- Output protocol (the show thread) -----------------------------------------------
 
     def start(self) -> None:
         with self._lock:
             self._running = True
-            if self.enabled and self._proc is None:
-                self._open()
+            self._sync()
 
     def write(self, block: np.ndarray) -> None:
+        if not self.enabled:             # paused: the show's last seconds go nowhere
+            return
         for i in range(0, len(block), SLICE_FRAMES):
+            if not self._emit(block[i:i + SLICE_FRAMES]):
+                return
+
+    def _emit(self, show: np.ndarray | None, n: int = 0) -> bool:
+        """Mix one slice (the programme, or None for noise only) and play it."""
+        with self._io:
             with self._lock:
                 proc = self._proc
                 g = gain(self.volume)
+                fade = 1.0
                 if self.fade_end is not None:
-                    g *= max(0.0, min(1.0, (self.fade_end - time.monotonic()) / SLEEP_FADE_S))
-                test = self.test
+                    fade = max(0.0, min(1.0, (self.fade_end - time.monotonic()) / SLEEP_FADE_S))
+                test, noise, mix = self.test, self.noise, self.noise_mix
+                if show is not None and not self._show_on:
+                    return False
             if proc is None:
-                return
-            x = block[i:i + SLICE_FRAMES].astype(np.float32)
+                return False
+            n = len(show) if show is not None else n
             if test is not None:             # the box as it is: no mono mix, EQ or low cut
-                x = test.next(len(x))
+                x = test.next(n)
                 if test.done:
                     with self._lock:
                         if self.test is test:
@@ -121,36 +170,46 @@ class SpeakerOutput:
                         self.eq.reset()      # don't replay the show from before the test
                     log.info("speaker: %s finished", test.label)
             else:
+                prog = min(1.0, 2 * (1 - mix / 100)) if noise is not None else 1.0
+                x = show.astype(np.float32) * (prog * fade) if show is not None \
+                    else np.zeros((n, pcm.CHANNELS), np.float32)
+                if noise is not None:
+                    x = x + noise.next(n) * min(1.0, 2 * mix / 100)
                 if self.mono:
                     x = np.repeat(x.mean(axis=1, keepdims=True), x.shape[1], axis=1)
                 if self.eq is not None:
                     x = self.eq.process(x)
             part = np.clip(x * g, -32768, 32767).astype(np.int16)
             try:
-                proc.stdin.write(part.tobytes())
+                view = memoryview(part.tobytes())
+                while view:                          # (unbuffered: a write can take part of it)
+                    view = view[proc.stdin.write(view):]
             except (BrokenPipeError, ValueError, OSError):
                 with self._lock:
                     if self._proc is proc:
                         log.error("aplay stopped; reopening the speaker")
                         self._close()
-                        if self._running and self.enabled:
-                            self._open()
-                return
+                        self._sync()
+                return False
+            return True
 
     def stop(self) -> None:
         with self._lock:
             self._running = False
-            self._close()
+            self._sync()
 
-    # --- pause ------------------------------------------------------------------------
+    # --- pause and the noise ------------------------------------------------------------
 
     def set_enabled(self, enabled: bool) -> None:
         with self._lock:
             self.enabled = enabled
-            if not enabled:
-                self._close()
-            elif self._running and self._proc is None:
-                self._open()
+            self._sync()
+
+    def set_noise(self, gen) -> None:
+        """The noise layer on (a NoiseGen) or off (None)."""
+        with self._lock:
+            self.noise = gen
+            self._sync()
 
 
 class TeeOutput:
@@ -184,7 +243,8 @@ class SpeakerControl:
 
     def __init__(self, speaker: SpeakerOutput, join: Callable[[], None],
                  leave: Callable[[], None], state_file: Path | None = None,
-                 default_volume: int = 30, config_file: Path | None = None) -> None:
+                 default_volume: int = 30, config_file: Path | None = None,
+                 noise: tuple[bool, str, int] = (False, "pink", 50)) -> None:
         self.speaker = speaker
         self._join, self._leave = join, leave
         self.state_file = state_file
@@ -201,6 +261,12 @@ class SpeakerControl:
         self.speech: Callable[[str], np.ndarray | None] | None = None
         speaker.volume = self._load(default_volume)
         speaker.set_enabled(False)   # silent until play()
+        # The noise layer: (on, kind, balance) from the settings; it survives a restart.
+        on, kind, mix = noise
+        self.noise_kind = kind if kind in NOISE_KINDS else "pink"
+        speaker.noise_mix = max(0, min(100, int(mix)))
+        if on:
+            speaker.set_noise(NoiseGen(self.noise_kind))
 
     def _load(self, default: int) -> int:
         try:
@@ -275,6 +341,34 @@ class SpeakerControl:
         """Set one key in the config file, keeping the others as they are."""
         if self.config_file is not None:
             save_setting(self.config_file, key, value)
+
+    def set_noise(self, on: bool | None = None, kind: str | None = None, mix: int | None = None) -> None:
+        """The noise layer: on/off, its colour (audio/noise.py KINDS) and the
+        balance against the programme (0-100). Heard at once, and saved."""
+        if kind is not None and kind not in NOISE_KINDS:
+            raise ValueError(f"no such noise: {kind}")
+        with self._lock:
+            if mix is not None:
+                self.speaker.noise_mix = max(0, min(100, int(mix)))
+                self._save_setting("noise_mix", self.speaker.noise_mix)
+            changed_kind = kind is not None and kind != self.noise_kind
+            if kind is not None:
+                self.noise_kind = kind
+                self._save_setting("noise_kind", kind)
+            now_on = self.speaker.noise is not None
+            want = now_on if on is None else bool(on)
+            if on is not None:
+                self._save_setting("noise_on", want)
+        if want and (not now_on or changed_kind):
+            self.speaker.set_noise(NoiseGen(self.noise_kind))
+        elif not want and now_on:
+            self.speaker.set_noise(None)
+        if on is not None or changed_kind:
+            log.info("speaker: noise %s", f"{self.noise_kind} on" if want else "off")
+
+    def toggle_noise(self) -> bool:
+        self.set_noise(on=self.speaker.noise is None)
+        return self.speaker.noise is not None
 
     def step(self, delta: int) -> None:
         self.set_volume(self.speaker.volume + delta)
@@ -393,7 +487,10 @@ class SpeakerControl:
 
     def status(self) -> dict:
         status = {"volume": self.speaker.volume, "playing": not self.paused,
-                  "mono": self.speaker.mono, "sleep_min": None, "sleep_left_s": None}
+                  "mono": self.speaker.mono, "sleep_min": None, "sleep_left_s": None,
+                  "noise": {"on": self.speaker.noise is not None, "kind": self.noise_kind,
+                            "mix": self.speaker.noise_mix,
+                            "kinds": {k: {"label": v[0], "about": v[1]} for k, v in NOISE_KINDS.items()}}}
         test = self.speaker.test
         status["test"] = None if test is None else {
             "kind": test.kind, "label": test.label, "elapsed_s": round(test.elapsed_s, 1),

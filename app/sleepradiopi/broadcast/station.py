@@ -235,6 +235,7 @@ class Station:
         self._source: dict | None = None
         self._switch = threading.Event()     # the source changed: whatever plays gives way
         self._radio_heard = False            # a station has made a sound since start-up
+        self._in_music = False               # the music show is playing (not a station, album or book)
         self.radio_title: str | None = None  # the station's now-playing, if it sends one
         self.radio_playing = False           # its sound is on air (not tuning in / reconnecting)
         self.source_error: str | None = None # why the last source stopped
@@ -341,6 +342,13 @@ class Station:
 
     def _run_music(self) -> None:
         """The Broadcast show, until it ends or the source changes."""
+        self._in_music = True
+        try:
+            self._run_music_show()
+        finally:
+            self._in_music = False
+
+    def _run_music_show(self) -> None:
         self._show_clock.reset()
         self._tracks_since_jingle = 0
         if not self.tracks:
@@ -1378,15 +1386,19 @@ class Station:
 
     def _reselect(self, artist: str | None = None, profile: str | None = None) -> bool:
         with self._lock:
-            on_air = self._thread is not None and self._thread.is_alive()
+            # Mid-show, the song already lined up still plays first (the DJ may have
+            # announced it). Otherwise -- off air, or a station / album / book on
+            # instead -- nothing from the old choice is kept: not the lined-up song,
+            # not the prepared opening (only requests).
+            in_show = self._in_music
             found = self._use_selection(artist, profile)
-            keep = max(1, self._n_requested) if on_air else self._n_requested
-            while len(self._queue) > keep:   # keep requests (and on air the announced song)
+            keep = max(1, self._n_requested) if in_show else self._n_requested
+            while len(self._queue) > keep:
                 self._queue.pop()
-            if not on_air:
+            if not in_show:
                 self._opening = None
         log.info("now playing from: %s (%s)", self.profile or self.artist or "everything", self.builder.station)
-        if not on_air and self.tracks:
+        if not in_show and self.tracks:
             self._prepare_opening()
         return found
 

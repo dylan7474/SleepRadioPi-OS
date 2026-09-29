@@ -59,6 +59,9 @@ class Settings:
     speaker_volume: int = 30          # 0-100 on first start; after that the knob's last setting
     speaker_mono: bool = False        # mix left and right so both speakers play the same
     speaker_eq: dict = field(default_factory=dict)  # {"bass", "mid", "treble"}: dB, -12..12
+    noise_on: bool = False            # the noise layer (audio/noise.py), on top of whatever plays
+    noise_kind: str = "pink"          # white, pink, brown, deep, blue, violet, ambient
+    noise_mix: int = 50               # balance: 0 programme only, 50 both full, 100 noise only
     speaker_highpass_hz: int = 0      # low cut for the speaker (~140 with the box's bass port); 0 = off
     knob_step: int = 2                # volume change per click of the knob
     gpio_pin_mapping: dict = field(default_factory=dict)

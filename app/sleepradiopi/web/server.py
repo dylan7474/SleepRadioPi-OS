@@ -401,6 +401,9 @@ def make_handler(station: Station, output: Mp3Output, speaker=None,
             if "buttons" in changed and presets is not None:
                 presets.set_all(settings["buttons"])
             if speaker is not None:
+                if changed & {"noise_on", "noise_kind", "noise_mix"}:
+                    speaker.set_noise(on=settings.get("noise_on"), kind=settings.get("noise_kind"),
+                                      mix=settings.get("noise_mix"))
                 if "speaker_mono" in settings:
                     speaker.set_mono(settings["speaker_mono"])
                 if "speaker_eq" in settings:
@@ -871,6 +874,16 @@ def make_handler(station: Station, output: Mp3Output, speaker=None,
                             or not 0 <= minutes <= 600:
                         raise ValueError("sleep must be 0-600 minutes")
                     speaker.set_sleep(minutes)
+                if "noise" in body or "noise_kind" in body or "noise_mix" in body:
+                    on = body.get("noise")
+                    if on == "toggle":
+                        on = speaker.speaker.noise is None
+                    kind, mix = body.get("noise_kind"), body.get("noise_mix")
+                    if on is not None and not isinstance(on, bool):
+                        raise ValueError("noise: true, false or \"toggle\"")
+                    if mix is not None and (isinstance(mix, bool) or not isinstance(mix, (int, float)) or not 0 <= mix <= 100):
+                        raise ValueError("noise_mix: 0-100")
+                    speaker.set_noise(on=on, kind=kind, mix=None if mix is None else int(mix))
                 if "test" in body:
                     if body["test"] == "stop":
                         speaker.stop_test()

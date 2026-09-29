@@ -39,12 +39,13 @@ LOCAL = {"music_folder", "jingles_folder", "audiobooks_folder", "voices_folder",
 LIVE = {"speaker_mono", "speaker_eq", "speaker_highpass_hz", "broadcast_artist", "birthdays",
         "profiles", "broadcast_profile", "broadcast_chattiness", "broadcast_dj_hooks",
         "broadcast_jingle_enabled", "broadcast_jingle_every", "news_enabled", "startup_sound", "web_stream",
-        "broadcast_announcer_speed", "news_speed", "radio_stations", "buttons"}
+        "broadcast_announcer_speed", "news_speed", "radio_stations", "buttons", "noise_on", "noise_kind", "noise_mix"}
 
 CHOICES = {
     "broadcast_voice": {None, "stock", "personal"},
     "news_voice": {"same", "stock", "personal"},
     "broadcast_chattiness": {c.ident for c in Chattiness},
+    "noise_kind": {"white", "pink", "brown", "deep", "blue", "violet", "ambient"},
 }
 RANGES = {
     "broadcast_jingle_every": (1, 50),
@@ -57,6 +58,7 @@ RANGES = {
     "speaker_volume": (0, 100),
     "knob_step": (1, 20),
     "speaker_highpass_hz": (0, 300),
+    "noise_mix": (0, 100),
 }
 SHARED = [f for f in fields(Settings) if f.name not in LOCAL]
 
