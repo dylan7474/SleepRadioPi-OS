@@ -646,7 +646,8 @@ def make_handler(station: Station, output: Mp3Output, speaker=None,
                 elif action == "done":
                     changed = media.done()
                     reply = {"changed": changed,
-                             "library": {"tracks": len(station.tracks), "jingles": len(station.jingles)}}
+                             "library": {"tracks": len(station.tracks), "jingles": len(station.jingles),
+                                         "books": len(station.books.all()) if hasattr(station, "books") else 0}}
                 else:
                     self.send_error(404)
                     return
