@@ -370,6 +370,9 @@ class Presets:
             self.menu.press(index)
             return
         preset = self.set(index, self.current())
+        if not getattr(self.station, "dj_on", True):     # the DJ off: no words -- a "saved" sound instead
+            self._clip(beep((1320.0, 1760.0, 1320.0, 1760.0), 0.07), "Button")
+            return
         self._say(f"Button {WORDS[index]}: {self.label(preset)}.")
 
     def apply(self, preset: dict) -> None:
@@ -400,7 +403,7 @@ class Presets:
                 if tts is not None and hasattr(tts, "wake"):
                     tts.wake()                    # (asleep: load it first, so the time is right when said)
                 self._say(self.station.builder.time_line() if clock_trusted()
-                          else "Sorry, I don't know the time yet.")
+                          else "Sorry, I don't know the time yet.", always=True)
             self._clip(beep(), "Button")          # (at once: the voice may need a moment to wake)
             threading.Thread(target=tell, name="button-time", daemon=True).start()
         elif action == "news":
@@ -428,7 +431,7 @@ class Presets:
             log.exception("news now failed")
             audio = None
         if audio is None:
-            self._say("Sorry, there's no news to read. Is the radio online?")
+            self._say("Sorry, there's no news to read. Is the radio online?", always=True)
         else:
             self._clip(audio, "News")
 
@@ -436,13 +439,16 @@ class Presets:
         if self.control is not None:
             self.control.play_clip(Clip(audio, "button", label_))
 
-    def _say(self, text: str, beep_first: bool = True) -> None:
+    def _say(self, text: str, beep_first: bool = True, always: bool = False) -> None:
         """A beep at once, then the line in the DJ's voice (made in the background:
-        slow on a Zero). Just the beep without a voice."""
+        slow on a Zero). Just the beep without a voice -- or with the DJ switched
+        off, unless the words are what was asked for (always: say the time)."""
         log.info("button: %s", text)
         if beep_first:
             self._clip(beep(), "Button")
         if not getattr(self.station, "_has_voice", False) or self.control is None:
+            return
+        if not always and not getattr(self.station, "dj_on", True):
             return
 
         def run():

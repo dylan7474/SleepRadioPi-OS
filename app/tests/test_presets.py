@@ -357,3 +357,30 @@ def test_the_dj_can_be_off(tmp_path) -> None:
     assert said == []
     st._prepare_opening()
     assert not any(s.kind == "say" for s in st._opening[1])       # no welcome either
+
+
+def test_with_the_dj_off_the_buttons_beep_instead_of_talking(tmp_path) -> None:
+    from sleepradiopi.io import presets as pm
+
+    class Station:
+        artist = profile = source = None
+        _has_voice = True
+        dj_on = False
+        rendered = []
+        def render_speech(self, text):
+            self.rendered.append(text)
+            import numpy as np
+            return np.zeros((10, 2), np.int16)
+
+    class Control:
+        clips = []
+        def play_clip(self, clip):
+            self.clips.append(clip)
+    st, c = Station(), Control()
+    p = pm.Presets(st, c, None, [])
+    p.hold(2)                                         # keeps what's playing on button 3...
+    p.press(1)                                        # ...an empty button
+    import time
+    time.sleep(0.2)
+    assert st.rendered == [] and len(c.clips) == 2    # beeps only, no words
+    assert p.presets[2] is not None

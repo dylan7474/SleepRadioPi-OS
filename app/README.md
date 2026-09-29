@@ -412,7 +412,10 @@ The cards:
 - **The DJ** — **on or off** (off: the show is music only, with no speech at
   all — no welcome, links, track intros, time checks, news, Messages or
   birthday wishes, including lines already made before it was switched off;
-  jingles keep their own switch; a preset button can toggle it too: "DJ on/off"),
+  the buttons' confirmations become beeps -- holding one to save what's playing
+  gives four quick high notes -- while "Say the time", the service menu and the
+  spoken address still talk; jingles keep their own switch; a preset button
+  can toggle it too: "DJ on/off"),
   the voice (your voice packs; changing it restarts the radio,
   about a minute, because only one voice fits in a Zero 2 W's memory), how
   often it talks (before every song, or every 2, 3 or 5), 70s hooks on/off,
