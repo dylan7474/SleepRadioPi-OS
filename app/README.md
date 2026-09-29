@@ -213,7 +213,10 @@ Most of these are set from the web page; the rest are in the config file.
 | `speaker_highpass_hz` | `0` | Low cut for the speaker (~140 with the case's bass port); 0 = off. |
 | `knob_step` | `2` | Volume steps per click (1 dB). |
 | `broadcast_voice` | `"stock"` | `"stock"` or `"personal"` (a folder in the voices folder). |
-| `buttons` | `[]` | The four preset buttons: `[preset or null, ...]`, each `{"kind": "show", "artist", "profile"}`, `{"kind": "radio", "name", "url"}`, `{"kind": "album", "folder", "title", "artist"}` or `{"kind": "action", "action": "time" \| "news" \| "sleep" \| "address"}`. |
+| `buttons_night`, `buttons_bank` | `[]`, `"day"` | The night set of four (like `buttons`, which is the day set), and the set in use. Hold buttons 2 and 3 together for 3 s (ticking) to swap: a rising two-note sound for day, falling for night, then the DJ says which. |
+| `buttons_auto` | `{}` | `{"on", "night_min", "day_min"}` (defaults off, 21:00, 07:00): swap the sets by the clock, quietly; a swap by hand lasts until the next switch time. |
+| `broadcast_dj` | `true` | `false`: the show is music only (see *The DJ*). |
+| `buttons` | `[]` | The four preset buttons (the day set): `[preset or null, ...]`, each `{"kind": "show", "artist", "profile"}`, `{"kind": "radio", "name", "url"}`, `{"kind": "album", "folder", "title", "artist"}` or `{"kind": "action", "action": "time" \| "news" \| "sleep" \| "address"}`. |
 | `radio_stations` | the starter set | Internet radio: your saved stations, `[{"name", "url", "info"?}]`. |
 | `stream_source` | `null` | What's playing instead of the show — a station, or an album and the track it's on — kept over a restart; `null` = the show. Not in the settings backup. |
 | `broadcast_artist` / `broadcast_profile` | `null` | Artist radio, or one of your `profiles` (lists of artists); `null` = everything. |
@@ -406,7 +409,10 @@ The cards:
   already lined up next still plays first. If the library has nothing for
   the choice, it plays everything. The jingles say "Sleep Radio", so they
   only play on the main mix (all artists).
-- **The DJ** — the voice (your voice packs; changing it restarts the radio,
+- **The DJ** — **on or off** (off: the show is music only — no welcome, links,
+  track intros, time checks or birthday wishes; the news, Messages and jingles
+  keep their own switches; a preset button can toggle it too: "DJ on/off"),
+  the voice (your voice packs; changing it restarts the radio,
   about a minute, because only one voice fits in a Zero 2 W's memory), how
   often it talks (before every song, or every 2, 3 or 5), 70s hooks on/off,
   jingles (off or every 2–8 songs), the **DJ speed** and **news speed**
@@ -645,6 +651,7 @@ everything but the page itself and the login needs the session cookie
 | `POST /api/media/upload?kind=&dir=&name=` | The file as the body (`name` may include folders); `{"path", "status": "added" \| "same"}` |
 | `POST /api/media/mkdir` / `/api/media/delete` | `{"kind", "path", "name"}` / `{"kind", "path"}` (a file or a folder) |
 | `POST /api/media/done` | Changes finished: /media read-only again, and the library rescanned |
+| `POST /api/buttons/bank` / `/api/buttons/auto` | `{"bank": "day" \| "night"}` (or `{}` to swap), announced on the radio / `{"on", "night_min", "day_min"}`: the timetable. `GET /api/buttons` has `bank` and `auto` |
 | `POST /api/buttons/key` | `{"button": 1-4, "down": bool}` — the page's button going down / up, through the real buttons' timers (tap, 3 s hold, 1+4 for 5 s); one held over 30 s is let go |
 | `GET /api/buttons` | The four preset buttons (`preset`, `label`, `playing`), what's playing now as a preset, and the actions |
 | `POST /api/buttons` | `{"button": 1-4, "preset": {...} \| null}` or `{"button", "now": true}` (keep what's playing on it); a podcast preset is `{"kind": "podcast", "show", "title", "start": gid, "start_title"}` |

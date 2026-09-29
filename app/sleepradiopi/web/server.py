@@ -328,6 +328,8 @@ def make_handler(station: Station, output: Mp3Output, speaker=None,
                 self._buttons(path.endswith("press"))
             elif path == "/api/buttons/key" and presets is not None and presets.keys:
                 self._button_key()
+            elif path in ("/api/buttons/bank", "/api/buttons/auto") and presets is not None:
+                self._button_bank(path.endswith("auto"))
             elif path.startswith("/api/podcasts/") and path.rsplit("/", 1)[1] in ("follow", "unfollow", "play", "heard"):
                 self._podcasts(path.rsplit("/", 1)[1])
             elif path in ("/api/books/play", "/api/books/seek"):
@@ -451,8 +453,9 @@ def make_handler(station: Station, output: Mp3Output, speaker=None,
                 station.set_birthdays(settings["birthdays"])
             if "messages" in changed:
                 station.set_messages(settings["messages"])
-            if "buttons" in changed and presets is not None:
-                presets.set_all(settings["buttons"])
+            if changed & {"buttons", "buttons_night", "buttons_bank", "buttons_auto"} and presets is not None:
+                presets.load_all(settings.get("buttons"), settings.get("buttons_night"),
+                                 settings.get("buttons_bank"), settings.get("buttons_auto"))
             if speaker is not None:
                 if changed & {"noise_on", "noise_kind", "noise_mix"}:
                     speaker.set_noise(on=settings.get("noise_on"), kind=settings.get("noise_kind"),
@@ -621,7 +624,7 @@ def make_handler(station: Station, output: Mp3Output, speaker=None,
                 body = self._body()
                 if not isinstance(body, dict):
                     raise ValueError("send a JSON object")
-                for key in ("dj_hooks", "news_enabled", "startup_sound"):
+                for key in ("dj_hooks", "news_enabled", "startup_sound", "dj_on"):
                     if key in body and not isinstance(body[key], bool):
                         raise ValueError(f"{key} must be true or false")
                 every = body.get("jingle_every")
@@ -632,7 +635,8 @@ def make_handler(station: Station, output: Mp3Output, speaker=None,
                     raise ValueError(f"no voice called {voice!r}")
                 station.set_dj(chattiness=body.get("chattiness"), dj_hooks=body.get("dj_hooks"),
                                jingle_every=every, news_enabled=body.get("news_enabled"),
-                               dj_speed=body.get("dj_speed"), news_speed=body.get("news_speed"))
+                               dj_speed=body.get("dj_speed"), news_speed=body.get("news_speed"),
+                               dj_on=body.get("dj_on"))
             except (ValueError, TypeError, AttributeError) as e:
                 self._error(str(e))
                 return
@@ -648,6 +652,8 @@ def make_handler(station: Station, output: Mp3Output, speaker=None,
                         save_setting(config_file, "broadcast_jingle_every", every)
                 if "news_enabled" in body:
                     save_setting(config_file, "news_enabled", body["news_enabled"])
+                if "dj_on" in body:
+                    save_setting(config_file, "broadcast_dj", body["dj_on"])
                 if "startup_sound" in body:
                     save_setting(config_file, "startup_sound", body["startup_sound"])
                 if "dj_speed" in body:
@@ -772,6 +778,23 @@ def make_handler(station: Station, output: Mp3Output, speaker=None,
             except (ValueError, TypeError, KeyError, AttributeError) as e:
                 self._error(str(e) if isinstance(e, ValueError) else
                             "send {\"button\": 1-4, \"preset\": ...} or {\"button\", \"now\": true}")
+                return
+            self._send(json.dumps(presets.status()).encode(), "application/json")
+
+        def _button_bank(self, auto: bool) -> None:
+            """POST /api/buttons/bank {"bank": "day" | "night"} (or {} to swap): the
+            set of buttons in use (announced on the radio); /api/buttons/auto
+            {"on", "night_min", "day_min"}: the timetable that swaps them. Saved."""
+            try:
+                body = self._body()
+                if auto:
+                    presets.set_auto(body)
+                elif body.get("bank") is None:
+                    presets.toggle_bank()
+                else:
+                    presets.set_bank(body["bank"])
+            except (ValueError, TypeError, AttributeError) as e:
+                self._error(str(e) if isinstance(e, ValueError) else "send {\"bank\": \"day\" | \"night\"}")
                 return
             self._send(json.dumps(presets.status()).encode(), "application/json")
 

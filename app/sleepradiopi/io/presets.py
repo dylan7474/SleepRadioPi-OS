@@ -8,6 +8,14 @@ already playing pauses, and again plays. Holding a button for LONG_PRESS_S
 stores whatever is playing now in it: a beep, then the DJ says "Button two:
 BBC Radio 4". The web page sets them too (Streaming -> Buttons).
 
+There are two sets of the four, **day** and **night**, each with its own
+presets; everything (the real buttons, the page's) uses the one in use.
+Holding buttons 2 and 3 together for BANK_HOLD_S swaps them (it ticks while
+held, then a rising or falling two-note sound, and the DJ says which), the
+page has a switch, and an optional timetable swaps them by the clock
+(`buttons_auto`: night from night_min, day from day_min); a swap by hand
+lasts until the next time on the timetable.
+
 The kernel does the GPIO work (config.txt): gpio-key overlays sending
 KEY_1..KEY_4, read with the knob's input events (io/knob.py).
 """
@@ -32,7 +40,11 @@ N = 4
 KEYCODES = {2: 0, 3: 1, 4: 2, 5: 3}          # KEY_1..KEY_4 -> button index
 WORDS = ("one", "two", "three", "four")
 ACTIONS = {"time": "Say the time", "news": "The news now", "sleep": "Sleep timer (30 min)",
-           "address": "Say the address", "noise": "Noise on/off"}
+           "address": "Say the address", "noise": "Noise on/off", "dj": "DJ on/off"}
+BANKS = ("day", "night")
+BANK_KEYS = (3, 4)          # buttons 2 and 3...
+BANK_HOLD_S = 3.0           # ...held together this long swap day and night
+AUTO_DEFAULT = {"on": False, "night_min": 21 * 60, "day_min": 7 * 60}
 SLEEP_MIN = 30
 MAX_TEXT = 200
 
@@ -83,6 +95,32 @@ def validate_all(presets) -> list:
     return [validate(p) for p in presets] + [None] * (N - len(presets))
 
 
+def validate_auto(auto) -> dict:
+    """The day/night timetable: {"on", "night_min", "day_min"} (minutes after midnight)."""
+    if auto is None:
+        auto = {}
+    if not isinstance(auto, dict):
+        raise ValueError("buttons_auto must be an object")
+    out = {**AUTO_DEFAULT, **{k: v for k, v in auto.items() if k in AUTO_DEFAULT}}
+    if not isinstance(out["on"], bool):
+        raise ValueError("buttons_auto on is true or false")
+    for k in ("night_min", "day_min"):
+        if isinstance(out[k], bool) or not isinstance(out[k], int) or not 0 <= out[k] < 24 * 60:
+            raise ValueError(f"buttons_auto {k} is a time of day (minutes)")
+    if out["night_min"] == out["day_min"]:
+        raise ValueError("night and day can't start at the same time")
+    return out
+
+
+def scheduled_bank(auto: dict, minute: int) -> str | None:
+    """Which set the timetable wants at this minute of the day (None: it's off)."""
+    if not auto["on"]:
+        return None
+    n, d = auto["night_min"], auto["day_min"]
+    night = (minute >= n or minute < d) if n > d else (n <= minute < d)
+    return "night" if night else "day"
+
+
 def label(preset: dict | None, station_name: Callable[[dict], str] | None = None) -> str:
     """What a button is, in words: "BBC Radio 4", "Rubber Soul — The Beatles"."""
     if preset is None:
@@ -125,19 +163,40 @@ class Presets:
     """The buttons' presets, and what a press or a hold does."""
 
     def __init__(self, station, control=None, config_file: Path | None = None,
-                 presets: list | None = None, announcer=None) -> None:
+                 presets: list | None = None, announcer=None, night: list | None = None,
+                 bank: str = "day", auto: dict | None = None) -> None:
         self.station = station
         self.control = control           # SpeakerControl: play/pause, sleep timer, clips
         self.menu = None                 # the service menu (io/service.py): gets the presses while it's open
         self.keys = None                 # the knob's key handlers {keycode: (down, up)}: the page's buttons use them too
         self.config_file = config_file
         self.announcer = announcer       # says the address
+        self.banks = {"day": self._safe(presets), "night": self._safe(night)}
+        self.bank = bank if bank in BANKS else "day"
         try:
-            self.presets = validate_all(presets or [])
+            self.auto = validate_auto(auto)
+        except ValueError as e:
+            log.warning("buttons timetable ignored: %s", e)
+            self.auto = dict(AUTO_DEFAULT)
+        self._auto_last: str | None = None
+        self._lock = threading.Lock()
+
+    @staticmethod
+    def _safe(presets) -> list:
+        try:
+            return validate_all(presets or [])
         except ValueError as e:          # a hand-edited config: don't stop the station
             log.warning("buttons ignored: %s", e)
-            self.presets = [None] * N
-        self._lock = threading.Lock()
+            return [None] * N
+
+    @property
+    def presets(self) -> list:
+        """The four in the set in use."""
+        return self.banks[self.bank]
+
+    @presets.setter
+    def presets(self, value: list) -> None:
+        self.banks[self.bank] = value
 
     # --- what's playing -----------------------------------------------------------------
 
@@ -172,6 +231,7 @@ class Presets:
         return {"buttons": [{"preset": p, "label": self.label(p), "playing": same(p, now)}
                             for p in self.presets],
                 "now": {"preset": now, "label": self.label(now)}, "actions": ACTIONS,
+                "bank": self.bank, "auto": self.auto,
                 "service": self.menu.state if self.menu is not None else None}
 
     # --- setting them -------------------------------------------------------------------
@@ -193,9 +253,89 @@ class Presets:
             self.presets = presets
             self._save()
 
+    def load_all(self, day=None, night=None, bank=None, auto=None) -> None:
+        """From a loaded settings file (any of them may be missing)."""
+        with self._lock:
+            if day is not None:
+                self.banks["day"] = validate_all(day)
+            if night is not None:
+                self.banks["night"] = validate_all(night)
+            if bank in BANKS:
+                self.bank = bank
+            if auto is not None:
+                self.auto = validate_auto(auto)
+                self._auto_last = None
+            self._save()
+
     def _save(self) -> None:
         if self.config_file is not None:
-            save_setting(self.config_file, "buttons", self.presets)
+            save_setting(self.config_file, "buttons", self.banks["day"])
+            save_setting(self.config_file, "buttons_night", self.banks["night"])
+            save_setting(self.config_file, "buttons_bank", self.bank)
+
+    # --- day and night ------------------------------------------------------------------
+
+    def set_bank(self, bank: str, announce: bool = True) -> str:
+        """Use the day or night set. announce: the two-note sound and the DJ saying so."""
+        if bank not in BANKS:
+            raise ValueError("the buttons' set is day or night")
+        with self._lock:
+            changed = bank != self.bank
+            self.bank = bank
+            if changed:
+                self._save()
+        log.info("buttons: the %s set%s", bank, "" if changed else " (already)")
+        if announce:
+            tones = (660.0, 990.0) if bank == "day" else (990.0, 660.0)   # rising for day, falling for night
+            self._clip(beep(tones, 0.16), "Button")
+            self._say(f"{bank.capitalize()} buttons.", beep_first=False)
+        return bank
+
+    def toggle_bank(self) -> str:
+        if self.menu is not None and self.menu.active:
+            return self.bank                  # (the service menu has the buttons)
+        return self.set_bank("night" if self.bank == "day" else "day")
+
+    def set_auto(self, auto: dict) -> dict:
+        """The timetable (validated; saved). It takes effect at once."""
+        auto = validate_auto(auto)
+        with self._lock:
+            self.auto = auto
+            self._auto_last = None
+        if self.config_file is not None:
+            save_setting(self.config_file, "buttons_auto", auto)
+        self.check_auto()
+        return auto
+
+    def check_auto(self, now_minute: int | None = None) -> None:
+        """Swap sets when the timetable passes a switch time (quietly: it may be
+        the middle of the night). A swap by hand lasts until the next one."""
+        if now_minute is None:
+            if not clock_trusted():
+                return
+            import time as _time
+            t = _time.localtime()
+            now_minute = t.tm_hour * 60 + t.tm_min
+        want = scheduled_bank(self.auto, now_minute)
+        if want is None:
+            self._auto_last = None
+            return
+        if want != self._auto_last:
+            self._auto_last = want
+            if want != self.bank:
+                self.set_bank(want, announce=False)
+                log.info("buttons: timetable swapped to the %s set", want)
+
+    def keep_auto(self, every_s: float = 20.0) -> None:
+        def run():
+            import time as _time
+            while True:
+                try:
+                    self.check_auto()
+                except Exception:
+                    log.exception("buttons timetable")
+                _time.sleep(every_s)
+        threading.Thread(target=run, name="buttons-auto", daemon=True).start()
 
     # --- the buttons -----------------------------------------------------------------------
 
@@ -275,6 +415,12 @@ class Presets:
             self.announcer.speak()
         elif action == "noise" and self.control is not None:
             self.control.toggle_noise()          # (the noise itself says it's on: no beep)
+        elif action == "dj":
+            on = not self.station.dj_on
+            self.station.set_dj(dj_on=on)
+            if self.config_file is not None:
+                save_setting(self.config_file, "broadcast_dj", on)
+            self._say("DJ on." if on else "DJ off. Just the music.")
 
     def _news(self) -> None:
         try:
@@ -291,11 +437,12 @@ class Presets:
         if self.control is not None:
             self.control.play_clip(Clip(audio, "button", label_))
 
-    def _say(self, text: str) -> None:
+    def _say(self, text: str, beep_first: bool = True) -> None:
         """A beep at once, then the line in the DJ's voice (made in the background:
         slow on a Zero). Just the beep without a voice."""
         log.info("button: %s", text)
-        self._clip(beep(), "Button")
+        if beep_first:
+            self._clip(beep(), "Button")
         if not getattr(self.station, "_has_voice", False) or self.control is None:
             return
 

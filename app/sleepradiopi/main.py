@@ -421,7 +421,9 @@ def main() -> None:
         if station._has_voice:
             threading.Thread(target=_make_warming_up, args=(station, on_air), name="warming-up",
                              daemon=True).start()
-        presets = presets_mod.Presets(station, control, args.config, settings.buttons, announcer)
+        presets = presets_mod.Presets(station, control, args.config, settings.buttons, announcer,
+                                      settings.buttons_night, settings.buttons_bank, settings.buttons_auto)
+        presets.keep_auto()
         # An audiobook steps back a minute after the sleep timer, and pauses the radio at its end.
         station.paused_by_sleep = lambda: control.slept
         station.on_book_end = control.pause
@@ -431,8 +433,11 @@ def main() -> None:
         menu = presets.menu = _service_menu(station, control, presets, args.config, ready=on_air)
         from sleepradiopi.broadcast.station import _tick
         tick = _tick()
-        chord = Chord({2, 5}, service_mod.HOLD_S, on_start=menu.holding, on_fire=menu.open,
-                      on_tick=lambda: presets._clip(tick, "Button"))   # a tick a second, counting down
+        chord = [Chord({2, 5}, service_mod.HOLD_S, on_start=menu.holding, on_fire=menu.open,
+                       on_tick=lambda: presets._clip(tick, "Button")),   # a tick a second, counting down
+                 # buttons 2 and 3 held: swap the day and night sets of buttons
+                 Chord(set(presets_mod.BANK_KEYS), presets_mod.BANK_HOLD_S, on_start=lambda: None,
+                       on_fire=presets.toggle_bank, on_tick=lambda: presets._clip(tick, "Button"))]
         # (SLEEPRADIOPI_INPUT_DIR: somewhere else to look for the knob and buttons -- e.g. an empty
         # folder for a test run on a desktop, whose keyboard would otherwise count as buttons 1-4)
         knob = Knob(lambda clicks: control.step(clicks * settings.knob_step), control.toggle,
@@ -443,7 +448,9 @@ def main() -> None:
         control.play()   # a bedside radio plays as soon as it's powered
     else:
         station = Station(cfg, tts, stream)
-        presets = presets_mod.Presets(station, None, args.config, settings.buttons)
+        presets = presets_mod.Presets(station, None, args.config, settings.buttons, None,
+                                      settings.buttons_night, settings.buttons_bank, settings.buttons_auto)
+        presets.keep_auto()
     # Podcasts: the shows followed are settings; their episode lists refresh in the background.
     station.podcasts.save = lambda shows: save_setting(args.config, "podcasts", shows)
     station.podcasts.keep_fresh()

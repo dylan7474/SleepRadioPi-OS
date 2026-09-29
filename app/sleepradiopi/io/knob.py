@@ -159,19 +159,20 @@ class Knob:
     def __init__(self, on_turn: Callable[[int], None], on_press: Callable[[], None],
                  devices: Path = Path("/dev/input"),
                  on_long_press: Callable[[], None] | None = None,
-                 buttons: dict | None = None, chord: Chord | None = None) -> None:
+                 buttons: dict | None = None, chord=None) -> None:
         """buttons: keycode -> (on_short, on_long) for the preset buttons;
-        chord: some of them held together."""
+        chord: a Chord (or a list of them): some of them held together."""
+        chords = [] if chord is None else (list(chord) if isinstance(chord, (list, tuple)) else [chord])
         self.on_turn = on_turn
         self.keys = {}
         timers = {}
         for code, (short, long_) in (buttons or {}).items():
             t = timers[code] = PressTimer(short, long_, name=f"button {code - 1}")
-            if chord is None:
+            if not chords:
                 self.keys[code] = (t.down, t.up)
             else:
-                self.keys[code] = (lambda t=t, c=code: (t.down(), chord.key(c, True, timers)),
-                                   lambda t=t, c=code: (chord.key(c, False, timers), t.up()))
+                self.keys[code] = (lambda t=t, c=code: (t.down(), [ch.key(c, True, timers) for ch in chords]),
+                                   lambda t=t, c=code: ([ch.key(c, False, timers) for ch in chords], t.up()))
         if on_long_press is None:            # act as soon as it's pressed
             self.on_press, self.on_release = on_press, None
         else:

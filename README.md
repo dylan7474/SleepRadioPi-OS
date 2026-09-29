@@ -98,6 +98,12 @@ software, and the case to print.
   a 30-minute sleep timer, say the address. Press the one that's playing to
   pause. **Hold one for 3 seconds** to keep what's playing on it (a beep, then
   "Button two: BBC Radio 4"). The same four are on the web page's front.
+  There are **two sets of the four, day and night**: hold **buttons 2 and
+  3** together for 3 seconds to swap (or use the page's ☀ / ☾ switch), and
+  optionally let the radio swap them by the clock.
+- **The DJ can be switched off** (Settings → The DJ, or a button): the show
+  becomes music only, while the news, messages and jingles keep their own
+  switches.
 - **A service menu** for getting a radio back when its page can't be
   reached: **hold buttons 1 and 4 together for 5 seconds** (it ticks once a
   second while they're held) and the DJ reads out the choices, with the

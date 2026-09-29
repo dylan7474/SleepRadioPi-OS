@@ -33,7 +33,11 @@ class Settings:
     broadcast_chattiness: str = "maximum"
     podcasts: list = field(default_factory=list)  # the shows followed: [{"feed_url", "title", "author"}]
     radio_stations: list | None = None    # internet radio: [{"name", "url", "info"?}]; None = the starter set
-    buttons: list = field(default_factory=list)   # the 4 preset buttons (io/presets.py); null = empty
+    buttons: list = field(default_factory=list)   # the 4 preset buttons (io/presets.py); null = empty (the day set)
+    buttons_night: list = field(default_factory=list)   # ...the night set
+    buttons_bank: str = "day"             # the set in use: "day" or "night"
+    buttons_auto: dict = field(default_factory=dict)    # {"on", "night_min", "day_min"}: swap sets by the clock
+    broadcast_dj: bool = True             # False: the show is music only (no welcome, links, time checks)
     stream_source: dict | None = None     # a station or album playing instead of the show; None = the show
     birthdays: list = field(default_factory=list)  # [{"name", "day", "month", "year"?}]: the DJ wishes them on the day
     messages: dict = field(default_factory=dict)   # notes the DJ reads through the day (broadcast/messages.py)

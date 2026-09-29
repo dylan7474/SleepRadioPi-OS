@@ -173,6 +173,10 @@
     box-shadow: 0 3px 0 #7c8189, 0 5px 8px rgba(0,0,0,.28); transition: transform .06s, box-shadow .2s; }
   #chordNote { margin: .5rem 0 0; text-align: center; font-weight: 700; font-variant-numeric: tabular-nums;
                color: #6b4a12; }
+  #bankRow { display: flex; align-items: center; justify-content: space-between; gap: .6rem; flex-wrap: wrap;
+             margin-top: .5rem; }
+  .seg.bank button { padding: .3rem .7rem; font-size: .85rem; }
+  #bankSeg2 { margin: 0 0 .6rem; }
   #presets button { touch-action: none; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; }
   #presets button:active .cap, #presets button.down .cap { transform: translateY(2px); box-shadow: 0 1px 0 #7c8189; }
   #presets button.on .cap { box-shadow: 0 3px 0 #7c8189, 0 0 0 3px var(--amber), 0 0 16px 4px rgba(242,178,74,.75); }
@@ -385,7 +389,13 @@
           <span class="grille"></span><span class="word">SLEEP<br>RADIO</span><span class="grille"></span>
         </div>
       </div>
-      <button id="presetsEdit" class="linkish" type="button" hidden>Change what the buttons play</button>
+      <div id="bankRow" hidden>
+        <div class="seg bank" id="bankSeg" role="group" aria-label="Which set of buttons">
+          <button type="button" data-v="day" title="The day set of buttons">☀ Day</button>
+          <button type="button" data-v="night" title="The night set of buttons">☾ Night</button>
+        </div>
+        <button id="presetsEdit" class="linkish" type="button" hidden>Change what the buttons play</button>
+      </div>
       <p id="volNote" class="muted" hidden>The knob also sets the volume in this browser.</p>
     </section>
 
@@ -615,7 +625,12 @@
     <div class="page" id="page-dj" hidden>
       <div class="page-head"><button class="back" type="button">‹ Settings</button><h1>The DJ</h1></div>
   <section id="dj" class="card" hidden>
-    <div class="row" style="margin-top:0"><label for="djVoice">Voice</label><select id="djVoice"></select></div>
+    <div class="row seg" id="djOn" role="group" aria-label="The DJ on or off" style="margin-top:0">
+      <label>DJ</label>
+      <button type="button" data-v="true" title="Links, time checks and the welcome">On</button>
+      <button type="button" data-v="false" title="Just the music (the news, messages and jingles keep their own switches)">Off: music only</button>
+    </div>
+    <div class="row"><label for="djVoice">Voice</label><select id="djVoice"></select></div>
     <div class="row seg" id="djChat" role="group" aria-label="How chatty">
       <label>Talks</label>
       <button type="button" data-v="maximum" title="A link before every song">Every song</button>
@@ -896,6 +911,9 @@
 <div id="sheet" role="dialog" aria-modal="true" aria-labelledby="sheetTitle" hidden>
   <div class="grab"></div>
   <h3 id="sheetTitle">The radio's buttons</h3>
+  <div class="seg bank" id="bankSeg2" role="group" aria-label="Which set of buttons to see and change">
+    <button type="button" data-v="day">☀ Day set</button><button type="button" data-v="night">☾ Night set</button>
+  </div>
   <section class="card" id="bCard" style="padding:.4rem .9rem">
     <ul id="bList"><li class="muted">Loading…</li></ul>
   </section>
@@ -903,6 +921,18 @@
     (press again to pause). <b>Set to now</b> keeps what's playing on a button, the same as holding it on the
     radio for 3 seconds; or choose from the list. For an album, play it first. A podcast episode on a button
     starts a run: the radio plays on through the newer episodes, in order, up to the latest.</p>
+  <section class="card" id="bAuto" style="padding:.6rem .9rem">
+    <div class="row seg" id="bAutoOn" role="group" aria-label="Swap day and night automatically" style="margin-top:0">
+      <label>Swap by the clock</label>
+      <button type="button" data-v="true">On</button><button type="button" data-v="false">Off</button>
+    </div>
+    <div class="row"><label for="bNightAt">Night from</label><input id="bNightAt" type="time" step="900">
+      <label for="bDayAt" style="margin-left:.6rem">Day from</label><input id="bDayAt" type="time" step="900"></div>
+    <p class="muted" style="margin:.4rem 0 0;font-size:.85rem">Two sets of the four buttons, each with its own
+      presets. Swap them here, with the switch under the buttons, or on the radio by holding buttons
+      <b>2 and 3</b> together for 3 seconds. With the clock on, the radio swaps at those times (quietly); a swap
+      by hand lasts until the next one.</p>
+  </section>
   <button id="sheetDone" class="primary big" type="button">Done</button>
 </div>
 <div id="toast" role="status" hidden></div>
@@ -1348,6 +1378,7 @@ function showDj(d) {
   if (d.voice && !d.voices.includes(d.voice)) v.append(new Option(d.voice, d.voice));
   v.value = d.voice || "";
   v.disabled = d.voices.length < 2;
+  pressSeg("djOn", d.dj_on);
   pressSeg("djChat", d.chattiness);
   pressSeg("djHooks", d.dj_hooks);
   $("djHooks").hidden = !d.hooks_available;
@@ -1386,6 +1417,8 @@ $("djVoice").onchange = e => {
 };
 const CHAT = { maximum: "before every song", chatty: "every 2 songs", balanced: "every 3 songs", minimal: "every 5 songs" };
 document.querySelectorAll("#djChat button").forEach(b => b.onclick = () => setDj({ chattiness: b.dataset.v }, `The DJ now talks ${CHAT[b.dataset.v]}.`));
+document.querySelectorAll("#djOn button").forEach(b => b.onclick = () => setDj({ dj_on: b.dataset.v === "true" },
+  b.dataset.v === "true" ? "The DJ is on." : "The DJ is off: just the music. (The news, messages and jingles have their own switches.)"));
 document.querySelectorAll("#djHooks button").forEach(b => b.onclick = () => setDj({ dj_hooks: b.dataset.v === "true" }, `70s hooks ${b.textContent.toLowerCase()}.`));
 $("djJingles").onchange = e => setDj({ jingle_every: +e.target.value }, +e.target.value ? `A jingle every ${e.target.value} songs.` : "No jingles.");
 document.querySelectorAll("#djStartup button").forEach(b => b.onclick = () => setDj({ startup_sound: b.dataset.v === "true" },
@@ -2381,24 +2414,27 @@ async function buttonKey(n, down) {
     if (!down) setTimeout(() => { poll(); loadButtons(); }, 1000);
   } catch (e) { rNote("bNote", "Couldn't: " + e.message + ".", true); }
 }
-// Buttons 1 and 4 held together: count down to the service menu (the radio's own timer does it).
-const CHORD_S = 5;
-let chordTimer = null, chordLeft = 0;
+// Two buttons held together: count down (the radio's own timers do it). 1 + 4 for
+// 5 s: the service menu; 2 + 3 for 3 s: swap the day and night buttons.
+const CHORDS = [{ keys: [1, 4], s: 5, what: () => "Service menu", done: "Opening the service menu… let go, then listen to the radio." },
+                { keys: [2, 3], s: 3, what: () => `${bState && bState.bank === "day" ? "Night" : "Day"} buttons`,
+                  done: "Swapping the buttons…" }];
+let chordTimer = null, chordLeft = 0, chordOn = null;
 function chordNote(text) { $("chordNote").textContent = text; $("chordNote").hidden = !text; }
 function chordCheck() {
-  const both = keysDown.has(1) && keysDown.has(4);
-  if (both && !chordTimer) {
-    chordLeft = CHORD_S;
-    chordNote(`Service menu in ${chordLeft}…`);
+  const held = CHORDS.find(c => c.keys.every(k => keysDown.has(k)));
+  if (held && !chordTimer) {
+    chordOn = held; chordLeft = held.s;
+    chordNote(`${held.what()} in ${chordLeft}…`);
     chordTimer = setInterval(() => {
       chordLeft -= 1;
-      if (chordLeft > 0) return chordNote(`Service menu in ${chordLeft}…`);
+      if (chordLeft > 0) return chordNote(`${chordOn.what()} in ${chordLeft}…`);
       clearInterval(chordTimer); chordTimer = "done";
-      chordNote("Opening the service menu… let go, then listen to the radio.");
-      setTimeout(() => { if (chordTimer === null) chordNote(""); }, 8000);
+      chordNote(chordOn.done);
+      setTimeout(() => { if (chordTimer === null) chordNote(""); loadButtons(); }, 4000);
     }, 1000);
-  } else if (!both && chordTimer) {
-    if (chordTimer !== "done") { clearInterval(chordTimer); chordNote("Let go too soon: hold both for 5 seconds.");
+  } else if (!held && chordTimer) {
+    if (chordTimer !== "done") { clearInterval(chordTimer); chordNote(`Let go too soon: hold both for ${chordOn.s} seconds.`);
                                  setTimeout(() => { if (chordTimer === null) chordNote(""); }, 4000); }
     chordTimer = null;
   }
@@ -2418,9 +2454,34 @@ function keyUp(btn, n) {
   chordCheck();
   if (!keysDown.size && presetsStale) { presetsStale = false; showPresets(); }
 }
+function showBank() {
+  if (!bState) return;
+  $("bankRow").hidden = false;
+  pressSeg("bankSeg", bState.bank); pressSeg("bankSeg2", bState.bank);
+  $("sheetTitle").textContent = `The radio's buttons: the ${bState.bank} set`;
+  const a = bState.auto || {};
+  pressSeg("bAutoOn", !!a.on);
+  if (a.night_min != null) { $("bNightAt").value = minHM(a.night_min); $("bDayAt").value = minHM(a.day_min); }
+}
+async function setBank(bank) {
+  try { bState = await radioPost("/api/buttons/bank", { bank }); showButtons(); toast(`The ${bank} buttons`); }
+  catch (e) { rNote("bNote", "Couldn't: " + e.message + ".", true); }
+}
+async function setAuto(change) {
+  const a = bState.auto || {};
+  try {
+    bState = await radioPost("/api/buttons/auto", { on: a.on, night_min: a.night_min, day_min: a.day_min, ...change });
+    showButtons();
+  } catch (e) { rNote("bNote", "Not changed: " + e.message + ".", true); showBank(); }
+}
+["bankSeg", "bankSeg2"].forEach(id => document.querySelectorAll(`#${id} button`).forEach(b => b.onclick = () => setBank(b.dataset.v)));
+document.querySelectorAll("#bAutoOn button").forEach(b => b.onclick = () => setAuto({ on: b.dataset.v === "true" }));
+$("bNightAt").onchange = () => $("bNightAt").value && setAuto({ night_min: toMin($("bNightAt").value) });
+$("bDayAt").onchange = () => $("bDayAt").value && setAuto({ day_min: toMin($("bDayAt").value) });
 function showPresets() {
   $("presets").hidden = $("presetsEdit").hidden = !bState;
   if (!bState) return;
+  showBank();
   if (keysDown.size) { presetsStale = true; return; }    // (not while one's held: that would lose it)
   $("presets").replaceChildren(...bState.buttons.map((b, i) => {
     const btn = document.createElement("button");
@@ -2773,11 +2834,13 @@ function settingRows() {
       ["browser", "Listen in a browser", s ? (s.stream ? "On: Listen here on the Radio tab" : "Off") : "…", "stream"],
       sp ? ["test", "Test sounds and the knob", "Left, then right · sweeps · pink noise · the knob's switch", "tests"] : null]],
     ["The show", [
-      ["mic", "The DJ", dj ? `Talks ${CHAT[dj.chattiness] || dj.chattiness} · news ${dj.news_enabled ? "on" : "off"} · ` +
+      ["mic", "The DJ", dj ? (dj.dj_on === false ? "Off: music only · " : `Talks ${CHAT[dj.chattiness] || dj.chattiness} · `) +
+        `news ${dj.news_enabled ? "on" : "off"} · ` +
         `jingles ${dj.jingle_every ? "every " + dj.jingle_every : "off"}` : "…", "dj"],
       ["voice", "Voices", lastVoices ? (lastVoices.current ? `${cap(lastVoices.current)} voice in use` : "No voice: the DJ is silent")
         : dj && dj.voice ? `${cap(dj.voice)} voice in use` : "…", "voices"],
-      ["buttons", "The radio's buttons", bState ? bState.buttons.map((b, i) => `${i + 1} ${b.preset ? b.label : "empty"}`).join(" · ") : "…", "sheet"],
+      ["buttons", "The radio's buttons", bState ? `${bState.bank === "night" ? "☾ Night" : "☀ Day"}: ` +
+        bState.buttons.map((b, i) => `${i + 1} ${b.preset ? b.label : "empty"}`).join(" · ") : "…", "sheet"],
       ["list", "Artist lists", allLists.length ? allLists.map(p => p.name).join(", ") : "None yet: make one", "lists"],
       ["cake", "Birthdays", bdList.length ? `${bdList.length} ${bdList.length === 1 ? "person" : "people"}` : "None yet", "birthdays"],
       ["note", "Messages", !msgState ? "…" : !msgState.list.length ? "None yet: the DJ can read notes through the day"

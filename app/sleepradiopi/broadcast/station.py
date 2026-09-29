@@ -178,6 +178,7 @@ class Station:
         self.scans = pcm.ScanCache(cfg["scan_cache"])
 
         self.chattiness = chattiness.ident
+        self.dj_on = bool(cfg.get("broadcast_dj", True))   # off: music only (news, messages, jingles keep their own switches)
         self.voices_dir: Path | None = cfg.get("voices_dir")
         self._hook_pool = None                # loaded even when off, so they can be turned on
         if cfg["hooks_file"] and Path(cfg["hooks_file"]).is_file():
@@ -1008,7 +1009,7 @@ class Station:
                 "chattiness_options": [c.ident for c in Chattiness],
                 "dj_hooks": self.builder.hooks is not None, "hooks_available": self._hook_pool is not None,
                 "jingle_every": self.config.jingle_every, "jingles_available": self._jingles_available(),
-                "news_enabled": self.config.news_enabled,
+                "news_enabled": self.config.news_enabled, "dj_on": self.dj_on,
                 "dj_speed": self.config.announcer_speed, "news_speed": self.config.news_speed}
 
     def _jingles_available(self) -> bool:
@@ -1019,7 +1020,8 @@ class Station:
 
     def set_dj(self, chattiness: str | None = None, dj_hooks: bool | None = None,
                jingle_every: int | None = None, news_enabled: bool | None = None,
-               dj_speed: float | None = None, news_speed: float | None = None) -> None:
+               dj_speed: float | None = None, news_speed: float | None = None,
+               dj_on: bool | None = None) -> None:
         """Change the DJ live (from the next gap on). ValueError if a value is wrong.
         The speeds (1 = the voice's own pace, higher = faster) apply to lines made
         from now on; one or two may already be made at the old speed."""
@@ -1053,8 +1055,14 @@ class Station:
             self._tracks_since_jingle = 0
         if news_enabled is not None:
             self.config.news_enabled = bool(news_enabled)
-        log.info("DJ: chattiness %s, hooks %s, jingles every %s, news %s, speed %s, news speed %s",
-                 self.chattiness, self.builder.hooks is not None, self.config.jingle_every or "off",
+        if dj_on is not None and bool(dj_on) != self.dj_on:
+            self.dj_on = bool(dj_on)
+            if not self.is_on_air:
+                self._opening = None           # the welcome: made again (with or without the DJ)
+                self._prepare_opening()
+        log.info("DJ %s: chattiness %s, hooks %s, jingles every %s, news %s, speed %s, news speed %s",
+                 "on" if self.dj_on else "off", self.chattiness, self.builder.hooks is not None,
+                 self.config.jingle_every or "off",
                  self.config.news_enabled, self.config.announcer_speed, self.config.news_speed)
 
     @property
@@ -1076,7 +1084,7 @@ class Station:
         # The jingles say "Sleep Radio": none on artist radio or a list.
         jingle_due = self._jingle_due() and self.main_mix
         people = []
-        if self._has_voice:
+        if self._has_voice and self.dj_on:
             now = datetime.now()
             people = self.birthdays.due(now, clock_trusted())
             if people:
@@ -1091,7 +1099,7 @@ class Station:
 
     def _build_gap(self, kind: LinkKind, jingle_due: bool, people: list, prev: BroadcastTrack,
                    nxt: BroadcastTrack | None, message: str | None = None) -> list[Step]:
-        b, voice = self.builder, self._has_voice
+        b, voice = self.builder, self._has_voice and self.dj_on   # (the DJ off: no talk)
         starts = self._album_start(prev, nxt) if nxt is not None else None
         ends = self._album_end(prev)
         if voice and (starts or ends):        # into or out of an album
@@ -1127,7 +1135,7 @@ class Station:
             text = b.build(kind, prev, nxt, announce_every_track=self.config.announce_every_track)
             if text:
                 steps.append(Step("say", self._say(text)))
-        if voice and message:                 # first thing in the gap (after a birthday wish)
+        if self._has_voice and message:       # first thing in the gap (after a birthday wish; even with the DJ off)
             steps.insert(0, Step("say", self._say(message)))
         if voice and people:                  # first thing in the gap
             steps.insert(0, Step("say", self._say(wish_text(people, b.station))))
@@ -1704,7 +1712,7 @@ class Station:
         startup = [j for j in self.jingles if 0 < j.duration_s < STARTUP_JINGLE_MAX_S] if self.main_mix else []
         album = self._album_start(None, first)
         opener = self.builder.album_intro(album, first) if album else self.builder.welcome_first_track(first)
-        if self._has_voice:
+        if self._has_voice and self.dj_on:
             if startup:
                 steps = [Step("say", self._say(greeting)),
                          Step("jingle", jingle=random.choice(startup)),

@@ -41,9 +41,10 @@ LIVE = {"speaker_mono", "speaker_eq", "speaker_highpass_hz", "broadcast_artist",
         "profiles", "broadcast_profile", "broadcast_chattiness", "broadcast_dj_hooks",
         "broadcast_jingle_enabled", "broadcast_jingle_every", "news_enabled", "startup_sound", "web_stream",
         "broadcast_announcer_speed", "news_speed", "radio_stations", "buttons", "noise_on", "noise_kind", "noise_mix",
-        "podcasts", "messages"}
+        "podcasts", "messages", "buttons_night", "buttons_bank", "buttons_auto", "broadcast_dj"}
 
 CHOICES = {
+    "buttons_bank": {"day", "night"},
     "broadcast_voice": {None, "stock", "personal"},
     "news_voice": {"same", "stock", "personal"},
     "broadcast_chattiness": {c.ident for c in Chattiness},
@@ -116,11 +117,16 @@ def _check(name: str, value):
             return podcasts_mod.validate_shows(value)
         except ValueError as e:
             raise BadSettings(f"podcasts: {e}") from None
-    if name == "buttons":
+    if name in ("buttons", "buttons_night"):
         try:
             return presets.validate_all(value)
         except ValueError as e:
-            raise BadSettings(f"buttons: {e}") from None
+            raise BadSettings(f"{name}: {e}") from None
+    if name == "buttons_auto":
+        try:
+            return presets.validate_auto(value)
+        except ValueError as e:
+            raise BadSettings(f"buttons_auto: {e}") from None
     if name == "radio_stations" and value is not None:
         try:
             return radio.validate_stations(value)

@@ -282,3 +282,72 @@ def test_a_list_chosen_while_something_else_plays_starts_with_its_own_songs(tmp_
         steps, first = st._take_opening()
         assert first.artist == "Frank Sinatra"
         assert all(t.artist == "Frank Sinatra" for t in list(st._queue)[:3])
+
+
+def test_day_and_night_sets(tmp_path) -> None:
+    import json
+    from sleepradiopi.io import presets as pm
+    conf = tmp_path / "config.json"
+    conf.write_text("{}")
+
+    class Station:
+        artist = profile = source = None
+        _has_voice = False
+    p = pm.Presets(Station(), None, conf, [{"kind": "action", "action": "time"}], None,
+                   [{"kind": "action", "action": "sleep"}], "day")
+    assert p.presets[0]["action"] == "time" and p.status()["bank"] == "day"
+    p.toggle_bank()
+    assert p.bank == "night" and p.presets[0]["action"] == "sleep"
+    p.set(1, {"kind": "action", "action": "news"})               # changes the night set only
+    saved = json.loads(conf.read_text())
+    assert saved["buttons_bank"] == "night" and saved["buttons_night"][1]["action"] == "news"
+    assert saved["buttons"][1] is None
+    p.set_bank("day", announce=False)
+    assert p.presets[1] is None
+
+
+def test_the_timetable_swaps_at_its_times_and_a_swap_by_hand_lasts_till_the_next() -> None:
+    from sleepradiopi.io import presets as pm
+
+    class Station:
+        artist = profile = source = None
+        _has_voice = False
+    auto = {"on": True, "night_min": 21 * 60, "day_min": 7 * 60}
+    assert pm.scheduled_bank(auto, 22 * 60) == "night" and pm.scheduled_bank(auto, 3 * 60) == "night"
+    assert pm.scheduled_bank(auto, 12 * 60) == "day"
+    assert pm.scheduled_bank({**auto, "night_min": 60, "day_min": 7 * 60}, 30) == "day"   # (night after midnight)
+    assert pm.scheduled_bank({**auto, "on": False}, 22 * 60) is None
+    p = pm.Presets(Station(), None, None, [], None, [], "day", auto)
+    p.check_auto(12 * 60)
+    assert p.bank == "day"
+    p.check_auto(21 * 60 + 1)                                     # 9 pm: night
+    assert p.bank == "night"
+    p.set_bank("day", announce=False)                             # by hand...
+    p.check_auto(23 * 60)
+    assert p.bank == "day"                                        # ...lasts till the next switch time
+    p.check_auto(7 * 60)
+    p.check_auto(21 * 60)
+    assert p.bank == "night"
+    for bad in ({"on": "yes"}, {"night_min": 2000}, {"night_min": 60, "day_min": 60}):
+        try:
+            pm.validate_auto(bad)
+            assert False, bad
+        except ValueError:
+            pass
+
+
+def test_the_dj_can_be_off(tmp_path) -> None:
+    from test_artist_radio import _station
+    from sleepradiopi.broadcast.models import LinkKind
+    st = _station(tmp_path)
+    st._say = lambda text, *a: text
+    track = st._take_next()
+    assert any(s.kind == "say" for s in st._build_gap(LinkKind.LINK, False, [], track, st._take_next()))
+    st.set_dj(dj_on=False)
+    assert st.dj_settings()["dj_on"] is False
+    assert not any(s.kind == "say" for s in st._build_gap(LinkKind.LINK, False, [], track, st._take_next()))
+    assert not any(s.kind == "say" for s in st._build_gap(LinkKind.TIME_CHECK, False, [], track, st._take_next()))
+    msg = st._build_gap(LinkKind.LINK, False, [], track, st._take_next(), "A message for Dad.")
+    assert [s.speech for s in msg if s.kind == "say"] == ["A message for Dad."]   # messages keep their own switch
+    st._prepare_opening()
+    assert not any(s.kind == "say" for s in st._opening[1])       # no welcome either
