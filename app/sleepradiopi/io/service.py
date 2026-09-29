@@ -1,4 +1,4 @@
-"""The service menu: hold preset buttons 1 and 4 together for 15 seconds.
+"""The service menu: hold preset buttons 1 and 4 together for 5 seconds.
 
 For getting a radio back when its page can't be reached (a new Wi-Fi, a
 forgotten password, an update gone wrong) -- no screen, so the DJ talks you
@@ -27,31 +27,33 @@ from collections.abc import Callable
 
 log = logging.getLogger(__name__)
 
-HOLD_S = 15.0          # both buttons held this long opens the menu
+HOLD_S = 5.0           # both buttons held this long opens the menu
 WAIT_S = 45.0          # no press this long after the last words end closes it
 TICK_S = 1.0
 
 MENU = ("Service menu. Press one to restart the radio. Two to reset the Wi-Fi. "
         "Three for a status report. Four for a factory reset. Or press nothing, to leave.")
 CLOSED = "Service menu closed."
-RESTARTING = "Restarting Sleep Radio. It'll be back in about a minute."
+RESTARTING = "Rebooting."
 WIFI = ("Resetting the Wi-Fi. I'll forget the networks added on the web page, and make my own network, "
         "so you can set up a new one.")
 ROLLBACK_ASK = "To go back to the previous version of the software, press three again. Or press nothing, to leave."
-ROLLBACK = "Going back to the previous version of the software. Sleep Radio will restart, in about a minute."
+ROLLBACK = "Going back to the previous version of the software. Rebooting."
 NO_ROLLBACK = "There's no previous version on this radio to go back to, so nothing has changed."
 RESET_ASK = ("Factory reset. This puts every setting back to how it came, including the Wi-Fi and the web "
              "page's password. Your music, audiobooks and voices are kept. To confirm, press two, then three. "
              "Or press nothing, to leave.")
 RESET_NEXT = "Now press three."
-RESETTING = "Resetting all the settings. Sleep Radio will restart, then tell you how to set it up."
+RESETTING = "Resetting all the settings. Restarting, then I'll tell you how to set me up."
 CANCELLED = "Cancelled. Nothing has changed."
 
 
 class ServiceMenu:
     """say(text) speaks (a beep first; the DJ's voice made in the background);
-    prepare(text) makes a line ahead of time. actions: "restart", "wifi",
-    "status" (-> the words), "rollback" (-> True if it's happening), "reset"."""
+    prepare(text) makes a line ahead of time. actions: "wifi", "status" (->
+    the words), and the ones that end with a restart -- "restart", "rollback"
+    (-> True if it's happening), "reset" -- which get their words: they go
+    quiet at once, say them, and only then act (no music in between)."""
 
     def __init__(self, say: Callable[[str], None], actions: dict, prepare: Callable[[str], None] = lambda t: None,
                  wait_s: float = WAIT_S, clock=time.monotonic, busy: Callable[[], bool] = lambda: False) -> None:
@@ -88,6 +90,7 @@ class ServiceMenu:
         a press speaks at once."""
         def run():
             self.prepare(MENU)
+            self.prepare(RESTARTING)
             try:
                 self._status = f"{self.actions['status']()} {ROLLBACK_ASK}"
                 self.prepare(self._status)
@@ -105,42 +108,44 @@ class ServiceMenu:
         if state == "menu":
             if n == 1:
                 self._close()
-                self.say(RESTARTING)
-                self._do("restart")
+                self._do("restart", RESTARTING)
             elif n == 2:
                 self._close()
                 self.say(WIFI)
-                self._do("wifi")
+                self._do("wifi", None)
             elif n == 3:
                 self._to("rollback?", self._status or f"{self.actions['status']()} {ROLLBACK_ASK}")
+                self._prepare(ROLLBACK)
             else:
                 self._to("reset?", RESET_ASK)
         elif state == "rollback?":
             self._close()
             if n == 3:
-                self.say(ROLLBACK)
-                self._do("rollback", lambda ok: ok or self.say(NO_ROLLBACK))
+                self._do("rollback", ROLLBACK, lambda ok: ok or self.say(NO_ROLLBACK))
             else:
                 self.say(CANCELLED)
         elif state == "reset?":
             if n == 2:
                 self._to("reset2", RESET_NEXT)
+                self._prepare(RESETTING)
             else:
                 self._close()
                 self.say(CANCELLED)
         elif state == "reset2":
             self._close()
             if n == 3:
-                self.say(RESETTING)
-                self._do("reset")
+                self._do("reset", RESETTING)
             else:
                 self.say(CANCELLED)
 
-    def _do(self, name: str, then: Callable | None = None) -> None:
-        """An action, in the background (they wait for the words to be said)."""
+    def _prepare(self, text: str) -> None:
+        threading.Thread(target=self.prepare, args=(text,), name="service-prepare", daemon=True).start()
+
+    def _do(self, name: str, words: str | None, then: Callable | None = None) -> None:
+        """An action, in the background (they wait for their words to be said)."""
         def run():
             try:
-                result = self.actions[name]()
+                result = self.actions[name]() if words is None else self.actions[name](words)
             except Exception:
                 log.exception("service menu: %s failed", name)
                 result = None

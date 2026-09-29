@@ -24,7 +24,7 @@ left.
    holes are done (2026-09-29): 16 mm buttons ordered; try them in
    `top_test`, print `tube_buttons` (knob moved back), wire them, and try
    press / hold on the real thing, and the service menu (1 and 4 held for
-   15 s; built 2026-09-29, tried so far from the page). Also worth a thought before the cathedral:
+   5 s; built 2026-09-29, tried so far from the page). Also worth a thought before the cathedral:
    a screw-on lid, so changing the controls means reprinting a lid, not the
    whole ~5-hour tube. Then
    maybe: LEDs showing the playing preset (4 more pins), the DJ's time checks

@@ -64,6 +64,15 @@ STARTUP_JINGLE_MAX_S = 20.0   # the opening ident: longer ones (most jingles) wa
                               # so the first song isn't held back after a slow start-up
 SPEECH_PAD_S = 0.25       # breath of silence either side of the DJ
 SPEECH_WAIT_S = 45.0      # give up on a line that still isn't synthesised after this
+WARM_TICK_S = 3.0         # back to the show, still warming up: a soft tick this often
+
+
+def _tick() -> np.ndarray:
+    """A soft, short "tock" (like a clock), int16 stereo, well below the music."""
+    t = np.arange(int(0.04 * pcm.SAMPLE_RATE)) / pcm.SAMPLE_RATE
+    wave = np.sin(2 * np.pi * 1100 * t) * 0.6 + np.sin(2 * np.pi * 550 * t) * 0.4
+    x = (0.12 * 32767 * wave * np.exp(-t * 120)).astype(np.int16)
+    return np.repeat(x[:, None], pcm.CHANNELS, axis=1)
 PER_LINE_ESTIMATE_S = 4.0  # rough length of a spoken line, for wording a clock after one
 SPEED_MIN, SPEED_MAX = 0.5, 1.5   # DJ / news speech speed (x the voice's own pace), from the page
 RADIO_PREBUFFER_S = 1.0   # internet radio: audio in hand before it plays (and after a stall)
@@ -385,6 +394,15 @@ class Station:
             if i == 0 and not ready() and words.is_file():
                 speech = np.frombuffer(words.read_bytes(), dtype=np.int16).reshape(-1, pcm.CHANNELS)
                 parts.append(np.concatenate([pcm.silence(0.2), speech]))
+        # Still not ready: a soft tick every few seconds, like a clock, so the
+        # wait sounds like a radio getting ready rather than a broken one.
+        tick = np.concatenate([_tick(), pcm.silence(WARM_TICK_S)])
+        end = time.monotonic() + SPEECH_WAIT_S
+        while not ready() and time.monotonic() < end:
+            for block in pcm.blocks(tick):
+                if self._halted() or ready():
+                    return
+                self._write(block)
 
     def _run_music_show(self, back: bool = False) -> None:
         self._show_clock.reset()
@@ -1612,11 +1630,23 @@ class Station:
         """Play only this artist (None = everything). On air, the track already
         lined up next still plays (the DJ may have introduced it), then the
         new choice. False if the library has nothing by that artist."""
+        if self._already(artist, None):
+            return True
         return self._reselect(artist=artist)
 
     def set_profile(self, profile: str | None) -> bool:
         """Play only the artists on this profile (None = everything)."""
+        if self._already(None, profile):
+            return True
         return self._reselect(profile=profile)
+
+    def _already(self, artist: str | None, profile: str | None) -> bool:
+        """Is that the choice already playing (or lined up)? Then nothing changes:
+        a preset button for the show that's on mustn't throw away its welcome,
+        which may be half made (slow on a Zero)."""
+        return (artist or "").lower() == (self.artist or "").lower() \
+            and (profile or "").lower() == (self.profile or "").lower() \
+            and (self._in_music or self._opening is not None)
 
     def set_profiles(self, profiles: list[dict]) -> None:
         """Replace the profiles (validated; ValueError if wrong). If the one
@@ -1638,6 +1668,10 @@ class Station:
             while len(self._queue) > keep:
                 self._queue.pop()
             if not in_show:
+                if self._opening is not None:     # its words needn't be made now
+                    for step in self._opening[1]:
+                        if step.kind == "say":
+                            step.speech.future.cancel()
                 self._opening = None
         log.info("now playing from: %s (%s)", self.profile or self.artist or "everything", self.builder.station)
         if not in_show and self.tracks:

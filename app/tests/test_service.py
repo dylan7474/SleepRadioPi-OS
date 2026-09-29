@@ -18,9 +18,11 @@ class Rig:
 
     def __init__(self, wait_s=30.0, rollback_ok=True):
         self.said, self.done = [], []
-        acts = {name: (lambda name=name: self.done.append(name)) for name in ("restart", "wifi", "reset")}
+        acts = {name: (lambda words, name=name: (self.said.append(words), self.done.append(name)))
+                for name in ("restart", "reset")}
+        acts["wifi"] = lambda: self.done.append("wifi")
         acts["status"] = lambda: "Status report."
-        acts["rollback"] = lambda: self.done.append("rollback") or rollback_ok
+        acts["rollback"] = lambda words: (self.said.append(words), self.done.append("rollback"))[0] or rollback_ok
         self.menu = service.ServiceMenu(self.said.append, acts, wait_s=wait_s)
 
     def press(self, *buttons):
@@ -220,7 +222,7 @@ def test_the_status_is_made_ahead_and_the_wait_starts_after_the_words() -> None:
     m = service.ServiceMenu(said.append, acts, prepare=made.append, wait_s=0.3, busy=lambda: busy[0])
     m.holding()
     time.sleep(0.2)
-    assert made == [service.MENU, f"Status report. {service.ROLLBACK_ASK}"]
+    assert made == [service.MENU, service.RESTARTING, f"Status report. {service.ROLLBACK_ASK}"]
     m.open()
     time.sleep(0.8)
     assert m.active                                  # still talking: not closed

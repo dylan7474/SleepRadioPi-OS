@@ -108,7 +108,7 @@ def test_jingles_only_on_the_main_mix(tmp_path: Path, monkeypatch) -> None:
 def test_no_opening_jingle_off_the_main_mix(tmp_path: Path) -> None:
     st = _station(tmp_path)
     st.jingles = [JingleClip(Path("sleep-radio.mp3"), 4.0)]
-    st.set_artist(None)                          # rebuilds the opening
+    st._reselect(artist=None)                    # rebuilds the opening
     assert any(s.kind == "jingle" for s in st._opening[1])
     st.set_artist("The Beatles")
     assert not any(s.kind == "jingle" for s in st._opening[1])

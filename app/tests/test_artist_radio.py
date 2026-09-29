@@ -116,3 +116,14 @@ def test_web_api_lists_and_sets_the_artist(tmp_path: Path) -> None:
         assert err.value.code == 400
     finally:
         httpd.shutdown()
+
+
+def test_choosing_the_show_that_is_on_keeps_its_welcome(tmp_path) -> None:
+    st = _station(tmp_path)
+    st.set_artist("The Beatles")
+    opening = st._opening
+    assert opening is not None
+    assert st.set_artist("the beatles")               # the same: nothing thrown away
+    assert st._opening is opening
+    st.set_artist(None)                                # a different choice: a new welcome
+    assert st._opening is not opening

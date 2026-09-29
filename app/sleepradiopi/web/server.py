@@ -778,7 +778,7 @@ def make_handler(station: Station, output: Mp3Output, speaker=None,
         def _button_key(self) -> None:
             """POST /api/buttons/key {"button": 1-4, "down": bool}: the page's button
             going down or up, through the same timers as the real ones -- a tap
-            plays, 3 s keeps what's playing, 1 and 4 held for 15 s open the service
+            plays, 3 s keeps what's playing, 1 and 4 held for 5 s open the service
             menu. A button the page never lets go of is let go after KEY_HELD_MAX_S."""
             try:
                 body = self._body()
@@ -973,7 +973,7 @@ def make_handler(station: Station, output: Mp3Output, speaker=None,
         def _knob(self) -> None:
             """/api/knob {"press": "short" | "long" | "service"}: the knob's switch, from
             the page (to try it without the hardware). Short = pause/play, long =
-            say the radio's address; "service" = as holding buttons 1 and 4 for 15 s
+            say the radio's address; "service" = as holding buttons 1 and 4 for 5 s
             (the service menu; then the page's buttons 1-4 answer it)."""
             try:
                 body = json.loads(self.rfile.read(int(self.headers.get("Content-Length", 0))) or b"{}")

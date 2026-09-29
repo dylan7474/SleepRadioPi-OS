@@ -96,7 +96,7 @@ software, and the case to print.
   pause. **Hold one for 3 seconds** to keep what's playing on it (a beep, then
   "Button two: BBC Radio 4"). The same four are on the web page's front.
 - **A service menu** for getting a radio back when its page can't be
-  reached: **hold buttons 1 and 4 together for 15 seconds** (a beep says it's
+  reached: **hold buttons 1 and 4 together for 5 seconds** (a beep says it's
   counting) and the DJ reads out the choices. **1** restarts the radio;
   **2** resets the Wi-Fi (forgets the networks added on the page and makes
   the radio's own SleepRadio-Setup network to set a new one up); **3** gives

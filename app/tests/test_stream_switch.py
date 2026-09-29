@@ -105,8 +105,24 @@ def test_back_to_the_show_warms_up_while_the_welcome_is_made(tmp_path, monkeypat
     monkeypatch.setattr(startup_sound, "speech_file", lambda home, voice: words)
     pending = Future()
     speech = station_mod.Speech("Good evening", "stock", pending)
+    monkeypatch.setattr(station_mod, "SPEECH_WAIT_S", 0.0)        # (no ticks: they're below)
     st._warm_up([station_mod.Step("say", speech)])
     assert sum(written) == 1000 + 500 + int(0.2 * 44100)        # the chime, then the words
+    # still not ready after that: soft ticks, every WARM_TICK_S, until it is
+    monkeypatch.setattr(station_mod, "SPEECH_WAIT_S", 30.0)
+    written.clear()
+
+    def write(block):
+        written.append(len(block))
+        if sum(written) > 3 * 44100 * (station_mod.WARM_TICK_S + 0.04):
+            pending.set_result(None) if not pending.done() else None
+    monkeypatch.setattr(st, "_write", write)
+    st._warm_up([station_mod.Step("say", speech)])
+    assert pending.done() and sum(written) > 3 * 44100 * station_mod.WARM_TICK_S
+    tick = station_mod._tick()
+    assert len(tick) == int(0.04 * 44100) and 0 < abs(tick).max() < 0.15 * 32767
+    pending = Future()
+    speech = station_mod.Speech("Good evening", "stock", pending)
     written.clear()
     pending.set_result(None)
     st._warm_up([station_mod.Step("say", speech)])

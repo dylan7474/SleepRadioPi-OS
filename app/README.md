@@ -27,7 +27,7 @@ and with no network, and is set up from its web page. See
 - **Back to Sleep Radio** from a station, album, audiobook or podcast: if the
   DJ's welcome isn't made yet (a Zero can take a while, more so when the
   voice is reloading), the same chime plays at once, then "Sleep Radio is
-  warming up…" if it's still not ready (`Station._warm_up`; off with *At
+  warming up…" if it's still not ready, then a soft tick every 3 s until it is (`Station._warm_up`; off with *At
   power-on: Silent*).
 - **Power on and it plays.** About 10 seconds after power-up it chimes, and
   the DJ says "Sleep Radio is warming up…", so you know it's alive; the show
@@ -452,13 +452,14 @@ The cards:
   speakers*, below).
 - **Knob switch** — works like the real knob: tap to pause/play, hold 3 s to
   hear the address. If the radio was paused it speaks, then pauses again.
-  **Open the service menu** does what holding buttons 1 and 4 for 15 s does;
+  **Open the service menu** does what holding buttons 1 and 4 for 5 s does;
   answer it with the buttons on the Radio tab. Those buttons behave like the
   real ones: each sends *down* and *up* to the radio (`/api/buttons/key`),
   through the same timers, so a tap plays, a 3 s hold keeps what's playing,
-  and holding 1 and 4 together (two fingers) for 15 s opens the menu.
+  and holding 1 and 4 together (two fingers) for 5 s opens the menu (the
+  page counts down from 5 under the buttons).
 - **The service menu** (`io/service.py`; buttons 1 and 4 held together for
-  15 s — the moment the second goes down, neither button's own press or
+  5 s — the moment the second goes down, neither button's own press or
   3 s hold counts, so a preset is never overwritten; `io/knob.py` `Chord`).
   While it's open the four buttons answer it. **1**: restart (the Pi).
   **2**: reset the Wi-Fi — delete `/data/radio/wifi.json` (the networks
@@ -627,7 +628,7 @@ everything but the page itself and the login needs the session cookie
 | `POST /api/media/upload?kind=&dir=&name=` | The file as the body (`name` may include folders); `{"path", "status": "added" \| "same"}` |
 | `POST /api/media/mkdir` / `/api/media/delete` | `{"kind", "path", "name"}` / `{"kind", "path"}` (a file or a folder) |
 | `POST /api/media/done` | Changes finished: /media read-only again, and the library rescanned |
-| `POST /api/buttons/key` | `{"button": 1-4, "down": bool}` — the page's button going down / up, through the real buttons' timers (tap, 3 s hold, 1+4 for 15 s); one held over 30 s is let go |
+| `POST /api/buttons/key` | `{"button": 1-4, "down": bool}` — the page's button going down / up, through the real buttons' timers (tap, 3 s hold, 1+4 for 5 s); one held over 30 s is let go |
 | `GET /api/buttons` | The four preset buttons (`preset`, `label`, `playing`), what's playing now as a preset, and the actions |
 | `POST /api/buttons` | `{"button": 1-4, "preset": {...} \| null}` or `{"button", "now": true}` (keep what's playing on it); a podcast preset is `{"kind": "podcast", "show", "title", "start": gid, "start_title"}` |
 | `POST /api/buttons/press` | `{"button": 1-4, "hold"?: bool}` — as if pressed (or held) on the case |

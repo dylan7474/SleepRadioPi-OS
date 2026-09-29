@@ -171,6 +171,8 @@
   #presets .cap { width: 3.2rem; height: 3.2rem; border-radius: 50%; display: grid; place-items: center; font-weight: 700;
     font-size: 1.15rem; color: #3b3f45; background: radial-gradient(circle at 35% 30%, #fff, var(--steel) 55%, #8d929a);
     box-shadow: 0 3px 0 #7c8189, 0 5px 8px rgba(0,0,0,.28); transition: transform .06s, box-shadow .2s; }
+  #chordNote { margin: .5rem 0 0; text-align: center; font-weight: 700; font-variant-numeric: tabular-nums;
+               color: #6b4a12; }
   #presets button { touch-action: none; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; }
   #presets button:active .cap, #presets button.down .cap { transform: translateY(2px); box-shadow: 0 1px 0 #7c8189; }
   #presets button.on .cap { box-shadow: 0 3px 0 #7c8189, 0 0 0 3px var(--amber), 0 0 16px 4px rgba(242,178,74,.75); }
@@ -377,6 +379,7 @@
           </div>
           <div id="dialLabel">Volume <b id="volNum">80</b> · <span id="dialState">turn the knob, or tap it to pause</span></div>
           <div id="presets" hidden></div>
+          <p id="chordNote" role="status" aria-live="assertive" hidden></p>
         </div>
         <div id="radioFace" aria-hidden="true">
           <span class="grille"></span><span class="word">SLEEP<br>RADIO</span><span class="grille"></span>
@@ -603,7 +606,7 @@
     <h2 style="margin-top:1rem">Service menu</h2>
     <button id="serviceBtn" type="button">Open the service menu</button>
     <p id="serviceNote" class="muted" style="margin:.5rem 0 0;font-size:.85rem">The same as holding buttons 1 and 4
-      together for 15 seconds (which works on the Radio tab's buttons too, with two fingers). The DJ reads out the choices; answer with the buttons on the Radio tab:
+      together for 5 seconds (which works on the Radio tab's buttons too, with two fingers). The DJ reads out the choices; answer with the buttons on the Radio tab:
       1 restarts the radio, 2 resets the Wi-Fi, 3 gives a status report (then 3 again goes back to the
       previous version of the software), 4 is a factory reset (confirmed with 2, then 3). Doing nothing
       closes it.</p>
@@ -2364,7 +2367,7 @@ function buttonChoices() {
   return groups;
 }
 // The page's buttons go down and up on the radio like the real ones (the same
-// timers: tap, 3 s hold, 1 + 4 held for 15 s = the service menu). Without that
+// timers: tap, 3 s hold, 1 + 4 held for 5 s = the service menu). Without that
 // (a radio with no speaker), a click is a press.
 const keysDown = new Set();
 let presetsStale = false, keyApi = true;
@@ -2378,17 +2381,41 @@ async function buttonKey(n, down) {
     if (!down) setTimeout(() => { poll(); loadButtons(); }, 1000);
   } catch (e) { rNote("bNote", "Couldn't: " + e.message + ".", true); }
 }
+// Buttons 1 and 4 held together: count down to the service menu (the radio's own timer does it).
+const CHORD_S = 5;
+let chordTimer = null, chordLeft = 0;
+function chordNote(text) { $("chordNote").textContent = text; $("chordNote").hidden = !text; }
+function chordCheck() {
+  const both = keysDown.has(1) && keysDown.has(4);
+  if (both && !chordTimer) {
+    chordLeft = CHORD_S;
+    chordNote(`Service menu in ${chordLeft}…`);
+    chordTimer = setInterval(() => {
+      chordLeft -= 1;
+      if (chordLeft > 0) return chordNote(`Service menu in ${chordLeft}…`);
+      clearInterval(chordTimer); chordTimer = "done";
+      chordNote("Opening the service menu… let go, then listen to the radio.");
+      setTimeout(() => { if (chordTimer === null) chordNote(""); }, 8000);
+    }, 1000);
+  } else if (!both && chordTimer) {
+    if (chordTimer !== "done") { clearInterval(chordTimer); chordNote("Let go too soon: hold both for 5 seconds.");
+                                 setTimeout(() => { if (chordTimer === null) chordNote(""); }, 4000); }
+    chordTimer = null;
+  }
+}
 function keyDown(btn, n, e) {
   e.preventDefault();
   if (keysDown.has(n)) return;
   try { btn.setPointerCapture(e.pointerId); } catch {}
   keysDown.add(n); btn.classList.add("down");
   buttonKey(n, true);
+  chordCheck();
 }
 function keyUp(btn, n) {
   if (!keysDown.delete(n)) return;
   btn.classList.remove("down");
   buttonKey(n, false);
+  chordCheck();
   if (!keysDown.size && presetsStale) { presetsStale = false; showPresets(); }
 }
 function showPresets() {

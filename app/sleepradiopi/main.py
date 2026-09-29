@@ -181,10 +181,31 @@ def _service_menu(station: Station, control, presets, config_file: Path):
             except Exception:
                 logging.exception("service menu: couldn't make its words")
 
-    def restart():
+    def quiet_then_say(words):
+        """Go quiet at once, say the words (a beep first), and return when
+        they've been said -- no music in between, before a restart."""
+        import numpy as np
+        from sleepradiopi.audio import pcm
+        from sleepradiopi.io.announce import Clip
+        logging.info("service menu: %s", words)
         control.save_now()
-        time.sleep(6)                 # (time to say so)
         control.pause()
+        parts = [beep(), pcm.silence(0.2)]
+        if station._has_voice:
+            try:
+                parts.append(render(words))
+            except Exception:
+                logging.exception("service menu: couldn't say it")
+        said = sum(len(p) for p in parts)
+        clip = Clip(np.concatenate(parts + [pcm.silence(2.0)]), "button", "Service menu")
+        control.play_clip(clip)
+        end = time.monotonic() + 60
+        while clip.pos < said and time.monotonic() < end:
+            time.sleep(0.05)
+        control.pause()               # (while the clip's quiet tail plays: nothing else is heard)
+
+    def restart(words):
+        quiet_then_say(words)
         if not power.request_restart():
             _restart_soon(control)    # (a desktop: at least restart the station)
 
@@ -203,16 +224,16 @@ def _service_menu(station: Station, control, presets, config_file: Path):
         return service_mod.status_text(addresses(), wifi.status(), this_version(), free, len(station.tracks),
                                        spoken_ip)
 
-    def rollback():
-        time.sleep(8)                 # (time to say so)
-        if not power.request_rollback():
+    def rollback(words):
+        quiet_then_say(words)
+        st = power.rollback_status() if power.request_rollback() else None
+        if not (st and st.get("ok")):
+            control.play()            # nothing to go back to: carry on
             return False
-        st = power.rollback_status()
-        return bool(st and st.get("ok"))
+        return True
 
-    def factory_reset():
-        time.sleep(8)                 # (time to say so)
-        control.pause()
+    def factory_reset(words):
+        quiet_then_say(words)
         reset.factory_reset(config_file, wifi.NETWORKS, volume_file)
         try:
             wifi.ask("hotspot")
@@ -284,7 +305,7 @@ def main() -> None:
         station.on_book_end = control.pause
         buttons = {code: (lambda i=i: presets.press(i), lambda i=i: presets.hold(i))
                    for code, i in presets_mod.KEYCODES.items()}
-        # The service menu: hold buttons 1 and 4 together for 15 s.
+        # The service menu: hold buttons 1 and 4 together for 5 s.
         menu = presets.menu = _service_menu(station, control, presets, args.config)
         chord = Chord({2, 5}, service_mod.HOLD_S, on_start=lambda: (presets._clip(beep(), "Button"), menu.holding()),
                       on_fire=menu.open)
