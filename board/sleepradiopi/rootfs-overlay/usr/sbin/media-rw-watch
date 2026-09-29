@@ -1,0 +1,32 @@
+#!/bin/sh
+# Make /media writable while the web page's music library manager is in use,
+# and read-only again after. The station (user radio, not root) writes the
+# time (epoch seconds) into $LEASE and keeps it fresh while files are being
+# added or deleted; once it's older than $HOLD seconds, or gone, /media goes
+# back to read-only -- so a power cut can't catch it half-written, and if the
+# station stops, it's read-only again by itself. The first time, the music
+# and jingles folders are handed to the radio user (they were root's).
+# Started by init: see the respawn line in /etc/inittab.
+
+LEASE=/run/sleepradiopi/media-rw
+HOLD=120
+
+mode() { awk '$2 == "/media" { split($4, o, ","); print o[1] }' /proc/mounts; }
+
+while sleep 2; do
+	now=$(date +%s)
+	t=$(cat $LEASE 2>/dev/null)
+	case "$t" in ''|*[!0-9]*) t=0 ;; esac
+	if [ $((now - t)) -lt $HOLD ]; then
+		[ "$(mode)" = rw ] && continue
+		mount -o remount,rw /media || continue
+		logger -t media-rw "/media is writable (music library manager)"
+		for d in /media/music /media/jingles; do
+			mkdir -p $d
+			[ "$(ls -ld $d | awk '{print $3}')" = radio ] || chown -R radio:radio $d
+		done
+	elif [ "$(mode)" = rw ]; then
+		sync
+		mount -o remount,ro /media && logger -t media-rw "/media is read-only again"
+	fi
+done

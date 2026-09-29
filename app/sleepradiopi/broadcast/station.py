@@ -177,7 +177,8 @@ class Station:
             log.warning("birthdays ignored: %s", e)
             self.birthdays = BirthdayWishes([], quiet)
 
-        self.tracks = scan_music(self.music_dir, cfg.get("tag_cache"))
+        self._tag_cache = cfg.get("tag_cache")
+        self.tracks = scan_music(self.music_dir, self._tag_cache)
         self.selector = BroadcastSelector(self.tracks)
         self.artist: str | None = None      # artist radio: only this artist's tracks
         self.profile: str | None = None     # ...or only the artists on this list
@@ -1139,6 +1140,34 @@ class Station:
         self.news_repo.mark_read(news.headlines)
 
     # --- opening ----------------------------------------------------------------------
+
+    # --- the library changed (the web page's music manager) ---------------------------
+
+    def reload_library(self) -> dict:
+        """Rescan the music (only new or changed files' tags are read) and the
+        jingles, keeping the artist or list playing; songs lined up whose files
+        have gone are dropped. The song on air carries on."""
+        tracks = scan_music(self.music_dir, self._tag_cache)
+        jingles = scan_jingles(self.jingles_dir) if self.config.jingle_every or self.jingles else []
+        with self._lock:
+            self.tracks = tracks
+            self._album_index = None
+            self._use_selection(self.artist, self.profile)
+            requested = list(self._queue)[:self._n_requested]
+            self._n_requested = sum(1 for t in requested if t.path.exists())
+            self._queue = deque(t for t in self._queue if t.path.exists())
+            self._pending = deque(t for t in self._pending if t.path.exists())
+            if self._opening is not None and not self._opening[2].path.exists():
+                self._opening = None
+            self.jingles = jingles
+            self._jingle_paths = {j.path for j in jingles}
+            self._jingle_bag.clear()
+        for j in jingles:
+            self._scan(j.path)
+        if self._opening is None and not self.is_on_air:
+            self._prepare_opening()
+        log.info("library reloaded: %d tracks, %d jingles", len(tracks), len(jingles))
+        return {"tracks": len(tracks), "jingles": len(jingles)}
 
     # --- artist radio ------------------------------------------------------------------
 

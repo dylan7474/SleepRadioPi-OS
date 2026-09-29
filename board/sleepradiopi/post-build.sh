@@ -45,3 +45,5 @@ grep -q voice-install-watch "${TARGET_DIR}/etc/inittab" ||
 rm -f "${TARGET_DIR}/etc/init.d/S80dnsmasq"
 grep -q update-watch "${TARGET_DIR}/etc/inittab" ||
 	echo "::respawn:/usr/sbin/update-watch" >> "${TARGET_DIR}/etc/inittab"
+grep -q media-rw-watch "${TARGET_DIR}/etc/inittab" ||
+	echo "::respawn:/usr/sbin/media-rw-watch" >> "${TARGET_DIR}/etc/inittab"

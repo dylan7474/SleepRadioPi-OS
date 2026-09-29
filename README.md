@@ -83,7 +83,8 @@ software, and the case to print.
   that fades the speakers out, artist radio, play next (and, if you switch
   it on, listening in the browser too), and the four preset buttons. Under
   📻 Streaming: what the buttons hold, albums straight through, and internet
-  radio stations, saved or found by name. Under ⚙ Settings: the
+  radio stations, saved or found by name. Under ⚙ Settings: the music
+  library (add and delete music and jingles from the page), the
   speakers (stereo/mono, EQ, low cut), the DJ (voice, how often it talks,
   hooks, jingles, news, DJ and news speaking speeds), voices (download the standard one, upload your
   own), your artist lists, birthdays, test sounds for
@@ -506,8 +507,8 @@ What's left to do (everything else described here is built and running):
 
 - **Wire the knob and the RTC** — check the knob's direction, step and long
   press on the real switch, and the RTC keeping time with no network.
-- **Library tools** — copying and syncing music from a desktop library onto
-  the card.
+- **Library tools** — adding and deleting music is on the web page (Settings
+  → Music library); still to do: syncing a whole desktop library in one go.
 - **A needle VU meter** — a physical meter driven from a PWM pin, with the
   Android app's ballistics; one meter first.
 - **Music from any computer** — adding music needs a Linux PC today

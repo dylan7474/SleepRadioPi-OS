@@ -252,6 +252,21 @@ The cards:
   like a record, with no talk, jingles or news between tracks, and a
   back-announcement at the end. *Stop album* goes back to the usual mix
   after the song playing.
+- **Music library** (Settings → Music library → *Manage…*) — browse the
+  music and jingles folders on the radio, **add files or a whole folder**
+  (e.g. an album, keeping its Disc 1 / Disc 2 folders and cover pictures),
+  make folders, and **delete** files or folders (with a confirmation; no
+  undo). Uploads go one file at a time with a progress bar, to a hidden
+  `.part` file then renamed into place, so a dropped connection never leaves
+  half a song; a file that's already there is skipped, and a different one of
+  the same name is kept as "… (2)". Up to 1 GB a file, keeping 200 MB free.
+  `/media` stays read-only (power-cut safe) except while you're changing
+  things: the station asks the root helper `media-rw-watch` for it (a lease
+  in `/run/sleepradiopi/media-rw`) and it goes read-only again ~2 minutes
+  after the last change, or at once when you leave the page. The library is
+  then rescanned while it plays (only new files' tags are read); songs lined
+  up whose files were deleted are dropped (`media.py`,
+  `Station.reload_library`).
 - **Buttons** (main page, and 📻 Streaming to change them) — the four preset
   buttons on the case (`io/presets.py`), like a car radio's. A press plays
   what the button holds: the show (all artists, an artist or a list), an
@@ -464,6 +479,10 @@ everything but the page itself and the login needs the session cookie
 | `POST /api/radio/directory` | Fetch a fresh copy of the station directory now (in the background) |
 | `POST /api/radio/play` / `/api/radio/stop` | `{"name", "url"}` — play that station instead of the show (starts the speaker if paused) / back to the show (from a station or an album) |
 | `POST /api/album/play` | `{"id": n}` from the search's `albums` — play it straight through instead of the show |
+| `GET /api/media?kind=music\|jingles&path=` | A folder of the library: its folders (with item counts) and files, and the space left |
+| `POST /api/media/upload?kind=&dir=&name=` | The file as the body (`name` may include folders); `{"path", "status": "added" \| "same"}` |
+| `POST /api/media/mkdir` / `/api/media/delete` | `{"kind", "path", "name"}` / `{"kind", "path"}` (a file or a folder) |
+| `POST /api/media/done` | Changes finished: /media read-only again, and the library rescanned |
 | `GET /api/buttons` | The four preset buttons (`preset`, `label`, `playing`), what's playing now as a preset, and the actions |
 | `POST /api/buttons` | `{"button": 1-4, "preset": {...} \| null}` or `{"button", "now": true}` (keep what's playing on it) |
 | `POST /api/buttons/press` | `{"button": 1-4, "hold"?: bool}` — as if pressed (or held) on the case |

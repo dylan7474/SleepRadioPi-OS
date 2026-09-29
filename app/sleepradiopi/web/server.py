@@ -30,6 +30,7 @@ from sleepradiopi.config import backup
 from sleepradiopi.config.settings import load as load_settings, save_setting
 from sleepradiopi.playback import radio as radio_mod
 from sleepradiopi.io import presets as presets_mod
+from sleepradiopi import media as media_mod
 from sleepradiopi.config.power import can_power_off, request_power_off
 
 from .stream import Mp3Output
@@ -66,7 +67,7 @@ def _quietly(job) -> None:
 
 def make_handler(station: Station, output: Mp3Output, speaker=None,
                  config_file: Path | None = None, announcer=None, voice_jobs=None, updates=None,
-                 presets=None, directory=None):
+                 presets=None, directory=None, media=None):
     auth = Auth(config_file)
     open_paths = {"/", "/index.html", "/api/auth", "/api/login"}
 
@@ -205,6 +206,14 @@ def make_handler(station: Station, output: Mp3Output, speaker=None,
                                        "profiles": station.profiles}).encode(), "application/json")
             elif path == "/api/buttons" and presets is not None:
                 self._send(json.dumps(presets.status()).encode(), "application/json")
+            elif path == "/api/media" and media is not None:
+                q = parse_qs(urlparse(self.path).query)
+                try:
+                    listing = media.list(q.get("kind", ["music"])[0], q.get("path", [""])[0])
+                except media_mod.MediaError as e:
+                    self._error(str(e))
+                    return
+                self._send(json.dumps(listing).encode(), "application/json")
             elif path == "/api/radio":
                 self._send(json.dumps(self._radio_state()).encode(), "application/json")
             elif path == "/api/radio/search":
@@ -258,6 +267,8 @@ def make_handler(station: Station, output: Mp3Output, speaker=None,
                 self._request()
             elif path == "/api/album":
                 self._album()
+            elif path.startswith("/api/media/") and media is not None:
+                self._media(path.rsplit("/", 1)[1])
             elif path in ("/api/buttons", "/api/buttons/press") and presets is not None:
                 self._buttons(path.endswith("press"))
             elif path == "/api/album/play":
@@ -591,6 +602,44 @@ def make_handler(station: Station, output: Mp3Output, speaker=None,
                     speaker.play()               # choosing a station means "play it"
             self._send(json.dumps(self._radio_state()).encode(), "application/json")
 
+        def _media(self, action: str) -> None:
+            """The music library manager: POST /api/media/upload?kind=&dir=&name= with
+            the file as the body (name may include folders, for a folder upload);
+            /api/media/mkdir {"kind", "path", "name"}; /api/media/delete {"kind",
+            "path"}; /api/media/done {} (changes finished: read-only again, and
+            the library is rescanned)."""
+            if action == "upload":
+                q = parse_qs(urlparse(self.path).query)
+                length = int(self.headers.get("Content-Length", 0) or 0)
+                try:
+                    reply = media.receive(q.get("kind", ["music"])[0], q.get("dir", [""])[0],
+                                          q.get("name", [""])[0], length, self.rfile.read)
+                except media_mod.MediaError as e:
+                    self.close_connection = True          # (the rest of the body wasn't read)
+                    self._error(str(e))
+                    return
+                self._send(json.dumps(reply).encode(), "application/json")
+                return
+            try:
+                body = self._body()
+                kind = body.get("kind", "music")
+                if action == "mkdir":
+                    reply = {"path": media.mkdir(kind, body.get("path", ""), body.get("name", ""))}
+                elif action == "delete":
+                    media.delete(kind, body.get("path", ""))
+                    reply = {"deleted": body.get("path")}
+                elif action == "done":
+                    changed = media.done()
+                    reply = {"changed": changed,
+                             "library": {"tracks": len(station.tracks), "jingles": len(station.jingles)}}
+                else:
+                    self.send_error(404)
+                    return
+            except (media_mod.MediaError, AttributeError, TypeError) as e:
+                self._error(str(e) if isinstance(e, media_mod.MediaError) else "send {\"kind\", \"path\"}")
+                return
+            self._send(json.dumps(reply).encode(), "application/json")
+
         def _buttons(self, press: bool) -> None:
             """POST /api/buttons {"button": 1-4, "preset": {...} | null} (null
             empties it) or {"button", "now": true} (keep what's playing on it);
@@ -827,10 +876,10 @@ def make_handler(station: Station, output: Mp3Output, speaker=None,
 
 def serve(station: Station, output: Mp3Output, port: int, speaker=None,
           config_file: Path | None = None, announcer=None, voice_jobs=None, updates=None,
-          presets=None, directory=None) -> None:
+          presets=None, directory=None, media=None) -> None:
     server = ThreadingHTTPServer(("0.0.0.0", port),
                                  make_handler(station, output, speaker, config_file, announcer, voice_jobs,
-                                              updates, presets, directory))
+                                              updates, presets, directory, media))
     server.daemon_threads = True
     log.info("Sleep Radio on http://0.0.0.0:%d/", port)
     server.serve_forever()

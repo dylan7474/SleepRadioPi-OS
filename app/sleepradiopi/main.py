@@ -29,6 +29,7 @@ from sleepradiopi.io.announce import Announcer
 from sleepradiopi.io.knob import Knob
 from sleepradiopi.io import presets as presets_mod
 from sleepradiopi.playback import radio as radio_mod
+from sleepradiopi.media import MediaLibrary
 from sleepradiopi.tts.worker import TtsWorker
 from sleepradiopi.web.server import serve
 from sleepradiopi.web.stream import Mp3Output
@@ -200,8 +201,11 @@ def main() -> None:
     # Internet radio's station search: a copy of the directory, kept fresh.
     directory = radio_mod.Directory(Path.home() / ".cache" / "sleepradiopi" / "stations.tsv")
     directory.keep_fresh()
+    # The web page's music library manager (upload / delete); the library is rescanned after.
+    media = MediaLibrary({"music": cfg["music_folder"], "jingles": cfg["jingles_folder"]},
+                         on_changed=station.reload_library)
     serve(station, stream, args.port or settings.http_port, control, args.config, announcer, jobs, updates,
-          presets, directory)
+          presets, directory, media)
 
 
 if __name__ == "__main__":

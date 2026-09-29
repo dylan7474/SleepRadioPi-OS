@@ -169,6 +169,21 @@
   #presets button.on { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
   #presets button.on span { color: var(--accent-ink); }
   #presetsCard .card-head a { font-size: .85rem; color: var(--muted); }
+  #mList li { align-items: center; }
+  #mList .t { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+  #mList .t small { color: var(--muted); display: block; }
+  #mList a.open { color: var(--text); text-decoration: none; }
+  #mList a.open:hover, #mList a.open:focus-visible { color: var(--accent); }
+  #mList .rm { flex: none; border-color: transparent; color: var(--muted); padding: .25rem .5rem; }
+  #mCrumbs { display: flex; flex-wrap: wrap; gap: .25rem; align-items: center; margin: 0 0 .6rem; font-size: .95rem; }
+  #mCrumbs a { color: var(--accent); text-decoration: none; }
+  #mTools button, #mNewFolder button { font-size: .9rem; padding: .4rem .8rem; }
+  #mNewFolder input { flex: 1; min-width: 0; font: inherit; color: var(--text); background: var(--bg);
+    border: 1px solid var(--line); border-radius: .5rem; padding: .45rem .5rem; }
+  #mUploads li { font-size: .85rem; align-items: center; }
+  #mUploads .t { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+  #mUploads progress { width: 5rem; accent-color: var(--accent); }
+  #mUploads .bad, #mNote.bad { color: var(--live); }
   #rNowTitle { font-size: 1.15rem; margin: .2rem 0 0; overflow-wrap: anywhere; }
   #rNote.bad, #rFindNote.bad, #rAddNote.bad { color: var(--live); }
   footer { margin-top: 2rem; font-size: .8rem; color: var(--muted); }
@@ -362,6 +377,42 @@
   </section>
   </div>
 
+  <div id="viewMedia" hidden>
+  <div class="view-head">
+    <button id="mediaBack" type="button">‹ Settings</button>
+    <h2>Music library</h2>
+  </div>
+
+  <section class="card">
+    <div class="row seg" role="group" aria-label="Music or jingles" style="margin-top:0">
+      <button type="button" data-kind="music" aria-pressed="true">Music</button>
+      <button type="button" data-kind="jingles" aria-pressed="false">Jingles</button>
+      <span id="mSpace" class="muted" style="font-size:.85rem;margin-left:auto"></span>
+    </div>
+  </section>
+
+  <section class="card">
+    <div id="mCrumbs"></div>
+    <ul id="mList"><li class="muted">Loading…</li></ul>
+    <div id="mTools" class="row">
+      <button id="mAddFiles" type="button">Add files</button>
+      <button id="mAddFolder" type="button" title="A whole folder, e.g. an album, keeping its folders">Add a folder</button>
+      <button id="mMkdir" type="button">New folder</button>
+    </div>
+    <form id="mNewFolder" class="row" hidden>
+      <input id="mFolderName" placeholder="Folder name, e.g. the artist" aria-label="New folder's name" maxlength="200" required>
+      <button type="submit">Make it</button>
+      <button id="mFolderCancel" type="button">Cancel</button>
+    </form>
+    <input id="mFiles" type="file" multiple accept="audio/*,.mp3,.flac,.m4a,.ogg,.opus,.wav" hidden>
+    <input id="mFolder" type="file" webkitdirectory multiple hidden>
+    <ul id="mUploads" style="margin-top:.6rem"></ul>
+    <p id="mNote" class="muted" style="margin:.6rem 0 0;font-size:.85rem">Files go into the folder shown above;
+      a folder keeps its own folders. Music is laid out as Artist / Album / "NN - Title". The radio plays
+      mp3, flac, m4a, ogg, opus and wav (album cover pictures can come too). Deleting can't be undone.</p>
+  </section>
+  </div>
+
   <div id="viewSettings" hidden>
   <div class="view-head">
     <button id="back" type="button">‹ Back to the radio</button>
@@ -474,6 +525,15 @@
       .tar.bz2 or .tar.xz) of a Piper / sherpa-onnx voice folder (a .onnx model, tokens.txt and espeak-ng-data).
       Then pick it as the DJ's voice above.</p>
     <p id="voiceCredit" class="muted" style="margin:.4rem 0 0;font-size:.8rem"></p>
+  </section>
+
+  <section id="libCard" class="card">
+    <div class="card-head">
+      <h2>Music library</h2>
+      <button id="libManage" type="button" style="font-size:.9rem;padding:.4rem .8rem">Manage…</button>
+    </div>
+    <p id="libNote" class="muted" style="margin:.5rem 0 0;font-size:.85rem">Add or delete music and jingles
+      on the radio from here.</p>
   </section>
 
   <section id="lists" class="card">
@@ -1715,16 +1775,166 @@ async function playAlbum(a) {
   } catch (e) { rNote("aNote", "Couldn't play it: " + e.message + ".", true); }
 }
 
+// --- Music library: browse, upload, delete (media.py) -------------------------------
+let mKind = "music", mPath = "", mediaDirty = false, uploading = false;
+const fmtSize = n => n >= 1e9 ? (n / 1e9).toFixed(1) + " GB" : n >= 1e6 ? (n / 1e6).toFixed(1) + " MB"
+                   : Math.max(1, Math.round(n / 1e3)) + " kB";
+function mNote(text, bad) { const n = $("mNote"); n.textContent = text; n.classList.toggle("bad", !!bad); }
+$("libManage").onclick = () => { location.hash = "#media"; };
+$("mediaBack").onclick = () => { location.hash = "#settings"; };
+for (const b of document.querySelectorAll("#viewMedia [data-kind]"))
+  b.onclick = () => { mKind = b.dataset.kind; mPath = ""; loadMedia(); };
+async function loadMedia() {
+  for (const b of document.querySelectorAll("#viewMedia [data-kind]"))
+    b.setAttribute("aria-pressed", String(b.dataset.kind === mKind));
+  $("mAddFolder").hidden = mKind !== "music";
+  try {
+    const r = await fetch(`/api/media?kind=${mKind}&path=${encodeURIComponent(mPath)}`, { cache: "no-store" });
+    const d = await r.json();
+    if (!r.ok) { if (mPath) { mPath = mPath.split("/").slice(0, -1).join("/"); return loadMedia(); } throw new Error(d.error); }
+    showMedia(d);
+  } catch (e) {
+    $("mList").replaceChildren(Object.assign(document.createElement("li"), { className: "muted",
+      textContent: "Couldn't read the library: " + (e.message || "is the radio there?") }));
+  }
+}
+function showMedia(d) {
+  $("mSpace").textContent = `${fmtSize(d.usage.free)} free of ${fmtSize(d.usage.total)}`;
+  const crumbs = [[mKind === "music" ? "Music" : "Jingles", ""]];
+  d.path.split("/").filter(Boolean).forEach((p, i, a) => crumbs.push([p, a.slice(0, i + 1).join("/")]));
+  $("mCrumbs").replaceChildren(...crumbs.flatMap(([name, path], i) => {
+    const last = i === crumbs.length - 1;
+    const el = last ? Object.assign(document.createElement("b"), { textContent: name })
+                    : Object.assign(document.createElement("a"), { href: "#media", textContent: name });
+    if (!last) el.onclick = e => { e.preventDefault(); mPath = path; loadMedia(); };
+    return i ? [Object.assign(document.createElement("span"), { className: "muted", textContent: "›" }), el] : [el];
+  }));
+  const rows = [];
+  for (const f of d.folders) {
+    const li = document.createElement("li");
+    const t = document.createElement("span"); t.className = "t";
+    const a = Object.assign(document.createElement("a"), { className: "open", href: "#media", textContent: "📁 " + f.name });
+    a.onclick = e => { e.preventDefault(); mPath = mPath ? `${mPath}/${f.name}` : f.name; loadMedia(); };
+    t.append(a, Object.assign(document.createElement("small"), { textContent: `${f.items} item${f.items === 1 ? "" : "s"}` }));
+    li.append(t, delButton(f.name, true));
+    rows.push(li);
+  }
+  for (const f of d.files) {
+    const li = document.createElement("li");
+    const t = Object.assign(document.createElement("span"), { className: "t", textContent: (f.audio ? "♪ " : "🖼 ") + f.name });
+    t.append(Object.assign(document.createElement("small"), { textContent: fmtSize(f.size) }));
+    li.append(t, delButton(f.name, false));
+    rows.push(li);
+  }
+  $("mList").replaceChildren(...(rows.length ? rows :
+    [Object.assign(document.createElement("li"), { className: "muted", textContent: "Nothing here yet." })]));
+}
+function delButton(name, folder) {
+  const b = button("🗑", `Delete ${name}`, async () => {
+    const path = mPath ? `${mPath}/${name}` : name;
+    if (!confirm(`Delete ${folder ? "the folder" : ""} "${name}"${folder ? " and everything in it" : ""} from the radio?\n\nThis can't be undone.`)) return;
+    try {
+      await radioPost("/api/media/delete", { kind: mKind, path });
+      mediaDirty = true;
+      mNote(`Deleted ${name}. The radio will update its library in a moment.`);
+      loadMedia();
+      scheduleDone();
+    } catch (e) { mNote("Not deleted: " + e.message + ".", true); }
+  });
+  b.className = "rm"; b.setAttribute("aria-label", `Delete ${name}`);
+  return b;
+}
+let doneTimer = null;
+function scheduleDone() { clearTimeout(doneTimer); doneTimer = setTimeout(() => { if (!uploading) mediaDone(); }, 8000); }
+async function mediaDone(before = "") {
+  clearTimeout(doneTimer);
+  mediaDirty = false;
+  try {
+    const d = await radioPost("/api/media/done");
+    if (d.changed) {
+      const text = `${before}Library updated: ${d.library.tracks.toLocaleString()} songs, ${d.library.jingles} jingles.`;
+      if (!$("viewMedia").hidden) mNote(text); else rNote("libNote", text);
+    }
+  } catch {}
+}
+$("mMkdir").onclick = () => { $("mNewFolder").hidden = false; $("mFolderName").focus(); };
+$("mFolderCancel").onclick = () => { $("mNewFolder").hidden = true; };
+$("mNewFolder").onsubmit = async e => {
+  e.preventDefault();
+  try {
+    const d = await radioPost("/api/media/mkdir", { kind: mKind, path: mPath, name: $("mFolderName").value });
+    $("mNewFolder").hidden = true; $("mFolderName").value = "";
+    mPath = d.path; loadMedia();                    // open it, ready to add files
+  } catch (e) { mNote("No folder made: " + e.message + ".", true); }
+};
+$("mAddFiles").onclick = () => $("mFiles").click();
+$("mAddFolder").onclick = () => $("mFolder").click();
+$("mFiles").onchange = e => { uploadAll([...e.target.files].map(f => [f, f.name])); e.target.value = ""; };
+$("mFolder").onchange = e => { uploadAll([...e.target.files].map(f => [f, f.webkitRelativePath || f.name])); e.target.value = ""; };
+const OK_EXT = /\.(mp3|flac|m4a|ogg|opus|wav|jpe?g|png)$/i;
+async function uploadAll(items) {
+  const wanted = items.filter(([f, name]) => OK_EXT.test(name) && !name.split("/").some(p => p.startsWith(".")) &&
+                                              (mKind === "music" || !/\.(jpe?g|png)$/i.test(name)));
+  const skipped = items.length - wanted.length;
+  if (!wanted.length) return mNote("None of those are files the radio can play.", true);
+  uploading = true;
+  const list = $("mUploads");
+  list.replaceChildren();
+  let added = 0, same = 0, failed = 0;
+  const folder = mPath;
+  for (const [file, name] of wanted) {
+    const li = document.createElement("li");
+    const t = Object.assign(document.createElement("span"), { className: "t", textContent: name });
+    const bar = Object.assign(document.createElement("progress"), { max: 1, value: 0 });
+    li.append(t, bar); list.prepend(li);
+    try {
+      const d = await uploadOne(file, name, folder, p => { bar.value = p; });
+      bar.replaceWith(Object.assign(document.createElement("span"), { className: "muted",
+        textContent: d.status === "same" ? "already there" : "added" }));
+      d.status === "same" ? same++ : added++;
+      mediaDirty = true;
+    } catch (e) {
+      bar.replaceWith(Object.assign(document.createElement("span"), { className: "bad", textContent: e.message }));
+      failed++;
+    }
+    mNote(`Uploading: ${added + same + failed} of ${wanted.length}…`);
+  }
+  uploading = false;
+  const summary = `${added} added${same ? `, ${same} already there` : ""}${failed ? `, ${failed} failed` : ""}` +
+                  `${skipped ? `, ${skipped} other file${skipped === 1 ? "" : "s"} skipped` : ""}. `;
+  mNote(summary, failed > 0);
+  loadMedia();
+  if (added) await mediaDone(summary);
+}
+function uploadOne(file, name, folder, progress) {
+  return new Promise((resolve, reject) => {
+    const x = new XMLHttpRequest();
+    x.open("POST", `/api/media/upload?kind=${mKind}&dir=${encodeURIComponent(folder)}&name=${encodeURIComponent(name)}`);
+    x.upload.onprogress = e => { if (e.lengthComputable) progress(e.loaded / e.total); };
+    x.onload = () => {
+      let d = {};
+      try { d = JSON.parse(x.responseText); } catch {}
+      x.status === 200 ? resolve(d) : reject(new Error(d.error || `the radio said ${x.status}`));
+    };
+    x.onerror = () => reject(new Error("the connection dropped"));
+    x.send(file);
+  });
+}
+
 // --- Views, login and the password ------------------------------------------------
 // The main page has the everyday controls; ⚙ opens Settings (#settings).
 function showView() {
-  const settings = location.hash === "#settings", streaming = location.hash === "#radio";
-  $("viewMain").hidden = settings || streaming;
+  const settings = location.hash === "#settings", streaming = location.hash === "#radio",
+        library = location.hash === "#media";
+  if (!library && mediaDirty) mediaDone();          // leaving the manager: rescan now
+  $("viewMain").hidden = settings || streaming || library;
   $("viewSettings").hidden = !settings;
   $("viewRadio").hidden = !streaming;
-  $("gear").hidden = settings;
-  $("radioBtn").hidden = streaming;
+  $("viewMedia").hidden = !library;
+  $("gear").hidden = settings || library;
+  $("radioBtn").hidden = streaming || library;
   if (streaming) loadRadio();
+  if (library) loadMedia();
   if (settings) { fillListPick(); showListEditor(); loadAuth(); loadVoices(); loadUpdate(); loadWifi(); }
   window.scrollTo(0, 0);
 }
@@ -1802,7 +2012,7 @@ function start() {
 function showLogin() {
   if (started) { location.reload(); return; }   // logged out while using it: start clean
   $("login").hidden = false;
-  $("viewMain").hidden = $("viewSettings").hidden = $("viewRadio").hidden = $("gear").hidden = true;
+  $("viewMain").hidden = $("viewSettings").hidden = $("viewRadio").hidden = $("viewMedia").hidden = $("gear").hidden = true;
   $("radioBtn").hidden = true;
   $("loginPw").focus();
 }
