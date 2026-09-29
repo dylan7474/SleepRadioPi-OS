@@ -104,7 +104,8 @@ software, and the case to print.
   and then **3 again** goes back to the previous version of the software;
   **4** is a **factory reset**, confirmed by pressing **2, then 3**: every
   setting back to how it came, Wi-Fi and the page's password included,
-  keeping the music, audiobooks and voices. Doing nothing closes it.
+  keeping the music, audiobooks and voices. Doing nothing closes it. The
+  web page's buttons work the same way (two fingers for 1 and 4).
 - **The web page** — http://sleepradiopi.local/ from any phone or computer
   on your network (optionally with a password) is its remote control.
   Everyday controls up front: now playing and skip, volume and a sleep timer

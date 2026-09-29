@@ -171,7 +171,8 @@
   #presets .cap { width: 3.2rem; height: 3.2rem; border-radius: 50%; display: grid; place-items: center; font-weight: 700;
     font-size: 1.15rem; color: #3b3f45; background: radial-gradient(circle at 35% 30%, #fff, var(--steel) 55%, #8d929a);
     box-shadow: 0 3px 0 #7c8189, 0 5px 8px rgba(0,0,0,.28); transition: transform .06s, box-shadow .2s; }
-  #presets button:active .cap { transform: translateY(2px); box-shadow: 0 1px 0 #7c8189; }
+  #presets button { touch-action: none; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; }
+  #presets button:active .cap, #presets button.down .cap { transform: translateY(2px); box-shadow: 0 1px 0 #7c8189; }
   #presets button.on .cap { box-shadow: 0 3px 0 #7c8189, 0 0 0 3px var(--amber), 0 0 16px 4px rgba(242,178,74,.75); }
   #presets .lbl { max-width: 100%; overflow-wrap: anywhere; min-height: 2.4em; display: -webkit-box;
                   -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
@@ -602,7 +603,7 @@
     <h2 style="margin-top:1rem">Service menu</h2>
     <button id="serviceBtn" type="button">Open the service menu</button>
     <p id="serviceNote" class="muted" style="margin:.5rem 0 0;font-size:.85rem">The same as holding buttons 1 and 4
-      together for 15 seconds. The DJ reads out the choices; answer with the buttons on the Radio tab:
+      together for 15 seconds (which works on the Radio tab's buttons too, with two fingers). The DJ reads out the choices; answer with the buttons on the Radio tab:
       1 restarts the radio, 2 resets the Wi-Fi, 3 gives a status report (then 3 again goes back to the
       previous version of the software), 4 is a factory reset (confirmed with 2, then 3). Doing nothing
       closes it.</p>
@@ -2362,9 +2363,38 @@ function buttonChoices() {
                   ["", [["Empty", null]]]];
   return groups;
 }
+// The page's buttons go down and up on the radio like the real ones (the same
+// timers: tap, 3 s hold, 1 + 4 held for 15 s = the service menu). Without that
+// (a radio with no speaker), a click is a press.
+const keysDown = new Set();
+let presetsStale = false, keyApi = true;
+async function buttonKey(n, down) {
+  if (!keyApi) { if (!down) pressButton(n); return; }
+  try {
+    const r = await fetch("/api/buttons/key", { method: "POST", headers: { "Content-Type": "application/json" },
+                                                body: JSON.stringify({ button: n, down }) });
+    if (r.status === 404) { keyApi = false; if (!down) pressButton(n); return; }
+    if (!r.ok) throw new Error((await r.json()).error);
+    if (!down) setTimeout(() => { poll(); loadButtons(); }, 1000);
+  } catch (e) { rNote("bNote", "Couldn't: " + e.message + ".", true); }
+}
+function keyDown(btn, n, e) {
+  e.preventDefault();
+  if (keysDown.has(n)) return;
+  try { btn.setPointerCapture(e.pointerId); } catch {}
+  keysDown.add(n); btn.classList.add("down");
+  buttonKey(n, true);
+}
+function keyUp(btn, n) {
+  if (!keysDown.delete(n)) return;
+  btn.classList.remove("down");
+  buttonKey(n, false);
+  if (!keysDown.size && presetsStale) { presetsStale = false; showPresets(); }
+}
 function showPresets() {
   $("presets").hidden = $("presetsEdit").hidden = !bState;
   if (!bState) return;
+  if (keysDown.size) { presetsStale = true; return; }    // (not while one's held: that would lose it)
   $("presets").replaceChildren(...bState.buttons.map((b, i) => {
     const btn = document.createElement("button");
     btn.type = "button";
@@ -2374,7 +2404,12 @@ function showPresets() {
     btn.setAttribute("aria-label", `Button ${i + 1}: ${b.preset ? b.label : "empty"}${b.playing ? ", playing" : ""}`);
     btn.append(Object.assign(document.createElement("span"), { className: "cap", textContent: i + 1 }),
                Object.assign(document.createElement("span"), { className: "lbl", textContent: b.preset ? b.label : "Empty" }));
-    btn.onclick = () => pressButton(i + 1);
+    btn.addEventListener("pointerdown", e => keyDown(btn, i + 1, e));
+    btn.addEventListener("pointerup", () => keyUp(btn, i + 1));
+    btn.addEventListener("pointercancel", () => keyUp(btn, i + 1));
+    btn.addEventListener("lostpointercapture", () => keyUp(btn, i + 1));
+    btn.addEventListener("contextmenu", e => e.preventDefault());       // a long touch on a phone
+    btn.onclick = e => { if (e.detail === 0) pressButton(i + 1); };     // the keyboard: a press
     return btn;
   }));
 }

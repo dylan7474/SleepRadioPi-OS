@@ -41,6 +41,7 @@ log = logging.getLogger(__name__)
 PAGE = (Path(__file__).parent / "page.html").read_bytes()
 # The speaker analyser (also on GitHub Pages): served here too, for tuning with no internet.
 ANALYSER = (Path(__file__).parent / "analyser" / "index.html").read_bytes()
+KEY_HELD_MAX_S = 30  # a page's button held longer than this is let go (a lost "up")
 IDLE_CLOSE_S = 30  # close a stream connection that has had no audio for this long
 MAX_SETTINGS_BYTES = 512 * 1024   # room for a long list of internet radio stations
 # Set where something restarts the station when it exits (init's respawn on the
@@ -73,6 +74,16 @@ def make_handler(station: Station, output: Mp3Output, speaker=None,
                  presets=None, directory=None, media=None):
     auth = Auth(config_file)
     open_paths = {"/", "/index.html", "/api/auth", "/api/login", "/analyser", "/analyser/", "/analyser/index.html"}
+
+    _held: dict = {}                  # the page's buttons held down: keycode -> auto let-go timer
+    _held_lock = threading.Lock()
+
+    def _let_go(code: int) -> None:
+        with _held_lock:
+            if _held.pop(code, None) is None:
+                return
+        log.info("button key %d: let go (the page never said)", code)
+        presets.keys[code][1]()
 
     class Handler(BaseHTTPRequestHandler):
         protocol_version = "HTTP/1.1"
@@ -315,6 +326,8 @@ def make_handler(station: Station, output: Mp3Output, speaker=None,
                 self._media(path.rsplit("/", 1)[1])
             elif path in ("/api/buttons", "/api/buttons/press") and presets is not None:
                 self._buttons(path.endswith("press"))
+            elif path == "/api/buttons/key" and presets is not None and presets.keys:
+                self._button_key()
             elif path.startswith("/api/podcasts/") and path.rsplit("/", 1)[1] in ("follow", "unfollow", "play", "heard"):
                 self._podcasts(path.rsplit("/", 1)[1])
             elif path in ("/api/books/play", "/api/books/seek"):
@@ -760,6 +773,35 @@ def make_handler(station: Station, output: Mp3Output, speaker=None,
                 self._error(str(e) if isinstance(e, ValueError) else
                             "send {\"button\": 1-4, \"preset\": ...} or {\"button\", \"now\": true}")
                 return
+            self._send(json.dumps(presets.status()).encode(), "application/json")
+
+        def _button_key(self) -> None:
+            """POST /api/buttons/key {"button": 1-4, "down": bool}: the page's button
+            going down or up, through the same timers as the real ones -- a tap
+            plays, 3 s keeps what's playing, 1 and 4 held for 15 s open the service
+            menu. A button the page never lets go of is let go after KEY_HELD_MAX_S."""
+            try:
+                body = self._body()
+                n, down = body["button"], body["down"]
+                if isinstance(n, bool) or not isinstance(n, int) or not 1 <= n <= presets_mod.N \
+                        or not isinstance(down, bool):
+                    raise ValueError(f"send {{\"button\": 1-{presets_mod.N}, \"down\": true | false}}")
+            except (ValueError, TypeError, KeyError, AttributeError) as e:
+                self._error(str(e) if isinstance(e, ValueError) else "send {\"button\", \"down\"}")
+                return
+            code = next(c for c, i in presets_mod.KEYCODES.items() if i == n - 1)
+            with _held_lock:
+                was = _held.pop(code, None)
+                if was is not None:
+                    was.cancel()
+                if down:
+                    t = _held[code] = threading.Timer(KEY_HELD_MAX_S, lambda: _let_go(code))
+                    t.daemon = True
+                    t.start()
+            if down and was is None:
+                presets.keys[code][0]()
+            elif not down and was is not None:
+                presets.keys[code][1]()
             self._send(json.dumps(presets.status()).encode(), "application/json")
 
         def _podcasts(self, action: str) -> None:

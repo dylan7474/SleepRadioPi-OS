@@ -279,9 +279,11 @@ def main() -> None:
                       on_fire=menu.open)
         # (SLEEPRADIOPI_INPUT_DIR: somewhere else to look for the knob and buttons -- e.g. an empty
         # folder for a test run on a desktop, whose keyboard would otherwise count as buttons 1-4)
-        Knob(lambda clicks: control.step(clicks * settings.knob_step), control.toggle,
-             devices=Path(os.environ.get("SLEEPRADIOPI_INPUT_DIR", "/dev/input")),
-             on_long_press=announcer.speak, buttons=buttons, chord=chord).start()
+        knob = Knob(lambda clicks: control.step(clicks * settings.knob_step), control.toggle,
+                    devices=Path(os.environ.get("SLEEPRADIOPI_INPUT_DIR", "/dev/input")),
+                    on_long_press=announcer.speak, buttons=buttons, chord=chord)
+        presets.keys = knob.keys         # the page's buttons go down and up through the same timers
+        knob.start()
         control.play()   # a bedside radio plays as soon as it's powered
     else:
         station = Station(cfg, tts, stream)

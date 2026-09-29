@@ -174,3 +174,39 @@ def test_no_previous_version(slots) -> None:
     assert up.rollback(p, reboot=lambda: rebooted.append(1)) == "nothing to go back to"
     assert "root=/dev/mmcblk0p3" in (p.boot / "cmdline.txt").read_text() and not rebooted
     assert json.loads(p.rollback_status.read_text())["ok"] is False
+
+
+def test_the_page_buttons_go_down_and_up_through_the_real_timers(tmp_path: Path, monkeypatch) -> None:
+    import urllib.error
+    import urllib.request
+    from http.server import ThreadingHTTPServer
+    from sleepradiopi.web import server as server_mod
+    from test_artist_radio import _station
+    st = _station(tmp_path)
+    p = presets_mod.Presets(st, None, None, [])
+    events = []
+    p.keys = {c: (lambda c=c: events.append(("down", c)), lambda c=c: events.append(("up", c))) for c in (2, 3, 4, 5)}
+    monkeypatch.setattr(server_mod, "KEY_HELD_MAX_S", 0.3)
+    httpd = ThreadingHTTPServer(("127.0.0.1", 0), server_mod.make_handler(st, None, presets=p))
+    threading.Thread(target=httpd.serve_forever, daemon=True).start()
+    base = f"http://127.0.0.1:{httpd.server_address[1]}"
+
+    def key(body):
+        req = urllib.request.Request(base + "/api/buttons/key", data=json.dumps(body).encode(), method="POST")
+        try:
+            with urllib.request.urlopen(req, timeout=5) as r:
+                return r.status
+        except urllib.error.HTTPError as e:
+            return e.code
+    try:
+        assert key({"button": 1, "down": True}) == 200
+        assert key({"button": 1, "down": True}) == 200              # (a repeat: not a second press)
+        assert key({"button": 1, "down": False}) == 200
+        assert events == [("down", 2), ("up", 2)]
+        assert key({"button": 4, "down": True}) == 200
+        time.sleep(0.6)                                              # the page never let go
+        assert events[-2:] == [("down", 5), ("up", 5)]
+        assert key({"button": 4, "down": False}) == 200 and len(events) == 4
+        assert key({"button": 5, "down": True}) == 400 and key({"button": 1}) == 400
+    finally:
+        httpd.shutdown()

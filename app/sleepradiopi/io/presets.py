@@ -129,6 +129,7 @@ class Presets:
         self.station = station
         self.control = control           # SpeakerControl: play/pause, sleep timer, clips
         self.menu = None                 # the service menu (io/service.py): gets the presses while it's open
+        self.keys = None                 # the knob's key handlers {keycode: (down, up)}: the page's buttons use them too
         self.config_file = config_file
         self.announcer = announcer       # says the address
         try:
