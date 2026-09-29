@@ -727,7 +727,8 @@ def make_handler(station: Station, output: Mp3Output, speaker=None,
         def _wifi(self, action: str) -> None:
             """POST /api/wifi/add {"ssid", "password"}, /remove {"ssid"}, /scan,
             /hotspot {"ssid", "password"} (the radio's own network's details),
-            /try (leave the hotspot and try the saved networks now)."""
+            /try (leave the hotspot and try the saved networks now), /hotspot-now
+            (switch to the radio's own network now: the only way it does, besides a reset)."""
             try:
                 body = self._body()
                 if action == "add":
@@ -742,6 +743,8 @@ def make_handler(station: Station, output: Mp3Output, speaker=None,
                     wifi_mod.set_hotspot(body.get("ssid"), body.get("password", ""))
                 elif action == "try":
                     wifi_mod.ask("station")
+                elif action == "hotspot-now":
+                    wifi_mod.ask("hotspot")
                 else:
                     self.send_error(404)
                     return

@@ -729,10 +729,14 @@
         <input id="spotPw" type="password" placeholder="New password" minlength="8" maxlength="63" aria-label="Hotspot password" required>
         <button type="submit">Save</button>
       </form>
+      <div class="row"><button id="spotNow" type="button">Switch to the hotspot now</button></div>
     </details>
     <p id="wifiNote" class="muted" style="margin:.5rem 0 0;font-size:.85rem">The radio joins any saved network it can
-      see. If none is in range when it starts, it makes its own network (the hotspot): join it on your phone and
-      open http://192.168.4.1 to add yours. Holding the knob for 3 s says how.</p>
+      see. If it loses it (a router restarting, a weak signal in the night) it keeps quietly trying to reconnect,
+      for as long as it takes, and never switches to its own network by itself. Its own network (the hotspot,
+      for adding a network somewhere new) comes on when you ask for it with <b>Hotspot</b> below, or on a radio
+      with no network set up at all: join it on your phone and open http://192.168.4.1. Holding the knob for
+      3 s says the radio's address.</p>
   </section>
     </div>
     <div class="page" id="page-updates" hidden>
@@ -1422,7 +1426,9 @@ function showWifi(w) {
   if (w.mode === "station") now.replaceChildren("Connected to ", Object.assign(document.createElement("b"), { textContent: w.ssid }), ` (${w.ip})`);
   else if (w.mode === "hotspot") now.replaceChildren("Hotspot on: join ", Object.assign(document.createElement("b"), { textContent: w.hotspot.ssid }),
                                                      `, then open http://${w.hotspot.ip}`);
-  else if (w.mode === "connecting") now.textContent = "Joining a saved network…";
+  else if (w.mode === "connecting") now.textContent = w.reconnecting && w.since > 60
+    ? `No network for ${Math.round(w.since / 60)} min: reconnecting quietly (it won't switch to its own network by itself).`
+    : "Joining a saved network…";
   else now.textContent = "Wi-Fi status unknown (not the radio's own system?)";
   $("wifiTry").hidden = w.mode !== "hotspot";
   $("wifiSaved").replaceChildren(
@@ -1456,6 +1462,11 @@ $("wifiAdd").onsubmit = async e => {
   if (await wifiPost("add", { ssid, password }, `Saved ${ssid}.` + (($("wifiNow").textContent || "").startsWith("Hotspot")
       ? " Tap “Try saved networks now” to join it." : " The radio will use it when it's in range.")))
     { $("wifiSsid").value = ""; $("wifiPw").value = ""; }
+};
+$("spotNow").onclick = () => {
+  if (!confirm("Switch the radio to its own network now?\n\nThis page loses the radio until you join " +
+               `${$("spotSsid").value || "SleepRadio-Setup"} on this phone and open http://192.168.4.1.`)) return;
+  wifiPost("hotspot-now", {}, "Switching: join the radio's own network, then open http://192.168.4.1.");
 };
 $("spotForm").onsubmit = async e => {
   e.preventDefault();
@@ -2389,7 +2400,8 @@ function settingRows() {
         ? ` · directory of ${lastDir.stations.toLocaleString()}` : ""), "stations"]]],
     ["The radio", [
       ["wifi", "Wi-Fi", !w ? "…" : w.mode === "station" ? `Connected to ${w.ssid} · ${w.ip}`
-        : w.mode === "hotspot" ? `Hotspot on: ${w.hotspot.ssid}` : w.mode === "connecting" ? "Joining a saved network…" : "Unknown", "wifi"],
+        : w.mode === "hotspot" ? `Hotspot on: ${w.hotspot.ssid}` : w.mode === "connecting"
+        ? (w.reconnecting ? "Reconnecting quietly…" : "Joining a saved network…") : "Unknown", "wifi"],
       ["update", "Updates", s ? (lastUpd && lastUpd.available ? `Version ${lastUpd.available.version} available`
         : `${$("version").textContent || "…"}${lastUpd && lastUpd.job && lastUpd.job.state === "checked" ? " · up to date" : ""}`) : "…", "updates"],
       ["lock", "Password", lastAuth ? (lastAuth.protected ? "On" : "Off: anyone on your network can use this page") : "…", "password"],

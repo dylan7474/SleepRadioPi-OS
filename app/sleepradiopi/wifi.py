@@ -6,13 +6,18 @@ as the WPA key worked out from the password -- never the password itself --
 and given to wpa_supplicant as an extra config file (-I). wpa_supplicant
 tries every saved network it can see; the first on the list wins a tie.
 
-If none has connected within JOIN_S of start-up, the radio makes its own
-network instead -- the hotspot, "SleepRadio-Setup" / "sleepradio" unless
-changed -- so a phone can join it and open http://192.168.4.1 to add the
-right network. (Its DNS answers every name with the radio, so phones usually
-offer to open the page by themselves.) While it's a hotspot with nobody on
-it, it tries the saved networks again every RETRY_S; and a radio that loses
-its network for LOST_S becomes a hotspot too.
+A radio that can't reach its network -- at start-up, or after a drop (a
+router restarting, a signal fading in the night) -- keeps quietly trying to
+reconnect, for as long as it takes: a nudge (wpa_cli reassociate) every
+RECONNECT_S, backing off to RECONNECT_MAX_S, and a full restart of the Wi-Fi
+every RESTART_S in case it's stuck. It never switches to its own network by
+itself (that could wake someone at night, and a router reboot shouldn't
+change anything): the hotspot -- "SleepRadio-Setup" / "sleepradio" unless
+changed, at http://192.168.4.1, whose DNS answers every name with the radio
+so phones offer to open the page -- only comes on when asked for (the web
+page, or a settings reset), or on a radio with no network set up at all.
+While it's a hotspot with nobody on it, it tries the saved networks again
+every RETRY_S.
 
 The manager runs as root (started by S35wifi):
 
@@ -44,7 +49,8 @@ EXTRA_CONF = RUN / "wifi-extra.conf"
 REQUEST, STATUS = RUN / "wifi-request", RUN / "wifi-status"
 HOTSPOT_IP = "192.168.4.1"
 HOTSPOT = {"ssid": "SleepRadio-Setup", "password": "sleepradio"}
-JOIN_S, RETRY_S, LOST_S = 45, 300, 180
+JOIN_S, RETRY_S = 45, 300
+RECONNECT_S, RECONNECT_MAX_S, RESTART_S = 30, 120, 600
 
 
 # --- the saved networks (station side) --------------------------------------------------
@@ -223,6 +229,44 @@ class Manager:
         self._write_status()
         log.warning("wifi: no saved network; hotspot %s is on at %s", spot["ssid"], HOTSPOT_IP)
 
+    def have_networks(self) -> bool:
+        return bool(load(self.networks)["networks"] or card_networks(self.base_conf))
+
+    def join_or_keep_trying(self) -> dict | None:
+        """Join a saved network; if none answers, keep trying in the background
+        (never the hotspot, unless there's no network to try at all)."""
+        got = self.join()
+        if got:
+            return got
+        if not self.have_networks():
+            self.start_hotspot()
+            return None
+        self._reconnecting()
+        return None
+
+    def _reconnecting(self) -> None:
+        now = self.clock()
+        if self.mode != "connecting" or not getattr(self, "lost_since", None):
+            self.lost_since, self.nudge_every = now, RECONNECT_S
+            self.next_nudge, self.next_restart = now + RECONNECT_S, now + RESTART_S
+            log.warning("wifi: no network; reconnecting quietly")
+        self.mode = "connecting"
+        self._write_status(reconnecting=True, since=time.time() - (now - self.lost_since))
+
+    def _keep_trying(self) -> None:
+        """(connecting) A nudge now and then, a full restart now and then."""
+        now = self.clock()
+        if now >= self.next_restart:
+            log.info("wifi: still no network after %d min; restarting the Wi-Fi", (now - self.lost_since) // 60)
+            self.start_station()                  # (mode stays "connecting")
+            self.next_restart = now + RESTART_S
+            self.next_nudge = now + RECONNECT_S
+        elif now >= self.next_nudge:
+            self.sh("wpa_cli", "-i", IFACE, "reassociate")
+            self.nudge_every = min(RECONNECT_MAX_S, self.nudge_every * 2)
+            self.next_nudge = now + self.nudge_every
+        self._write_status(reconnecting=True, since=time.time() - (now - self.lost_since))
+
     def hotspot_in_use(self) -> bool:
         return "Station" in self.sh("iw", "dev", IFACE, "station", "dump")
 
@@ -258,20 +302,19 @@ class Manager:
                 (self.rundir / "wifi-extra.conf").write_text(extra_conf(load(self.networks)["networks"]))
                 self.sh("wpa_cli", "-i", IFACE, "reconfigure")
             else:
-                self.join() or self.start_hotspot()
+                self.join_or_keep_trying()
         elif action == "scan":
             self.scan()
         elif action == "hotspot":
             self.start_hotspot()
         elif action == "station":
-            self.join() or self.start_hotspot()
+            self.join_or_keep_trying()
         self._write_status(**(self.connected() or {}))
 
     def start(self) -> None:
-        """At start-up: join a saved network, or make the hotspot."""
-        if not self.join():
-            self.start_hotspot()
+        """At start-up: join a saved network (or keep trying)."""
         self.lost_since, self.retry_at = None, self.clock() + RETRY_S
+        self.join_or_keep_trying()
 
     def step(self) -> None:
         """One turn of the loop (every 2 s): requests, and keeping connected."""
@@ -279,20 +322,21 @@ class Manager:
         if req:
             self.handle(req)
             self.retry_at = self.clock() + RETRY_S
-        if self.mode == "station":
+        if self.mode in ("station", "connecting"):
             got = self.connected()
             if got:
-                self.lost_since = None
-                if got.get("ip") != self.status.get("ip") or got.get("ssid") != self.status.get("ssid"):
+                if self.mode == "connecting":
+                    log.info("wifi: back on %s (%s)", got["ssid"], got["ip"])
+                self.mode, self.lost_since = "station", None
+                if got.get("ip") != self.status.get("ip") or got.get("ssid") != self.status.get("ssid") \
+                        or self.status.get("reconnecting"):
                     self._write_status(**got)
+            elif self.mode == "station":
+                self._reconnecting()              # dropped: keep trying, quietly
             else:
-                self.lost_since = self.lost_since or self.clock()
-                if self.clock() - self.lost_since > LOST_S:
-                    log.warning("wifi: lost the network for %d s", LOST_S)
-                    self.start_hotspot()
-                    self.lost_since, self.retry_at = None, self.clock() + RETRY_S
+                self._keep_trying()
         elif self.mode == "hotspot" and self.clock() >= self.retry_at:
-            if not self.hotspot_in_use() and (load(self.networks)["networks"] or card_networks(self.base_conf)):
+            if not self.hotspot_in_use() and self.have_networks():
                 if not self.join():
                     self.start_hotspot()
             self.retry_at = self.clock() + RETRY_S

@@ -99,12 +99,16 @@ software, and the case to print.
   own), your artist lists, birthdays, test sounds for
   checking speakers and wiring, the password, a settings backup you can
   download and load back, and shut down.
-- **Wi-Fi anywhere.** Add networks on the web page (Settings → Wi-Fi) as
-  well as the one set up on the card; it joins whichever is in range. If
-  none is, it makes its own network — **SleepRadio-Setup**, password
-  **sleepradio** — and says so: join it on your phone, open
-  http://192.168.4.1 (phones usually offer to), and add your Wi-Fi. With
-  nobody on the hotspot it tries the saved networks again every 5 minutes.
+- **Wi-Fi anywhere, quietly.** Add networks on the web page (Settings →
+  Wi-Fi) as well as the one set up on the card; it joins whichever is in
+  range. If the network drops (a router restarting, a weak signal in the
+  night) it **keeps quietly reconnecting**, for as long as it takes, and never
+  switches to its own network or says anything by itself, so nothing wakes
+  you. Its own network — **SleepRadio-Setup**, password **sleepradio** —
+  comes on when you ask (Settings → Wi-Fi → *Switch to the hotspot now*, e.g.
+  before taking it somewhere new), or on a radio with no network set up: join
+  it on your phone, open http://192.168.4.1 (phones usually offer to), and add
+  your Wi-Fi.
 - **Offline is normal.** Without the internet it keeps playing and talking;
   it only leaves out what needs the right time (time checks, news, birthday
   wishes) until the clock is known, from the internet or an optional
@@ -359,9 +363,12 @@ Other targets are passed through to Buildroot: `make menuconfig`,
 - Wi-Fi: `wpa_supplicant.conf` on the boot partition (FAT, readable on
   any PC), plus any networks added on the web page (`/data/radio/wifi.json`,
   kept as WPA keys, not passwords). The manager (`sleepradiopi/wifi.py`,
-  started by `S35wifi`, logs tagged `wifi`) joins a saved network or, after
-  45 s without one, runs the hotspot (hostapd + dnsmasq, 192.168.4.1); if the
-  manager can't run, `S35wifi` joins the card's network directly after 20 s.
+  started by `S35wifi`, logs tagged `wifi`) joins a saved network and, without
+  one, keeps reconnecting (`wpa_cli reassociate` every 30 s, backing off to
+  2 min, and a full Wi-Fi restart every 10 min). The hotspot (hostapd +
+  dnsmasq, 192.168.4.1) only runs when asked for, or with no network set up at
+  all; if the manager can't run, `S35wifi` joins the card's network directly
+  after 20 s.
 - Serial console: GPIO14/15, 115200 baud (Bluetooth is disabled so the full
   UART is used).
 - Logs: `/var/log/messages` (in RAM, lost at power-off).

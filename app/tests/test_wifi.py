@@ -102,23 +102,40 @@ def _run_for(m, pi, seconds):
         m.step()
 
 
-def test_no_network_in_range_makes_a_hotspot_then_retries(tmp_path: Path) -> None:
+def test_no_network_in_range_keeps_trying_quietly_never_the_hotspot(tmp_path: Path) -> None:
     pi = FakePi()
     m, run = _manager(tmp_path, pi)
     m.start()
-    assert wifi.status(run)["mode"] == "hotspot" and pi.now >= wifi.JOIN_S
-    assert any(c[0] == "hostapd" for c in pi.cmds) and any(c[0] == "dnsmasq" for c in pi.cmds)
+    st = wifi.status(run)
+    assert st["mode"] == "connecting" and st["reconnecting"] and pi.now >= wifi.JOIN_S
+    assert not any(c[0] == "hostapd" for c in pi.cmds)
+    _run_for(m, pi, 3 * 3600)                             # all night: still quietly trying
+    assert wifi.status(run)["mode"] == "connecting" and not any(c[0] == "hostapd" for c in pi.cmds)
+    nudges = [c for c in pi.cmds if c[-1:] == ("reassociate",)]
+    restarts = [c for c in pi.cmds if c[0] == "wpa_supplicant"]
+    assert len(nudges) > 20 and len(restarts) >= 3 * 3600 // wifi.RESTART_S
+    pi.connected_to = "CHIGLEY"                           # the router's back
+    _run_for(m, pi, 4)
+    st = wifi.status(run)
+    assert st["mode"] == "station" and st["ssid"] == "CHIGLEY" and not st.get("reconnecting")
+
+
+def test_a_radio_with_no_network_set_up_makes_the_hotspot(tmp_path: Path) -> None:
+    pi = FakePi()
+    m, run = _manager(tmp_path, pi)
+    m.base_conf.write_text("ctrl_interface=/run/wpa_supplicant\n")     # nothing on the card, nothing saved
+    m.start()
+    assert wifi.status(run)["mode"] == "hotspot"
     assert ("ip", "addr", "add", "192.168.4.1/24", "dev", "wlan0") in pi.cmds
     assert "ssid=SleepRadio-Setup" in (run / "hostapd.conf").read_text()
+    wifi.add_network("Home", "password1", tmp_path / "wifi.json")      # added on the page
     joins = lambda: len([c for c in pi.cmds if c[0] == "wpa_supplicant"])
     pi.hotspot_clients = True                  # someone's on it: never pulled out from under them
     before = joins()
     _run_for(m, pi, 3 * wifi.RETRY_S)
     assert joins() == before and wifi.status(run)["mode"] == "hotspot"
-    pi.hotspot_clients = False                 # they've gone; still no known network
-    _run_for(m, pi, wifi.RETRY_S + 5)
-    assert joins() == before + 1 and wifi.status(run)["mode"] == "hotspot"   # tried, back to hotspot
-    pi.connected_to = "CHIGLEY"                # the router's back
+    pi.hotspot_clients = False
+    pi.connected_to = "Home"
     _run_for(m, pi, wifi.RETRY_S + 5)
     assert wifi.status(run)["mode"] == "station"
 
@@ -144,19 +161,25 @@ def test_page_requests(tmp_path: Path) -> None:
     assert wifi.status(run)["mode"] == "hotspot"
 
 
-def test_losing_the_network_makes_a_hotspot(tmp_path: Path) -> None:
+def test_a_drop_in_the_night_reconnects_quietly(tmp_path: Path) -> None:
     pi = FakePi()
     pi.connected_to = "CHIGLEY"
     m, run = _manager(tmp_path, pi)
     m.start()
-    pi.connected_to = None
-    _run_for(m, pi, wifi.LOST_S - 10)
-    assert wifi.status(run)["mode"] == "station"          # a short drop: wait it out
+    pi.connected_to = None                                # the router restarts
+    _run_for(m, pi, 20)
+    st = wifi.status(run)
+    assert st["mode"] == "connecting" and st["reconnecting"]
+    _run_for(m, pi, 2 * 3600)
+    assert not any(c[0] == "hostapd" for c in pi.cmds)    # never the hotspot (and so nothing said)
     pi.connected_to = "CHIGLEY"
-    _run_for(m, pi, 10)
-    pi.connected_to = None                                # the timer started again
-    _run_for(m, pi, wifi.LOST_S + 10)
-    assert wifi.status(run)["mode"] == "hotspot"
+    _run_for(m, pi, 4)
+    assert wifi.status(run)["mode"] == "station"
+    nudge = ("wpa_cli", "-i", "wlan0", "reassociate")
+    before = pi.cmds.count(nudge)
+    pi.connected_to = None                                # another drop: the back-off starts again
+    _run_for(m, pi, wifi.RECONNECT_S + 4)
+    assert pi.cmds.count(nudge) == before + 1 and m.nudge_every == wifi.RECONNECT_S * 2
 
 
 def test_hotspot_announcement_and_captive_redirect(tmp_path: Path, monkeypatch) -> None:
