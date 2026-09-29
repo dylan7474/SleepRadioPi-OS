@@ -165,13 +165,17 @@ shaft_flat  = 4.65;
 shaft_len   = 12;
 
 /* ---------- Preset buttons ---------- */
-// Four momentary panel buttons in the top, two each side of the knob --
-// "1 2 (knob) 3 4" -- like an old radio's presets (wiring: hardware/wiring).
-// -D buttons=true puts the holes in the tube; for a tube printed without
-// them, drill through button_guide.
+// Four momentary panel buttons in a row across the top, near the front, with
+// the knob on its own further back: the channels and the volume in separate
+// places, which is easier to follow (the radio is for an elderly listener).
+// Wiring: hardware/wiring. -D buttons=true puts the holes in the tube; for a
+// tube printed without them, drill through button_guide.
 buttons     = false;
 btn_hole_d  = 12.4;      // 12 mm threaded body (CHECK the buttons: some are 16 mm)
-btn_x       = [-50, -28, 28, 50];   // from the centre; the knob is 30 mm across
+btn_x       = [-36, -12, 12, 36];   // from the centre, evenly spaced; the outer two miss the
+                                    // speakers' top clamp tabs (and screws) at +-45
+btn_y       = 19;        // from the front face: clear of the front panel's lip and the
+                         // speakers' clamp bosses (within ~11 mm), well in front of the knob
 btn_nut_d   = 16;        // the nut inside, for the checks
 btn_body_d  = 14;        // below the nut: the switch body and its tags
 btn_body_h  = 24;        // top of the wall to the ends of the tags
@@ -312,7 +316,7 @@ module tube() {
         }
         if (handle) strap_holes(loop_hole_d);
         if (buttons) for (x = btn_x)
-            translate([x, enc_y, H - wall - 1]) linear_extrude(wall + 2) enc2d(btn_hole_d);
+            translate([x, btn_y, H - wall - 1]) linear_extrude(wall + 2) enc2d(btn_hole_d);
         // Encoder hole in the top, with a thinner patch of wall around it.
         translate([0, enc_y, H - wall - 1]) linear_extrude(wall + 2) enc2d(enc_hole_d);
         translate([0, enc_y, H - wall - 1]) linear_extrude(1 + enc_pocket) enc2d(enc_pocket_d);
@@ -554,20 +558,22 @@ module strap_guide() {
 
 // Drill guide for the preset buttons in a tube printed without them: lies on
 // the top (knob off), locates over the encoder's nut and hooks over the top of
-// the front panel. Drill 3.5 mm through it, then open each hole to size.
+// the front panel along its whole length, so it sits square. Drill 3.5 mm
+// through it, then open each hole to size.
 module button_guide() {
-    x0 = btn_x[0] - 10;  x1 = btn_x[len(btn_x) - 1] + 10;
+    x0 = btn_x[0] - 12;  x1 = btn_x[len(btn_x) - 1] + 12;
     difference() {
         union() {
-            translate([x0, enc_y - 10, H]) cube([x1 - x0, 20, bguide_t]);            // the strip
-            translate([-8, -guide_clr, H]) cube([16, enc_y - 10 + guide_clr, bguide_t]);  // stem to the front
-            translate([-8, -guide_clr - guide_t, H - bguide_lip])                     // lip over the front face
-                cube([16, guide_t, bguide_lip + bguide_t]);
+            translate([x0, -guide_clr, H]) cube([x1 - x0, btn_y + 10 + guide_clr, bguide_t]);  // the strip
+            translate([-8, btn_y, H]) cube([16, enc_y - btn_y, bguide_t]);             // back to the knob
+            translate([0, enc_y, H]) cylinder(d = bguide_nut + 8, h = bguide_t);       // ring round the nut
+            translate([x0, -guide_clr - guide_t, H - bguide_lip])                      // lip over the front face
+                cube([x1 - x0, guide_t, bguide_lip + bguide_t]);
         }
         translate([0, enc_y, H - 1]) cylinder(d = bguide_nut, h = bguide_t + 2);
-        for (x = btn_x) translate([x, enc_y, H - 1]) cylinder(d = bguide_hole, h = bguide_t + 2);
-        for (i = [0 : len(btn_x) - 1])                                               // 1 2 . 3 4
-            translate([btn_x[i], enc_y - 6.5, H + bguide_t - 0.6]) linear_extrude(1)
+        for (x = btn_x) translate([x, btn_y, H - 1]) cylinder(d = bguide_hole, h = bguide_t + 2);
+        for (i = [0 : len(btn_x) - 1])                                                // 1 2 3 4
+            translate([btn_x[i], btn_y - 8, H + bguide_t - 0.6]) linear_extrude(1)
                 text(str(i + 1), size = 4, halign = "center", valign = "center");
     }
 }
@@ -641,7 +647,7 @@ module encoder_model() color("gray") translate([0, enc_y, 0]) {
 module knob_in_place() color("orange") translate([0, enc_y, H + 2]) knob();
 
 // The preset buttons, fitted: cap above the top, thread through it, nut and body below.
-module buttons_model() color("goldenrod") for (x = btn_x) translate([x, enc_y, 0]) {
+module buttons_model() color("goldenrod") for (x = btn_x) translate([x, btn_y, 0]) {
     translate([0, 0, H]) cylinder(d = btn_head_d, h = btn_head_h);
     translate([0, 0, H - wall]) cylinder(d = 11.9, h = wall);
     translate([0, 0, H - wall - 2]) cylinder(d = btn_nut_d, h = 2, $fn = 6);

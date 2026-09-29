@@ -190,11 +190,15 @@ across them.
 
 ## Preset buttons
 
-Four 12 mm momentary push buttons in the top, two each side of the knob:
-**1 2 (knob) 3 4**, like an old radio's presets. They sit at the knob's depth,
-where nothing is underneath: the speakers stop about 27 mm in from the front,
-and the Pi stack starts about 25 mm in from the back. The checks put them
-clear of everything, with room below for ~24 mm of switch body and tags.
+Four 12 mm momentary push buttons in a row across the top, near the front,
+**1 2 3 4** from left to right, with the knob on its own behind them. The
+channels and the volume are in separate places, which is easier to follow
+(this radio is for an elderly listener). The row is 19 mm back from the front
+face and 24 mm between buttons, which leaves a 9 mm gap before the knob. It
+clears the front panel's lip and the speakers' top clamp tabs and their
+screws (the outer buttons sit inboard of them). The switch bodies end ~67 mm
+up, above the tops of the speakers (~65.5 mm). The checks put them clear of
+everything, with room below for ~24 mm of switch body and tags.
 Wiring and what they do: the main [README](../../README.md#build-one).
 
 **You need:** 4 momentary (not latching) panel push buttons with a **12 mm**
@@ -210,14 +214,14 @@ Measure yours and change `btn_hole_d` if it's different (16 mm buttons need
   all pointed if yours sag.
 - **Tube already printed:** use `stl/button_guide.stl`. Take the knob off
   (leave the encoder's nut on). Lay the guide on the top, with its ring over
-  the nut and its lip down over the front panel's top edge. Drill 3.5 mm
+  the nut and its long lip down over the front panel's top edge. Drill 3.5 mm
   through its four holes, then open each one to 12 mm with a step drill (slowly:
   PLA melts). Take the back panel off first and blow out the swarf.
 
 **Fitting:** push each button up through its hole from inside. Fit the nut on
 top, or inside if the button has a flange, and wire it as the README says.
-The numbers on the guide show which is which: 1 and 2 on the left, seen from
-the front.
+The numbers on the guide show which is which: 1 on the left, seen from the
+front.
 
 ## Hardware
 
