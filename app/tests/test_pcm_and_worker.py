@@ -1,3 +1,4 @@
+import time
 import numpy as np
 
 from sleepradiopi.audio import pcm
@@ -72,7 +73,8 @@ def test_a_worker_past_its_limit_hands_the_rest_to_a_fresh_one(monkeypatch) -> N
 
     w = worker_mod.TtsWorker.__new__(worker_mod.TtsWorker)          # (no real process)
     w.voice, w.recycle_mb, w.hard_mb, w.last_rss_mb = "v", 200, 240, 0
-    w._lock, w._ready = th.Lock(), th.Event()
+    w._lock, w._ready, w._wake_lock = th.Lock(), th.Event(), th.Lock()
+    w._asleep, w._idle, w.idle_s, w._ok, w.restarts, w._proc, w._old_proc = False, None, 999, True, 0, None, None
     w._ready.set()
     sent = []
     replies = iter([("ok", np.ones(10, np.float32).tobytes(), 1000, 250, "the rest."),
@@ -82,3 +84,28 @@ def test_a_worker_past_its_limit_hands_the_rest_to_a_fresh_one(monkeypatch) -> N
     samples, rate = w.synth("v", "Some words, the rest.", 1.0)
     assert [m[0] for m in sent] == ["Some words, the rest.", "the rest."]
     assert len(samples) == 10 + int(1000 * worker_mod.SENTENCE_PAUSE_S) + 5
+
+
+def test_an_idle_worker_goes_to_sleep_and_the_next_line_wakes_it() -> None:
+    import threading as th
+    from types import SimpleNamespace
+    from sleepradiopi.tts import worker as worker_mod
+    w = worker_mod.TtsWorker.__new__(worker_mod.TtsWorker)
+    w.voice, w.recycle_mb, w.hard_mb, w.last_rss_mb, w.restarts = "v", 250, 280, 0, 0
+    w._lock, w._ready, w._wake_lock = th.Lock(), th.Event(), th.Lock()
+    w._asleep, w._idle, w.idle_s, w._ok, w._old_proc = False, None, 0.2, True, None
+    sent = []
+    starts = []
+
+    def start():
+        starts.append(1)
+        w._conn, w._proc = SimpleNamespace(send=sent.append, recv=lambda: ("ok", b"\0" * 8, 1000, 150, "")), object()
+        w._ready.set()
+    w._start = start
+    start()
+    w.synth("v", "Hello.", 1.0)
+    assert w.ready and not w._asleep
+    time.sleep(0.5)                                  # nothing to say: it goes to sleep
+    assert w._asleep and not w._ready.is_set() and w._proc is None and None in sent
+    w.synth("v", "Again.", 1.0)                      # the next line wakes it
+    assert starts == [1, 1] and not w._asleep and w.ready

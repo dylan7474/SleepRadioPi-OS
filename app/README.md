@@ -712,6 +712,10 @@ which the personal voice's ~300 MB peaks left the Zero thrashing. The CPU
 is shared the same way: on the radio the station runs at nice -5 (the
 speaker feed, aplay and the music decoder inherit it) and the voice worker
 and library scan lower themselves to +5, with a 500 ms speaker buffer; and
+the voice worker **sleeps** (its process exits, freeing 150-300 MB) after 30 s
+with nothing to say or once a line leaves it over 250 MB, and the next line
+wakes it (~17 s; lines are made well ahead, time checks 75 s before the song
+ends, and "Say the time" wakes it before working out the time); and
 once music is playing the station locks the memory it's using in RAM
 (`mlockall(MCL_CURRENT | MCL_ONFAULT)`, ~100 MB), because the voice reloading
 its ~60 MB model pushed the station's code out of memory and the stall while

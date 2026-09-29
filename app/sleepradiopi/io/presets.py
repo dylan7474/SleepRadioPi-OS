@@ -256,9 +256,14 @@ class Presets:
 
     def _action(self, action: str) -> None:
         if action == "time":
-            text = (self.station.builder.time_line() if clock_trusted()
-                    else "Sorry, I don't know the time yet.")
-            self._say(text)
+            def tell():
+                tts = getattr(self.station, "tts", None)
+                if tts is not None and hasattr(tts, "wake"):
+                    tts.wake()                    # (asleep: load it first, so the time is right when said)
+                self._say(self.station.builder.time_line() if clock_trusted()
+                          else "Sorry, I don't know the time yet.")
+            self._clip(beep(), "Button")          # (at once: the voice may need a moment to wake)
+            threading.Thread(target=tell, name="button-time", daemon=True).start()
         elif action == "news":
             self._clip(beep(), "Button")
             threading.Thread(target=self._news, name="news-now", daemon=True).start()

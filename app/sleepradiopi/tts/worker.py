@@ -46,6 +46,7 @@ log = logging.getLogger(__name__)
 TTS_THREADS = 2  # leaves the other cores for ffmpeg decode/encode
 RECYCLE_MB = 250     # (with the image's zram swap, S01zram; it was 200 without)
 HARD_MB = 280        # mid-line: stop, and let a fresh worker say the rest
+IDLE_S = 30.0        # nothing to say for this long: the worker exits (freeing its memory)
 MAX_WORDS = 12       # a piece longer than this is split (bounds the largest buffer)
 _SENTENCE = re.compile(r"(?<=[.!?])\s+")
 _CLAUSE = re.compile(r"(?<=[,;:—])\s+")
@@ -131,21 +132,39 @@ def _serve(conn, voice_dir: str, voice: str) -> None:
 
 class TtsWorker:
     """One voice in a child process. synth() is blocking and thread-safe (calls are
-    serialised); it waits while the worker is (re)loading."""
+    serialised); it waits while the worker is (re)loading.
 
-    def __init__(self, voices_dir: Path, voice: str, recycle_mb: int = RECYCLE_MB, hard_mb: int = HARD_MB) -> None:
+    The worker goes to sleep (its process exits, freeing 150-300 MB) after
+    IDLE_S with nothing to say, and after a line that left it over recycle_mb;
+    the next synth() wakes it (a fresh load, ~17 s on a Zero -- lines are made
+    well ahead). Kept loaded, it squeezed the Zero's memory all the time, and
+    each reload then stalled the music for a moment (a blip)."""
+
+    def __init__(self, voices_dir: Path, voice: str, recycle_mb: int = RECYCLE_MB, hard_mb: int = HARD_MB,
+                 idle_s: float = IDLE_S) -> None:
         self.voices_dir = voices_dir
         self.voice = voice
-        self.recycle_mb, self.hard_mb = recycle_mb, hard_mb
+        self.recycle_mb, self.hard_mb, self.idle_s = recycle_mb, hard_mb, idle_s
         self._ctx = mp.get_context("spawn")
         self._lock = threading.Lock()
+        self._wake_lock = threading.Lock()
         self._ready = threading.Event()
+        self._ok = False                     # the voice has loaded (at least once)
+        self._asleep = False
+        self._idle: threading.Timer | None = None
+        self._old_proc = None                # one going to sleep: gone before a new one starts
         self.restarts = 0
         self.last_rss_mb = 0
         self._conn = self._proc = None
         threading.Thread(target=self._start, name="tts-start", daemon=True).start()
 
     def _start(self) -> None:
+        old = self._old_proc
+        if old is not None:                  # (never two voices in memory at once)
+            old.join(timeout=10)
+            if old.is_alive():
+                old.kill()
+            self._old_proc = None
         conn, child = self._ctx.Pipe()
         proc = self._ctx.Process(target=_serve, args=(child, str(self.voices_dir / self.voice), self.voice),
                                  name="tts-worker", daemon=True)
@@ -155,6 +174,7 @@ class TtsWorker:
             log.error("voice pack %r is missing or incomplete in %s", self.voice, self.voices_dir)
             return
         self._conn, self._proc, self.last_rss_mb = conn, proc, rss
+        self._ok = True
         log.info("TTS worker ready: %s loaded in %.1fs (%d MB)", self.voice, load_s, rss)
         self._ready.set()
 
@@ -164,26 +184,61 @@ class TtsWorker:
             self._shutdown_and_restart()
 
     def _shutdown_and_restart(self) -> None:
-        old_conn, old_proc = self._conn, self._proc
-        try:
-            old_conn.send(None)
-        except OSError:
-            pass
-        old_proc.join(timeout=5)
-        if old_proc.is_alive():
-            old_proc.kill()
+        self._stop_proc()
         self.restarts += 1
         self._start()
 
+    def _stop_proc(self) -> None:
+        """(Under _lock.) Ask the worker to exit; _start() makes sure it has."""
+        old_conn, old_proc = self._conn, self._proc
+        self._conn = self._proc = None
+        if old_conn is not None:
+            try:
+                old_conn.send(None)
+            except OSError:
+                pass
+        self._old_proc = old_proc
+
+    def _sleep(self, why: str) -> None:
+        """(Under _lock.) Let the worker go: the next synth() loads a fresh one."""
+        if self._asleep or self._proc is None:
+            return
+        self._ready.clear()
+        self._asleep = True
+        self._stop_proc()
+        log.info("TTS worker asleep (%s): %d MB freed", why, self.last_rss_mb)
+
+    def _idle_sleep(self) -> None:
+        if self._lock.acquire(blocking=False):         # (not in the middle of a line)
+            try:
+                self._sleep("idle")
+            finally:
+                self._lock.release()
+
+    def wake(self) -> None:
+        """Load the voice now if it's asleep (blocking: ~17 s on a Zero)."""
+        self._wake()
+
+    def _wake(self) -> None:
+        with self._wake_lock:
+            if self._asleep:
+                self._asleep = False
+                self.restarts += 1
+                self._start()
+
     @property
     def ready(self) -> bool:
-        return self._ready.is_set()
+        """The voice is there (it may be asleep: the next line wakes it)."""
+        return self._ok
 
     def synth(self, voice: str, text: str, speed: float) -> tuple[np.ndarray, int]:
         if voice != self.voice:
             log.warning("asked for voice %r but only %r is loaded; using it", voice, self.voice)
+        if self._idle is not None:
+            self._idle.cancel()
         pieces, rate = [], 22050
         for _ in range(20):                      # (a very long text: a few fresh workers at most)
+            self._wake()
             if not self._ready.wait(timeout=120):
                 raise RuntimeError("TTS worker not ready")
             with self._lock:
@@ -192,12 +247,12 @@ class TtsWorker:
                 self._conn.send((text, speed, self.hard_mb))
                 status, payload, rate, rss, rest = self._conn.recv()
                 self.last_rss_mb = rss
-                recycle = rss > self.recycle_mb or bool(rest)
-                if recycle:
+                if rest:                         # mid-line: a fresh worker says the rest, now
                     self._ready.clear()
-            if recycle:
-                log.info("TTS worker at %d MB (> %d)%s: recycling", rss, self.recycle_mb,
-                         " mid-line; a fresh one says the rest" if rest else "")
+                elif rss > self.recycle_mb:      # grown: let it go; the next line loads a fresh one
+                    self._sleep(f"{rss} MB > {self.recycle_mb}")
+            if rest:
+                log.info("TTS worker at %d MB mid-line; a fresh one says the rest", rss)
                 threading.Thread(target=self._recycle, name="tts-recycle", daemon=True).start()
             if status != "ok":
                 raise RuntimeError(payload)
@@ -206,6 +261,9 @@ class TtsWorker:
                 break
             pieces.append(np.zeros(int(rate * SENTENCE_PAUSE_S), dtype=np.float32))
             text = rest
+        self._idle = threading.Timer(self.idle_s, self._idle_sleep)
+        self._idle.daemon = True
+        self._idle.start()
         return (np.concatenate(pieces) if len(pieces) > 1 else pieces[0]), rate
 
     def close(self) -> None:

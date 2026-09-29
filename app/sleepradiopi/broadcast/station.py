@@ -58,7 +58,8 @@ from .selector import BroadcastSelector, HookPool, parse_hooks
 log = logging.getLogger(__name__)
 
 LOOKAHEAD = 3             # tracks picked (and loudness-scanned) ahead
-PREFETCH_S = 45.0         # word the time check / news time line this long before a track ends
+PREFETCH_S = 75.0         # word the time check / news time line this long before a track ends
+                          # (from the real end time; long enough to wake the voice, ~17 s, and say it)
                           # (room for a TTS worker recycle, ~15 s, to finish first)
 STARTUP_JINGLE_MAX_S = 20.0   # the opening ident: longer ones (most jingles) wait for the first gap,
                               # so the first song isn't held back after a slow start-up
