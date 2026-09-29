@@ -102,8 +102,8 @@ software, and the case to print.
   3** together for a second to swap (or use the page's ☀ / ☾ switch), and
   optionally let the radio swap them by the clock.
 - **The DJ can be switched off** (Settings → The DJ, or a button): the show
-  becomes music only, while the news, messages and jingles keep their own
-  switches.
+  becomes music only, with no speech at all (no links, time checks, news or
+  messages).
 - **A service menu** for getting a radio back when its page can't be
   reached: **hold buttons 1 and 4 together for 5 seconds** (it ticks once a
   second while they're held) and the DJ reads out the choices, with the

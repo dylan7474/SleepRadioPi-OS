@@ -178,7 +178,7 @@ class Station:
         self.scans = pcm.ScanCache(cfg["scan_cache"])
 
         self.chattiness = chattiness.ident
-        self.dj_on = bool(cfg.get("broadcast_dj", True))   # off: music only (news, messages, jingles keep their own switches)
+        self.dj_on = bool(cfg.get("broadcast_dj", True))   # off: music only -- no speech at all (links, time, news, messages)
         self.voices_dir: Path | None = cfg.get("voices_dir")
         self._hook_pool = None                # loaded even when off, so they can be turned on
         if cfg["hooks_file"] and Path(cfg["hooks_file"]).is_file():
@@ -1135,7 +1135,7 @@ class Station:
             text = b.build(kind, prev, nxt, announce_every_track=self.config.announce_every_track)
             if text:
                 steps.append(Step("say", self._say(text)))
-        if self._has_voice and message:       # first thing in the gap (after a birthday wish; even with the DJ off)
+        if voice and message:                 # first thing in the gap (after a birthday wish)
             steps.insert(0, Step("say", self._say(message)))
         if voice and people:                  # first thing in the gap
             steps.insert(0, Step("say", self._say(wish_text(people, b.station))))
@@ -1174,6 +1174,8 @@ class Station:
         """PREFETCH_S before the track ends: word anything time-dependent from the real
         end time, so it's synthesised by the time the gap arrives. [again]: the track was
         skipped after that, so throw away what was worded and word it from now."""
+        if not self.dj_on:                    # the DJ off: nothing to word
+            return
         news = self._news_ready
         if again:
             for step in plan:
@@ -1202,7 +1204,7 @@ class Station:
         first in the gap (after a birthday wish). Not in an album, and not when
         the news is due in this gap (the message then waits for the next one)."""
         decision = self._gap_decision
-        if decision is None or decision[4] is not None or not self._has_voice or self._gap_is_album:
+        if decision is None or decision[4] is not None or not self._has_voice or not self.dj_on or self._gap_is_album:
             return
         if self.config.news_enabled and self._news_ready is not None \
                 and self.news_schedule.due_at(end_at) is not None:
@@ -1221,7 +1223,7 @@ class Station:
     def _run_gap(self) -> None:
         plan = self._plan
         news = self._news_ready
-        if news is not None and self.config.news_enabled and not self._gap_is_album:
+        if news is not None and self.config.news_enabled and self.dj_on and not self._gap_is_album:
             due = self.news_schedule.due_at(datetime.now())
             if due is not None and due.key == news.due.key and not news.body.future.done():
                 # Still being made (a skip can bring the gap early): don't sit in
@@ -1234,7 +1236,7 @@ class Station:
                 plan = [Step("news", news=news)]
                 if had_jingle:
                     plan.append(Step("jingle"))
-                if self._has_voice:
+                if self._has_voice and self.dj_on:
                     plan.append(Step("say", self._say(self.builder.intro_line(self.next_track))))
                 log.info("gap (news): %s", [s.describe() for s in plan])
         self._run_steps(plan)
@@ -1243,6 +1245,8 @@ class Station:
         for step in steps:
             if self._halted():
                 return
+            if not self.dj_on and step.kind in ("say", "clock", "news"):
+                continue                      # the DJ went off after this was planned: music only
             if step.kind == "say":
                 self._speak(step.speech)
             elif step.kind == "clock":
@@ -1262,7 +1266,7 @@ class Station:
 
     def _maybe_prepare_news(self) -> None:
         # News is scheduled by the clock (and needs the internet anyway).
-        if not (self.config.news_enabled and self.tts is not None and clock_trusted()):
+        if not (self.config.news_enabled and self.dj_on and self.tts is not None and clock_trusted()):
             return
         due = self.news_schedule.prep_at(datetime.now())
         if due is None or due.key == self._news_prep_key:

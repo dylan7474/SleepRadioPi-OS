@@ -215,7 +215,7 @@ Most of these are set from the web page; the rest are in the config file.
 | `broadcast_voice` | `"stock"` | `"stock"` or `"personal"` (a folder in the voices folder). |
 | `buttons_night`, `buttons_bank` | `[]`, `"day"` | The night set of four (like `buttons`, which is the day set), and the set in use. Hold buttons 2 and 3 together for 1 s to swap: three notes, rising for day, falling for night. |
 | `buttons_auto` | `{}` | `{"on", "night_min", "day_min"}` (defaults off, 21:00, 07:00): swap the sets by the clock, quietly; a swap by hand lasts until the next switch time. |
-| `broadcast_dj` | `true` | `false`: the show is music only (see *The DJ*). |
+| `broadcast_dj` | `true` | `false`: the show is music only, no speech at all (see *The DJ*). |
 | `buttons` | `[]` | The four preset buttons (the day set): `[preset or null, ...]`, each `{"kind": "show", "artist", "profile"}`, `{"kind": "radio", "name", "url"}`, `{"kind": "album", "folder", "title", "artist"}` or `{"kind": "action", "action": "time" \| "news" \| "sleep" \| "address"}`. |
 | `radio_stations` | the starter set | Internet radio: your saved stations, `[{"name", "url", "info"?}]`. |
 | `stream_source` | `null` | What's playing instead of the show — a station, or an album and the track it's on — kept over a restart; `null` = the show. Not in the settings backup. |
@@ -409,9 +409,10 @@ The cards:
   already lined up next still plays first. If the library has nothing for
   the choice, it plays everything. The jingles say "Sleep Radio", so they
   only play on the main mix (all artists).
-- **The DJ** — **on or off** (off: the show is music only — no welcome, links,
-  track intros, time checks or birthday wishes; the news, Messages and jingles
-  keep their own switches; a preset button can toggle it too: "DJ on/off"),
+- **The DJ** — **on or off** (off: the show is music only, with no speech at
+  all — no welcome, links, track intros, time checks, news, Messages or
+  birthday wishes, including lines already made before it was switched off;
+  jingles keep their own switch; a preset button can toggle it too: "DJ on/off"),
   the voice (your voice packs; changing it restarts the radio,
   about a minute, because only one voice fits in a Zero 2 W's memory), how
   often it talks (before every song, or every 2, 3 or 5), 70s hooks on/off,

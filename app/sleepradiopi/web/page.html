@@ -628,7 +628,7 @@
     <div class="row seg" id="djOn" role="group" aria-label="The DJ on or off" style="margin-top:0">
       <label>DJ</label>
       <button type="button" data-v="true" title="Links, time checks and the welcome">On</button>
-      <button type="button" data-v="false" title="Just the music (the news, messages and jingles keep their own switches)">Off: music only</button>
+      <button type="button" data-v="false" title="Just the music: no speech at all (no links, time checks, news or messages)">Off: music only</button>
     </div>
     <div class="row"><label for="djVoice">Voice</label><select id="djVoice"></select></div>
     <div class="row seg" id="djChat" role="group" aria-label="How chatty">
@@ -1418,7 +1418,7 @@ $("djVoice").onchange = e => {
 const CHAT = { maximum: "before every song", chatty: "every 2 songs", balanced: "every 3 songs", minimal: "every 5 songs" };
 document.querySelectorAll("#djChat button").forEach(b => b.onclick = () => setDj({ chattiness: b.dataset.v }, `The DJ now talks ${CHAT[b.dataset.v]}.`));
 document.querySelectorAll("#djOn button").forEach(b => b.onclick = () => setDj({ dj_on: b.dataset.v === "true" },
-  b.dataset.v === "true" ? "The DJ is on." : "The DJ is off: just the music. (The news, messages and jingles have their own switches.)"));
+  b.dataset.v === "true" ? "The DJ is on." : "The DJ is off: just the music, no speech at all (no links, time checks, news or messages)."));
 document.querySelectorAll("#djHooks button").forEach(b => b.onclick = () => setDj({ dj_hooks: b.dataset.v === "true" }, `70s hooks ${b.textContent.toLowerCase()}.`));
 $("djJingles").onchange = e => setDj({ jingle_every: +e.target.value }, +e.target.value ? `A jingle every ${e.target.value} songs.` : "No jingles.");
 document.querySelectorAll("#djStartup button").forEach(b => b.onclick = () => setDj({ startup_sound: b.dataset.v === "true" },

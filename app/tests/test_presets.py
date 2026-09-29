@@ -348,6 +348,12 @@ def test_the_dj_can_be_off(tmp_path) -> None:
     assert not any(s.kind == "say" for s in st._build_gap(LinkKind.LINK, False, [], track, st._take_next()))
     assert not any(s.kind == "say" for s in st._build_gap(LinkKind.TIME_CHECK, False, [], track, st._take_next()))
     msg = st._build_gap(LinkKind.LINK, False, [], track, st._take_next(), "A message for Dad.")
-    assert [s.speech for s in msg if s.kind == "say"] == ["A message for Dad."]   # messages keep their own switch
+    assert not any(s.kind == "say" for s in msg)                  # no speech at all: messages too
+    # lines planned before the DJ went off aren't said either
+    said = []
+    st._speak = lambda speech, *a, **k: said.append(speech)
+    from sleepradiopi.broadcast.station import Step
+    st._run_steps([Step("say", "Coming up next."), Step("clock"), Step("news")])
+    assert said == []
     st._prepare_opening()
     assert not any(s.kind == "say" for s in st._opening[1])       # no welcome either
