@@ -275,8 +275,8 @@ The cards:
   like a record, with no talk, jingles or news between tracks, and a
   back-announcement at the end. *Stop album* goes back to the usual mix
   after the song playing.
-- **Music library** (Settings → Music library → *Manage…*) — browse the
-  music and jingles folders on the radio, **add files or a whole folder**
+- **Media library** (Settings → Media library) — browse the music, jingles
+  and audiobooks folders on the radio, **add files or a whole folder**
   (e.g. an album, keeping its Disc 1 / Disc 2 folders and cover pictures),
   make folders, and **delete** files or folders (with a confirmation; no
   undo). Uploads go one file at a time with a progress bar, to a hidden
@@ -306,7 +306,7 @@ The cards:
   alongside the knob.
 - **Audiobooks** (Find, and the Radio tab while one plays) — books go in their
   own folder, next to the music (`/media/audiobooks` on the radio; upload them
-  under Settings → Music library → Audiobooks): a folder of mp3s is one book
+  under Settings → Media library → Audiobooks): a folder of mp3s is one book
   (its chapters in file order, CD1/CD2 sub-folders included), and a single
   `.m4b` or `.mp3` is a book too, an m4b's chapter markers becoming its chapters.
   A book plays **instead of the show, with nothing from the DJ** (no links,

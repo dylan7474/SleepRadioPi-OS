@@ -615,7 +615,7 @@
   </section>
     </div>
     <div class="page" id="page-library" hidden>
-      <div class="page-head"><button class="back" type="button">‹ Settings</button><h1>Music library</h1></div>
+      <div class="page-head"><button class="back" type="button">‹ Settings</button><h1>Media library</h1></div>
   <section class="card">
     <div class="row seg" role="group" aria-label="Music or jingles" style="margin-top:0">
       <button type="button" data-kind="music" aria-pressed="true">Music</button>
@@ -2031,7 +2031,7 @@ async function playAlbum(a) {
   } catch (e) { toast("Couldn't play it: " + e.message + "."); }
 }
 
-// --- Music library: browse, upload, delete (media.py) -------------------------------
+// --- Media library (music, jingles, audiobooks): browse, upload, delete (media.py) -------------------------------
 let mKind = "music", mPath = "", mediaDirty = false, uploading = false;
 const fmtSize = n => n >= 1e9 ? (n / 1e9).toFixed(1) + " GB" : n >= 1e6 ? (n / 1e6).toFixed(1) + " MB"
                    : Math.max(1, Math.round(n / 1e3)) + " kB";
@@ -2289,8 +2289,8 @@ function settingRows() {
       ["buttons", "The radio's buttons", bState ? bState.buttons.map((b, i) => `${i + 1} ${b.preset ? b.label : "empty"}`).join(" · ") : "…", "sheet"],
       ["list", "Artist lists", allLists.length ? allLists.map(p => p.name).join(", ") : "None yet: make one", "lists"],
       ["cake", "Birthdays", bdList.length ? `${bdList.length} ${bdList.length === 1 ? "person" : "people"}` : "None yet", "birthdays"]]],
-    ["Music", [
-      ["music", "Music library", s ? `${s.library.tracks.toLocaleString()} songs, ${s.library.jingles} jingles, ` +
+    ["Media", [
+      ["music", "Media library", s ? `${s.library.tracks.toLocaleString()} songs, ${s.library.jingles} jingles, ` +
         `${s.library.books ?? 0} audiobooks · add or delete` : "…", "library"],
       ["globe", "Internet stations", `${rStations.length} saved` + (lastDir && lastDir.stations
         ? ` · directory of ${lastDir.stations.toLocaleString()}` : ""), "stations"]]],

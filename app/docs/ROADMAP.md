@@ -17,7 +17,7 @@ left.
    the long press on the real switch; that a press wakes the radio after
    the sleep timer has faded it out and paused it (playing again, speaker
    back at its normal level, the page showing it); the RTC with no network.
-2. **Library tools** — the web page's *Music library* (Settings) adds and
+2. **Library tools** — the web page's *Media library* (Settings) adds and
    deletes music and jingles (2026-09-29). Still to do: syncing a whole
    desktop library in one go (e.g. an rsync-style script from the PC).
 3. **Fit the preset buttons** — the code, wiring (GPIO5/6/16/26) and case

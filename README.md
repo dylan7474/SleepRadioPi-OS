@@ -514,7 +514,7 @@ What's left to do (everything else described here is built and running):
 - **Wire the knob and the RTC** — check the knob's direction, step and long
   press on the real switch, and the RTC keeping time with no network.
 - **Library tools** — adding and deleting music is on the web page (Settings
-  → Music library); still to do: syncing a whole desktop library in one go.
+  → Media library); still to do: syncing a whole desktop library in one go.
 - **A needle VU meter** — a physical meter driven from a PWM pin, with the
   Android app's ballistics; one meter first.
 - **Music from any computer** — adding music needs a Linux PC today
