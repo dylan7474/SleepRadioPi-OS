@@ -50,6 +50,7 @@ from .models import BroadcastConfig, BroadcastTrack, Chattiness, JingleClip, Lin
 from .news import DueNews, NewsRepository, NewsSlot, NewsSchedule, QuietHours, build_bulletin_body, bulletin_time_line
 from . import profiles as profiles_mod
 from .birthdays import BirthdayWishes, wish_text
+from .messages import Messages
 from .script_builder import DjScriptBuilder, ShowClock, artist_station_name
 from .selector import BroadcastSelector, HookPool, parse_hooks
 
@@ -182,6 +183,11 @@ class Station:
         except ValueError as e:              # a hand-edited config: don't stop the station
             log.warning("birthdays ignored: %s", e)
             self.birthdays = BirthdayWishes([], quiet)
+        try:
+            self.messages = Messages(cfg.get("messages"))
+        except ValueError as e:
+            log.warning("messages ignored: %s", e)
+            self.messages = Messages()
 
         self._tag_cache = cfg.get("tag_cache")
         self.tracks = scan_music(self.music_dir, self._tag_cache)
@@ -997,7 +1003,7 @@ class Station:
 
     def _plan_gap(self, prev: BroadcastTrack, nxt: BroadcastTrack | None) -> list[Step]:
         """onBroadcastTrackStarted: what fills the gap after [prev]. The decisions
-        (link or time check, jingle, birthday) are made once here and kept, so a
+        (link or time check, jingle, birthday, message) are made once here and kept, so a
         request for the next song can re-word the gap without making them again."""
         self._gap_is_album = nxt is not None and self._album_inside(prev, nxt)
         if self._gap_is_album:               # like a record: straight on to the next track
@@ -1015,7 +1021,7 @@ class Station:
             if people:
                 self.birthdays.wished(now)
                 log.info("birthday wish planned for %s", ", ".join(p["name"] for p in people))
-        self._gap_decision = (kind, jingle_due, people, prev)
+        self._gap_decision = (kind, jingle_due, people, prev, None)   # (a message is added near the end)
         steps = self._build_gap(kind, jingle_due, people, prev, nxt)
         finished = self._album_end(prev)
         if finished is not None:              # its back-announcement is planned: done with it
@@ -1023,7 +1029,7 @@ class Station:
         return steps
 
     def _build_gap(self, kind: LinkKind, jingle_due: bool, people: list, prev: BroadcastTrack,
-                   nxt: BroadcastTrack | None) -> list[Step]:
+                   nxt: BroadcastTrack | None, message: str | None = None) -> list[Step]:
         b, voice = self.builder, self._has_voice
         starts = self._album_start(prev, nxt) if nxt is not None else None
         ends = self._album_end(prev)
@@ -1035,6 +1041,8 @@ class Station:
                 steps.append(Step("say", self._say(b.album_intro(starts, nxt))))
             elif nxt is not None:
                 steps.append(Step("say", self._say(b.intro_line(nxt))))
+            if message:
+                steps.insert(0, Step("say", self._say(message)))
             if people:
                 steps.insert(0, Step("say", self._say(wish_text(people, b.station))))
             return steps
@@ -1058,6 +1066,8 @@ class Station:
             text = b.build(kind, prev, nxt, announce_every_track=self.config.announce_every_track)
             if text:
                 steps.append(Step("say", self._say(text)))
+        if voice and message:                 # first thing in the gap (after a birthday wish)
+            steps.insert(0, Step("say", self._say(message)))
         if voice and people:                  # first thing in the gap
             steps.insert(0, Step("say", self._say(wish_text(people, b.station))))
         return steps
@@ -1066,9 +1076,9 @@ class Station:
         """The next song changed (a request) while a track plays: re-word the
         gap's lines for it. Clock, jingle and news steps are kept as they are
         (a time check may already be worded); only the talk is redone."""
-        kind, jingle_due, people, prev = self._gap_decision
+        kind, jingle_due, people, prev, message = self._gap_decision
         old = self._plan
-        new = self._build_gap(kind, jingle_due, people, prev, nxt)
+        new = self._build_gap(kind, jingle_due, people, prev, nxt, message)
         for i, step in enumerate(new):
             if step.kind != "say" and i < len(old) and old[i].kind == step.kind:
                 new[i] = old[i]
@@ -1084,6 +1094,12 @@ class Station:
         """Replace the birthday list (validated; ValueError if it's wrong)."""
         self.birthdays.set(entries)
         log.info("birthdays: %d on the list", len(self.birthdays.entries))
+
+    def set_messages(self, cfg: dict) -> None:
+        """Replace the messages and their times (validated; ValueError if wrong)."""
+        self.messages.set(cfg)
+        log.info("messages: %d on the list, %s", len(self.messages.cfg["list"]),
+                 "on" if self.messages.cfg["on"] else "off")
 
     def _prefetch_gap(self, plan: list[Step], end_at: datetime, again: bool = False) -> None:
         """PREFETCH_S before the track ends: word anything time-dependent from the real
@@ -1102,6 +1118,7 @@ class Station:
             if due and due.key == news.due.key:
                 news.time_line = self._say(bulletin_time_line(news.due.mark, end_at),
                                            self.news_voice, self.config.news_speed)
+        self._maybe_add_message(end_at)
         offset = 0.0
         for step in plan:
             if step.kind == "say":
@@ -1110,6 +1127,27 @@ class Station:
                 step.clock.speech = self._say(self.builder.time_line((end_at + timedelta(seconds=offset)).time()))
             elif step.kind == "jingle":
                 break
+
+    def _maybe_add_message(self, end_at: datetime) -> None:
+        """Near the end of a track: if a message is due when the gap comes, put it
+        first in the gap (after a birthday wish). Not in an album, and not when
+        the news is due in this gap (the message then waits for the next one)."""
+        decision = self._gap_decision
+        if decision is None or decision[4] is not None or not self._has_voice or self._gap_is_album:
+            return
+        if self.config.news_enabled and self._news_ready is not None \
+                and self.news_schedule.due_at(end_at) is not None:
+            return
+        message = self.messages.due(end_at, clock_trusted())
+        if not message:
+            return
+        self.messages.played(end_at)
+        self._gap_decision = decision[:4] + (message,)
+        step = Step("say", self._say(message))
+        plan = self._plan
+        plan.insert(1 if decision[2] and plan and plan[0].kind == "say" else 0, step)
+        self.gap_plan = [s.describe() for s in plan]
+        log.info("message in the next gap: %s", message[:60])
 
     def _run_gap(self) -> None:
         plan = self._plan

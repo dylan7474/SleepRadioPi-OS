@@ -34,6 +34,12 @@ software, and the case to print.
 - **Birthdays** — tell it whose birthday is when, and on the day the DJ
   wishes them a happy one between songs (*"happy forty-first birthday to
   Sarah"*), a few times through the day.
+- **Messages** — short notes written on the web page that the DJ reads
+  between songs through the day (by default at :07, :22, :37 and :52, between
+  8 am and 9 pm, one at a time in turn), opening with the day and date: for
+  someone with a poor memory, *"It's Tuesday, the twenty-ninth of September.
+  You're at Willow Court, and you're safe here."* A message can have a last
+  day (for "coming to see you on Sunday").
 - **Artist radio and your own lists** — play only one artist (the DJ then
   says *"welcome to Beatles Radio"*) or a named list of artists (*"Friday
   List on Sleep Radio"*).
@@ -544,19 +550,11 @@ What's left to do (everything else described here is built and running):
     brackets);
   - the flat parts exported as DXF/SVG for the laser from the same OpenSCAD
     design.
-- **A family bulletin** — reassuring messages the DJ reads at set times:
-  - for someone with poor memory, for example in a care home;
-  - for example "You're at Rosewood House, the staff are looking after you.
-    Dylan lives five minutes away and will be in to see you soon";
-  - it opens with the day and date;
-  - messages are written on the web page, and can end on a set date
-    (for "coming on Sunday");
-  - none at night;
-  - read in the DJ's voice as "a message from ...", or optionally a
-    recorded clip;
-  - updated from home, through a private link the radio checks or through
-    remote access, since a care home's Wi-Fi usually blocks incoming
-    connections.
+- **Messages, from further away** — the Messages (built 2026-09-29) are
+  written on the radio's own page; for a radio in a care home they'd need
+  updating from home, through a private link the radio checks or through
+  remote access, since a care home's Wi-Fi usually blocks incoming
+  connections. Maybe a recorded clip as well as the DJ's reading.
 - **A glow behind the grilles** — warm-white LEDs (a 5 V COB strip)
   lighting the grille from behind, for a soft glow at night: dimmable from the
   page, fading with the sleep timer, shared with the VU meter's backlight. On

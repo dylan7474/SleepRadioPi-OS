@@ -58,7 +58,7 @@ def test_mid_song_the_gap_is_reworded_for_the_request(tmp_path: Path, monkeypatc
     clock = ClockStep()
     st._plan = [Step("say", _speech("That was A. Coming up, Old Next.")), Step("clock", clock=clock),
                 Step("say", _speech("Here's Old Next."))]
-    st._gap_decision = (LinkKind.TIME_CHECK, False, [], track)
+    st._gap_decision = (LinkKind.TIME_CHECK, False, [], track, None)
     reply = st.request(_id(st, "Fall at Your Feet"))
     assert reply["replanned"] and st.next_track.title == "Fall at Your Feet"
     talk = " ".join(s.speech.text for s in st._plan if s.kind == "say")

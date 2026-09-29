@@ -253,6 +253,14 @@
   #bdName { flex: 1 1 9rem; }
   #bdYear { width: 5.5rem; }
   #bdToday { margin: 0 0 .6rem; color: var(--amber); }
+  #msgForm { display: grid; gap: .5rem; margin-top: .8rem; }
+  #msgText { width: 100%; min-height: 4.5rem; resize: vertical; font: inherit; }
+  #msgForm .row { margin: 0; }
+  #msgList li { flex-wrap: wrap; }
+  #msgList li > .who { flex: 1 1 100%; }
+  #msgList li.off .who { opacity: .5; }
+  #msgList small { display: block; color: var(--dim); font-size: .8rem; }
+  #msgTimes input[type=time] { width: 7.5rem; }
   #knobBtn { position: relative; overflow: hidden; width: 100%; padding: .9rem; border-radius: var(--r);
              touch-action: none; user-select: none; -webkit-user-select: none; }
   #knobBtn span { position: relative; }
@@ -686,6 +694,38 @@
     <p id="bdNote" class="muted" style="margin:.5rem 0 0;font-size:.85rem">On their birthday the DJ wishes them a
       happy one between songs, a few times through the day (not in the night-time quiet hours). The year is
       optional: with it the DJ says which birthday.</p>
+  </section>
+    </div>
+    <div class="page" id="page-messages" hidden>
+      <div class="page-head"><button class="back" type="button">‹ Settings</button><h1>Messages</h1></div>
+  <section id="msg" class="card">
+    <div class="row seg" id="msgOn" role="group" aria-label="Messages on or off" style="margin-top:0">
+      <label>Messages</label>
+      <button type="button" data-v="true">On</button><button type="button" data-v="false">Off</button>
+    </div>
+    <div class="row"><label for="msgEvery">How often</label><select id="msgEvery">
+      <option value="15">Every 15 minutes</option><option value="20">Every 20 minutes</option>
+      <option value="30">Every 30 minutes</option><option value="60">Every hour</option></select></div>
+    <div class="row"><label for="msgOffset">Minutes past</label><select id="msgOffset"></select>
+      <span id="msgAt" class="muted" style="font-size:.85rem"></span></div>
+    <div class="row" id="msgTimes"><label for="msgFrom">Between</label>
+      <input id="msgFrom" type="time" step="900" aria-label="From"> and
+      <input id="msgTo" type="time" step="900" aria-label="To"></div>
+    <div class="row seg" id="msgDate" role="group" aria-label="Say the day and date first">
+      <label>Day and date first</label>
+      <button type="button" data-v="true">Yes</button><button type="button" data-v="false">No</button>
+    </div>
+    <ul id="msgList" style="margin-top:.8rem"><li class="muted">No messages yet.</li></ul>
+    <form id="msgForm" autocomplete="off">
+      <textarea id="msgText" maxlength="400" aria-label="The message" required
+        placeholder="e.g. You're at Willow Court, and you're safe here. Dylan lives five minutes away and is coming to see you on Sunday."></textarea>
+      <div class="row"><label for="msgUntil">Last day</label><input id="msgUntil" type="date" aria-label="Last day (optional)">
+        <span class="muted" style="font-size:.85rem">optional</span>
+        <button type="submit" style="margin-left:auto">Add</button></div>
+    </form>
+    <p id="msgNote" class="muted" style="margin:.5rem 0 0;font-size:.85rem">The DJ reads one message at a time,
+      taking turns, in the first gap between songs after each time; the news is on the hour and half past, so the
+      times sit between. Only on the show (not while a station, album, audiobook or podcast plays).</p>
   </section>
     </div>
     <div class="page" id="page-library" hidden>
@@ -1568,6 +1608,91 @@ async function hearBirthday(b) {
     bdNote(r.ok ? `On the radio: “${reply.text}”` : "Couldn't: " + reply.error + ".", !r.ok);
   } catch { bdNote("Couldn't reach the radio.", true); }
 }
+// Messages: notes the DJ reads through the day (kept on the radio, and in the saved settings).
+let msgState = null;
+const minHM = m => `${String(Math.floor(m / 60) % 24).padStart(2, "0")}:${String(m % 60).padStart(2, "0")}`;
+const toMin = v => { const [h, m] = (v || "0:0").split(":").map(Number); return h * 60 + m; };
+function msgNote(text, bad) { $("msgNote").textContent = text; $("msgNote").classList.toggle("bad", !!bad); }
+function msgSlots(every, offset) {
+  const at = []; for (let m = offset; m < 60; m += every) at.push(":" + String(m).padStart(2, "0"));
+  return at.join(", ");
+}
+function fillOffsets(every, offset) {
+  $("msgOffset").replaceChildren(...Array.from({ length: every }, (_, m) => new Option(m, m)));
+  $("msgOffset").value = Math.min(offset, every - 1);
+  $("msgAt").textContent = "at " + msgSlots(every, +$("msgOffset").value) + " past";
+}
+function showMessages(state) {
+  msgState = state;
+  $("msgOn").querySelectorAll("button").forEach(b => b.setAttribute("aria-pressed", String(b.dataset.v === String(state.on))));
+  $("msgDate").querySelectorAll("button").forEach(b => b.setAttribute("aria-pressed", String(b.dataset.v === String(state.date_first))));
+  $("msgEvery").value = state.every_min;
+  fillOffsets(state.every_min, state.offset_min);
+  $("msgFrom").value = minHM(state.start_min); $("msgTo").value = minHM(state.end_min);
+  const today = new Date().toISOString().slice(0, 10);
+  $("msgList").replaceChildren(...(state.list.length ? state.list.map((m, i) => {
+    const li = document.createElement("li");
+    const gone = m.until && m.until < today;
+    li.classList.toggle("off", !!(m.off || gone));
+    const who = document.createElement("span"); who.className = "who"; who.textContent = m.text;
+    const until = m.until ? (gone ? `Finished (last day ${m.until})` : `Until ${new Date(m.until + "T12:00").toLocaleDateString(undefined, { weekday: "short", day: "numeric", month: "short" })}`) : "";
+    const bits = [m.off ? "Paused" : "", until].filter(Boolean).join(" · ");
+    if (bits) who.append(Object.assign(document.createElement("small"), { textContent: bits }));
+    const acts = Object.assign(document.createElement("div"), { className: "ep-do" });
+    li.append(who, acts);
+    const btn = (label, fn, title) => { const b = document.createElement("button"); b.type = "button";
+      b.textContent = label; if (title) b.title = title; b.onclick = fn; acts.append(b); };
+    if (state.can_hear) btn("Hear it", () => hearMessage(m.text), "The DJ says it on the radio now");
+    btn(m.off ? "Resume" : "Pause", () => saveMessages({ list: state.list.map((x, j) => j === i ? { ...x, off: !x.off } : x) },
+                                                        m.off ? "Resumed." : "Paused: it's kept, but not read."));
+    btn("Remove", () => saveMessages({ list: state.list.filter((_, j) => j !== i) }, "Removed."));
+    return li;
+  }) : [Object.assign(document.createElement("li"), { className: "muted", textContent: "No messages yet." })]));
+  drawSettings();
+  if (!state.clock_trusted) msgNote("The radio's clock isn't set yet (no internet), so no messages until it is.");
+  else if (state.on && state.next) msgNote(state.due_now ? "A message is due: it's read in the next gap between songs."
+    : `Next message ${state.next_day ? "tomorrow at" : "at about"} ${state.next}.`);
+}
+async function loadMessages() {
+  try { showMessages(await (await fetch("/api/messages", { cache: "no-store" })).json()); } catch {}
+}
+async function saveMessages(change, done) {
+  if (!msgState) return false;
+  const { on, every_min, offset_min, start_min, end_min, date_first, list } = msgState;
+  try {
+    const r = await fetch("/api/messages", { method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ on, every_min, offset_min, start_min, end_min, date_first, list, ...change }) });
+    const reply = await r.json();
+    if (!r.ok) return msgNote("Not saved: " + reply.error + ".", true), false;
+    showMessages(reply); if (done) toast(done);
+    return true;
+  } catch { msgNote("Couldn't reach the radio.", true); return false; }
+}
+async function hearMessage(text) {
+  msgNote("Making it; the DJ reads it on the radio in a few seconds…");
+  try {
+    const r = await fetch("/api/messages/hear", { method: "POST", headers: { "Content-Type": "application/json" },
+                                                  body: JSON.stringify({ text }) });
+    const reply = await r.json();
+    msgNote(r.ok ? `On the radio: “${reply.text}”` : "Couldn't: " + reply.error + ".", !r.ok);
+  } catch { msgNote("Couldn't reach the radio.", true); }
+}
+$("msgOn").onclick = e => { const v = e.target.dataset && e.target.dataset.v; if (v) saveMessages({ on: v === "true" }, v === "true" ? "Messages on." : "Messages off."); };
+$("msgDate").onclick = e => { const v = e.target.dataset && e.target.dataset.v; if (v) saveMessages({ date_first: v === "true" }); };
+$("msgEvery").onchange = () => { const every = +$("msgEvery").value;
+  saveMessages({ every_min: every, offset_min: Math.min(msgState.offset_min, every - 1) }); };
+$("msgOffset").onchange = () => saveMessages({ offset_min: +$("msgOffset").value });
+$("msgFrom").onchange = () => $("msgFrom").value && saveMessages({ start_min: toMin($("msgFrom").value) });
+$("msgTo").onchange = () => $("msgTo").value && saveMessages({ end_min: toMin($("msgTo").value) });
+$("msgForm").onsubmit = async e => {
+  e.preventDefault();
+  const text = $("msgText").value.trim();
+  if (!text || !msgState) return;
+  const entry = { text };
+  if ($("msgUntil").value) entry.until = $("msgUntil").value;
+  if (await saveMessages({ list: [...msgState.list, entry] }, "Message added.")) { $("msgText").value = ""; $("msgUntil").value = ""; }
+};
+
 $("bdForm").onsubmit = async e => {
   e.preventDefault();
   const name = $("bdName").value.trim();
@@ -2009,7 +2134,7 @@ $("settingsFile").onchange = async e => {
                : reply.needs_restart ? "Loaded. Some take effect the next time the radio starts."
                : reply.changed.length ? "Loaded." : "Loaded. They were the same as the radio's already.");
     lastInput = eqInput = modeSent = lowcutSent = 0;   // let the page follow the new volume, EQ and mode
-    poll(); loadBirthdays(); loadArtists(); loadDj();   // (lists come with the artists)
+    poll(); loadBirthdays(); loadMessages(); loadArtists(); loadDj();   // (lists come with the artists)
   } catch {
     settingsNote("Couldn't reach the radio. Try again?", true);
   }
@@ -2449,7 +2574,7 @@ function uploadOne(file, name, folder, progress) {
 // --- Views: Radio · Find · Settings (and a page per setting), login -------------------
 // Links: "" (the radio), #find, #settings, #set-<page>. Old ones still work:
 // #radio (the old Streaming view) opens Find, #media the music library.
-const PAGES = ["speakers", "noise", "stream", "tests", "dj", "voices", "lists", "birthdays", "library", "stations",
+const PAGES = ["speakers", "noise", "stream", "tests", "dj", "voices", "lists", "birthdays", "messages", "library", "stations",
                "wifi", "updates", "password", "backup", "power"];
 function route() {
   const h = location.hash.slice(1);
@@ -2547,6 +2672,7 @@ const ICONS = {
   mic: '<rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/>',
   voice: '<path d="M4 12h2M8 8v8M12 5v14M16 9v6M20 11v2"/>',
   list: '<path d="M8 6h12M8 12h12M8 18h12M4 6h.01M4 12h.01M4 18h.01"/>',
+  note: '<path d="M4 5h16v11H9l-5 4z"/><path d="M8 9h8M8 12h5"/>',
   cake: '<path d="M4 21h16v-8H4zM4 16c2 1.5 4 1.5 6 0s4-1.5 6 0 3 1 4 0M12 13V9M12 6v.01"/>',
   buttons: '<circle cx="6" cy="12" r="2.5"/><circle cx="12" cy="12" r="2.5"/><circle cx="18" cy="12" r="2.5"/><path d="M3 7h18M3 17h18"/>',
   music: '<path d="M9 18V5l11-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="17" cy="16" r="3"/>',
@@ -2576,7 +2702,9 @@ function settingRows() {
         : dj && dj.voice ? `${cap(dj.voice)} voice in use` : "…", "voices"],
       ["buttons", "The radio's buttons", bState ? bState.buttons.map((b, i) => `${i + 1} ${b.preset ? b.label : "empty"}`).join(" · ") : "…", "sheet"],
       ["list", "Artist lists", allLists.length ? allLists.map(p => p.name).join(", ") : "None yet: make one", "lists"],
-      ["cake", "Birthdays", bdList.length ? `${bdList.length} ${bdList.length === 1 ? "person" : "people"}` : "None yet", "birthdays"]]],
+      ["cake", "Birthdays", bdList.length ? `${bdList.length} ${bdList.length === 1 ? "person" : "people"}` : "None yet", "birthdays"],
+      ["note", "Messages", !msgState ? "…" : !msgState.list.length ? "None yet: the DJ can read notes through the day"
+        : `${msgState.list.length} · ${msgState.on ? `every ${msgState.every_min} min, ${minHM(msgState.start_min)}–${minHM(msgState.end_min)}` : "off"}`, "messages"]]],
     ["Media", [
       ["music", "Media library", s ? `${s.library.tracks.toLocaleString()} songs, ${s.library.jingles} jingles, ` +
         `${s.library.books ?? 0} audiobooks · add or delete` : "…", "library"],
@@ -2672,7 +2800,7 @@ function start() {
   offerTune();
   poll();
   setInterval(poll, 3000);
-  loadArtists(); loadBirthdays(); loadDj(); loadButtons(); loadRadio(); loadBooks(); loadPodcasts();
+  loadArtists(); loadBirthdays(); loadMessages(); loadDj(); loadButtons(); loadRadio(); loadBooks(); loadPodcasts();
 }
 function showLogin() {
   if (started) { location.reload(); return; }   // logged out while using it: start clean

@@ -21,7 +21,7 @@ from dataclasses import asdict, fields
 from pathlib import Path
 
 from sleepradiopi.audio.eq import BANDS, MAX_DB
-from sleepradiopi.broadcast import birthdays, profiles
+from sleepradiopi.broadcast import birthdays, messages, profiles
 from sleepradiopi.broadcast.models import Chattiness
 from sleepradiopi.config.atomic import write_atomic
 from sleepradiopi.config.settings import Settings, load
@@ -41,7 +41,7 @@ LIVE = {"speaker_mono", "speaker_eq", "speaker_highpass_hz", "broadcast_artist",
         "profiles", "broadcast_profile", "broadcast_chattiness", "broadcast_dj_hooks",
         "broadcast_jingle_enabled", "broadcast_jingle_every", "news_enabled", "startup_sound", "web_stream",
         "broadcast_announcer_speed", "news_speed", "radio_stations", "buttons", "noise_on", "noise_kind", "noise_mix",
-        "podcasts"}
+        "podcasts", "messages"}
 
 CHOICES = {
     "broadcast_voice": {None, "stock", "personal"},
@@ -131,6 +131,11 @@ def _check(name: str, value):
             return birthdays.validate(value)
         except ValueError as e:
             raise BadSettings(f"birthdays: {e}") from None
+    if name == "messages":
+        try:
+            return messages.validate(value)
+        except ValueError as e:
+            raise BadSettings(f"messages: {e}") from None
     if name == "speaker_eq":
         if not all(k in BANDS and isinstance(v, (int, float)) and not isinstance(v, bool)
                    and -MAX_DB <= v <= MAX_DB for k, v in value.items()):

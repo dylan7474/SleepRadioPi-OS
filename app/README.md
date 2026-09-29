@@ -206,6 +206,7 @@ Most of these are set from the web page; the rest are in the config file.
 | `broadcast_artist` / `broadcast_profile` | `null` | Artist radio, or one of your `profiles` (lists of artists); `null` = everything. |
 | `profiles` | `[]` | `[{"name": "Friday List", "artists": [...]}]` |
 | `birthdays` | `[]` | `[{"name", "day", "month", "year"?}]` |
+| `messages` | `{}` | `{"on", "every_min", "offset_min", "start_min", "end_min", "date_first", "list": [{"text", "until"?, "off"?}]}` (defaults: on, 15, 7, 480, 1260, true) |
 | `broadcast_chattiness` | `"maximum"` | `maximum` (a link before every song), `chatty`, `balanced`, `minimal` (every 5). |
 | `broadcast_dj_hooks`, `broadcast_jingle_enabled` / `broadcast_jingle_every`, `news_enabled` | on, on / 4, on | The DJ card sets these. |
 | `broadcast_announcer_speed`, `news_speed` | `0.85`, `0.70` | Speech speed, 0.5–1.5 (1 = the voice's own pace, higher = faster). The DJ card sets these. |
@@ -415,6 +416,21 @@ The cards:
   between songs, at most every 90 minutes and up to 4 times ("happy
   forty-first birthday to Sarah" when the year is known; 29 February is
   celebrated on the 28th in other years). *Hear it* plays a wish now.
+- **Messages** (Settings → Messages) — short notes the DJ reads between
+  songs through the day, e.g. for someone with a poor memory: "You're at
+  Willow Court, and you're safe here. Dylan lives five minutes away and is
+  coming to see you on Sunday." One message per slot, taking turns: slots are
+  **every 15 minutes, 7 past** (:07, :22, :37, :52 — well clear of the news
+  at :00 and :30; every 20, 30 or 60 minutes and the minute are settings),
+  **between 8 am and 9 pm** (also a setting). A message is read first thing in
+  the first gap between songs from its time on (worded 45 s before the song
+  ends, for the gap's real time); if the news is due in that gap, it waits
+  for the next one. With **Day and date first** on, it opens "It's Tuesday,
+  the twenty-ninth of September." Each message can have a **last day**, and
+  can be **paused** without deleting it; *Hear it* plays one now. Only on the
+  show (not while a station, album, audiobook or podcast plays), only once
+  the clock is known, and on artist radio and lists too. Kept in the settings
+  as `messages` (`broadcast/messages.py`).
 - **Volume** — the same 0–100 scale as the knob, and it follows the knob.
   **Speakers: Stereo / Mono** switches at once. **Sleep timer** (15 min to
   1½ h) runs on the radio: it fades the speakers (and the page's own stream)
@@ -586,6 +602,8 @@ everything but the page itself and the login needs the session cookie
 | `POST /api/profiles` | `{"profiles": [{"name", "artists": [...]}]}` — replace the lists |
 | `GET` / `POST /api/birthdays` | The list (and whose birthday it is today) / `{"birthdays": [...]}` to replace it |
 | `POST /api/birthdays/hear` | `{"name", "day", "month", "year"?}` — say that wish now |
+| `GET` / `POST /api/messages` | The messages and their times, with `next` (HH:MM) and `due_now` / the same object to replace them |
+| `POST /api/messages/hear` | `{"text"}` — the DJ says it now (with the day and date first, if that's on) |
 | `GET` / `POST /api/settings` | Download the settings file / load one (400 with `{"error"}` if it's wrong) |
 | `POST /api/power` | Shut down, or `{"restart": true}` to restart (404 unless the appliance's watcher is there) |
 | `GET /stream` | The MP3 stream (404 while listening in a browser is off) |

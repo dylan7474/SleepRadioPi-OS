@@ -18,7 +18,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
-from sleepradiopi.broadcast import birthdays, profiles
+from sleepradiopi.broadcast import birthdays, messages, profiles
 from sleepradiopi.broadcast.station import Station
 from sleepradiopi.config.auth import COOKIE, SESSION_S, Auth
 from sleepradiopi.config.clock import clock_trusted
@@ -200,6 +200,8 @@ def make_handler(station: Station, output: Mp3Output, speaker=None,
                 self._save_settings()
             elif path == "/api/birthdays":
                 self._send(json.dumps(self._birthdays_state()).encode(), "application/json")
+            elif path == "/api/messages":
+                self._send(json.dumps(self._messages_state()).encode(), "application/json")
             elif path == "/api/voices":
                 self._send(json.dumps(self._voices_state()).encode(), "application/json")
             elif path == "/api/wifi":
@@ -299,6 +301,10 @@ def make_handler(station: Station, output: Mp3Output, speaker=None,
                 self._station()
             elif path == "/api/birthdays":
                 self._set_birthdays()
+            elif path == "/api/messages":
+                self._set_messages()
+            elif path == "/api/messages/hear":
+                self._hear_message()
             elif path == "/api/profiles":
                 self._set_profiles()
             elif path == "/api/request":
@@ -430,6 +436,8 @@ def make_handler(station: Station, output: Mp3Output, speaker=None,
                     station.set_artist(settings.get("broadcast_artist"))
             if "birthdays" in changed:
                 station.set_birthdays(settings["birthdays"])
+            if "messages" in changed:
+                station.set_messages(settings["messages"])
             if "buttons" in changed and presets is not None:
                 presets.set_all(settings["buttons"])
             if speaker is not None:
@@ -463,6 +471,48 @@ def make_handler(station: Station, output: Mp3Output, speaker=None,
                     "today": station.birthdays.today(datetime.now()) if trusted else [],
                     "clock_trusted": trusted,
                     "can_hear": speaker is not None and station._has_voice}
+
+        def _messages_state(self) -> dict:
+            trusted = clock_trusted()
+            nxt = station.messages.next_slot(datetime.now()) if trusted else None
+            return {**station.messages.cfg, "next": nxt.strftime("%H:%M") if nxt else None,
+                    "next_day": nxt.date() != date.today() if nxt else False,
+                    "due_now": bool(nxt and nxt <= datetime.now()),
+                    "clock_trusted": trusted, "can_hear": speaker is not None and station._has_voice}
+
+        def _set_messages(self) -> None:
+            """POST /api/messages {"on", "every_min", "offset_min", "start_min", "end_min",
+            "date_first", "list": [{"text", "until"?, "off"?}]}: replace them. Saved."""
+            try:
+                cfg = messages.validate(self._body())
+            except (ValueError, TypeError, AttributeError) as e:
+                self._error(str(e) if isinstance(e, ValueError) else "send the messages' settings")
+                return
+            station.set_messages(cfg)
+            if config_file is not None:
+                save_setting(config_file, "messages", cfg)
+            self._send(json.dumps(self._messages_state()).encode(), "application/json")
+
+        def _hear_message(self) -> None:
+            """POST /api/messages/hear {"text"}: the DJ says it on the speaker now
+            (with the day and date first, if that's on)."""
+            try:
+                text = messages.validate({"list": [{"text": self._body().get("text")}]})["list"][0]["text"]
+            except (ValueError, TypeError, AttributeError) as e:
+                self._error(str(e) if isinstance(e, ValueError) else "send {\"text\"}")
+                return
+            if speaker is None or not station._has_voice:
+                self._error("this radio has no speaker or no voice")
+                return
+            words = station.messages.words(text, date.today())
+
+            def run():
+                try:
+                    speaker.play_clip(Clip(station.render_speech(words), "message", "Message"))
+                except Exception:
+                    log.exception("message preview failed")
+            threading.Thread(target=run, name="message-preview", daemon=True).start()
+            self._send(json.dumps({"ok": True, "text": words}).encode(), "application/json")
 
         def _body(self):
             return json.loads(self.rfile.read(int(self.headers.get("Content-Length", 0))) or b"{}")

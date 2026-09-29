@@ -36,6 +36,7 @@ class Settings:
     buttons: list = field(default_factory=list)   # the 4 preset buttons (io/presets.py); null = empty
     stream_source: dict | None = None     # a station or album playing instead of the show; None = the show
     birthdays: list = field(default_factory=list)  # [{"name", "day", "month", "year"?}]: the DJ wishes them on the day
+    messages: dict = field(default_factory=dict)   # notes the DJ reads through the day (broadcast/messages.py)
     broadcast_jingle_enabled: bool = True
     broadcast_jingle_every: int = 4
     broadcast_announcer_volume: float = 0.4    # x the speech level; 0.4 ~ level with the music
