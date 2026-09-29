@@ -34,6 +34,9 @@ python3 -m sleepradiopi.startup_sound --home $HOME 2>&1 | logger -t startup-soun
 # Nice -5: the music (the speaker feed, aplay and the ffmpeg decoder, which
 # inherit it) comes first; the voice worker and the library scan lower
 # themselves to +5, so making a line never starves the speaker (drop-outs).
+# The station may lock itself in RAM (main._lock_in_memory), so the voice
+# reloading its model never pushes the station's code out and stalls the music.
+ulimit -l unlimited
 HOME=$HOME MALLOC_ARENA_MAX=2 SLEEPRADIOPI_CLOCK_FLAG=/run/time-synced \
 	SLEEPRADIOPI_POWER_REQUEST=/run/sleepradiopi/poweroff SLEEPRADIOPI_SUPERVISED=1 \
 	SLEEPRADIOPI_VOICE_REQUEST=/run/sleepradiopi/voice-install \

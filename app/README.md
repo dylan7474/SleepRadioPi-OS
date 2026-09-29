@@ -711,6 +711,9 @@ image adds 256 MB of compressed swap in RAM (zram, lz4: `S01zram`), without
 which the personal voice's ~300 MB peaks left the Zero thrashing. The CPU
 is shared the same way: on the radio the station runs at nice -5 (the
 speaker feed, aplay and the music decoder inherit it) and the voice worker
-and library scan lower themselves to +5, with a 350 ms speaker buffer, so
-making a line doesn't cause drop-outs. See `sleepradiopi/tts/worker.py`
+and library scan lower themselves to +5, with a 500 ms speaker buffer; and
+once music is playing the station locks the memory it's using in RAM
+(`mlockall(MCL_CURRENT | MCL_ONFAULT)`, ~100 MB), because the voice reloading
+its ~60 MB model pushed the station's code out of memory and the stall while
+it was read back in was a blip in the music. See `sleepradiopi/tts/worker.py`
 and the "Lessons" section of `docs/PI_SETUP.md`.

@@ -99,11 +99,34 @@ def _say_now(station: Station, control, text: str) -> None:
     threading.Thread(target=run, name="say", daemon=True).start()
 
 
+def _lock_in_memory() -> None:
+    """Keep the station's code and data (as they are now) in RAM. When the
+    voice reloads it reads its ~60 MB model, which pushed parts of the station
+    out of memory; reading them back in stalled it long enough for the speaker
+    to run dry (a blip in the music). Only what's mapped now is locked, so
+    later allocations can still go to the compressed swap. Needs the memlock
+    limit raised (the appliance's sleepradiopi-station does); else a no-op."""
+    import ctypes
+    import ctypes.util
+    MCL_CURRENT, MCL_ONFAULT = 1, 4       # (ONFAULT: only pages already in RAM -- the ~100 MB
+    try:                                  #  in use, not the ~240 MB of address space reserved)
+        libc = ctypes.CDLL(ctypes.util.find_library("c") or "libc.so.6", use_errno=True)
+        if libc.mlockall(MCL_CURRENT | MCL_ONFAULT) != 0:
+            logging.info("memory not locked (errno %d): fine on a desktop", ctypes.get_errno())
+            return
+        logging.info("station memory locked in RAM (%s)", next((line.split(":")[1].strip()
+                     for line in open("/proc/self/status") if line.startswith("VmLck")), "?"))
+    except (OSError, AttributeError):
+        pass
+
+
 def _after_first_song(station: Station, updates: Updates) -> None:
     """Once music is playing after a start-up, confirm a pending update (so the
-    boot watchdog doesn't roll it back) and say how it went."""
+    boot watchdog doesn't roll it back) and say how it went; and lock the
+    station in memory (everything it needs is loaded by then)."""
     while not station.music_started:      # a song, or an internet radio station
         time.sleep(2)
+    _lock_in_memory()
     updates.on_air()
 
 

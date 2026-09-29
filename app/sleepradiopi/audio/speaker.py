@@ -33,7 +33,7 @@ log = logging.getLogger(__name__)
 
 SLICE_FRAMES = 1024          # ~23 ms: how often the volume can change
 PIPE_BYTES = 16384           # ~93 ms of audio queued in the pipe to aplay
-ALSA_BUFFER_US = 350_000     # aplay's own buffer; 250 ms under-ran now and then while the voice worked
+ALSA_BUFFER_US = 500_000     # aplay's own buffer; 250 / 350 ms under-ran now and then while the voice reloaded
 STUCK_S = 120.0              # the card won't open for this long: on_stuck() (the radio restarts)
 DB_PER_STEP = 0.5            # volume 100 = full scale, 0 = silent
 F_SETPIPE_SZ = 1031          # fcntl.F_SETPIPE_SZ (Linux), missing from older Pythons
