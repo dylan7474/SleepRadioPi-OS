@@ -31,6 +31,7 @@ slot in the back is a small vent. An optional **bass port** back panel is below.
 | `stl/strap_guide.stl` | side down, no supports | a **drill guide** for the loops' screw holes in a tube printed without them |
 | `stl/top_test.stl` | outside face down, no supports | just the **top wall** with the preset buttons' and knob's holes (~40 min), to try the buttons before printing the tube; see *Preset buttons* below |
 | `stl/tube_buttons.stl` | as the tube | the tube **with the four 16 mm preset buttons' holes and the knob moved back** (`-D buttons=true`) |
+| `stl/tube_buttons_handle.stl` | as the tube | the same **plus the carry strap loops' screw holes** (`-D buttons=true -D handle=true`) |
 | `stl/tube_handle.stl` | as the tube | the tube **with the loops' screw holes** (`-D handle=true`), for a new print |
 | `stl/front.stl`, `knob.stl`, `tabs.stl` | | the same parts, separately |
 | `stl/knob_sunburst.stl` | top face down, no supports | the knob with the grilles' **sunburst fan** engraved 0.8 mm into its top instead of the pointer groove; the fan rises towards where the groove pointed, so it still shows the knob's position (`knob_style="sunburst"` in either `.scad`) |
