@@ -71,3 +71,15 @@ def test_time_checks_and_news_only_with_a_trusted_clock(tmp_path: Path, monkeypa
         if t.name == "news-prep":
             t.join(2)
     assert bool(fetched) == synced
+
+
+def test_a_hello_welcome_made_before_the_clock_was_set_is_kept(tmp_path: Path, monkeypatch) -> None:
+    from sleepradiopi.broadcast import station as station_mod
+    monkeypatch.setattr(station_mod, "clock_trusted", lambda: False)
+    st = _station(tmp_path)
+    st._prepare_opening()
+    made = st._opening
+    assert made[0].startswith("Hello,")
+    monkeypatch.setattr(station_mod, "clock_trusted", lambda: True)     # NTP set the clock meanwhile
+    steps, first = st._take_opening()
+    assert steps is made[1] and first is made[2]                         # not made again

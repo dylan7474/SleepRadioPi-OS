@@ -1716,7 +1716,11 @@ class Station:
 
     def _take_opening(self) -> tuple[list[Step], BroadcastTrack]:
         opening = self._opening
-        if opening is None or opening[0] != self.builder.welcome_greeting():
+        # Remade only if its greeting is now wrong ("Good evening" after 10 pm). A
+        # "Hello" (made before the clock was set, or at night) suits any time: remaking
+        # it held up every start-up by a line's worth of synthesis on a Zero.
+        if opening is None or (opening[0] != self.builder.welcome_greeting(time_known=clock_trusted())
+                               and not opening[0].startswith("Hello,")):
             if opening is not None:
                 self._queue.appendleft(opening[2])
             self._prepare_opening()
