@@ -594,14 +594,13 @@ What's left to do (everything else described here is built and running):
   lighting the grille from behind, for a soft glow at night: dimmable from the
   page, fading with the sleep timer, shared with the VU meter's backlight. On
   the box it glows round each speaker (a clip-in holder inside the collar,
-  wired with the speakers). On the cathedral it's behind the grille cloth, so
-  the sunburst shows in silhouette:
-
-  ![The cathedral radio at night, the grille cloth and VU meter glowing warm](hardware/cathedral/concept_night.jpg)
-- **A cathedral radio case** — a 1930s art deco cathedral set in wood, with
-  one 4-inch speaker and the VU meter as its dial. The design, the pictures and
-  what to buy are on [its page](hardware/cathedral/README.md); the parts come
-  once the speaker and meter are here to measure.
+  wired with the speakers). On the cathedral radio it's behind the grille
+  cloth, so the sunburst shows in silhouette.
+- **A cathedral radio** — a 1930s art deco cathedral set in wood (a ported
+  4-inch speaker, the VU meter as its dial, a six-way selector) is now its own
+  project, **Phonosphere** (private for now). It runs this software; its
+  differences (six presets, the selector, a back button, the meter and the
+  grille light) will be a hardware profile here.
 - **Auto-tune with a USB mic** — a cheap USB mic in the Zero's data port,
   where you sit, and an **Auto-tune** button on the radio's page:
   - it plays the pink noise, records the box and works out the EQ and low
