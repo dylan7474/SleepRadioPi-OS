@@ -294,7 +294,8 @@ from `LOGO=1 SUNBURST=1 ./make-mockup.sh`, `LOGO=1 ./make-mockup.sh` and
 `./make-mockup.sh`. `mockup.scad` sets the
 colours (`body_colour`, `panel_colour`, `knob_colour`, and `letter_colour` for the
 two-tone front's blue layers 0.8–1.6 mm behind the face) and reuses the real parts
-unchanged; `./make-mockup.sh` renders it and places it on a studio backdrop
+unchanged, with the four preset buttons in the top (`mockup_buttons = true`: the
+`-D buttons=true` tube, knob moved back, the buttons' stainless heads); `./make-mockup.sh` renders it and places it on a studio backdrop
 (needs OpenSCAD + ImageMagick, ~30 s). Change the view with
 `CAM=tx,ty,tz,rx,ry,rz,dist ./make-mockup.sh`.
 
