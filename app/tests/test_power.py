@@ -89,3 +89,15 @@ def test_shutdown_from_the_page(server, tmp_path: Path, monkeypatch) -> None:
     assert _post(url + "/api/power") == {"shutting_down": True}
     assert flag.exists()
     assert speaker.saved and speaker.paused    # volume kept, speaker silent at once
+
+
+def test_restart_from_the_page(server, tmp_path: Path, monkeypatch) -> None:
+    base, speaker = server
+    request = tmp_path / "poweroff"
+    monkeypatch.setenv(ENV, str(request))
+    req = urllib.request.Request(base + "/api/power", data=json.dumps({"restart": True}).encode(), method="POST",
+                                 headers={"Content-Type": "application/json"})
+    with urllib.request.urlopen(req) as r:
+        assert json.load(r) == {"restarting": True}
+    assert (tmp_path / "reboot").exists() and not request.exists()      # a restart, not a shutdown
+    assert speaker.saved and speaker.paused                            # the volume kept, quiet at once

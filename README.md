@@ -98,7 +98,7 @@ software, and the case to print.
   hooks, jingles, news, DJ and news speaking speeds), voices (download the standard one, upload your
   own), your artist lists, birthdays, test sounds for
   checking speakers and wiring, the password, a settings backup you can
-  download and load back, and shut down.
+  download and load back, and restart or shut down.
 - **Wi-Fi anywhere, quietly.** Add networks on the web page (Settings →
   Wi-Fi) as well as the one set up on the card; it joins whichever is in
   range. If the network drops (a router restarting, a weak signal in the
@@ -387,7 +387,7 @@ Other targets are passed through to Buildroot: `make menuconfig`,
   introduces them), artist radio ("Beatles Radio") and your own lists of
   artists ("Friday List"; the "Sleep Radio" jingles only play on the main mix), birthdays the DJ wishes on the day, test sounds (sweeps,
   pink noise, left/right (spoken) and phase checks), a virtual knob, skip, save/load
-  settings and shut down (see *What it does*, above). Everything on it is a
+  settings and restart or shut down (see *What it does*, above). Everything on it is a
   small JSON API too, e.g. `wget -qO- http://127.0.0.1/api/status` over
   ssh.
 - **Web password** (optional, off by default): set it on the page under

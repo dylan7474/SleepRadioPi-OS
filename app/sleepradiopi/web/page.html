@@ -785,10 +785,12 @@
   </section>
     </div>
     <div class="page" id="page-power" hidden>
-      <div class="page-head"><button class="back" type="button">‹ Settings</button><h1>Shut down</h1></div>
+      <div class="page-head"><button class="back" type="button">‹ Settings</button><h1>Restart or shut down</h1></div>
   <section id="power" class="card" hidden>
+    <p id="powerNote" class="muted" style="margin:0">Restart the radio if something seems stuck (it's back in about a
+      minute), or shut it down before unplugging it.</p>
     <div class="row">
-      <span id="powerNote" class="muted">Turn the radio off before unplugging it.</span>
+      <button id="restart" type="button">Restart</button>
       <button id="off" type="button">Shut down</button>
     </div>
   </section>
@@ -1875,6 +1877,35 @@ $("settingsFile").onchange = async e => {
   }
 };
 
+// Restart: the page says so, waits for the radio to answer again, then reloads.
+$("restart").onclick = async () => {
+  if (!confirm("Restart the radio?\n\nIt goes quiet and is back in about a minute.")) return;
+  try {
+    const r = await fetch("/api/power", { method: "POST", headers: { "Content-Type": "application/json" },
+                                          body: JSON.stringify({ restart: true }) });
+    if (!r.ok) throw new Error(r.status);
+  } catch { $("powerNote").textContent = "Couldn't restart. Try again?"; return; }
+  shuttingDown = true;
+  tuneOut();
+  $("restart").disabled = $("off").disabled = true;
+  $("badge").textContent = "Restarting"; $("badge").classList.remove("live");
+  $("kind").textContent = "Restarting";
+  $("title").textContent = "Back in about a minute";
+  $("artist").textContent = ""; $("next").textContent = "";
+  $("powerNote").textContent = "Restarting… this page reloads by itself when the radio's back.";
+  const started = Date.now();
+  await new Promise(r => setTimeout(r, 15000));              // (let it go down first)
+  const check = setInterval(async () => {
+    try {
+      const r = await fetch("/api/status", { cache: "no-store" });
+      if (r.ok || r.status === 401) { clearInterval(check); location.reload(); }
+    } catch {}
+    if (Date.now() - started > 5 * 60000) {
+      clearInterval(check);
+      $("powerNote").textContent = "It's taking a while: try reloading this page in a minute.";
+    }
+  }, 3000);
+};
 $("off").onclick = async () => {
   if (!confirm("Shut down the radio?\n\nTo turn it back on, unplug it and plug it in again.")) return;
   try {
@@ -2406,7 +2437,7 @@ function settingRows() {
         : `${$("version").textContent || "…"}${lastUpd && lastUpd.job && lastUpd.job.state === "checked" ? " · up to date" : ""}`) : "…", "updates"],
       ["lock", "Password", lastAuth ? (lastAuth.protected ? "On" : "Off: anyone on your network can use this page") : "…", "password"],
       ["save", "Save or load settings", "A backup of everything, as a file", "backup"],
-      s && s.can_power_off ? ["power", "Shut down", "Safe to unplug about 20 seconds later", "power", true] : null]],
+      s && s.can_power_off ? ["power", "Restart or shut down", "Restart if something seems stuck; shut down before unplugging", "power", true] : null]],
   ];
 }
 function drawSettings() {

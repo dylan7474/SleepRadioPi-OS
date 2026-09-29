@@ -38,7 +38,7 @@ and with no network, and is set up from its web page. See
   home, where there's no screen to show where the web page is.
 - **Everything else is on its web page** (below): EQ, sleep timer, artist
   radio and your own lists of artists, birthdays, test sounds, settings
-  backup, shut down.
+  backup, restart and shut down.
 - **Offline is normal.** Until the clock is known — from the internet (NTP),
   or from an optional DS3231 real-time clock module — the DJ **doesn't say
   the time, greets with "Hello" rather than "Good evening", and there's no
@@ -439,6 +439,7 @@ The cards:
   never saved or loaded. Most settings apply at once; others restart the
   station (only where `SLEEPRADIOPI_SUPERVISED` is set, as the service and
   the appliance image do; otherwise at the next start).
+- **Restart** (beside Shut down, Settings → Restart or shut down) — for when something seems stuck: the radio goes quiet, restarts and is back in about a minute; the page waits and reloads itself when it answers again (the same root helper, `power-request-watch`, watching `/run/sleepradiopi/reboot`).
 - **Shut down** — turns the radio off safely before unplugging (appliance
   image only: the station isn't root, so it creates the file named by
   `SLEEPRADIOPI_POWER_REQUEST`, which a root service watches).
@@ -561,7 +562,7 @@ everything but the page itself and the login needs the session cookie
 | `GET` / `POST /api/birthdays` | The list (and whose birthday it is today) / `{"birthdays": [...]}` to replace it |
 | `POST /api/birthdays/hear` | `{"name", "day", "month", "year"?}` — say that wish now |
 | `GET` / `POST /api/settings` | Download the settings file / load one (400 with `{"error"}` if it's wrong) |
-| `POST /api/power` | Shut down (404 unless the appliance's watcher is there) |
+| `POST /api/power` | Shut down, or `{"restart": true}` to restart (404 unless the appliance's watcher is there) |
 | `GET /stream` | The MP3 stream (404 while listening in a browser is off) |
 
 ## Why Python

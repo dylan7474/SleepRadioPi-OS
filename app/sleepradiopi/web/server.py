@@ -31,7 +31,7 @@ from sleepradiopi.config.settings import load as load_settings, save_setting
 from sleepradiopi.playback import radio as radio_mod
 from sleepradiopi.io import presets as presets_mod
 from sleepradiopi import media as media_mod
-from sleepradiopi.config.power import can_power_off, request_power_off
+from sleepradiopi.config.power import can_power_off, request_power_off, request_restart
 
 from .stream import Mp3Output
 
@@ -330,18 +330,23 @@ def make_handler(station: Station, output: Mp3Output, speaker=None,
                 self.send_error(404)
 
         def _power(self) -> None:
-            """/api/power: shut the radio down. Saves the volume and silences
-            the speaker first, so it goes quiet at once."""
-            self.rfile.read(int(self.headers.get("Content-Length", 0)))  # no body needed
+            """/api/power: shut the radio down, or {"restart": true}: restart it.
+            Saves the volume and silences the speaker first, so it goes quiet at once."""
+            try:
+                restart = self._body().get("restart") is True
+            except (ValueError, AttributeError):
+                restart = False
             if not can_power_off():
                 self.send_error(404)
                 return
-            log.info("shutdown requested from %s", self.address_string())
+            log.info("%s requested from %s", "restart" if restart else "shutdown", self.address_string())
             if speaker is not None:
                 speaker.save_now()
                 speaker.pause()
-            ok = request_power_off()
-            self._send(json.dumps({"shutting_down": ok}).encode(), "application/json")
+            if restart:
+                self._send(json.dumps({"restarting": request_restart()}).encode(), "application/json")
+            else:
+                self._send(json.dumps({"shutting_down": request_power_off()}).encode(), "application/json")
 
         def _save_settings(self) -> None:
             """GET /api/settings: the settings as a file to download."""

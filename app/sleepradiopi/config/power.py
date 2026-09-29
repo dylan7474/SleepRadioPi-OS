@@ -29,3 +29,12 @@ def request_power_off() -> bool:
         return False
     _request_file().touch()
     return True
+
+
+def request_restart() -> bool:
+    """Ask for a restart (a "reboot" file beside the shutdown one; the same
+    root helper watches both). False if this system doesn't offer one."""
+    if not can_power_off():
+        return False
+    (_request_file().parent / "reboot").touch()
+    return True
