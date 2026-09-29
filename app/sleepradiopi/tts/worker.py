@@ -23,7 +23,10 @@ wouldn't load. So now clauses longer than MAX_WORDS are split at spaces too,
 and the worker checks itself between clauses: past HARD_MB it stops, hands
 back what it has made and the words still to say, and a fresh worker says
 the rest. The peak stays near HARD_MB, at the cost of an extra reload in a
-long line now and then.
+long line now and then. At 240 that happened after almost every clause of
+the personal voice (a bulletin took 142 s to make, and the service menu's
+words waited behind it); the appliance image now has compressed swap in RAM
+(zram, board/.../S01zram), so the limits are 250 after a line, 280 within one.
 """
 
 from __future__ import annotations
@@ -41,8 +44,8 @@ import numpy as np
 log = logging.getLogger(__name__)
 
 TTS_THREADS = 2  # leaves the other cores for ffmpeg decode/encode
-RECYCLE_MB = 200
-HARD_MB = 240        # mid-line: stop, and let a fresh worker say the rest
+RECYCLE_MB = 250     # (with the image's zram swap, S01zram; it was 200 without)
+HARD_MB = 280        # mid-line: stop, and let a fresh worker say the rest
 MAX_WORDS = 12       # a longer clause is split at spaces (bounds the largest buffer)
 _CLAUSE = re.compile(r"(?<=[.!?,;:—])\s+")
 PAUSE_S = {",": 0.12, ";": 0.18, ":": 0.18, "—": 0.18}

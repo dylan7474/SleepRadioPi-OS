@@ -72,6 +72,7 @@ class SpeakerOutput:
         self.eq = eq                     # bass/mid/treble, the speaker only
         self.fade_end: float | None = None  # sleep timer: the programme silent at this time.monotonic()
         self.test: TestSignal | None = None  # a test sound, played instead of everything
+        self.hold = None                 # the service menu's sound: plays (paused or not) instead of everything
         self.noise = None                # the noise layer (a NoiseGen), None = off
         self.noise_mix = 50              # balance: 0 = programme only, 50 = both full, 100 = noise only
         self.enabled = True
@@ -119,19 +120,20 @@ class SpeakerOutput:
     def _sync(self) -> None:
         """(Under _lock.) aplay open while the show plays or the noise is on; the
         pump running while the noise is on and the show isn't."""
-        want = self._show_on or self.noise is not None
+        want = self._show_on or self.noise is not None or self.hold is not None
         if want and self._proc is None:
             self._open()
         elif not want and self._proc is not None:
             self._close()
-        if self.noise is not None and not self._show_on and (self._pump is None or not self._pump.is_alive()):
+        if (self.noise is not None or self.hold is not None) and not self._show_on \
+                and (self._pump is None or not self._pump.is_alive()):
             self._pump = threading.Thread(target=self._pump_run, name="noise", daemon=True)
             self._pump.start()
 
     def _pump_run(self) -> None:
         while True:
             with self._lock:
-                if self.noise is None or self._show_on or self._proc is None:
+                if (self.noise is None and self.hold is None) or self._show_on or self._proc is None:
                     return
             if not self._emit(None, SLICE_FRAMES):   # blocks on aplay: real time
                 time.sleep(0.1)
@@ -159,7 +161,7 @@ class SpeakerOutput:
                 fade = 1.0
                 if self.fade_end is not None:
                     fade = max(0.0, min(1.0, (self.fade_end - time.monotonic()) / SLEEP_FADE_S))
-                test, noise, mix = self.test, self.noise, self.noise_mix
+                test, noise, mix = self.test or self.hold, self.noise, self.noise_mix
                 if show is not None and not self._show_on:
                     return False
             if proc is None:
@@ -167,7 +169,7 @@ class SpeakerOutput:
             n = len(show) if show is not None else n
             if test is not None:             # the box as it is: no mono mix, EQ or low cut
                 x = test.next(n)
-                if test.done:
+                if test.done and test is not self.hold:
                     with self._lock:
                         if self.test is test:
                             self.test = None
@@ -215,6 +217,15 @@ class SpeakerOutput:
         with self._lock:
             self.noise = gen
             self._sync()
+
+    def set_hold(self, sound) -> None:
+        """The service menu's sound (something with next(n)), played instead of
+        everything -- even while paused -- until set back to None."""
+        with self._lock:
+            self.hold = sound
+            self._sync()
+        if sound is None and self.eq is not None:
+            self.eq.reset()
 
 
 class TeeOutput:

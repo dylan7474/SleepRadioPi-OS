@@ -133,46 +133,100 @@ def _voice_installed(station: Station, config_file: Path, control, name: str) ->
         _restart_soon(control)
 
 
-def _service_menu(station: Station, control, presets, config_file: Path):
-    """The service menu's voice and actions (io/service.py)."""
+def _service_menu(station: Station, control, presets, config_file: Path, ready=lambda: True):
+    """The service menu's voice and actions (io/service.py). While it's open the
+    show is paused and the speaker plays only the menu (MenuSound): its words,
+    and a soft tick while they're being made. The fixed lines are made once
+    per voice (in the background, after the show starts) and kept on disk, so
+    they play at once; only the status report is made fresh."""
+    import hashlib
     import shutil
+    import numpy as np
+    from sleepradiopi.audio import pcm
+    from sleepradiopi.broadcast.station import _tick
     from sleepradiopi.config import power, reset
-    from sleepradiopi.io.announce import addresses, spoken_ip
+    from sleepradiopi.io.announce import Clip, addresses, spoken_ip
     from sleepradiopi.updater import this_version
     from sleepradiopi.web.server import _restart_soon
     volume_file = Path.home() / ".local" / "state" / "sleepradiopi" / "speaker.json"
-    made: dict = {}                   # the words made so far (a few: the menu, the status...)
+    cache = Path.home() / ".cache" / "sleepradiopi" / "service-menu"
+    made: dict = {}                   # the status report (made fresh), in memory
     making = threading.Lock()
-    saying = [0]
+    sound = service_mod.MenuSound(_tick(), pcm.SAMPLE_RATE, pcm.CHANNELS)
+    held = [False]                    # the menu has the speaker
+    was_playing = [False]
+    said = [0]                        # the latest say(): an older one's words aren't played
+
+    def kept(text):
+        return cache / f"{station.dj_voice}-{hashlib.sha1(text.encode()).hexdigest()[:16]}.raw"
 
     def render(text):
+        path = kept(text)
+        try:
+            return np.frombuffer(path.read_bytes(), dtype=np.int16).reshape(-1, pcm.CHANNELS)
+        except (OSError, ValueError):
+            pass
         with making:                  # one at a time, so a line being made ahead is used, not made twice
-            if text not in made:
-                if len(made) >= 6:
-                    made.pop(next(iter(made)))
-                made[text] = station.render_speech(text)
-            return made[text]
+            if text in made:
+                return made[text]
+            audio = station.render_speech(text)
+            if text in service_mod.FIXED:
+                try:
+                    cache.mkdir(parents=True, exist_ok=True)
+                    tmp = path.with_suffix(".tmp")
+                    tmp.write_bytes(audio.astype("<i2").tobytes())
+                    os.replace(tmp, path)
+                except OSError:
+                    logging.exception("service menu: couldn't keep a line")
+            else:
+                made.clear()
+                made[text] = audio
+            return audio
+
+    def make_fixed_lines():
+        """Once per voice: the fixed lines, made while the show plays."""
+        while not ready():
+            time.sleep(10)
+        for text in service_mod.FIXED:
+            if not kept(text).is_file():
+                try:
+                    render(text)
+                    time.sleep(5)     # (leave the voice free for the show between them)
+                except Exception:
+                    logging.exception("service menu: couldn't make a line")
+                    return
+
+    if station._has_voice:
+        threading.Thread(target=make_fixed_lines, name="service-lines", daemon=True).start()
 
     def say(text):
         logging.info("service menu: %s", text)
-        presets._clip(beep(), "Service menu")
+        if not held[0]:               # (not in the menu: over the show, as a notice)
+            presets._clip(beep(), "Service menu")
+            if station._has_voice:
+                threading.Thread(target=lambda: control.play_clip(Clip(render(text), "button", "Service menu")),
+                                 name="service-say", daemon=True).start()
+            return
+        said[0] += 1
+        me = said[0]
+        sound.put(beep())
         if not station._has_voice:
             return
-        saying[0] += 1
+        sound.making += 1
 
         def run():
             try:
-                from sleepradiopi.io.announce import Clip
-                control.play_clip(Clip(render(text), "button", "Service menu"))
+                audio = render(text)
+                if said[0] == me:
+                    sound.add(np.concatenate([pcm.silence(0.2), audio]))
             except Exception:
                 logging.exception("service menu: couldn't say it")
             finally:
-                saying[0] -= 1
+                sound.making -= 1
         threading.Thread(target=run, name="service-say", daemon=True).start()
 
     def busy():
-        clip = control.speaker.test
-        return saying[0] > 0 or (clip is not None and getattr(clip, "label", "") == "Service menu" and not clip.done)
+        return sound.talking
 
     def prepare(text):
         if station._has_voice:
@@ -181,28 +235,37 @@ def _service_menu(station: Station, control, presets, config_file: Path):
             except Exception:
                 logging.exception("service menu: couldn't make its words")
 
+    def on_open():
+        was_playing[0] = not control.paused
+        control.pause()               # the show stops while the menu is open
+        held[0] = True
+        control.speaker.set_hold(sound)
+
+    def on_close(resume):
+        if not resume:
+            return                    # (a restart: stay quiet until it happens)
+
+        def run():
+            time.sleep(0.3)
+            end = time.monotonic() + 30
+            while sound.talking and time.monotonic() < end:
+                time.sleep(0.1)       # its last words ("Cancelled...")
+            held[0] = False
+            control.speaker.set_hold(None)
+            if was_playing[0]:
+                control.play()        # back to what was playing
+        threading.Thread(target=run, name="service-close", daemon=True).start()
+
     def quiet_then_say(words):
-        """Go quiet at once, say the words (a beep first), and return when
-        they've been said -- no music in between, before a restart."""
-        import numpy as np
-        from sleepradiopi.audio import pcm
-        from sleepradiopi.io.announce import Clip
+        """Say the last words (the show is already paused) and return once
+        they've been said -- before a restart."""
         logging.info("service menu: %s", words)
         control.save_now()
-        control.pause()
-        parts = [beep(), pcm.silence(0.2)]
-        if station._has_voice:
-            try:
-                parts.append(render(words))
-            except Exception:
-                logging.exception("service menu: couldn't say it")
-        said = sum(len(p) for p in parts)
-        clip = Clip(np.concatenate(parts + [pcm.silence(2.0)]), "button", "Service menu")
-        control.play_clip(clip)
+        say(words)
+        time.sleep(0.3)
         end = time.monotonic() + 60
-        while clip.pos < said and time.monotonic() < end:
+        while sound.talking and time.monotonic() < end:
             time.sleep(0.05)
-        control.pause()               # (while the clip's quiet tail plays: nothing else is heard)
 
     def restart(words):
         quiet_then_say(words)
@@ -227,10 +290,7 @@ def _service_menu(station: Station, control, presets, config_file: Path):
     def rollback(words):
         quiet_then_say(words)
         st = power.rollback_status() if power.request_rollback() else None
-        if not (st and st.get("ok")):
-            control.play()            # nothing to go back to: carry on
-            return False
-        return True
+        return bool(st and st.get("ok"))  # (not: the menu says so, and the show carries on)
 
     def factory_reset(words):
         quiet_then_say(words)
@@ -242,7 +302,8 @@ def _service_menu(station: Station, control, presets, config_file: Path):
         os._exit(75)                  # the supervisor restarts the station with the settings as they came
 
     return service_mod.ServiceMenu(say, {"restart": restart, "wifi": forget_wifi, "status": status,
-                                         "rollback": rollback, "reset": factory_reset}, prepare=prepare, busy=busy)
+                                         "rollback": rollback, "reset": factory_reset}, prepare=prepare, busy=busy,
+                                   on_open=on_open, on_close=on_close)
 
 
 def main() -> None:
@@ -306,7 +367,7 @@ def main() -> None:
         buttons = {code: (lambda i=i: presets.press(i), lambda i=i: presets.hold(i))
                    for code, i in presets_mod.KEYCODES.items()}
         # The service menu: hold buttons 1 and 4 together for 5 s.
-        menu = presets.menu = _service_menu(station, control, presets, args.config)
+        menu = presets.menu = _service_menu(station, control, presets, args.config, ready=on_air)
         from sleepradiopi.broadcast.station import _tick
         tick = _tick()
         chord = Chord({2, 5}, service_mod.HOLD_S, on_start=menu.holding, on_fire=menu.open,

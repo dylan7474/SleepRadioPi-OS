@@ -465,6 +465,12 @@ The cards:
 - **The service menu** (`io/service.py`; buttons 1 and 4 held together for
   5 s — the moment the second goes down, neither button's own press or
   3 s hold counts, so a preset is never overwritten; `io/knob.py` `Chord`).
+  While it's open the show is **paused** and the speaker plays only the
+  menu: its words, and a soft tick once a second while they're being made;
+  leaving it (or cancelling, or the Wi-Fi reset) resumes what was playing.
+  Its fixed lines are made once per voice in the background after start-up
+  and kept (`~/.cache/sleepradiopi/service-menu/`), so they play at once;
+  only the status report is made fresh (while the buttons are held).
   While it's open the four buttons answer it. **1**: restart (the Pi).
   **2**: reset the Wi-Fi — delete `/data/radio/wifi.json` (the networks
   added on the page, and a renamed hotspot) and ask the Wi-Fi manager for
@@ -691,6 +697,9 @@ tests/
 A neural voice is the heaviest part, and ~464 MB (after freeing the GPU's
 reservation) only fits **one** voice alongside the stream. So the DJ and the
 newsreader share a voice (`news_voice: "same"`), text is synthesised a
-clause at a time, and the TTS worker process is recycled when it passes
-200 MB (its buffers grow and never shrink). See `sleepradiopi/tts/worker.py`
+clause at a time (at most 12 words), and the TTS worker process is recycled
+when it passes 250 MB after a line, or 280 MB partway through one (a fresh
+worker says the rest) -- its buffers grow and never shrink. The appliance
+image adds 256 MB of compressed swap in RAM (zram, lz4: `S01zram`), without
+which the personal voice's ~300 MB peaks left the Zero thrashing. See `sleepradiopi/tts/worker.py`
 and the "Lessons" section of `docs/PI_SETUP.md`.

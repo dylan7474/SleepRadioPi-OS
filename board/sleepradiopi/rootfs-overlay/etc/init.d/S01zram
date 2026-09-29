@@ -1,0 +1,37 @@
+#!/bin/sh
+#
+# Compressed swap in RAM (zram). A Pi Zero 2 W has ~467 MB: the station
+# (~100 MB) plus the voice (153 MB loaded, 240-300 MB while it speaks a long
+# line) left too little for the page cache, and the radio thrashed -- long
+# drop-outs, the page and ssh unreachable. Idle memory compresses ~3:1 with
+# lz4 (fast on the Zero), which gives the voice room to grow without
+# starving the music. Nothing is written to the card.
+#
+
+SIZE=256M
+
+start() {
+	printf "Starting zram swap: "
+	modprobe zram num_devices=1 2>/dev/null
+	if [ ! -e /sys/block/zram0 ]; then
+		echo "FAIL (no zram)"
+		return 1
+	fi
+	echo lz4 > /sys/block/zram0/comp_algorithm 2>/dev/null
+	echo $SIZE > /sys/block/zram0/disksize &&
+		mkswap /dev/zram0 >/dev/null &&
+		swapon -p 100 /dev/zram0 &&
+		echo 100 > /proc/sys/vm/swappiness &&
+		echo "OK ($SIZE lz4)" || echo "FAIL"
+}
+
+stop() {
+	swapoff /dev/zram0 2>/dev/null
+}
+
+case "$1" in
+	start) start ;;
+	stop) stop ;;
+	restart) stop; start ;;
+	*) echo "Usage: $0 {start|stop|restart}"; exit 1 ;;
+esac

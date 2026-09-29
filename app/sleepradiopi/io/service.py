@@ -25,6 +25,8 @@ import threading
 import time
 from collections.abc import Callable
 
+import numpy as np
+
 log = logging.getLogger(__name__)
 
 HOLD_S = 5.0           # both buttons held this long opens the menu
@@ -46,6 +48,7 @@ RESET_ASK = ("Factory reset. This puts every setting back to how it came, includ
 RESET_NEXT = "Now press three."
 RESETTING = "Resetting all the settings. Restarting, then I'll tell you how to set me up."
 CANCELLED = "Cancelled. Nothing has changed."
+FIXED = (MENU, CLOSED, RESTARTING, WIFI, ROLLBACK, NO_ROLLBACK, RESET_ASK, RESET_NEXT, RESETTING, CANCELLED)
 
 
 class ServiceMenu:
@@ -56,9 +59,15 @@ class ServiceMenu:
     quiet at once, say them, and only then act (no music in between)."""
 
     def __init__(self, say: Callable[[str], None], actions: dict, prepare: Callable[[str], None] = lambda t: None,
-                 wait_s: float = WAIT_S, clock=time.monotonic, busy: Callable[[], bool] = lambda: False) -> None:
-        """busy(): still making or saying the words (the wait starts after)."""
+                 wait_s: float = WAIT_S, clock=time.monotonic, busy: Callable[[], bool] = lambda: False,
+                 on_open: Callable[[], None] = lambda: None,
+                 on_close: Callable[[bool], None] = lambda resume: None) -> None:
+        """busy(): still making or saying the words (the wait starts after).
+        on_open(): the menu opens (pause the show); on_close(resume): it
+        closed -- resume the show (once its last words are said), unless the
+        radio is about to restart."""
         self.say, self.prepare, self.actions, self.busy = say, prepare, actions, busy
+        self.on_open, self.on_close = on_open, on_close
         self._status: str | None = None     # the status report's words, made ahead
         self.wait_s, self.clock = wait_s, clock
         self.state: str | None = None         # None (closed), "menu", "rollback?", "reset?", "reset2"
@@ -81,6 +90,8 @@ class ServiceMenu:
 
     def open(self) -> None:
         log.info("service menu: open")
+        if self.state is None:
+            self.on_open()
         self._to("menu", MENU)
         if self._status is None:           # (opened from the page: no hold to make them in)
             self._prepare_all()
@@ -107,11 +118,11 @@ class ServiceMenu:
         log.info("service menu (%s): button %d", state, n)
         if state == "menu":
             if n == 1:
-                self._close()
+                self._close(resume=False)
                 self._do("restart", RESTARTING)
             elif n == 2:
-                self._close()
                 self.say(WIFI)
+                self._close()
                 self._do("wifi", None)
             elif n == 3:
                 self._to("rollback?", self._status or f"{self.actions['status']()} {ROLLBACK_ASK}")
@@ -119,24 +130,26 @@ class ServiceMenu:
             else:
                 self._to("reset?", RESET_ASK)
         elif state == "rollback?":
-            self._close()
             if n == 3:
-                self._do("rollback", ROLLBACK, lambda ok: ok or self.say(NO_ROLLBACK))
+                self._close(resume=False)
+                self._do("rollback", ROLLBACK, lambda ok: ok or (self.say(NO_ROLLBACK), self.on_close(True)))
             else:
                 self.say(CANCELLED)
+                self._close()
         elif state == "reset?":
             if n == 2:
                 self._to("reset2", RESET_NEXT)
                 self._prepare(RESETTING)
             else:
-                self._close()
                 self.say(CANCELLED)
+                self._close()
         elif state == "reset2":
-            self._close()
             if n == 3:
+                self._close(resume=False)
                 self._do("reset", RESETTING)
             else:
                 self.say(CANCELLED)
+                self._close()
 
     def _prepare(self, text: str) -> None:
         threading.Thread(target=self.prepare, args=(text,), name="service-prepare", daemon=True).start()
@@ -169,12 +182,14 @@ class ServiceMenu:
         self._timer.daemon = True
         self._timer.start()
 
-    def _close(self) -> None:
+    def _close(self, resume: bool = True) -> None:
         with self._lock:
-            self.state = None
+            was, self.state = self.state, None
             if self._timer is not None:
                 self._timer.cancel()
                 self._timer = None
+        if was is not None:
+            self.on_close(resume)
 
     def _time_out(self) -> None:
         with self._lock:
@@ -189,6 +204,59 @@ class ServiceMenu:
             self.state, self._timer = None, None
         log.info("service menu: closed (no press)")
         self.say(CLOSED)
+        self.on_close(True)
+
+
+class MenuSound:
+    """What the speaker plays while the menu is open (the show is paused):
+    its words as they're ready, silence between, and a soft tick once a
+    second while words are still being made -- never a dead silence."""
+
+    label = "Service menu"
+    done = False
+
+    def __init__(self, tick: np.ndarray, rate: int = 44100, channels: int = 2, tick_s: float = 1.0) -> None:
+        self.tick, self.rate, self.channels = tick, rate, channels
+        self.every = int(tick_s * rate)
+        self._lock = threading.Lock()
+        self._queue: list[np.ndarray] = []
+        self._pos = 0                          # into _queue[0]
+        self.making = 0                        # words being made
+        self._t = 0
+
+    def put(self, audio: np.ndarray) -> None:
+        """Say this now (cutting off whatever was being said)."""
+        with self._lock:
+            self._queue, self._pos = [audio], 0
+
+    def add(self, audio: np.ndarray) -> None:
+        with self._lock:
+            self._queue.append(audio)
+
+    @property
+    def talking(self) -> bool:
+        with self._lock:
+            return bool(self._queue) or self.making > 0
+
+    def next(self, n: int) -> np.ndarray:
+        out = np.zeros((n, self.channels), np.float32)
+        filled = 0
+        with self._lock:
+            while filled < n and self._queue:
+                part = self._queue[0][self._pos:self._pos + n - filled]
+                out[filled:filled + len(part)] = part
+                filled += len(part)
+                self._pos += len(part)
+                if self._pos >= len(self._queue[0]):
+                    self._queue.pop(0)
+                    self._pos = 0
+            ticking = not filled and self.making > 0
+        if ticking:                            # waiting for words: tick, once a second
+            k = (self._t + np.arange(n)) % self.every
+            at = k < len(self.tick)
+            out[at] = self.tick[k[at]]
+        self._t += n
+        return out
 
 
 def status_text(addresses: list, wifi: dict, version: str, free_gb: float | None, songs: int,

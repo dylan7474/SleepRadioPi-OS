@@ -232,3 +232,36 @@ def test_the_status_is_made_ahead_and_the_wait_starts_after_the_words() -> None:
     busy[0] = False
     time.sleep(0.6)
     assert not m.active and said[-1] == service.CLOSED
+
+
+def test_the_menu_pauses_the_show_and_resumes_it_after() -> None:
+    events = []
+    r = Rig()
+    r.menu.on_open = lambda: events.append("pause")
+    r.menu.on_close = lambda resume: events.append(("close", resume))
+    r.menu.open()
+    r.menu.open()                                    # (already open: not paused twice)
+    assert events == ["pause"]
+    r.press(4, 1)                                    # cancelled: back to the show
+    assert events == ["pause", ("close", True)] and r.said[-1] == service.CANCELLED
+    r.menu.open()
+    r.press(1)                                       # a restart: stays quiet
+    assert events[-1] == ("close", False)
+
+
+def test_the_menu_sound_ticks_while_words_are_made_then_says_them() -> None:
+    import numpy as np
+    tick = np.full((10, 2), 1000, np.int16)
+    s = service.MenuSound(tick, rate=100, channels=2, tick_s=1.0)
+    assert not s.next(100).any() and not s.talking             # nothing to say: silence
+    s.making = 1
+    out = s.next(200)
+    assert out[:10].all() and not out[10:100].any() and out[100:110].all()   # a tick a second
+    s.making = 0
+    s.put(np.full((50, 2), 7, np.int16))
+    assert s.talking
+    out = s.next(80)
+    assert (out[:50] == 7).all() and not out[50:].any() and not s.talking
+    s.put(np.full((50, 2), 1, np.int16))
+    s.put(np.full((30, 2), 2, np.int16))                       # a new line cuts the old one off
+    assert (s.next(30) == 2).all()
