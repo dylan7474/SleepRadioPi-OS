@@ -190,6 +190,7 @@ class SpeakerControl:
         self.state_file = state_file
         self.config_file = config_file
         self.paused = True
+        self.slept = False               # the last pause was the sleep timer's
         self._lock = threading.Lock()
         self._save_timer: threading.Timer | None = None
         self._sleep_timer: threading.Timer | None = None
@@ -280,6 +281,7 @@ class SpeakerControl:
 
     def play(self) -> None:
         self._pause_after_clip = False       # asked to play: stay playing after a clip
+        self.slept = False
         with self._lock:
             if not self.paused:
                 return
@@ -380,6 +382,7 @@ class SpeakerControl:
         log.info("speaker: sleep timer ended")
         with self._lock:
             self._sleep_min = 0          # so the pause below doesn't log "off" as well
+        self.slept = True                # (an audiobook steps back a minute: you'd dozed off)
         self.pause()
 
     def toggle(self) -> None:

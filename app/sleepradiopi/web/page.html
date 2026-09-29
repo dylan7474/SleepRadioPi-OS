@@ -118,6 +118,12 @@
   #nowCard button { border: 1px solid rgba(35,23,3,.35); background: rgba(255,255,255,.28); color: var(--amber-ink);
                     font-size: .88rem; font-weight: 600; padding: .4rem .85rem; }
   #rNote { margin: .5rem 0 0; font-size: .85rem; font-weight: 600; }
+  #bookCtl { display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: .5rem; margin-top: .7rem; }
+  #bookCtl button { padding: .6rem .5rem; font-size: 1rem; }
+  #bookPlay { width: 3.4rem; height: 3.4rem; border-radius: 50%; padding: 0 !important; font-size: 1.3rem !important; }
+  #bookTime { grid-column: 1 / -1; text-align: center; font-size: .85rem; font-variant-numeric: tabular-nums; opacity: .8; }
+  #nowCard.book .bar { height: 8px; cursor: pointer; }
+  #nowCard.book .scale { display: none; }
   #tune { width: 100%; }
 
   /* --- the radio: its top from above, then its front --- */
@@ -312,7 +318,13 @@
       <div id="kind">Ready</div>
       <p id="title">Nothing on air</p>
       <p id="artist"></p>
-      <div class="bar"><div id="progress"></div></div>
+      <div class="bar" id="bar" title="Tap to jump"><div id="progress"></div></div>
+      <div id="bookCtl" hidden>
+        <button id="bookBack" type="button" title="Back 1 minute">⏪ 1 min</button>
+        <button id="bookPlay" type="button" aria-label="Pause or play" title="Pause or play">⏯</button>
+        <button id="bookFwd" type="button" title="On 1 minute">1 min ⏩</button>
+        <span id="bookTime"></span>
+      </div>
       <div class="scale" id="scale" aria-hidden="true">
         <span style="left:12.5%">1</span><span style="left:37.5%">2</span><span style="left:62.5%">3</span><span style="left:87.5%">4</span>
         <div id="needle" hidden></div>
@@ -377,6 +389,7 @@
       <button class="chip" type="button" data-f="album" aria-pressed="false">Albums</button>
       <button class="chip" type="button" data-f="song" aria-pressed="false">Songs</button>
       <button class="chip" type="button" data-f="station" aria-pressed="false">Stations</button>
+      <button class="chip" type="button" data-f="book" aria-pressed="false">Audiobooks</button>
     </div>
     <p id="qNote" hidden></p>
 
@@ -391,6 +404,11 @@
       </div>
       <p id="artistNote" class="muted" style="margin:-.4rem 0 0;font-size:.85rem">Play one artist only (e.g. Beatles
         Radio), or one of your lists of artists.</p>
+
+      <div id="booksHome" class="view" hidden>
+        <h2 class="eyebrow">Audiobooks</h2>
+        <div class="tiles" id="bookTiles"></div>
+      </div>
 
       <h2 class="eyebrow">Your stations</h2>
       <div class="tiles" id="stationTiles"></div>
@@ -602,6 +620,7 @@
     <div class="row seg" role="group" aria-label="Music or jingles" style="margin-top:0">
       <button type="button" data-kind="music" aria-pressed="true">Music</button>
       <button type="button" data-kind="jingles" aria-pressed="false">Jingles</button>
+      <button type="button" data-kind="audiobooks" aria-pressed="false">Audiobooks</button>
       <span id="mSpace" class="muted" style="font-size:.85rem;margin-left:auto"></span>
     </div>
   </section>
@@ -619,7 +638,7 @@
       <button type="submit">Make it</button>
       <button id="mFolderCancel" type="button">Cancel</button>
     </form>
-    <input id="mFiles" type="file" multiple accept="audio/*,.mp3,.flac,.m4a,.ogg,.opus,.wav" hidden>
+    <input id="mFiles" type="file" multiple accept="audio/*,.mp3,.flac,.m4a,.m4b,.ogg,.opus,.wav" hidden>
     <input id="mFolder" type="file" webkitdirectory multiple hidden>
     <ul id="mUploads" style="margin-top:.6rem"></ul>
     <p id="mNote" class="muted" style="margin:.6rem 0 0;font-size:.85rem">Files go into the folder shown above;
@@ -1066,9 +1085,10 @@ async function find() {
     fData.artists = allArtists.filter(a => hasAll(a.name, ws)).slice(0, fFilter === "artist" ? 50 : 6);
   }
   if (want("station")) fData.saved = rStations.filter(st => hasAll(st.name, ws));
+  fData.books = want("book") ? books.filter(b => hasAll(`${b.title} ${b.author}`, ws)) : [];
   renderFind();
   const jobs = [];
-  if (want("song") || want("album")) jobs.push(fetch("/api/search?q=" + encodeURIComponent(q), { cache: "no-store" })
+  if ((want("song") || want("album")) && fFilter !== "book") jobs.push(fetch("/api/search?q=" + encodeURIComponent(q), { cache: "no-store" })
     .then(r => r.json()).then(d => { if (seq !== fSeq) return; fData.albums = want("album") ? d.albums : [];
       fData.songs = want("song") ? d.results : []; renderFind(); }).catch(() => {}));
   if (want("station") && q.length >= 3) jobs.push(fetch("/api/radio/search?q=" + encodeURIComponent(q), { cache: "no-store" })
@@ -1109,10 +1129,12 @@ function renderFind() {
     [act("Play next", true, b => requestTrack(r, b.currentTarget))])));
   const stationRow = (st, saved) => resultRow(st.name, st.info, [act("Play", true, () => tuneTo(st)),
     ...(saved ? [] : [act("Save", false, b => { b.currentTarget.disabled = true; saveStations([...rStations, st]); })])]);
+  group("Audiobooks", d.books.map(b => resultRow(b.title, bookWords(b), [act("Play", true, () => playBook(b))])));
   group("Internet stations", [...d.saved.map(st => stationRow(st, true)),
                               ...(d.stations || []).slice(0, fFilter === "station" ? 40 : 8).map(st => stationRow(st, false))]);
   $("findResults").replaceChildren(...out);
-  const n = d.artists.length + d.lists.length + d.albums.length + d.songs.length + d.saved.length + (d.stations || []).length;
+  const n = d.artists.length + d.lists.length + d.albums.length + d.songs.length + d.saved.length + d.books.length +
+            (d.stations || []).length;
   qNote(d.busy ? "Searching…" : n ? (d.dirError ? `Stations: ${d.dirError}.` : "")
        : "Nothing found by that name. Try fewer words, or another spelling.");
 }
@@ -1560,7 +1582,7 @@ setInterval(() => {
 }, 1000);
 
 const KIND = { track: "Now playing", dj: "On the mic", jingle: "Station ident", news: "News", wait: "Just a moment",
-               radio: "Internet radio" };
+               radio: "Internet radio", book: "Audiobook" };
 const ICON = { track: "♪", dj: "🎙", jingle: "✦", news: "📰", radio: "📻" };
 const hhmm = t => new Date(t * 1000).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 
@@ -1636,15 +1658,75 @@ async function poll() {
     $("noSpeaker").hidden = hasSpeaker;
     $("nowCard").classList.toggle("talk", !!s.now && ["dj", "news", "wait"].includes(s.now.kind));
     $("progress").parentElement.hidden = !(s.now && s.now.duration_s);
+    showBook(s.source && s.source.kind === "book" ? s.source : null);
     $("next").textContent = s.on_air && s.next ? `Next: ${s.next.title}${s.next.artist ? " — " + s.next.artist : ""}` : "";
     showHistory(s.history);
     drawSettings();
   } catch {}
 }
 
+// An audiobook: its place in the whole book, a minute back / on, pause, and tap
+// the bar to jump. Paused (the show off), it still shows where it was left.
+let bookNow = null;
+const hms = ms => { const t = Math.floor(ms / 1000), h = Math.floor(t / 3600), m = Math.floor(t / 60) % 60;
+  return h ? `${h}:${String(m).padStart(2, "0")}:${String(t % 60).padStart(2, "0")}` : `${m}:${String(t % 60).padStart(2, "0")}`; };
+function showBook(b) {
+  bookNow = b;
+  $("bookCtl").hidden = !b;
+  $("nowCard").classList.toggle("book", !!b);
+  if (!b || b.total_ms === undefined) return;
+  const paused = !b.playing;
+  $("kind").textContent = (paused ? "Paused · " : "Audiobook · ") + (b.chapters > 1 ? `chapter ${b.chapter} of ${b.chapters}` : "");
+  $("title").textContent = b.title;
+  $("artist").textContent = b.chapters > 1 ? b.chapter_title : b.author;
+  $("progress").parentElement.hidden = false;
+  $("progress").style.width = Math.min(100, 100 * b.pos_ms / Math.max(1, b.total_ms)) + "%";
+  $("bookTime").textContent = `${hms(b.pos_ms)} of ${hms(b.total_ms)} · ${hms(Math.max(0, b.total_ms - b.pos_ms))} left`;
+  $("bookPlay").textContent = paused ? "▶" : "⏸";
+  $("next").textContent = "";
+}
+async function bookSeek(body) {
+  try {
+    const d = await radioPost("/api/books/seek", body);
+    if (bookNow) showBook({ ...bookNow, ...d });
+    setTimeout(poll, 600);
+  } catch (e) { toast("Couldn't: " + e.message + "."); }
+}
+$("bookBack").onclick = () => bookSeek({ delta_ms: -60000 });
+$("bookFwd").onclick = () => bookSeek({ delta_ms: 60000 });
+$("bookPlay").onclick = () => knobTap();
+$("bar").onclick = e => {
+  if (!bookNow) return;
+  const r = $("bar").getBoundingClientRect();
+  bookSeek({ to_ms: Math.round(bookNow.total_ms * Math.min(1, Math.max(0, (e.clientX - r.left) / r.width))) });
+};
+let books = [];
+async function loadBooks() {
+  try { books = (await (await fetch("/api/books", { cache: "no-store" })).json()).books; } catch { return; }
+  drawBooks(); drawSettings();
+}
+function bookWords(b) {
+  if (!b.pos_ms) return `${b.author ? b.author + " · " : ""}${hms(b.total_ms)}`;
+  if (b.pos_ms >= b.total_ms - 500) return "Finished · plays from the start";
+  return `${Math.floor(100 * b.pos_ms / b.total_ms)}% · ${hms(b.total_ms - b.pos_ms)} left`;
+}
+async function playBook(b) {
+  try {
+    const d = await radioPost("/api/books/play", { key: b.key });
+    showRadio(d.source, null);
+    toast(b.pos_ms && b.pos_ms < b.total_ms - 500 ? `${b.title}: carrying on where it was left` : `${b.title}: from the start`);
+    setTimeout(() => { poll(); loadBooks(); }, 800);
+  } catch (e) { toast("Couldn't play it: " + e.message + "."); }
+}
+function drawBooks() {
+  $("booksHome").hidden = !books.length;
+  $("bookTiles").replaceChildren(...books.slice(0, 6).map(b =>
+    tile(b.title, bookWords(b), !!bookNow && bookNow.key === b.key, () => playBook(b))));
+}
+
 let histAll = false;
 function showHistory(items) {
-  const kinds = { track: "Sleep Radio", dj: "The DJ", jingle: "Station ident", news: "News", radio: "Internet radio",
+  const kinds = { track: "Sleep Radio", dj: "The DJ", jingle: "Station ident", news: "News", radio: "Internet radio", book: "Audiobook",
                   album: "Album" };
   const shown = histAll ? items : items.slice(0, 5);
   $("history").replaceChildren(...(items.length ? shown.map(h => {
@@ -1868,6 +1950,7 @@ function buttonChoices() {
   const groups = [["Sleep Radio", [["Sleep Radio (all artists)", { kind: "show", artist: null, profile: null }],
                                    ...bLists.map(l => [l.name, { kind: "show", profile: l.name }])]],
                   ["My stations", rStations.map(st => [st.name, { kind: "radio", ...st }])],
+                  ["Audiobooks", books.map(b => [b.title, { kind: "book", key: b.key, title: b.title }])],
                   ["Actions", Object.entries(bState.actions).map(([a, text]) => [text, { kind: "action", action: a }])],
                   ["", [["Empty", null]]]];
   return groups;
@@ -1958,7 +2041,7 @@ for (const b of document.querySelectorAll("#page-library [data-kind]"))
 async function loadMedia() {
   for (const b of document.querySelectorAll("#page-library [data-kind]"))
     b.setAttribute("aria-pressed", String(b.dataset.kind === mKind));
-  $("mAddFolder").hidden = mKind !== "music";
+  $("mAddFolder").hidden = mKind === "jingles";
   try {
     const r = await fetch(`/api/media?kind=${mKind}&path=${encodeURIComponent(mPath)}`, { cache: "no-store" });
     const d = await r.json();
@@ -1971,7 +2054,7 @@ async function loadMedia() {
 }
 function showMedia(d) {
   $("mSpace").textContent = `${fmtSize(d.usage.free)} free of ${fmtSize(d.usage.total)}`;
-  const crumbs = [[mKind === "music" ? "Music" : "Jingles", ""]];
+  const crumbs = [[{ music: "Music", jingles: "Jingles", audiobooks: "Audiobooks" }[mKind], ""]];
   d.path.split("/").filter(Boolean).forEach((p, i, a) => crumbs.push([p, a.slice(0, i + 1).join("/")]));
   $("mCrumbs").replaceChildren(...crumbs.flatMap(([name, path], i) => {
     const last = i === crumbs.length - 1;
@@ -2023,7 +2106,9 @@ async function mediaDone(before = "") {
   try {
     const d = await radioPost("/api/media/done");
     if (d.changed) {
-      const text = `${before}Library updated: ${d.library.tracks.toLocaleString()} songs, ${d.library.jingles} jingles.`;
+      const text = `${before}Library updated: ${d.library.tracks.toLocaleString()} songs, ${d.library.jingles} jingles, ` +
+                   `${d.library.books ?? 0} audiobooks.`;
+      loadBooks();
       if (!$("page-library").hidden) mNote(text); else toast(text);
       loadArtists();                              // new (or gone) artists in Artist radio and the lists
     }
@@ -2043,10 +2128,11 @@ $("mAddFiles").onclick = () => $("mFiles").click();
 $("mAddFolder").onclick = () => $("mFolder").click();
 $("mFiles").onchange = e => { uploadAll([...e.target.files].map(f => [f, f.name])); e.target.value = ""; };
 $("mFolder").onchange = e => { uploadAll([...e.target.files].map(f => [f, f.webkitRelativePath || f.name])); e.target.value = ""; };
-const OK_EXT = /\.(mp3|flac|m4a|ogg|opus|wav|jpe?g|png)$/i;
+const OK_EXT = /\.(mp3|flac|m4a|m4b|ogg|opus|wav|jpe?g|png)$/i;
 async function uploadAll(items) {
   const wanted = items.filter(([f, name]) => OK_EXT.test(name) && !name.split("/").some(p => p.startsWith(".")) &&
-                                              (mKind === "music" || !/\.(jpe?g|png)$/i.test(name)));
+                                              (mKind !== "jingles" || !/\.(jpe?g|png)$/i.test(name)) &&
+                                              (mKind !== "audiobooks" || /\.(mp3|m4b|jpe?g|png)$/i.test(name)));
   const skipped = items.length - wanted.length;
   if (!wanted.length) return mNote("None of those are files the radio can play.", true);
   uploading = true;
@@ -2117,7 +2203,7 @@ function showView() {
   $("setHome").hidden = !!page;
   for (const p of PAGES) $("page-" + p).hidden = p !== page;
   pageNow = page;
-  if (tab === "find") { loadRadio(); drawHome(); }
+  if (tab === "find") { loadRadio(); loadBooks(); drawHome(); }
   if (tab === "settings" && !page) { loadAuth(); loadVoices(); loadUpdate(); loadWifi(); loadRadio(); drawSettings(); }
   if (page === "lists") { fillListPick(); showListEditor(); }
   if (page === "voices") loadVoices();
@@ -2204,7 +2290,8 @@ function settingRows() {
       ["list", "Artist lists", allLists.length ? allLists.map(p => p.name).join(", ") : "None yet: make one", "lists"],
       ["cake", "Birthdays", bdList.length ? `${bdList.length} ${bdList.length === 1 ? "person" : "people"}` : "None yet", "birthdays"]]],
     ["Music", [
-      ["music", "Music library", s ? `${s.library.tracks.toLocaleString()} songs, ${s.library.jingles} jingles · add or delete` : "…", "library"],
+      ["music", "Music library", s ? `${s.library.tracks.toLocaleString()} songs, ${s.library.jingles} jingles, ` +
+        `${s.library.books ?? 0} audiobooks · add or delete` : "…", "library"],
       ["globe", "Internet stations", `${rStations.length} saved` + (lastDir && lastDir.stations
         ? ` · directory of ${lastDir.stations.toLocaleString()}` : ""), "stations"]]],
     ["The radio", [
@@ -2294,7 +2381,7 @@ function start() {
   offerTune();
   poll();
   setInterval(poll, 3000);
-  loadArtists(); loadBirthdays(); loadDj(); loadButtons(); loadRadio();
+  loadArtists(); loadBirthdays(); loadDj(); loadButtons(); loadRadio(); loadBooks();
 }
 function showLogin() {
   if (started) { location.reload(); return; }   // logged out while using it: start clean

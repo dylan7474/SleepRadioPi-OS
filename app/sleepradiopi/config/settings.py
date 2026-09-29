@@ -23,6 +23,7 @@ DEFAULT_PATH = Path.home() / ".config" / "sleepradiopi" / "config.json"
 class Settings:
     music_folder: str | None = None       # default ~/media/music
     jingles_folder: str | None = None     # default ~/media/jingles
+    audiobooks_folder: str | None = None  # default ~/media/audiobooks
     voices_folder: str | None = None      # default <repo>/voices
     hooks_file: str | None = None         # default: the bundled sleepradiopi/data/dj_hooks_70s.txt
     broadcast_voice: str | None = "stock"      # "stock" or "personal"; None = music and jingles only

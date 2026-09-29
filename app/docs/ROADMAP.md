@@ -1,10 +1,12 @@
 # Roadmap
 
 **Direction (2026-09-22): Broadcast Radio is the product.** The other
-SleepRadio sources (audiobooks, ambient noise and binaural beats) are
+SleepRadio sources (ambient noise and binaural beats) are
 deferred and may never be built; their placeholder modules stay in the tree
 until that's decided. **Internet radio came back (2026-09-29)** as the page's
-*Streaming* view (📻).
+Streaming view, and **audiobooks** on 2026-09-29. **Podcasts** (as in the
+Android app: search, subscribe, episodes, saved places) are a future idea,
+sharing the audiobooks' saved-place and seek plumbing.
 
 What's built is described in the [README](../README.md); this is what's
 left.

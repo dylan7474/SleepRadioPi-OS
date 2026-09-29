@@ -41,6 +41,7 @@ import numpy as np
 from sleepradiopi.audio import pcm
 from sleepradiopi.config.clock import clock_trusted
 from sleepradiopi.playback import radio as radio_mod
+from sleepradiopi.playback.audiobooks import BookLibrary, Positions
 from sleepradiopi.tts.worker import TtsWorker
 
 from .library import scan_jingles, scan_music
@@ -65,6 +66,10 @@ SPEED_MIN, SPEED_MAX = 0.5, 1.5   # DJ / news speech speed (x the voice's own pa
 RADIO_PREBUFFER_S = 1.0   # internet radio: audio in hand before it plays (and after a stall)
 RADIO_GIVE_UP_S = 45.0    # no sound from a station this long: back to the show (Wi-Fi can be slow at boot)
 RADIO_RETRY_S = 3.0       # wait between reconnects
+BOOK_SAVE_S = 30.0        # an audiobook's place is saved this often while it plays (and on pause)
+BOOK_BACK_SLEEP_MS = 60_000   # resuming after the sleep timer: a minute back (you'd dozed off)
+BOOK_BACK_PAUSE_MS = 5_000    # ...after an ordinary pause: a few seconds
+BOOK_SEEK_MS = 60_000     # the page's rewind / fast-forward
 
 
 class Output(Protocol):
@@ -236,6 +241,15 @@ class Station:
         # Called with the source (or None) when it changes, so it can be saved
         # and resumed after a restart (an album at the track it was on).
         self.on_source: Callable[[dict | None], None] | None = None
+        # Audiobooks: their own folder; each book's place kept on the writable storage.
+        self.books = BookLibrary(cfg.get("audiobooks_folder") or Path("/nonexistent"), cfg.get("book_cache"))
+        self.book_positions = Positions(cfg.get("book_positions"))
+        self.books_scanning = True
+        threading.Thread(target=self._scan_books, name="books-scan", daemon=True).start()
+        self._book_seek: int | None = None
+        self.book_now: dict | None = None    # the book playing: place, chapter, length
+        self.paused_by_sleep: Callable[[], bool] = lambda: False   # (wired to the speaker)
+        self.on_book_end: Callable[[], None] | None = None          # pause the radio at the end
         if cfg.get("stream_source"):
             try:
                 self._source = self._check_source(cfg["stream_source"])
@@ -287,7 +301,7 @@ class Station:
         """Cut short whatever is on air (a track, jingle, DJ line or bulletin) and
         go straight on to what comes after it. False if there's nothing to skip."""
         on_air = self.on_air
-        if not self.is_on_air or on_air is None or on_air.kind == "radio":
+        if not self.is_on_air or on_air is None or on_air.kind in ("radio", "book"):
             return False
         self._skip_for = on_air
         log.info("skip: %s %s", on_air.kind, on_air.title[:70])
@@ -311,6 +325,8 @@ class Station:
                     self._run_music()
                 elif source["kind"] == "album":
                     self._run_album(source)
+                elif source["kind"] == "book":
+                    self._run_book(source)
                 else:
                     self._run_radio(source)
         except Exception:
@@ -379,6 +395,14 @@ class Station:
             track = track if isinstance(track, int) and not isinstance(track, bool) else 0
             return {"kind": "album", "folder": album["folder"], "title": album["title"],
                     "artist": album["artist"], "track": max(0, min(track, len(album["tracks"]) - 1))}
+        if source["kind"] == "book":
+            key = source.get("key")
+            book = self.books.get(key) if isinstance(key, str) else None
+            if book is None and not (isinstance(key, str) and key and ".." not in key.split("/")
+                                     and (self.books.root / key).exists()):
+                raise ValueError("that book isn't in the audiobooks folder")
+            return {"kind": "book", "key": key, "title": book.title if book else Path(key).stem,
+                    "author": book.author if book else ""}
         raise ValueError(f"unknown kind of source {source.get('kind')!r}")
 
     def tune(self, source: dict | None) -> None:
@@ -1141,6 +1165,134 @@ class Station:
 
     # --- opening ----------------------------------------------------------------------
 
+    # --- audiobooks -------------------------------------------------------------------------
+
+    def _scan_books(self) -> None:
+        try:
+            self.books.scan()
+        except Exception:
+            log.exception("audiobooks: scan failed")
+        finally:
+            self.books_scanning = False
+
+    @staticmethod
+    def _book_state(book, pos_ms: int) -> dict:
+        i, _ = book.at(pos_ms)
+        return {"key": book.key, "pos_ms": int(pos_ms), "total_ms": book.total_ms, "chapter": i + 1,
+                "chapters": len(book.chapters), "chapter_title": book.chapters[i].title}
+
+    def book_seek(self, delta_ms: int | None = None, to_ms: int | None = None) -> dict:
+        """Move the book playing (or the one tuned, while paused): by delta_ms
+        (e.g. -60000 for a minute back) or to to_ms. ValueError if no book."""
+        src = self._source
+        if not src or src.get("kind") != "book":
+            raise ValueError("no audiobook is on")
+        book = self.books.get(src["key"])
+        if book is None:
+            raise ValueError("that book isn't in the audiobooks folder")
+        now = self.book_now["pos_ms"] if self.book_now and self.book_now["key"] == book.key \
+            else self.book_positions.get(book.key)
+        target = to_ms if to_ms is not None else now + (delta_ms or 0)
+        target = int(max(0, min(target, book.total_ms - 1000)))
+        if self.book_now and self.book_now["key"] == book.key and self.on_air and self.on_air.kind == "book":
+            self._book_seek = target             # the player picks it up at once
+            self.book_now = self._book_state(book, target)
+        else:
+            self.book_positions.set(book.key, target)
+        log.info("audiobook: to %d:%02d of %s", target // 60000, target // 1000 % 60, book.title)
+        return self._book_state(book, target)
+
+    def _run_book(self, source: dict) -> None:
+        """Read a book from where it was left, chapter by chapter, with no DJ.
+        Paused, it stops at once and keeps its place (a minute back after the
+        sleep timer); at the end it pauses the radio rather than waking anyone."""
+        deadline = time.monotonic() + 120
+        book = self.books.get(source["key"])
+        while book is None and self.books_scanning and time.monotonic() < deadline and not self._halted():
+            self._write(pcm.silence(0.2))        # still reading the folder (just after start-up)
+            book = self.books.get(source["key"])
+        if book is None or not book.chapters:
+            with self._lock:
+                if self._source is source:
+                    self._source = None
+                    self.source_error = f"{source.get('title') or source['key']}: not in the audiobooks folder"
+            return
+        key = book.key
+        pos = self.book_positions.get(key)
+        if pos >= book.total_ms - 500:
+            pos = 0                              # finished last time: from the start
+        self._book_seek = None
+        leveller = radio_mod.Leveller()
+        on_air = self.on_air = OnAir("book", book.title, book.author)
+        self.next_track = None
+        self.gap_plan = []
+        self.history.appendleft({"kind": "book", "text": f"{book.title}" + (f" — {book.author}" if book.author else ""),
+                                 "at": time.time()})
+        saved_at = time.monotonic()
+        try:
+            while not self._halted():
+                i, into = book.at(pos)
+                ch = book.chapters[i]
+                self.book_now = self._book_state(book, pos)
+                on_air.artist = ch.title if len(book.chapters) > 1 else book.author
+                on_air.duration_s = book.total_ms / 1000
+                on_air.started = time.time() - pos / 1000
+                restart = False
+                for block in pcm.decode(ch.path, ch.start_ms + into, ch.end_ms):
+                    if self._halted():
+                        return
+                    if self._book_seek is not None:
+                        pos, self._book_seek = self._book_seek, None
+                        restart = True
+                        break
+                    if self._listeners == 0:     # paused: keep the place, and wait
+                        back = BOOK_BACK_SLEEP_MS if self.paused_by_sleep() else BOOK_BACK_PAUSE_MS
+                        pos = max(0, int(pos) - back)
+                        self.book_positions.set(key, pos)
+                        self.book_now = self._book_state(book, pos)
+                        log.info("audiobook paused: %s, resumes at %d:%02d", book.title, pos // 60000, pos // 1000 % 60)
+                        while self._listeners == 0 and not self._halted():
+                            time.sleep(0.2)
+                        restart = True
+                        break
+                    self._radio_heard = True     # (music_started: confirms an update)
+                    self._write(leveller.process(block))
+                    pos += len(block) * 1000 / pcm.SAMPLE_RATE     # (exact: whole ms would drift ~30 s an hour)
+                    self.book_now["pos_ms"] = int(pos)
+                    if time.monotonic() - saved_at > BOOK_SAVE_S:
+                        self.book_positions.set(key, pos)
+                        saved_at = time.monotonic()
+                if restart:
+                    continue
+                pos = ch.offset_ms + ch.length_ms          # on to the next chapter
+                if i + 1 >= len(book.chapters):
+                    log.info("audiobook finished: %s", book.title)
+                    self.book_positions.set(key, book.total_ms)
+                    self.book_now = self._book_state(book, book.total_ms)
+                    if self.on_book_end is not None:
+                        self.on_book_end()
+                    while not self._halted() and self._listeners > 0:
+                        self._write(pcm.silence(0.2))
+                    return
+        finally:
+            if self.book_now and self.book_now["key"] == key and pos < book.total_ms:
+                self.book_positions.set(key, pos)
+            self.book_now = None
+
+    def play_book(self, key: str) -> dict:
+        self.tune({"kind": "book", "key": key})
+        return self._source
+
+    def book_list(self) -> list[dict]:
+        """Every book, with where it was left; the most recently listened first."""
+        out = []
+        for b in self.books.all():
+            pos = self.book_positions.get(b.key)
+            out.append({"key": b.key, "title": b.title, "author": b.author, "total_ms": b.total_ms,
+                        "pos_ms": pos, "chapters": len(b.chapters), "at": self.book_positions.when(b.key)})
+        out.sort(key=lambda b: (-b["at"], b["title"].lower()))
+        return out
+
     # --- the library changed (the web page's music manager) ---------------------------
 
     def reload_library(self) -> dict:
@@ -1148,6 +1300,7 @@ class Station:
         jingles, keeping the artist or list playing; songs lined up whose files
         have gone are dropped. The song on air carries on."""
         tracks = scan_music(self.music_dir, self._tag_cache)
+        self._scan_books()
         jingles = scan_jingles(self.jingles_dir) if self.config.jingle_every or self.jingles else []
         with self._lock:
             self.tracks = tracks
@@ -1166,8 +1319,9 @@ class Station:
             self._scan(j.path)
         if self._opening is None and not self.is_on_air:
             self._prepare_opening()
-        log.info("library reloaded: %d tracks, %d jingles", len(tracks), len(jingles))
-        return {"tracks": len(tracks), "jingles": len(jingles)}
+        log.info("library reloaded: %d tracks, %d jingles, %d audiobooks", len(tracks), len(jingles),
+                 len(self.books.all()))
+        return {"tracks": len(tracks), "jingles": len(jingles), "books": len(self.books.all())}
 
     # --- artist radio ------------------------------------------------------------------
 
@@ -1276,6 +1430,12 @@ class Station:
         src = self._source
         if src is None:
             return None
+        if src["kind"] == "book":
+            now = self.book_now if self.book_now and self.book_now["key"] == src["key"] else None
+            if now is None:                      # not playing (paused): where it was left
+                book = self.books.get(src["key"])
+                now = self._book_state(book, self.book_positions.get(src["key"])) if book else {}
+            return {**src, **now, "playing": on_air is not None and on_air.kind == "book"}
         if src["kind"] == "radio":
             return {**src, "title": self.radio_title,
                     "playing": self.radio_playing and on_air is not None and on_air.kind == "radio"}
@@ -1295,13 +1455,13 @@ class Station:
                 "album": on_air.album, "elapsed_s": round(time.time() - on_air.started, 1),
                 "duration_s": round(on_air.duration_s, 1),
             },
-            "next": None if nxt is None or (self._source or {}).get("kind") == "radio"
+            "next": None if nxt is None or (self._source or {}).get("kind") in ("radio", "book")
             else {"title": nxt.title, "artist": nxt.artist},
             "gap_plan": self.gap_plan,
-            "can_skip": self.is_on_air and on_air is not None and on_air.kind != "radio",
+            "can_skip": self.is_on_air and on_air is not None and on_air.kind not in ("radio", "book"),
             "news_ready": None if news is None else news.due.mark.strftime("%H:%M"),
             "history": list(self.history),
-            "library": {"tracks": len(self.tracks), "jingles": len(self.jingles)},
+            "library": {"tracks": len(self.tracks), "jingles": len(self.jingles), "books": len(self.books.all())},
             "artist": self.artist,
             "profile": self.profile,
             "requests": self.requests(),

@@ -61,11 +61,14 @@ def validate(preset) -> dict | None:
         return {"kind": "album", "folder": _text(preset.get("folder"), "album folder", True),
                 "title": _text(preset.get("title"), "album title") or "",
                 "artist": _text(preset.get("artist"), "artist") or ""}
+    if kind == "book":
+        return {"kind": "book", "key": _text(preset.get("key"), "book", True),
+                "title": _text(preset.get("title"), "book title") or ""}
     if kind == "action":
         if preset.get("action") not in ACTIONS:
             raise ValueError(f"a button's action is one of {', '.join(ACTIONS)}")
         return {"kind": "action", "action": preset["action"]}
-    raise ValueError("a button holds the show, a radio station, an album or an action")
+    raise ValueError("a button holds the show, a radio station, an album, an audiobook or an action")
 
 
 def validate_all(presets) -> list:
@@ -84,6 +87,8 @@ def label(preset: dict | None, station_name: Callable[[dict], str] | None = None
         return preset["name"]
     if kind == "album":
         return f"{preset['title']} — {preset['artist']}" if preset["artist"] else preset["title"]
+    if kind == "book":
+        return preset["title"] or preset["key"]
     if kind == "action":
         return ACTIONS[preset["action"]]
     if station_name is not None:
@@ -99,6 +104,8 @@ def same(a: dict | None, b: dict | None) -> bool:
         return a["url"] == b["url"]
     if a["kind"] == "album":
         return a["folder"] == b["folder"]
+    if a["kind"] == "book":
+        return a["key"] == b["key"]
     if a["kind"] == "show":
         return ((a["profile"] or "").lower(), (a["artist"] or "").lower()) == \
                ((b["profile"] or "").lower(), (b["artist"] or "").lower())
@@ -128,6 +135,8 @@ class Presets:
         src = self.station.source
         if src is not None and src["kind"] == "radio":
             return validate({k: v for k, v in src.items() if k in ("kind", "name", "url", "info")})
+        if src is not None and src["kind"] == "book":
+            return validate({"kind": "book", "key": src["key"], "title": src.get("title", "")})
         if src is not None and src["kind"] == "album":
             return validate({"kind": "album", "folder": src["folder"], "title": src["title"],
                              "artist": src["artist"]})
@@ -214,7 +223,7 @@ class Presets:
             if self.config_file is not None:
                 save_setting(self.config_file, "broadcast_artist", self.station.artist)
                 save_setting(self.config_file, "broadcast_profile", self.station.profile)
-        elif preset["kind"] in ("radio", "album"):
+        elif preset["kind"] in ("radio", "album", "book"):
             self.station.tune(preset)
         else:
             raise ValueError("not something to play")

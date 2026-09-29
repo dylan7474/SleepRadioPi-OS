@@ -27,6 +27,7 @@ from collections.abc import Callable
 from pathlib import Path
 
 from sleepradiopi.broadcast.library import AUDIO_EXTENSIONS
+from sleepradiopi.playback.audiobooks import BOOK_FILES
 
 log = logging.getLogger(__name__)
 
@@ -116,7 +117,7 @@ class MediaLibrary:
                     elif e.is_file():
                         ext = Path(e.name).suffix.lower()
                         files.append({"name": e.name, "size": e.stat().st_size,
-                                      "audio": ext in AUDIO_EXTENSIONS})
+                                      "audio": ext in AUDIO_EXTENSIONS or ext in BOOK_FILES})
                 except OSError:
                     continue
         key = lambda d: d["name"].lower()
@@ -213,8 +214,9 @@ class MediaLibrary:
         if not parts:
             raise MediaError("the file has no name")
         ext = Path(parts[-1]).suffix.lower()
-        if ext not in AUDIO_EXTENSIONS and not (kind == "music" and ext in IMAGES):
-            raise MediaError(f"{parts[-1]}: the radio plays {', '.join(sorted(AUDIO_EXTENSIONS))} files")
+        playable = BOOK_FILES if kind == "audiobooks" else AUDIO_EXTENSIONS
+        if ext not in playable and not (kind != "jingles" and ext in IMAGES):
+            raise MediaError(f"{parts[-1]}: the radio plays {', '.join(sorted(playable))} files here")
         if length <= 0 or length > MAX_FILE:
             raise MediaError(f"{parts[-1]}: files up to {MAX_FILE >> 30} GB")
         if self.usage()["free"] - length < KEEP_FREE:

@@ -21,7 +21,7 @@ while sleep 2; do
 		[ "$(mode)" = rw ] && continue
 		mount -o remount,rw /media || continue
 		logger -t media-rw "/media is writable (music library manager)"
-		for d in /media/music /media/jingles; do
+		for d in /media/music /media/jingles /media/audiobooks; do
 			mkdir -p $d
 			[ "$(ls -ld $d | awk '{print $3}')" = radio ] || chown -R radio:radio $d
 		done

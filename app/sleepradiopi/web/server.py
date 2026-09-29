@@ -224,6 +224,9 @@ def make_handler(station: Station, output: Mp3Output, speaker=None,
                     self._error(str(e))
                     return
                 self._send(json.dumps(listing).encode(), "application/json")
+            elif path == "/api/books":
+                self._send(json.dumps({"books": station.book_list(), "scanning": station.books_scanning}).encode(),
+                           "application/json")
             elif path == "/api/radio":
                 self._send(json.dumps(self._radio_state()).encode(), "application/json")
             elif path == "/api/radio/search":
@@ -281,6 +284,8 @@ def make_handler(station: Station, output: Mp3Output, speaker=None,
                 self._media(path.rsplit("/", 1)[1])
             elif path in ("/api/buttons", "/api/buttons/press") and presets is not None:
                 self._buttons(path.endswith("press"))
+            elif path in ("/api/books/play", "/api/books/seek"):
+                self._books(path.rsplit("/", 1)[1])
             elif path == "/api/album/play":
                 self._play_album()
             elif path == "/api/album/stop":
@@ -670,6 +675,29 @@ def make_handler(station: Station, output: Mp3Output, speaker=None,
                             "send {\"button\": 1-4, \"preset\": ...} or {\"button\", \"now\": true}")
                 return
             self._send(json.dumps(presets.status()).encode(), "application/json")
+
+        def _books(self, action: str) -> None:
+            """POST /api/books/play {"key"}: that audiobook, from where it was left;
+            /api/books/seek {"delta_ms": -60000} or {"to_ms": n}: move in the book on."""
+            try:
+                body = self._body()
+                if action == "play":
+                    if not isinstance(body.get("key"), str):
+                        raise ValueError("send {\"key\"} from /api/books")
+                    station.play_book(body["key"])
+                    if speaker is not None:
+                        speaker.play()
+                    reply = {"source": station.status()["source"]}
+                else:
+                    delta, to = body.get("delta_ms"), body.get("to_ms")
+                    for v in (delta, to):
+                        if v is not None and (isinstance(v, bool) or not isinstance(v, (int, float))):
+                            raise ValueError("delta_ms / to_ms are milliseconds")
+                    reply = station.book_seek(None if delta is None else int(delta), None if to is None else int(to))
+            except (ValueError, AttributeError, TypeError) as e:
+                self._error(str(e) if isinstance(e, ValueError) else "send {\"key\"} or {\"delta_ms\"}")
+                return
+            self._send(json.dumps(reply).encode(), "application/json")
 
         def _play_album(self) -> None:
             """POST /api/album/play {"id": n} (from /api/search's albums): play it

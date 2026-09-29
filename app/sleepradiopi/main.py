@@ -147,6 +147,9 @@ def main() -> None:
     cfg = asdict(settings)
     cfg["music_folder"] = Path(settings.music_folder or MEDIA / "music").expanduser()
     cfg["jingles_folder"] = Path(settings.jingles_folder or MEDIA / "jingles").expanduser()
+    cfg["audiobooks_folder"] = Path(settings.audiobooks_folder or MEDIA / "audiobooks").expanduser()
+    cfg["book_cache"] = Path.home() / ".cache" / "sleepradiopi" / "books.json"
+    cfg["book_positions"] = Path.home() / ".local" / "state" / "sleepradiopi" / "book-positions.json"
     voices = Path(settings.voices_folder or REPO / "voices").expanduser()
     cfg["hooks_file"] = str(Path(settings.hooks_file).expanduser() if settings.hooks_file else BUNDLED_HOOKS)
     cfg["scan_cache"] = Path.home() / ".cache" / "sleepradiopi" / "scans.json"
@@ -181,6 +184,9 @@ def main() -> None:
             threading.Thread(target=_make_warming_up, args=(station, on_air), name="warming-up",
                              daemon=True).start()
         presets = presets_mod.Presets(station, control, args.config, settings.buttons, announcer)
+        # An audiobook steps back a minute after the sleep timer, and pauses the radio at its end.
+        station.paused_by_sleep = lambda: control.slept
+        station.on_book_end = control.pause
         buttons = {code: (lambda i=i: presets.press(i), lambda i=i: presets.hold(i))
                    for code, i in presets_mod.KEYCODES.items()}
         Knob(lambda clicks: control.step(clicks * settings.knob_step), control.toggle,
@@ -202,7 +208,8 @@ def main() -> None:
     directory = radio_mod.Directory(Path.home() / ".cache" / "sleepradiopi" / "stations.tsv")
     directory.keep_fresh()
     # The web page's music library manager (upload / delete); the library is rescanned after.
-    media = MediaLibrary({"music": cfg["music_folder"], "jingles": cfg["jingles_folder"]},
+    media = MediaLibrary({"music": cfg["music_folder"], "jingles": cfg["jingles_folder"],
+                          "audiobooks": cfg["audiobooks_folder"]},
                          on_changed=station.reload_library)
     serve(station, stream, args.port or settings.http_port, control, args.config, announcer, jobs, updates,
           presets, directory, media)

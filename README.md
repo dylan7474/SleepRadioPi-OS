@@ -43,6 +43,11 @@ software, and the case to print.
   (the web page's Find tab): your saved stations, or search thousands in the
   [Radio Browser](https://www.radio-browser.info/) directory. What's playing
   shows on the page; same speakers, knob and sleep timer.
+- **Audiobooks** — mp3 folders or m4b files in their own folder, read with
+  nothing from the DJ; each book remembers its place (a minute back after the
+  sleep timer, for when you drifted off), with a whole-book progress bar and
+  one-minute back / forward on the web page. At the end of a book the radio
+  pauses instead of waking you with the show.
 - **Album mode** — or pick a whole album: the DJ introduces it, then it plays
   start to finish like a record (no talk between tracks), and the DJ
   back-announces it at the end.

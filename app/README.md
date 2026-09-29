@@ -304,6 +304,25 @@ The cards:
   your stations, the actions); tapping one on the main page is the same as
   pressing it on the case. Wired as GPIO keys (KEY_1–KEY_4, config.txt), read
   alongside the knob.
+- **Audiobooks** (Find, and the Radio tab while one plays) — books go in their
+  own folder, `~/media/audiobooks` (`/media/audiobooks` on the radio; upload them
+  under Settings → Music library → Audiobooks): a folder of mp3s is one book
+  (its chapters in file order, CD1/CD2 sub-folders included), and a single
+  `.m4b` or `.mp3` is a book too, an m4b's chapter markers becoming its chapters.
+  A book plays **instead of the show, with nothing from the DJ** (no links,
+  jingles or news), and **every book remembers its place**: saved every 30 s
+  and on pause, the sleep timer, switching to something else, restarts and
+  power cuts (`~/.local/state/sleepradiopi/book-positions.json`). While one
+  plays, the dial window shows the book and chapter, a bar for the whole book
+  (tap it to jump), the time gone and left, and **⏪ 1 min · ⏯ · 1 min ⏩**. A
+  pause picks up a few seconds back; **after the sleep timer, a minute back**
+  (you'd dozed off during the fade). At the end of a book the radio **pauses**
+  rather than going back to the show, and next time the book starts again.
+  Find shows your books (the most recently heard first, with how far through
+  each is) and searches them; a preset button can hold one (one press
+  carries on). Chapter lists are cached (`~/.cache/sleepradiopi/books.json`):
+  reading a long m4b takes a Zero a while the first time
+  (`playback/audiobooks.py`, `Station._run_book`).
 - **Albums** (Find) — search the library's albums and play one start
   to finish **instead of the show**: no DJ, jingles or news; Skip goes to the
   next track; then back to Sleep Radio. The radio remembers the album and
@@ -512,6 +531,8 @@ everything but the page itself and the login needs the session cookie
 | `GET /api/radio/search?q=` | Stations by name or tag (`from`: `copy` or `online`; 400 with `{"error"}` if there's no copy and Radio Browser can't be reached) |
 | `POST /api/radio/directory` | Fetch a fresh copy of the station directory now (in the background) |
 | `POST /api/radio/play` / `/api/radio/stop` | `{"name", "url"}` — play that station instead of the show (starts the speaker if paused) / back to the show (from a station or an album) |
+| `GET /api/books` | The audiobooks, each with `key`, `title`, `author`, `total_ms`, `pos_ms` (where it was left), `chapters` |
+| `POST /api/books/play` / `/api/books/seek` | `{"key"}` — that book from where it was left / `{"delta_ms": -60000}` or `{"to_ms": n}` in the book on |
 | `POST /api/album/play` | `{"id": n}` from the search's `albums` — play it straight through instead of the show |
 | `GET /api/media?kind=music\|jingles&path=` | A folder of the library: its folders (with item counts) and files, and the space left |
 | `POST /api/media/upload?kind=&dir=&name=` | The file as the body (`name` may include folders); `{"path", "status": "added" \| "same"}` |
