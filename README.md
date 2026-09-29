@@ -83,9 +83,12 @@ software, and the case to print.
 ### Using it
 
 - **Power on and it plays.** About 10 seconds after you plug it in it chimes
-  and the DJ says it's warming up, so you know it's alive; the show starts
-  once the voice has loaded. (An LED flickers while it boots and pulses when
-  it's on air.)
+  and the DJ says it's warming up, so you know it's alive, then ticks softly
+  every few seconds, like a clock, until the show starts once the voice has
+  loaded (about 50 seconds from power-on on a Zero 2 W). Coming back to
+  Sleep Radio from a station, album, audiobook or podcast does the same if
+  the DJ's welcome isn't ready yet. (An LED flickers while it boots and
+  pulses when it's on air.)
 - **One knob.** Turn for volume; press to pause or play; **hold it for 3
   seconds** and the radio reads out its network address (handy away from
   home).
@@ -96,8 +99,9 @@ software, and the case to print.
   pause. **Hold one for 3 seconds** to keep what's playing on it (a beep, then
   "Button two: BBC Radio 4"). The same four are on the web page's front.
 - **A service menu** for getting a radio back when its page can't be
-  reached: **hold buttons 1 and 4 together for 5 seconds** (a beep says it's
-  counting) and the DJ reads out the choices. **1** restarts the radio;
+  reached: **hold buttons 1 and 4 together for 5 seconds** (it ticks once a
+  second while they're held) and the DJ reads out the choices, with the
+  music paused until you leave the menu. **1** restarts the radio;
   **2** resets the Wi-Fi (forgets the networks added on the page and makes
   the radio's own SleepRadio-Setup network to set a new one up); **3** gives
   a status report — address, Wi-Fi, software version, songs and free space —
@@ -105,7 +109,8 @@ software, and the case to print.
   **4** is a **factory reset**, confirmed by pressing **2, then 3**: every
   setting back to how it came, Wi-Fi and the page's password included,
   keeping the music, audiobooks and voices. Doing nothing closes it. The
-  web page's buttons work the same way (two fingers for 1 and 4).
+  web page's buttons work the same way (two fingers for 1 and 4), with a
+  countdown from 5 under them.
 - **The web page** — http://sleepradiopi.local/ from any phone or computer
   on your network (optionally with a password) is its remote control.
   Everyday controls up front: now playing and skip, volume and a sleep timer
@@ -239,7 +244,13 @@ music and settings stay put.
   are read-only; logs and runtime state live in RAM. The only thing written
   is a small data partition, and only by atomic replace.
 - **Fast boot, more free RAM.** No desktop, no systemd, no services you don't
-  need: BusyBox init, eudev, Wi-Fi, mDNS, ssh, and the station.
+  need: BusyBox init, eudev, Wi-Fi, mDNS, ssh, and the station; plus 256 MB
+  of compressed swap in RAM (zram), so the neural voice has room to work
+  without starving the music.
+- **Looks after itself.** If the sound card ever refuses to open, the radio
+  restarts itself after 2 minutes (at most once an hour) rather than sitting
+  there silent; a broken update undoes itself; a Wi-Fi drop is reconnected
+  quietly.
 - **The radio software** is plain Python (sherpa-onnx for the voice, ffmpeg
   for audio, numpy for the EQ) in [`app/`](app/), with its own README (the
   settings, the web page's API, how it's put together) and tests.

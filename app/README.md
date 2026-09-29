@@ -29,6 +29,11 @@ and with no network, and is set up from its web page. See
   voice is reloading), the same chime plays at once, then "Sleep Radio is
   warming up…" if it's still not ready, then a soft tick every 3 s until it is (`Station._warm_up`; off with *At
   power-on: Silent*).
+- **A stuck sound card restarts the radio.** If aplay keeps failing (once, the
+  card refused to open after a boot until a restart), the speaker retries ever
+  more slowly (0.1 s up to 5 s, logged at the 1st, 2nd, 4th... failure), and
+  after 2 minutes the radio restarts itself -- at most once an hour
+  (`SpeakerOutput._failed`, `main._speaker_stuck`).
 - **Power on and it plays.** About 10 seconds after power-up it chimes, and
   the DJ says "Sleep Radio is warming up…", so you know it's alive; then a
   soft tick every 3 s (like a clock) until the DJ starts -- the start-up
@@ -467,7 +472,9 @@ The cards:
   3 s hold counts, so a preset is never overwritten; `io/knob.py` `Chord`).
   While it's open the show is **paused** and the speaker plays only the
   menu: its words, and a soft tick once a second while they're being made;
-  leaving it (or cancelling, or the Wi-Fi reset) resumes what was playing.
+  leaving it (or cancelling, or the Wi-Fi reset) resumes what was playing;
+  restarting, going back and the factory reset say a short line ("Rebooting.")
+  and only then act, so no music comes back in between.
   Its fixed lines are made once per voice in the background after start-up
   and kept (`~/.cache/sleepradiopi/service-menu/`), so they play at once;
   only the status report is made fresh (while the buttons are held).
