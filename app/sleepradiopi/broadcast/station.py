@@ -42,6 +42,7 @@ from sleepradiopi.audio import pcm
 from sleepradiopi.config.clock import clock_trusted
 from sleepradiopi.playback import radio as radio_mod
 from sleepradiopi.playback.audiobooks import BookLibrary, Positions
+from sleepradiopi.playback import podcasts as pod_mod
 from sleepradiopi.tts.worker import TtsWorker
 
 from .library import scan_jingles, scan_music
@@ -251,6 +252,8 @@ class Station:
         self.book_now: dict | None = None    # the book playing: place, chapter, length
         self.paused_by_sleep: Callable[[], bool] = lambda: False   # (wired to the speaker)
         self.on_book_end: Callable[[], None] | None = None          # pause the radio at the end
+        # Podcasts: the shows (settings), their episode lists (cached), each episode's place.
+        self.podcasts = pod_mod.Podcasts(cfg.get("podcasts") or [], cfg.get("podcast_cache"), self.book_positions)
         if cfg.get("stream_source"):
             try:
                 self._source = self._check_source(cfg["stream_source"])
@@ -302,7 +305,7 @@ class Station:
         """Cut short whatever is on air (a track, jingle, DJ line or bulletin) and
         go straight on to what comes after it. False if there's nothing to skip."""
         on_air = self.on_air
-        if not self.is_on_air or on_air is None or on_air.kind in ("radio", "book"):
+        if not self.is_on_air or on_air is None or on_air.kind in ("radio", "book", "episode"):
             return False
         self._skip_for = on_air
         log.info("skip: %s %s", on_air.kind, on_air.title[:70])
@@ -328,6 +331,8 @@ class Station:
                     self._run_album(source)
                 elif source["kind"] == "book":
                     self._run_book(source)
+                elif source["kind"] == "episode":
+                    self._run_episode(source)
                 else:
                     self._run_radio(source)
         except Exception:
@@ -403,6 +408,15 @@ class Station:
             track = track if isinstance(track, int) and not isinstance(track, bool) else 0
             return {"kind": "album", "folder": album["folder"], "title": album["title"],
                     "artist": album["artist"], "track": max(0, min(track, len(album["tracks"]) - 1))}
+        if source["kind"] == "episode":
+            show = self.podcasts.show(source.get("show")) if isinstance(source.get("show"), str) else None
+            eps = self.podcasts.episodes(show["id"]) if show else []
+            ep = next((e for e in eps if e["guid"] == source.get("guid")), None)
+            if ep is None:
+                raise ValueError("that episode isn't in a podcast you follow")
+            return {"kind": "episode", "show": show["id"], "show_title": show["title"], "guid": ep["guid"],
+                    "title": ep["title"], "url": ep["url"], "type": ep["type"], "bytes": ep["bytes"],
+                    "duration_ms": ep["duration_ms"]}
         if source["kind"] == "book":
             key = source.get("key")
             book = self.books.get(key) if isinstance(key, str) else None
@@ -1193,8 +1207,10 @@ class Station:
         """Move the book playing (or the one tuned, while paused): by delta_ms
         (e.g. -60000 for a minute back) or to to_ms. ValueError if no book."""
         src = self._source
+        if src and src.get("kind") == "episode":
+            return self._episode_seek(src, delta_ms, to_ms)
         if not src or src.get("kind") != "book":
-            raise ValueError("no audiobook is on")
+            raise ValueError("no audiobook or podcast is on")
         book = self.books.get(src["key"])
         if book is None:
             raise ValueError("that book isn't in the audiobooks folder")
@@ -1285,6 +1301,165 @@ class Station:
         finally:
             if self.book_now and self.book_now["key"] == key and pos < book.total_ms:
                 self.book_positions.set(key, pos)
+            self.book_now = None
+
+    # --- podcasts ------------------------------------------------------------------------
+
+    @staticmethod
+    def _episode_state(src: dict, pos_ms: int) -> dict:
+        return {"key": pod_mod.episode_key(src["show"], src["guid"]), "pos_ms": int(pos_ms),
+                "total_ms": src.get("duration_ms") or 0, "chapter": 1, "chapters": 1,
+                "chapter_title": src.get("show_title", "")}
+
+    def play_episode(self, show: str, guid: str | None = None, start: str | None = None) -> dict:
+        """An episode of a show you follow (guid None: the one a podcast button
+        would play -- from `start` on, the first not yet heard; without one, the
+        one you're part-way through, else the newest unheard)."""
+        if guid is None:
+            ep = self.podcasts.pick(show, start)
+            if ep is None:
+                raise ValueError("no episodes yet: is the radio online?")
+            guid = ep["guid"]
+        self.tune({"kind": "episode", "show": show, "guid": guid})
+        return self._source
+
+    def _episode_seek(self, src: dict, delta_ms, to_ms) -> dict:
+        key = pod_mod.episode_key(src["show"], src["guid"])
+        now = self.book_now["pos_ms"] if self.book_now and self.book_now["key"] == key else self.book_positions.get(key)
+        total = (self.book_now or {}).get("total_ms") or src.get("duration_ms") or 0
+        target = to_ms if to_ms is not None else now + (delta_ms or 0)
+        target = int(max(0, min(target, total - 1000) if total else target))
+        if self.book_now and self.book_now["key"] == key and self.on_air and self.on_air.kind == "episode":
+            self._book_seek = target
+            self.book_now = {**self.book_now, "pos_ms": target}
+        else:
+            self.book_positions.set(key, target)
+        return {**self._episode_state(src, target), "total_ms": total}
+
+    @staticmethod
+    def _episode_bytes(url: str) -> int:
+        """The episode's size, from a one-byte request (for starting part-way through)."""
+        import re as _re
+        import urllib.request
+        try:
+            req = urllib.request.Request(url, headers={"User-Agent": radio_mod.USER_AGENT, "Range": "bytes=0-0"})
+            with urllib.request.urlopen(req, timeout=10) as r:
+                m = _re.match(r"bytes \d+-\d+/(\d+)", r.headers.get("Content-Range") or "")
+                return int(m.group(1)) if m else int(r.headers.get("Content-Length") or 0) if r.status == 200 else 0
+        except (OSError, ValueError):
+            return 0
+
+    def _run_episode(self, source: dict) -> None:
+        """Play a podcast episode from its place, with no DJ: streamed (https is
+        fetched in Python), starting part-way through with an HTTP Range for mp3
+        (others are skipped forward). Pause, the sleep timer's step back, seeking
+        and the end are as for an audiobook; a dropped connection reconnects at
+        the same place."""
+        key = pod_mod.episode_key(source["show"], source["guid"])
+        total = source.get("duration_ms") or 0
+        pos = self.book_positions.get(key)
+        if self.book_positions.done(key) or (total and pos >= total - 30_000):
+            pos = 0                              # heard: from the start
+        mp3 = pod_mod.is_mp3(source)
+        nbytes = source.get("bytes") or 0
+        self._book_seek = None
+        leveller = radio_mod.Leveller()
+        on_air = self.on_air = OnAir("episode", source["title"], source.get("show_title", ""))
+        on_air.duration_s = total / 1000
+        self.next_track = None
+        self.gap_plan = []
+        self.history.appendleft({"kind": "episode", "text": f"{source['title']} — {source.get('show_title', '')}",
+                                 "at": time.time()})
+        saved_at = time.monotonic()
+        last_sound = time.monotonic()
+        self.book_now = self._episode_state(source, pos)
+        try:
+            while not self._halted():
+                headers, skip_ms = {}, 0
+                if pos > 0 and mp3:
+                    nbytes = nbytes or self._episode_bytes(source["url"])
+                    if nbytes and total:
+                        headers = {"Range": f"bytes={int(nbytes * pos / total)}-"}
+                    else:
+                        skip_ms = pos
+                elif pos > 0:
+                    skip_ms = pos
+                decoder = list(radio_mod.DECODER)
+                if skip_ms:
+                    decoder[decoder.index("-i"):decoder.index("-i")] = ["-ss", f"{skip_ms / 1000:.3f}"]
+                stream = radio_mod.RadioStream(source["url"], decoder=decoder, headers=headers)
+                restart = False
+                try:
+                    stream.start()
+                    playing = False
+                    while not self._halted():
+                        if self._book_seek is not None:
+                            pos, self._book_seek = self._book_seek, None
+                            restart = True
+                            break
+                        if self._listeners == 0:     # paused: keep the place, and wait
+                            back = BOOK_BACK_SLEEP_MS if self.paused_by_sleep() else BOOK_BACK_PAUSE_MS
+                            pos = max(0, int(pos) - back)
+                            self.book_positions.set(key, pos)
+                            self.book_now = self._episode_state(source, pos)
+                            while self._listeners == 0 and not self._halted():
+                                time.sleep(0.2)
+                            restart = True
+                            break
+                        filling = not playing and stream.buffered_s < RADIO_PREBUFFER_S and not stream.ended
+                        block = None if filling else stream.read(0.05)
+                        if block is None:
+                            playing = False
+                            if stream.ended and not stream.buffered_s:
+                                break
+                            if time.monotonic() - last_sound > RADIO_GIVE_UP_S:
+                                with self._lock:
+                                    if self._source is source:
+                                        self._source = None
+                                        self.source_error = f"{source['title']}: {stream.ended or 'no sound from the podcast'}"
+                                return
+                            self._write(pcm.silence(0.05))
+                            continue
+                        playing = True
+                        last_sound = time.monotonic()
+                        self._radio_heard = True
+                        self._write(leveller.process(block))
+                        pos += len(block) * 1000 / pcm.SAMPLE_RATE
+                        if not total and stream.total_bytes:  # no length in the feed: from the size (~128 kbps)
+                            total = stream.total_bytes * 8 // 128
+                        total = max(total, int(pos)) if total else total   # (feeds' lengths can be a little short)
+                        self.book_now = {**self._episode_state(source, pos), "total_ms": total}
+                        on_air.duration_s = total / 1000
+                        if time.monotonic() - saved_at > BOOK_SAVE_S:
+                            self.book_positions.set(key, pos)
+                            saved_at = time.monotonic()
+                finally:
+                    stream.close()
+                if restart or self._halted():
+                    continue
+                if total and pos < total - 60_000:   # cut off mid-episode: carry on from here
+                    log.info("podcast: %s broke off at %d:%02d; reconnecting", source["title"],
+                             int(pos) // 60000, int(pos) // 1000 % 60)
+                    deadline = time.monotonic() + RADIO_RETRY_S
+                    while time.monotonic() < deadline and not self._halted():
+                        self._write(pcm.silence(0.1))
+                    continue
+                log.info("podcast finished: %s", source["title"])
+                self.book_positions.set(key, int(pos), done=True)
+                self.book_now = None
+                nxt = self.podcasts.next_after(source["show"], source["guid"])
+                if nxt is not None:                   # on to the next newer episode, in order
+                    log.info("podcast: on to %s", nxt["title"])
+                    self.tune({"kind": "episode", "show": source["show"], "guid": nxt["guid"]})
+                    return
+                if self.on_book_end is not None:      # that was the latest: pause, as for a book
+                    self.on_book_end()
+                while not self._halted() and self._listeners > 0:
+                    self._write(pcm.silence(0.2))
+                return
+        finally:
+            if self.book_now and self.book_now["key"] == key:
+                self.book_positions.set(key, int(pos))
             self.book_now = None
 
     def play_book(self, key: str) -> dict:
@@ -1442,6 +1617,11 @@ class Station:
         src = self._source
         if src is None:
             return None
+        if src["kind"] == "episode":
+            key = pod_mod.episode_key(src["show"], src["guid"])
+            now = self.book_now if self.book_now and self.book_now["key"] == key else \
+                self._episode_state(src, self.book_positions.get(key))
+            return {**src, **now, "playing": on_air is not None and on_air.kind == "episode"}
         if src["kind"] == "book":
             now = self.book_now if self.book_now and self.book_now["key"] == src["key"] else None
             if now is None:                      # not playing (paused): where it was left
@@ -1467,10 +1647,10 @@ class Station:
                 "album": on_air.album, "elapsed_s": round(time.time() - on_air.started, 1),
                 "duration_s": round(on_air.duration_s, 1),
             },
-            "next": None if nxt is None or (self._source or {}).get("kind") in ("radio", "book")
+            "next": None if nxt is None or (self._source or {}).get("kind") in ("radio", "book", "episode")
             else {"title": nxt.title, "artist": nxt.artist},
             "gap_plan": self.gap_plan,
-            "can_skip": self.is_on_air and on_air is not None and on_air.kind not in ("radio", "book"),
+            "can_skip": self.is_on_air and on_air is not None and on_air.kind not in ("radio", "book", "episode"),
             "news_ready": None if news is None else news.due.mark.strftime("%H:%M"),
             "history": list(self.history),
             "library": {"tracks": len(self.tracks), "jingles": len(self.jingles), "books": len(self.books.all())},

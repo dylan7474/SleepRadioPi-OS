@@ -151,6 +151,7 @@ def main() -> None:
     cfg["audiobooks_folder"] = Path(settings.audiobooks_folder or cfg["music_folder"].parent / "audiobooks").expanduser()
     cfg["book_cache"] = Path.home() / ".cache" / "sleepradiopi" / "books.json"
     cfg["book_positions"] = Path.home() / ".local" / "state" / "sleepradiopi" / "book-positions.json"
+    cfg["podcast_cache"] = Path.home() / ".cache" / "sleepradiopi" / "podcasts"
     voices = Path(settings.voices_folder or REPO / "voices").expanduser()
     cfg["hooks_file"] = str(Path(settings.hooks_file).expanduser() if settings.hooks_file else BUNDLED_HOOKS)
     cfg["scan_cache"] = Path.home() / ".cache" / "sleepradiopi" / "scans.json"
@@ -200,6 +201,9 @@ def main() -> None:
     else:
         station = Station(cfg, tts, stream)
         presets = presets_mod.Presets(station, None, args.config, settings.buttons)
+    # Podcasts: the shows followed are settings; their episode lists refresh in the background.
+    station.podcasts.save = lambda shows: save_setting(args.config, "podcasts", shows)
+    station.podcasts.keep_fresh()
     # A station or album playing instead of the show is kept over a restart.
     station.on_source = lambda source: save_setting(args.config, "stream_source", source)
     updates = Updates(settings.update_source, say=lambda text: _say_now(station, control, text))

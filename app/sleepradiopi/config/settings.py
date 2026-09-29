@@ -31,6 +31,7 @@ class Settings:
     profiles: list = field(default_factory=list)   # [{"name": "Friday List", "artists": [...]}]
     broadcast_profile: str | None = None  # the profile playing (instead of an artist); None = none
     broadcast_chattiness: str = "maximum"
+    podcasts: list = field(default_factory=list)  # the shows followed: [{"feed_url", "title", "author"}]
     radio_stations: list | None = None    # internet radio: [{"name", "url", "info"?}]; None = the starter set
     buttons: list = field(default_factory=list)   # the 4 preset buttons (io/presets.py); null = empty
     stream_source: dict | None = None     # a station or album playing instead of the show; None = the show

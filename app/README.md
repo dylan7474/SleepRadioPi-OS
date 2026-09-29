@@ -336,6 +336,26 @@ The cards:
   carries on). Chapter lists are cached (`~/.cache/sleepradiopi/books.json`):
   reading a long m4b takes a Zero a while the first time
   (`playback/audiobooks.py`, `Station._run_book`).
+- **Podcasts** (Find → Podcasts) — search the iTunes podcast directory (as the
+  Android app does) or paste a feed's address, and **follow** a show (up to 50,
+  kept in the settings as `podcasts`). Each show's episode list (the newest
+  200) is fetched when you look and every 3 hours, and saved on the radio
+  (`~/.cache/sleepradiopi/podcasts/`), so it's there offline. An episode plays
+  **like an audiobook**: instead of the show, nothing from the DJ, its place
+  remembered in the same file (a minute back after the sleep timer), with the
+  same bar and **1 min** back / forward; within a minute of the end counts as
+  heard, and **Heard / Unheard** marks one by hand. Episodes stream (https via
+  Python, like the stations); starting part-way through an mp3 asks the server
+  for just the rest (an HTTP Range), and a dropped connection picks up where it
+  was. **A run on a button**: *On button…* beside any episode puts the show on
+  a preset button **starting from that episode** — the button plays the first
+  not yet heard from there on, oldest to newest, and when one finishes the
+  radio goes straight on to the next newer episode, up to the latest, then
+  pauses (as at the end of a book). A button holding just the show (Settings →
+  Buttons) plays the episode part-heard, else the newest unheard; holding a
+  button for 3 s while an episode plays starts the run from that one; and
+  playing any episode from the list carries on through the newer ones too
+  (`playback/podcasts.py`, `Station._run_episode`).
 - **Albums** (Find) — search the library's albums and play one start
   to finish **instead of the show**: no DJ, jingles or news; Skip goes to the
   next track; then back to Sleep Radio. The radio remembers the album and
@@ -547,13 +567,18 @@ everything but the page itself and the login needs the session cookie
 | `POST /api/radio/play` / `/api/radio/stop` | `{"name", "url"}` — play that station instead of the show (starts the speaker if paused) / back to the show (from a station or an album) |
 | `GET /api/books` | The audiobooks, each with `key`, `title`, `author`, `total_ms`, `pos_ms` (where it was left), `chapters` |
 | `POST /api/books/play` / `/api/books/seek` | `{"key"}` — that book from where it was left / `{"delta_ms": -60000}` or `{"to_ms": n}` in the book on |
+| `GET /api/podcasts` | The shows followed, each with its number of episodes, how many recent ones are unheard, and the latest |
+| `GET /api/podcasts/search?q=` | Shows from the podcast directory (`id`, `feed_url`, `title`, `author`) |
+| `GET /api/podcasts/episodes?id=&refresh=1` | A show's episodes, newest first (`guid`, `gid`, `title`, `pub`, `duration_ms`, `pos_ms`, `done`); `refresh=1` fetches the feed first (`note` if it couldn't) |
+| `POST /api/podcasts/follow` / `/unfollow` | `{"feed_url"}` / `{"id"}` |
+| `POST /api/podcasts/play` / `/heard` | `{"id", "guid"?}` — that episode (none: the one part-heard, else the newest unheard), then on through the newer ones / `{"id", "guid", "heard": bool}`; seek with `/api/books/seek` |
 | `POST /api/album/play` | `{"id": n}` from the search's `albums` — play it straight through instead of the show |
 | `GET /api/media?kind=music\|jingles&path=` | A folder of the library: its folders (with item counts) and files, and the space left |
 | `POST /api/media/upload?kind=&dir=&name=` | The file as the body (`name` may include folders); `{"path", "status": "added" \| "same"}` |
 | `POST /api/media/mkdir` / `/api/media/delete` | `{"kind", "path", "name"}` / `{"kind", "path"}` (a file or a folder) |
 | `POST /api/media/done` | Changes finished: /media read-only again, and the library rescanned |
 | `GET /api/buttons` | The four preset buttons (`preset`, `label`, `playing`), what's playing now as a preset, and the actions |
-| `POST /api/buttons` | `{"button": 1-4, "preset": {...} \| null}` or `{"button", "now": true}` (keep what's playing on it) |
+| `POST /api/buttons` | `{"button": 1-4, "preset": {...} \| null}` or `{"button", "now": true}` (keep what's playing on it); a podcast preset is `{"kind": "podcast", "show", "title", "start": gid, "start_title"}` |
 | `POST /api/buttons/press` | `{"button": 1-4, "hold"?: bool}` — as if pressed (or held) on the case |
 | `POST /api/radio/stations` | `{"stations": [...]}` — replace the saved list |
 | `GET /api/artists` | Every artist with a track count, your lists, and what's playing |

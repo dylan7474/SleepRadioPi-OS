@@ -118,6 +118,15 @@
   #nowCard button { border: 1px solid rgba(35,23,3,.35); background: rgba(255,255,255,.28); color: var(--amber-ink);
                     font-size: .88rem; font-weight: 600; padding: .4rem .85rem; }
   #rNote { margin: .5rem 0 0; font-size: .85rem; font-weight: 600; }
+  .ep-meta { color: var(--dim); font-size: .8rem; }
+  .ep-bar { height: 3px; background: var(--line); border-radius: 2px; margin-top: .3rem; overflow: hidden; }
+  .ep-bar i { display: block; height: 100%; background: var(--amber); }
+  #podEps li { flex-wrap: wrap; }
+  #podEps li > .t { flex: 1 1 100%; }
+  .ep-do { display: flex; gap: .5rem; align-items: center; margin-left: auto; }
+  .ep-do select { font-size: .8rem; padding: .3rem .4rem; }
+  #podHead { display: grid; gap: .2rem; }
+  #podHead h1 { margin: 0; font-family: var(--display); font-size: 1.3rem; }
   #noiseRow { display: flex; gap: .6rem; align-items: center; flex-wrap: wrap; }
   #noiseChip[aria-pressed=true]::before { content: "● "; }
   #noiseKinds { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .5rem; margin-top: .6rem; }
@@ -422,6 +431,10 @@
       <p id="artistNote" class="muted" style="margin:-.4rem 0 0;font-size:.85rem">Play one artist only (e.g. Beatles
         Radio), or one of your lists of artists.</p>
 
+      <h2 class="eyebrow">Podcasts</h2>
+      <div class="tiles" id="podTiles"></div>
+      <button id="podAdd" class="linkish" type="button">Add or remove podcasts</button>
+
       <div id="booksHome" class="view" hidden>
         <h2 class="eyebrow">Audiobooks</h2>
         <div class="tiles" id="bookTiles"></div>
@@ -443,6 +456,27 @@
       </div>
     </div>
     <div id="findResults" class="view" hidden></div>
+
+    <div id="podList" class="view" hidden>
+      <button class="back" type="button" data-to="#find">‹ Find</button>
+      <h2 class="eyebrow">Your podcasts</h2>
+      <ul id="podShows" class="list"><li class="muted">None yet: find one below.</li></ul>
+      <h2 class="eyebrow">Add a podcast</h2>
+      <form id="podFind" class="search" autocomplete="off">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+        <input id="podQ" type="search" placeholder="A podcast's name, e.g. In Our Time" aria-label="Find a podcast">
+      </form>
+      <ul id="podFound" class="list" hidden></ul>
+      <p id="podNote" class="muted" style="margin:0;font-size:.85rem">From Apple's podcast directory. Following a
+        podcast keeps its episodes on the radio (refreshed every few hours); episodes play over the internet.</p>
+    </div>
+
+    <div id="podShow" class="view" hidden>
+      <button class="back" type="button" data-to="#podcasts">‹ Podcasts</button>
+      <div id="podHead"><h1 id="podTitle"></h1><span id="podAuthor" class="muted"></span></div>
+      <ul id="podEps" class="list"><li class="muted">Loading…</li></ul>
+      <p id="podEpNote" class="muted" style="margin:0;font-size:.85rem"></p>
+    </div>
   </div>
 
   <!-- ============================== SETTINGS ============================== -->
@@ -816,7 +850,8 @@
   </section>
   <p id="bNote" class="muted" style="margin:0;font-size:.85rem">Like a car radio's: press a button to play it
     (press again to pause). <b>Set to now</b> keeps what's playing on a button, the same as holding it on the
-    radio for 3 seconds; or choose from the list. For an album, play it first.</p>
+    radio for 3 seconds; or choose from the list. For an album, play it first. A podcast episode on a button
+    starts a run: the radio plays on through the newer episodes, in order, up to the latest.</p>
   <button id="sheetDone" class="primary big" type="button">Done</button>
 </div>
 <div id="toast" role="status" hidden></div>
@@ -1132,6 +1167,7 @@ async function find() {
   }
   if (want("station")) fData.saved = rStations.filter(st => hasAll(st.name, ws));
   fData.books = want("book") ? books.filter(b => hasAll(`${b.title} ${b.author}`, ws)) : [];
+  fData.pods = fFilter === "all" ? podShows.filter(p => hasAll(`${p.title} ${p.author}`, ws)) : [];
   renderFind();
   const jobs = [];
   if ((want("song") || want("album")) && fFilter !== "book") jobs.push(fetch("/api/search?q=" + encodeURIComponent(q), { cache: "no-store" })
@@ -1176,10 +1212,12 @@ function renderFind() {
   const stationRow = (st, saved) => resultRow(st.name, st.info, [act("Play", true, () => tuneTo(st)),
     ...(saved ? [] : [act("Save", false, b => { b.currentTarget.disabled = true; saveStations([...rStations, st]); })])]);
   group("Audiobooks", d.books.map(b => resultRow(b.title, bookWords(b), [act("Play", true, () => playBook(b))])));
+  group("Podcasts", d.pods.map(p => resultRow(p.title, p.author, [act("Latest", true, () => playEpisode(p.id)),
+                                                                act("Episodes", false, () => go("#pod-" + p.id))])));
   group("Internet stations", [...d.saved.map(st => stationRow(st, true)),
                               ...(d.stations || []).slice(0, fFilter === "station" ? 40 : 8).map(st => stationRow(st, false))]);
   $("findResults").replaceChildren(...out);
-  const n = d.artists.length + d.lists.length + d.albums.length + d.songs.length + d.saved.length + d.books.length +
+  const n = d.artists.length + d.lists.length + d.albums.length + d.songs.length + d.saved.length + d.books.length + d.pods.length +
             (d.stations || []).length;
   qNote(d.busy ? "Searching…" : n ? (d.dirError ? `Stations: ${d.dirError}.` : "")
        : "Nothing found by that name. Try fewer words, or another spelling.");
@@ -1635,7 +1673,7 @@ setInterval(() => {
 }, 1000);
 
 const KIND = { track: "Now playing", dj: "On the mic", jingle: "Station ident", news: "News", wait: "Just a moment",
-               radio: "Internet radio", book: "Audiobook" };
+               radio: "Internet radio", book: "Audiobook", episode: "Podcast" };
 const ICON = { track: "♪", dj: "🎙", jingle: "✦", news: "📰", radio: "📻" };
 const hhmm = t => new Date(t * 1000).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 
@@ -1715,7 +1753,7 @@ async function poll() {
     $("noSpeaker").hidden = hasSpeaker;
     $("nowCard").classList.toggle("talk", !!s.now && ["dj", "news", "wait"].includes(s.now.kind));
     $("progress").parentElement.hidden = !(s.now && s.now.duration_s);
-    showBook(s.source && s.source.kind === "book" ? s.source : null);
+    showBook(s.source && (s.source.kind === "book" || s.source.kind === "episode") ? s.source : null);
     $("next").textContent = s.on_air && s.next ? `Next: ${s.next.title}${s.next.artist ? " — " + s.next.artist : ""}` : "";
     showHistory(s.history);
     drawSettings();
@@ -1733,12 +1771,15 @@ function showBook(b) {
   $("nowCard").classList.toggle("book", !!b);
   if (!b || b.total_ms === undefined) return;
   const paused = !b.playing;
-  $("kind").textContent = (paused ? "Paused · " : "Audiobook · ") + (b.chapters > 1 ? `chapter ${b.chapter} of ${b.chapters}` : "");
+  const ep = b.kind === "episode";
+  $("kind").textContent = (paused ? "Paused · " : ep ? "Podcast · " : "Audiobook · ") +
+    (ep ? b.show_title : b.chapters > 1 ? `chapter ${b.chapter} of ${b.chapters}` : "");
   $("title").textContent = b.title;
-  $("artist").textContent = b.chapters > 1 ? b.chapter_title : b.author;
+  $("artist").textContent = ep ? "" : b.chapters > 1 ? b.chapter_title : b.author;
   $("progress").parentElement.hidden = false;
   $("progress").style.width = Math.min(100, 100 * b.pos_ms / Math.max(1, b.total_ms)) + "%";
-  $("bookTime").textContent = `${hms(b.pos_ms)} of ${hms(b.total_ms)} · ${hms(Math.max(0, b.total_ms - b.pos_ms))} left`;
+  $("bookTime").textContent = b.total_ms ? `${hms(b.pos_ms)} of ${hms(b.total_ms)} · ${hms(Math.max(0, b.total_ms - b.pos_ms))} left`
+                                           : hms(b.pos_ms);
   $("bookPlay").textContent = paused ? "▶" : "⏸";
   $("next").textContent = "";
 }
@@ -1823,9 +1864,106 @@ $("noiseMix").oninput = () => {
   noiseTimer = setTimeout(() => sendNoise({ noise_mix: +$("noiseMix").value }), 150);
 };
 
+// Podcasts (playback/podcasts.py): the shows you follow, their episodes, adding one.
+let podShows = [];
+async function loadPodcasts() {
+  try { podShows = (await (await fetch("/api/podcasts", { cache: "no-store" })).json()).shows; } catch { return; }
+  drawPodcasts(); drawSettings();
+}
+const day = t => t ? new Date(t * 1000).toLocaleDateString([], { day: "numeric", month: "short" }) : "";
+function drawPodcasts() {
+  $("podTiles").replaceChildren(...(podShows.length ? podShows.map(p =>
+    tile(p.title, p.new ? `${p.new} new` + (p.latest ? ` · latest ${day(p.latest.pub)}` : "") : p.author || "Podcast",
+         !!bookNow && bookNow.kind === "episode" && bookNow.show === p.id, () => go("#pod-" + p.id)))
+    : [Object.assign(document.createElement("p"), { className: "muted", style: "margin:0;font-size:.9rem",
+                                                    textContent: "None yet: add one below." })]));
+  $("podShows").replaceChildren(...(podShows.length ? podShows.map(p => resultRow(p.title, p.author, [
+      act("Episodes", false, () => go("#pod-" + p.id)),
+      act("Unfollow", false, async () => { if (!confirm(`Stop following ${p.title}?`)) return;
+        try { await radioPost("/api/podcasts/unfollow", { id: p.id }); loadPodcasts(); } catch (e) { toast(e.message); } })]))
+    : [Object.assign(document.createElement("li"), { className: "muted", textContent: "None yet: find one below." })]));
+}
+$("podFind").onsubmit = async e => {
+  e.preventDefault();
+  const q = $("podQ").value.trim();
+  if (!q) return;
+  rNote("podNote", "Searching…");
+  try {
+    const r = await fetch("/api/podcasts/search?q=" + encodeURIComponent(q), { cache: "no-store" });
+    const d = await r.json();
+    if (!r.ok) throw new Error(d.error);
+    $("podFound").hidden = false;
+    $("podFound").replaceChildren(...(d.results.length ? d.results.map(p => {
+      const have = podShows.some(x => x.id === p.id);
+      const b = act(have ? "Following" : "Follow", !have, async ev => {
+        const btn = ev.currentTarget;
+        btn.disabled = true; btn.textContent = "Adding…";
+        try { await radioPost("/api/podcasts/follow", { feed_url: p.feed_url }); toast(`Following ${p.title}`);
+              await loadPodcasts(); go("#pod-" + p.id); }
+        catch (err) { toast("Couldn't: " + err.message + "."); btn.disabled = false; btn.textContent = "Follow"; }
+      });
+      b.disabled = have;
+      return resultRow(p.title, p.author, [b]);
+    }) : [Object.assign(document.createElement("li"), { className: "muted", textContent: "Nothing by that name." })]));
+    rNote("podNote", "From Apple's podcast directory.");
+  } catch (err) { rNote("podNote", "Couldn't search: " + err.message + ".", true); }
+};
+async function loadEpisodes(id, refresh) {
+  const show = podShows.find(p => p.id === id);
+  $("podTitle").textContent = show ? show.title : "Podcast";
+  $("podAuthor").textContent = show ? show.author : "";
+  try {
+    const d = await (await fetch(`/api/podcasts/episodes?id=${encodeURIComponent(id)}&refresh=${refresh ? 1 : 0}`,
+                                 { cache: "no-store" })).json();
+    if (d.error) throw new Error(d.error);
+    $("podTitle").textContent = d.show.title; $("podAuthor").textContent = d.show.author;
+    $("podEps").replaceChildren(...(d.episodes.length ? d.episodes.slice(0, 60).map(ep => {
+      const li = document.createElement("li");
+      const t = Object.assign(document.createElement("span"), { className: "t", textContent: ep.title });
+      const bits = [day(ep.pub), ep.duration_ms ? hms(ep.duration_ms) : "",
+                    ep.done ? "heard" : ep.pos_ms ? `${hms(ep.pos_ms)} in` : ""].filter(Boolean).join(" · ");
+      t.append(Object.assign(document.createElement("small"), { className: "ep-meta", textContent: bits }));
+      if (ep.pos_ms && !ep.done && ep.duration_ms) {
+        const bar = Object.assign(document.createElement("div"), { className: "ep-bar" });
+        bar.append(Object.assign(document.createElement("i"), { style: `width:${Math.min(100, 100 * ep.pos_ms / ep.duration_ms)}%` }));
+        t.append(bar);
+      }
+      const playing = !!bookNow && bookNow.kind === "episode" && bookNow.guid === ep.guid;
+      const onButton = document.createElement("select");
+      onButton.setAttribute("aria-label", `Put ${ep.title} on a button`);
+      onButton.append(new Option("On button…", ""), ...[1, 2, 3, 4].map(n => new Option(`Button ${n}`, n)));
+      onButton.onchange = () => {
+        if (!onButton.value) return;
+        setButton(+onButton.value, { preset: { kind: "podcast", show: id, title: $("podTitle").textContent,
+                                               start: ep.gid, start_title: ep.title } });
+        onButton.value = "";
+      };
+      const actions = Object.assign(document.createElement("div"), { className: "ep-do" });
+      actions.append(act(playing ? "Playing" : ep.pos_ms && !ep.done ? "Carry on" : "Play", true,
+                         () => playEpisode(id, ep.guid)), onButton,
+                     act(ep.done ? "Unheard" : "Heard", false, async () => {
+                       try { await radioPost("/api/podcasts/heard", { id, guid: ep.guid, heard: !ep.done }); loadEpisodes(id); }
+                       catch (e) { toast(e.message); } }));
+      li.append(t, actions);
+      return li;
+    }) : [Object.assign(document.createElement("li"), { className: "muted", textContent: "No episodes found." })]));
+    rNote("podEpNote", d.note ? d.note + ": showing the list saved on the radio." : "", !!d.note);
+  } catch (e) { $("podEps").replaceChildren(Object.assign(document.createElement("li"), { className: "muted",
+    textContent: "Couldn't load the episodes: " + e.message }));
+  }
+}
+async function playEpisode(id, guid) {
+  try {
+    const d = await radioPost("/api/podcasts/play", guid ? { id, guid } : { id });
+    showRadio(d.source, null);
+    toast(d.source && d.source.pos_ms > 5000 ? `${d.source.title}: carrying on` : `Playing ${d.source ? d.source.title : ""}`);
+    setTimeout(() => { poll(); loadPodcasts(); }, 800);
+  } catch (e) { toast("Couldn't play it: " + e.message + "."); }
+}
+
 let histAll = false;
 function showHistory(items) {
-  const kinds = { track: "Sleep Radio", dj: "The DJ", jingle: "Station ident", news: "News", radio: "Internet radio", book: "Audiobook",
+  const kinds = { track: "Sleep Radio", dj: "The DJ", jingle: "Station ident", news: "News", radio: "Internet radio", book: "Audiobook", episode: "Podcast",
                   album: "Album" };
   const shown = histAll ? items : items.slice(0, 5);
   $("history").replaceChildren(...(items.length ? shown.map(h => {
@@ -2079,6 +2217,7 @@ function buttonChoices() {
                                    ...bLists.map(l => [l.name, { kind: "show", profile: l.name }])]],
                   ["My stations", rStations.map(st => [st.name, { kind: "radio", ...st }])],
                   ["Audiobooks", books.map(b => [b.title, { kind: "book", key: b.key, title: b.title }])],
+                  ["Podcasts (the latest, or the one part-heard)", podShows.map(p => [p.title, { kind: "podcast", show: p.id, title: p.title }])],
                   ["Actions", Object.entries(bState.actions).map(([a, text]) => [text, { kind: "action", action: a }])],
                   ["", [["Empty", null]]]];
   return groups;
@@ -2314,6 +2453,7 @@ const PAGES = ["speakers", "noise", "stream", "tests", "dj", "voices", "lists", 
                "wifi", "updates", "password", "backup", "power"];
 function route() {
   const h = location.hash.slice(1);
+  if (h === "podcasts" || h.startsWith("pod-")) return ["find", h];
   if (h === "radio" || h === "find") return ["find", null];
   if (h === "media") return ["settings", "library"];
   if (h === "settings") return ["settings", null];
@@ -2328,10 +2468,21 @@ function showView() {
   $("viewFind").hidden = tab !== "find";
   $("viewSettings").hidden = tab !== "settings";
   document.querySelectorAll(".tab").forEach(t => t.setAttribute("aria-selected", String(t.dataset.tab === tab)));
-  $("setHome").hidden = !!page;
-  for (const p of PAGES) $("page-" + p).hidden = p !== page;
-  pageNow = page;
-  if (tab === "find") { loadRadio(); loadBooks(); drawHome(); }
+  const setPage = PAGES.includes(page) ? page : null;       // (podcasts are Find panels, not Settings pages)
+  $("setHome").hidden = !!setPage;
+  for (const p of PAGES) $("page-" + p).hidden = p !== setPage;
+  pageNow = setPage;
+  if (tab === "find") { loadRadio(); loadBooks(); loadPodcasts(); drawHome(); }
+  const podPage = tab === "find" && page && (page === "podcasts" || page.startsWith("pod-")) ? page : null;
+  $("podList").hidden = podPage !== "podcasts";
+  $("podShow").hidden = !podPage || podPage === "podcasts";
+  if (tab === "find") {
+    $("q").closest(".search").hidden = $("filters").hidden = !!podPage;
+    $("qNote").hidden = !!podPage || !$("qNote").textContent;
+    $("findHome").hidden = !!podPage || $("q").value.trim().length >= 2;
+    $("findResults").hidden = !!podPage || $("q").value.trim().length < 2;
+  }
+  if (podPage && podPage !== "podcasts") loadEpisodes(podPage.slice(4), true);
   if (tab === "settings" && !page) { loadAuth(); loadVoices(); loadUpdate(); loadWifi(); loadRadio(); drawSettings(); }
   if (page === "lists") { fillListPick(); showListEditor(); }
   if (page === "voices") loadVoices();
@@ -2349,11 +2500,13 @@ document.querySelectorAll(".tab").forEach(t => t.onclick = () =>
 document.querySelectorAll(".page .back").forEach(b => b.onclick = () => go("#settings"));
 $("listsBtn").onclick = () => go("#set-lists");
 $("stationsManage").onclick = () => go("#set-stations");
+$("podAdd").onclick = () => go("#podcasts");
+document.querySelectorAll("#viewFind .back[data-to]").forEach(b => b.onclick = () => go(b.dataset.to));
 
 // The buttons' sheet: from the radio panel or Settings.
 async function openSheet() {
   $("sheet").hidden = $("scrim").hidden = false; $("sheetDone").focus();
-  await Promise.all([loadBooks(), loadRadio()]);      // the choices: the latest books and stations
+  await Promise.all([loadBooks(), loadRadio(), loadPodcasts()]);   // the choices: the latest books, stations, podcasts
   loadButtons();
 }
 function closeSheet() { $("sheet").hidden = $("scrim").hidden = true; }
@@ -2427,6 +2580,8 @@ function settingRows() {
     ["Media", [
       ["music", "Media library", s ? `${s.library.tracks.toLocaleString()} songs, ${s.library.jingles} jingles, ` +
         `${s.library.books ?? 0} audiobooks · add or delete` : "…", "library"],
+      ["mic", "Podcasts", podShows.length ? `${podShows.length} followed: ${podShows.map(p => p.title).join(", ")}`
+        : "None yet: find some", "podcasts"],
       ["globe", "Internet stations", `${rStations.length} saved` + (lastDir && lastDir.stations
         ? ` · directory of ${lastDir.stations.toLocaleString()}` : ""), "stations"]]],
     ["The radio", [
@@ -2452,7 +2607,7 @@ function drawSettings() {
       b.append(Object.assign(document.createElement("span"), { className: "t", textContent: title }),
                Object.assign(document.createElement("span"), { className: "chev", textContent: "›" }));
       b.querySelector(".t").append(Object.assign(document.createElement("small"), { textContent: sub }));
-      b.onclick = () => page === "sheet" ? openSheet() : go("#set-" + page);
+      b.onclick = () => page === "sheet" ? openSheet() : page === "podcasts" ? go("#podcasts") : go("#set-" + page);
       return b;
     })); return el; })));
 }
@@ -2517,7 +2672,7 @@ function start() {
   offerTune();
   poll();
   setInterval(poll, 3000);
-  loadArtists(); loadBirthdays(); loadDj(); loadButtons(); loadRadio(); loadBooks();
+  loadArtists(); loadBirthdays(); loadDj(); loadButtons(); loadRadio(); loadBooks(); loadPodcasts();
 }
 function showLogin() {
   if (started) { location.reload(); return; }   // logged out while using it: start clean

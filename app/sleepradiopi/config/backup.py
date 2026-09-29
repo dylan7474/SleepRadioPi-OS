@@ -27,6 +27,7 @@ from sleepradiopi.config.atomic import write_atomic
 from sleepradiopi.config.settings import Settings, load
 from sleepradiopi.playback import radio
 from sleepradiopi.io import presets
+from sleepradiopi.playback import podcasts as podcasts_mod
 
 FORMAT = "sleepradiopi-settings"
 VERSION = 1
@@ -39,7 +40,8 @@ LOCAL = {"music_folder", "jingles_folder", "audiobooks_folder", "voices_folder",
 LIVE = {"speaker_mono", "speaker_eq", "speaker_highpass_hz", "broadcast_artist", "birthdays",
         "profiles", "broadcast_profile", "broadcast_chattiness", "broadcast_dj_hooks",
         "broadcast_jingle_enabled", "broadcast_jingle_every", "news_enabled", "startup_sound", "web_stream",
-        "broadcast_announcer_speed", "news_speed", "radio_stations", "buttons", "noise_on", "noise_kind", "noise_mix"}
+        "broadcast_announcer_speed", "news_speed", "radio_stations", "buttons", "noise_on", "noise_kind", "noise_mix",
+        "podcasts"}
 
 CHOICES = {
     "broadcast_voice": {None, "stock", "personal"},
@@ -109,6 +111,11 @@ def _check(name: str, value):
             return profiles.validate(value)
         except ValueError as e:
             raise BadSettings(f"profiles: {e}") from None
+    if name == "podcasts":
+        try:
+            return podcasts_mod.validate_shows(value)
+        except ValueError as e:
+            raise BadSettings(f"podcasts: {e}") from None
     if name == "buttons":
         try:
             return presets.validate_all(value)

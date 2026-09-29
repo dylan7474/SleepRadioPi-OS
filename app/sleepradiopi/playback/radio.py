@@ -465,8 +465,11 @@ class RadioStream:
     ffmpeg; a decode thread queues ffmpeg's PCM for the show, which takes it
     with read(). ended says why, once either side has stopped; close() stops both."""
 
-    def __init__(self, url: str, fetch: Callable = _get, decoder: list[str] | None = None) -> None:
+    def __init__(self, url: str, fetch: Callable = _get, decoder: list[str] | None = None,
+                 headers: dict | None = None) -> None:
         self.url = url
+        self.headers = headers or {}           # e.g. a Range, to start part-way through (podcasts)
+        self.total_bytes = 0                   # from the server's Content-Range, when it sends one
         self._fetch = fetch
         self._cmd = decoder or DECODER
         self.title: str | None = None          # ICY now-playing, if the station sends it
@@ -534,7 +537,11 @@ class RadioStream:
 
     def _open(self, url: str):
         try:
-            return self._fetch(url, headers={"Icy-MetaData": "1"})
+            resp = self._fetch(url, headers={"Icy-MetaData": "1", **self.headers})
+            m = re.match(r"bytes \d+-\d+/(\d+)", resp.headers.get("Content-Range") or "") if hasattr(resp, "headers") else None
+            if m:
+                self.total_bytes = int(m.group(1))
+            return resp
         except urllib.error.HTTPError as e:
             raise StreamError(f"the station said {e.code} {e.reason}") from None
 

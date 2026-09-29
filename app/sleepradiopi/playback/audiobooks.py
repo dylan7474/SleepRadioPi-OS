@@ -238,9 +238,13 @@ class Positions:
         with self._lock:
             return float(self._data.get(key, {}).get("at", 0))
 
-    def set(self, key: str, pos_ms: int) -> None:
+    def done(self, key: str) -> bool:
         with self._lock:
-            self._data[key] = {"pos_ms": max(0, int(pos_ms)), "at": time.time()}
+            return bool(self._data.get(key, {}).get("done"))
+
+    def set(self, key: str, pos_ms: int, done: bool = False) -> None:
+        with self._lock:
+            self._data[key] = {"pos_ms": max(0, int(pos_ms)), "at": time.time(), **({"done": True} if done else {})}
             data = json.dumps(self._data)
         if self.path is not None:
             try:

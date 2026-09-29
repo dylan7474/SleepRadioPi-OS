@@ -51,6 +51,10 @@ software, and the case to print.
   sleep timer, for when you drifted off), with a whole-book progress bar and
   one-minute back / forward on the web page. At the end of a book the radio
   pauses instead of waking you with the show.
+- **Podcasts** — search the directory, follow shows, and play episodes (again
+  with nothing from the DJ), each remembering its place like a book. Put a
+  show on a preset button starting from any episode, and the radio plays on
+  through the newer ones in order, pausing after the latest.
 - **Album mode** — or pick a whole album: the DJ introduces it, then it plays
   start to finish like a record (no talk between tracks), and the DJ
   back-announces it at the end.

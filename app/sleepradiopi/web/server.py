@@ -31,6 +31,7 @@ from sleepradiopi.config.settings import load as load_settings, save_setting
 from sleepradiopi.playback import radio as radio_mod
 from sleepradiopi.io import presets as presets_mod
 from sleepradiopi import media as media_mod
+from sleepradiopi.playback import podcasts as pod_mod
 from sleepradiopi.config.power import can_power_off, request_power_off, request_restart
 
 from .stream import Mp3Output
@@ -227,6 +228,30 @@ def make_handler(station: Station, output: Mp3Output, speaker=None,
             elif path == "/api/books":
                 self._send(json.dumps({"books": station.book_list(), "scanning": station.books_scanning}).encode(),
                            "application/json")
+            elif path == "/api/podcasts":
+                self._send(json.dumps({"shows": station.podcasts.summary()}).encode(), "application/json")
+            elif path == "/api/podcasts/search":
+                q = parse_qs(urlparse(self.path).query).get("q", [""])[0][:200]
+                try:
+                    found = pod_mod.search(q)
+                except pod_mod.PodcastError as e:
+                    self._error(str(e))
+                    return
+                self._send(json.dumps({"results": found}).encode(), "application/json")
+            elif path == "/api/podcasts/episodes":
+                q = parse_qs(urlparse(self.path).query)
+                sid = q.get("id", [""])[0]
+                if station.podcasts.show(sid) is None:
+                    self._error("that podcast isn't followed")
+                    return
+                note = ""
+                if q.get("refresh", ["0"])[0] == "1":
+                    try:
+                        station.podcasts.refresh(sid)
+                    except pod_mod.PodcastError as e:
+                        note = str(e)
+                self._send(json.dumps({"show": station.podcasts.show(sid), "episodes": station.podcasts.episodes(sid),
+                                       "note": note}).encode(), "application/json")
             elif path == "/api/radio":
                 self._send(json.dumps(self._radio_state()).encode(), "application/json")
             elif path == "/api/radio/search":
@@ -284,6 +309,8 @@ def make_handler(station: Station, output: Mp3Output, speaker=None,
                 self._media(path.rsplit("/", 1)[1])
             elif path in ("/api/buttons", "/api/buttons/press") and presets is not None:
                 self._buttons(path.endswith("press"))
+            elif path.startswith("/api/podcasts/") and path.rsplit("/", 1)[1] in ("follow", "unfollow", "play", "heard"):
+                self._podcasts(path.rsplit("/", 1)[1])
             elif path in ("/api/books/play", "/api/books/seek"):
                 self._books(path.rsplit("/", 1)[1])
             elif path == "/api/album/play":
@@ -684,6 +711,32 @@ def make_handler(station: Station, output: Mp3Output, speaker=None,
                             "send {\"button\": 1-4, \"preset\": ...} or {\"button\", \"now\": true}")
                 return
             self._send(json.dumps(presets.status()).encode(), "application/json")
+
+        def _podcasts(self, action: str) -> None:
+            """POST /api/podcasts/follow {"feed_url"}, /unfollow {"id"}, /play {"id", "guid"?}
+            (no guid: the one part-heard, else the newest unheard), /heard {"id", "guid", "heard": bool}."""
+            try:
+                body = self._body()
+                pods = station.podcasts
+                if action == "follow":
+                    reply = {"show": pods.subscribe(str(body.get("feed_url") or ""))}
+                elif action == "unfollow":
+                    pods.unsubscribe(str(body.get("id") or ""))
+                    reply = {"ok": True}
+                elif action == "play":
+                    station.play_episode(str(body.get("id") or ""), body.get("guid"))
+                    if speaker is not None:
+                        speaker.play()
+                    reply = {"source": station.status()["source"]}
+                else:
+                    sid, guid = str(body.get("id") or ""), str(body.get("guid") or "")
+                    key = pod_mod.episode_key(sid, guid)
+                    station.book_positions.set(key, 0, done=bool(body.get("heard", True)))
+                    reply = {"ok": True}
+            except (ValueError, AttributeError, TypeError) as e:
+                self._error(str(e) if isinstance(e, ValueError) else "send {\"id\"}")
+                return
+            self._send(json.dumps(reply).encode(), "application/json")
 
         def _books(self, action: str) -> None:
             """POST /api/books/play {"key"}: that audiobook, from where it was left;

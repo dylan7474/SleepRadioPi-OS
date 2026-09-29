@@ -61,6 +61,11 @@ def validate(preset) -> dict | None:
         return {"kind": "album", "folder": _text(preset.get("folder"), "album folder", True),
                 "title": _text(preset.get("title"), "album title") or "",
                 "artist": _text(preset.get("artist"), "artist") or ""}
+    if kind == "podcast":
+        return {"kind": "podcast", "show": _text(preset.get("show"), "podcast", True),
+                "title": _text(preset.get("title"), "podcast title") or "",
+                "start": _text(preset.get("start"), "starting episode"),        # its guid; None = latest / part-heard
+                "start_title": _text(preset.get("start_title"), "starting episode's title") or ""}
     if kind == "book":
         return {"kind": "book", "key": _text(preset.get("key"), "book", True),
                 "title": _text(preset.get("title"), "book title") or ""}
@@ -68,7 +73,7 @@ def validate(preset) -> dict | None:
         if preset.get("action") not in ACTIONS:
             raise ValueError(f"a button's action is one of {', '.join(ACTIONS)}")
         return {"kind": "action", "action": preset["action"]}
-    raise ValueError("a button holds the show, a radio station, an album, an audiobook or an action")
+    raise ValueError("a button holds the show, a radio station, an album, an audiobook, a podcast or an action")
 
 
 def validate_all(presets) -> list:
@@ -89,6 +94,8 @@ def label(preset: dict | None, station_name: Callable[[dict], str] | None = None
         return f"{preset['title']} — {preset['artist']}" if preset["artist"] else preset["title"]
     if kind == "book":
         return preset["title"] or preset["key"]
+    if kind == "podcast":
+        return preset["title"] or "Podcast"
     if kind == "action":
         return ACTIONS[preset["action"]]
     if station_name is not None:
@@ -106,6 +113,8 @@ def same(a: dict | None, b: dict | None) -> bool:
         return a["folder"] == b["folder"]
     if a["kind"] == "book":
         return a["key"] == b["key"]
+    if a["kind"] == "podcast":
+        return a["show"] == b["show"]
     if a["kind"] == "show":
         return ((a["profile"] or "").lower(), (a["artist"] or "").lower()) == \
                ((b["profile"] or "").lower(), (b["artist"] or "").lower())
@@ -135,6 +144,10 @@ class Presets:
         src = self.station.source
         if src is not None and src["kind"] == "radio":
             return validate({k: v for k, v in src.items() if k in ("kind", "name", "url", "info")})
+        if src is not None and src["kind"] == "episode":         # (the episode playing starts the sequence)
+            from sleepradiopi.playback.podcasts import guid_id
+            return validate({"kind": "podcast", "show": src["show"], "title": src.get("show_title", ""),
+                             "start": guid_id(src["guid"]), "start_title": src.get("title", "")[:MAX_TEXT]})
         if src is not None and src["kind"] == "book":
             return validate({"kind": "book", "key": src["key"], "title": src.get("title", "")})
         if src is not None and src["kind"] == "album":
@@ -225,6 +238,8 @@ class Presets:
                 save_setting(self.config_file, "broadcast_profile", self.station.profile)
         elif preset["kind"] in ("radio", "album", "book"):
             self.station.tune(preset)
+        elif preset["kind"] == "podcast":
+            self.station.play_episode(preset["show"], start=preset.get("start"))   # on through, in order
         else:
             raise ValueError("not something to play")
 

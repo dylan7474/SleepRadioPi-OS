@@ -44,7 +44,7 @@ small LCD — this is an embedded-device rebuild, not a UI port.
 ## Non-goals (v1)
 
 - No phone app, no remote control, no network API (may revisit later)
-- No podcasts (defer — lower priority than the core four sources)
+- ~~No podcasts~~ (built 2026-09-29: see the README)
 - No Android Auto (not applicable — this *is* the dedicated device)
 - No attempt to recreate the Compose skins/VU meters — physical buttons + LCD
   status text is the whole control surface
