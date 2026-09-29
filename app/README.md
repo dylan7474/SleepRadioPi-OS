@@ -276,7 +276,7 @@ The cards:
   searches the [Radio Browser](https://www.radio-browser.info/) directory by
   name or tag (most listened-to first, as the Android app does) to play or
   save. Its servers often time out, so the radio **keeps its own copy of the
-  directory** (~60,000 working stations, ~7 MB in `~/.cache/sleepradiopi/`),
+  directory** (~50,000 working stations, one per stream, ~6 MB in `~/.cache/sleepradiopi/`),
   made in the background two minutes after start-up and refreshed weekly
   (*Update the list* does it now), trying each mirror in turn; searches use
   the copy (instant, and they work when the servers don't), or go online

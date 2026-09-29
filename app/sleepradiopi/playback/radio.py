@@ -12,7 +12,7 @@ station's PCM (16-bit stereo, 44.1 kHz). On the way it:
 Stations are found with the Radio Browser directory (radio-browser.info),
 as the Android app does; the starter set is the Android app's. Its servers
 come and go (all.api... often points at one that's down), so the radio keeps
-a compact copy of the whole directory (Directory: ~60,000 stations, ~7 MB,
+a compact copy of the whole directory (Directory: ~50,000 stations, ~6 MB,
 refreshed weekly in the background, trying each mirror in turn) and searches
 that: instant, and it works when the servers don't.
 """
@@ -20,6 +20,7 @@ that: instant, and it works when the servers don't.
 from __future__ import annotations
 
 import csv
+import http.client
 import io
 import json
 import logging
@@ -49,6 +50,8 @@ MIRRORS = ["https://all.api.radio-browser.info", "https://de1.api.radio-browser.
 MIRROR_TIMEOUT_S = 8.0
 REFRESH_S = 7 * 24 * 3600    # the directory copy is refreshed weekly
 RETRY_S = 3600               # ...or an hour after a failed try
+PAGE = 10_000                # stations per request (the servers drop long downloads)
+PAGE_TRIES = 4
 USER_AGENT = "SleepRadioPi/1.0 (+https://github.com/dylan7474/SleepRadioPi-OS)"
 TIMEOUT_S = 10.0
 MAX_STATIONS = 100
@@ -209,8 +212,9 @@ class Directory:
             return None
 
     def refresh(self) -> int:
-        """Download the directory (~35 MB of CSV, read as it arrives) and keep
-        the working stations. Returns how many. StreamError if it can't."""
+        """Download the directory (~35 MB of CSV, read as it arrives, a page at
+        a time: the servers drop long downloads) and keep the working stations.
+        Returns how many. StreamError if it can't."""
         with self._lock:
             if self.refreshing:
                 raise StreamError("already being fetched")
@@ -219,14 +223,20 @@ class Directory:
         try:
             t0 = time.monotonic()
             self.path.parent.mkdir(parents=True, exist_ok=True)
-            n = 0
-            with _mirrored("/csv/stations/search?hidebroken=true&limit=500000&order=clickcount&reverse=true",
-                           self.fetch, timeout=30) as resp, open(tmp, "w", encoding="utf-8") as out:
-                for row in csv.DictReader(io.TextIOWrapper(resp, encoding="utf-8", errors="replace", newline="")):
-                    line = _directory_line(row)
-                    if line:
-                        out.write(line + "\n")
-                        n += 1
+            n, seen = 0, set()
+            with open(tmp, "w", encoding="utf-8") as out:
+                offset = 0
+                while True:
+                    lines, rows = self._page(offset)
+                    for line in lines:
+                        url = line.split("\t", 2)[1]
+                        if url not in seen:          # (a station can move between pages)
+                            seen.add(url)
+                            out.write(line + "\n")
+                            n += 1
+                    if rows == 0 or offset > 100 * PAGE:   # (a short page isn't the end: the
+                        break                              #  servers sometimes stop early)
+                    offset += rows
                 out.flush()
                 os.fsync(out.fileno())
             if n < 1000:                        # a cut-off download: keep the old copy
@@ -237,7 +247,7 @@ class Directory:
             self.last_error = None
             log.info("station directory: %d stations saved in %.0f s", n, time.monotonic() - t0)
             return n
-        except (OSError, ValueError, csv.Error, StreamError) as e:
+        except (OSError, ValueError, csv.Error, http.client.HTTPException, StreamError) as e:
             self.last_error = str(e) if isinstance(e, StreamError) else _reason(e)
             log.warning("station directory: refresh failed: %s", e)
             raise StreamError(self.last_error) from None
@@ -247,6 +257,28 @@ class Directory:
                 tmp.unlink()
             except OSError:
                 pass
+
+    def _page(self, offset: int) -> tuple[list[str], int]:
+        """One page of the directory: (its lines for the copy, rows read), trying
+        again (on each mirror) if the download breaks off."""
+        path = (f"/csv/stations/search?hidebroken=true&order=clickcount&reverse=true"
+                f"&offset={offset}&limit={PAGE}")
+        for attempt in range(PAGE_TRIES):
+            try:
+                with _mirrored(path, self.fetch, timeout=30) as resp:
+                    lines, rows = [], 0
+                    for row in csv.DictReader(io.TextIOWrapper(resp, encoding="utf-8", errors="replace",
+                                                               newline="")):
+                        rows += 1
+                        if line := _directory_line(row):
+                            lines.append(line)
+                return lines, rows
+            except (OSError, csv.Error, http.client.HTTPException) as e:
+                if attempt == PAGE_TRIES - 1:
+                    raise
+                log.info("station directory: page at %d broke off (%s); again", offset, e)
+                time.sleep(2 + 3 * attempt)
+        raise StreamError("unreachable")
 
     def keep_fresh(self, start_delay_s: float = 120.0) -> None:
         """Refresh when there's no copy or it's a week old (a background thread,
@@ -262,7 +294,7 @@ class Directory:
                 if age is None or age > REFRESH_S:
                     try:
                         self.refresh()
-                    except StreamError:
+                    except Exception:               # (logged in refresh); never let the thread die
                         time.sleep(RETRY_S)
                         continue
                 time.sleep(min(REFRESH_S, RETRY_S * 6))

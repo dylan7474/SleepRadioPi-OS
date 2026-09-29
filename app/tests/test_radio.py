@@ -512,7 +512,7 @@ def test_the_directory_copy(tmp_path: Path, monkeypatch) -> None:
 
     def fetch(url, headers=None, timeout=None):
         assert "/csv/stations/search" in url
-        return _Reply(body)
+        return _Reply(body if "offset=0&" in url else CSV_HEAD.encode())
     d = radio.Directory(tmp_path / "stations.tsv", fetch)
     assert d.status()["stations"] == 0
     assert d.refresh() == 2002                               # the dead one's left out
@@ -527,12 +527,51 @@ def test_the_directory_copy(tmp_path: Path, monkeypatch) -> None:
     assert len(d.search("station")[0]) == 40
 
 
+def test_the_directory_comes_in_pages_and_a_broken_page_is_fetched_again(tmp_path: Path, monkeypatch) -> None:
+    import http.client
+    monkeypatch.setattr(radio, "MIRRORS", ["https://m"])
+    monkeypatch.setattr(radio, "PAGE", 1000)
+    monkeypatch.setattr(radio.time, "sleep", lambda s: None)
+    lines = _csv_rows(2500).splitlines(keepends=True)
+    head, rows = lines[0], lines[1:]
+    asked, broke = [], []
+
+    class Broken(_Reply):                    # the connection drops before the end
+        def _cut(self, data):
+            if not data:
+                raise http.client.IncompleteRead(b"")
+            return data
+
+        def read(self, *a):
+            return self._cut(super().read(*a))
+
+        def read1(self, *a):
+            return self._cut(super().read1(*a))
+
+        def readinto(self, b):
+            return len(self._cut(b"x" * super().readinto(b)))
+
+    def fetch(url, headers=None, timeout=None):
+        offset = int(url.split("offset=")[1].split("&")[0])
+        asked.append(offset)
+        page = (head + "".join(rows[offset:offset + 1000])).encode()
+        if offset == 1000 and not broke:
+            broke.append(1)
+            return Broken(page[:500])
+        return _Reply(page)
+    d = radio.Directory(tmp_path / "stations.tsv", fetch)
+    assert d.refresh() == 2502
+    assert asked == [0, 1000, 1000, 2000, 2503]      # on to an empty page
+
+
 def test_a_cut_off_download_keeps_the_old_copy(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setattr(radio, "MIRRORS", ["https://m"])
     good = _csv_rows(1500).encode()
-    d = radio.Directory(tmp_path / "stations.tsv", lambda url, headers=None, timeout=None: _Reply(good))
+    first = lambda data: lambda url, headers=None, timeout=None: _Reply(data if "offset=0&" in url
+                                                                         else CSV_HEAD.encode())
+    d = radio.Directory(tmp_path / "stations.tsv", first(good))
     d.refresh()
-    d.fetch = lambda url, headers=None, timeout=None: _Reply(good[:3000])
+    d.fetch = first(good[:3000])
     with pytest.raises(radio.StreamError, match="only"):
         d.refresh()
     assert d.status()["stations"] == 1502 and d.status()["error"]
