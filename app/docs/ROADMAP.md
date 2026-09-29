@@ -17,8 +17,11 @@ left.
    back at its normal level, the page showing it); the RTC with no network.
 2. **Library tools** — copying/syncing music from the desktop library.
 3. **Fit the preset buttons** — the code, wiring (GPIO5/6/16/26) and case
-   holes are done (2026-09-29): drill the printed tube with `button_guide`,
-   wire four 12 mm buttons, and try press / hold on the real thing. Then
+   holes are done (2026-09-29): 16 mm buttons ordered; try them in
+   `top_test`, print `tube_buttons` (knob moved back), wire them, and try
+   press / hold on the real thing. Also worth a thought before the cathedral:
+   a screw-on lid, so changing the controls means reprinting a lid, not the
+   whole ~5-hour tube. Then
    maybe: LEDs showing the playing preset (4 more pins), the DJ's time checks
    or news over a station (off for now: a station plays untouched).
 4. **A needle VU meter** — a physical meter driven from a PWM pin, with the

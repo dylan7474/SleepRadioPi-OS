@@ -29,8 +29,8 @@ slot in the back is a small vent. An optional **bass port** back panel is below.
 | `stl/grommet.stl` | flange down | closes the power cable slot round the cable; use it with the bass port |
 | `stl/strap_loops.stl` | bar down, no supports | two **carry strap loops**, screwed to the sides from inside; see *Carry strap* below |
 | `stl/strap_guide.stl` | side down, no supports | a **drill guide** for the loops' screw holes in a tube printed without them |
-| `stl/button_guide.stl` | top face down, no supports | a **drill guide** for the four preset buttons' holes in the top of a tube printed without them; see *Preset buttons* below |
-| `stl/tube_buttons.stl` | as the tube | the tube **with the preset buttons' holes** (`-D buttons=true`), for a new print |
+| `stl/top_test.stl` | outside face down, no supports | just the **top wall** with the preset buttons' and knob's holes (~40 min), to try the buttons before printing the tube; see *Preset buttons* below |
+| `stl/tube_buttons.stl` | as the tube | the tube **with the four 16 mm preset buttons' holes and the knob moved back** (`-D buttons=true`) |
 | `stl/tube_handle.stl` | as the tube | the tube **with the loops' screw holes** (`-D handle=true`), for a new print |
 | `stl/front.stl`, `knob.stl`, `tabs.stl` | | the same parts, separately |
 | `stl/knob_sunburst.stl` | top face down, no supports | the knob with the grilles' **sunburst fan** engraved 0.8 mm into its top instead of the pointer groove; the fan rises towards where the groove pointed, so it still shows the knob's position (`knob_style="sunburst"` in either `.scad`) |
@@ -190,37 +190,38 @@ across them.
 
 ## Preset buttons
 
-Four 12 mm momentary push buttons in a row across the top, near the front,
-**1 2 3 4** from left to right, with the knob on its own behind them. The
-channels and the volume are in separate places, which is easier to follow
-(this radio is for an elderly listener). The row is 19 mm back from the front
-face and 24 mm between buttons, which leaves a 9 mm gap before the knob. It
-clears the front panel's lip and the speakers' top clamp tabs and their
-screws (the outer buttons sit inboard of them). The switch bodies end ~67 mm
-up, above the tops of the speakers (~65.5 mm). The checks put them clear of
-everything, with room below for ~24 mm of switch body and tags.
-Wiring and what they do: the main [README](../../README.md#build-one).
+Four chunky **16 mm** stainless momentary push buttons (flat head, screw
+terminals: no soldering) in a row across the top, near the front, **1 2 3 4**
+from left to right, with the knob on its own behind them. The channels and
+the volume are in separate places, which is easier to follow (this radio is
+for an elderly listener). With `-D buttons=true` the knob moves 12 mm back
+(`btn_knob_back`, still clear of the Pi stack) to make room. The row is 25 mm
+back from the front face, with 26 mm between buttons, leaving ~12 mm of top
+between the buttons' heads and the knob. It clears the front panel's lip and
+the speakers' top clamp tabs and their screws (the outer buttons sit inboard
+of them); the checks allow for 30 mm of switch body and terminals below the
+top. Wiring and what they do: the main [README](../../README.md#build-one).
 
-**You need:** 4 momentary (not latching) panel push buttons with a **12 mm**
-threaded body and a nut, for a panel up to 3 mm thick (the top wall). Some
-"12 mm" listings mean the cap; the hole is 12.4 mm for a 12 mm thread.
-Measure yours and change `btn_hole_d` if it's different (16 mm buttons need
-`btn_x` further apart too).
+**You need:** 4 momentary (not latching, "self-locking") panel push buttons
+with a **16 mm** threaded body and a nut, for a panel up to 3 mm thick (the
+top wall), e.g. Gebildet's 16 mm flat-head ones with 2 screw terminals. The
+sizes marked CHECK at the top of the `.scad` (the hole, head, nut and body
+length) are typical values: measure yours and change them if they differ.
 
-**The holes:**
+**Try them first:** `stl/top_test.stl` is just the top wall of that tube,
+3 mm thick with the four button holes and the knob's hole, printed flat and
+outside face down (~40 min, and flat-printed holes come out rounder). Screw
+the buttons and the encoder in and check the fit, the nuts and how the row
+feels before the ~5-hour tube.
 
-- **New tube:** print `stl/tube_buttons.stl`, the tube with the four holes.
-  They print sideways like the knob's hole; `enc_teardrop=true` makes them
-  all pointed if yours sag.
-- **Tube already printed:** use `stl/button_guide.stl`. Take the knob off
-  (leave the encoder's nut on). Lay the guide on the top, with its ring over
-  the nut and its long lip down over the front panel's top edge. Drill 3.5 mm
-  through its four holes, then open each one to 12 mm with a step drill (slowly:
-  PLA melts). Take the back panel off first and blow out the swarf.
+**The tube:** `stl/tube_buttons.stl` (`-D buttons=true`), the tube with the
+four holes and the knob moved back. The holes print sideways like the knob's
+hole; `enc_teardrop=true` makes them all pointed if yours sag. For a quicker
+prototype, a 0.6 mm nozzle and 0.3 mm layers should about halve the print
+time (the tube is nearly all wall, so infill hardly matters).
 
-**Fitting:** push each button up through its hole from inside. Fit the nut on
-top, or inside if the button has a flange, and wire it as the README says.
-The numbers on the guide show which is which: 1 on the left, seen from the
+**Fitting:** push each button up through its hole from outside and fit the
+nut inside, then wire it as the README says: 1 on the left, seen from the
 front.
 
 ## Hardware
@@ -258,9 +259,10 @@ The back panel comes off with all the electronics on it, so you don't need to re
 on it slides straight out past the encoder. The same with `-D rear_port=true` (the port tube is clear of
 everything), and the grommet in its slot only touches the panel's outside face. With `-D handle=true` it
 also checks that the strap loops only touch the tube, and that the screws inside miss the corner bosses, the
-speakers and the electronics. With `-D buttons=true`, the four preset buttons (cap, thread, nut and a 24 mm
-switch body) miss the speakers, the electronics, the encoder, the knob, the corner bosses and the panels, and
-the back panel's Pi stack slides out past them; the nut only touches the inside of the top.
+speakers and the electronics. With `-D buttons=true`, the four preset buttons (head, thread, nut and a 30 mm
+switch body) miss the speakers, their clamp tabs and screws, the electronics, the encoder, the knob, the corner
+bosses and the panels; the knob in its new place misses the Pi stack, and the back panel slides out past them
+all; the nut only touches the inside of the top.
 
 ## To measure (unverified)
 

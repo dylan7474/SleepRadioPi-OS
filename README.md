@@ -113,7 +113,7 @@ software, and the case to print.
 You need a Raspberry Pi Zero 2 W, a HiFiBerry MiniAmp, one or two small
 speakers (4–8 Ω), a rotary encoder with a push switch (a KY-040 module is
 easiest), a 5 V 2.5 A micro-USB supply and a microSD card; a DS3231 clock
-module and four 12 mm momentary push buttons (the presets) are optional. The case is in [`hardware/case/`](hardware/case/).
+module and four 16 mm momentary push buttons (the presets) are optional. The case is in [`hardware/case/`](hardware/case/).
 
 ![Wiring diagram: the Pi's header, the MiniAmp, the rotary encoder, the optional RTC, speakers and power](hardware/wiring/wiring.svg)
 
