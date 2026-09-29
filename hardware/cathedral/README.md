@@ -1,6 +1,8 @@
 # SleepRadioPi cathedral radio
 
-![The cathedral radio in wood: an art deco sunburst grille, a VU meter as the dial, one knob](concept_wood.jpg)
+![The cathedral radio in wood: an art deco sunburst grille, a barred louvre (the bass port), a brass name plaque, the VU meter as the dial, a volume knob and a 6-way selector](concept_wood_front.jpg)
+
+![At night: the grille cloth lit from behind, the fretwork in silhouette, and the meter's warm backlight](concept_night.jpg)
 
 The next case for the radio is a **1930s cathedral set, very art deco**, in
 wood. This page collects the design and the recommended parts.
@@ -9,7 +11,33 @@ wood. This page collects the design and the recommended parts.
 > yet. The parts will be designed once the speaker and the VU meter arrive and
 > can be measured.
 
-## The design
+## Design decisions (2026-09-29)
+
+The serious design has started: great sound first, built around the speaker's
+published figures, then the look around it. Mono now; a stereo version would
+be a separate, wider design later.
+
+- **Speaker: Visaton FR 10, 4 Ω** (Art. No. 2020): Fs 90 Hz, Qts 0.54,
+  Vas 2.3 L, Sd 50 cm², 86 dB. A 105 mm square frame, 4 slots on a 115 mm
+  circle, 100 mm cut-out, 47 mm deep.
+- **Ported, not sealed.** With Qts 0.54 this driver suits a bass-reflex box:
+  sealed, it rolls off at ~120 Hz whatever the size; in a **~9 L chamber
+  tuned to ~50 Hz** it is flat to **~50 Hz**. The chamber is the arch above a
+  sealed shelf; the radio's low cut goes just under the tuning (~40 Hz).
+- **The port is the louvre** under the grille: a 126 × 10 mm slot port runs
+  back along the shelf and opens through three slots with brass bars.
+- **Size ~300 W × 384 H × 200 D mm**: the arch starts 20 mm higher than the
+  first concept, to fit the louvre and plaque and keep the chamber at ~9 L.
+- **Controls: two knobs**, as the 1930s sets — **volume** (the encoder: turn,
+  press to pause) and a **6-way wafer rotary selector** with firm detents
+  over a brass escutcheon (the six presets). No push-buttons. A **small
+  hidden button on the back** swaps the day/night sets and opens the service
+  menu. (The app needs a "selector" mode and six presets for this radio.)
+- **The grille glows**: warm-white LEDs round the speaker behind the cloth,
+  dimmed by the Pi.
+- Electronics (Pi, amp, RTC, meter) in a bay below the shelf, behind the dial.
+
+## The first concept
 
 - **About 300 W × 360 H × 200 D mm**, the size of a mid-size 1930s cathedral set.
 - **A sunburst fretwork grille** fills the arch: rays fanning from a half-sun,
