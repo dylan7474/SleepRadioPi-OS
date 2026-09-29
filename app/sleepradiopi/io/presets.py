@@ -11,7 +11,7 @@ BBC Radio 4". The web page sets them too (Streaming -> Buttons).
 There are two sets of the four, **day** and **night**, each with its own
 presets; everything (the real buttons, the page's) uses the one in use.
 Holding buttons 2 and 3 together for BANK_HOLD_S swaps them (it ticks while
-held, then a rising or falling two-note sound, and the DJ says which), the
+held, then three notes: rising for day, falling for night), the
 page has a switch, and an optional timetable swaps them by the clock
 (`buttons_auto`: night from night_min, day from day_min); a swap by hand
 lasts until the next time on the timetable.
@@ -276,7 +276,7 @@ class Presets:
     # --- day and night ------------------------------------------------------------------
 
     def set_bank(self, bank: str, announce: bool = True) -> str:
-        """Use the day or night set. announce: the two-note sound and the DJ saying so."""
+        """Use the day or night set. announce: three notes, rising for day, falling for night."""
         if bank not in BANKS:
             raise ValueError("the buttons' set is day or night")
         with self._lock:
@@ -285,10 +285,9 @@ class Presets:
             if changed:
                 self._save()
         log.info("buttons: the %s set%s", bank, "" if changed else " (already)")
-        if announce:
-            tones = (660.0, 990.0) if bank == "day" else (990.0, 660.0)   # rising for day, falling for night
-            self._clip(beep(tones, 0.16), "Button")
-            self._say(f"{bank.capitalize()} buttons.", beep_first=False)
+        if announce:                          # (no words: instant, even with the voice asleep)
+            notes = (523.25, 659.25, 783.99)      # C E G
+            self._clip(beep(notes if bank == "day" else notes[::-1], 0.14), "Button")
         return bank
 
     def toggle_bank(self) -> str:
