@@ -39,6 +39,7 @@ from typing import Protocol
 import numpy as np
 
 from sleepradiopi.audio import pcm
+from sleepradiopi import startup_sound
 from sleepradiopi.config.clock import clock_trusted
 from sleepradiopi.playback import radio as radio_mod
 from sleepradiopi.playback.audiobooks import BookLibrary, Positions
@@ -327,12 +328,14 @@ class Station:
     def _run_show(self) -> None:
         self.shows_started += 1
         self.output.start()
+        back = False                      # back to the show from a station, album, book or podcast
         try:
             while not self._stop.is_set():
                 self._switch.clear()
                 source = self._source
                 if source is None:
-                    self._run_music()
+                    self._run_music(back)
+                    back = False
                 elif source["kind"] == "album":
                     self._run_album(source)
                 elif source["kind"] == "book":
@@ -341,6 +344,8 @@ class Station:
                     self._run_episode(source)
                 else:
                     self._run_radio(source)
+                if source is not None:
+                    back = True
         except Exception:
             log.exception("show crashed")
         finally:
@@ -351,15 +356,37 @@ class Station:
             if self._opening is None:
                 self._prepare_opening()
 
-    def _run_music(self) -> None:
+    def _run_music(self, back: bool = False) -> None:
         """The Broadcast show, until it ends or the source changes."""
         self._in_music = True
         try:
-            self._run_music_show()
+            self._run_music_show(back)
         finally:
             self._in_music = False
 
-    def _run_music_show(self) -> None:
+    def _warm_up(self, steps: list[Step]) -> None:
+        """Back to the show and its welcome isn't made yet (slow on a Zero): the
+        start-up chime, then (if it's still not ready) "Sleep Radio is warming
+        up", as at power-on -- rather than a silence that sounds broken."""
+        def ready():
+            return all(s.speech.future.done() for s in steps if s.kind == "say")
+        home = Path.home()
+        if ready() or not startup_sound.settings(home)[0]:    # (the page's "At power-on: Chime / Silent")
+            return
+        self.on_air = OnAir("wait", "Sleep Radio is warming up")
+        parts = [np.frombuffer(startup_sound.cached_chime(home, 1.0), dtype=np.int16).reshape(-1, pcm.CHANNELS)]
+        words = startup_sound.speech_file(home, self.dj_voice)
+        log.info("back to the show: warming up")
+        for i, part in enumerate(parts):
+            for block in pcm.blocks(part):
+                if self._halted():
+                    return
+                self._write(block)
+            if i == 0 and not ready() and words.is_file():
+                speech = np.frombuffer(words.read_bytes(), dtype=np.int16).reshape(-1, pcm.CHANNELS)
+                parts.append(np.concatenate([pcm.silence(0.2), speech]))
+
+    def _run_music_show(self, back: bool = False) -> None:
         self._show_clock.reset()
         self._tracks_since_jingle = 0
         if not self.tracks:
@@ -371,6 +398,8 @@ class Station:
         try:
             steps, first = self._take_opening()
             opening = self._last_opening
+            if back:
+                self._warm_up(steps)
             self._run_steps(steps)
             track = first
             while not self._halted():

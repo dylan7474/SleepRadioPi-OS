@@ -24,6 +24,11 @@ and with no network, and is set up from its web page. See
 
 ## How it behaves
 
+- **Back to Sleep Radio** from a station, album, audiobook or podcast: if the
+  DJ's welcome isn't made yet (a Zero can take a while, more so when the
+  voice is reloading), the same chime plays at once, then "Sleep Radio is
+  warming up…" if it's still not ready (`Station._warm_up`; off with *At
+  power-on: Silent*).
 - **Power on and it plays.** About 10 seconds after power-up it chimes, and
   the DJ says "Sleep Radio is warming up…", so you know it's alive; the show
   itself starts once the voice has loaded ("Good evening, and welcome to
@@ -473,7 +478,9 @@ The cards:
   goes, the web password included, with the page's Wi-Fi networks and the
   saved volume; music, audiobooks (and their places), voices and caches
   stay. It asks for the hotspot and restarts the station, which then says
-  how to join it. Anything else, or 45 s of nothing, closes it.
+  how to join it. Anything else, or 45 s of nothing after the DJ stops
+  talking, closes it. The menu's words and the status report are made
+  while the buttons are being held, so a press answers at once.
 - **Test sound** — for comparing speaker cabinets and checking wiring, on the
   speakers instead of the show for a moment, with the EQ and low cut
   bypassed: a **bass sweep** (40–600 Hz) and a **full sweep** (40 Hz–16 kHz),

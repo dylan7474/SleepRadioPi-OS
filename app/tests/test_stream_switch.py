@@ -88,3 +88,26 @@ def test_without_a_speaker_it_cant_be_switched_off(tmp_path: Path) -> None:
         assert err.value.code == 400 and out.enabled
     finally:
         httpd.shutdown()
+
+
+def test_back_to_the_show_warms_up_while_the_welcome_is_made(tmp_path, monkeypatch) -> None:
+    from concurrent.futures import Future
+    from sleepradiopi.broadcast import station as station_mod
+    from sleepradiopi import startup_sound
+    from test_offline import _station
+    st = _station(tmp_path)
+    written = []
+    monkeypatch.setattr(st, "_write", lambda block: written.append(len(block)))
+    monkeypatch.setattr(startup_sound, "settings", lambda home: (True, "stock", 50))
+    monkeypatch.setattr(startup_sound, "cached_chime", lambda home, level: bytes(4 * 1000))
+    words = tmp_path / "words.raw"
+    words.write_bytes(bytes(4 * 500))
+    monkeypatch.setattr(startup_sound, "speech_file", lambda home, voice: words)
+    pending = Future()
+    speech = station_mod.Speech("Good evening", "stock", pending)
+    st._warm_up([station_mod.Step("say", speech)])
+    assert sum(written) == 1000 + 500 + int(0.2 * 44100)        # the chime, then the words
+    written.clear()
+    pending.set_result(None)
+    st._warm_up([station_mod.Step("say", speech)])
+    assert written == []                                          # ready: straight on

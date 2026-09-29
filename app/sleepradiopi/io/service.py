@@ -28,7 +28,8 @@ from collections.abc import Callable
 log = logging.getLogger(__name__)
 
 HOLD_S = 15.0          # both buttons held this long opens the menu
-WAIT_S = 45.0          # no press this long (from the last prompt) closes it
+WAIT_S = 45.0          # no press this long after the last words end closes it
+TICK_S = 1.0
 
 MENU = ("Service menu. Press one to restart the radio. Two to reset the Wi-Fi. "
         "Three for a status report. Four for a factory reset. Or press nothing, to leave.")
@@ -53,8 +54,10 @@ class ServiceMenu:
     "status" (-> the words), "rollback" (-> True if it's happening), "reset"."""
 
     def __init__(self, say: Callable[[str], None], actions: dict, prepare: Callable[[str], None] = lambda t: None,
-                 wait_s: float = WAIT_S, clock=time.monotonic) -> None:
-        self.say, self.prepare, self.actions = say, prepare, actions
+                 wait_s: float = WAIT_S, clock=time.monotonic, busy: Callable[[], bool] = lambda: False) -> None:
+        """busy(): still making or saying the words (the wait starts after)."""
+        self.say, self.prepare, self.actions, self.busy = say, prepare, actions, busy
+        self._status: str | None = None     # the status report's words, made ahead
         self.wait_s, self.clock = wait_s, clock
         self.state: str | None = None         # None (closed), "menu", "rollback?", "reset?", "reset2"
         self._lock = threading.Lock()
@@ -71,11 +74,26 @@ class ServiceMenu:
         """Both buttons have gone down: a beep so you know it's counting, and
         the menu's words made now, so they're ready when it opens."""
         log.info("service menu: buttons 1 and 4 held")
-        threading.Thread(target=self.prepare, args=(MENU,), name="service-prepare", daemon=True).start()
+        self._status = None
+        self._prepare_all()
 
     def open(self) -> None:
         log.info("service menu: open")
         self._to("menu", MENU)
+        if self._status is None:           # (opened from the page: no hold to make them in)
+            self._prepare_all()
+
+    def _prepare_all(self) -> None:
+        """Make the menu's words and the status report now (slow on a Zero), so
+        a press speaks at once."""
+        def run():
+            self.prepare(MENU)
+            try:
+                self._status = f"{self.actions['status']()} {ROLLBACK_ASK}"
+                self.prepare(self._status)
+            except Exception:
+                log.exception("service menu: couldn't get the status ready")
+        threading.Thread(target=run, name="service-prepare", daemon=True).start()
 
     # --- presses while it's open ------------------------------------------------------------
 
@@ -94,7 +112,7 @@ class ServiceMenu:
                 self.say(WIFI)
                 self._do("wifi")
             elif n == 3:
-                self._to("rollback?", f"{self.actions['status']()} {ROLLBACK_ASK}")
+                self._to("rollback?", self._status or f"{self.actions['status']()} {ROLLBACK_ASK}")
             else:
                 self._to("reset?", RESET_ASK)
         elif state == "rollback?":
@@ -137,12 +155,14 @@ class ServiceMenu:
         with self._lock:
             self.state = state
             self._deadline = self.clock() + self.wait_s
-            if self._timer is not None:
-                self._timer.cancel()
-            self._timer = threading.Timer(self.wait_s, self._time_out)
-            self._timer.daemon = True
-            self._timer.start()
+            if self._timer is None:
+                self._tick()
         self.say(text)
+
+    def _tick(self) -> None:
+        self._timer = threading.Timer(min(TICK_S, self.wait_s), self._time_out)
+        self._timer.daemon = True
+        self._timer.start()
 
     def _close(self) -> None:
         with self._lock:
@@ -153,7 +173,13 @@ class ServiceMenu:
 
     def _time_out(self) -> None:
         with self._lock:
-            if self.state is None or self.clock() < self._deadline:
+            if self.state is None:
+                self._timer = None
+                return
+            if self.busy():                    # still talking: the wait starts when it's done
+                self._deadline = self.clock() + self.wait_s
+            if self.clock() < self._deadline:
+                self._tick()
                 return
             self.state, self._timer = None, None
         log.info("service menu: closed (no press)")

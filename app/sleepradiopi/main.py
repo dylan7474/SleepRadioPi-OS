@@ -141,19 +141,24 @@ def _service_menu(station: Station, control, presets, config_file: Path):
     from sleepradiopi.updater import this_version
     from sleepradiopi.web.server import _restart_soon
     volume_file = Path.home() / ".local" / "state" / "sleepradiopi" / "speaker.json"
-    made: dict = {}
+    made: dict = {}                   # the words made so far (a few: the menu, the status...)
+    making = threading.Lock()
+    saying = [0]
 
     def render(text):
-        if text not in made:
-            made.clear()
-            made[text] = station.render_speech(text)
-        return made[text]
+        with making:                  # one at a time, so a line being made ahead is used, not made twice
+            if text not in made:
+                if len(made) >= 6:
+                    made.pop(next(iter(made)))
+                made[text] = station.render_speech(text)
+            return made[text]
 
     def say(text):
         logging.info("service menu: %s", text)
         presets._clip(beep(), "Service menu")
         if not station._has_voice:
             return
+        saying[0] += 1
 
         def run():
             try:
@@ -161,7 +166,13 @@ def _service_menu(station: Station, control, presets, config_file: Path):
                 control.play_clip(Clip(render(text), "button", "Service menu"))
             except Exception:
                 logging.exception("service menu: couldn't say it")
+            finally:
+                saying[0] -= 1
         threading.Thread(target=run, name="service-say", daemon=True).start()
+
+    def busy():
+        clip = control.speaker.test
+        return saying[0] > 0 or (clip is not None and getattr(clip, "label", "") == "Service menu" and not clip.done)
 
     def prepare(text):
         if station._has_voice:
@@ -210,7 +221,7 @@ def _service_menu(station: Station, control, presets, config_file: Path):
         os._exit(75)                  # the supervisor restarts the station with the settings as they came
 
     return service_mod.ServiceMenu(say, {"restart": restart, "wifi": forget_wifi, "status": status,
-                                         "rollback": rollback, "reset": factory_reset}, prepare=prepare)
+                                         "rollback": rollback, "reset": factory_reset}, prepare=prepare, busy=busy)
 
 
 def main() -> None:

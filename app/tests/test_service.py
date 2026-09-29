@@ -210,3 +210,20 @@ def test_the_page_buttons_go_down_and_up_through_the_real_timers(tmp_path: Path,
         assert key({"button": 5, "down": True}) == 400 and key({"button": 1}) == 400
     finally:
         httpd.shutdown()
+
+
+def test_the_status_is_made_ahead_and_the_wait_starts_after_the_words() -> None:
+    made, said = [], []
+    busy = [True]
+    acts = {"status": lambda: "Status report.", "restart": lambda: None, "wifi": lambda: None,
+            "rollback": lambda: True, "reset": lambda: None}
+    m = service.ServiceMenu(said.append, acts, prepare=made.append, wait_s=0.3, busy=lambda: busy[0])
+    m.holding()
+    time.sleep(0.2)
+    assert made == [service.MENU, f"Status report. {service.ROLLBACK_ASK}"]
+    m.open()
+    time.sleep(0.8)
+    assert m.active                                  # still talking: not closed
+    busy[0] = False
+    time.sleep(0.6)
+    assert not m.active and said[-1] == service.CLOSED
