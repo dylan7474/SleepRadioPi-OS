@@ -83,6 +83,8 @@ class SpeakerOutput:
         self._io = threading.Lock()      # one writer at a time: the show, or the noise pump
         self._pump: threading.Thread | None = None
         self._opened_once = False
+        self.level = 0.0                 # the last slice's mean |sample|, before the volume (io/lamps.py)
+        self.level_at = 0.0
         self._fails = 0                  # aplay failures in a row (the card won't open)
         self._opened_at = 0.0
         self._failing_since: float | None = None
@@ -192,6 +194,7 @@ class SpeakerOutput:
                     x = np.repeat(x.mean(axis=1, keepdims=True), x.shape[1], axis=1)
                 if self.eq is not None:
                     x = self.eq.process(x)
+            self.level, self.level_at = float(np.mean(np.abs(x))), time.monotonic()   # (pre-volume: the VU needle)
             part = np.clip(x * g, -32768, 32767).astype(np.int16)
             try:
                 view = memoryview(part.tobytes())
@@ -242,6 +245,13 @@ class SpeakerOutput:
         with self._lock:
             self.noise = gen
             self._sync()
+
+    @property
+    def fade_factor(self) -> float:
+        """The sleep timer's fade: 1 until the last SLEEP_FADE_S, then down to 0."""
+        if self.fade_end is None:
+            return 1.0
+        return max(0.0, min(1.0, (self.fade_end - time.monotonic()) / SLEEP_FADE_S))
 
     def set_hold(self, sound) -> None:
         """The service menu's sound (something with next(n)), played instead of

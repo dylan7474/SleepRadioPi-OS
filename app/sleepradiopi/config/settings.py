@@ -35,6 +35,9 @@ class Settings:
     radio_stations: list | None = None    # internet radio: [{"name", "url", "info"?}]; None = the starter set
     station_name: str | None = None       # the radio's name as spoken and shown; None: by the hardware
                                           # ("Sleep Radio", or "Phonosphere" for the cathedral) -- config/brand.py
+    glow_day: int = 60                    # the cathedral's grille light, % (the day set of presets)...
+    glow_night: int = 15                  # ...and the night set
+    meter_trim_db: float = 0.0            # the VU needle: + reads higher
     hardware: str = "box"                 # "box": 4 preset buttons; "cathedral": the Phonosphere -- a 6-way
                                           # rotary selector, a back button, a VU needle and a grille light
     buttons: list = field(default_factory=list)   # the preset buttons (io/presets.py); null = empty (the day set)

@@ -71,7 +71,7 @@ def _quietly(job) -> None:
 
 def make_handler(station: Station, output: Mp3Output, speaker=None,
                  config_file: Path | None = None, announcer=None, voice_jobs=None, updates=None,
-                 presets=None, directory=None, media=None):
+                 presets=None, directory=None, media=None, lamps=None):
     auth = Auth(config_file)
     open_paths = {"/", "/index.html", "/api/auth", "/api/login", "/analyser", "/analyser/", "/analyser/index.html"}
 
@@ -215,6 +215,9 @@ def make_handler(station: Station, output: Mp3Output, speaker=None,
                 self._send(json.dumps(self._messages_state()).encode(), "application/json")
             elif path == "/api/identity":
                 self._send(json.dumps(self._identity()).encode(), "application/json")
+            elif path == "/api/lamps":
+                self._send(json.dumps(lamps.settings() if lamps is not None else {"needle": False, "glow": False}).encode(),
+                           "application/json")
             elif path == "/api/voices":
                 self._send(json.dumps(self._voices_state()).encode(), "application/json")
             elif path == "/api/wifi":
@@ -318,6 +321,8 @@ def make_handler(station: Station, output: Mp3Output, speaker=None,
                 self._set_messages()
             elif path == "/api/identity":
                 self._set_identity()
+            elif path in ("/api/lamps", "/api/lamps/sweep") and lamps is not None:
+                self._set_lamps(path.endswith("sweep"))
             elif path == "/api/messages/hear":
                 self._hear_message()
             elif path == "/api/profiles":
@@ -491,6 +496,25 @@ def make_handler(station: Station, output: Mp3Output, speaker=None,
                     "today": station.birthdays.today(datetime.now()) if trusted else [],
                     "clock_trusted": trusted,
                     "can_hear": speaker is not None and station._has_voice}
+
+        def _set_lamps(self, sweep: bool) -> None:
+            """POST /api/lamps {"glow_day", "glow_night" (0-100 %), "meter_trim_db" (-12..12)}:
+            saved; /api/lamps/sweep: the needle up to full scale and back (to set its trimmer)."""
+            try:
+                if sweep:
+                    lamps.sweep()
+                    reply = lamps.settings()
+                else:
+                    body = self._body()
+                    reply = lamps.set(body.get("glow_day"), body.get("glow_night"), body.get("meter_trim_db"))
+                    if config_file is not None:
+                        for k in ("glow_day", "glow_night", "meter_trim_db"):
+                            if k in body:
+                                save_setting(config_file, k, reply[k])
+            except (ValueError, TypeError, AttributeError) as e:
+                self._error(str(e) if isinstance(e, ValueError) else "send {\"glow_day\", ...}")
+                return
+            self._send(json.dumps(reply).encode(), "application/json")
 
         def _identity(self) -> dict:
             from sleepradiopi.config import brand
@@ -1150,10 +1174,11 @@ def make_handler(station: Station, output: Mp3Output, speaker=None,
 
 def serve(station: Station, output: Mp3Output, port: int, speaker=None,
           config_file: Path | None = None, announcer=None, voice_jobs=None, updates=None,
-          presets=None, directory=None, media=None) -> None:
+          presets=None, directory=None, media=None, lamps=None) -> None:
+    from sleepradiopi.config import brand
     server = ThreadingHTTPServer(("0.0.0.0", port),
                                  make_handler(station, output, speaker, config_file, announcer, voice_jobs,
-                                              updates, presets, directory, media))
+                                              updates, presets, directory, media, lamps))
     server.daemon_threads = True
-    log.info("Sleep Radio on http://0.0.0.0:%d/", port)
+    log.info("%s on http://0.0.0.0:%d/", brand.name, port)
     server.serve_forever()

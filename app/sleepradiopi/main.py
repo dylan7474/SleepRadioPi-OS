@@ -401,7 +401,7 @@ def main() -> None:
     # One voice only: two don't fit a Pi Zero 2 W's RAM alongside the stream.
     tts = TtsWorker(voices, settings.broadcast_voice) if settings.broadcast_voice else None
     stream = Mp3Output(enabled=settings.web_stream or not settings.speaker_enabled)
-    speaker = control = announcer = None
+    speaker = control = announcer = lamps = None
     if settings.speaker_enabled:
         # (the start-up sound chimes, then ticks, until the speaker first opens: SpeakerOutput._open)
         speaker = SpeakerOutput(settings.speaker_device, mono=settings.speaker_mono,
@@ -463,6 +463,11 @@ def main() -> None:
                     devices=Path(os.environ.get("SLEEPRADIOPI_INPUT_DIR", "/dev/input")),
                     on_long_press=announcer.speak, buttons=buttons, chord=chord, raw_keys=raw_keys)
         presets.keys = knob.keys         # the page's buttons go down and up through the same timers
+        if cathedral:                    # the VU needle and the grille's glow (hardware PWM)
+            from sleepradiopi.io.lamps import Lamps
+            lamps = Lamps(speaker, control, bank=lambda: presets.bank, glow_day=settings.glow_day,
+                          glow_night=settings.glow_night, meter_trim_db=settings.meter_trim_db)
+            lamps.start()
         knob.start()
         control.play()   # a bedside radio plays as soon as it's powered
     else:
@@ -492,7 +497,7 @@ def main() -> None:
                           "audiobooks": cfg["audiobooks_folder"]},
                          on_changed=station.reload_library)
     serve(station, stream, args.port or settings.http_port, control, args.config, announcer, jobs, updates,
-          presets, directory, media)
+          presets, directory, media, lamps)
 
 
 if __name__ == "__main__":

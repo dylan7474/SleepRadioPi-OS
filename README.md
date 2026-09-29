@@ -600,7 +600,8 @@ What's left to do (everything else described here is built and running):
   4-inch speaker, the VU meter as its dial, a six-way selector) is now its own
   project, **Phonosphere** (private for now). It runs this software; its
   differences (six presets, the selector, a back button, the meter and the
-  grille light) will be a hardware profile here.
+  grille light) are the `"cathedral"` hardware profile here (software done;
+  the image's GPIO keys and PWM next — see *Two radios* in the app README).
 - **Auto-tune with a USB mic** — a cheap USB mic in the Zero's data port,
   where you sit, and an **Auto-tune** button on the radio's page:
   - it plays the pink noise, records the box and works out the EQ and low

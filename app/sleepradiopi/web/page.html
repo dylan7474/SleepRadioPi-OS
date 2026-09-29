@@ -623,6 +623,20 @@
       and in the set-up Wi-Fi's name. Left empty, it's the type's own: Sleep Radio, or Phonosphere. The radio
       restarts to take it up (about a minute). (Recorded jingles are just files: swap them for ones with the new name.)</p>
   </section>
+  <section id="lampsCard" class="card" hidden>
+    <h2>The grille light and the meter</h2>
+    <div class="row"><label for="glowDay">Light by day</label><input id="glowDay" type="range" min="0" max="100" step="5">
+      <output id="glowDayNum" class="muted"></output></div>
+    <div class="row"><label for="glowNight">Light at night</label><input id="glowNight" type="range" min="0" max="100" step="5">
+      <output id="glowNightNum" class="muted"></output></div>
+    <div class="row"><label for="meterTrim">Meter reads</label><input id="meterTrim" type="range" min="-12" max="12" step="1">
+      <output id="meterTrimNum" class="muted"></output></div>
+    <button id="meterSweep" type="button">Sweep the needle</button>
+    <p class="muted" style="margin:.5rem 0 0;font-size:.85rem">The light follows the day and night sets of presets,
+      and fades out on pause and with the sleep timer. <b>Sweep the needle</b> takes it up to full scale and back:
+      turn the meter's trimmer so it just reaches the end. <b>Meter reads</b> moves where normal music sits
+      (about 0 VU).</p>
+  </section>
   <section id="knob" class="card" hidden>
     <h2>Knob switch</h2>
     <button id="knobBtn" type="button"><i id="knobFill"></i><span>Tap: pause / play · Hold 3 s: say the address</span></button>
@@ -1831,6 +1845,22 @@ $("identSave").onclick = async () => {
   } catch (e) { $("identNote").textContent = "Not saved: " + e.message + "."; }
 };
 loadIdentity();
+// The cathedral's grille light and VU needle.
+async function loadLamps() {
+  try {
+    const d = await (await fetch("/api/lamps", { cache: "no-store" })).json();
+    $("lampsCard").hidden = !(d.needle || d.glow || d.glow_day != null);
+    if (d.glow_day == null) return;
+    [["glowDay", d.glow_day, "%"], ["glowNight", d.glow_night, "%"], ["meterTrim", d.meter_trim_db, " dB"]]
+      .forEach(([id, v, u]) => { $(id).value = v; $(id + "Num").textContent = (u === " dB" && v > 0 ? "+" : "") + v + u; });
+  } catch {}
+}
+[["glowDay", "glow_day", "%"], ["glowNight", "glow_night", "%"], ["meterTrim", "meter_trim_db", " dB"]].forEach(([id, key, u]) => {
+  $(id).oninput = e => $(id + "Num").textContent = (u === " dB" && +e.target.value > 0 ? "+" : "") + e.target.value + u;
+  $(id).onchange = async e => { try { await radioPost("/api/lamps", { [key]: +e.target.value }); } catch (err) { toast(err.message); } };
+});
+$("meterSweep").onclick = async () => { try { await radioPost("/api/lamps/sweep"); toast("Watch the needle"); } catch (e) { toast(e.message); } };
+loadLamps();
 $("serviceBtn").onclick = async () => {
   try {
     const r = await (await fetch("/api/knob", { method: "POST", headers: { "Content-Type": "application/json" },

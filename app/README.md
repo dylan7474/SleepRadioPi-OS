@@ -196,12 +196,36 @@ There are two ways:
 | Caches | `~/.cache/sleepradiopi/` — `tags.json` (track tags, so start-up takes seconds, not a minute), `scans.json` (loudness) |
 | Volume | `~/.local/state/sleepradiopi/speaker.json` |
 
+### Two radios
+
+The same software runs the box radio and the cathedral radio (the
+[Phonosphere](https://github.com/dylan7474/Phonosphere), private for now);
+`hardware` in the settings says which, and the "This radio" card on the page
+sets it. The name the DJ says, the page shows and the set-up Wi-Fi uses comes
+from one place (`config/brand.py`): `station_name`, or the hardware's own.
+Recorded jingles are just files, so swap in ones that say the new name.
+
+| | Box (`"box"`) | Cathedral (`"cathedral"`) |
+|---|---|---|
+| Presets | 4 buttons: press plays, hold saves | A 6-way rotary selector: a position plays once the knob settles there (0.6 s), no hold-to-save (save from the page) |
+| Day / night sets | Hold 2 + 3 for 1 s | Press the back button |
+| Service menu | Hold 1 + 4 for 5 s; the buttons choose | Hold the back button 5 s; turn the selector to choose (it says the option), press the back button to confirm |
+| VU meter | — | A 500 uA needle on GPIO12 (hardware PWM), fed the music's level before the volume; ~0 VU for normal music, falls back at rest |
+| Grille light | — | Warm-white LEDs behind the cloth via a MOSFET on GPIO13: its own brightness for each set, fades on pause and with the sleep timer |
+
+The selector's positions and the back button are GPIO keys (keycodes 2–7 and
+139, see config.txt); the lamps need `dtoverlay=pwm-2chan,pin=12,func=4,pin2=13,func2=4`.
+Without the PWM (a desktop, the box) they quietly do nothing.
+
 ### Settings you're likely to change
 
 Most of these are set from the web page; the rest are in the config file.
 
 | Key | Default | |
 |---|---|---|
+| `hardware` | `"box"` | Which radio this is: `"box"` (four buttons) or `"cathedral"` (the Phonosphere: six-way selector, back button, VU needle and grille light). See *Two radios*. |
+| `station_name` | `null` | The radio's name as the DJ says it and the page shows it; `null` = the hardware's own ("Sleep Radio", "Phonosphere"). |
+| `glow_day`, `glow_night`, `meter_trim_db` | `60`, `15`, `0` | The cathedral's grille light by day and night set (0–100 %), and where normal music sits on the meter (-12 to 12 dB). |
 | `speaker_enabled` | `false` | Play through the sound card from start-up (the appliance turns it on). Off by default so a desktop test run doesn't play out loud. |
 | `speaker_device` | `"default"` | ALSA device. |
 | `speaker_volume` | `30` | Volume on the very first start; after that the knob's last setting. |
@@ -627,6 +651,9 @@ everything but the page itself and the login needs the session cookie
 | `POST /api/speaker` | Any of `{"volume": 0-100}`, `{"step": n}`, `{"pause": true \| false \| "toggle"}`, `{"sleep": minutes}` (0 = off), `{"mono": bool}`, `{"noise": true \| false \| "toggle", "noise_kind": "pink", "noise_mix": 0-100}`, `{"eq": {"bass": dB, ...}}`, `{"highpass": Hz}`, `{"test": "bass" \| "sweep" \| "pink" \| "left" \| "right" \| "sides" \| "phase" \| "tune" \| "stop"}` |
 | `POST /api/stream` | `{"enabled": bool}` — listening in a browser on/off (saved as `web_stream`) |
 | `POST /api/knob` | `{"press": "short" \| "long" \| "service"}` — the knob's switch; `service` opens the service menu (then `/api/buttons/press` answers it; `GET /api/buttons` has its `service` state) |
+| `GET` / `POST /api/identity` | `{"hardware", "station_name"}` — which radio this is and its name; a POST saves and restarts the station |
+| `GET` / `POST /api/lamps` | The cathedral's `{"glow_day", "glow_night", "meter_trim_db", "needle", "glow"}` (the last two: is the PWM there) / any of the first three, saved |
+| `POST /api/lamps/sweep` | The needle up to full scale and back over 4 s, to set the meter's trimmer |
 | `POST /api/skip` | Skip what's on air (track, link, jingle or bulletin) |
 | `GET` / `POST /api/dj` | The DJ settings (and the voices there are) / any of `{"voice", "chattiness", "dj_hooks", "jingle_every", "news_enabled", "startup_sound", "dj_speed", "news_speed"}` |
 | `GET /api/wifi` | Wi-Fi: mode (station / hotspot / connecting), network and address, saved networks, nearby ones |
