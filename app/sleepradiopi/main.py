@@ -147,7 +147,8 @@ def main() -> None:
     cfg = asdict(settings)
     cfg["music_folder"] = Path(settings.music_folder or MEDIA / "music").expanduser()
     cfg["jingles_folder"] = Path(settings.jingles_folder or MEDIA / "jingles").expanduser()
-    cfg["audiobooks_folder"] = Path(settings.audiobooks_folder or MEDIA / "audiobooks").expanduser()
+    # (next to the music by default: /media/audiobooks on the radio, whose config names /media/music)
+    cfg["audiobooks_folder"] = Path(settings.audiobooks_folder or cfg["music_folder"].parent / "audiobooks").expanduser()
     cfg["book_cache"] = Path.home() / ".cache" / "sleepradiopi" / "books.json"
     cfg["book_positions"] = Path.home() / ".local" / "state" / "sleepradiopi" / "book-positions.json"
     voices = Path(settings.voices_folder or REPO / "voices").expanduser()

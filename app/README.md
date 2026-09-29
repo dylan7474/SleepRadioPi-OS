@@ -305,7 +305,7 @@ The cards:
   pressing it on the case. Wired as GPIO keys (KEY_1–KEY_4, config.txt), read
   alongside the knob.
 - **Audiobooks** (Find, and the Radio tab while one plays) — books go in their
-  own folder, `~/media/audiobooks` (`/media/audiobooks` on the radio; upload them
+  own folder, next to the music (`/media/audiobooks` on the radio; upload them
   under Settings → Music library → Audiobooks): a folder of mp3s is one book
   (its chapters in file order, CD1/CD2 sub-folders included), and a single
   `.m4b` or `.mp3` is a book too, an m4b's chapter markers becoming its chapters.
