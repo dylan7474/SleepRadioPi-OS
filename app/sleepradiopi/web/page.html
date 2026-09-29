@@ -612,31 +612,6 @@
       (swap its + and −).</p>
     <p id="testNow" class="muted" hidden></p>
   </section>
-  <section id="ident" class="card">
-    <h2>This radio</h2>
-    <div class="row"><label for="identHw">Type</label><select id="identHw">
-      <option value="box">Box radio: four preset buttons</option>
-      <option value="cathedral">Cathedral (Phonosphere): six-way selector, back button</option></select></div>
-    <div class="row"><label for="identName">Name</label><input id="identName" maxlength="40" placeholder="Sleep Radio"></div>
-    <button id="identSave" type="button">Save and restart</button>
-    <p id="identNote" class="muted" style="margin:.5rem 0 0;font-size:.85rem">What the DJ calls the radio, on the page
-      and in the set-up Wi-Fi's name. Left empty, it's the type's own: Sleep Radio, or Phonosphere. The radio
-      restarts to take it up (about a minute). (Recorded jingles are just files: swap them for ones with the new name.)</p>
-  </section>
-  <section id="lampsCard" class="card" hidden>
-    <h2>The grille light and the meter</h2>
-    <div class="row"><label for="glowDay">Light by day</label><input id="glowDay" type="range" min="0" max="100" step="5">
-      <output id="glowDayNum" class="muted"></output></div>
-    <div class="row"><label for="glowNight">Light at night</label><input id="glowNight" type="range" min="0" max="100" step="5">
-      <output id="glowNightNum" class="muted"></output></div>
-    <div class="row"><label for="meterTrim">Meter reads</label><input id="meterTrim" type="range" min="-12" max="12" step="1">
-      <output id="meterTrimNum" class="muted"></output></div>
-    <button id="meterSweep" type="button">Sweep the needle</button>
-    <p class="muted" style="margin:.5rem 0 0;font-size:.85rem">The light follows the day and night sets of presets,
-      and fades out on pause and with the sleep timer. <b>Sweep the needle</b> takes it up to full scale and back:
-      turn the meter's trimmer so it just reaches the end. <b>Meter reads</b> moves where normal music sits
-      (about 0 VU).</p>
-  </section>
   <section id="knob" class="card" hidden>
     <h2>Knob switch</h2>
     <button id="knobBtn" type="button"><i id="knobFill"></i><span>Tap: pause / play · Hold 3 s: say the address</span></button>
@@ -871,6 +846,34 @@
       for adding a network somewhere new) comes on when you ask for it with <b>Hotspot</b> below, or on a radio
       with no network set up at all: join it on your phone and open http://192.168.4.1. Holding the knob for
       3 s says the radio's address.</p>
+  </section>
+    </div>
+    <div class="page" id="page-identity" hidden>
+      <div class="page-head"><button class="back" type="button">‹ Settings</button><h1>This radio</h1></div>
+  <section id="ident" class="card">
+    <h2>This radio</h2>
+    <div class="row"><label for="identHw">Type</label><select id="identHw">
+      <option value="box">Box radio: four preset buttons</option>
+      <option value="cathedral">Cathedral (Phonosphere): six-way selector, back button</option></select></div>
+    <div class="row"><label for="identName">Name</label><input id="identName" maxlength="40" placeholder="Sleep Radio"></div>
+    <button id="identSave" type="button">Save and restart</button>
+    <p id="identNote" class="muted" style="margin:.5rem 0 0;font-size:.85rem">What the DJ calls the radio, on the page
+      and in the set-up Wi-Fi's name. Left empty, it's the type's own: Sleep Radio, or Phonosphere. The radio
+      restarts to take it up (about a minute). (Recorded jingles are just files: swap them for ones with the new name.)</p>
+  </section>
+  <section id="lampsCard" class="card" hidden>
+    <h2>The grille light and the meter</h2>
+    <div class="row"><label for="glowDay">Light by day</label><input id="glowDay" type="range" min="0" max="100" step="5">
+      <output id="glowDayNum" class="muted"></output></div>
+    <div class="row"><label for="glowNight">Light at night</label><input id="glowNight" type="range" min="0" max="100" step="5">
+      <output id="glowNightNum" class="muted"></output></div>
+    <div class="row"><label for="meterTrim">Meter reads</label><input id="meterTrim" type="range" min="-12" max="12" step="1">
+      <output id="meterTrimNum" class="muted"></output></div>
+    <button id="meterSweep" type="button">Sweep the needle</button>
+    <p class="muted" style="margin:.5rem 0 0;font-size:.85rem">The light follows the day and night sets of presets,
+      and fades out on pause and with the sleep timer. <b>Sweep the needle</b> takes it up to full scale and back:
+      turn the meter's trimmer so it just reaches the end. <b>Meter reads</b> moves where normal music sits
+      (about 0 VU).</p>
   </section>
     </div>
     <div class="page" id="page-updates" hidden>
@@ -1834,6 +1837,7 @@ async function loadIdentity() {
     $("identHw").value = identState.hardware;
     $("identName").value = identState.station_name;
     $("identName").placeholder = identState.default_names[identState.hardware] || "Sleep Radio";
+    drawSettings();
   } catch {}
 }
 $("identHw").onchange = () => { if (identState) $("identName").placeholder = identState.default_names[$("identHw").value] || "Sleep Radio"; };
@@ -2821,7 +2825,7 @@ function uploadOne(file, name, folder, progress) {
 // --- Views: Radio · Find · Settings (and a page per setting), login -------------------
 // Links: "" (the radio), #find, #settings, #set-<page>. Old ones still work:
 // #radio (the old Streaming view) opens Find, #media the music library.
-const PAGES = ["speakers", "noise", "stream", "tests", "dj", "voices", "lists", "birthdays", "messages", "library", "stations",
+const PAGES = ["identity", "speakers", "noise", "stream", "tests", "dj", "voices", "lists", "birthdays", "messages", "library", "stations",
                "wifi", "updates", "password", "backup", "power"];
 function route() {
   const h = location.hash.slice(1);
@@ -2929,6 +2933,7 @@ const ICONS = {
   lock: '<rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/>',
   save: '<path d="M12 3v12m0 0-4-4m4 4 4-4M4 17v3h16v-3"/>',
   power: '<path d="M12 3v9M6.3 6.3a8 8 0 1 0 11.4 0"/>',
+  radio: '<rect x="3" y="8" width="18" height="12" rx="2"/><path d="M7 8l10-5"/><circle cx="15" cy="14" r="3"/><path d="M6 12h3M6 16h3"/>',
 };
 const signed = v => (v > 0 ? "+" : v < 0 ? "−" : "") + Math.abs(v);
 function settingRows() {
@@ -2962,6 +2967,8 @@ function settingRows() {
       ["globe", "Internet stations", `${rStations.length} saved` + (lastDir && lastDir.stations
         ? ` · directory of ${lastDir.stations.toLocaleString()}` : ""), "stations"]]],
     ["The radio", [
+      ["radio", "This radio", identState ? `${identState.hardware === "cathedral" ? "Cathedral" : "Box"} · called ${identState.name}`
+        : "…", "identity"],
       ["wifi", "Wi-Fi", !w ? "…" : w.mode === "station" ? `Connected to ${w.ssid} · ${w.ip}`
         : w.mode === "hotspot" ? `Hotspot on: ${w.hotspot.ssid}` : w.mode === "connecting"
         ? (w.reconnecting ? "Reconnecting quietly…" : "Joining a saved network…") : "Unknown", "wifi"],

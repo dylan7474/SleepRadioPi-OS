@@ -212,7 +212,7 @@ There are two ways:
 The same software runs the box radio and the cathedral radio (the
 [Phonosphere](https://github.com/dylan7474/Phonosphere), private for now);
 `hardware` in the settings says which, and the "This radio" card on the page
-sets it. The name the DJ says, the page shows and the set-up Wi-Fi uses comes
+sets it (Settings → The radio → This radio). The name the DJ says, the page shows and the set-up Wi-Fi uses comes
 from one place (`config/brand.py`): `station_name`, or the hardware's own.
 Recorded jingles are just files, so swap in ones that say the new name.
 
