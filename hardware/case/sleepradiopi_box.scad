@@ -48,8 +48,8 @@ logo_gap      = 4;       // between lines
 logo_depth    = 0.8;     // 4 layers at 0.2 mm
 
 /* ---------- Speakers (CHECK WITH CALIPERS) ---------- */
-spk_d        = 40;      // rim diameter (Gikfun's listing: 40 mm)
-spk_rim_t    = 2;       // thickness of the flat front rim/flange   (UNVERIFIED)
+spk_d        = 40;      // rim diameter (measured: 40 mm)
+spk_rim_t    = 2.7;     // thickness of the flat front rim/flange (measured 2026-09-29)
 spk_depth    = 22;      // front of the rim to the back of the magnet (UNVERIFIED)
 spk_grille_d = 34;      // grille opening, a bit less than the rim so the rim seals
 spk_fit      = 0.6;     // collar clearance on the diameter

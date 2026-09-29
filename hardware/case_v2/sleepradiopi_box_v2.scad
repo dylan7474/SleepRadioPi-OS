@@ -35,8 +35,8 @@
 part = "assembly";
 
 /* ---------- Speakers (CHECK WITH CALIPERS, as version 1) ---------- */
-spk_d        = 40;
-spk_rim_t    = 2;
+spk_d        = 40;      // measured
+spk_rim_t    = 2.7;     // measured
 spk_depth    = 22;
 spk_grille_d = 34;
 spk_fit      = 0.6;
