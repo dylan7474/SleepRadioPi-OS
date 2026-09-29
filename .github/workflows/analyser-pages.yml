@@ -1,12 +1,13 @@
-# Publishes the spectrum analyser (tools/analyser/) to GitHub Pages:
+# Publishes the spectrum analyser (app/sleepradiopi/web/analyser/) to GitHub Pages:
 # https://dylan7474.github.io/SleepRadioPi-OS/
-# It needs HTTPS for the microphone, which the radio's own page can't give.
+# It needs HTTPS for the microphone. The radio serves the same file at /analyser/
+# too (for tuning with no internet), where Chrome needs a one-off flag instead.
 name: Analyser page
 
 on:
   push:
     branches: [main]
-    paths: ["tools/analyser/**", ".github/workflows/analyser-pages.yml"]
+    paths: ["app/sleepradiopi/web/analyser/**", ".github/workflows/analyser-pages.yml"]
   workflow_dispatch:
 
 permissions:
@@ -29,6 +30,6 @@ jobs:
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:
-          path: tools/analyser
+          path: app/sleepradiopi/web/analyser
       - id: deployment
         uses: actions/deploy-pages@v4

@@ -414,11 +414,21 @@ The cards:
 ### Tuning the speakers
 
 The [spectrum analyser](https://dylan7474.github.io/SleepRadioPi-OS/) (source in
-[`tools/analyser/`](../tools/analyser/)) is a web page for a laptop or a
+[`sleepradiopi/web/analyser/`](sleepradiopi/web/analyser/)) is a web page for a laptop or a
 phone. It listens through the device's microphone and suggests the speaker EQ and low cut.
 
 **The easy way:** on the radio's page, Settings → Speakers → **Tune
 speakers…**, from the phone:
+
+**With no internet** (e.g. on the radio's own hotspot) the radio serves its
+own copy of the analyser at `/analyser/`. Chrome only lets a page use the
+microphone on a secure (https) address, so once per phone: open
+`chrome://flags`, enable **Insecure origins treated as secure** and add the
+radio's addresses (`http://sleepradiopi.local`, and `http://192.168.4.1` for the
+hotspot), then relaunch Chrome. After that **Tune speakers…** opens the radio's
+own copy (the flag makes the radio's page count as secure, which is how it
+knows); without it, it opens the GitHub copy, which needs internet. The
+radio's copy explains the flag, with its own address, if the mic is blocked.
 
 1. It opens the analyser in a new tab and the radio plays its **tune** test
    sound: 5 s of quiet, then 10 s of hiss, three times.

@@ -38,6 +38,8 @@ from .stream import Mp3Output
 log = logging.getLogger(__name__)
 
 PAGE = (Path(__file__).parent / "page.html").read_bytes()
+# The speaker analyser (also on GitHub Pages): served here too, for tuning with no internet.
+ANALYSER = (Path(__file__).parent / "analyser" / "index.html").read_bytes()
 IDLE_CLOSE_S = 30  # close a stream connection that has had no audio for this long
 MAX_SETTINGS_BYTES = 512 * 1024   # room for a long list of internet radio stations
 # Set where something restarts the station when it exits (init's respawn on the
@@ -69,7 +71,7 @@ def make_handler(station: Station, output: Mp3Output, speaker=None,
                  config_file: Path | None = None, announcer=None, voice_jobs=None, updates=None,
                  presets=None, directory=None, media=None):
     auth = Auth(config_file)
-    open_paths = {"/", "/index.html", "/api/auth", "/api/login"}
+    open_paths = {"/", "/index.html", "/api/auth", "/api/login", "/analyser", "/analyser/", "/analyser/index.html"}
 
     class Handler(BaseHTTPRequestHandler):
         protocol_version = "HTTP/1.1"
@@ -163,6 +165,7 @@ def make_handler(station: Station, output: Mp3Output, speaker=None,
         def do_GET(self) -> None:
             path = urlparse(self.path).path
             if (not path.startswith("/api/") and path not in ("/", "/index.html", "/stream")
+                    and not path.startswith("/analyser")
                     and wifi_mod.status().get("mode") == "hotspot"):
                 # The radio's own network: a phone checking for internet
                 # (e.g. /generate_204) is sent to the page, which it then offers to open.
@@ -177,6 +180,13 @@ def make_handler(station: Station, output: Mp3Output, speaker=None,
                 self._send(json.dumps(self._auth_state()).encode(), "application/json")
             elif path in ("/", "/index.html"):
                 self._send(PAGE, "text/html; charset=utf-8")
+            elif path == "/analyser":
+                self.send_response(301)
+                self.send_header("Location", "/analyser/")
+                self.send_header("Content-Length", "0")
+                self.end_headers()
+            elif path in ("/analyser/", "/analyser/index.html"):
+                self._send(ANALYSER, "text/html; charset=utf-8")
             elif path == "/api/status":
                 status = station.status()
                 if speaker is not None:

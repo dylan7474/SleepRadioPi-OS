@@ -101,6 +101,21 @@
     and the phone still. The graph and the details are below.</p>
 </section>
 <main>
+  <section id="micHelp" class="panel" hidden style="margin:1rem 1rem 0;border:1px solid var(--bad)">
+    <h2 style="color:var(--bad)">Let Chrome use the microphone here</h2>
+    <p style="margin:0 0 .5rem">You've opened the radio's own copy of this page, which works with no internet
+      (on the radio's own Wi-Fi, for example). Chrome only lets pages on <i>secure</i> addresses use the
+      microphone, so tell it this one is fine. Once per phone:</p>
+    <ol style="margin:0 0 .5rem;padding-left:1.3rem">
+      <li>Open a new tab and go to <b>chrome://flags</b>.</li>
+      <li>Search for <b>Insecure origins treated as secure</b> and set it to <b>Enabled</b>.</li>
+      <li>In its box, type <b id="micOrigin">http://sleepradiopi.local</b> (add the radio's other addresses too,
+        separated by commas, e.g. <b>http://192.168.4.1</b> for its hotspot).</li>
+      <li>Tap <b>Relaunch</b>, then come back to this page.</li>
+    </ol>
+    <p class="muted" style="margin:0">With internet, the same page also works from
+      <a href="https://dylan7474.github.io/SleepRadioPi-OS/">GitHub</a> without this.</p>
+  </section>
   <div id="plotBox"><canvas id="plot"></canvas><div id="readout"></div></div>
   <aside>
     <div class="card">
@@ -132,7 +147,7 @@
         <p class="muted">Opens the radio's page with these settings, ready to <b>Apply</b> (and <b>Undo</b>, to
           compare by ear). The device must be on the radio's Wi-Fi.</p>
         <div class="row"><button id="dlBtn" disabled>Download settings file</button></div>
-        <p class="muted">Or load the file on the radio's page: <b>⚙ Settings → Backup → Load settings…</b>. It holds only
+        <p class="muted">Or load the file on the radio's page: <b>Settings → Save or load settings → Load settings…</b>. It holds only
           the speaker EQ and low cut. Or set the sliders by hand.</p>
       </div>
     </div>
@@ -241,8 +256,24 @@ async function listDevices() {
   if ([...sel.options].some(o => o.value === keep)) sel.value = keep;
 }
 
+// Opened from the radio itself (plain http, e.g. on its hotspot with no internet), Chrome
+// blocks the microphone unless the radio's address is on its list of addresses to treat
+// as secure -- a one-off setting on each phone: say so, with the exact address to add.
+const ON_RADIO = location.protocol === "http:" && !/^(localhost|127\.|\[::1\])/.test(location.hostname);
+function micBlockedHelp() {
+  const box = $("micHelp");
+  if (!box || window.isSecureContext) return false;
+  $("micOrigin").textContent = location.origin;
+  box.hidden = false;
+  return true;
+}
 async function start() {
   stop();
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+    micBlockedHelp();
+    setStatus("The microphone is blocked on this connection: see the note at the top.", true);
+    return false;
+  }
   try {
     const id = $("dev").value;
     stream = await navigator.mediaDevices.getUserMedia({ audio: {
@@ -506,6 +537,8 @@ $("dlBtn").onclick = () => {
 // browser wouldn't let this page talk to it directly.
 const ADDR_STORE = "spectrum-analyser-radio";
 try { $("radioAddr").value = localStorage.getItem(ADDR_STORE) || $("radioAddr").value; } catch {}
+if (ON_RADIO) $("radioAddr").value = location.host;          // opened from the radio: send back to it
+micBlockedHelp();
 $("sendBtn").onclick = () => {
   const s = lastSuggestion; if (!s) return;
   const addr = $("radioAddr").value.trim().replace(/^https?:\/\//i, "").replace(/\/.*$/, "");

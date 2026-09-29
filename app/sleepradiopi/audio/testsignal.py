@@ -13,7 +13,7 @@ but with the EQ and low cut bypassed, so what you hear is the box itself.
   sides  left, then right, twice: "Left speaker" in the DJ voice and 3 s of
          pink noise on the left one only, then the same on the right. With
          no voice ready it's the noise alone (the page says which side)
-  tune   for the spectrum analyser's Tune speakers (tools/analyser): 5 s of
+  tune   for the spectrum analyser's Tune speakers (web/analyser): 5 s of
          quiet (it measures the room), then 10 s of pink noise (it measures
          the box), three times over, so the phone can start listening at
          any point and still hear a whole quiet-then-noise

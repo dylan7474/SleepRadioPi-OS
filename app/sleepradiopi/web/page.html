@@ -451,7 +451,9 @@
       back panel, set the low cut to 140 Hz. Or press <b>Tune speakers…</b>: it opens the
       <a href="https://dylan7474.github.io/SleepRadioPi-OS/" target="_blank" rel="noopener">spectrum analyser</a>
       and the radio plays bursts of hiss for it to measure. Hold the phone about 50 cm in front of the radio and
-      tap Start; it brings the settings back here for you to Apply.</p>
+      tap Start; it brings the settings back here for you to Apply. With no internet (e.g. on the radio's own
+      Wi-Fi) it uses <a href="/analyser/" target="_blank">the radio's own copy</a>, which needs a one-off Chrome
+      setting on the phone: the page shows how.</p>
   </section>
       <p id="noSpeaker" class="muted" hidden>This radio has no speaker of its own (it only plays in a browser), so there's nothing to set here.</p>
     </div>
@@ -902,8 +904,12 @@ $("eqFlat").onclick = () => { eq = { bass: 0, mid: 0, treble: 0 }; queueEq(); };
 // sound and sends its suggestion back to this tab as #tune=... (see offerTune). Opened first,
 // inside the click, so the browser doesn't block it; it keeps window.opener to come back here.
 const ANALYSER_URL = "https://dylan7474.github.io/SleepRadioPi-OS/";
+// The radio's own copy works with no internet, but only where Chrome lets an http
+// page use the microphone (the one-off "Insecure origins treated as secure" flag,
+// which makes this page a secure context too); otherwise the GitHub copy.
 $("tuneBtn").onclick = () => {
-  window.open(`${ANALYSER_URL}#auto&radio=${encodeURIComponent(location.host)}`, "_blank");
+  const url = window.isSecureContext ? "/analyser/" : ANALYSER_URL;
+  window.open(`${url}#auto&radio=${encodeURIComponent(location.host)}`, "_blank");
   sendTest("tune");
 };
 
@@ -2228,7 +2234,7 @@ function drawSettings() {
     })); return el; })));
 }
 
-// Speaker settings sent by the spectrum analyser (tools/analyser): it opens this page as
+// Speaker settings sent by the spectrum analyser (web/analyser): it opens this page as
 // #tune=bass,mid,treble,lowcut. Nothing changes until Apply is pressed here.
 let tuneOld = null;
 const tuneWords = t => `bass ${fmtDb(t.bass)}, mid ${fmtDb(t.mid)}, treble ${fmtDb(t.treble)}, ` +

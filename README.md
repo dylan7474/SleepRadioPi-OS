@@ -498,7 +498,7 @@ anything else starts.
 | `board/sleepradiopi/linux.fragment` | Kernel options on top of `bcm2711_defconfig` (squashfs built in; unused drivers trimmed) |
 | `package/` | `python-sherpa-onnx` (PyPI wheels) and `sleepradiopi` (installs `app/`) |
 | `scripts/` | `flash.sh`, `provision-media.sh`, `update.sh`, `release.sh`, `speaker-mode.sh`, `web-password.sh` (run on the PC) |
-| `tools/analyser/` | The spectrum analyser web page that suggests speaker settings (published to GitHub Pages) |
+| `app/sleepradiopi/web/analyser/` | The spectrum analyser web page that suggests speaker settings (published to GitHub Pages, and served by the radio at `/analyser/`) |
 | `hardware/case/` | The 3D-printed case (OpenSCAD source, STLs, assembly notes) |
 | `hardware/wiring/` | The wiring diagram (`wiring.svg`) and the script that draws it |
 
