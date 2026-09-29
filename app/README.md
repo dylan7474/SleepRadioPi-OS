@@ -217,8 +217,9 @@ NTP sets the clock). If the variable isn't set, the clock is trusted.
 ### The web page
 
 **http://sleepradiopi.local/** (or the address the knob reads out). The
-main page is the radio's remote control — now playing, the four preset
-buttons, volume and sleep timer, artist radio, play next, recently on air —
+main page is the radio's remote control — now playing, **the radio** (the
+knob and the four preset buttons, drawn like the real one), the sleep timer,
+artist radio, play next, recently on air —
 **📻 Streaming** has the buttons' settings, albums and internet radio, and
 **⚙ Settings** has the rest, grouped as Sound, Music and the DJ, and The radio. Cards that need a
 speaker only appear when the station has one.
@@ -233,6 +234,15 @@ it can always be reset over ssh: `python3 -m sleepradiopi.config.auth clear`
 new one. The change is picked up at once.
 
 The cards:
+
+- **The radio** — the top of the radio drawn as it is: the blue **knob** at
+  the back and the four silver **preset buttons** along the front edge, each
+  labelled with what it plays (the one playing glows), over the front face's
+  grilles and lettering. The knob works like the real one: drag it round (or
+  − / +, the mouse wheel, arrow keys) for volume, over a 7-to-5 o'clock sweep;
+  **tap it to pause or play** (it greys out when paused). With no speaker of
+  its own, a tap starts or stops listening in the browser. The sleep timer
+  sits under it.
 
 - **Now playing** with a progress bar, what's next, and **Skip**.
 - **Listen here** (only when *Listen in a browser* is on, under Settings →
