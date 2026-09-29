@@ -132,6 +132,13 @@ a stacking header between the Pi and the amp.
 | RTC VCC | 3.3 V | 1 |
 | RTC SDA / SCL | GPIO2 / GPIO3 | 3 / 5 |
 | RTC ground | GND | 9 |
+| Preset buttons 1 / 2 / 3 / 4 (each to GND) | GPIO5 / 6 / 16 / 26 | 29 / 31 / 36 / 37 |
+| *Cathedral:* selector positions 1–4 | as the preset buttons | |
+| *Cathedral:* selector positions 5 / 6 | GPIO23 / 24 | 16 / 18 |
+| *Cathedral:* selector common, back button's other side | GND | 30, 34 or 39 |
+| *Cathedral:* back button | GPIO25 | 22 |
+| *Cathedral:* VU needle (~5.6 k + 2 k trimmer to the meter's +) | GPIO12 (PWM0) | 32 |
+| *Cathedral:* grille light (a logic-level MOSFET's gate, ~100 Ω) | GPIO13 (PWM1) | 33 |
 
 - The Pi's internal pull-ups are enabled on the encoder pins, so a bare
   encoder works. A module with its own pull-ups (KY-040) has a `+` pin: put
@@ -153,6 +160,10 @@ gpio=17,27=ip,pu                        # encoder pull-ups
 dtoverlay=rotary-encoder,pin_a=17,pin_b=27,relative_axis=1
 dtoverlay=gpio-key,gpio=22,active_low=1,gpio_pull=up,keycode=164,label="PLAYPAUSE"
 # dtoverlay=i2c-rtc,ds3231              # once the RTC is fitted
+dtoverlay=gpio-key,gpio=5,active_low=1,gpio_pull=up,keycode=2,label="PRESET1"   # ... 6/3, 16/4, 26/5
+dtoverlay=gpio-key,gpio=23,active_low=1,gpio_pull=up,keycode=6,label="PRESET5"  # cathedral: 24/7
+dtoverlay=gpio-key,gpio=25,active_low=1,gpio_pull=up,keycode=139,label="BACK"   # cathedral
+dtoverlay=pwm-2chan,pin=12,func=4,pin2=13,func2=4                                # cathedral: needle, light
 ```
 
 The kernel turns the encoder and switch into input events, which the station

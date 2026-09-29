@@ -24,6 +24,19 @@ mkdir -p /run/sleepradiopi
 chown radio:radio /run/sleepradiopi
 rm -f /run/sleepradiopi/poweroff
 
+# The cathedral's VU needle and grille light: the two hardware PWM channels
+# (config.txt), exported for the station's user. No PWM chip: skipped.
+modprobe -q pwm-bcm2835 2>/dev/null
+PWM=/sys/class/pwm/pwmchip0
+if [ -d $PWM ]; then
+	for ch in 0 1; do
+		[ -d $PWM/pwm$ch ] || echo $ch > $PWM/export 2>/dev/null
+		i=0
+		while [ ! -e $PWM/pwm$ch/duty_cycle ] && [ $i -lt 10 ]; do sleep 0.1; i=$((i + 1)); done
+		chown radio:radio $PWM/pwm$ch/period $PWM/pwm$ch/duty_cycle $PWM/pwm$ch/enable 2>/dev/null
+	done
+fi
+
 # The start-up chime (then the DJ: "Sleep Radio is warming up..."), played
 # while the station loads, so a slow start doesn't look like a broken radio.
 # It holds /run/sleepradiopi/startup-sound.lock; the station waits for it
