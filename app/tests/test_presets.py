@@ -122,8 +122,9 @@ def test_validation_and_labels() -> None:
         with pytest.raises(ValueError):
             presets_mod.validate(bad)
     assert presets_mod.validate_all([None]) == [None] * 4
+    assert len(presets_mod.validate_all([None], 6)) == 6          # the cathedral's six
     with pytest.raises(ValueError):
-        presets_mod.validate_all([None] * 5)
+        presets_mod.validate_all([None] * 7)
     assert presets_mod.label(RP) == "Radio Paradise"
     assert presets_mod.label({"kind": "album", "folder": "a", "title": "Rubber Soul", "artist": "The Beatles"}) \
         == "Rubber Soul — The Beatles"
@@ -384,3 +385,52 @@ def test_with_the_dj_off_the_buttons_beep_instead_of_talking(tmp_path) -> None:
     time.sleep(0.2)
     assert st.rendered == [] and len(c.clips) == 2    # beeps only, no words
     assert p.presets[2] is not None
+
+
+def test_the_cathedral_selector_plays_where_it_settles(monkeypatch) -> None:
+    import time
+    from sleepradiopi.io import presets as pm
+    monkeypatch.setattr(pm, "SETTLE_S", 0.1)
+    played = []
+
+    class Station:
+        artist = profile = source = None
+        _has_voice = False
+        def set_artist(self, a): played.append(("show", a))
+        def set_profile(self, p): played.append(("list", p))
+        def tune(self, s): played.append(("tune", s["name"] if s else None))
+        dj_on = True
+    p = pm.Presets(Station(), None, None,
+                   [{"kind": "radio", "name": f"Station {i}", "url": f"http://s/{i}"} for i in range(6)],
+                   count=6, selector=True)
+    assert p.status()["count"] == 6 and p.status()["selector"]
+    for i in (0, 1, 2):                 # turning from 1 to 4 passes 2 and 3...
+        p.selector_down(i); time.sleep(0.03); p.selector_up(i)
+    p.selector_down(3)                  # ...and stops on 4
+    time.sleep(0.3)
+    assert played == [("tune", "Station 3")]
+    p.hold(3)                           # a switch has no hold-to-save
+    assert p.presets[3]["name"] == "Station 3"
+
+
+def test_the_back_button_swaps_day_and_night_or_confirms_the_menu() -> None:
+    from sleepradiopi.io import presets as pm
+
+    class Station:
+        artist = profile = source = None
+        _has_voice = False
+    p = pm.Presets(Station(), None, None, [], count=6, selector=True)
+    p.back_press()
+    assert p.bank == "night"
+
+    class Menu:
+        active = False
+        calls = []
+        def open(self): self.calls.append("open"); self.active = True
+        def confirm(self): self.calls.append("confirm")
+        def select(self, i): self.calls.append(("select", i))
+    p.menu = m = Menu()
+    p.back_hold()
+    p.press(2)
+    p.back_press()
+    assert m.calls == ["open", ("select", 2), "confirm"] and p.bank == "night"

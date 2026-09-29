@@ -273,6 +273,11 @@
   #knobBtn span { position: relative; }
   #knobFill { position: absolute; inset: 0 auto 0 0; width: 0; background: var(--amber); opacity: .35; }
   #knobBtn.holding #knobFill { width: 100%; transition: width 3s linear; }
+  #backBtn { position: relative; overflow: hidden; width: 100%; padding: .9rem; border-radius: var(--r);
+             touch-action: none; user-select: none; -webkit-user-select: none; }
+  #backBtn span { position: relative; }
+  #backFill { position: absolute; inset: 0 auto 0 0; width: 0; background: var(--amber); opacity: .35; }
+  #backBtn.holding #backFill { width: 100%; transition: width 5s linear; }
   #testNow { margin: .75rem 0 0; font-variant-numeric: tabular-nums; }
   #testNow b { color: var(--amber); font-size: 1.4rem; }
   #wifiNow b { color: var(--amber); }
@@ -365,7 +370,7 @@
       <div class="now-foot">
         <p id="next"></p>
         <button id="skip" type="button" hidden title="Skip to what's next">Skip ⏭︎</button>
-        <button id="radioOff" type="button" hidden title="Stop streaming">Back to Sleep Radio</button>
+        <button id="radioOff" type="button" hidden title="Stop streaming">Back to <span class="radioName">Sleep Radio</span></button>
       </div>
       <p id="rNote" hidden></p>
     </section>
@@ -386,7 +391,7 @@
           <p id="chordNote" role="status" aria-live="assertive" hidden></p>
         </div>
         <div id="radioFace" aria-hidden="true">
-          <span class="grille"></span><span class="word">SLEEP<br>RADIO</span><span class="grille"></span>
+          <span class="grille"></span><span class="word" id="faceWord">SLEEP<br>RADIO</span><span class="grille"></span>
         </div>
       </div>
       <div id="bankRow" hidden>
@@ -442,11 +447,11 @@
     <p id="qNote" hidden></p>
 
     <div id="findHome" class="view">
-      <h2 class="eyebrow">Sleep Radio</h2>
+      <h2 class="eyebrow radioName">Sleep Radio</h2>
       <div class="tiles" id="mixTiles"></div>
       <div class="sel-row">
         <select id="artistRadio" aria-label="Artist radio: play one artist or list">
-          <option value="">All artists (Sleep Radio)</option>
+          <option value="">All artists</option>
         </select>
         <button id="listsBtn" type="button" title="Make lists of artists, e.g. a Friday List">Lists…</button>
       </div>
@@ -474,7 +479,7 @@
         </div>
         <div id="reqBox" hidden><ul id="reqList" class="list"></ul></div>
         <p id="qRadio" class="muted" style="margin:0;font-size:.85rem" hidden>Something is streaming: songs you pick
-          play when you go back to Sleep Radio.</p>
+          play when you go back to <span class="radioName">Sleep Radio</span>.</p>
       </div>
     </div>
     <div id="findResults" class="view" hidden></div>
@@ -607,12 +612,27 @@
       (swap its + and −).</p>
     <p id="testNow" class="muted" hidden></p>
   </section>
+  <section id="ident" class="card">
+    <h2>This radio</h2>
+    <div class="row"><label for="identHw">Type</label><select id="identHw">
+      <option value="box">Box radio: four preset buttons</option>
+      <option value="cathedral">Cathedral (Phonosphere): six-way selector, back button</option></select></div>
+    <div class="row"><label for="identName">Name</label><input id="identName" maxlength="40" placeholder="Sleep Radio"></div>
+    <button id="identSave" type="button">Save and restart</button>
+    <p id="identNote" class="muted" style="margin:.5rem 0 0;font-size:.85rem">What the DJ calls the radio, on the page
+      and in the set-up Wi-Fi's name. Left empty, it's the type's own: Sleep Radio, or Phonosphere. The radio
+      restarts to take it up (about a minute). (Recorded jingles are just files: swap them for ones with the new name.)</p>
+  </section>
   <section id="knob" class="card" hidden>
     <h2>Knob switch</h2>
     <button id="knobBtn" type="button"><i id="knobFill"></i><span>Tap: pause / play · Hold 3 s: say the address</span></button>
     <p id="knobNote" class="muted" style="margin:.5rem 0 0;font-size:.85rem">The same as pressing the radio's knob.
       Holding it for 3 seconds makes the radio beep and then read out its network address, or say it isn't
       connected.</p>
+    <div id="backRow" hidden>
+      <h2 style="margin-top:1rem">The back button</h2>
+      <button id="backBtn" type="button"><i id="backFill"></i><span>Tap: day / night (or yes, in the service menu) · Hold 5 s: the service menu</span></button>
+    </div>
     <h2 style="margin-top:1rem">Service menu</h2>
     <button id="serviceBtn" type="button">Open the service menu</button>
     <p id="serviceNote" class="muted" style="margin:.5rem 0 0;font-size:.85rem">The same as holding buttons 1 and 4
@@ -797,7 +817,7 @@
           <button type="submit">Add</button>
         </form>
         <p id="rAddNote" class="muted" style="margin:.6rem 0 0;font-size:.85rem">Find new stations with the search
-          on the Find tab, or add one by its stream address here. A station plays instead of the Sleep Radio show,
+          on the Find tab, or add one by its stream address here. A station plays instead of the <span class="radioName">Sleep Radio</span> show,
           through the speakers, knob and sleep timer as usual. Needs the radio online.</p>
       </section>
       <section class="card">
@@ -939,6 +959,7 @@
 <audio id="audio" preload="none"></audio>
 <script>
 const $ = id => document.getElementById(id);
+let RADIO = "Sleep Radio";                // the radio's name (from its status: showRadioName)
 function toast(text) {
   const t = $("toast");
   t.textContent = text; t.hidden = false;
@@ -1128,7 +1149,7 @@ async function loadArtists() {
     const data = await (await fetch("/api/artists", { cache: "no-store" })).json();
     allArtists = data.artists; allLists = data.profiles;
     const sel = $("artistRadio");
-    sel.replaceChildren(new Option("All artists (Sleep Radio)", ""));
+    sel.replaceChildren(new Option(`All artists (${RADIO})`, ""));
     if (allLists.length) {
       const g = Object.assign(document.createElement("optgroup"), { label: "Your lists" });
       allLists.forEach(p => g.append(new Option(`${p.name} (${p.artists.length} artists)`, "p:" + p.name)));
@@ -1148,10 +1169,10 @@ function showSelection(artist, profile, name) {
   if (selNow && ![...sel.options].some(o => o.value === selNow))   // list not loaded yet
     sel.append(new Option(profile || artist, selNow));
   sel.value = selNow;
-  const words = (name || "Sleep Radio").split(" ");
+  const words = (name || RADIO).split(" ");
   const last = words.pop();
   $("stationName").replaceChildren(words.join(" ") + " ", Object.assign(document.createElement("span"), { textContent: last }));
-  document.title = name || "Sleep Radio";
+  document.title = name || RADIO;
 }
 $("artistRadio").onchange = async e => {
   const v = e.target.value;
@@ -1772,6 +1793,44 @@ function knobUp(cancel) {
   $("knobBtn").classList.remove("holding");
   if (!knobLong && !cancel) knobPress("short");
 }
+// The cathedral's back button, as the real one: tap, or hold 5 s.
+let backTimer = null, backLong = false;
+async function backPress(press) {
+  try { await radioPost("/api/knob", { press }); setTimeout(loadButtons, 800); }
+  catch (e) { toast("Couldn't: " + e.message); }
+}
+$("backBtn").addEventListener("pointerdown", e => {
+  e.preventDefault(); if (backTimer) return; backLong = false; $("backBtn").classList.add("holding");
+  backTimer = setTimeout(() => { backLong = true; $("backBtn").classList.remove("holding"); backPress("back_long"); }, 5000);
+});
+function backUp(cancel) {
+  if (!backTimer) return;
+  clearTimeout(backTimer); backTimer = null; $("backBtn").classList.remove("holding");
+  if (!backLong && !cancel) backPress("back");
+}
+$("backBtn").addEventListener("pointerup", () => backUp(false));
+$("backBtn").addEventListener("pointercancel", () => backUp(true));
+$("backBtn").addEventListener("pointerleave", () => backUp(true));
+$("backBtn").addEventListener("contextmenu", e => e.preventDefault());
+// This radio: its type (box / cathedral) and its name.
+let identState = null;
+async function loadIdentity() {
+  try {
+    identState = await (await fetch("/api/identity", { cache: "no-store" })).json();
+    $("identHw").value = identState.hardware;
+    $("identName").value = identState.station_name;
+    $("identName").placeholder = identState.default_names[identState.hardware] || "Sleep Radio";
+  } catch {}
+}
+$("identHw").onchange = () => { if (identState) $("identName").placeholder = identState.default_names[$("identHw").value] || "Sleep Radio"; };
+$("identSave").onclick = async () => {
+  try {
+    const r = await radioPost("/api/identity", { hardware: $("identHw").value, station_name: $("identName").value.trim() });
+    $("identNote").textContent = r.restarting ? "Saved: the radio is restarting (about a minute)."
+                                              : "Saved: used the next time the radio starts.";
+  } catch (e) { $("identNote").textContent = "Not saved: " + e.message + "."; }
+};
+loadIdentity();
 $("serviceBtn").onclick = async () => {
   try {
     const r = await (await fetch("/api/knob", { method: "POST", headers: { "Content-Type": "application/json" },
@@ -1854,12 +1913,22 @@ const KIND = { track: "Now playing", dj: "On the mic", jingle: "Station ident", 
 const ICON = { track: "♪", dj: "🎙", jingle: "✦", news: "📰", radio: "📻" };
 const hhmm = t => new Date(t * 1000).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 
+// The radio's name ("Sleep Radio", "Phonosphere", or its own): shown wherever the page names it.
+function showRadioName(n) {
+  if (!n || n === RADIO) return;
+  RADIO = n;
+  document.querySelectorAll(".radioName").forEach(e => e.textContent = n);
+  const w = n.toUpperCase().split(" ");
+  $("faceWord").replaceChildren(...w.flatMap((x, i) => i ? [document.createElement("br"), x] : [x]));
+  if (!document.title || document.title === "Sleep Radio") document.title = n;
+}
 async function poll() {
   if (shuttingDown) return;
   try {
     const r = await fetch("/api/status", { cache: "no-store" });
     if (r.status === 401) return showLogin();
     const s = await r.json();
+    showRadioName(s.radio_name);
     // Follow the speaker (the knob, or another page), except mid-drag.
     hasSpeaker = !!s.speaker;
     lastStatus = s;
@@ -2140,7 +2209,7 @@ async function playEpisode(id, guid) {
 
 let histAll = false;
 function showHistory(items) {
-  const kinds = { track: "Sleep Radio", dj: "The DJ", jingle: "Station ident", news: "News", radio: "Internet radio", book: "Audiobook", episode: "Podcast",
+  const kinds = { track: RADIO, dj: "The DJ", jingle: "Station ident", news: "News", radio: "Internet radio", book: "Audiobook", episode: "Podcast",
                   album: "Album" };
   const shown = histAll ? items : items.slice(0, 5);
   $("history").replaceChildren(...(items.length ? shown.map(h => {
@@ -2265,7 +2334,7 @@ function showRadio(src, err) {
     loadButtons();
     drawHome();
   }
-  if (err && !src) rNote("rNote", "Stopped " + err + ". Back on Sleep Radio.", true);
+  if (err && !src) rNote("rNote", "Stopped " + err + ". Back on " + RADIO + ".", true);
   else if (src || !$("rNote").classList.contains("bad")) rNote("rNote", "");
   for (const b of document.querySelectorAll("#rStations button[data-url]")) markPlay(b);
 }
@@ -2353,7 +2422,7 @@ async function stopRadio() {
     const d = await radioPost("/api/radio/stop");
     rNote("rNote", "");
     showRadio(d.source, null);
-    toast("Back to Sleep Radio");
+    toast("Back to " + RADIO);
     setTimeout(poll, 800);
   } catch (e) { rNote("rNote", "Couldn't: " + e.message + ".", true); }
 }
@@ -2390,7 +2459,7 @@ async function loadButtons() {
   } catch {}
 }
 function buttonChoices() {
-  const groups = [["Sleep Radio", [["Sleep Radio (all artists)", { kind: "show", artist: null, profile: null }],
+  const groups = [[RADIO, [[`${RADIO} (all artists)`, { kind: "show", artist: null, profile: null }],
                                    ...bLists.map(l => [l.name, { kind: "show", profile: l.name }])]],
                   ["My stations", rStations.map(st => [st.name, { kind: "radio", ...st }])],
                   ["Audiobooks", books.map(b => [b.title, { kind: "book", key: b.key, title: b.title }])],
@@ -2483,6 +2552,8 @@ function showPresets() {
   if (!bState) return;
   showBank();
   if (keysDown.size) { presetsStale = true; return; }    // (not while one's held: that would lose it)
+  $("presets").style.gridTemplateColumns = `repeat(${bState.buttons.length}, 1fr)`;
+  $("backRow").hidden = !bState.selector;
   $("presets").replaceChildren(...bState.buttons.map((b, i) => {
     const btn = document.createElement("button");
     btn.type = "button";
@@ -2492,6 +2563,10 @@ function showPresets() {
     btn.setAttribute("aria-label", `Button ${i + 1}: ${b.preset ? b.label : "empty"}${b.playing ? ", playing" : ""}`);
     btn.append(Object.assign(document.createElement("span"), { className: "cap", textContent: i + 1 }),
                Object.assign(document.createElement("span"), { className: "lbl", textContent: b.preset ? b.label : "Empty" }));
+    if (bState.selector) {               // the cathedral's rotary selector: a tap goes to that position
+      btn.onclick = () => pressButton(i + 1);
+      return btn;
+    }
     btn.addEventListener("pointerdown", e => keyDown(btn, i + 1, e));
     btn.addEventListener("pointerup", () => keyUp(btn, i + 1));
     btn.addEventListener("pointercancel", () => keyUp(btn, i + 1));
@@ -2506,7 +2581,11 @@ function showButtons() {
   drawSettings();
   const playing = bState ? bState.buttons.findIndex(b => b.playing) : -1;
   $("needle").hidden = playing < 0;
-  if (playing >= 0) $("needle").style.left = (12.5 + 25 * playing) + "%";
+  const nb = bState ? bState.buttons.length : 4;
+  if (document.querySelectorAll("#scale span").length !== nb)       // the dial's numbers: one per preset
+    $("scale").replaceChildren(...Array.from({ length: nb }, (_, j) =>
+      Object.assign(document.createElement("span"), { textContent: j + 1, style: `left:${100 / nb * (j + 0.5)}%` })), $("needle"));
+  if (playing >= 0) $("needle").style.left = (100 / nb * (playing + 0.5)) + "%";
   document.querySelectorAll("#scale span").forEach((sp, j) => sp.classList.toggle("on", j === playing));
   if (!bState) return;
   $("bList").replaceChildren(...bState.buttons.map((b, i) => {

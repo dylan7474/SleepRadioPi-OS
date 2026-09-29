@@ -33,7 +33,11 @@ class Settings:
     broadcast_chattiness: str = "maximum"
     podcasts: list = field(default_factory=list)  # the shows followed: [{"feed_url", "title", "author"}]
     radio_stations: list | None = None    # internet radio: [{"name", "url", "info"?}]; None = the starter set
-    buttons: list = field(default_factory=list)   # the 4 preset buttons (io/presets.py); null = empty (the day set)
+    station_name: str | None = None       # the radio's name as spoken and shown; None: by the hardware
+                                          # ("Sleep Radio", or "Phonosphere" for the cathedral) -- config/brand.py
+    hardware: str = "box"                 # "box": 4 preset buttons; "cathedral": the Phonosphere -- a 6-way
+                                          # rotary selector, a back button, a VU needle and a grille light
+    buttons: list = field(default_factory=list)   # the preset buttons (io/presets.py); null = empty (the day set)
     buttons_night: list = field(default_factory=list)   # ...the night set
     buttons_bank: str = "day"             # the set in use: "day" or "night"
     buttons_auto: dict = field(default_factory=dict)    # {"on", "night_min", "day_min"}: swap sets by the clock

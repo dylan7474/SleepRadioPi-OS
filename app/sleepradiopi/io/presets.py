@@ -36,9 +36,14 @@ from sleepradiopi.playback import radio as radio_mod
 
 log = logging.getLogger(__name__)
 
-N = 4
-KEYCODES = {2: 0, 3: 1, 4: 2, 5: 3}          # KEY_1..KEY_4 -> button index
-WORDS = ("one", "two", "three", "four")
+N = 4                                         # the box radio's buttons
+MAX_N = 6                                     # the cathedral's selector positions
+KEYCODES = {2: 0, 3: 1, 4: 2, 5: 3, 6: 4, 7: 5}   # KEY_1..KEY_6 -> preset index
+BACK_KEY = 139                                # KEY_MENU: the cathedral's hidden back button
+WORDS = ("one", "two", "three", "four", "five", "six")
+SETTLE_S = 0.6            # the selector: a position counts once it's been there this long (turning
+                          # from 1 to 4 passes 2 and 3 without playing them)
+BACK_HOLD_S = 5.0         # the back button held this long: the service menu
 ACTIONS = {"time": "Say the time", "news": "The news now", "sleep": "Sleep timer (30 min)",
            "address": "Say the address", "noise": "Noise on/off", "dj": "DJ on/off"}
 BANKS = ("day", "night")
@@ -88,11 +93,13 @@ def validate(preset) -> dict | None:
     raise ValueError("a button holds the show, a radio station, an album, an audiobook, a podcast or an action")
 
 
-def validate_all(presets) -> list:
-    """The four buttons (a shorter list is padded with empty ones)."""
-    if not isinstance(presets, list) or len(presets) > N:
-        raise ValueError(f"send a list of up to {N} buttons")
-    return [validate(p) for p in presets] + [None] * (N - len(presets))
+def validate_all(presets, n: int = N) -> list:
+    """The buttons (a shorter list is padded with empty ones; a longer one, up
+    to MAX_N, is kept -- e.g. a cathedral's six, on a box's four)."""
+    if not isinstance(presets, list) or len(presets) > MAX_N:
+        raise ValueError(f"send a list of up to {MAX_N} buttons")
+    out = [validate(p) for p in presets]
+    return (out + [None] * (n - len(out)))[:max(n, len(out))]
 
 
 def validate_auto(auto) -> dict:
@@ -138,7 +145,8 @@ def label(preset: dict | None, station_name: Callable[[dict], str] | None = None
         return ACTIONS[preset["action"]]
     if station_name is not None:
         return station_name(preset)
-    return preset["profile"] or (f"{preset['artist']} Radio" if preset["artist"] else "Sleep Radio")
+    from sleepradiopi.config import brand
+    return preset["profile"] or (f"{preset['artist']} Radio" if preset["artist"] else brand.name)
 
 
 def same(a: dict | None, b: dict | None) -> bool:
@@ -164,14 +172,19 @@ class Presets:
 
     def __init__(self, station, control=None, config_file: Path | None = None,
                  presets: list | None = None, announcer=None, night: list | None = None,
-                 bank: str = "day", auto: dict | None = None) -> None:
+                 bank: str = "day", auto: dict | None = None, count: int = N, selector: bool = False) -> None:
+        """count: how many presets (4 buttons on the box, 6 on the cathedral's
+        selector); selector: they're positions of a rotary switch, not buttons --
+        landing on one plays it (after SETTLE_S), and there's no hold-to-save."""
+        self.count, self.selector = count, selector
+        self._settle: threading.Timer | None = None
         self.station = station
         self.control = control           # SpeakerControl: play/pause, sleep timer, clips
         self.menu = None                 # the service menu (io/service.py): gets the presses while it's open
         self.keys = None                 # the knob's key handlers {keycode: (down, up)}: the page's buttons use them too
         self.config_file = config_file
         self.announcer = announcer       # says the address
-        self.banks = {"day": self._safe(presets), "night": self._safe(night)}
+        self.banks = {"day": self._safe(presets, count), "night": self._safe(night, count)}
         self.bank = bank if bank in BANKS else "day"
         try:
             self.auto = validate_auto(auto)
@@ -182,12 +195,12 @@ class Presets:
         self._lock = threading.Lock()
 
     @staticmethod
-    def _safe(presets) -> list:
+    def _safe(presets, n: int = N) -> list:
         try:
-            return validate_all(presets or [])
+            return validate_all(presets or [], n)
         except ValueError as e:          # a hand-edited config: don't stop the station
             log.warning("buttons ignored: %s", e)
-            return [None] * N
+            return [None] * n
 
     @property
     def presets(self) -> list:
@@ -229,7 +242,8 @@ class Presets:
     def status(self) -> dict:
         now = self.current()
         return {"buttons": [{"preset": p, "label": self.label(p), "playing": same(p, now)}
-                            for p in self.presets],
+                            for p in self.presets[:self.count]],
+                "count": self.count, "selector": self.selector,
                 "now": {"preset": now, "label": self.label(now)}, "actions": ACTIONS,
                 "bank": self.bank, "auto": self.auto,
                 "service": self.menu.state if self.menu is not None else None}
@@ -238,8 +252,8 @@ class Presets:
 
     def set(self, index: int, preset) -> dict | None:
         """Put a preset on a button (None empties it). Saved."""
-        if not 0 <= index < N:
-            raise ValueError(f"buttons are 1 to {N}")
+        if not 0 <= index < self.count:
+            raise ValueError(f"buttons are 1 to {self.count}")
         preset = validate(preset)
         with self._lock:
             self.presets[index] = preset
@@ -248,7 +262,7 @@ class Presets:
         return preset
 
     def set_all(self, presets: list) -> None:
-        presets = validate_all(presets)
+        presets = validate_all(presets, self.count)
         with self._lock:
             self.presets = presets
             self._save()
@@ -257,9 +271,9 @@ class Presets:
         """From a loaded settings file (any of them may be missing)."""
         with self._lock:
             if day is not None:
-                self.banks["day"] = validate_all(day)
+                self.banks["day"] = validate_all(day, self.count)
             if night is not None:
-                self.banks["night"] = validate_all(night)
+                self.banks["night"] = validate_all(night, self.count)
             if bank in BANKS:
                 self.bank = bank
             if auto is not None:
@@ -338,11 +352,48 @@ class Presets:
 
     # --- the buttons -----------------------------------------------------------------------
 
+    # --- the cathedral's selector and back button -----------------------------------------
+
+    def selector_down(self, index: int) -> None:
+        """The selector reached a position: it counts once it stays there SETTLE_S."""
+        if self._settle is not None:
+            self._settle.cancel()
+        self._settle = threading.Timer(SETTLE_S, self._settled, args=(index,))
+        self._settle.daemon = True
+        self._settle.start()
+
+    def selector_up(self, index: int) -> None:
+        """The selector left a position (on its way to another)."""
+        if self._settle is not None and self._settle.args == (index,):
+            self._settle.cancel()
+            self._settle = None
+
+    def _settled(self, index: int) -> None:
+        self._settle = None
+        self.press(index)
+
+    def back_press(self) -> None:
+        """The hidden back button: in the service menu, confirm; otherwise swap day and night."""
+        if self.menu is not None and self.menu.active:
+            self.menu.confirm()
+        else:
+            self.toggle_bank()
+
+    def back_hold(self) -> None:
+        """Held for BACK_HOLD_S: the service menu."""
+        if self.menu is not None and not self.menu.active:
+            self.menu.open()
+
     def press(self, index: int) -> None:
         """A short press: play the button's preset, or pause/play if it's what's
-        playing already; do its action."""
+        playing already; do its action. (The selector: a position reached.)"""
+        if not 0 <= index < self.count:
+            return
         if self.menu is not None and self.menu.active:
-            self.menu.press(index)
+            (self.menu.select if self.selector else self.menu.press)(index)
+            return
+        if self.selector:
+            self._choose(index)
             return
         preset = self.presets[index]
         log.info("button %d pressed: %s", index + 1, self.label(preset))
@@ -364,11 +415,34 @@ class Presets:
         if self.control is not None:
             self.control.play()
 
+    def _choose(self, index: int) -> None:
+        """The selector landed on a position: play it (nothing to toggle -- it's already
+        on if it's what's playing). An empty position just beeps."""
+        preset = self.presets[index]
+        log.info("selector %d: %s", index + 1, self.label(preset))
+        if preset is None:
+            self._clip(beep((440.0, 330.0)), "Button")
+            return
+        if preset["kind"] == "action":
+            self._action(preset["action"])
+            return
+        if not same(preset, self.current()):
+            try:
+                self.apply(preset)
+            except ValueError as e:
+                log.warning("selector %d: %s", index + 1, e)
+                self._say(f"Sorry, I can't play {self.label(preset)}.")
+                return
+        if self.control is not None:
+            self.control.play()
+
     def hold(self, index: int) -> None:
         """A long press: keep what's playing now on this button."""
         if self.menu is not None and self.menu.active:
             self.menu.press(index)
             return
+        if self.selector:
+            return                           # (a switch has no hold: save from the page)
         preset = self.set(index, self.current())
         if not getattr(self.station, "dj_on", True):     # the DJ off: no words -- a "saved" sound instead
             self._clip(beep((1320.0, 1760.0, 1320.0, 1760.0), 0.07), "Button")

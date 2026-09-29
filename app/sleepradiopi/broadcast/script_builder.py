@@ -66,13 +66,14 @@ OUTROS = ["That was", "You just heard", "We just heard"]
 INTROS = ["Coming up,", "Next up,", "Here's", "Let's hear"]
 EXACT_TIME_LEADS = ["The time is", "It's"]
 STATION_ONLY = ["You're with {station}.", "More music in a moment."]
-DEFAULT_STATION = "Sleep Radio"
+DEFAULT_STATION = "Sleep Radio"      # (the box radio's name; the radio's own is config/brand.name)
 
 
 def artist_station_name(artist: str | None) -> str:
-    """"The Beatles" -> "Beatles Radio"; None -> "Sleep Radio"."""
+    """"The Beatles" -> "Beatles Radio"; None -> the radio's name ("Sleep Radio", "Phonosphere")."""
     if not artist:
-        return DEFAULT_STATION
+        from sleepradiopi.config import brand
+        return brand.name
     name = artist.strip()
     if name.lower().startswith("the ") and len(name) > 4:
         name = name[4:]
@@ -81,10 +82,11 @@ def artist_station_name(artist: str | None) -> str:
 
 class DjScriptBuilder:
     def __init__(self, rng: random.Random | None = None, hooks: HookPool | None = None,
-                 station: str = DEFAULT_STATION) -> None:
+                 station: str | None = None) -> None:
+        from sleepradiopi.config import brand
         self.rng = rng or random.Random()
         self.hooks = hooks
-        self.station = station      # the name the DJ uses; changes with artist radio
+        self.station = station or brand.name   # the name the DJ uses; changes with artist radio
 
     def _pick(self, options: list[str]) -> str:
         return options[self.rng.randrange(len(options))].format(station=self.station)

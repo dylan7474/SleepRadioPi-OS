@@ -74,7 +74,15 @@ def load(path: Path = NETWORKS) -> dict:
         data = {}
     nets = [n for n in data.get("networks", []) if isinstance(n, dict) and isinstance(n.get("ssid"), str)]
     hotspot = data.get("hotspot") if isinstance(data.get("hotspot"), dict) else {}
-    return {"networks": nets, "hotspot": {**HOTSPOT, **hotspot}}
+    return {"networks": nets, "hotspot": {**default_hotspot(path), **hotspot}}
+
+
+def default_hotspot(networks: Path = NETWORKS) -> dict:
+    """The set-up network, named after the radio ("Phonosphere-Setup") unless changed."""
+    from sleepradiopi.config import brand
+    name = brand.name_from_config(networks.parent / ".config" / "sleepradiopi" / "config.json") \
+        if networks == NETWORKS else brand.name
+    return {**HOTSPOT, "ssid": brand.hotspot_ssid(name)}
 
 
 def save(data: dict, path: Path = NETWORKS) -> None:

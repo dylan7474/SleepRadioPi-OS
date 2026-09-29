@@ -385,7 +385,8 @@ class Station:
         home = Path.home()
         if ready() or not startup_sound.settings(home)[0]:    # (the page's "At power-on: Chime / Silent")
             return
-        self.on_air = OnAir("wait", "Sleep Radio is warming up")
+        from sleepradiopi.config import brand
+        self.on_air = OnAir("wait", f"{brand.name} is warming up")
         parts = [np.frombuffer(startup_sound.cached_chime(home, 1.0), dtype=np.int16).reshape(-1, pcm.CHANNELS)]
         words = startup_sound.speech_file(home, self.dj_voice)
         log.info("back to the show: warming up")
@@ -407,7 +408,8 @@ class Station:
             return all(s.speech.future.done() for s in steps if s.kind == "say")
         if ready() or not startup_sound.settings(Path.home())[0]:
             return
-        self.on_air = OnAir("wait", "Sleep Radio is warming up")
+        from sleepradiopi.config import brand
+        self.on_air = OnAir("wait", f"{brand.name} is warming up")
         tick = np.concatenate([_tick(), pcm.silence(WARM_TICK_S)])
         end = time.monotonic() + SPEECH_WAIT_S
         while not ready() and time.monotonic() < end:
@@ -1770,7 +1772,9 @@ class Station:
         on_air = self.on_air
         nxt = self.next_track
         news = self._news_ready
+        from sleepradiopi.config import brand
         return {
+            "radio_name": brand.name,
             "on_air": self.is_on_air,
             "listeners": self._listeners,
             "now": None if on_air is None else {

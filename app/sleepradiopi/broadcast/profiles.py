@@ -45,7 +45,8 @@ def validate(profiles) -> list[dict]:
 
 
 def station_name(profile_name: str) -> str:
-    """"Friday List" -> "Friday List on Sleep Radio"; "Rock Radio" stays."""
+    """"Friday List" -> "Friday List on Sleep Radio" (the radio's name); "Rock Radio" stays."""
+    from sleepradiopi.config import brand
     if profile_name.lower().endswith("radio"):
         return profile_name
-    return f"{profile_name} on {DEFAULT_STATION}"
+    return f"{profile_name} on {brand.name}"

@@ -159,20 +159,25 @@ class Knob:
     def __init__(self, on_turn: Callable[[int], None], on_press: Callable[[], None],
                  devices: Path = Path("/dev/input"),
                  on_long_press: Callable[[], None] | None = None,
-                 buttons: dict | None = None, chord=None) -> None:
-        """buttons: keycode -> (on_short, on_long) for the preset buttons;
-        chord: a Chord (or a list of them): some of them held together."""
+                 buttons: dict | None = None, chord=None, raw_keys: dict | None = None) -> None:
+        """buttons: keycode -> (on_short, on_long[, long_s]) for the preset
+        buttons; chord: a Chord (or a list of them): some of them held together;
+        raw_keys: keycode -> (on_down, on_up), passed straight through (a rotary
+        selector's positions)."""
         chords = [] if chord is None else (list(chord) if isinstance(chord, (list, tuple)) else [chord])
         self.on_turn = on_turn
         self.keys = {}
         timers = {}
-        for code, (short, long_) in (buttons or {}).items():
-            t = timers[code] = PressTimer(short, long_, name=f"button {code - 1}")
+        for code, spec in (buttons or {}).items():
+            short, long_ = spec[0], spec[1]
+            t = timers[code] = PressTimer(short, long_, long_s=spec[2] if len(spec) > 2 else LONG_PRESS_S,
+                                          name=f"button {code - 1}")
             if not chords:
                 self.keys[code] = (t.down, t.up)
             else:
                 self.keys[code] = (lambda t=t, c=code: (t.down(), [ch.key(c, True, timers) for ch in chords]),
                                    lambda t=t, c=code: ([ch.key(c, False, timers) for ch in chords], t.up()))
+        self.keys.update(raw_keys or {})
         if on_long_press is None:            # act as soon as it's pressed
             self.on_press, self.on_release = on_press, None
         else:

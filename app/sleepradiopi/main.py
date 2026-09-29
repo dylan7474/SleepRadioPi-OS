@@ -45,13 +45,14 @@ BUNDLED_HOOKS = Path(__file__).resolve().parent / "data" / "dj_hooks_70s.txt"
 def _make_warming_up(station: Station, ready) -> None:
     """Make the start-up sound's spoken line in the DJ's voice, once (per voice),
     after the show is under way. startup_sound.py plays it at the next start."""
-    path = startup_sound.speech_file(Path.home(), station.dj_voice)
+    from sleepradiopi.config import brand
+    path = startup_sound.speech_file(Path.home(), station.dj_voice, brand.name)
     if path.is_file():
         return
     while not ready():
         time.sleep(5)
     try:
-        audio = station.render_speech(startup_sound.WARMING_UP)
+        audio = station.render_speech(startup_sound.warming_up(brand.name))
         path.parent.mkdir(parents=True, exist_ok=True)
         tmp = path.with_name(path.name + ".tmp")
         with open(tmp, "wb") as f:
@@ -195,6 +196,7 @@ def _service_menu(station: Station, control, presets, config_file: Path, ready=l
     volume_file = Path.home() / ".local" / "state" / "sleepradiopi" / "speaker.json"
     cache = Path.home() / ".cache" / "sleepradiopi" / "service-menu"
     made: dict = {}                   # the status report (made fresh), in memory
+    menu_ref: list = []               # (the menu, once made: which kind of status question it asks)
     making = threading.Lock()
     sound = service_mod.MenuSound(_tick(), pcm.SAMPLE_RATE, pcm.CHANNELS)
     held = [False]                    # the menu has the speaker
@@ -250,7 +252,7 @@ def _service_menu(station: Station, control, presets, config_file: Path, ready=l
                     return
         while True:
             try:
-                text = f"{status()} {service_mod.ROLLBACK_ASK}"
+                text = f"{status()} {menu_ref[0].rollback_ask if menu_ref else service_mod.ROLLBACK_ASK}"
                 if not kept(text).is_file():
                     render(text)
             except Exception:
@@ -361,9 +363,11 @@ def _service_menu(station: Station, control, presets, config_file: Path, ready=l
 
     if station._has_voice:
         threading.Thread(target=make_fixed_lines, name="service-lines", daemon=True).start()
-    return service_mod.ServiceMenu(say, {"restart": restart, "wifi": forget_wifi, "status": status,
+    menu = service_mod.ServiceMenu(say, {"restart": restart, "wifi": forget_wifi, "status": status,
                                          "rollback": rollback, "reset": factory_reset}, prepare=prepare, busy=busy,
                                    on_open=on_open, on_close=on_close)
+    menu_ref.append(menu)
+    return menu
 
 
 def main() -> None:
@@ -377,6 +381,8 @@ def main() -> None:
         save(args.config, load(args.config))
         logging.info("wrote default settings to %s", args.config)
     settings = load(args.config)
+    from sleepradiopi.config import brand
+    brand.set_name(brand.name_for(asdict(settings)))   # "Sleep Radio", "Phonosphere", or station_name
 
     cfg = asdict(settings)
     cfg["music_folder"] = Path(settings.music_folder or MEDIA / "music").expanduser()
@@ -421,35 +427,50 @@ def main() -> None:
         if station._has_voice:
             threading.Thread(target=_make_warming_up, args=(station, on_air), name="warming-up",
                              daemon=True).start()
+        cathedral = settings.hardware == "cathedral"
         presets = presets_mod.Presets(station, control, args.config, settings.buttons, announcer,
-                                      settings.buttons_night, settings.buttons_bank, settings.buttons_auto)
+                                      settings.buttons_night, settings.buttons_bank, settings.buttons_auto,
+                                      count=presets_mod.MAX_N if cathedral else presets_mod.N, selector=cathedral)
         presets.keep_auto()
         # An audiobook steps back a minute after the sleep timer, and pauses the radio at its end.
         station.paused_by_sleep = lambda: control.slept
         station.on_book_end = control.pause
-        buttons = {code: (lambda i=i: presets.press(i), lambda i=i: presets.hold(i))
-                   for code, i in presets_mod.KEYCODES.items()}
-        # The service menu: hold buttons 1 and 4 together for 5 s.
         menu = presets.menu = _service_menu(station, control, presets, args.config, ready=on_air)
+        menu.selector = cathedral
         from sleepradiopi.broadcast.station import _tick
         tick = _tick()
-        chord = [Chord({2, 5}, service_mod.HOLD_S, on_start=menu.holding, on_fire=menu.open,
-                       on_tick=lambda: presets._clip(tick, "Button")),   # a tick a second, counting down
-                 # buttons 2 and 3 held: swap the day and night sets of buttons
-                 Chord(set(presets_mod.BANK_KEYS), presets_mod.BANK_HOLD_S, on_start=lambda: None,
-                       on_fire=presets.toggle_bank, on_tick=lambda: presets._clip(tick, "Button"))]
+        raw_keys = {}
+        if cathedral:
+            # The Phonosphere: a 6-way rotary selector (a position counts once the knob
+            # settles there) and a hidden button on the back -- a press swaps day and
+            # night (or confirms in the service menu), a 5 s hold opens the service menu.
+            raw_keys = {code: (lambda i=i: presets.selector_down(i), lambda i=i: presets.selector_up(i))
+                        for code, i in presets_mod.KEYCODES.items() if i < presets.count}
+            buttons = {presets_mod.BACK_KEY: (presets.back_press, presets.back_hold, presets_mod.BACK_HOLD_S)}
+            chord = []
+        else:
+            buttons = {code: (lambda i=i: presets.press(i), lambda i=i: presets.hold(i))
+                       for code, i in presets_mod.KEYCODES.items() if i < presets.count}
+            # The service menu: hold buttons 1 and 4 together for 5 s.
+            chord = [Chord({2, 5}, service_mod.HOLD_S, on_start=menu.holding, on_fire=menu.open,
+                           on_tick=lambda: presets._clip(tick, "Button")),   # a tick a second, counting down
+                     # buttons 2 and 3 held: swap the day and night sets of buttons
+                     Chord(set(presets_mod.BANK_KEYS), presets_mod.BANK_HOLD_S, on_start=lambda: None,
+                           on_fire=presets.toggle_bank, on_tick=lambda: presets._clip(tick, "Button"))]
         # (SLEEPRADIOPI_INPUT_DIR: somewhere else to look for the knob and buttons -- e.g. an empty
         # folder for a test run on a desktop, whose keyboard would otherwise count as buttons 1-4)
         knob = Knob(lambda clicks: control.step(clicks * settings.knob_step), control.toggle,
                     devices=Path(os.environ.get("SLEEPRADIOPI_INPUT_DIR", "/dev/input")),
-                    on_long_press=announcer.speak, buttons=buttons, chord=chord)
+                    on_long_press=announcer.speak, buttons=buttons, chord=chord, raw_keys=raw_keys)
         presets.keys = knob.keys         # the page's buttons go down and up through the same timers
         knob.start()
         control.play()   # a bedside radio plays as soon as it's powered
     else:
         station = Station(cfg, tts, stream)
+        cathedral = settings.hardware == "cathedral"
         presets = presets_mod.Presets(station, None, args.config, settings.buttons, None,
-                                      settings.buttons_night, settings.buttons_bank, settings.buttons_auto)
+                                      settings.buttons_night, settings.buttons_bank, settings.buttons_auto,
+                                      count=presets_mod.MAX_N if cathedral else presets_mod.N, selector=cathedral)
         presets.keep_auto()
     # Podcasts: the shows followed are settings; their episode lists refresh in the background.
     station.podcasts.save = lambda shows: save_setting(args.config, "podcasts", shows)

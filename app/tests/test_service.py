@@ -265,3 +265,23 @@ def test_the_menu_sound_ticks_while_words_are_made_then_says_them() -> None:
     s.put(np.full((50, 2), 1, np.int16))
     s.put(np.full((30, 2), 2, np.int16))                       # a new line cuts the old one off
     assert (s.next(30) == 2).all()
+
+
+def test_the_selector_version_turn_to_choose_back_button_to_confirm() -> None:
+    r = Rig()
+    r.menu.selector = True
+    r.menu.open()
+    assert r.said[-1] == service.SEL_MENU
+    r.menu.select(3)
+    assert r.said[-1] == service.SEL_OPTIONS[3] and r.done == []   # it says what's there, does nothing yet
+    r.menu.confirm()
+    assert r.said[-1] == service.SEL_RESET_ASK
+    r.menu.select(0)                                                 # turning away: cancelled
+    assert r.said[-1] == service.CANCELLED and not r.menu.active and r.done == []
+    r.menu.open(); r.menu.select(2); r.menu.confirm()
+    assert r.menu.state == "rollback?"
+    r.menu.confirm()
+    if getattr(r.menu, "worker", None): r.menu.worker.join(2)
+    assert r.done == ["rollback"]
+    r.menu.open(); r.menu.select(5)
+    assert r.said[-1] == service.SEL_NOTHING

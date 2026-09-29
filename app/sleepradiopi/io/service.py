@@ -48,7 +48,19 @@ RESET_ASK = ("Factory reset. This puts every setting back to how it came, includ
 RESET_NEXT = "Now press three."
 RESETTING = "Resetting all the settings. Restarting, then I'll tell you how to set me up."
 CANCELLED = "Cancelled. Nothing has changed."
-FIXED = (MENU, CLOSED, RESTARTING, WIFI, ROLLBACK, NO_ROLLBACK, RESET_ASK, RESET_NEXT, RESETTING, CANCELLED)
+# The cathedral: a rotary selector and a button on the back. Turn to choose (it
+# says what's there), press the back button to confirm.
+SEL_MENU = ("Service menu. Turn the selector to choose, and press the button on the back to confirm. "
+            "One: restart. Two: reset the Wi-Fi. Three: a status report. Four: factory reset.")
+SEL_OPTIONS = ("Restart the radio.", "Reset the Wi-Fi.", "Status report.", "Factory reset.")
+SEL_NOTHING = "Nothing here. Turn to one, two, three or four."
+SEL_ROLLBACK_ASK = ("To go back to the previous version of the software, press the back button again. "
+                    "Or turn the selector, to leave.")
+SEL_RESET_ASK = ("Factory reset. This puts every setting back to how it came, including the Wi-Fi and the web "
+                 "page's password. Your music, audiobooks and voices are kept. To confirm, press the back button "
+                 "again. Or turn the selector, to leave.")
+FIXED = (MENU, CLOSED, RESTARTING, WIFI, ROLLBACK, NO_ROLLBACK, RESET_ASK, RESET_NEXT, RESETTING, CANCELLED,
+         SEL_MENU, *SEL_OPTIONS, SEL_NOTHING, SEL_RESET_ASK)
 
 
 class ServiceMenu:
@@ -67,6 +79,8 @@ class ServiceMenu:
         closed -- resume the show (once its last words are said), unless the
         radio is about to restart."""
         self.say, self.prepare, self.actions, self.busy = say, prepare, actions, busy
+        self.selector = False                 # the cathedral: select() + confirm() instead of press()
+        self.choice: int | None = None
         self.on_open, self.on_close = on_open, on_close
         self._status: str | None = None     # the status report's words, made ahead
         self.wait_s, self.clock = wait_s, clock
@@ -92,7 +106,8 @@ class ServiceMenu:
         log.info("service menu: open")
         if self.state is None:
             self.on_open()
-        self._to("menu", MENU)
+        self.choice = None
+        self._to("menu", SEL_MENU if self.selector else MENU)
         if self._status is None:           # (opened from the page: no hold to make them in)
             self._prepare_all()
 
@@ -100,14 +115,63 @@ class ServiceMenu:
         """Make the menu's words and the status report now (slow on a Zero), so
         a press speaks at once."""
         def run():
-            self.prepare(MENU)
+            self.prepare(SEL_MENU if self.selector else MENU)
             self.prepare(RESTARTING)
             try:
-                self._status = f"{self.actions['status']()} {ROLLBACK_ASK}"
+                self._status = f"{self.actions['status']()} {self.rollback_ask}"
                 self.prepare(self._status)
             except Exception:
                 log.exception("service menu: couldn't get the status ready")
         threading.Thread(target=run, name="service-prepare", daemon=True).start()
+
+    @property
+    def rollback_ask(self) -> str:
+        return SEL_ROLLBACK_ASK if self.selector else ROLLBACK_ASK
+
+    # --- the selector and the back button (the cathedral) -----------------------------------
+
+    def select(self, index: int) -> None:
+        """The selector reached a position while the menu is open: say what's there
+        (or, at a yes/no question, leave it)."""
+        state = self.state
+        log.info("service menu (%s): selector %d", state, index + 1)
+        if state == "menu":
+            if index < len(SEL_OPTIONS):
+                self.choice = index
+                self._to("menu", SEL_OPTIONS[index])
+            else:
+                self.choice = None
+                self._to("menu", SEL_NOTHING)
+        elif state in ("rollback?", "reset?"):
+            self.say(CANCELLED)
+            self._close()
+
+    def confirm(self) -> None:
+        """The back button while the menu is open: do what's chosen / say yes."""
+        state = self.state
+        log.info("service menu (%s): confirm %s", state, self.choice)
+        if state == "menu":
+            if self.choice is None:
+                self._to("menu", SEL_MENU)
+            elif self.choice == 0:
+                self._close(resume=False)
+                self._do("restart", RESTARTING)
+            elif self.choice == 1:
+                self.say(WIFI)
+                self._close()
+                self._do("wifi", None)
+            elif self.choice == 2:
+                self._to("rollback?", self._status or f"{self.actions['status']()} {SEL_ROLLBACK_ASK}")
+                self._prepare(ROLLBACK)
+            else:
+                self._to("reset?", SEL_RESET_ASK)
+                self._prepare(RESETTING)
+        elif state == "rollback?":
+            self._close(resume=False)
+            self._do("rollback", ROLLBACK, lambda ok: ok or (self.say(NO_ROLLBACK), self.on_close(True)))
+        elif state == "reset?":
+            self._close(resume=False)
+            self._do("reset", RESETTING)
 
     # --- presses while it's open ------------------------------------------------------------
 

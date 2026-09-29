@@ -162,7 +162,10 @@ def test_a_card_that_wont_open_is_retried_ever_more_slowly_then_reported(monkeyp
     monkeypatch.setattr(sp.time, "sleep", lambda s: naps.append(s))
     stuck = []
     out.on_stuck = lambda: stuck.append(1)
-    monkeypatch.setattr(sp.threading, "Thread", lambda target, **k: type("T", (), {"start": lambda self: target()})())
+    import threading as real
+    fake = type("threading", (), {"__getattr__": lambda self, n: getattr(real, n)})()
+    fake.Thread = lambda target, **k: type("T", (), {"start": lambda self: target()})()
+    monkeypatch.setattr(sp, "threading", fake)          # (only the speaker's own: other timers keep working)
     monkeypatch.setattr(out, "_opened_once", True)
     out.start()
     t0 = sp.time.monotonic()

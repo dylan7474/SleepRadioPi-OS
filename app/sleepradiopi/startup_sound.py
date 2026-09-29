@@ -38,7 +38,11 @@ LOCK = Path(os.environ.get("SLEEPRADIOPI_STARTUP_LOCK", "/run/sleepradiopi/start
 STOP = LOCK.with_name("startup-sound.stop")     # (the station) "I'm taking the sound card now"
 TICK_EVERY_S = 3.0
 TICK_FOR_S = 90.0                                # at most (a station that never comes)
-WARMING_UP = "Sleep Radio is warming up. The music will be with you in a moment."
+WARMING_UP = "Sleep Radio is warming up. The music will be with you in a moment."   # (the box's)
+
+
+def warming_up(radio_name: str) -> str:
+    return f"{radio_name} is warming up. The music will be with you in a moment."
 DB_PER_STEP = 0.5             # the speaker's volume scale (audio/speaker.py)
 
 
@@ -102,8 +106,13 @@ def cached_chime(home: Path, level: float) -> bytes:
     return array.array("h", [int(x * level) for x in base]).tobytes()
 
 
-def speech_file(home: Path, voice: str | None) -> Path:
-    return home / ".cache" / "sleepradiopi" / f"startup-{voice or 'none'}.raw"
+def speech_file(home: Path, voice: str | None, radio_name: str | None = None) -> Path:
+    """The spoken line, made once per voice (and per name: a renamed radio says its new one)."""
+    if radio_name is None:
+        from sleepradiopi.config import brand
+        radio_name = brand.name_from_config(home / ".config" / "sleepradiopi" / "config.json")
+    tag = "" if radio_name == "Sleep Radio" else "-" + "".join(c for c in radio_name.lower() if c.isalnum())
+    return home / ".cache" / "sleepradiopi" / f"startup-{voice or 'none'}{tag}.raw"
 
 
 def settings(home: Path) -> tuple[bool, str | None, int]:

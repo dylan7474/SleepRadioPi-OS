@@ -213,6 +213,8 @@ def make_handler(station: Station, output: Mp3Output, speaker=None,
                 self._send(json.dumps(self._birthdays_state()).encode(), "application/json")
             elif path == "/api/messages":
                 self._send(json.dumps(self._messages_state()).encode(), "application/json")
+            elif path == "/api/identity":
+                self._send(json.dumps(self._identity()).encode(), "application/json")
             elif path == "/api/voices":
                 self._send(json.dumps(self._voices_state()).encode(), "application/json")
             elif path == "/api/wifi":
@@ -314,6 +316,8 @@ def make_handler(station: Station, output: Mp3Output, speaker=None,
                 self._set_birthdays()
             elif path == "/api/messages":
                 self._set_messages()
+            elif path == "/api/identity":
+                self._set_identity()
             elif path == "/api/messages/hear":
                 self._hear_message()
             elif path == "/api/profiles":
@@ -487,6 +491,39 @@ def make_handler(station: Station, output: Mp3Output, speaker=None,
                     "today": station.birthdays.today(datetime.now()) if trusted else [],
                     "clock_trusted": trusted,
                     "can_hear": speaker is not None and station._has_voice}
+
+        def _identity(self) -> dict:
+            from sleepradiopi.config import brand
+            try:
+                saved = json.loads(config_file.read_text()) if config_file is not None else {}
+            except (OSError, ValueError):
+                saved = {}
+            return {"hardware": saved.get("hardware", "box"), "station_name": saved.get("station_name") or "",
+                    "name": brand.name, "default_names": {"box": brand.DEFAULT, **brand.BY_HARDWARE},
+                    "can_restart": bool(os.environ.get(RESTART_ENV))}
+
+        def _set_identity(self) -> None:
+            """POST /api/identity {"hardware": "box" | "cathedral", "station_name": "..." | ""}:
+            which radio this is, and its name (empty: the hardware's own). Saved; the
+            station restarts to take it up."""
+            try:
+                body = self._body()
+                hw = body.get("hardware", "box")
+                name = body.get("station_name") or None
+                if hw not in ("box", "cathedral"):
+                    raise ValueError("hardware is box or cathedral")
+                if name is not None and (not isinstance(name, str) or len(name.strip()) > 40):
+                    raise ValueError("a name is up to 40 characters")
+            except (ValueError, TypeError, AttributeError) as e:
+                self._error(str(e) if isinstance(e, ValueError) else "send {\"hardware\", \"station_name\"}")
+                return
+            if config_file is not None:
+                save_setting(config_file, "hardware", hw)
+                save_setting(config_file, "station_name", name.strip() if name else None)
+            restarting = bool(os.environ.get(RESTART_ENV))
+            self._send(json.dumps({**self._identity(), "restarting": restarting}).encode(), "application/json")
+            if restarting:
+                _restart_soon(speaker)
 
         def _messages_state(self) -> dict:
             trusted = clock_trusted()
@@ -767,8 +804,8 @@ def make_handler(station: Station, output: Mp3Output, speaker=None,
             try:
                 body = self._body()
                 n = body["button"]
-                if isinstance(n, bool) or not isinstance(n, int) or not 1 <= n <= presets_mod.N:
-                    raise ValueError(f"button is 1 to {presets_mod.N}")
+                if isinstance(n, bool) or not isinstance(n, int) or not 1 <= n <= presets.count:
+                    raise ValueError(f"button is 1 to {presets.count}")
                 if press:
                     (presets.hold if body.get("hold") else presets.press)(n - 1)
                 elif body.get("now"):
@@ -806,9 +843,9 @@ def make_handler(station: Station, output: Mp3Output, speaker=None,
             try:
                 body = self._body()
                 n, down = body["button"], body["down"]
-                if isinstance(n, bool) or not isinstance(n, int) or not 1 <= n <= presets_mod.N \
+                if isinstance(n, bool) or not isinstance(n, int) or not 1 <= n <= presets.count \
                         or not isinstance(down, bool):
-                    raise ValueError(f"send {{\"button\": 1-{presets_mod.N}, \"down\": true | false}}")
+                    raise ValueError(f"send {{\"button\": 1-{presets.count}, \"down\": true | false}}")
             except (ValueError, TypeError, KeyError, AttributeError) as e:
                 self._error(str(e) if isinstance(e, ValueError) else "send {\"button\", \"down\"}")
                 return
@@ -1001,12 +1038,15 @@ def make_handler(station: Station, output: Mp3Output, speaker=None,
             try:
                 body = json.loads(self.rfile.read(int(self.headers.get("Content-Length", 0))) or b"{}")
                 press = body.get("press")
-                if press not in ("short", "long", "service"):
-                    raise ValueError("press must be short, long or service")
+                if press not in ("short", "long", "service", "back", "back_long"):
+                    raise ValueError("press must be short, long, service, back or back_long")
             except (ValueError, TypeError, AttributeError):
                 self.send_error(400)
                 return
-            if press == "service":
+            if press in ("back", "back_long") and presets is not None:   # the cathedral's back button
+                (presets.back_press if press == "back" else presets.back_hold)()
+                done = True
+            elif press == "service":
                 menu = getattr(presets, "menu", None)
                 if menu is not None:
                     menu.open()
