@@ -39,6 +39,7 @@ import numpy as np
 
 from sleepradiopi.audio import pcm
 from sleepradiopi.config.clock import clock_trusted
+from sleepradiopi.playback import radio as radio_mod
 from sleepradiopi.tts.worker import TtsWorker
 
 from .library import scan_jingles, scan_music
@@ -60,6 +61,9 @@ SPEECH_PAD_S = 0.25       # breath of silence either side of the DJ
 SPEECH_WAIT_S = 45.0      # give up on a line that still isn't synthesised after this
 PER_LINE_ESTIMATE_S = 4.0  # rough length of a spoken line, for wording a clock after one
 SPEED_MIN, SPEED_MAX = 0.5, 1.5   # DJ / news speech speed (x the voice's own pace), from the page
+RADIO_PREBUFFER_S = 1.0   # internet radio: audio in hand before it plays (and after a stall)
+RADIO_GIVE_UP_S = 45.0    # no sound from a station this long: back to the show (Wi-Fi can be slow at boot)
+RADIO_RETRY_S = 3.0       # wait between reconnects
 
 
 class Output(Protocol):
@@ -109,7 +113,7 @@ class Step:
 
 @dataclass
 class OnAir:
-    kind: str       # "track" | "dj" | "jingle" | "news"
+    kind: str       # "track" | "dj" | "jingle" | "news" | "wait" | "radio"
     title: str
     artist: str = ""
     album: str = ""
@@ -217,6 +221,18 @@ class Station:
         self._skip_for: OnAir | None = None
 
         self.on_air: OnAir | None = None
+        # Internet radio: a station ({"name", "url"}) played instead of the show.
+        self._tuned: dict | None = None
+        self._switch = threading.Event()     # the source changed: whatever plays gives way
+        self._radio_heard = False            # a station has made a sound since start-up
+        self.radio_title: str | None = None  # the station's now-playing, if it sends one
+        self.radio_playing = False           # its sound is on air (not tuning in / reconnecting)
+        self.radio_error: str | None = None  # why the last station stopped
+        if cfg.get("radio_tuned"):
+            try:
+                self._tuned = radio_mod.validate_station(cfg["radio_tuned"])
+            except ValueError as e:
+                log.warning("radio_tuned ignored: %s", e)
         self.next_track: BroadcastTrack | None = None
         self.gap_plan: list[str] = []
         self.history: deque[dict] = deque(maxlen=12)
@@ -263,7 +279,7 @@ class Station:
         """Cut short whatever is on air (a track, jingle, DJ line or bulletin) and
         go straight on to what comes after it. False if there's nothing to skip."""
         on_air = self.on_air
-        if not self.is_on_air or on_air is None:
+        if not self.is_on_air or on_air is None or on_air.kind == "radio":
             return False
         self._skip_for = on_air
         log.info("skip: %s %s", on_air.kind, on_air.title[:70])
@@ -272,23 +288,47 @@ class Station:
     def _skipped(self, on_air: OnAir) -> bool:
         return self._skip_for is on_air
 
+    def _halted(self) -> bool:
+        """Stop what's playing: the show is ending, or the source changed."""
+        return self._stop.is_set() or self._switch.is_set()
+
     def _run_show(self) -> None:
         self.shows_started += 1
-        self._show_clock.reset()
-        self._tracks_since_jingle = 0
         self.output.start()
         try:
-            if not self.tracks:
-                log.error("no music in %s: nothing to broadcast", self.music_dir)
-                while not self._stop.is_set():
-                    self._write(pcm.silence(0.5))
-                return
+            while not self._stop.is_set():
+                self._switch.clear()
+                tuned = self._tuned
+                if tuned is not None:
+                    self._run_radio(tuned)
+                else:
+                    self._run_music()
+        except Exception:
+            log.exception("show crashed")
+        finally:
+            self.output.stop()
+            self.on_air = None
+            self.gap_plan = []
+            log.info("show ended")
+            if self._opening is None:
+                self._prepare_opening()
+
+    def _run_music(self) -> None:
+        """The Broadcast show, until it ends or the source changes."""
+        self._show_clock.reset()
+        self._tracks_since_jingle = 0
+        if not self.tracks:
+            log.error("no music in %s: nothing to broadcast", self.music_dir)
+            while not self._halted():
+                self._write(pcm.silence(0.5))
+            return
+        try:
             steps, first = self._take_opening()
             self._run_steps(steps)
             track = first
-            while not self._stop.is_set():
+            while not self._halted():
                 self._play_track(track)
-                if self._stop.is_set():
+                if self._halted():
                     break
                 with self._lock:
                     self._in_gap = True       # a request now plays after the announced next song
@@ -297,14 +337,100 @@ class Station:
                     track = self._take_next()
                     self._in_gap = False
                     self._place_pending()
-        except Exception:
-            log.exception("show crashed")
         finally:
-            self.output.stop()
-            self.on_air = None
-            self.gap_plan = []
-            log.info("show ended")
-            self._prepare_opening()
+            if self._switch.is_set() and not self._stop.is_set():
+                with self._lock:
+                    self._in_gap = False
+                    self._place_pending()
+                self.on_air = None
+                self.gap_plan = []
+                self.next_track = None
+                self._prepare_opening()       # ready for coming back from the station
+
+    # --- internet radio ----------------------------------------------------------------
+
+    def tune(self, station: dict | None) -> None:
+        """Play an internet radio station ({"name", "url"}) instead of the show,
+        or None to go back to the show. Heard at once if the radio is playing."""
+        station = radio_mod.validate_station(station) if station is not None else None
+        with self._lock:
+            self._tuned = station
+            self.radio_error = None
+            self._switch.set()
+        log.info("radio: %s", f"tuned to {station['name']} ({station['url']})" if station else "back to the show")
+
+    @property
+    def radio_tuned(self) -> dict | None:
+        return self._tuned
+
+    @property
+    def music_started(self) -> bool:
+        """Something (a song, or a station) has played since start-up."""
+        return self.current_track is not None or self._radio_heard
+
+    def _give_up_radio(self, tuned: dict, why: str) -> None:
+        with self._lock:
+            if self._tuned is tuned:
+                self._tuned = None
+                self.radio_error = f"{tuned['name']}: {why}"
+        log.warning("radio: giving up on %s (%s): back to the show", tuned["name"], why)
+
+    def _run_radio(self, tuned: dict) -> None:
+        """Play a station until the source changes, the show ends, or it stays
+        silent for RADIO_GIVE_UP_S (then the show plays instead)."""
+        name = tuned["name"]
+        on_air = self.on_air = OnAir("radio", "Tuning in…", name)
+        self.next_track = None
+        self.gap_plan = []
+        self.radio_title = None
+        self.history.appendleft({"kind": "radio", "text": name, "at": time.time()})
+        leveller = radio_mod.Leveller()
+        last_sound = time.monotonic()
+        why = "no sound from the station"
+        while not self._halted():
+            stream = radio_mod.RadioStream(tuned["url"])
+            try:
+                stream.start()
+                playing = False
+                while not self._halted():
+                    if stream.title != self.radio_title and stream.title is not None:
+                        self.radio_title = stream.title
+                        self.history.appendleft({"kind": "radio", "text": f"{stream.title} ({name})",
+                                                 "at": time.time()})
+                    filling = not playing and stream.buffered_s < RADIO_PREBUFFER_S and not stream.ended
+                    block = None if filling else stream.read(0.05)
+                    if block is None:
+                        playing = self.radio_playing = False
+                        if stream.ended and not stream.buffered_s:
+                            why = stream.ended
+                            break
+                        if time.monotonic() - last_sound > RADIO_GIVE_UP_S:
+                            self._give_up_radio(tuned, why if stream.ended else "no sound from the station")
+                            return
+                        self._write(pcm.silence(0.05))
+                        continue
+                    if not playing:
+                        playing = self.radio_playing = True
+                        on_air.title = self.radio_title or name
+                        on_air.started = time.time()
+                    self._radio_heard = True
+                    last_sound = time.monotonic()
+                    on_air.title = self.radio_title or name
+                    self._write(leveller.process(block))
+            finally:
+                stream.close()
+                self.radio_playing = False
+            if self._halted():
+                break
+            on_air.title = "Reconnecting…"
+            log.info("radio: %s: %s; reconnecting", name, why)
+            deadline = time.monotonic() + RADIO_RETRY_S
+            while time.monotonic() < deadline and not self._halted():
+                self._write(pcm.silence(0.1))
+            if time.monotonic() - last_sound > RADIO_GIVE_UP_S:
+                self._give_up_radio(tuned, why)
+                return
+        self.radio_title = None
 
     # --- output -----------------------------------------------------------------------
 
@@ -317,7 +443,7 @@ class Station:
         skip_for (what the page shows meanwhile) gives up waiting."""
         deadline = time.monotonic() + limit_s
         while not fut.done():
-            if self._stop.is_set() or time.monotonic() > deadline:
+            if self._halted() or time.monotonic() > deadline:
                 return None
             if skip_for is not None and self._skipped(skip_for):
                 return None
@@ -370,7 +496,7 @@ class Station:
         self.history.appendleft({"kind": kind, "text": speech.text, "at": time.time()})
         self._write(pcm.silence(SPEECH_PAD_S))
         for block in pcm.blocks(audio):
-            if self._stop.is_set():
+            if self._halted():
                 return False
             if self._skipped(on_air):
                 self._write(pcm.silence(SPEECH_PAD_S))
@@ -585,7 +711,7 @@ class Station:
         played = 0
         fired = near_end is None
         for block in pcm.decode(path, scan.start_ms, scan.end_ms):
-            if self._stop.is_set():
+            if self._halted():
                 return
             if self._skipped(on_air):
                 if fired and near_end is not None:
@@ -848,7 +974,7 @@ class Station:
 
     def _run_steps(self, steps: list[Step]) -> None:
         for step in steps:
-            if self._stop.is_set():
+            if self._halted():
                 return
             if step.kind == "say":
                 self._speak(step.speech)
@@ -1015,9 +1141,9 @@ class Station:
                 "album": on_air.album, "elapsed_s": round(time.time() - on_air.started, 1),
                 "duration_s": round(on_air.duration_s, 1),
             },
-            "next": None if nxt is None else {"title": nxt.title, "artist": nxt.artist},
+            "next": None if nxt is None or self._tuned is not None else {"title": nxt.title, "artist": nxt.artist},
             "gap_plan": self.gap_plan,
-            "can_skip": self.is_on_air and on_air is not None,
+            "can_skip": self.is_on_air and on_air is not None and on_air.kind != "radio",
             "news_ready": None if news is None else news.due.mark.strftime("%H:%M"),
             "history": list(self.history),
             "library": {"tracks": len(self.tracks), "jingles": len(self.jingles)},
@@ -1025,6 +1151,10 @@ class Station:
             "profile": self.profile,
             "requests": self.requests(),
             "album": self.album_status(),
+            "radio": None if self._tuned is None else {
+                **self._tuned, "title": self.radio_title,
+                "playing": self.radio_playing and on_air is not None and on_air.kind == "radio"},
+            "radio_error": self.radio_error,
             "station_name": self.builder.station,
             "voices_ready": bool(self.tts and self.tts.ready),
             "voice": {"name": self.dj_voice, "rss_mb": self.tts.last_rss_mb, "restarts": self.tts.restarts}

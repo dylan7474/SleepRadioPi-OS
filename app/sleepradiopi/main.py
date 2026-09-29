@@ -98,7 +98,7 @@ def _say_now(station: Station, control, text: str) -> None:
 def _after_first_song(station: Station, updates: Updates) -> None:
     """Once music is playing after a start-up, confirm a pending update (so the
     boot watchdog doesn't roll it back) and say how it went."""
-    while station.current_track is None:
+    while not station.music_started:      # a song, or an internet radio station
         time.sleep(2)
     updates.on_air()
 
@@ -166,7 +166,7 @@ def main() -> None:
             default_volume=settings.speaker_volume, config_file=args.config)
         # A long press says the radio's address (for finding the web page away from home).
         # Made only once the show is playing music, so it never holds up the opening.
-        on_air = lambda: bool(tts and tts.ready) and station.current_track is not None
+        on_air = lambda: bool(tts and tts.ready) and station.music_started
         announcer = Announcer(station.render_speech if station._has_voice else None, control.play_clip,
                               voice_ready=on_air, hotspot=_hotspot)
         announcer.start()

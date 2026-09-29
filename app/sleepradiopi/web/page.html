@@ -133,6 +133,22 @@
     background: var(--bg); border: 1px solid var(--line); border-radius: .5rem; padding: .5rem .6rem; }
   #pwRemove, #pwLogout { font-size: .9rem; }
   code { font-size: .85em; color: var(--text); }
+  #radioBtn { font-size: 1.1rem; }
+  #radioOff { flex: none; padding: .35rem .8rem; font-size: .9rem; }
+  #rStations li, #rResults li { align-items: center; }
+  #rStations .t, #rResults .t { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+  #rStations .t small, #rResults .t small { color: var(--muted); display: block; }
+  #rStations button, #rResults button { flex: none; padding: .3rem .7rem; font-size: .85rem; }
+  #rStations button[aria-pressed=true] { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+  #rStations .rm { border-color: transparent; color: var(--muted); }
+  #rResults { max-height: 24rem; overflow-y: auto; margin-top: .5rem; }
+  #rq, #rAdd input { font: inherit; color: var(--text); background: var(--bg); border: 1px solid var(--line);
+    border-radius: .6rem; padding: .55rem .7rem; min-width: 0; }
+  #rq { flex: 1; }
+  #rAddName { flex: 1 1 8rem; }
+  #rAddUrl { flex: 2 1 12rem; }
+  #rNowTitle { font-size: 1.15rem; margin: .2rem 0 0; overflow-wrap: anywhere; }
+  #rNote.bad, #rFindNote.bad, #rAddNote.bad { color: var(--live); }
   footer { margin-top: 2rem; font-size: .8rem; color: var(--muted); }
   footer a { color: var(--muted); }
 </style>
@@ -146,6 +162,8 @@
     </div>
     <div class="head-right">
       <span id="badge" class="badge">Off air</span>
+      <button id="radioBtn" class="icon" type="button" aria-label="Streaming: internet radio"
+              title="Streaming: internet radio" hidden>📻</button>
       <button id="gear" class="icon" type="button" aria-label="Settings" title="Settings" hidden>⚙</button>
     </div>
   </header>
@@ -180,6 +198,7 @@
     <div class="now-foot">
       <p id="next" class="muted"></p>
       <button id="skip" type="button" hidden title="Skip to what's next">Skip ⏭︎</button>
+      <button id="radioOff" type="button" hidden title="Stop the internet radio station">Back to Sleep Radio</button>
     </div>
   </section>
 
@@ -225,6 +244,8 @@
     </div>
     <ul id="results"></ul>
     <p id="qNote" class="muted" style="margin:.4rem 0 0;font-size:.85rem" hidden></p>
+    <p id="qRadio" class="muted" style="margin:.4rem 0 0;font-size:.85rem" hidden>An internet radio station is
+      on: songs you pick play when you go back to Sleep Radio.</p>
     <div id="albumBox" class="row" hidden>
       <span id="albumNow" class="t" style="flex:1"></span>
       <button id="albumStop" type="button">Stop album</button>
@@ -243,6 +264,48 @@
   <footer>News bulletins from <a href="https://www.bbc.co.uk/news">BBC News</a>.
     The sleep timer fades out over the last minute (the radio's speakers too).</footer>
 
+  </div>
+
+  <div id="viewRadio" hidden>
+  <div class="view-head">
+    <button id="radioBack" type="button">‹ Back to the radio</button>
+    <h2>Streaming</h2>
+  </div>
+
+  <section class="card" aria-live="polite">
+    <div id="rKind" class="kind">Sleep Radio</div>
+    <p id="rNowTitle">The radio's own show is on.</p>
+    <p id="rNowSub" class="artist"></p>
+    <div class="row" id="rStopRow" hidden>
+      <button id="rStop" type="button">Back to Sleep Radio</button>
+    </div>
+    <p id="rNote" class="muted" style="margin:.6rem 0 0;font-size:.85rem" hidden></p>
+  </section>
+
+  <h3 class="group">Internet radio</h3>
+
+  <section class="card">
+    <h2>My stations</h2>
+    <ul id="rStations"><li class="muted">Loading…</li></ul>
+    <form id="rAdd" class="row">
+      <input id="rAddName" placeholder="Name" aria-label="Station name" maxlength="120" required>
+      <input id="rAddUrl" type="url" placeholder="https://… stream address" aria-label="Stream address" required>
+      <button type="submit">Add</button>
+    </form>
+    <p id="rAddNote" class="muted" style="margin:.5rem 0 0;font-size:.85rem">Needs the radio online. A station
+      plays instead of the Sleep Radio show, through the speakers, volume and sleep timer as usual.</p>
+  </section>
+
+  <section class="card">
+    <h2>Find stations</h2>
+    <form id="rFind" class="row" style="margin-top:0">
+      <input id="rq" type="search" placeholder="Station name, e.g. Radio 4, jazz" aria-label="Find a station" autocomplete="off">
+      <button type="submit">Search</button>
+    </form>
+    <ul id="rResults"></ul>
+    <p id="rFindNote" class="muted" style="margin:.5rem 0 0;font-size:.85rem">From the
+      <a href="https://www.radio-browser.info/" style="color:inherit">Radio Browser</a> directory.</p>
+  </section>
   </div>
 
   <div id="viewSettings" hidden>
@@ -1197,8 +1260,9 @@ setInterval(() => {
   $("sleepLeft").textContent = Math.ceil(left / 60000) + " min left";
 }, 1000);
 
-const KIND = { track: "Now playing", dj: "On the mic", jingle: "Station ident", news: "News", wait: "Just a moment" };
-const ICON = { track: "♪", dj: "🎙", jingle: "✦", news: "📰" };
+const KIND = { track: "Now playing", dj: "On the mic", jingle: "Station ident", news: "News", wait: "Just a moment",
+               radio: "Internet radio" };
+const ICON = { track: "♪", dj: "🎙", jingle: "✦", news: "📰", radio: "📻" };
 const hhmm = t => new Date(t * 1000).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 
 async function poll() {
@@ -1244,6 +1308,7 @@ async function poll() {
       showSelection(s.artist, s.profile, s.station_name);    // changed on another phone
     showRequests(s.requests);
     showAlbum(s.album);
+    showRadio(s.radio, s.radio_error);
     const badge = $("badge");
     badge.textContent = s.on_air ? "On air" : (s.voices_ready ? "Off air" : "Warming up");
     badge.classList.toggle("live", s.on_air);
@@ -1332,19 +1397,154 @@ $("off").onclick = async () => {
   $("powerNote").textContent = "Safe to unplug in about 20 seconds.";
 };
 
+// --- Streaming: internet radio ----------------------------------------------------
+// A station plays instead of the show (the speakers, volume and sleep timer as
+// usual); the radio remembers it over a restart. Stations are found with the
+// Radio Browser directory, as the Android app does.
+let rStations = [], rTuned = null;
+function rNote(id, text, bad) {
+  const n = $(id);
+  n.textContent = text; n.hidden = !text; n.classList.toggle("bad", !!bad);
+}
+function showRadio(r, err) {
+  rTuned = r;
+  $("radioOff").hidden = !r;
+  $("qRadio").hidden = !r;
+  $("rStopRow").hidden = !r;
+  $("rKind").textContent = r ? (r.playing ? "Internet radio" : "Tuning in") : "Sleep Radio";
+  $("rNowTitle").textContent = r ? (r.title || r.name) : "The radio's own show is on.";
+  $("rNowSub").textContent = r && r.title ? r.name : "";
+  if (err && !r) rNote("rNote", "Stopped " + err + ". Back on Sleep Radio.", true);
+  else if (!r || !$("rNote").classList.contains("bad")) rNote("rNote", "");
+  for (const b of document.querySelectorAll("#rStations button[data-url]")) markPlay(b);
+}
+function markPlay(b) {
+  const on = !!rTuned && b.dataset.url === rTuned.url;
+  b.setAttribute("aria-pressed", String(on));
+  b.textContent = on ? "Playing" : "▶ Play";
+}
+async function loadRadio() {
+  try {
+    const d = await (await fetch("/api/radio", { cache: "no-store" })).json();
+    rStations = d.stations;
+    showStations();
+    showRadio(d.radio, d.radio_error);
+  } catch { $("rStations").replaceChildren(Object.assign(document.createElement("li"),
+                                           { className: "muted", textContent: "Couldn't reach the radio." })); }
+}
+function stationItem(st, buttons) {
+  const li = document.createElement("li");
+  const t = document.createElement("span"); t.className = "t"; t.textContent = st.name;
+  if (st.info) t.append(Object.assign(document.createElement("small"), { textContent: st.info }));
+  li.append(t, ...buttons);
+  return li;
+}
+function button(text, title, onclick) {
+  const b = document.createElement("button");
+  b.type = "button"; b.textContent = text; b.title = title; b.onclick = onclick;
+  return b;
+}
+function showStations() {
+  const ul = $("rStations");
+  if (!rStations.length) {
+    ul.replaceChildren(Object.assign(document.createElement("li"), { className: "muted",
+      textContent: "No stations saved. Find some below, or add one by its address." }));
+    return;
+  }
+  ul.replaceChildren(...rStations.map((st, i) => {
+    const play = button("▶ Play", "Play " + st.name, () => tuneTo(st));
+    play.dataset.url = st.url;
+    markPlay(play);
+    const rm = button("✕", "Remove " + st.name, () => saveStations(rStations.filter((_, j) => j !== i)));
+    rm.className = "rm"; rm.setAttribute("aria-label", "Remove " + st.name);
+    return stationItem(st, [play, rm]);
+  }));
+}
+async function radioPost(path, body) {
+  const r = await fetch(path, { method: "POST", headers: { "Content-Type": "application/json" },
+                                body: JSON.stringify(body || {}) });
+  const reply = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(reply.error || "the radio said no (" + r.status + ")");
+  return reply;
+}
+async function tuneTo(st) {
+  try {
+    const d = await radioPost("/api/radio/play", { name: st.name, url: st.url, info: st.info || "" });
+    rNote("rNote", "");
+    showRadio(d.radio, null);
+    setTimeout(poll, 800);
+  } catch (e) { rNote("rNote", "Couldn't play it: " + e.message + ".", true); }
+}
+async function stopRadio() {
+  try {
+    const d = await radioPost("/api/radio/stop");
+    rNote("rNote", "");
+    showRadio(d.radio, null);
+    setTimeout(poll, 800);
+  } catch (e) { rNote("rNote", "Couldn't: " + e.message + ".", true); }
+}
+$("rStop").onclick = stopRadio;
+$("radioOff").onclick = stopRadio;
+async function saveStations(list) {
+  try {
+    rStations = (await radioPost("/api/radio/stations", { stations: list })).stations;
+    showStations();
+    showFound();
+    return true;
+  } catch (e) { rNote("rAddNote", "Not saved: " + e.message + ".", true); return false; }
+}
+$("rAdd").onsubmit = async e => {
+  e.preventDefault();
+  const st = { name: $("rAddName").value.trim(), url: $("rAddUrl").value.trim(), info: "" };
+  if (rStations.some(x => x.url === st.url)) return rNote("rAddNote", "That one's already saved.", true);
+  if (await saveStations([...rStations, st])) {
+    $("rAddName").value = $("rAddUrl").value = "";
+    rNote("rAddNote", "Added " + st.name + ".");
+  }
+};
+let rFound = [];
+function showFound() {
+  $("rResults").replaceChildren(...rFound.map(st => {
+    const saved = rStations.some(x => x.url === st.url);
+    const add = button(saved ? "Saved" : "+ Save", "Keep it in My stations",
+                       () => saveStations([...rStations, st]));
+    add.disabled = saved;
+    return stationItem(st, [button("▶ Play", "Play " + st.name, () => tuneTo(st)), add]);
+  }));
+}
+$("rFind").onsubmit = async e => {
+  e.preventDefault();
+  const q = $("rq").value.trim();
+  if (!q) return;
+  rNote("rFindNote", "Searching…");
+  try {
+    const r = await fetch("/api/radio/search?q=" + encodeURIComponent(q), { cache: "no-store" });
+    const d = await r.json();
+    if (!r.ok) throw new Error(d.error || r.status);
+    rFound = d.results;
+    showFound();
+    rNote("rFindNote", rFound.length ? `${rFound.length} found, most listened-to first.` : "Nothing found by that name.");
+  } catch (e) { rNote("rFindNote", "Couldn't search: " + e.message + ".", true); }
+};
+
 // --- Views, login and the password ------------------------------------------------
 // The main page has the everyday controls; ⚙ opens Settings (#settings).
 function showView() {
-  const settings = location.hash === "#settings";
-  $("viewMain").hidden = settings;
+  const settings = location.hash === "#settings", streaming = location.hash === "#radio";
+  $("viewMain").hidden = settings || streaming;
   $("viewSettings").hidden = !settings;
+  $("viewRadio").hidden = !streaming;
   $("gear").hidden = settings;
+  $("radioBtn").hidden = streaming;
+  if (streaming) loadRadio();
   if (settings) { fillListPick(); showListEditor(); loadAuth(); loadVoices(); loadUpdate(); loadWifi(); }
   window.scrollTo(0, 0);
 }
 window.addEventListener("hashchange", () => { if (started) showView(); });
 $("gear").onclick = () => { location.hash = "#settings"; };
 $("back").onclick = () => { location.hash = ""; };
+$("radioBtn").onclick = () => { location.hash = "#radio"; };
+$("radioBack").onclick = () => { location.hash = ""; };
 $("listsBtn").onclick = () => {
   location.hash = "#settings";
   setTimeout(() => $("lists").scrollIntoView({ behavior: "smooth" }), 50);
@@ -1414,7 +1614,8 @@ function start() {
 function showLogin() {
   if (started) { location.reload(); return; }   // logged out while using it: start clean
   $("login").hidden = false;
-  $("viewMain").hidden = $("viewSettings").hidden = $("gear").hidden = true;
+  $("viewMain").hidden = $("viewSettings").hidden = $("viewRadio").hidden = $("gear").hidden = true;
+  $("radioBtn").hidden = true;
   $("loginPw").focus();
 }
 $("loginForm").onsubmit = async e => {

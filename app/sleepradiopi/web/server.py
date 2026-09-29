@@ -27,7 +27,8 @@ from sleepradiopi import voices as voices_mod
 from sleepradiopi import updater as updater_mod
 from sleepradiopi import wifi as wifi_mod
 from sleepradiopi.config import backup
-from sleepradiopi.config.settings import save_setting
+from sleepradiopi.config.settings import load as load_settings, save_setting
+from sleepradiopi.playback import radio as radio_mod
 from sleepradiopi.config.power import can_power_off, request_power_off
 
 from .stream import Mp3Output
@@ -36,7 +37,7 @@ log = logging.getLogger(__name__)
 
 PAGE = (Path(__file__).parent / "page.html").read_bytes()
 IDLE_CLOSE_S = 30  # close a stream connection that has had no audio for this long
-MAX_SETTINGS_BYTES = 64 * 1024
+MAX_SETTINGS_BYTES = 512 * 1024   # room for a long list of internet radio stations
 # Set where something restarts the station when it exits (init's respawn on the
 # appliance image, systemd's Restart= on Raspberry Pi OS). Without it, e.g. on
 # a desktop, loaded settings that need a restart wait for the next start.
@@ -193,6 +194,16 @@ def make_handler(station: Station, output: Mp3Output, speaker=None,
             elif path == "/api/artists":
                 self._send(json.dumps({**self._selection(), "artists": station.artists(),
                                        "profiles": station.profiles}).encode(), "application/json")
+            elif path == "/api/radio":
+                self._send(json.dumps(self._radio_state()).encode(), "application/json")
+            elif path == "/api/radio/search":
+                q = parse_qs(urlparse(self.path).query).get("q", [""])[0][:200]
+                try:
+                    found = radio_mod.search(q)
+                except radio_mod.StreamError as e:
+                    self._error(str(e))
+                    return
+                self._send(json.dumps({"results": found}).encode(), "application/json")
             elif path == "/stream":
                 if output is None or not output.enabled:
                     self.send_error(404, "listening in a browser is switched off")
@@ -242,6 +253,8 @@ def make_handler(station: Station, output: Mp3Output, speaker=None,
                 self._set_dj()
             elif path == "/api/stream":
                 self._set_stream()
+            elif path in ("/api/radio/play", "/api/radio/stop", "/api/radio/stations"):
+                self._radio(path.rsplit("/", 1)[1])
             elif path == "/api/voices/standard" and voice_jobs is not None:
                 self._body()
                 try:
@@ -514,6 +527,45 @@ def make_handler(station: Station, output: Mp3Output, speaker=None,
                 return
             self._send(json.dumps({**reply, "album": station.album_status(),
                                    "requests": station.requests()}).encode(), "application/json")
+
+        def _radio_stations(self) -> list[dict]:
+            saved = load_settings(config_file).radio_stations if config_file is not None else None
+            if saved is None:
+                return [dict(s) for s in radio_mod.DEFAULT_STATIONS]
+            try:
+                return radio_mod.validate_stations(saved)
+            except ValueError:
+                return []
+
+        def _radio_state(self) -> dict:
+            st = station.status()
+            return {"stations": self._radio_stations(), "radio": st.get("radio"),
+                    "radio_error": st.get("radio_error")}
+
+        def _radio(self, action: str) -> None:
+            """POST /api/radio/play {"name", "url"}: play that internet radio station
+            instead of the show; /api/radio/stop: back to the show; /api/radio/stations
+            {"stations": [...]}: the saved list. All saved."""
+            try:
+                body = self._body()
+                if action == "play":
+                    tuned = radio_mod.validate_station(body)
+                elif action == "stations":
+                    stations = radio_mod.validate_stations(body["stations"])
+            except (ValueError, TypeError, KeyError, AttributeError) as e:
+                self._error(str(e) if isinstance(e, ValueError) else "send a station or {\"stations\": [...]}")
+                return
+            if action == "stations":
+                if config_file is not None:
+                    save_setting(config_file, "radio_stations", stations)
+            else:
+                tuned = tuned if action == "play" else None
+                station.tune(tuned)
+                if config_file is not None:
+                    save_setting(config_file, "radio_tuned", tuned)
+                if tuned is not None and speaker is not None:
+                    speaker.play()               # choosing a station means "play it"
+            self._send(json.dumps(self._radio_state()).encode(), "application/json")
 
         def _wifi_state(self) -> dict:
             st = wifi_mod.status()

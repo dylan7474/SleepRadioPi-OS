@@ -39,6 +39,10 @@ software, and the case to print.
   List on Sleep Radio"*).
 - **Play next** — search the library from your phone and queue songs; the
   DJ introduces them.
+- **Internet radio** — when it's online, play a station instead of the show
+  (📻 on the web page): your saved stations, or search thousands in the
+  [Radio Browser](https://www.radio-browser.info/) directory. What's playing
+  shows on the page; same speakers, knob and sleep timer.
 - **Album mode** — or pick a whole album: the DJ introduces it, then it plays
   start to finish like a record (no talk between tracks), and the DJ
   back-announces it at the end.
@@ -71,7 +75,8 @@ software, and the case to print.
   on your network (optionally with a password) is its remote control.
   Everyday controls up front: now playing and skip, volume and a sleep timer
   that fades the speakers out, artist radio, play next (and, if you switch
-  it on, listening in the browser too). Under ⚙ Settings: the
+  it on, listening in the browser too). Under 📻 Streaming: internet radio
+  stations, saved or found by name. Under ⚙ Settings: the
   speakers (stereo/mono, EQ, low cut), the DJ (voice, how often it talks,
   hooks, jingles, news, DJ and news speaking speeds), voices (download the standard one, upload your
   own), your artist lists, birthdays, test sounds for

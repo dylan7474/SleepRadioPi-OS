@@ -30,6 +30,8 @@ class Settings:
     profiles: list = field(default_factory=list)   # [{"name": "Friday List", "artists": [...]}]
     broadcast_profile: str | None = None  # the profile playing (instead of an artist); None = none
     broadcast_chattiness: str = "maximum"
+    radio_stations: list | None = None    # internet radio: [{"name", "url", "info"?}]; None = the starter set
+    radio_tuned: dict | None = None       # the station playing instead of the show; None = the show
     birthdays: list = field(default_factory=list)  # [{"name", "day", "month", "year"?}]: the DJ wishes them on the day
     broadcast_jingle_enabled: bool = True
     broadcast_jingle_every: int = 4
