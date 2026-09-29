@@ -58,6 +58,7 @@ def test_main_plays_through_aplay_and_holds_the_lock(tmp_path: Path, monkeypatch
     (bin_dir / "aplay").chmod(0o755)
     monkeypatch.setenv("PATH", f"{bin_dir}:/usr/bin:/bin")
     monkeypatch.setattr(ss, "LOCK", tmp_path / "lock")
+    monkeypatch.setattr(ss, "TICK_FOR_S", 0)                            # (no ticking here: see below)
     assert ss.main(["--home", str(home)]) == 0
     assert out.stat().st_size == len(ss.chime(ss.gain(80)))              # played while locked
     assert (home / ".cache" / "sleepradiopi" / ss.CHIME_FILE).is_file()  # made once, kept
@@ -88,3 +89,32 @@ def test_the_kept_chime_scales_like_a_fresh_one(tmp_path: Path) -> None:
     fresh = np.frombuffer(ss.chime(ss.gain(70)), dtype=np.int16).astype(int)
     kept = np.frombuffer(again, dtype=np.int16).astype(int)
     assert first == again and np.abs(kept - fresh).max() <= 3   # rounding, twice: inaudible
+
+
+def test_it_ticks_until_the_station_takes_over(tmp_path, monkeypatch) -> None:
+    import threading
+    import time
+    from sleepradiopi import startup_sound as ss
+    lock = tmp_path / "startup-sound.lock"
+    monkeypatch.setattr(ss, "LOCK", lock)
+    monkeypatch.setattr(ss, "STOP", tmp_path / "startup-sound.stop")
+    monkeypatch.setattr(ss, "parts", lambda home: iter([b"\0" * 400]))
+    monkeypatch.setattr(ss, "settings", lambda home: (True, "stock", 100))
+    written = []
+
+    class Player:
+        def __init__(self, *a, **k):
+            self.stdin = self
+        def write(self, b): written.append(len(b)); time.sleep(0.01)
+        def flush(self): ...
+        def close(self): ...
+        def wait(self, timeout=None): ...
+    monkeypatch.setattr(ss.subprocess, "Popen", Player)
+    t = threading.Thread(target=ss.main, args=(["--home", str(tmp_path)],), daemon=True)
+    t.start()
+    time.sleep(0.3)
+    assert lock.exists() and sum(written) > 400                  # the chime, then ticking
+    ss.wait_for_it(limit_s=5)                                    # the station takes the card
+    t.join(3)
+    assert not t.is_alive() and not lock.exists()
+    assert len(ss.tick(1.0)) == 4 * int(ss.TICK_EVERY_S * ss.RATE)

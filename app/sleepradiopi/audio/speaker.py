@@ -80,8 +80,13 @@ class SpeakerOutput:
         self._lock = threading.Lock()
         self._io = threading.Lock()      # one writer at a time: the show, or the noise pump
         self._pump: threading.Thread | None = None
+        self._opened_once = False
 
     def _open(self) -> None:
+        if not self._opened_once:        # the start-up sound (ticking by now) hands the card over
+            from sleepradiopi import startup_sound
+            startup_sound.wait_for_it()
+            self._opened_once = True
         if self.eq is not None:
             self.eq.reset()              # don't replay the end of the last session
         # Unbuffered: Python 3.14 buffers pipes 128 KB (~0.75 s of audio), which would

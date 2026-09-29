@@ -102,7 +102,9 @@ def test_holding_one_and_four_opens_it_and_neither_button_acts() -> None:
     pressed, fired, started = [], [], []
     timers = {c: PressTimer(lambda c=c: pressed.append(c), lambda c=c: pressed.append(("hold", c)), long_s=0.3)
               for c in (2, 3, 4, 5)}
-    chord = Chord({2, 5}, 0.4, on_start=lambda: started.append(1), on_fire=lambda: fired.append(1))
+    ticks = []
+    chord = Chord({2, 5}, 0.4, on_start=lambda: started.append(1), on_fire=lambda: fired.append(1),
+                  on_tick=lambda: ticks.append(1), tick_s=0.1)
 
     def down(c):
         timers[c].down(); chord.key(c, True, timers)
@@ -114,6 +116,7 @@ def test_holding_one_and_four_opens_it_and_neither_button_acts() -> None:
     time.sleep(0.6)
     up(2); up(5)
     assert fired == [1] and pressed == []            # no press, no hold (which would store a preset)
+    assert 3 <= len(ticks) <= 4                      # counting, out loud
     down(2); down(5); time.sleep(0.1); up(5); up(2)  # let go early
     time.sleep(0.5)
     assert fired == [1] and pressed == []

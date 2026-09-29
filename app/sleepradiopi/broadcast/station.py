@@ -231,6 +231,7 @@ class Station:
         self._news_prep_key: str | None = None
         self._news_ready: NewsItem | None = None
         self._opening: tuple[str, list[Step], BroadcastTrack] | None = None
+        self._first_open = True               # the first welcome since power-on
         self._last_opening: tuple[str, list[Step], BroadcastTrack] | None = None
         self._plan: list[Step] = []
         self._gap_decision = None
@@ -394,8 +395,17 @@ class Station:
             if i == 0 and not ready() and words.is_file():
                 speech = np.frombuffer(words.read_bytes(), dtype=np.int16).reshape(-1, pcm.CHANNELS)
                 parts.append(np.concatenate([pcm.silence(0.2), speech]))
-        # Still not ready: a soft tick every few seconds, like a clock, so the
-        # wait sounds like a radio getting ready rather than a broken one.
+        self._tick_until_ready(steps)
+
+    def _tick_until_ready(self, steps: list[Step]) -> None:
+        """Still not ready: a soft tick every few seconds, like a clock, so the
+        wait sounds like a radio getting ready rather than a broken one. (At
+        power-on too, carrying on from the start-up sound's ticking.)"""
+        def ready():
+            return all(s.speech.future.done() for s in steps if s.kind == "say")
+        if ready() or not startup_sound.settings(Path.home())[0]:
+            return
+        self.on_air = OnAir("wait", "Sleep Radio is warming up")
         tick = np.concatenate([_tick(), pcm.silence(WARM_TICK_S)])
         end = time.monotonic() + SPEECH_WAIT_S
         while not ready() and time.monotonic() < end:
@@ -418,6 +428,9 @@ class Station:
             opening = self._last_opening
             if back:
                 self._warm_up(steps)
+            elif self._first_open:            # power-on: the start-up sound chimed; tick on from it
+                self._tick_until_ready(steps)
+            self._first_open = False
             self._run_steps(steps)
             track = first
             while not self._halted():

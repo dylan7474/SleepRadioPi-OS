@@ -30,7 +30,10 @@ and with no network, and is set up from its web page. See
   warming up…" if it's still not ready, then a soft tick every 3 s until it is (`Station._warm_up`; off with *At
   power-on: Silent*).
 - **Power on and it plays.** About 10 seconds after power-up it chimes, and
-  the DJ says "Sleep Radio is warming up…", so you know it's alive; the show
+  the DJ says "Sleep Radio is warming up…", so you know it's alive; then a
+  soft tick every 3 s (like a clock) until the DJ starts -- the start-up
+  program ticks until the station first opens the speaker, then the station
+  ticks on until its welcome is ready; the show
   itself starts once the voice has loaded ("Good evening, and welcome to
   Sleep Radio..."). No app, no phone, no button press. The chime is a small
   separate program (`startup_sound.py`, standard library only) run before
@@ -457,7 +460,8 @@ The cards:
   real ones: each sends *down* and *up* to the radio (`/api/buttons/key`),
   through the same timers, so a tap plays, a 3 s hold keeps what's playing,
   and holding 1 and 4 together (two fingers) for 5 s opens the menu (the
-  page counts down from 5 under the buttons).
+  page counts down from 5 under the buttons, and the radio ticks once a
+  second while they're held -- the same with the real buttons).
 - **The service menu** (`io/service.py`; buttons 1 and 4 held together for
   5 s — the moment the second goes down, neither button's own press or
   3 s hold counts, so a preset is never overwritten; `io/knob.py` `Chord`).

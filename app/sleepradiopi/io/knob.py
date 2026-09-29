@@ -104,9 +104,13 @@ class Chord:
     """Keys held together: on_start when they're all down, on_fire if they
     stay down for hold_s. The keys' own PressTimers are cancelled."""
 
-    def __init__(self, codes, hold_s: float, on_start: Callable[[], None], on_fire: Callable[[], None]) -> None:
+    def __init__(self, codes, hold_s: float, on_start: Callable[[], None], on_fire: Callable[[], None],
+                 on_tick: Callable[[], None] | None = None, tick_s: float = 1.0) -> None:
+        """on_tick: every tick_s while they're held (from the start), so you
+        can hear it counting."""
         self.codes, self.hold_s = frozenset(codes), hold_s
         self.on_start, self.on_fire = on_start, on_fire
+        self.on_tick, self.tick_s = on_tick, tick_s
         self.down: set = set()
         self._timer: threading.Timer | None = None
         self._lock = threading.Lock()
@@ -133,6 +137,14 @@ class Chord:
                     log.info("chord let go early")
         if start:
             self.on_start()
+            if self.on_tick is not None:
+                threading.Thread(target=self._ticks, args=(self._timer,), name="chord-ticks", daemon=True).start()
+
+    def _ticks(self, timer) -> None:
+        end = time.monotonic() + self.hold_s - self.tick_s / 2
+        while self._timer is timer and time.monotonic() < end:
+            self.on_tick()
+            time.sleep(self.tick_s)
 
     def _fire(self) -> None:
         with self._lock:

@@ -8,8 +8,11 @@ show is running (never while it's starting) and kept in the cache, so from
 the second start-up on it plays straight after the chime.
 
 It plays at the speaker's saved volume (0 = silent), and not at all if the
-speaker is off or "startup_sound" is false in the config. While it plays it
-holds a lock file, so the station waits for the sound card.
+speaker is off or "startup_sound" is false in the config. After the words it
+ticks softly every few seconds (like a clock) while the station loads, until
+the station asks it to stop (STOP) -- the station then ticks on itself until
+the DJ's welcome is ready. While it plays it holds a lock file, so the
+station waits for the sound card.
 
     python3 -m sleepradiopi.startup_sound [--home DIR] [--device NAME]
 
@@ -32,6 +35,9 @@ from pathlib import Path
 RATE = 44_100
 CHANNELS = 2
 LOCK = Path(os.environ.get("SLEEPRADIOPI_STARTUP_LOCK", "/run/sleepradiopi/startup-sound.lock"))
+STOP = LOCK.with_name("startup-sound.stop")     # (the station) "I'm taking the sound card now"
+TICK_EVERY_S = 3.0
+TICK_FOR_S = 90.0                                # at most (a station that never comes)
 WARMING_UP = "Sleep Radio is warming up. The music will be with you in a moment."
 DB_PER_STEP = 0.5             # the speaker's volume scale (audio/speaker.py)
 
@@ -62,6 +68,18 @@ def chime(level: float) -> bytes:
 
 
 CHIME_FILE = "chime-v1.raw"
+
+
+def tick(level: float) -> bytes:
+    """A soft, short "tock" (as the station's warm-up tick), then silence to TICK_EVERY_S."""
+    n = int(0.04 * RATE)
+    out = array.array("h", bytes(2 * CHANNELS * int(TICK_EVERY_S * RATE)))
+    for i in range(n):
+        t = i / RATE
+        v = int(0.12 * 32767 * level * math.exp(-t * 120)
+                * (0.6 * math.sin(2 * math.pi * 1100 * t) + 0.4 * math.sin(2 * math.pi * 550 * t)))
+        out[2 * i] = out[2 * i + 1] = v
+    return out.tobytes()
 
 
 def cached_chime(home: Path, level: float) -> bytes:
@@ -129,6 +147,7 @@ def main(argv=None) -> int:
     args = parser.parse_args(argv)
     try:
         LOCK.parent.mkdir(parents=True, exist_ok=True)
+        STOP.unlink(missing_ok=True)
         LOCK.write_text(str(os.getpid()))
     except OSError:
         pass
@@ -141,7 +160,21 @@ def main(argv=None) -> int:
                                            "-r", str(RATE), "-c", str(CHANNELS)], stdin=subprocess.PIPE)
             player.stdin.write(piece)
             player.stdin.flush()
-        if player is not None:
+        if player is not None:                   # then tick until the station takes over
+            _, _, volume = settings(args.home)
+            each = tick(gain(volume))
+            step = 2 * CHANNELS * int(0.25 * RATE)
+            end = time.monotonic() + TICK_FOR_S
+            while not STOP.exists() and time.monotonic() < end:
+                for i in range(0, len(each), step):          # (a quarter-second at a time: stops quickly)
+                    if STOP.exists():
+                        break
+                    player.stdin.write(each[i:i + step])
+                    player.stdin.flush()
+                try:
+                    LOCK.touch()                             # (still alive: not a crashed one's lock)
+                except OSError:
+                    pass
             player.stdin.close()
             player.wait(timeout=60)
             print(f"start-up sound played ({'chime + warming up' if pieces > 1 else 'chime'})", flush=True)
@@ -154,7 +187,13 @@ def main(argv=None) -> int:
 
 
 def wait_for_it(limit_s: float = 20.0) -> None:
-    """(the station) Let a start-up sound finish before opening the sound card."""
+    """(the station) Let a start-up sound finish before opening the sound card
+    (its ticking stops when asked)."""
+    try:
+        if LOCK.exists():
+            STOP.touch()
+    except OSError:
+        pass
     end = time.monotonic() + limit_s
     while LOCK.exists() and time.monotonic() < end:
         try:

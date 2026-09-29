@@ -276,7 +276,7 @@ def main() -> None:
     stream = Mp3Output(enabled=settings.web_stream or not settings.speaker_enabled)
     speaker = control = announcer = None
     if settings.speaker_enabled:
-        startup_sound.wait_for_it()   # the chime / "warming up" may still be playing
+        # (the start-up sound chimes, then ticks, until the speaker first opens: SpeakerOutput._open)
         speaker = SpeakerOutput(settings.speaker_device, mono=settings.speaker_mono,
                                 eq=Equalizer(pcm.SAMPLE_RATE, pcm.CHANNELS, settings.speaker_eq,
                                              settings.speaker_highpass_hz))
@@ -307,8 +307,10 @@ def main() -> None:
                    for code, i in presets_mod.KEYCODES.items()}
         # The service menu: hold buttons 1 and 4 together for 5 s.
         menu = presets.menu = _service_menu(station, control, presets, args.config)
-        chord = Chord({2, 5}, service_mod.HOLD_S, on_start=lambda: (presets._clip(beep(), "Button"), menu.holding()),
-                      on_fire=menu.open)
+        from sleepradiopi.broadcast.station import _tick
+        tick = _tick()
+        chord = Chord({2, 5}, service_mod.HOLD_S, on_start=menu.holding, on_fire=menu.open,
+                      on_tick=lambda: presets._clip(tick, "Button"))   # a tick a second, counting down
         # (SLEEPRADIOPI_INPUT_DIR: somewhere else to look for the knob and buttons -- e.g. an empty
         # folder for a test run on a desktop, whose keyboard would otherwise count as buttons 1-4)
         knob = Knob(lambda clicks: control.step(clicks * settings.knob_step), control.toggle,
