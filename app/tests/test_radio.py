@@ -454,3 +454,27 @@ def test_backups_keep_the_stations_but_not_whats_on(tmp_path: Path) -> None:
     saved["settings"]["radio_stations"] = [{"name": "B", "url": "gopher://b/"}]
     with pytest.raises(backup.BadSettings, match="radio_stations"):
         backup.parse(saved)
+
+
+def test_an_opening_cut_short_is_kept_for_coming_back(tmp_path: Path, monkeypatch) -> None:
+    """Tuning in while the welcome is still being made (slow on a Zero) keeps
+    it, half made, for when the show comes back, instead of starting again."""
+    from concurrent.futures import Future
+    from sleepradiopi.broadcast.station import Speech, Step
+    monkeypatch.setattr(radio, "RadioStream", lambda url: FakeStream(url, blocks=10_000))
+    st = _station(tmp_path)
+    welcome = Speech("Good evening, and welcome", "v", Future())     # never finishes here
+    first = st.tracks[0]
+    st._opening = (st.builder.welcome_greeting(), [Step("say", welcome)], first)
+    out = Counting()
+
+    def write(block):
+        out.blocks += 1
+        if out.blocks == 5:
+            st.tune({"name": "RP", "url": "http://rp/"})
+        elif out.blocks == 40:
+            st._stop.set()
+    out.write = write
+    st.output = out
+    st._run_show()
+    assert st._opening[1][0].speech is welcome and st._opening[2] is first

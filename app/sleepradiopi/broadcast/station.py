@@ -207,6 +207,7 @@ class Station:
         self._news_prep_key: str | None = None
         self._news_ready: NewsItem | None = None
         self._opening: tuple[str, list[Step], BroadcastTrack] | None = None
+        self._last_opening: tuple[str, list[Step], BroadcastTrack] | None = None
         self._plan: list[Step] = []
         self._gap_decision = None
         self._in_gap = False
@@ -322,11 +323,14 @@ class Station:
             while not self._halted():
                 self._write(pcm.silence(0.5))
             return
+        opened = False
         try:
             steps, first = self._take_opening()
+            opening = self._last_opening
             self._run_steps(steps)
             track = first
             while not self._halted():
+                opened = True
                 self._play_track(track)
                 if self._halted():
                     break
@@ -345,7 +349,10 @@ class Station:
                 self.on_air = None
                 self.gap_plan = []
                 self.next_track = None
-                self._prepare_opening()       # ready for coming back from the station
+                if not opened:                # its lines may be half made (slow on a Zero): keep them
+                    self._opening = opening
+                else:
+                    self._prepare_opening()   # ready for coming back from the station
 
     # --- internet radio ----------------------------------------------------------------
 
@@ -1125,6 +1132,7 @@ class Station:
             self._prepare_opening()
             opening = self._opening
         self._opening = None
+        self._last_opening = opening
         return opening[1], opening[2]
 
     # --- status ----------------------------------------------------------------------
