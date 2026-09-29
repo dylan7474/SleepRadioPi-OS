@@ -7,6 +7,7 @@
 
 REQ=/run/sleepradiopi/poweroff
 BOOT=/run/sleepradiopi/reboot
+BACK=/run/sleepradiopi/rollback      # the service menu: go back to the previous version
 
 while sleep 1; do
 	if [ -e $REQ ]; then
@@ -14,6 +15,11 @@ while sleep 1; do
 		logger -t sleepradiopi "shutdown requested from the web page"
 		poweroff
 		exit 0
+	fi
+	if [ -e $BACK ]; then
+		rm -f $BACK
+		logger -t sleepradiopi "going back to the previous version (service menu)"
+		python3 -m sleepradiopi.updater rollback 2>&1 | logger -t update
 	fi
 	if [ -e $BOOT ]; then
 		rm -f $BOOT

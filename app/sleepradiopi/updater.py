@@ -147,8 +147,10 @@ class Paths:
     def __init__(self, boot: Path = Path("/boot"), proc_cmdline: Path = Path("/proc/cmdline"),
                  state: Path = STATE, status: Path = STATUS, go: Path = GO,
                  device: Callable[[str], Path] = lambda slot: Path(f"/dev/mmcblk0{slot}"),
-                 remount: Callable[[str], None] | None = None) -> None:
+                 remount: Callable[[str], None] | None = None,
+                 rollback_status: Path = RUN / "rollback-status") -> None:
         self.boot, self.proc_cmdline, self.state = boot, proc_cmdline, state
+        self.rollback_status = rollback_status
         self.status, self.go, self.device = status, go, device
         self.remount = remount or (lambda mode: subprocess.run(["mount", "-o", f"remount,{mode}", str(boot)],
                                                                check=True))
@@ -281,15 +283,44 @@ def watchdog(p: Paths = Paths(), confirm_s: float = CONFIRM_S, reboot=lambda: su
     return "rolled back"
 
 
+SQUASHFS_MAGIC = b"hsqs"
+
+
+def rollback(p: Paths = Paths(), reboot=lambda: subprocess.run(["reboot"])) -> str:
+    """(root; the service menu's "go back to the previous version") Boot the
+    other root slot, if it holds a system, and reboot. Writes ROLLBACK_STATUS."""
+    cur = booted_slot(p)
+    other = "p3" if cur == "p2" else "p2"
+    try:
+        with open(p.device(other), "rb") as f:
+            ok = f.read(4) == SQUASHFS_MAGIC
+    except OSError:
+        ok = False
+    if not ok:
+        _write_json(p.rollback_status, {"ok": False, "reason": "no previous version"})
+        return "nothing to go back to"
+    (p.state / "pending.json").unlink(missing_ok=True)     # (not an update to confirm)
+    _write_json(p.state / "result.json", {"ok": True, "rolled_back": True})
+    _set_root(p, cur, other)
+    _write_json(p.rollback_status, {"ok": True, "slot": other})
+    log.warning("going back to the previous version in %s", other)
+    reboot()
+    return f"back to {other}"
+
+
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description="Install an update (root), or watch a new one boot.")
     sub = parser.add_subparsers(dest="cmd", required=True)
     sub.add_parser("install")        # reads REQUEST
     sub.add_parser("watchdog")
+    sub.add_parser("rollback")
     args = parser.parse_args(argv)
     logging.basicConfig(level=logging.INFO, format="%(message)s")
     if args.cmd == "watchdog":
         print(watchdog())
+        return 0
+    if args.cmd == "rollback":
+        print(rollback())
         return 0
     try:
         req = json.loads(REQUEST.read_text())
@@ -410,7 +441,9 @@ class Updates:
         except (OSError, ValueError):
             return
         result.unlink(missing_ok=True)
-        if r.get("ok"):
+        if r.get("rolled_back"):
+            self.say(f"Sleep Radio has gone back to its previous version, {self.version}.")
+        elif r.get("ok"):
             self.say(f"Sleep Radio has been updated to version {r.get('version', self.version)}.")
         else:
             self.say("The last update didn't work, so Sleep Radio went back to the version it had before.")

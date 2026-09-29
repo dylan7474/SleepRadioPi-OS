@@ -128,6 +128,7 @@ class Presets:
                  presets: list | None = None, announcer=None) -> None:
         self.station = station
         self.control = control           # SpeakerControl: play/pause, sleep timer, clips
+        self.menu = None                 # the service menu (io/service.py): gets the presses while it's open
         self.config_file = config_file
         self.announcer = announcer       # says the address
         try:
@@ -169,7 +170,8 @@ class Presets:
         now = self.current()
         return {"buttons": [{"preset": p, "label": self.label(p), "playing": same(p, now)}
                             for p in self.presets],
-                "now": {"preset": now, "label": self.label(now)}, "actions": ACTIONS}
+                "now": {"preset": now, "label": self.label(now)}, "actions": ACTIONS,
+                "service": self.menu.state if self.menu is not None else None}
 
     # --- setting them -------------------------------------------------------------------
 
@@ -199,6 +201,9 @@ class Presets:
     def press(self, index: int) -> None:
         """A short press: play the button's preset, or pause/play if it's what's
         playing already; do its action."""
+        if self.menu is not None and self.menu.active:
+            self.menu.press(index)
+            return
         preset = self.presets[index]
         log.info("button %d pressed: %s", index + 1, self.label(preset))
         if preset is None:
@@ -221,6 +226,9 @@ class Presets:
 
     def hold(self, index: int) -> None:
         """A long press: keep what's playing now on this button."""
+        if self.menu is not None and self.menu.active:
+            self.menu.press(index)
+            return
         preset = self.set(index, self.current())
         self._say(f"Button {WORDS[index]}: {self.label(preset)}.")
 

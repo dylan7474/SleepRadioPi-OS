@@ -12,6 +12,11 @@ KEY_4, io/presets.py), which go to their own button.
 With a long-press action, a press acts when it's let go (pause/play), and
 holding it for LONG_PRESS_S does the long-press action instead (say the
 radio's address).
+
+Holding two preset buttons together (a chord: 1 and 4 open the service
+menu, io/service.py) cancels both buttons' own press and hold the moment
+the second goes down, so neither plays anything or keeps a preset; held for
+the chord's time, its action runs.
 """
 
 from __future__ import annotations
@@ -86,18 +91,75 @@ class PressTimer:
             timer.cancel()
             self.on_short()
 
+    def cancel(self) -> None:
+        """Part of a chord: this press does nothing, now or when it's let go."""
+        with self._lock:
+            if isinstance(self._timer, threading.Timer):
+                self._timer.cancel()
+            if self._timer is not None:
+                self._timer = "cancelled"
+
+
+class Chord:
+    """Keys held together: on_start when they're all down, on_fire if they
+    stay down for hold_s. The keys' own PressTimers are cancelled."""
+
+    def __init__(self, codes, hold_s: float, on_start: Callable[[], None], on_fire: Callable[[], None]) -> None:
+        self.codes, self.hold_s = frozenset(codes), hold_s
+        self.on_start, self.on_fire = on_start, on_fire
+        self.down: set = set()
+        self._timer: threading.Timer | None = None
+        self._lock = threading.Lock()
+
+    def key(self, code: int, pressed: bool, timers: dict) -> None:
+        with self._lock:
+            if pressed:
+                self.down.add(code)
+                if len(self.down) > 1:                 # two buttons at once: neither acts
+                    for c in self.down:
+                        if c in timers:
+                            timers[c].cancel()
+                start = self.codes <= self.down and self._timer is None
+                if start:
+                    self._timer = threading.Timer(self.hold_s, self._fire)
+                    self._timer.daemon = True
+                    self._timer.start()
+            else:
+                self.down.discard(code)
+                start = False
+                if self._timer is not None and code in self.codes:
+                    self._timer.cancel()
+                    self._timer = None
+                    log.info("chord let go early")
+        if start:
+            self.on_start()
+
+    def _fire(self) -> None:
+        with self._lock:
+            if self._timer is None:
+                return
+            self._timer = None
+        log.info("chord held")
+        self.on_fire()
+
 
 class Knob:
     def __init__(self, on_turn: Callable[[int], None], on_press: Callable[[], None],
                  devices: Path = Path("/dev/input"),
                  on_long_press: Callable[[], None] | None = None,
-                 buttons: dict | None = None) -> None:
-        """buttons: keycode -> (on_short, on_long) for the preset buttons."""
+                 buttons: dict | None = None, chord: Chord | None = None) -> None:
+        """buttons: keycode -> (on_short, on_long) for the preset buttons;
+        chord: some of them held together."""
         self.on_turn = on_turn
         self.keys = {}
+        timers = {}
         for code, (short, long_) in (buttons or {}).items():
-            t = PressTimer(short, long_, name=f"button {code - 1}")
-            self.keys[code] = (t.down, t.up)
+            t = timers[code] = PressTimer(short, long_, name=f"button {code - 1}")
+            if chord is None:
+                self.keys[code] = (t.down, t.up)
+            else:
+                self.keys[code] = (lambda t=t, c=code: (t.down(), chord.key(c, True, timers)),
+                                   lambda t=t, c=code: (chord.key(c, False, timers), t.up()))
         if on_long_press is None:            # act as soon as it's pressed
             self.on_press, self.on_release = on_press, None
         else:

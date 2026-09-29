@@ -25,8 +25,9 @@ from sleepradiopi import startup_sound
 from sleepradiopi import wifi
 from sleepradiopi.updater import Updates
 from sleepradiopi.voices import STANDARD_NAME, VoiceJobs
-from sleepradiopi.io.announce import Announcer
-from sleepradiopi.io.knob import Knob
+from sleepradiopi.io.announce import Announcer, beep
+from sleepradiopi.io.knob import Chord, Knob
+from sleepradiopi.io import service as service_mod
 from sleepradiopi.io import presets as presets_mod
 from sleepradiopi.playback import radio as radio_mod
 from sleepradiopi.media import MediaLibrary
@@ -132,6 +133,86 @@ def _voice_installed(station: Station, config_file: Path, control, name: str) ->
         _restart_soon(control)
 
 
+def _service_menu(station: Station, control, presets, config_file: Path):
+    """The service menu's voice and actions (io/service.py)."""
+    import shutil
+    from sleepradiopi.config import power, reset
+    from sleepradiopi.io.announce import addresses, spoken_ip
+    from sleepradiopi.updater import this_version
+    from sleepradiopi.web.server import _restart_soon
+    volume_file = Path.home() / ".local" / "state" / "sleepradiopi" / "speaker.json"
+    made: dict = {}
+
+    def render(text):
+        if text not in made:
+            made.clear()
+            made[text] = station.render_speech(text)
+        return made[text]
+
+    def say(text):
+        logging.info("service menu: %s", text)
+        presets._clip(beep(), "Service menu")
+        if not station._has_voice:
+            return
+
+        def run():
+            try:
+                from sleepradiopi.io.announce import Clip
+                control.play_clip(Clip(render(text), "button", "Service menu"))
+            except Exception:
+                logging.exception("service menu: couldn't say it")
+        threading.Thread(target=run, name="service-say", daemon=True).start()
+
+    def prepare(text):
+        if station._has_voice:
+            try:
+                render(text)
+            except Exception:
+                logging.exception("service menu: couldn't make its words")
+
+    def restart():
+        control.save_now()
+        time.sleep(6)                 # (time to say so)
+        control.pause()
+        if not power.request_restart():
+            _restart_soon(control)    # (a desktop: at least restart the station)
+
+    def forget_wifi():
+        reset.forget_wifi(wifi.NETWORKS)
+        try:
+            wifi.ask("hotspot")
+        except OSError:
+            logging.warning("service menu: no Wi-Fi manager to ask")
+
+    def status():
+        try:
+            free = shutil.disk_usage(station.music_dir).free / 1e9
+        except OSError:
+            free = None
+        return service_mod.status_text(addresses(), wifi.status(), this_version(), free, len(station.tracks),
+                                       spoken_ip)
+
+    def rollback():
+        time.sleep(8)                 # (time to say so)
+        if not power.request_rollback():
+            return False
+        st = power.rollback_status()
+        return bool(st and st.get("ok"))
+
+    def factory_reset():
+        time.sleep(8)                 # (time to say so)
+        control.pause()
+        reset.factory_reset(config_file, wifi.NETWORKS, volume_file)
+        try:
+            wifi.ask("hotspot")
+        except OSError:
+            pass
+        os._exit(75)                  # the supervisor restarts the station with the settings as they came
+
+    return service_mod.ServiceMenu(say, {"restart": restart, "wifi": forget_wifi, "status": status,
+                                         "rollback": rollback, "reset": factory_reset}, prepare=prepare)
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Sleep Radio broadcast station")
     parser.add_argument("--config", type=Path, default=DEFAULT_PATH)
@@ -192,11 +273,15 @@ def main() -> None:
         station.on_book_end = control.pause
         buttons = {code: (lambda i=i: presets.press(i), lambda i=i: presets.hold(i))
                    for code, i in presets_mod.KEYCODES.items()}
+        # The service menu: hold buttons 1 and 4 together for 15 s.
+        menu = presets.menu = _service_menu(station, control, presets, args.config)
+        chord = Chord({2, 5}, service_mod.HOLD_S, on_start=lambda: (presets._clip(beep(), "Button"), menu.holding()),
+                      on_fire=menu.open)
         # (SLEEPRADIOPI_INPUT_DIR: somewhere else to look for the knob and buttons -- e.g. an empty
         # folder for a test run on a desktop, whose keyboard would otherwise count as buttons 1-4)
         Knob(lambda clicks: control.step(clicks * settings.knob_step), control.toggle,
              devices=Path(os.environ.get("SLEEPRADIOPI_INPUT_DIR", "/dev/input")),
-             on_long_press=announcer.speak, buttons=buttons).start()
+             on_long_press=announcer.speak, buttons=buttons, chord=chord).start()
         control.play()   # a bedside radio plays as soon as it's powered
     else:
         station = Station(cfg, tts, stream)

@@ -447,6 +447,30 @@ The cards:
   speakers*, below).
 - **Knob switch** — works like the real knob: tap to pause/play, hold 3 s to
   hear the address. If the radio was paused it speaks, then pauses again.
+  **Open the service menu** does what holding buttons 1 and 4 for 15 s does;
+  answer it with the buttons on the Radio tab.
+- **The service menu** (`io/service.py`; buttons 1 and 4 held together for
+  15 s — the moment the second goes down, neither button's own press or
+  3 s hold counts, so a preset is never overwritten; `io/knob.py` `Chord`).
+  While it's open the four buttons answer it. **1**: restart (the Pi).
+  **2**: reset the Wi-Fi — delete `/data/radio/wifi.json` (the networks
+  added on the page, and a renamed hotspot) and ask the Wi-Fi manager for
+  the hotspot, which then announces how to join it; the network on the card
+  (`/boot/wpa_supplicant.conf`) stays, so with nobody on the hotspot the
+  radio tries that again every 5 minutes. **3**: a status report (network,
+  address, version, songs, free space), then **3** again goes back to the
+  previous version: the root helper (`power-request-watch` →
+  `updater.py rollback`) checks the other root slot holds a system
+  (squashfs), points `cmdline.txt` at it and reboots; the old version then
+  says it's back (or the DJ says there's nothing to go back to).
+  **4**: a factory reset, confirmed with **2** then **3**
+  (`config/reset.py`): the settings file keeps only what belongs to the
+  radio (`backup.LOCAL`: its folders, speaker, pins, update source) plus the
+  voice in use and the speaker tuning (mono, EQ, low cut); everything else
+  goes, the web password included, with the page's Wi-Fi networks and the
+  saved volume; music, audiobooks (and their places), voices and caches
+  stay. It asks for the hotspot and restarts the station, which then says
+  how to join it. Anything else, or 45 s of nothing, closes it.
 - **Test sound** — for comparing speaker cabinets and checking wiring, on the
   speakers instead of the show for a moment, with the EQ and low cut
   bypassed: a **bass sweep** (40–600 Hz) and a **full sweep** (40 Hz–16 kHz),
@@ -564,7 +588,7 @@ everything but the page itself and the login needs the session cookie
 | `GET /api/status` | What's on air, next, history, the library, the voice, the speaker (volume, playing, mono, EQ, low cut, sleep timer, test sound), artist/list playing |
 | `POST /api/speaker` | Any of `{"volume": 0-100}`, `{"step": n}`, `{"pause": true \| false \| "toggle"}`, `{"sleep": minutes}` (0 = off), `{"mono": bool}`, `{"noise": true \| false \| "toggle", "noise_kind": "pink", "noise_mix": 0-100}`, `{"eq": {"bass": dB, ...}}`, `{"highpass": Hz}`, `{"test": "bass" \| "sweep" \| "pink" \| "left" \| "right" \| "sides" \| "phase" \| "tune" \| "stop"}` |
 | `POST /api/stream` | `{"enabled": bool}` — listening in a browser on/off (saved as `web_stream`) |
-| `POST /api/knob` | `{"press": "short" \| "long"}` — the knob's switch |
+| `POST /api/knob` | `{"press": "short" \| "long" \| "service"}` — the knob's switch; `service` opens the service menu (then `/api/buttons/press` answers it; `GET /api/buttons` has its `service` state) |
 | `POST /api/skip` | Skip what's on air (track, link, jingle or bulletin) |
 | `GET` / `POST /api/dj` | The DJ settings (and the voices there are) / any of `{"voice", "chattiness", "dj_hooks", "jingle_every", "news_enabled", "startup_sound", "dj_speed", "news_speed"}` |
 | `GET /api/wifi` | Wi-Fi: mode (station / hotspot / connecting), network and address, saved networks, nearby ones |
@@ -636,7 +660,8 @@ sleepradiopi/
   web/         MP3 stream, the web page (page.html) and the JSON API (server.py)
   config/      Settings (JSON), atomic file writes, settings backup (backup.py), the web password
                (auth.py), "is the clock right?"
-  io/          knob.py (rotary encoder + push switch, short/long press), announce.py (spoken address)
+  io/          knob.py (rotary encoder + push switch, short/long press, two-button chord), announce.py
+               (spoken address), presets.py (the four buttons), service.py (the service menu)
   data/        dj_hooks_70s.txt
   playback/    Other sources (deferred: Broadcast is the focus)
 scripts/       deploy.sh, install_service.sh, smoke_test_audio.py, dev_web.py

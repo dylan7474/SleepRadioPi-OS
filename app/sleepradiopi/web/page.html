@@ -599,6 +599,13 @@
     <p id="knobNote" class="muted" style="margin:.5rem 0 0;font-size:.85rem">The same as pressing the radio's knob.
       Holding it for 3 seconds makes the radio beep and then read out its network address, or say it isn't
       connected.</p>
+    <h2 style="margin-top:1rem">Service menu</h2>
+    <button id="serviceBtn" type="button">Open the service menu</button>
+    <p id="serviceNote" class="muted" style="margin:.5rem 0 0;font-size:.85rem">The same as holding buttons 1 and 4
+      together for 15 seconds. The DJ reads out the choices; answer with the buttons on the Radio tab:
+      1 restarts the radio, 2 resets the Wi-Fi, 3 gives a status report (then 3 again goes back to the
+      previous version of the software), 4 is a factory reset (confirmed with 2, then 3). Doing nothing
+      closes it.</p>
   </section>
     </div>
     <div class="page" id="page-dj" hidden>
@@ -1728,6 +1735,14 @@ function knobUp(cancel) {
   $("knobBtn").classList.remove("holding");
   if (!knobLong && !cancel) knobPress("short");
 }
+$("serviceBtn").onclick = async () => {
+  try {
+    const r = await (await fetch("/api/knob", { method: "POST", headers: { "Content-Type": "application/json" },
+                                                body: JSON.stringify({ press: "service" }) })).json();
+    $("serviceNote").textContent = r.done ? "Open: listen to the radio, then press 1–4 on the Radio tab."
+      : "This radio has no service menu (no speaker).";
+  } catch { $("serviceNote").textContent = "Couldn't reach the radio."; }
+};
 $("knobBtn").addEventListener("pointerdown", knobDown);
 $("knobBtn").addEventListener("pointerup", () => knobUp(false));
 $("knobBtn").addEventListener("pointercancel", () => knobUp(true));

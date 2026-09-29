@@ -1,0 +1,176 @@
+import json
+import threading
+import time
+from pathlib import Path
+
+import pytest
+
+from sleepradiopi import updater as up
+from sleepradiopi.config.reset import KEEP, factory_reset
+from sleepradiopi.io import presets as presets_mod
+from sleepradiopi.io import service
+from sleepradiopi.io.knob import Chord, PressTimer
+from sleepradiopi.io.announce import spoken_ip
+
+
+class Rig:
+    """A menu with its words and actions recorded."""
+
+    def __init__(self, wait_s=30.0, rollback_ok=True):
+        self.said, self.done = [], []
+        acts = {name: (lambda name=name: self.done.append(name)) for name in ("restart", "wifi", "reset")}
+        acts["status"] = lambda: "Status report."
+        acts["rollback"] = lambda: self.done.append("rollback") or rollback_ok
+        self.menu = service.ServiceMenu(self.said.append, acts, wait_s=wait_s)
+
+    def press(self, *buttons):
+        for n in buttons:
+            self.menu.press(n - 1)
+            worker = getattr(self.menu, "worker", None)
+            if worker is not None:
+                worker.join(2)
+
+
+def test_one_restarts_and_two_resets_the_wifi() -> None:
+    r = Rig()
+    r.menu.open()
+    assert r.menu.active and r.said[-1] == service.MENU
+    r.press(1)
+    assert r.done == ["restart"] and not r.menu.active and r.said[-1] == service.RESTARTING
+    r.menu.open()
+    r.press(2)
+    assert r.done[-1] == "wifi" and r.said[-1] == service.WIFI
+
+
+def test_three_is_a_status_report_then_three_again_goes_back() -> None:
+    r = Rig()
+    r.menu.open()
+    r.press(3)
+    assert r.said[-1] == f"Status report. {service.ROLLBACK_ASK}" and r.menu.state == "rollback?"
+    r.press(3)
+    assert r.done == ["rollback"] and r.said[-1] == service.ROLLBACK and not r.menu.active
+    r.menu.open()
+    r.press(3, 1)                                    # anything else: cancelled
+    assert r.done == ["rollback"] and r.said[-1] == service.CANCELLED
+
+
+def test_going_back_with_nothing_to_go_back_to() -> None:
+    r = Rig(rollback_ok=False)
+    r.menu.open()
+    r.press(3, 3)
+    assert r.said[-2:] == [service.ROLLBACK, service.NO_ROLLBACK]
+
+
+def test_four_is_a_factory_reset_confirmed_by_two_then_three() -> None:
+    r = Rig()
+    r.menu.open()
+    r.press(4)
+    assert r.said[-1] == service.RESET_ASK
+    r.press(2)
+    assert r.said[-1] == service.RESET_NEXT and not r.done
+    r.press(3)
+    assert r.done == ["reset"] and r.said[-1] == service.RESETTING
+    for wrong in ((4, 3), (4, 2, 2), (4, 1)):
+        r.menu.open()
+        r.press(*wrong)
+        assert r.done == ["reset"] and r.said[-1] == service.CANCELLED and not r.menu.active
+
+
+def test_doing_nothing_closes_it() -> None:
+    r = Rig(wait_s=0.2)
+    r.menu.open()
+    time.sleep(0.5)
+    assert not r.menu.active and r.said[-1] == service.CLOSED
+
+
+def test_while_it_is_open_the_buttons_belong_to_it() -> None:
+    class Station:
+        _has_voice = False
+        source = None
+    p = presets_mod.Presets(Station(), None, None, [{"kind": "action", "action": "time"}, None, None, None])
+    r = Rig()
+    p.menu = r.menu
+    r.menu.open()
+    p.hold(0)                                        # a hold doesn't keep a preset
+    assert r.done == ["restart"] and p.presets[0] == {"kind": "action", "action": "time"}
+    assert not r.menu.active
+
+
+def test_holding_one_and_four_opens_it_and_neither_button_acts() -> None:
+    pressed, fired, started = [], [], []
+    timers = {c: PressTimer(lambda c=c: pressed.append(c), lambda c=c: pressed.append(("hold", c)), long_s=0.3)
+              for c in (2, 3, 4, 5)}
+    chord = Chord({2, 5}, 0.4, on_start=lambda: started.append(1), on_fire=lambda: fired.append(1))
+
+    def down(c):
+        timers[c].down(); chord.key(c, True, timers)
+
+    def up(c):
+        chord.key(c, False, timers); timers[c].up()
+    down(2); down(5)
+    assert started == [1]
+    time.sleep(0.6)
+    up(2); up(5)
+    assert fired == [1] and pressed == []            # no press, no hold (which would store a preset)
+    down(2); down(5); time.sleep(0.1); up(5); up(2)  # let go early
+    time.sleep(0.5)
+    assert fired == [1] and pressed == []
+    down(3); up(3)                                   # a button on its own still works
+    assert pressed == [3]
+
+
+def test_status_words() -> None:
+    text = service.status_text([("wlan0", "192.168.50.130")], {"mode": "station", "ssid": "CHIGLEY"}, "1.0.7",
+                               12.4, 2211, spoken_ip)
+    assert "Wi-Fi network CHIGLEY" in text and "one nine two, dot" in text and "version 1.0.7" in text
+    assert "2211 songs, and 12 gigabytes free" in text
+    spot = service.status_text([], {"mode": "hotspot", "hotspot": {"ssid": "SleepRadio-Setup"}}, "1", None, 0, spoken_ip)
+    assert "own network, SleepRadio-Setup" in spot and "not connected" in spot
+
+
+def test_factory_reset_keeps_the_radio_and_forgets_the_rest(tmp_path: Path) -> None:
+    conf = tmp_path / "config.json"
+    conf.write_text(json.dumps({"music_folder": "/media/music", "speaker_enabled": True, "speaker_eq": {"bass": 3},
+                                "broadcast_voice": "personal", "web_password": "pbkdf2$...", "birthdays": [{}],
+                                "buttons": [None], "messages": {"list": []}, "stream_source": {"kind": "radio"}}))
+    wifi, volume = tmp_path / "wifi.json", tmp_path / "speaker.json"
+    wifi.write_text("{}"); volume.write_text("{}")
+    kept = factory_reset(conf, wifi, volume)
+    assert json.loads(conf.read_text()) == {"music_folder": "/media/music", "speaker_enabled": True,
+                                            "speaker_eq": {"bass": 3}, "broadcast_voice": "personal"}
+    assert set(kept) <= KEEP and not wifi.exists() and not volume.exists()
+
+
+@pytest.fixture
+def slots(tmp_path: Path):
+    boot = tmp_path / "boot"
+    boot.mkdir()
+    (boot / "cmdline.txt").write_text("console=serial0 root=/dev/mmcblk0p3 rootfstype=squashfs ro\n")
+    (tmp_path / "proc_cmdline").write_text("console=serial0 root=/dev/mmcblk0p3 rootfstype=squashfs ro")
+    (tmp_path / "slot_p2").write_bytes(b"hsqs" + b"\0" * 60)
+    (tmp_path / "slot_p3").write_bytes(b"hsqs" + b"\0" * 60)
+    return tmp_path, up.Paths(boot=boot, proc_cmdline=tmp_path / "proc_cmdline", state=tmp_path / "state",
+                              device=lambda s: tmp_path / f"slot_{s}", remount=lambda mode: None,
+                              rollback_status=tmp_path / "run" / "rollback-status")
+
+
+def test_going_back_to_the_previous_version(slots) -> None:
+    tmp, p = slots
+    rebooted = []
+    assert up.rollback(p, reboot=lambda: rebooted.append(1)) == "back to p2"
+    assert "root=/dev/mmcblk0p2" in (p.boot / "cmdline.txt").read_text() and rebooted == [1]
+    assert json.loads((p.state / "result.json").read_text())["rolled_back"]
+    assert json.loads(p.rollback_status.read_text()) == {"ok": True, "slot": "p2"}
+    said = []
+    ups = up.Updates(say=said.append, state=p.state, run=tmp / "run", version_file=tmp / "none")
+    ups.on_air()
+    assert said and "gone back to its previous version" in said[0]
+
+
+def test_no_previous_version(slots) -> None:
+    tmp, p = slots
+    (tmp / "slot_p2").write_bytes(b"\xff" * 64)      # a blank slot (a fresh card)
+    rebooted = []
+    assert up.rollback(p, reboot=lambda: rebooted.append(1)) == "nothing to go back to"
+    assert "root=/dev/mmcblk0p3" in (p.boot / "cmdline.txt").read_text() and not rebooted
+    assert json.loads(p.rollback_status.read_text())["ok"] is False

@@ -929,18 +929,24 @@ def make_handler(station: Station, output: Mp3Output, speaker=None,
                        "application/json")
 
         def _knob(self) -> None:
-            """/api/knob {"press": "short" | "long"}: the knob's switch, from the
-            page (to try it without the hardware). Short = pause/play, long =
-            say the radio's address."""
+            """/api/knob {"press": "short" | "long" | "service"}: the knob's switch, from
+            the page (to try it without the hardware). Short = pause/play, long =
+            say the radio's address; "service" = as holding buttons 1 and 4 for 15 s
+            (the service menu; then the page's buttons 1-4 answer it)."""
             try:
                 body = json.loads(self.rfile.read(int(self.headers.get("Content-Length", 0))) or b"{}")
                 press = body.get("press")
-                if press not in ("short", "long"):
-                    raise ValueError("press must be short or long")
+                if press not in ("short", "long", "service"):
+                    raise ValueError("press must be short, long or service")
             except (ValueError, TypeError, AttributeError):
                 self.send_error(400)
                 return
-            if press == "short":
+            if press == "service":
+                menu = getattr(presets, "menu", None)
+                if menu is not None:
+                    menu.open()
+                done = menu is not None
+            elif press == "short":
                 speaker.toggle()
                 done = True
             else:
