@@ -216,10 +216,19 @@ the buttons and the encoder in and check the fit, the nuts and how the row
 feels before the ~5-hour tube.
 
 **The tube:** `stl/tube_buttons.stl` (`-D buttons=true`), the tube with the
-four holes and the knob moved back. The holes print sideways like the knob's
-hole; `enc_teardrop=true` makes them all pointed if yours sag. For a quicker
-prototype, a 0.6 mm nozzle and 0.3 mm layers should about halve the print
-time (the tube is nearly all wall, so infill hardly matters).
+four holes and the knob moved back. The holes print sideways (the tube stands
+on its front end), so their tops are **teardrops cut flat** 8.75 mm from the
+centre, just inside the button's 19 mm head (`btn_teardrop`): no overhang to
+curl up and catch the nozzle, and hidden once the buttons are in.
+
+A 5-hour print that shifts partway (everything above a point offset a
+little) is usually the bed skipping steps, most often because the nozzle
+clipped a curled-up edge on a travel move. Turn on **Lift Z** (PrusaSlicer:
+Printer Settings → Extruder → Retraction, 0.4 mm) for the tube, and check
+the Y belt's tension, the Y pulley's grub screw and that nothing can snag
+the bed. For a quicker prototype, a 0.6 mm nozzle and 0.3 mm layers should
+about halve the print time (the tube is nearly all wall, so infill hardly
+matters).
 
 **Fitting:** push each button up through its hole from outside and fit the
 nut inside, then wire it as the README says: 1 on the left, seen from the

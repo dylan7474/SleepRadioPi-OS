@@ -179,6 +179,9 @@ btn_x       = [-39, -13, 13, 39];   // 26 mm apart; the outer two miss the speak
 btn_y       = 25;        // from the front face: clear of the front panel's lip and the
                          // clamp tabs, and ~13 mm in front of the knob
 btn_knob_back = 12;      // the knob moves this far back with the buttons in
+btn_teardrop = true;     // the holes print sideways (the tube stands on its front end): a
+                         // teardrop top, cut flat just inside the button's head, so there's
+                         // no overhang to curl up and catch the nozzle (and it's hidden)
 btn_head_d  = 19;        // the flat head above the top (CHECK)
 btn_head_h  = 3;
 btn_nut_d   = 22;        // the nut inside, across its corners (CHECK)
@@ -302,6 +305,10 @@ module teardrop2d(d) hull() {   // point towards +y (up while the tube prints)
 }
 
 module enc2d(d) if (enc_teardrop) teardrop2d(d); else circle(d = d);
+module btn2d(d) if (btn_teardrop) intersection() {
+    teardrop2d(d);
+    translate([-d, -d]) square([2 * d, d + min(d / 2 * sqrt(2), btn_head_d / 2 - 0.75)]);
+} else circle(d = d);
 
 module tube() {
     difference() {
@@ -315,7 +322,7 @@ module tube() {
         }
         if (handle) strap_holes(loop_hole_d);
         if (buttons) for (x = btn_x)
-            translate([x, btn_y, H - wall - 1]) linear_extrude(wall + 2) enc2d(btn_hole_d);
+            translate([x, btn_y, H - wall - 1]) linear_extrude(wall + 2) btn2d(btn_hole_d);
         // Encoder hole in the top, with a thinner patch of wall around it.
         translate([0, enc_y, H - wall - 1]) linear_extrude(wall + 2) enc2d(enc_hole_d);
         translate([0, enc_y, H - wall - 1]) linear_extrude(1 + enc_pocket) enc2d(enc_pocket_d);
