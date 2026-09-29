@@ -33,8 +33,12 @@ NFFT = 4096                 # holds TAPS - 1 frames of history + a block of up t
 MAX_DB = 12
 MAX_HIGHPASS_HZ = 300
 
+# The bass shelf sits at 200 Hz, not the usual ~100: the box's 40 mm drivers
+# resonate at ~250 Hz and its vent props them up only down to ~150 Hz, so
+# there's next to nothing below that to boost (a 120 Hz shelf mostly pushed
+# the cones at notes they can't play). Keep tools/analyser in step.
 BANDS = {                   # name: (kind, frequency Hz)
-    "bass": ("lowshelf", 120.0),
+    "bass": ("lowshelf", 200.0),
     "mid": ("peak", 1000.0),
     "treble": ("highshelf", 6000.0),
 }

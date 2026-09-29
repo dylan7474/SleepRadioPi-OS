@@ -329,7 +329,7 @@ The cards:
   1½ h) runs on the radio: it fades the speakers (and the page's own stream)
   over the last minute, then pauses; every open page shows the same
   countdown, and a pause cancels it.
-- **Speaker EQ** — bass / mid / treble (±12 dB; shelves at 120 Hz and 6 kHz,
+- **Speaker EQ** — bass / mid / treble (±12 dB; shelves at 200 Hz and 6 kHz,
   a peak at 1 kHz) and a **Low cut** (Off / 100–160 Hz, 24 dB/octave) that
   keeps the deepest bass out of small speakers (~140 Hz with the case's bass
   port). The MiniAmp has no EQ of its own, so it's done in software
@@ -419,9 +419,9 @@ How it decides:
   worked out through the same filters the radio uses (`audio/eq.py`).
 - Boosts cost more than cuts, so small speakers aren't pushed.
 - Only frequencies at least 10 dB above the room's noise count, from
-  150 Hz (or just above the low cut) to 12 kHz. The bass shelf (120 Hz)
-  mostly works below that, so how much of the deepest bass you want is
-  still for your ears.
+  150 Hz (or just above the low cut) to 12 kHz. The bass shelf is at 200 Hz
+  (the box plays little below ~150 Hz), inside what the mic hears, so the
+  suggestion covers bass too; the low cut is still worth checking by ear.
 
 A laptop mic hears little below ~150 Hz. **Mic → Typical laptop mic** adds
 back a rough guess at what it misses. A measurement mic's calibration file

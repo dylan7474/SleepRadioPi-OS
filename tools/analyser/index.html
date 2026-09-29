@@ -332,7 +332,7 @@ function tick(t) {
 
 // --- the radio's EQ, as the radio does it (sleepradiopi/audio/eq.py) ----------------------------------
 const RADIO_RATE = 44100, LOWCUTS = [0, 100, 120, 140, 160];
-const EQ_BANDS = { bass: ["lowshelf", 120], mid: ["peak", 1000], treble: ["highshelf", 6000] };
+const EQ_BANDS = { bass: ["lowshelf", 200], mid: ["peak", 1000], treble: ["highshelf", 6000] };   // = the radio's audio/eq.py
 const SEARCH = { bass: [-9, 9], mid: [-6, 6], treble: [-9, 6] };   // cautious: small speakers
 
 function biquad(kind, f0, db) {            // RBJ cookbook; shelves S = 1, peak Q = 0.7
