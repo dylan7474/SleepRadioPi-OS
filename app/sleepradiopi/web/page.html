@@ -783,7 +783,7 @@ function toast(text) {
   clearTimeout(t._h); t._h = setTimeout(() => { t.hidden = true; }, 3200);
 }
 const audio = $("audio");
-let wanted = false, sleepEnd = 0, shuttingDown = false;
+let wanted = false, sleepEnd = 0, shuttingDown = false, pageVersion = null;
 
 // Volume 0-100 in 0.5 dB steps, the same scale as the radio's speaker (and
 // its knob), so this page and the speaker sound alike at the same number.
@@ -1597,6 +1597,9 @@ async function poll() {
     lastStatus = s;
     $("power").hidden = !s.can_power_off;
     if (s.version) $("version").textContent = /^\d/.test(s.version) ? "v" + s.version : "build " + s.version;
+    // The radio was updated while this page was open: load the new page to match it.
+    if (s.version && pageVersion && s.version !== pageVersion && !uploading) { location.reload(); return; }
+    pageVersion = pageVersion || s.version;
     streamOn = !!s.stream;
     $("tune").hidden = !streamOn;
     if (!streamOn && wanted) tuneOut();              // switched off (here or on another phone)
@@ -2223,7 +2226,11 @@ $("listsBtn").onclick = () => go("#set-lists");
 $("stationsManage").onclick = () => go("#set-stations");
 
 // The buttons' sheet: from the radio panel or Settings.
-function openSheet() { loadButtons(); $("sheet").hidden = $("scrim").hidden = false; $("sheetDone").focus(); }
+async function openSheet() {
+  $("sheet").hidden = $("scrim").hidden = false; $("sheetDone").focus();
+  await Promise.all([loadBooks(), loadRadio()]);      // the choices: the latest books and stations
+  loadButtons();
+}
 function closeSheet() { $("sheet").hidden = $("scrim").hidden = true; }
 $("presetsEdit").onclick = openSheet;
 $("sheetDone").onclick = closeSheet;
