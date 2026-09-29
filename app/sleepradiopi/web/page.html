@@ -930,7 +930,7 @@
       <label for="bDayAt" style="margin-left:.6rem">Day from</label><input id="bDayAt" type="time" step="900"></div>
     <p class="muted" style="margin:.4rem 0 0;font-size:.85rem">Two sets of the four buttons, each with its own
       presets. Swap them here, with the switch under the buttons, or on the radio by holding buttons
-      <b>2 and 3</b> together for 3 seconds. With the clock on, the radio swaps at those times (quietly); a swap
+      <b>2 and 3</b> together for a second. With the clock on, the radio swaps at those times (quietly); a swap
       by hand lasts until the next one.</p>
   </section>
   <button id="sheetDone" class="primary big" type="button">Done</button>
@@ -2417,7 +2417,7 @@ async function buttonKey(n, down) {
 // Two buttons held together: count down (the radio's own timers do it). 1 + 4 for
 // 5 s: the service menu; 2 + 3 for 3 s: swap the day and night buttons.
 const CHORDS = [{ keys: [1, 4], s: 5, what: () => "Service menu", done: "Opening the service menu… let go, then listen to the radio." },
-                { keys: [2, 3], s: 3, what: () => `${bState && bState.bank === "day" ? "Night" : "Day"} buttons`,
+                { keys: [2, 3], s: 1, what: () => `${bState && bState.bank === "day" ? "Night" : "Day"} buttons`,
                   done: "Swapping the buttons…" }];
 let chordTimer = null, chordLeft = 0, chordOn = null;
 function chordNote(text) { $("chordNote").textContent = text; $("chordNote").hidden = !text; }

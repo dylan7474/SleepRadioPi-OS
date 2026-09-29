@@ -99,7 +99,7 @@ software, and the case to print.
   pause. **Hold one for 3 seconds** to keep what's playing on it (a beep, then
   "Button two: BBC Radio 4"). The same four are on the web page's front.
   There are **two sets of the four, day and night**: hold **buttons 2 and
-  3** together for 3 seconds to swap (or use the page's ☀ / ☾ switch), and
+  3** together for a second to swap (or use the page's ☀ / ☾ switch), and
   optionally let the radio swap them by the clock.
 - **The DJ can be switched off** (Settings → The DJ, or a button): the show
   becomes music only, while the news, messages and jingles keep their own

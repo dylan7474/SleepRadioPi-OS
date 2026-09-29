@@ -213,7 +213,7 @@ Most of these are set from the web page; the rest are in the config file.
 | `speaker_highpass_hz` | `0` | Low cut for the speaker (~140 with the case's bass port); 0 = off. |
 | `knob_step` | `2` | Volume steps per click (1 dB). |
 | `broadcast_voice` | `"stock"` | `"stock"` or `"personal"` (a folder in the voices folder). |
-| `buttons_night`, `buttons_bank` | `[]`, `"day"` | The night set of four (like `buttons`, which is the day set), and the set in use. Hold buttons 2 and 3 together for 3 s (ticking) to swap: three notes, rising for day, falling for night. |
+| `buttons_night`, `buttons_bank` | `[]`, `"day"` | The night set of four (like `buttons`, which is the day set), and the set in use. Hold buttons 2 and 3 together for 1 s to swap: three notes, rising for day, falling for night. |
 | `buttons_auto` | `{}` | `{"on", "night_min", "day_min"}` (defaults off, 21:00, 07:00): swap the sets by the clock, quietly; a swap by hand lasts until the next switch time. |
 | `broadcast_dj` | `true` | `false`: the show is music only (see *The DJ*). |
 | `buttons` | `[]` | The four preset buttons (the day set): `[preset or null, ...]`, each `{"kind": "show", "artist", "profile"}`, `{"kind": "radio", "name", "url"}`, `{"kind": "album", "folder", "title", "artist"}` or `{"kind": "action", "action": "time" \| "news" \| "sleep" \| "address"}`. |

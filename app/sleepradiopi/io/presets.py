@@ -43,7 +43,7 @@ ACTIONS = {"time": "Say the time", "news": "The news now", "sleep": "Sleep timer
            "address": "Say the address", "noise": "Noise on/off", "dj": "DJ on/off"}
 BANKS = ("day", "night")
 BANK_KEYS = (3, 4)          # buttons 2 and 3...
-BANK_HOLD_S = 3.0           # ...held together this long swap day and night
+BANK_HOLD_S = 1.0           # ...held together this long swap day and night
 AUTO_DEFAULT = {"on": False, "night_min": 21 * 60, "day_min": 7 * 60}
 SLEEP_MIN = 30
 MAX_TEXT = 200
