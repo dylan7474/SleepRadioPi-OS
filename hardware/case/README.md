@@ -2,6 +2,9 @@
 
 ![The finished radio: blue body, white front, back and knob, sunburst grilles and knob, and the two-tone front: SLEEP RADIO lettering in blue, with a thin blue line round the panel's edge and in the grilles](mockup_logo_sunburst.jpg)
 
+> **See also [version 2](../case_v2)**: the cabinet designed around these speakers
+> (a sealed chamber each, electronics bay on top). This version 1 stays as it is.
+
 > **Work in progress.** The front and back panels have been printed and fitted;
 > the full tube hasn't been printed yet, and the speaker sizes below are still
 > unverified. Print `stl/tube_ring.stl` first to check the fit.

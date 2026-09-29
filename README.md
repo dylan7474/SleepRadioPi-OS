@@ -510,7 +510,13 @@ the Pi, so none of this needs the card reader.
 
 ### Case
 
-[`hardware/case/`](hardware/case/) is a 3D-printable stereo cabinet for this
+**Version 2** ([`hardware/case_v2/`](hardware/case_v2/), designed, not printed
+yet) is the cabinet sized from the speakers' acoustics: a sealed 0.4 L chamber
+for each speaker under a shelf, and an electronics bay across the top (the Pi
+lies on a tray on the back panel; the power lead plugs straight in), 152 × 100
+× 115 mm. Its README explains the design.
+
+Version 1: [`hardware/case/`](hardware/case/) is a 3D-printable stereo cabinet for this
 build: two 40 mm speakers behind hex or art deco sunburst grilles (with
 optional SLEEP RADIO lettering), the Pi, MiniAmp and RTC on the removable
 back panel, and the encoder knob in the top. There's an optional **bass
@@ -547,6 +553,7 @@ anything else starts.
 | `scripts/` | `flash.sh`, `provision-media.sh`, `update.sh`, `release.sh`, `speaker-mode.sh`, `web-password.sh` (run on the PC) |
 | `app/sleepradiopi/web/analyser/` | The spectrum analyser web page that suggests speaker settings (published to GitHub Pages, and served by the radio at `/analyser/`) |
 | `hardware/case/` | The 3D-printed case (OpenSCAD source, STLs, assembly notes) |
+| `hardware/case_v2/` | Version 2 of the case, designed around the speakers (sealed chambers) |
 | `hardware/wiring/` | The wiring diagram (`wiring.svg`) and the script that draws it |
 
 ## Roadmap
