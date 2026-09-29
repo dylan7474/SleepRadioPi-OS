@@ -1854,6 +1854,7 @@ async function mediaDone(before = "") {
     if (d.changed) {
       const text = `${before}Library updated: ${d.library.tracks.toLocaleString()} songs, ${d.library.jingles} jingles.`;
       if (!$("viewMedia").hidden) mNote(text); else rNote("libNote", text);
+      loadArtists();                              // new (or gone) artists in Artist radio and the lists
     }
   } catch {}
 }
