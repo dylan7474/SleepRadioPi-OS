@@ -151,3 +151,23 @@ def test_pausing_or_cancelling_ends_the_sleep_timer(tmp_path: Path) -> None:
     ctl.set_sleep(15)
     ctl.pause()                                # e.g. the knob
     assert spk.fade_end is None and ctl._sleep_timer is None
+
+
+def test_a_card_that_wont_open_is_retried_ever_more_slowly_then_reported(monkeypatch) -> None:
+    import numpy as np
+    from sleepradiopi.audio import speaker as sp
+    out = sp.SpeakerOutput(command=["false"])            # "aplay" that exits at once
+    monkeypatch.setattr(sp, "STUCK_S", 0.5)
+    naps = []
+    monkeypatch.setattr(sp.time, "sleep", lambda s: naps.append(s))
+    stuck = []
+    out.on_stuck = lambda: stuck.append(1)
+    monkeypatch.setattr(sp.threading, "Thread", lambda target, **k: type("T", (), {"start": lambda self: target()})())
+    monkeypatch.setattr(out, "_opened_once", True)
+    out.start()
+    t0 = sp.time.monotonic()
+    while sp.time.monotonic() - t0 < 1.0:
+        out.write(np.zeros((1024, 2), np.int16))
+    assert naps[:4] == [0.1, 0.2, 0.4, 0.8] and max(naps) <= 5.0
+    assert stuck == [1]                                     # once
+    out.stop()

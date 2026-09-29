@@ -34,6 +34,7 @@ log = logging.getLogger(__name__)
 SLICE_FRAMES = 1024          # ~23 ms: how often the volume can change
 PIPE_BYTES = 16384           # ~93 ms of audio queued in the pipe to aplay
 ALSA_BUFFER_US = 250_000     # aplay's own buffer; smaller risks underruns on a Zero
+STUCK_S = 120.0              # the card won't open for this long: on_stuck() (the radio restarts)
 DB_PER_STEP = 0.5            # volume 100 = full scale, 0 = silent
 F_SETPIPE_SZ = 1031          # fcntl.F_SETPIPE_SZ (Linux), missing from older Pythons
 SAVE_AFTER_S = 3.0           # save the volume once the knob has been still this long
@@ -82,6 +83,10 @@ class SpeakerOutput:
         self._io = threading.Lock()      # one writer at a time: the show, or the noise pump
         self._pump: threading.Thread | None = None
         self._opened_once = False
+        self._fails = 0                  # aplay failures in a row (the card won't open)
+        self._opened_at = 0.0
+        self._failing_since: float | None = None
+        self.on_stuck = None             # called once when the card has failed to open for STUCK_S
 
     def _open(self) -> None:
         if not self._opened_once:        # the start-up sound (ticking by now) hands the card over
@@ -93,6 +98,7 @@ class SpeakerOutput:
         # Unbuffered: Python 3.14 buffers pipes 128 KB (~0.75 s of audio), which would
         # delay every knob turn and pause by that much on top of the small pipe below.
         self._proc = subprocess.Popen(self.command, stdin=subprocess.PIPE, bufsize=0)
+        self._opened_at = time.monotonic()
         try:
             fcntl.fcntl(self._proc.stdin, F_SETPIPE_SZ, PIPE_BYTES)
         except OSError:
@@ -192,13 +198,32 @@ class SpeakerOutput:
                 while view:                          # (unbuffered: a write can take part of it)
                     view = view[proc.stdin.write(view):]
             except (BrokenPipeError, ValueError, OSError):
+                self._failed()
                 with self._lock:
                     if self._proc is proc:
-                        log.error("aplay stopped; reopening the speaker")
                         self._close()
                         self._sync()
                 return False
+            if self._fails and time.monotonic() - self._opened_at > 5.0:   # (a dead aplay's pipe
+                self._fails, self._failing_since = 0, None                  # takes a few writes)
             return True
+
+    def _failed(self) -> None:
+        """aplay stopped (e.g. the sound card wouldn't open): try again, waiting
+        longer each time (not ten times a second, flooding the log), and if the
+        card still won't open after STUCK_S, on_stuck() -- a stuck driver needs
+        a restart. (Called with _io held: nothing else plays meanwhile anyway.)"""
+        self._fails += 1
+        now = time.monotonic()
+        if self._failing_since is None:
+            self._failing_since = now
+        if self._fails & (self._fails - 1) == 0:      # the 1st, 2nd, 4th, 8th... time
+            log.error("aplay stopped; reopening the speaker (%d in a row)", self._fails)
+        if now - self._failing_since > STUCK_S and self.on_stuck is not None:
+            stuck, self.on_stuck = self.on_stuck, None
+            log.error("speaker: the sound card hasn't opened for %.0f s", now - self._failing_since)
+            threading.Thread(target=stuck, name="speaker-stuck", daemon=True).start()
+        time.sleep(min(5.0, 0.1 * 2 ** min(self._fails - 1, 6)))
 
     def stop(self) -> None:
         with self._lock:

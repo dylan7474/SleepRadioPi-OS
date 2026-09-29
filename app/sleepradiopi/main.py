@@ -133,6 +133,27 @@ def _voice_installed(station: Station, config_file: Path, control, name: str) ->
         _restart_soon(control)
 
 
+def _speaker_stuck() -> None:
+    """The sound card won't open (a stuck driver: only a restart clears it) --
+    restart the radio, at most once an hour, so it never sits there silent
+    with nobody to pull the plug."""
+    from sleepradiopi.config import power
+    flag = Path.home() / ".local" / "state" / "sleepradiopi" / "speaker-restart"
+    try:
+        if time.time() - flag.stat().st_mtime < 3600:
+            logging.error("speaker stuck, but restarted for that within the hour: not again")
+            return
+    except OSError:
+        pass
+    try:
+        flag.parent.mkdir(parents=True, exist_ok=True)
+        flag.touch()
+    except OSError:
+        pass
+    logging.error("speaker stuck: restarting the radio")
+    power.request_restart()
+
+
 def _service_menu(station: Station, control, presets, config_file: Path, ready=lambda: True):
     """The service menu's voice and actions (io/service.py). While it's open the
     show is paused and the speaker plays only the menu (MenuSound): its words,
@@ -342,6 +363,7 @@ def main() -> None:
                                 eq=Equalizer(pcm.SAMPLE_RATE, pcm.CHANNELS, settings.speaker_eq,
                                              settings.speaker_highpass_hz))
         station = Station(cfg, tts, TeeOutput(speaker, stream))
+        speaker.on_stuck = _speaker_stuck
         control = SpeakerControl(
             speaker, station.listener_joined, station.listener_left,
             state_file=Path.home() / ".local" / "state" / "sleepradiopi" / "speaker.json",
