@@ -485,3 +485,17 @@ def test_programming_the_other_set_without_swapping(tmp_path) -> None:
     p.set(0, {"kind": "action", "action": "sleep"}, bank="night")
     assert p.bank == "day" and p.banks["night"][0] == {"kind": "action", "action": "sleep"} and p.banks["day"][0] is None
     assert p.status()["sets"]["night"][0]["label"] == "Sleep timer (30 min)"
+
+
+def test_instant_does_it_now_without_a_button(tmp_path: Path) -> None:
+    """The desktop's double-click on a jingle or an action (or a drop on the radio)."""
+    st, ctl, conf, p = _presets(tmp_path)
+    played, did = [], []
+    p.jingle = played.append
+    p._action = did.append
+    assert p.instant({"kind": "jingle", "path": "Station ID.mp3"})["kind"] == "jingle"
+    p.instant({"kind": "action", "action": "time"})
+    assert played == ["Station ID.mp3"] and did == ["time"] and ctl.calls == []
+    for bad in (None, {"kind": "show"}, {"kind": "jingle", "path": "../x.mp3"}):
+        with pytest.raises(ValueError):
+            p.instant(bad)

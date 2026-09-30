@@ -412,6 +412,13 @@ def make_handler(station: Station, output: Mp3Output, speaker=None,
                 self._buttons(path.endswith("press"))
             elif path == "/api/buttons/key" and presets is not None and presets.keys:
                 self._button_key()
+            elif path == "/api/instant" and presets is not None:
+                try:
+                    done = presets.instant(self._body().get("preset"))
+                except (ValueError, TypeError, AttributeError) as e:
+                    self._error(str(e) if isinstance(e, ValueError) else "send {\"preset\": {...}}")
+                    return
+                self._send(json.dumps({"done": done}).encode(), "application/json")
             elif path in ("/api/buttons/bank", "/api/buttons/auto") and presets is not None:
                 self._button_bank(path.endswith("auto"))
             elif path.startswith("/api/podcasts/") and path.rsplit("/", 1)[1] in ("follow", "unfollow", "play", "heard"):

@@ -574,6 +574,16 @@ class Presets:
                 save_setting(self.config_file, "broadcast_dj", on)
             self._say("DJ on." if on else "DJ off. Just the music.")
 
+    def instant(self, preset) -> dict:
+        """Do an action, or play a jingle / say a message or birthday, now -- as a
+        button holding it would (the desktop's double-click or drop on the radio).
+        ValueError if it isn't one of those."""
+        p = validate(preset)
+        if p is None or p["kind"] not in INSTANT:
+            raise ValueError(f"only these happen at once: {', '.join(INSTANT)}")
+        self._instant(p)
+        return p
+
     def _instant(self, preset: dict) -> None:
         """An action, or words or a jingle over whatever's on (asked for: said even with the DJ off)."""
         kind = preset["kind"]

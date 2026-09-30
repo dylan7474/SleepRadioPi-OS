@@ -71,6 +71,8 @@
   .menubar .m { color: var(--dim); background: none; border: 0; padding: 2px 4px; border-radius: 4px; }
   .menubar .m:hover { color: var(--ink); background: var(--hover); }
   .menubar .grow { flex: 1; }
+  .menubar > * { flex-shrink: 0; white-space: nowrap; }
+  .menubar #nextLine { flex-shrink: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
   .proto { font-size: 11px; letter-spacing: .1em; text-transform: uppercase; color: var(--amber-deep); border: 1px solid #e9a23a77; border-radius: 99px; padding: 1px 8px; white-space: nowrap; }
   .onair { font-size: 11px; letter-spacing: .14em; text-transform: uppercase; color: var(--red); white-space: nowrap; }
   .onair::before { content: "● "; }
@@ -95,6 +97,9 @@
   .icon.sel .glyph { filter: brightness(1.15); }
   .icon.over .glyph { outline: 2px solid var(--blue); outline-offset: 3px; }
   .icon.alias .lbl { font-style: italic; }
+  .icon.nowon::after { content: ""; position: absolute; top: 0; right: 14px; width: 20px; height: 20px; border-radius: 50%; z-index: 2; pointer-events: none;
+    background: var(--amber) center / 12px no-repeat url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23231703' stroke-width='2.6' stroke-linecap='round'%3E%3Cpath d='M5 10v4M9.5 6v12M14 8.5v7M18.5 5v14'/%3E%3C/svg%3E");
+    box-shadow: 0 2px 6px var(--shadow); }   /* playing now: the level bars, on whatever stands for it */
   .icon.alias .glyph::after { content: "↗"; position: absolute; left: -2px; bottom: -2px; width: 16px; height: 16px; border-radius: 4px;
                                background: #fff; color: #000; font: 700 11px/16px var(--body); text-align: center; }
   .grid .icon, .grid .icon.alias { position: relative; }
@@ -374,6 +379,8 @@
   .toast { position: fixed; left: 50%; bottom: calc(env(safe-area-inset-bottom, 0px) + 18px); transform: translateX(-50%); z-index: 3000;
            background: var(--toast); color: var(--toast-ink); border: 1px solid var(--line); border-radius: 10px; padding: 8px 14px; max-width: min(560px, calc(100% - 32px));
            box-shadow: 0 10px 30px var(--shadow); font-size: 13px; }
+  .toast .undo { margin-left: 12px; border: 1px solid var(--amber); background: none; color: var(--amber); border-radius: 99px; padding: 1px 10px; font: 600 12px var(--body); cursor: pointer; pointer-events: auto; }
+  .toast:has(.undo) { pointer-events: auto; }
   .confirm { position: fixed; inset: 0; z-index: 2500; display: grid; place-items: center; background: #0006; }
   .confirm .box { background: var(--win); border: 1px solid var(--menubar-line); border-radius: 10px; padding: 16px 18px; width: min(380px, calc(100% - 32px)); box-shadow: 0 20px 60px #000c; }
   .confirm .box p { margin: 0 0 14px; }
@@ -804,6 +811,7 @@ function iconEl(o, ctx) {
   d.append(glyph(o), el("div", { className: "lbl", textContent: o.title }));
   if (sub) d.append(el("div", { className: "sub", textContent: sub }));
   d.title = `${KIND[o.kind]}: ${o.title}${sub ? " · " + sub : ""}` + (o.kind === "show" ? " · double-click to play, like starting an app" : "");
+  d._src = { id: o.id, ...ctx };
   d.addEventListener("pointerdown", e => press(e, d, { id: o.id, ...ctx }));
   d.addEventListener("keydown", e => { if (e.key === "Enter") open(o.id); });
   return d;
@@ -841,6 +849,8 @@ function drawDesk() {
   d.replaceChildren(...kids.filter(Boolean));
   d.querySelectorAll(".win[data-win]").forEach(win => { const b = win.querySelector(".wbody"), y = scrolls[win.dataset.win]; if (b && y) b.scrollTop = y; });
   d.querySelectorAll(".tlscroll[data-left]").forEach(n => { n.scrollLeft = +n.dataset.left; });
+  markPlaying();
+  if (booted) try { localStorage.setItem("srd.wins", JSON.stringify(W.filter(w => !w.gone).map(w => ({ id: w.id, x: w.x, y: w.y, w: w.w, h: w.h, z: w.z })))); } catch {}
 }
 
 // ============ the radio on the desktop, live ============
@@ -850,14 +860,16 @@ function turnRadio() { radioBack = !radioBack; flipNow = true; drawDesk(); }
 function nowWords() {
   if (!S) return ["Connecting…", "", ""];
   const n = S.now, src = S.source, pr = S.programme;
-  let title = "Nothing on air", sub = S.speaker && !S.speaker.playing ? "Paused: press the knob" : "";
+  const tuned = S.source ? (S.source.name || S.source.title || S.source.show_title) : null;
+  let title = tuned || "Nothing on air", sub = S.speaker && !S.speaker.playing ? "Paused: press the knob" : "";
   if (n) { title = n.title; sub = [n.artist, n.kind === "track" && !src ? "Sleep Radio" : src ? (src.kind === "radio" ? "Internet radio" : src.kind === "album" ? "Straight through, no DJ" : src.kind === "book" ? "Audiobook" : "Podcast") : ""].filter(Boolean).join(" · "); }
   if (n && ["dj", "news", "jingle"].includes(n.kind)) sub = { dj: "The DJ", news: "The news", jingle: "A jingle" }[n.kind];
   const prog = pr ? `Programme: ${pr.name} · ${pr.waiting ? "waiting for the next block" : pr.block}${pr.until ? " until " + pr.until : ""}` : "";
   if (S.programme_mode && !pr && !(S.speaker && S.speaker.playing)) {
     const nx = nextArmed();
     const ov = nextOver(nx);
-    return ["Programme mode", nx ? `Quiet until ${nx.o.title}, ${when(nx.start)}` + (ov ? ` · ${overWords(ov)}` : "") : ov ? `Quiet · ${overWords(ov)}` : "Quiet: nothing armed", "Arm a programme to wake it"];
+    const quiet = nx ? `Quiet until ${nx.o.title}, ${when(nx.start)}` + (ov ? ` · ${overWords(ov)}` : "") : ov ? `Quiet · ${overWords(ov)}` : "Quiet: nothing armed";
+    return tuned ? [tuned, "Paused · " + quiet, "Programme mode"] : ["Programme mode", quiet, "Arm a programme to wake it"];
   }
   return [title, sub, prog];
 }
@@ -993,6 +1005,7 @@ async function poll() {
   }
   document.querySelectorAll(".cd[data-pid]").forEach(n => { const o = O[n.dataset.pid]; if (o) n.textContent = armText(o); });
   $("nextLine").textContent = nextLineText();
+  markPlaying();
 }
 // the buttons: the set in use (day or night), and which set the radio on the desktop shows --
 // dropping on a button programmes the set shown, without swapping the radio's
@@ -1022,14 +1035,18 @@ async function play(o) {
     else if (o.kind === "episode") await api("/api/podcasts/play", { id: o.pid, guid: o.guid });
     else if (o.kind === "playlist") await api("/api/playlists/play", { name: o.name, shuffle: false });
     else if (o.kind === "programme") await api("/api/programmes/play", { name: o.title });
+    else if (["action", "jingle"].includes(o.kind)) {       // over what's on, now
+      await api("/api/instant", { preset: presetOf(o) });
+      return toast(o.kind === "jingle" ? `Playing the jingle “${o.title}”.` : `${o.title}: now.` + (o.action === "noise" || o.action === "dj" ? " (Switched.)" : ""));
+    }
     else if (o.kind === "show" || o.kind === "list") {
       await api("/api/station", o.kind === "list" ? { artist: null, profile: o.name } : { artist: null, profile: null });
       if (S?.source) await api("/api/radio/stop", {});
       await api("/api/speaker", { pause: false });
     } else return open(o.id);
-    toast(`Playing ${o.title}.`);
+    toast(`Playing “${o.title}”.`);
     setTimeout(poll, 700); setTimeout(async () => { await loadButtons(); updateRadio(); }, 1500);
-  } catch (e) { toast(`Couldn't play ${o.title}: ${e.message}.`); }
+  } catch (e) { toast(`Couldn't play “${o.title}”: ${e.message}.`); }
 }
 function presetOf(o) {
   switch (o.kind) {
@@ -1075,8 +1092,7 @@ async function open(id) {
   if (!o) return;
   if (["track", "station", "episode", "show", "book"].includes(o.kind)) return play(o);
   if (o.kind === "dj") return open(PANEL.dj.id);
-  if (o.kind === "action") return toast(`“${o.title}”: drag it onto a button on the radio, or a programme's timeline.`);
-  if (o.kind === "jingle") return toast(`“${o.title}”: the DJ plays jingles between songs, when jingles are on (the DJ's window).`);
+  if (o.kind === "action" || o.kind === "jingle") return play(o);                 // (do it now; drag it to keep it on a button)
   if (o.kind === "panel" && o.key === "library") return open(JINGLES.id);
   if (o.kind === "panel" && o.key === "voices") return open(VOICES.id);
   if (o.kind === "panel" && o.key === "birthdays") return open(BDAYS.id);
@@ -1096,7 +1112,7 @@ async function open(id) {
   if (needs) {
     win.loading = true; drawDesk();
     try { if (o.kind === "folder") await loadFolder(o); else if (o.kind === "album") await loadAlbum(o); else await loadEpisodes(o); }
-    catch (e) { toast(`Couldn't open ${o.title}: ${e.message}.`); }
+    catch (e) { toast(`Couldn't open “${o.title}”: ${e.message}.`); }
     win.loading = false;
   }
   drawDesk();
@@ -1241,7 +1257,7 @@ function podcastView(o, box) {
 }
 function playlistView(o, box) {
   box.append(el("div", { className: "wtools" }, T("▶ Play", () => play(o), "primary"),
-    T("Shuffle", async () => { try { await api("/api/playlists/play", { name: o.name, shuffle: true }); toast(`${o.title}, shuffled.`); setTimeout(poll, 700); } catch (e) { toast(e.message); } }),
+    T("Shuffle", async () => { try { await api("/api/playlists/play", { name: o.name, shuffle: true }); toast(`“${o.title}”, shuffled.`); setTimeout(poll, 700); } catch (e) { toast(e.message); } }),
     el("span", { className: "note", textContent: `${o.items.length} songs · drop songs, albums or folders here · drag one to the Trash to take it out` })));
   box.append(el("div", { className: "wbody" }, o.items.length ? rowsOf(o.items, o.id, (t, i) => i + 1, true)
     : el("div", { className: "empty", textContent: "Empty. Drag songs, albums or folders onto this window." })));
@@ -1257,6 +1273,7 @@ function rowsOf(ids, where, num, removable, album) {
     const extra = album && o.artist && o.artist !== album.artist ? o.artist : removable ? o.artist : "";
     li.append(el("span", { className: "n", textContent: num(o, i) }), el("b", {}, o.title, extra ? el("small", { textContent: extra }) : null),
               el("span", { className: "len", textContent: o.kind === "episode" ? dur(o.min) : "" }), p);
+    li._src = { id, where, parent: where, index: i, row: true };
     li.addEventListener("pointerdown", e => press(e, li, { id, where, parent: where, index: i, row: true }));
     ul.append(li);
   });
@@ -1332,7 +1349,7 @@ async function afterChange(folders) {                // the radio rescans; the w
 }
 async function mkdir(o, name, win) {
   if (!name) return toast("Give the folder a name.");
-  try { await api("/api/media/mkdir", { kind: kindOf(o), path: o.path || "", name }); win.mkdir = false; await afterChange([o]); toast(`Made ${name}.`); }
+  try { await api("/api/media/mkdir", { kind: kindOf(o), path: o.path || "", name }); win.mkdir = false; await afterChange([o]); toast(`Made the folder “${name}”.`); }
   catch (e) { toast("No folder made: " + e.message + "."); }
 }
 function download(o) {
@@ -1587,8 +1604,9 @@ const UI = {
       until.onchange = () => save({ until: until.value || undefined });
       return [
         grp("The words", ta, line(sbtn("Hear it now", () => act(() => api("/api/messages/hear", { text: ta.value }))),
-          sbtn("Delete…", () => ask("Delete this message?", "Delete", async () => { const fresh = await api("/api/messages");
-            await api("/api/messages", { ...fresh, list: fresh.list.filter((_, j) => j !== idx) }); closeFor(O[win.id]); await loadFolder(NOTES); drawDesk(); }), "danger"))),
+          sbtn("Delete", () => gone("Deleted the message.", async () => { const fresh = await api("/api/messages");
+            await api("/api/messages", { ...fresh, list: fresh.list.filter((_, j) => j !== idx) }); closeFor(O[win.id]); await loadFolder(NOTES); drawDesk();
+            return async () => { await api("/api/messages", fresh); await loadFolder(NOTES); drawDesk(); }; }), "danger"))),
         grp("When it's said",
           srow("Said", seg([[false, "With the others"], [true, "At set times"]], timed, v => save({ times: v ? ["09:00"] : undefined }))),
           timed ? srow("At", times) : help(`In turn with the other messages, every ${all.every_min} min between ${hhmm(all.start_min)} and ${hhmm(all.end_min)}.`),
@@ -1638,8 +1656,9 @@ const UI = {
           el("div", { className: "line" }, ...cur.artists.map(a => el("span", { className: "chipx" }, a, Object.assign(el("button", { type: "button", textContent: "✕", title: "Take " + a + " off" }),
             { onclick: () => cur.artists.length > 1 ? save(d.profiles.map(p => p === cur ? { ...p, artists: p.artists.filter(x => x !== a) } : p)) : toast("A theme needs at least one artist: delete the theme instead.") })))),
           line(add, sbtn("Add", addTo, "primary"))),
-        grp("", line(sbtn("▶ Play it", () => play(o)), sbtn("Delete this theme…", () => ask(`Delete the theme “${cur.name}”? The music stays.`, "Delete theme", async () => {
-          await api("/api/profiles", { profiles: d.profiles.filter(p => p !== cur) }); closeFor(o); await loadFolder(LISTS); drawDesk(); }), "danger")),
+        grp("", line(sbtn("▶ Play it", () => play(o)), sbtn("Delete this theme", () => gone(`Deleted the theme “${cur.name}”. The music stays.`, async () => {
+          await api("/api/profiles", { profiles: d.profiles.filter(p => p !== cur) }); closeFor(o); await loadFolder(LISTS); drawDesk();
+          return async () => { await api("/api/profiles", { profiles: d.profiles }); await loadFolder(LISTS); drawDesk(); }; }), "danger")),
           help("The show, playing only these artists (\"welcome to " + cur.name + " on Sleep Radio\"). A button can hold it: drag it onto one."))];
     },
   },
@@ -1709,7 +1728,8 @@ const UI = {
             { onclick: () => cur.artists.length > 1 ? save(d.profiles.map(p => p === cur ? { ...p, artists: p.artists.filter(x => x !== a) } : p)) : toast("A theme needs at least one artist: delete the theme instead.") })))),
           line(add, sbtn("Add", addTo, "primary")),
           line(sbtn("▶ Play it", () => play(mk({ id: "ls:" + cur.name, kind: "list", name: cur.name, title: cur.name }))),
-               sbtn("Delete this theme…", () => ask(`Delete the theme “${cur.name}”? The music stays.`, "Delete theme", () => { win.pickList = null; save(d.profiles.filter(p => p !== cur)); }), "danger"))) : null,
+               sbtn("Delete this theme", () => { const before = d.profiles; win.pickList = null; save(d.profiles.filter(p => p !== cur));
+                 toast(`Deleted the theme “${cur.name}”. The music stays.`, false, () => save(before)); }, "danger"))) : null,
         grp("Make a list", line(newName, first, sbtn("Make it", make, "primary")))];
     },
   },
@@ -1723,7 +1743,7 @@ const UI = {
       return [grp("Find a station", line(q, sbtn("Search", go, "primary")),
         ...d.results.slice(0, 40).map(st => srow(st.name, help(st.info || ""), have.has(st.url) ? help("Saved") : line(sbtn("▶", () => play(stationObj(st))), sbtn("Save", async () => {
           const list = [...STATIONS.kids.map(id => O[id]).map(o => ({ name: o.name, url: o.url, info: o.info })), { name: st.name, url: st.url, info: st.info }];
-          try { await api("/api/radio/stations", { stations: list }); await loadFolder(STATIONS); toast(`Saved ${st.name}.`); drawDesk(); } catch (e) { toast(e.message); } })))))];
+          try { await api("/api/radio/stations", { stations: list }); await loadFolder(STATIONS); toast(`Saved the station “${st.name}”.`); drawDesk(); } catch (e) { toast(e.message); } })))))];
     },
   },
   findpodcast: {
@@ -1734,7 +1754,7 @@ const UI = {
       q.onkeydown = e => { if (e.key === "Enter") go(); };
       return [grp("Follow a podcast", line(q, sbtn("Search", go, "primary")),
         ...d.results.slice(0, 30).map(p => srow(p.title, help(p.author || ""), sbtn("Follow", async () => {
-          try { await api("/api/podcasts/follow", { feed_url: p.feed_url }); await loadFolder(PODCASTS); toast(`Following ${p.title}.`); drawDesk(); } catch (e) { toast(e.message); } })))),
+          try { await api("/api/podcasts/follow", { feed_url: p.feed_url }); await loadFolder(PODCASTS); toast(`Following “${p.title}”.`); drawDesk(); } catch (e) { toast(e.message); } })))),
         help("From Apple's podcast directory. Episodes play over the internet; each remembers its place.")];
     },
   },
@@ -2211,7 +2231,8 @@ function switchInspector(o, w, win, s0) {
   for (const v of MINS) m.append(new Option(dur(v), v, false, w.min === v)); if (!MINS.includes(w.min)) m.append(new Option(dur(w.min), w.min, false, true));
   m.onchange = () => setSwitch(o, k, on, +m.value, s0);
   const del = el("button", { className: "pill", type: "button", textContent: "Delete", style: "margin-left:auto" });
-  del.onclick = () => { o.switches.splice(k, 1); win.sw = null; saveProgrammes(`${SWITCH_NAME[w.what]}: taken out.`); };
+  del.onclick = async () => { const before = JSON.stringify(o.switches); o.switches.splice(k, 1); win.sw = null; await saveProgrammes();
+    toast(`${SWITCH_NAME[w.what]}: taken out.`, false, async () => { o.switches = JSON.parse(before); win.sw = k; await saveProgrammes(); }); };
   return el("div", { className: "insp" },
     el("div", { className: "line" }, what, el("span", { className: "muted", textContent: "on at" }), onIn, el("span", { className: "muted", textContent: "off at" }), offIn,
       el("span", { className: "muted", textContent: "for" }), m, del),
@@ -2292,7 +2313,8 @@ function inspector(o, b, win) {
   const dj = b.items.some(id => ["album", "track", "playlist", "folder"].includes(O[id]?.kind) && O[id]?.root !== "ondemand") || b.items.some(id => ["list", "show"].includes(O[id]?.kind));
   if (!moment) line2.append(el("span", { className: "muted", textContent: dj ? "The DJ follows your DJ setting" : "No DJ over stations, books, podcasts or On demand" }));
   const del = el("button", { className: "pill", type: "button", textContent: "Delete block", style: "margin-left:auto" });
-  del.onclick = () => { o.blocks.splice(i, 1); win.blk = Math.max(0, i - 1); saveProgrammes(); };
+  del.onclick = async () => { const before = JSON.stringify(o.blocks); o.blocks.splice(i, 1); win.blk = Math.max(0, i - 1); await saveProgrammes();
+    toast(`Deleted the block “${b.name}”.`, false, async () => { o.blocks = JSON.parse(before); win.blk = i; await saveProgrammes(); }); };
   line2.append(del);
   const line3 = el("div", { className: "line" });
   b.items.forEach(id => { const it = O[id]; if (!it) return; const x = el("button", { type: "button", textContent: "✕", title: "Take it out" }); x.onclick = () => { b.items = b.items.filter(v => v !== id); saveProgrammes(); };
@@ -2357,7 +2379,7 @@ async function drop(src, target, ev) {
     if (o.kind === "panel") return open(o.id);
     if (o.kind === "person") return api("/api/birthdays/hear", o.b).then(() => toast(`The DJ is wishing ${o.title} a happy birthday.`)).catch(e => toast(e.message));
     if (o.kind === "voice") return open(o.id);
-    if (o.kind === "note" || o.kind === "message") return api("/api/messages/hear", { text: o.text }).then(() => toast(`The DJ is saying: “${o.title}”`)).catch(e => toast(e.message));
+    if (o.kind === "note" || o.kind === "message") return api("/api/messages/hear", { text: o.text }).then(() => toast(`The DJ is saying “${o.title}”.`)).catch(e => toast(e.message));
     return play(o);
   }
   if (kind === "preset") return setPreset(+target.dataset.n, o);
@@ -2399,6 +2421,7 @@ async function drop(src, target, ev) {
   if (dest.box === "playlists") return toast("Drop it onto one of the playlists.");
   if (dest.box === "programmes") return toast("Drop it onto one programme, or into its timeline.");
   if (dest.kind === "folder" && dest.root) return moveInto(src, dest);
+  if (![src.parent, src.where, src.id].includes(dest.id)) toast(`“${o.title}” can't go in ${dest.title}.`);   // (every drop answers)
 }
 async function addToPlaylist(pl, o) {
   const what = o.kind === "track" ? { root: o.root, path: o.path } : o.kind === "album" ? { root: o.root, folder: o.path }
@@ -2412,14 +2435,20 @@ function ask(msg, yes, fn) {
   const no = el("button", { type: "button", textContent: "Cancel" }), go = el("button", { type: "button", className: "danger", textContent: yes });
   no.onclick = () => box.remove(); go.onclick = () => { box.remove(); fn(); };
   box.append(el("div", { className: "box", role: "dialog" }, el("p", { textContent: msg }), el("div", { className: "btns" }, no, go)));
-  document.body.append(box); go.focus();
+  box.addEventListener("keydown", e => { if (e.key === "Escape") { e.preventDefault(); box.remove(); } });   // (as on a Mac: Escape cancels)
+  box.addEventListener("pointerdown", e => { if (e.target === box) box.remove(); });                       // (a click outside, too)
+  document.body.append(box); no.focus();            // the safe choice is the default: Enter doesn't delete
+}
+// delete now, and offer Undo on the message: doIt() returns the function that puts it back
+async function gone(msg, doIt) {
+  try { const undo = await doIt(); toast(msg, false, undo); } catch (e) { toast("Not deleted: " + e.message + "."); }
 }
 function trash(src) {
   const o = O[src.id];
   if (src.where === "desk") {
     const p = desk.find(p => p.id === src.id);
     if (p && (p.alias || !["folder", "trash"].includes(o.kind))) { desk.splice(desk.indexOf(p), 1); saveDesk(); drawDesk(); return toast(`Took “${o.title}” off the desktop. The real one is still on the radio.`); }
-    return toast(`${o.title} stays on the desktop.`);
+    return toast(`“${o.title}” stays on the desktop.`);
   }
   const from = O[src.parent];
   if (from?.kind === "playlist") {
@@ -2427,32 +2456,37 @@ function trash(src) {
     const all = PLAYLISTS.kids.map(id => O[id]).map(p => ({ name: p.name, tracks: (p === from ? items : p.items).map(id => [O[id].root, O[id].path]) }));
     return api("/api/playlists", { playlists: all }).then(d => { loadPlaylists(d); drawDesk(); toast(`Took “${o.title}” out of ${from.title}.`); }).catch(e => toast(e.message));
   }
-  if (o.kind === "person") return ask(`Take ${o.title} off the birthdays?`, "Remove", async () => {
-    try { const d = await api("/api/birthdays"); await api("/api/birthdays", { birthdays: d.birthdays.filter((_, j) => j !== o.idx) }); closeFor(o); await loadFolder(BDAYS); drawDesk(); toast(`${o.title} taken off.`); } catch (e) { toast(e.message); } });
-  if (o.kind === "list" && from === LISTS) return ask(`Delete the theme “${o.title}”? The music stays.`, "Delete theme", async () => {
-    try { const d = await api("/api/artists"); await api("/api/profiles", { profiles: d.profiles.filter(p => p.name !== o.name) }); closeFor(o); await loadFolder(LISTS); drawDesk(); toast(`Deleted ${o.title}.`); } catch (e) { toast(e.message); } });
+  // things that can come back go at once, with Undo on the message; only files (and following a podcast) ask first
+  if (o.kind === "person") return gone(`${o.title} is off the birthdays.`, async () => {
+    const d = await api("/api/birthdays"); await api("/api/birthdays", { birthdays: d.birthdays.filter((_, j) => j !== o.idx) }); closeFor(o); await loadFolder(BDAYS); drawDesk();
+    return async () => { await api("/api/birthdays", { birthdays: d.birthdays }); await loadFolder(BDAYS); drawDesk(); }; });
+  if (o.kind === "list" && from === LISTS) return gone(`Deleted the theme “${o.title}”. The music stays.`, async () => {
+    const d = await api("/api/artists"); await api("/api/profiles", { profiles: d.profiles.filter(p => p.name !== o.name) }); closeFor(o); await loadFolder(LISTS); drawDesk();
+    return async () => { await api("/api/profiles", { profiles: d.profiles }); await loadFolder(LISTS); drawDesk(); }; });
   if (o.kind === "voice") return toast("Voices can't be removed from here yet.");
-  if (o.kind === "note") return ask(`Delete the message “${o.title}”?`, "Delete", async () => {
-    try { const m = await api("/api/messages"); await api("/api/messages", { ...m, list: m.list.filter((_, j) => j !== o.idx) });
-          closeFor(o); await loadFolder(NOTES); drawDesk(); toast("Message deleted."); } catch (e) { toast(e.message); } });
-  if (o.kind === "station" && from === STATIONS) return ask(`Forget the station “${o.title}”?`, "Forget it", async () => {
-    try { await api("/api/radio/stations", { stations: STATIONS.kids.map(id => O[id]).filter(x => x !== o).map(x => ({ name: x.name, url: x.url, info: x.info })) });
-          await loadFolder(STATIONS); drawDesk(); toast(`Forgot ${o.title}.`); } catch (e) { toast(e.message); } });
+  if (o.kind === "note") return gone(`Deleted the message “${o.title}”.`, async () => {
+    const m = await api("/api/messages"); await api("/api/messages", { ...m, list: m.list.filter((_, j) => j !== o.idx) }); closeFor(o); await loadFolder(NOTES); drawDesk();
+    return async () => { await api("/api/messages", m); await loadFolder(NOTES); drawDesk(); }; });
+  if (o.kind === "station" && from === STATIONS) return gone(`Forgot the station “${o.title}”.`, async () => {
+    const all = STATIONS.kids.map(id => O[id]).map(x => ({ name: x.name, url: x.url, info: x.info }));
+    await api("/api/radio/stations", { stations: all.filter(x => x.url !== o.url) }); await loadFolder(STATIONS); drawDesk();
+    return async () => { await api("/api/radio/stations", { stations: all }); await loadFolder(STATIONS); drawDesk(); }; });
   if (o.kind === "podcast" && from === PODCASTS) return ask(`Stop following “${o.title}”?`, "Unfollow", async () => {
-    try { await api("/api/podcasts/unfollow", { id: o.pid }); await loadFolder(PODCASTS); closeFor(o); toast(`No longer following ${o.title}.`); } catch (e) { toast(e.message); } });
-  if (o.kind === "playlist") return ask(`Delete the playlist “${o.title}”? The songs stay on the radio.`, "Delete playlist", async () => {
-    const all = PLAYLISTS.kids.map(id => O[id]).filter(p => p !== o).map(p => ({ name: p.name, tracks: p.items.map(id => [O[id].root, O[id].path]) }));
-    try { await loadPlaylists(await api("/api/playlists", { playlists: all })); closeFor(o); toast(`Deleted ${o.title}.`); } catch (e) { toast(e.message); }
-  });
-  if (o.kind === "programme") return ask(`Delete the programme “${o.title}”?`, "Delete programme", async () => {
-    PROGRAMMES.kids = PROGRAMMES.kids.filter(id => id !== o.id); closeFor(o); await saveProgrammes(`Deleted ${o.title}.`);
-  });
+    try { await api("/api/podcasts/unfollow", { id: o.pid }); await loadFolder(PODCASTS); closeFor(o); toast(`No longer following “${o.title}”.`); } catch (e) { toast(e.message); } });
+  if (o.kind === "playlist") return gone(`Deleted the playlist “${o.title}”. The songs stay on the radio.`, async () => {
+    const all = PLAYLISTS.kids.map(id => O[id]).map(p => ({ name: p.name, tracks: p.items.map(id => [O[id].root, O[id].path]) }));
+    await loadPlaylists(await api("/api/playlists", { playlists: all.filter(p => p.name !== o.name) })); closeFor(o);
+    return async () => { await loadPlaylists(await api("/api/playlists", { playlists: all })); drawDesk(); }; });
+  if (o.kind === "programme") return gone(`Deleted the programme “${o.title}”.`, async () => {
+    const at = PROGRAMMES.kids.indexOf(o.id);
+    PROGRAMMES.kids = PROGRAMMES.kids.filter(id => id !== o.id); closeFor(o); await saveProgrammes();
+    return async () => { O[o.id] = o; PROGRAMMES.kids.splice(Math.max(0, at), 0, o.id); await saveProgrammes(); }; });
   if ((o.root && o.path) || o.kind === "book") {
     const what = o.kind === "folder" ? "the folder and everything in it" : o.kind === "album" ? "the album (its folder)" : "it";
     if (o.kind === "jingle" && from !== JINGLES) return toast("Delete jingles from the Jingles window.");
     return ask(`Delete “${o.title}” from the radio for good? This deletes ${what}, and can't be undone.`, "Delete for good", async () => {
       try { await api("/api/media/delete", { kind: o.kind === "book" ? "audiobooks" : o.root, path: o.kind === "book" ? o.key : o.path });
-            closeFor(o); await afterChange([from, o.kind === "book" ? BOOKS : null, o.kind === "jingle" ? JINGLES : null].filter(Boolean)); toast(`Deleted ${o.title}.`); }
+            closeFor(o); await afterChange([from, o.kind === "book" ? BOOKS : null, o.kind === "jingle" ? JINGLES : null].filter(Boolean)); toast(`Deleted “${o.title}” for good.`); }
       catch (e) { toast("Not deleted: " + e.message + "."); }
     });
   }
@@ -2551,7 +2585,9 @@ function applyTheme() {
 }
 $("desk").addEventListener("pointerdown", e => { if (e.target === $("desk") && sel) { sel = null; drawDesk(); } });
 document.querySelectorAll("[data-open]").forEach(b => b.onclick = () => open(b.dataset.open));
-$("tidy").onclick = () => { desk.forEach((p, i) => { p.x = 18 + Math.floor(i / 7) * 128; p.y = 14 + (i % 7) * 96; }); saveDesk(); drawDesk(); };
+$("tidy").onclick = () => { const before = JSON.stringify(desk.map(p => [p.x, p.y]));
+  desk.forEach((p, i) => { p.x = 18 + Math.floor(i / 7) * 128; p.y = 14 + (i % 7) * 96; }); saveDesk(); drawDesk();
+  toast(JSON.stringify(desk.map(p => [p.x, p.y])) === before ? "Already tidy." : "Tidied the desktop."); };
 $("settingsMenu").onclick = () => { if (!radioBack) turnRadio(); toast("Every setting is on the back of the radio. Or click a part of it: the speakers, the knob, the buttons, its name."); };
 $("wifiMenu").onclick = () => open(PANEL.wifi.id);
 $("scheduleMenu").onclick = async () => { if (!PROGRAMMES.loaded) await loadProgrammes(); open(SCHEDULE.id); };
@@ -2586,6 +2622,36 @@ function closeNew() { $("newDrop").hidden = true; $("newMenu").setAttribute("ari
 $("newMenu").onclick = e => { e.stopPropagation(); const open_ = $("newDrop").hidden; $("newDrop").hidden = !open_; $("newMenu").setAttribute("aria-expanded", String(open_)); };
 document.addEventListener("pointerdown", e => { if (!e.target.closest(".menu")) closeNew(); });
 document.addEventListener("keydown", e => { if (e.key === "Escape" && !$("newDrop").hidden) { closeNew(); $("newMenu").focus(); } });
+// the keyboard, as on a Mac: Escape closes the front window, Delete puts the chosen thing in the Trash,
+// the arrows move the choice around a folder (Enter opens it: each icon handles that itself)
+document.addEventListener("keydown", e => {
+  if (document.querySelector(".confirm") || !$("newDrop").hidden || e.target.closest?.("input, textarea, select, [contenteditable]")) return;
+  if (e.key === "Escape") {
+    const top = W.reduce((a, w) => !a || w.z > a.z ? w : a, null);
+    if (top) { e.preventDefault(); closeWin(top); }
+    return;
+  }
+  const cur = document.querySelector(".icon.sel, .row.sel");
+  if (!cur?._src) return;
+  if (e.key === "Delete" || e.key === "Backspace") { e.preventDefault(); trash(cur._src); return; }
+  if (!e.key.startsWith("Arrow")) return;
+  const sibs = [...cur.parentElement.children].filter(n => n._src && (n.classList.contains("icon") || n.classList.contains("row")));
+  const r0 = cur.getBoundingClientRect(), i = sibs.indexOf(cur);
+  let nx = null;
+  if (e.key === "ArrowLeft") nx = sibs[i - 1];
+  else if (e.key === "ArrowRight") nx = sibs[i + 1];
+  else {                                             // the nearest one in the row above or below
+    const down = e.key === "ArrowDown";
+    const cand = sibs.filter(n => { const r = n.getBoundingClientRect(); return down ? r.top > r0.top + 4 : r.top < r0.top - 4; });
+    const rowY = cand.length ? (down ? Math.min : Math.max)(...cand.map(n => n.getBoundingClientRect().top)) : null;
+    nx = cand.filter(n => n.getBoundingClientRect().top === rowY).sort((a, b) => Math.abs(a.getBoundingClientRect().left - r0.left) - Math.abs(b.getBoundingClientRect().left - r0.left))[0];
+  }
+  if (!nx) return;
+  e.preventDefault();
+  cur.classList.remove("sel"); nx.classList.add("sel");
+  sel = nx._src.id + "@" + nx._src.where; lastTap = { key: "", t: 0 };
+  nx.scrollIntoView({ block: "nearest" }); nx.focus?.({ preventScroll: true });
+});
 document.querySelectorAll("[data-new]").forEach(b => b.onclick = async () => {
   closeNew();
   const what = b.dataset.new;
@@ -2600,7 +2666,36 @@ document.querySelectorAll("[data-new]").forEach(b => b.onclick = async () => {
 });
 $("classic").onclick = () => { try { localStorage.setItem("srd.stay", "classic"); } catch {} };
 let tt;
-function toast(msg, sticky) { const t = $("toast"); t.textContent = msg; t.hidden = false; clearTimeout(tt); if (!sticky) tt = setTimeout(() => t.hidden = true, 4500); }
+function toast(msg, sticky, undo) {
+  const t = $("toast"); t.textContent = msg; t.hidden = false; clearTimeout(tt);
+  if (undo) {                                      // something that can come back: Undo, for a while
+    const b = el("button", { type: "button", className: "undo", textContent: "Undo" });
+    b.onclick = async () => { t.hidden = true; try { await undo(); toast("Put back."); } catch (e) { toast("Couldn't put it back: " + e.message + "."); } };
+    t.append(b);
+  }
+  if (!sticky) tt = setTimeout(() => t.hidden = true, undo ? 9000 : 4500);
+}
+// the icons that stand for what's playing now (a station, an album, a book, an episode, a playlist, the show...)
+function playingIds() {
+  const ids = new Set();
+  if (!S || S.speaker?.playing === false) return ids;
+  const src = S.source;
+  if (src?.kind === "radio") ids.add("st:" + src.url);
+  else if (src?.kind === "album") { ids.add("a:" + (src.root || "music") + ":" + src.folder); ids.add("f:" + (src.root || "music") + ":" + src.folder); }
+  else if (src?.kind === "book") ids.add("b:" + src.key);
+  else if (src?.kind === "episode") { ids.add(`ep:${src.show}:${src.guid}`); ids.add("pod:" + src.show); }
+  else if (!src) {
+    if (S.playlist?.name) ids.add("pl:" + S.playlist.name.toLowerCase());
+    else if (S.profile) ids.add("ls:" + S.profile);
+    else ids.add("show");
+  }
+  if (S.programme?.name) ids.add("pg:" + S.programme.name.toLowerCase());
+  return ids;
+}
+function markPlaying() {
+  const ids = playingIds();
+  document.querySelectorAll(".icon[data-id]").forEach(n => { const on = ids.has(n.dataset.id); n.classList.toggle("nowon", on); if (on) n.dataset.tip = "Playing now"; });
+}
 function tick() { const d = new Date(); $("clock").textContent = d.toLocaleDateString(undefined, { weekday: "short" }) + " " + d.toTimeString().slice(0, 5); }
 window.addEventListener("resize", () => drawDesk());
 let booted = false;
@@ -2610,7 +2705,15 @@ async function boot() {
   await Promise.all([poll(), loadButtons(), loadProgrammes().catch(() => {}), loadPlaylists().catch(() => {})]);
   document.title = radioName; SHOW.title = radioName;
   drawDesk();
-  if (!booted) { booted = true; setInterval(tick, 10000); setInterval(poll, 2500); setInterval(refreshOpen, 20000);
+  if (!booted) {
+    let was = []; try { was = JSON.parse(localStorage.getItem("srd.wins")) || []; } catch {}
+    for (const s of was.sort((a, b) => a.z - b.z)) {
+      const o = O[s.id];
+      if (!o || ["track", "station", "episode", "show", "book", "action", "jingle"].includes(o.kind)) continue;   // (never plays anything)
+      await open(s.id);
+      const w = W.find(w => w.id === s.id); if (w) Object.assign(w, { x: s.x, y: s.y, w: s.w, h: s.h, fitted: true });
+    }
+    booted = true; drawDesk(); setInterval(tick, 10000); setInterval(poll, 2500); setInterval(refreshOpen, 20000);
     document.addEventListener("visibilitychange", () => { if (!document.hidden) { refreshOpen(); poll(); } }); setInterval(async () => { await loadButtons(); updateRadio(); }, 15000); }
 }
 boot();

@@ -371,7 +371,15 @@ The cards:
   wheel scrolls along the day, a block dragged to an edge scrolls on, and a
   second click on a chosen block opens a box to type its start time; *＋ Moment* and the block's *Say it / Time check / The
   news / Sleep timer* add moments; drag a sticky note or a jingle in too.
-  They're saved on the radio. The menu bar's **New** menu makes anything: a
+  They're saved on the radio. It works like a Mac's desktop throughout: **Escape**
+  closes the front window, **Delete** puts the chosen thing in the Trash, the
+  **arrow keys** move around a folder and Enter opens; a delete that can be taken
+  back (a playlist, a programme, a message, a birthday, a theme, a station, a
+  block) happens at once with **Undo** on its message, and only deleting files
+  (or unfollowing a podcast) asks first, with Cancel as the default; double-click
+  a **jingle** to hear it or an **action** to do it now (also POST /api/instant);
+  what's playing wears a small level-bars badge wherever its icon is; windows
+  that were open come back after a reload. The menu bar's **New** menu makes anything: a
   programme, playlist, message, birthday, artist list, folder, station or
   podcast. Dropping a podcast **episode** on a button keeps the podcast there,
   starting from that episode. Drop songs, albums
