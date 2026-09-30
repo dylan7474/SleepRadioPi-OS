@@ -1819,7 +1819,8 @@ function scheduleView(o, box, win) {
         (cont ? ";border-top-left-radius:0;border-bottom-left-radius:0" : "") + (goesOn ? ";border-top-right-radius:0;border-bottom-right-radius:0" : "") +
         (clash.has(x) ? ";outline:2px solid var(--red)" : "") + (x.chained ? ";opacity:.8" : "");
       const icons = x.chained ? "↳ " : (x.o.wake === false ? "🔕 " : "🔔 ") + (x.o.once ? "" : "↻ ");
-      bar.append(el("div", { className: "bt", textContent: cont ? `… ${x.o.title}, until ${t1}` : w < 80 ? t0 + (goesOn ? " →" : "") : (w < 110 ? "" : icons) + x.o.title + (goesOn ? " →" : "") +
+      if (w < 80 && !cont) bar.style.padding = "3px 3px";          // (narrow: just its time, which fits)
+      bar.append(el("div", { className: "bt", style: w < 80 && !cont ? "font-size:10.5px" : "", textContent: cont ? `… ${x.o.title}, until ${t1}` : w < 80 ? t0 + (goesOn && w >= 64 ? " →" : "") : (w < 110 ? "" : icons) + x.o.title + (goesOn ? " →" : "") +
         (x.every ? ` · every ${x.every === 60 ? "hour" : x.every + " min"}` : "") }));
       if (x.every) bar.style.background = `repeating-linear-gradient(90deg, hsl(var(--h) 45% 38%) 0 ${x.every * px - 1}px, hsl(var(--h) 45% 26%) ${x.every * px - 1}px ${x.every * px}px)`;
       bar.onclick = () => open(x.o.id);
