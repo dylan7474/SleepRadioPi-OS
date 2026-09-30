@@ -209,6 +209,7 @@ def make_handler(station: Station, output: Mp3Output, speaker=None,
                 status["can_power_off"] = can_power_off()
                 sched = getattr(station, "scheduler", None)
                 status["programme"] = sched.status() if sched else None
+                status["programme_mode"] = bool(sched and sched.quiet)
                 status["stream"] = output is not None and output.enabled
                 status["version"] = updater_mod.this_version()
                 self._send(json.dumps(status).encode(), "application/json")
@@ -343,6 +344,18 @@ def make_handler(station: Station, output: Mp3Output, speaker=None,
                 if speaker is not None:
                     speaker.play()
                 self._send(json.dumps(reply).encode(), "application/json")
+            elif path == "/api/programmes/mode" and getattr(station, "scheduler", None) is not None:
+                try:
+                    on = self._body()["on"]
+                    if not isinstance(on, bool):
+                        raise ValueError("on is true or false")
+                except (ValueError, TypeError, KeyError, AttributeError) as e:
+                    self._error(str(e) if isinstance(e, ValueError) else "send {\"on\": true | false}")
+                    return
+                station.scheduler.set_quiet(on)
+                if config_file is not None:
+                    save_setting(config_file, "programme_mode", on)
+                self._send(json.dumps(self._programmes()).encode(), "application/json")
             elif path in ("/api/programmes", "/api/programmes/play", "/api/programmes/stop") \
                     and getattr(station, "scheduler", None) is not None:
                 self._programmes_post(path)
@@ -521,6 +534,8 @@ def make_handler(station: Station, output: Mp3Output, speaker=None,
                 station.set_playlists(settings["playlists"])
             if "programmes" in changed and getattr(station, "scheduler", None) is not None:
                 station.scheduler.set_programmes(settings["programmes"])
+            if "programme_mode" in changed and getattr(station, "scheduler", None) is not None:
+                station.scheduler.set_quiet(settings["programme_mode"])
             if "knob_mode" in changed and speaker is not None:
                 speaker.set_knob_mode(settings["knob_mode"])
             if "messages" in changed:
@@ -799,7 +814,7 @@ def make_handler(station: Station, output: Mp3Output, speaker=None,
 
         def _programmes(self) -> dict:
             sched = station.scheduler
-            return {"programmes": sched.programmes, "playing": sched.status()}
+            return {"programmes": sched.programmes, "playing": sched.status(), "programme_mode": sched.quiet}
 
         def _programmes_post(self, path: str) -> None:
             """POST /api/programmes {"programmes": [...]} (the whole list, saved),

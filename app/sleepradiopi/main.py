@@ -472,7 +472,8 @@ def main() -> None:
                           glow_night=settings.glow_night, meter_trim_db=settings.meter_trim_db)
             lamps.start()
         knob.start()
-        control.play()   # a bedside radio plays as soon as it's powered
+        if not settings.programme_mode:
+            control.play()   # a bedside radio plays as soon as it's powered (in programme mode: quiet until one's on)
     else:
         station = Station(cfg, tts, stream)
         control = None
@@ -507,6 +508,7 @@ def main() -> None:
     except ValueError as e:              # a hand-edited config: don't stop the station
         logging.getLogger(__name__).warning("programmes ignored: %s", e)
     scheduler.on_change = lambda progs: save_setting(args.config, "programmes", progs)
+    scheduler.quiet = settings.programme_mode
     station.scheduler = scheduler
     scheduler.start()
     # Podcasts: the shows followed are settings; their episode lists refresh in the background.

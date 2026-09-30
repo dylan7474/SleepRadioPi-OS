@@ -79,6 +79,7 @@ class Settings:
     noise_mix: int = 50               # balance: 0 programme only, 50 both full, 100 noise only
     speaker_highpass_hz: int = 0      # low cut for the speaker (~140 with the box's bass port); 0 = off
     knob_step: int = 2                # volume change per click of the knob ("normal")
+    programme_mode: bool = False      # silent unless a programme is on (an alarm clock): see broadcast/programmes.py
     knob_mode: str = "auto"           # auto (slow = fine, fast = big steps), fine (1), normal (knob_step), coarse (5)
     gpio_pin_mapping: dict = field(default_factory=dict)
     lcd_panel_type: str | None = None

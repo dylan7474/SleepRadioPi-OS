@@ -21,6 +21,10 @@ show's queue, talked over as usual when the DJ is on; a station, a book, an
 episode or a single On demand folder plays on its own with no DJ; the show or
 an artist list is the show itself.
 
+Programme mode (quiet = True, the "programme_mode" setting): the radio is
+silent unless a programme is on -- an alarm clock. Gaps are silent, and when a
+programme ends (unless it chains on or repeats) the radio pauses.
+
 Kept in the config as "programmes". The Scheduler runs them: tick() once a
 second (from its own thread on the radio; by hand in the tests).
 """
@@ -208,6 +212,7 @@ class Scheduler:
         self.jingle = jingle          # a jingle's file (in the jingles folder) played
         self.action = action          # "time", "news", "sleep": as the radio's buttons do them
         self.on_change: Callable[[list], None] | None = None   # the list changed by itself (a one-off start): save it
+        self.quiet = False            # programme mode: silent unless a programme is on
         self.programmes: list[dict] = []
         self.run: dict | None = None      # the programme playing, and where it's got to
         self._lock = threading.RLock()
@@ -216,6 +221,13 @@ class Scheduler:
         self._stop = threading.Event()
 
     # --- the list ---------------------------------------------------------------------
+
+    def set_quiet(self, on: bool) -> None:
+        """Programme mode on or off. On, with no programme playing: quiet at once."""
+        self.quiet = bool(on)
+        log.info("programme mode %s", "on" if self.quiet else "off")
+        if self.quiet and self.run is None and self.pause:
+            self.pause()
 
     def set_programmes(self, entries) -> None:
         self.programmes = validate(entries)
@@ -366,6 +378,8 @@ class Scheduler:
     def _fill_gap(self) -> None:
         """Nothing in the programme for now: the show, silence, or its gap filler."""
         r, gap = self.run, self.run["prog"].get("gap", "show")
+        if self.quiet and gap == "show":
+            gap = "silence"                   # programme mode: nothing between blocks
         r["expect"], r["filling"] = None, True
         if gap == "silence":
             self.station.tune(None)           # (let go of the last block's station or album)
@@ -535,6 +549,8 @@ class Scheduler:
                 return
             log.warning("programme %s: no programme %s to play next: back to the show", r["name"], r["prog"].get("chain"))
             then = "show"
+        if self.quiet and then in ("show", "keep"):
+            then = "stop"                     # programme mode: quiet again afterwards
         if then == "keep":                    # leave whatever's playing as it is
             self.run = None
             return

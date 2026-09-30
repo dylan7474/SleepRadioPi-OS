@@ -44,7 +44,7 @@ LIVE = {"speaker_mono", "speaker_eq", "speaker_highpass_hz", "broadcast_artist",
         "broadcast_jingle_enabled", "broadcast_jingle_every", "news_enabled", "startup_sound", "web_stream",
         "broadcast_announcer_speed", "news_speed", "radio_stations", "buttons", "noise_on", "noise_kind", "noise_mix",
         "podcasts", "messages", "buttons_night", "buttons_bank", "buttons_auto", "broadcast_dj",
-        "glow_day", "glow_night", "meter_trim_db", "playlists", "knob_mode", "programmes"}
+        "glow_day", "glow_night", "meter_trim_db", "playlists", "knob_mode", "programmes", "programme_mode"}
 
 CHOICES = {
     "buttons_bank": {"day", "night"},

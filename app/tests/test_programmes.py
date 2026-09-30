@@ -289,3 +289,33 @@ def test_a_chained_programme_waits_quietly_for_its_first_at_block(tmp_path, monk
     assert sched.run["name"] == "Evening" and st.playlist_status() is None      # ...silent until 18:00
     clock.go(minutes=1); sched.tick()
     assert st.playlist_status()["name"] == "Beatles at six" and woke == [1]
+
+
+def test_programme_mode_is_quiet_unless_a_programme_is_on(tmp_path, monkeypatch) -> None:
+    st, sched, clock, woke, _, did = _sched_with_hooks(tmp_path, monkeypatch, [
+        {"name": "Morning", "start": "12:05", "auto": True, "then": "show", "blocks": [
+            {"name": "R4", "items": [R4], "rule": "for", "min": 10},
+            {"name": "Beatles at half past", "items": [RUBBER], "rule": "at", "at": "12:30", "min": 10}]}])
+    sched.set_quiet(True)
+    assert did == [("pause",)]                               # on, with nothing playing: quiet at once
+    clock.go(minutes=5); sched.tick()
+    assert sched.run["name"] == "Morning" and woke == [1]    # an armed programme wakes it (an alarm)
+    clock.go(minutes=10); sched.tick()
+    assert sched.status()["waiting"] and did[-1] == ("pause",)   # the gap: silent, not the show
+    clock.go(minutes=15); sched.tick()
+    assert st.playlist_status()["name"] == "Beatles at half past" and woke == [1, 1]
+    clock.go(minutes=10); sched.tick()
+    assert sched.run is None and did[-1] == ("pause",)       # over: quiet again, though "then" said the show
+
+
+def test_programme_mode_web(tmp_path, monkeypatch) -> None:
+    st, sched, *_ = _setup(tmp_path, monkeypatch, [])
+    httpd = ThreadingHTTPServer(("127.0.0.1", 0), make_handler(st, None, None, None))
+    threading.Thread(target=httpd.serve_forever, daemon=True).start()
+    base = f"http://127.0.0.1:{httpd.server_address[1]}"
+    try:
+        r = urllib.request.Request(base + "/api/programmes/mode", data=json.dumps({"on": True}).encode(), method="POST", headers={"Content-Type": "application/json"})
+        with urllib.request.urlopen(r) as resp:
+            assert json.load(resp)["programme_mode"] is True and sched.quiet
+    finally:
+        httpd.shutdown()

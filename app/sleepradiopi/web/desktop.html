@@ -776,7 +776,11 @@ function nowWords() {
   let title = "Nothing on air", sub = S.speaker && !S.speaker.playing ? "Paused: press the knob" : "";
   if (n) { title = n.title; sub = [n.artist, n.kind === "track" && !src ? "Sleep Radio" : src ? (src.kind === "radio" ? "Internet radio" : src.kind === "album" ? "Straight through, no DJ" : src.kind === "book" ? "Audiobook" : "Podcast") : ""].filter(Boolean).join(" · "); }
   if (n && ["dj", "news", "jingle"].includes(n.kind)) sub = { dj: "The DJ", news: "The news", jingle: "A jingle" }[n.kind];
-  const prog = pr ? `Programme: ${pr.name} · ${pr.waiting ? "the show until the next block" : pr.block}${pr.until ? " until " + pr.until : ""}` : "";
+  const prog = pr ? `Programme: ${pr.name} · ${pr.waiting ? "waiting for the next block" : pr.block}${pr.until ? " until " + pr.until : ""}` : "";
+  if (S.programme_mode && !pr && !(S.speaker && S.speaker.playing)) {
+    const nx = nextArmed();
+    return ["Programme mode", nx ? `Quiet until ${nx.o.title}, ${when(nx.start)}` : "Quiet: nothing armed", "Arm a programme to wake it"];
+  }
   return [title, sub, prog];
 }
 function radioEl() {
@@ -814,7 +818,12 @@ function radioEl() {
   const badge = el("div", { className: "badge", textContent: radioName.toUpperCase(), title: "This radio" });
   badge.style.cursor = "pointer"; badge.onclick = () => open(PANEL.identity.id);
   const handle = el("div", { className: "handle" });
-  r.append(handle, badge, dial, face, pre, el("div", { className: "rfoot" }, plink, turn));
+  const modeSw = el("button", { className: "sw", type: "button", role: "switch", title: "Programme mode: quiet unless a programme is on (an alarm clock)" });
+  modeSw.setAttribute("aria-checked", String(!!S?.programme_mode)); modeSw.setAttribute("aria-label", "Programme mode");
+  modeSw.onclick = () => setProgrammeMode(!S?.programme_mode);
+  const modeRow = el("div", { className: "rfoot", style: "justify-content:flex-start;gap:8px" }, modeSw,
+    el("span", { className: "plink", textContent: S?.programme_mode ? "Programme mode: quiet unless a programme is on" : "Programme mode (an alarm clock)" }));
+  r.append(handle, badge, dial, face, pre, modeRow, el("div", { className: "rfoot" }, plink, turn));
   r.addEventListener("pointerdown", e => { if (e.target === r || e.target === handle) moveThing(e, r, (x, y) => { radioPos = { x, y }; saveDesk(); }); });
   return r;
 }
@@ -847,6 +856,7 @@ function updateRadio() {            // the live bits, without redrawing the desk
   const vol = S?.speaker?.volume ?? 0;
   $("rKnob").style.setProperty("--rot", (vol / 100 * 270 - 135) + "deg");
   $("rVol").textContent = S?.speaker ? (S.speaker.playing ? "Volume " + vol : "Paused") : "";
+  const msw = document.querySelector("#radio .sw"); if (msw) msw.setAttribute("aria-checked", String(!!S?.programme_mode));
   const pbs = $("rPresets")?.children || [];
   buttons.forEach((b, i) => { if (pbs[i]) { pbs[i].classList.toggle("on", !!b.playing); pbs[i].querySelector("span").textContent = b.label; } });
   $("onair").hidden = !S?.on_air;
@@ -1626,7 +1636,11 @@ function scheduleView(o, box, win) {
   const clash = new Set(), notes = [];
   occ.forEach((a, i) => occ.slice(i + 1).forEach(b => { if (a.o !== b.o && a.start < b.end && b.start < a.end) { clash.add(a); clash.add(b);
     notes.push(`${a.o.title} and ${b.o.title} overlap ${when(b.start)}: ${b.start > a.start ? b.o.title : a.o.title} would take over.`); } }));
+  const modeSw = el("button", { className: "sw", type: "button", role: "switch", title: "Quiet unless a programme is on" });
+  modeSw.setAttribute("aria-checked", String(!!S?.programme_mode)); modeSw.setAttribute("aria-label", "Programme mode");
+  modeSw.onclick = () => setProgrammeMode(!S?.programme_mode);
   box.append(el("div", { className: "wtools" }, T("New programme", newProgramme), T("Programmes", () => open(PROGRAMMES.id)),
+    el("span", { className: "line", style: "display:inline-flex;gap:6px;align-items:center" }, modeSw, el("span", { className: "muted", textContent: "Programme mode (quiet unless a programme is on)" })),
     el("span", { className: "note", textContent: "Armed programmes over the next 7 days · click one to open it · the later start wins if two overlap" })));
   const W_ = Math.max(360, win.w - 180), px = W_ / 1440;
   const wrap = el("div", { style: "padding:12px 14px;display:grid;gap:6px" });
@@ -1756,9 +1770,18 @@ function armProgramme(o) {
   ask(`${o.title} (${when(x.a.start)}–${x.a.end.toTimeString().slice(0, 5)}) overlaps ${x.b.o.title} (${when(x.b.start)}–${x.b.end.toTimeString().slice(0, 5)}). ` +
       `If they overlap, the one starting later takes over. Arm it anyway?`, "Arm anyway", go);
 }
+function nextArmed() {
+  return PROGRAMMES.kids.map(id => O[id]).filter(x => x && x.auto).flatMap(x => occurrences(x)).filter(x => !x.chained).sort((a, b) => a.start - b.start)[0] || null;
+}
+async function setProgrammeMode(on) {
+  try { const d = await api("/api/programmes/mode", { on }); if (S) S.programme_mode = d.programme_mode;
+        toast(on ? "Programme mode: the radio is quiet unless a programme is on. Armed programmes wake it, like an alarm." : "Programme mode off: the radio plays as usual."); poll(); drawDesk(); }
+  catch (e) { toast(e.message); }
+}
 function nextLineText() {
   const pr = S?.programme;
   if (pr) return `● ${pr.name}: ${pr.waiting ? "waiting" : pr.block}${pr.until ? " until " + pr.until : ""}`;
+  if (S?.programme_mode) { const nx = nextArmed(); return nx ? `☾ Programme mode · next: ${nx.o.title} ${when(nx.start)}` : "☾ Programme mode · nothing armed"; }
   const next = PROGRAMMES.kids.map(id => O[id]).filter(x => x && x.auto).flatMap(x => occurrences(x)).filter(x => !x.chained).sort((a, b) => a.start - b.start)[0];
   return next ? `⏰ Next: ${next.o.title} ${when(next.start)}` : "Schedule: nothing armed";
 }

@@ -405,7 +405,12 @@ The cards:
   on 24-hour lines (overlaps outlined red, chained ones after them); the menu
   bar says what's next or playing, and programme icons show ⏰ armed once, ↻
   repeats, ● playing. A chained programme whose first block is *at* a later
-  time waits (with its gaps' choice: silence, the show, something) until then. Stations and podcasts are found
+  time waits (with its gaps' choice: silence, the show, something) until then.
+  **Programme mode** (a switch on the radio and in the Schedule window;
+  setting `programme_mode`) makes it an alarm clock: quiet unless a programme
+  is on — silent between programmes and at power-on, armed programmes wake
+  it, gaps are silent, and when a programme ends (unless it chains on or
+  repeats) it goes quiet again. The knob or Play still plays as usual. Stations and podcasts are found
   and followed from their windows (*Find a station*, *Follow a podcast*) and
   forgotten by dragging to the Trash. **Jingles** is a folder of its own
   (upload, download, delete) and **Artist lists** an editor (make a list with
@@ -804,6 +809,7 @@ everything but the page itself and the login needs the session cookie
 | `POST /api/skip` | Skip what's on air (track, link, jingle or bulletin) |
 | `GET` / `POST /api/programmes` | `{"programmes": [...], "playing"}` / `{"programmes": [{"name", "start", "auto", "days": [0-6], "then": "show" \| "sleep" \| "repeat", "blocks": [{"name", "items": [{"kind": "album", "root", "folder"} \| {"kind": "track", "root", "path"} \| {"kind": "station", "name", "url"} \| {"kind": "playlist", "name"} \| {"kind": "book", "key"} \| {"kind": "podcast", "show"} \| {"kind": "episode", "show", "guid"} \| {"kind": "show", "artist"?} \| {"kind": "list", "name"}], "rule": "for" \| "until" \| "end" \| "at", "min", "at", "until", "order"}]}]}` — the whole list, saved. The status's `programme` has the one playing (`name`, `block`, `until`, `next`, `waiting`) |
 | `POST /api/programmes/play` / `/stop` | `{"name"}` — start it now (and the speaker) / stop it (what's on carries on) |
+| `POST /api/programmes/mode` | `{"on": bool}` — programme mode (quiet unless a programme is on); the status has `programme_mode` |
 | `POST /api/previous` | Back, like a CD player (see *Now playing*); `{"previous": false}` if there's nothing to go back to. The status's `can_previous` says when it works |
 | `GET` / `POST /api/playlists` | `{"playlists": [{"name", "tracks": [{"root", "path", "title", "artist", "missing"}]}], "playing"}` / `{"playlists": [{"name", "tracks": [[root, path], ...]}]}` — the whole list, saved |
 | `POST /api/playlists/add` | `{"name"` + `"root", "path"` (a song; search results have `path`) or `"root", "folder", "deep"` (a folder) or `"now": true` (the song on air)`}` — added at the end; a new name makes the playlist |
