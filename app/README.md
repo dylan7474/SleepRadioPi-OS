@@ -350,8 +350,11 @@ The cards:
   preset button can hold one, in order or shuffled. A song whose file has gone
   is skipped. Kept in the settings (`playlists`), so *Save settings* has them
   (`broadcast/playlists.py`, `Station.play_playlist`).
-- **The desktop** (`http://<radio>/desktop`, `web/desktop.html`) — the new
-  interface for a computer (the page above stays, for phones): a menu bar;
+- **The desktop** (`http://<radio>/desktop`, `web/desktop.html`) — the
+  interface for a computer: opening the radio's address on a wide screen with a
+  mouse goes straight to it (this page stays for phones and tablets; the
+  desktop's *Classic page* link keeps you here, and this page's *Desktop* link
+  goes back). A menu bar;
   icons for Music, On demand, Audiobooks, Podcasts, Stations, Playlists,
   Programmes and Artist radio (folders load from `/api/browse` as you open
   them); windows you move and resize; **the radio on the desktop** showing
@@ -373,8 +376,9 @@ The cards:
   **Messages** are a pinboard of sticky notes (edit in place, pause, hear it,
   add, delete) and **Birthdays** a calendar. Stations and podcasts are found
   and followed from their windows (*Find a station*, *Follow a podcast*) and
-  forgotten by dragging to the Trash. Jingles and artist lists still open
-  this page's own editor in a window (`/?embedded#set-…`). Open windows ask
+  forgotten by dragging to the Trash. **Jingles** is a folder of its own
+  (upload, download, delete) and **Artist lists** an editor (make a list with
+  its first artist, add and take off artists, play it, delete it). Open windows ask
   the radio again every 20 s (and when you come back to the tab or close a
   setting), so changes made elsewhere show up. Your icon layout and light or
   dark are kept in the browser. **The media manager is built in**: in Music,

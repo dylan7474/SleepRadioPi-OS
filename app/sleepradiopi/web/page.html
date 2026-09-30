@@ -329,8 +329,16 @@
       <h1 id="stationName">Sleep <span>Radio</span></h1>
       <div id="version" title="The radio's software version (Settings → Updates)"></div>
     </div>
+    <a id="toDesktop" href="/desktop" title="The desktop, for a computer" style="margin-left:auto;margin-right:.6rem;font-size:.8rem;color:var(--dim)" hidden>Desktop</a>
     <span id="badge" class="badge">Off air</span>
   </header>
+  <script>
+    (function () {
+      const a = document.getElementById("toDesktop");
+      if (matchMedia("(min-width: 700px)").matches) a.hidden = false;
+      a.onclick = () => { try { localStorage.removeItem("srd.stay"); } catch {} };
+    })();
+  </script>
 
   <section id="login" class="card" hidden>
     <h2>Password</h2>
@@ -1047,6 +1055,12 @@
 <script>
   // Shown inside a window of the desktop (/desktop): just the setting, no header or tabs.
   if (location.search.includes("embedded") || window.self !== window.top) document.documentElement.classList.add("embedded");
+  // A computer (a wide screen and a mouse) gets the desktop, unless you chose this page there
+  // (its Classic page link) or followed a link to one of this page's settings (#...).
+  else {
+    let stay = ""; try { stay = localStorage.getItem("srd.stay") || ""; } catch {}
+    if (!location.hash && stay !== "classic" && matchMedia("(min-width: 1000px) and (pointer: fine)").matches) location.replace("/desktop");
+  }
 </script>
 <style>
   .embedded header.top, .embedded #tabs, .embedded .page-head .back { display: none !important; }

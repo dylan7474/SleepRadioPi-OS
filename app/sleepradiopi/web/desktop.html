@@ -341,7 +341,7 @@
   <button class="m" type="button" data-open="box:programmes">Programmes</button>
   <button class="m" type="button" id="tidy">Tidy up</button>
   <button class="m" type="button" id="settingsMenu">Settings</button>
-  <a class="m classic" href="/" title="The page you know, also for phones">Classic page</a>
+  <a class="m classic" href="/" id="classic" title="The page you know, also for phones">Classic page</a>
   <span class="grow"></span>
   <button class="themebtn" type="button" id="theme" title="Light or dark">Dark</button>
   <button class="wifi" type="button" id="wifiMenu" title="Wi-Fi"><span class="bars"><i class="on" style="height:4px"></i><i class="on" style="height:7px"></i><i class="on" style="height:10px"></i><i class="on" style="height:12px"></i></span><span>Wi-Fi</span></button>
@@ -397,13 +397,14 @@ const PLAYLISTS = mk({ id: "box:playlists", kind: "folder", title: "Playlists", 
 const PROGRAMMES = mk({ id: "box:programmes", kind: "folder", title: "Programmes", box: "programmes", kids: [], sym: "◷" });
 const LISTS = mk({ id: "box:lists", kind: "folder", title: "Artist radio", box: "lists", kids: [], sym: "A", alt: true });
 const TRASH = mk({ id: "trash", kind: "trash", title: "Trash", kids: [] });
+const JINGLES = mk({ id: "box:jingles", kind: "folder", title: "Jingles", box: "jingles", kids: [], sym: "J", alt: true });
 const SHOW = mk({ id: "show", kind: "show", title: "Sleep Radio" });
 // settings: each one an object; for now each opens the classic page's version in a window
 const PANELS = [
   ["dj", "The DJ", "DJ", 40, "dj"], ["speakers", "Speakers", "♫", 28, "speakers"], ["buttons", "Buttons", "4", 200, null],
   ["noise", "Noise", "≈", 250, "noise"], ["sleep", "Sleep timer", "☾", 265, null], ["voices", "Voices", "“", 300, "voices"],
   ["wifi", "Wi-Fi", "⌔", 190, "wifi"], ["identity", "This radio", "R", 40, "identity"], ["updates", "Updates", "↑", 130, "updates"],
-  ["backup", "Save & load", "⇅", 170, "backup"], ["power", "Power", "⏻", 5, "power"], ["library", "Jingles & library", "▤", 30, "library"],
+  ["backup", "Save & load", "⇅", 170, "backup"], ["power", "Power", "⏻", 5, "power"], ["library", "Jingles", "J", 30, null],
 ];
 const PANEL = {};
 for (const [key, title, sym, h, page] of PANELS) PANEL[key] = mk({ id: "set:" + key, kind: "panel", key, title, sym, h, page });
@@ -454,6 +455,9 @@ async function loadFolder(f) {
     await loadPlaylists();
   } else if (f.box === "programmes") {
     await loadProgrammes();
+  } else if (f.box === "jingles") {
+    const d = await api("/api/media?kind=jingles&path=");
+    f.kids = d.files.filter(x => x.audio).map(x => mk({ id: "j:" + x.name, kind: "jingle", title: cleanName(x.name), root: "jingles", path: x.name, mb: x.size / 1e6 }).id);
   } else if (f.box === "lists") {
     const d = await api("/api/artists");
     f.kids = [SHOW.id, ...d.profiles.map(p => mk({ id: "ls:" + p.name, kind: "list", name: p.name, title: p.name, count: p.artists.length }).id)];
@@ -549,7 +553,7 @@ function timeline(p) {
 const $ = id => document.getElementById(id);
 const el = (tag, props = {}, ...kids) => { const e = Object.assign(document.createElement(tag), props); e.append(...kids.filter(k => k != null)); return e; };
 const KIND = { folder: "Folder", album: "Album", track: "Track", station: "Station", podcast: "Podcast", episode: "Episode", book: "Audiobook",
-               playlist: "Playlist", programme: "Programme", list: "Artist list", show: "The show", trash: "Trash", panel: "Setting", dj: "The DJ", note: "Messages", calendar: "Birthdays" };
+               playlist: "Playlist", programme: "Programme", list: "Artist list", jingle: "Jingle", show: "The show", trash: "Trash", panel: "Setting", dj: "The DJ", note: "Messages", calendar: "Birthdays" };
 const TINT = { album: 30, track: 45, station: 8, podcast: 275, episode: 265, book: 150, playlist: 215, programme: 40, list: 195, show: 40, folder: 40 };
 function wave(seed) {
   let x = hue(seed), bars = "";
@@ -578,6 +582,7 @@ function glyph(o) {
       break;
     }
     case "list": g.className += " g-list"; g.textContent = initials(o.title); break;
+    case "jingle": g.className += " g-sound"; g.innerHTML = wave(o.title); break;
     case "show": g.className += " g-show"; g.textContent = "SLEEP\nRADIO"; g.style.whiteSpace = "pre"; break;
     case "trash": g.className += " g-trash" + (o.kids.length ? " full" : ""); break;
     case "panel": g.className += " g-panel"; g.textContent = o.sym; break;
@@ -598,7 +603,8 @@ function subOf(o) {
     case "playlist": return `${o.items.length} songs`;
     case "programme": { const tl = timeline(o); return tl.length ? `${hhmm(tl[0].start)}–${hhmm(tl[tl.length - 1].end)}` : "empty"; }
     case "folder": return o.root && o.path ? `${o.count || 0} tracks` : "";
-    case "list": return o.count ? `${o.count} artists` : "";
+    case "list": return o.count ? `${o.count} artist${o.count === 1 ? "" : "s"}` : "";
+    case "jingle": return o.mb ? `${o.mb.toFixed(1)} MB` : "";
     case "show": return "with the DJ";
   }
   return "";
@@ -798,6 +804,8 @@ async function open(id) {
   if (!o) return;
   if (["track", "station", "episode", "show", "list", "book"].includes(o.kind)) return play(o);
   if (o.kind === "dj") return open(PANEL.dj.id);
+  if (o.kind === "jingle") return toast(`“${o.title}”: the DJ plays jingles between songs, when jingles are on (the DJ's window).`);
+  if (o.kind === "panel" && o.key === "library") return open(JINGLES.id);
   if (o.kind === "note") return open(PANEL.messages.id);
   if (o.kind === "calendar") return open(PANEL.birthdays.id);
   const had = W.find(w => w.id === id);
@@ -887,6 +895,13 @@ function folderView(o, box, win) {
   else if (o.box === "stations") tools.append(T("Find a station", () => open(PANEL.findstation.id)), el("span", { className: "note", textContent: "Drag a station onto a button to keep it there" }));
   else if (o.box === "podcasts") tools.append(T("Follow a podcast", () => open(PANEL.findpodcast.id)), el("span", { className: "note", textContent: "Open a show for its episodes" }));
   else if (o.box === "lists") tools.append(T("Make an artist list", () => open(PANEL.lists.id)), el("span", { className: "note", textContent: "The show, playing only these artists" }));
+  else if (o.box === "jingles") {
+    const up = el("input", { type: "file", multiple: true, hidden: true, accept: ".mp3,audio/mpeg" });
+    up.onchange = () => { upload(o, [...up.files].map(f => [f, f.name])); up.value = ""; };
+    const picked = selectedIn(o);
+    tools.append(T("Upload…", () => up.click()), T("Download", () => picked && download(picked), "", !picked), up,
+      el("span", { className: "note", textContent: "Short mp3s the DJ plays between songs (on the main mix) · drag one to the Trash to delete it" }));
+  }
   else if (o.box === "books") {
     const up = el("input", { type: "file", multiple: true, hidden: true, accept: ".mp3,.m4b,audio/*" });
     up.onchange = () => { upload(o, [...up.files].map(f => [f, f.name])); up.value = ""; };
@@ -897,14 +912,15 @@ function folderView(o, box, win) {
   o.kids.forEach(id => O[id] && grid.append(iconEl(O[id], { where: o.id, parent: o.id })));
   if (!o.kids.length) grid.append(el("div", { className: "empty", textContent: o.kind === "trash" ? "The Trash is empty." : o.root === "ondemand" && !o.path ? "Nothing here yet: add files under Settings › Media library › On demand." : "Nothing here yet." }));
   const body = el("div", { className: "wbody" }, grid);
-  if (o.root || o.box === "books") {                // files and folders from the computer
+  if (o.root || o.box === "books" || o.box === "jingles") {   // files and folders from the computer
     body.addEventListener("dragover", e => { if ([...e.dataTransfer.types].includes("Files")) { e.preventDefault(); box.classList.add("over"); } });
     body.addEventListener("dragleave", () => box.classList.remove("over"));
     body.addEventListener("drop", async e => { e.preventDefault(); box.classList.remove("over"); upload(o, await dropped(e.dataTransfer)); });
   }
   box.append(body);
-  box.append(el("div", { className: "wfoot" }, `${o.kids.length} item${o.kids.length === 1 ? "" : "s"}`, o.root || o.box === "books" ? el("span", { id: "space-" + o.id }) : null));
-  if (o.root || o.box === "books") space(o);
+  const media = o.root || o.box === "books" || o.box === "jingles";
+  box.append(el("div", { className: "wfoot" }, `${o.kids.length} item${o.kids.length === 1 ? "" : "s"}`, media ? el("span", { id: "space-" + o.id }) : null));
+  if (media) space(o);
 }
 function albumView(o, box) {
   box.append(el("div", { className: "wtools" }, T("▶ Play", () => play(o), "primary"),
@@ -952,7 +968,7 @@ function panelView(o, box, win) {
 }
 
 // ============ the media manager ============
-const kindOf = o => o.root || (o.box === "books" ? "audiobooks" : null);
+const kindOf = o => o.root || (o.box === "books" ? "audiobooks" : o.box === "jingles" ? "jingles" : null);
 async function space(o) {
   try { const d = await api(`/api/media?kind=${kindOf(o)}&path=`); const n = $("space-" + o.id); if (n) n.textContent = ` · ${gb(d.usage.free)} free of ${gb(d.usage.total)}`; } catch {}
 }
@@ -1094,7 +1110,7 @@ const UI = {
         grp("The news", srow("News", sw(d.news_enabled, v => set({ news_enabled: v }), "The news"), help("On the hour, when the radio's online")),
           srow("News speed", ...range("news-speed", 0.5, 1.5, 0.05, d.news_speed, v => v.toFixed(2) + "×", v => set({ news_speed: v })))),
         grp("Waking up", srow("At power-on", seg([[true, "Chime"], [false, "Silent"]], d.startup_sound, v => set({ startup_sound: v })))),
-        grp("", line(sbtn("Messages…", () => open(NOTES.id)), sbtn("Birthdays…", () => open(BDAYS.id)), sbtn("Voices…", () => open(PANEL.voices.id)))),
+        grp("", line(sbtn("Messages…", () => open(NOTES.id)), sbtn("Birthdays…", () => open(BDAYS.id)), sbtn("Voices…", () => open(PANEL.voices.id)), sbtn("Jingles…", () => open(JINGLES.id)))),
       ];
     },
   },
@@ -1246,6 +1262,36 @@ const UI = {
           ...b.birthdays.map((x, i) => srow(x.name, el("span", { textContent: `${x.day} ${MON[x.month - 1]}${x.year ? " " + x.year : ""}` }), sbtn("✕", () => ask(`Take ${x.name} off the list?`, "Remove", () => save(b.birthdays.filter((_, j) => j !== i)))))),
           b.today?.length ? help(`Today: ${b.today.map(t => t.name || t).join(", ")}!`) : null),
         grp("Add someone", line(name, day, mon, year, sbtn("Add", () => { if (name.value && day.value) save([...b.birthdays, { name: name.value.trim(), day: +day.value, month: +mon.value, ...(year.value ? { year: +year.value } : {}) }]); }, "primary")))];
+    },
+  },
+  lists: {
+    load: () => api("/api/artists"),
+    build: (d, act, win) => {
+      const save = profiles => act(async () => { await api("/api/profiles", { profiles }); await loadFolder(LISTS).catch(() => {}); });
+      const pick = win.pickList ?? (d.profiles[0]?.name || null);
+      const cur = d.profiles.find(p => p.name === pick);
+      const names = d.artists.map(a => a.name);
+      const dl = el("datalist", { id: "artist-names" }, ...names.map(n => el("option", { value: n })));
+      const add = el("input", { type: "text", placeholder: "Type an artist's name", id: "list-add" });
+      add.setAttribute("list", "artist-names");
+      const addTo = () => { const n = names.find(x => x.toLowerCase() === add.value.trim().toLowerCase()); if (!n) return toast("Pick an artist from the list as you type.");
+        save(d.profiles.map(p => p === cur ? { ...p, artists: [...new Set([...p.artists, n])] } : p)); };
+      add.onkeydown = e => { if (e.key === "Enter") addTo(); };
+      const newName = el("input", { type: "text", placeholder: "A new list's name, e.g. Friday List", id: "list-new", maxLength: 40 });
+      const first = el("input", { type: "text", placeholder: "and its first artist", id: "list-first" });
+      first.setAttribute("list", "artist-names");
+      const make = () => { const n = names.find(x => x.toLowerCase() === first.value.trim().toLowerCase());
+        if (!newName.value.trim() || !n) return toast("Give the list a name and pick its first artist.");
+        win.pickList = newName.value.trim(); save([...d.profiles, { name: newName.value.trim(), artists: [n] }]); };
+      return [dl,
+        grp("Your artist lists", d.profiles.length ? seg(d.profiles.map(p => [p.name, `${p.name} (${p.artists.length})`]), pick, v => { win.pickList = v; drawDesk(); }) : help("None yet: make one below."),
+          help("The show, playing only these artists (\"welcome to Friday List on Sleep Radio\"). Play one from the Artist radio folder, or put it on a button.")),
+        cur ? grp(cur.name, el("div", { className: "line" }, ...cur.artists.map(a => el("span", { className: "chipx" }, a, Object.assign(el("button", { type: "button", textContent: "✕", title: "Take " + a + " off" }),
+            { onclick: () => cur.artists.length > 1 ? save(d.profiles.map(p => p === cur ? { ...p, artists: p.artists.filter(x => x !== a) } : p)) : toast("A list needs at least one artist: delete the list instead.") })))),
+          line(add, sbtn("Add", addTo, "primary")),
+          line(sbtn("▶ Play it", () => play(mk({ id: "ls:" + cur.name, kind: "list", name: cur.name, title: cur.name }))),
+               sbtn("Delete this list…", () => ask(`Delete the list “${cur.name}”? The music stays.`, "Delete list", () => { win.pickList = null; save(d.profiles.filter(p => p !== cur)); }), "danger"))) : null,
+        grp("Make a list", line(newName, first, sbtn("Make it", make, "primary")))];
     },
   },
   findstation: {
@@ -1521,9 +1567,10 @@ function trash(src) {
   });
   if ((o.root && o.path) || o.kind === "book") {
     const what = o.kind === "folder" ? "the folder and everything in it" : o.kind === "album" ? "the album (its folder)" : "it";
+    if (o.kind === "jingle" && from !== JINGLES) return toast("Delete jingles from the Jingles window.");
     return ask(`Delete “${o.title}” from the radio for good? This deletes ${what}, and can't be undone.`, "Delete for good", async () => {
       try { await api("/api/media/delete", { kind: o.kind === "book" ? "audiobooks" : o.root, path: o.kind === "book" ? o.key : o.path });
-            closeFor(o); await afterChange([from, o.kind === "book" ? BOOKS : null].filter(Boolean)); toast(`Deleted ${o.title}.`); }
+            closeFor(o); await afterChange([from, o.kind === "book" ? BOOKS : null, o.kind === "jingle" ? JINGLES : null].filter(Boolean)); toast(`Deleted ${o.title}.`); }
       catch (e) { toast("Not deleted: " + e.message + "."); }
     });
   }
@@ -1587,6 +1634,7 @@ document.querySelectorAll("[data-open]").forEach(b => b.onclick = () => open(b.d
 $("tidy").onclick = () => { desk.forEach((p, i) => { p.x = 18 + Math.floor(i / 7) * 128; p.y = 14 + (i % 7) * 96; }); saveDesk(); drawDesk(); };
 $("settingsMenu").onclick = () => { if (!radioBack) turnRadio(); toast("Every setting is on the back of the radio. Or click a part of it: the speakers, the knob, the buttons, its name."); };
 $("wifiMenu").onclick = () => open(PANEL.wifi.id);
+$("classic").onclick = () => { try { localStorage.setItem("srd.stay", "classic"); } catch {} };
 let tt;
 function toast(msg, sticky) { const t = $("toast"); t.textContent = msg; t.hidden = false; clearTimeout(tt); if (!sticky) tt = setTimeout(() => t.hidden = true, 4500); }
 function tick() { const d = new Date(); $("clock").textContent = d.toLocaleDateString(undefined, { weekday: "short" }) + " " + d.toTimeString().slice(0, 5); }

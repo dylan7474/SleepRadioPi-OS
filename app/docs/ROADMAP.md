@@ -34,8 +34,13 @@ left.
       messages as sticky notes, birthdays as a calendar; stations and podcasts
       found/followed in their windows. Still the classic editor in a window:
       jingles, artist lists.
-   5. **The switchover**: the desktop is the main page on a computer; this
-      page stays as the phone remote.
+   5. **The switchover** — DONE 2026-09-30: a computer opening the radio gets
+      the desktop (a wide screen and a mouse; the choice of the classic page is
+      remembered); phones and tablets keep this page. Jingles and artist lists
+      have native windows, so nothing on the desktop uses the classic page.
+   6. Next: **schedule anything** (messages, jingles, the news, a time check,
+      sleep as programme blocks), then a **look-and-feel pass** over the
+      settings windows to match the desktop.
 
 1. **Wire the knob and the RTC** — done 2026-09-30 (amp unplugged): the knob's
    direction, one step a click, short press (pause) and long press all right;
