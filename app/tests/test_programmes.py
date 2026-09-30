@@ -334,3 +334,25 @@ def test_a_programme_that_doesnt_wake_a_paused_radio(tmp_path, monkeypatch) -> N
     sched.stop(); sched.paused = lambda: False
     clock.go(days=1, minutes=-5); sched.tick()               # tomorrow, playing: it starts
     assert sched.run["name"] == "News"
+
+
+def test_a_talking_clock_every_quarter_of_an_hour_over_whatever_is_on(tmp_path, monkeypatch) -> None:
+    st, sched, clock, woke, _ = _setup(tmp_path, monkeypatch, [
+        {"name": "Talking clock", "start": "12:00", "every": 15, "until": "12:30", "auto": True,
+         "blocks": [{"name": "The time", "items": [{"kind": "action", "action": "pips"}, {"kind": "action", "action": "time"}]}]},
+        {"name": "Radio 4", "blocks": [{"name": "R4", "items": [R4], "rule": "for", "min": 90}]}],
+        start=SUNDAY.replace(minute=0) - timedelta(minutes=2))
+    signals = []
+    sched.time_signal = lambda at, pips, speak: signals.append((at.strftime("%H:%M"), pips, speak))
+    sched.play("Radio 4")
+    for _ in range(40):                                   # 11:58 to 12:38, a minute at a time
+        sched.tick(); clock.go(minutes=1)
+    assert signals == [("12:00", True, True), ("12:15", True, True), ("12:30", True, True)]   # got ready a minute early each time
+    assert sched.run["name"] == "Radio 4" and st.source["name"] == "BBC Radio 4"               # the programme playing carried on
+
+
+def test_repeating_every_needs_a_proper_interval() -> None:
+    ok = programmes.validate([{"name": "P", "every": 30}])
+    assert ok[0]["every"] == 30 and ok[0]["until"] == "23:59"
+    with pytest.raises(ValueError):
+        programmes.validate([{"name": "P", "every": 7}])

@@ -51,7 +51,9 @@ GAPS = ("show", "silence")
 ITEM_KINDS = ("album", "track", "station", "playlist", "book", "podcast", "episode", "show", "list",
               "message", "jingle", "action")
 INSTANT = ("message", "jingle", "action")     # happen at once: said, played or done, then on
-ACTIONS = ("time", "news", "sleep")
+ACTIONS = ("time", "news", "sleep", "pips")
+EVERY = (15, 30, 60)                         # repeating within the day, from start to until
+MOMENT_LEAD = timedelta(seconds=60)          # a moment with the time gets ready this early (the voice is slow)
 DEFAULT_MIN = 60
 _HHMM = re.compile(r"^([01]\d|2[0-3]):[0-5]\d$")
 
@@ -172,7 +174,13 @@ def validate(programmes) -> list[dict]:
                  "auto": p.get("auto") is True, "days": sorted(set(days)), "then": then, "gap": gap,
                  "blocks": [_block(b) for b in blocks]}
         if p.get("wake") is False:
-            entry["wake"] = False             # starts by itself only if the radio's playing (a pause wins)
+            entry["wake"] = False
+        every = p.get("every")
+        if every not in (None, 0):
+            if every not in EVERY or isinstance(every, bool):
+                raise ValueError(f"{name}: repeats every {', '.join(map(str, EVERY))} minutes")
+            entry["every"] = every
+            entry["until"] = _hhmm(p.get("until") or "23:59", f"{name}'s last time")             # starts by itself only if the radio's playing (a pause wins)
         if entry["auto"] and p.get("once") is True:
             entry["once"] = True              # armed for its next start only, then off
         if then == "chain":
@@ -216,6 +224,8 @@ class Scheduler:
         self.on_change: Callable[[list], None] | None = None   # the list changed by itself (a one-off start): save it
         self.quiet = False            # programme mode: silent unless a programme is on
         self.paused: Callable[[], bool] = lambda: False   # is the radio paused (by a person)?
+        # the time signal: (when, pips, speak) -- the pips' long one on the minute, then the time said
+        self.time_signal: Callable[[datetime, bool, bool], None] | None = None
         self.programmes: list[dict] = []
         self.run: dict | None = None      # the programme playing, and where it's got to
         self._lock = threading.RLock()
@@ -326,8 +336,9 @@ class Scheduler:
             blocks = r["prog"]["blocks"]
             nxt = blocks[r["i"] + 1] if r["i"] + 1 < len(blocks) else None
             # an "at" block cuts in at its time, whatever's playing
-            if nxt is not None and nxt["rule"] == "at" and r["at_next"] is not None and now >= r["at_next"]:
-                self._start_block(r["i"] + 1)
+            lead = MOMENT_LEAD if nxt is not None and self._is_moment(nxt) else timedelta(0)
+            if nxt is not None and nxt["rule"] == "at" and r["at_next"] is not None and now >= r["at_next"] - lead:
+                self._start_block(r["i"] + 1, due=r["at_next"])
                 return
             done = (r["ends"] is not None and now >= r["ends"]) or (r["ends"] is None and self._content_over())
             if r.get("waiting"):
@@ -344,33 +355,62 @@ class Scheduler:
             else:
                 self._start_block(r["i"] + 1)
 
+    @staticmethod
+    def _is_moment(b: dict) -> bool:
+        return bool(b["items"]) and all(it["kind"] in INSTANT for it in b["items"])
+
+    def _moments_only(self, p: dict) -> bool:
+        return bool(p["blocks"]) and all(self._is_moment(b) for b in p["blocks"])
+
+    def _times_today(self, p: dict, day: datetime) -> list[datetime]:
+        """When an armed programme starts on this day (several, repeating every N minutes)."""
+        h, m = map(int, p["start"].split(":"))
+        first = day.replace(hour=h, minute=m, second=0, microsecond=0)
+        if not p.get("every"):
+            return [first]
+        uh, um = map(int, p["until"].split(":"))
+        last = day.replace(hour=uh, minute=um, second=0, microsecond=0)
+        out, t = [], first
+        while t <= last:
+            out.append(t)
+            t += timedelta(minutes=p["every"])
+        return out
+
     def _auto_start(self, now: datetime) -> None:
         for p in self.programmes:
-            if not p["auto"] or (p["days"] and now.weekday() not in p["days"]):
+            if not p["auto"] or not p["blocks"]:
                 continue
-            h, m = map(int, p["start"].split(":"))
-            if (now.hour, now.minute) != (h, m):
-                continue
-            key = f"{p['name']}@{now:%Y-%m-%d %H:%M}"
-            if key in self._auto_done or not p["blocks"]:
-                continue
-            self._auto_done.add(key)
-            skip = p.get("wake") is False and self.paused()
-            log.info("programme %s %s%s", p["name"], "skipped: the radio's paused" if skip else "starts by itself",
-                     " (once)" if p.get("once") else "")
-            if p.get("once"):                 # a one-off: not again tomorrow (it had its turn)
-                p["auto"] = False
-                p.pop("once", None)
-                if self.on_change:
-                    try:
-                        self.on_change(self.programmes)
-                    except Exception:
-                        log.exception("couldn't save the programmes")
-            if skip:
-                continue
-            self.play(p["name"])
-            if self.wake:
-                self.wake()
+            moments = self._moments_only(p)
+            lead = MOMENT_LEAD if moments else timedelta(0)
+            for due in self._times_today(p, now) + self._times_today(p, now + timedelta(days=1)):
+                if p["days"] and due.weekday() not in p["days"]:
+                    continue
+                if not (due - lead <= now < due - lead + timedelta(seconds=50)):
+                    continue
+                key = f"{p['name']}@{due:%Y-%m-%d %H:%M}"
+                if key in self._auto_done:
+                    continue
+                self._auto_done.add(key)
+                skip = p.get("wake") is False and self.paused()
+                log.info("programme %s %s at %s%s", p["name"], "skipped: the radio's paused" if skip else "starts by itself",
+                         f"{due:%H:%M}", " (once)" if p.get("once") else "")
+                if p.get("once"):             # a one-off: not again (it had its turn)
+                    p["auto"] = False
+                    p.pop("once", None)
+                    if self.on_change:
+                        try:
+                            self.on_change(self.programmes)
+                        except Exception:
+                            log.exception("couldn't save the programmes")
+                if skip:
+                    continue
+                if moments:                   # a talking clock and the like: over whatever's on
+                    for b in p["blocks"]:
+                        self._instants(b, due)
+                    continue
+                self.play(p["name"])
+                if self.wake:
+                    self.wake()
 
     # --- blocks -----------------------------------------------------------------------
 
@@ -403,7 +443,7 @@ class Scheduler:
                 log.warning("programme %s: the gap filler can't play (%s): the show", r["name"], e)
         self.station.tune(None)
 
-    def _start_block(self, i: int) -> None:
+    def _start_block(self, i: int, due: datetime | None = None) -> None:
         r = self.run
         self._drop_queued()
         prog, now = r["prog"], self.now()
@@ -423,9 +463,10 @@ class Scheduler:
             at = _next_clock(now, nxt["at"])
             # its time has gone today (played late): it just follows on, like any block
             r["at_next"] = at if at - now <= timedelta(hours=12) else None
-        self._instants(b)
-        if b["items"] and all(it["kind"] in INSTANT for it in b["items"]):
-            r["expect"], r["ends"] = None, now      # a moment: said or done, then straight on
+        due = due if due is not None and due > now else now
+        self._instants(b, due)
+        if self._is_moment(b):
+            r["expect"], r["ends"] = None, due      # a moment: said or done at its time, then straight on
             log.info("programme %s: moment %s", r["name"], b["name"])
             return
         if not [it for it in b["items"] if it["kind"] not in INSTANT]:
@@ -443,16 +484,35 @@ class Scheduler:
     def _has_end(b: dict) -> bool:
         return any(it["kind"] not in ("show", "list", "station") + INSTANT for it in b["items"])
 
-    def _instants(self, b: dict) -> None:
-        """A block's messages, jingles and actions, at its start."""
+    def _instants(self, b: dict, due: datetime | None = None) -> None:
+        """A block's messages, jingles and actions, at its time (due; now if None).
+        The pips and the spoken time go together as one time signal, on the minute."""
+        now = self.now()
+        due = due or now
+        acts = {it["action"] for it in b["items"] if it["kind"] == "action"}
+        if acts & {"time", "pips"} and self.time_signal:
+            try:
+                self.time_signal(due, "pips" in acts, "time" in acts)
+            except Exception:
+                log.exception("programme: the time signal didn't happen")
+        def later(fn, *a):
+            wait = (due - now).total_seconds()
+            if wait > 0.5:
+                t = threading.Timer(wait, fn, a)
+                t.daemon = True
+                t.start()
+            else:
+                fn(*a)
         for it in b["items"]:
             try:
                 if it["kind"] == "message" and self.say:
-                    self.say(it["text"])
+                    later(self.say, it["text"])
                 elif it["kind"] == "jingle" and self.jingle:
-                    self.jingle(it["path"])
-                elif it["kind"] == "action" and self.action:
-                    self.action(it["action"])
+                    later(self.jingle, it["path"])
+                elif it["kind"] == "action" and self.action and it["action"] not in ("time", "pips"):
+                    later(self.action, it["action"])
+                elif it["kind"] == "action" and it["action"] == "time" and not self.time_signal and self.action:
+                    later(self.action, "time")          # (no time signal hooked up: the button's way)
             except Exception:
                 log.exception("programme: %s didn't happen", it)
 

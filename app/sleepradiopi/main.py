@@ -498,6 +498,45 @@ def main() -> None:
             audio = np.concatenate(list(pcm.decode(path)) or [pcm.silence(0.1)])
             control.play_clip(Clip(audio, "jingle", path.stem))
         threading.Thread(target=run, name="programme-jingle", daemon=True).start()
+    def time_signal(at, pips: bool, speak: bool) -> None:
+        """A programme's time signal for [at]: the pips (five short, the long one on
+        the minute) and/or the time said. Made ahead (the voice is slow on a Zero),
+        then played on the dot; given up if it's more than half a minute late."""
+        if control is None:
+            return
+        def run():
+            import datetime as dt
+            import numpy as np
+            from sleepradiopi.audio import pcm
+            from sleepradiopi.io.announce import Clip
+            parts = []
+            if pips:
+                rate = pcm.SAMPLE_RATE
+                def tone(sec):
+                    t = np.arange(int(rate * sec)) / rate
+                    wave = (np.sin(2 * np.pi * 1000 * t) * 9000).astype(np.int16)
+                    return np.repeat(wave[:, None], pcm.CHANNELS, axis=1)
+                for _ in range(5):
+                    parts += [tone(0.1), pcm.silence(0.9)]
+                parts.append(tone(0.5))
+            if speak and station._has_voice:
+                try:
+                    if pips:
+                        parts.append(pcm.silence(0.3))
+                    parts.append(station.render_speech(station.builder.time_line(at.time())))
+                except Exception:
+                    logging.getLogger(__name__).exception("couldn't make the time")
+            if not parts:
+                return
+            start = at - dt.timedelta(seconds=5) if pips else at
+            wait = (start - dt.datetime.now()).total_seconds()
+            if wait < -30:
+                logging.getLogger(__name__).warning("time signal for %s too late: skipped", at.strftime("%H:%M"))
+                return
+            if wait > 0:
+                time.sleep(wait)
+            control.play_clip(Clip(np.concatenate(parts), "time", "The time"))
+        threading.Thread(target=run, name="time-signal", daemon=True).start()
     scheduler = Scheduler(station, wake=control.play if control else None,
                           sleep=(lambda: control.set_sleep(1)) if control else None,
                           pause=control.pause if control else None,
@@ -509,6 +548,7 @@ def main() -> None:
         logging.getLogger(__name__).warning("programmes ignored: %s", e)
     scheduler.on_change = lambda progs: save_setting(args.config, "programmes", progs)
     scheduler.quiet = settings.programme_mode
+    scheduler.time_signal = time_signal
     if control is not None:
         scheduler.paused = lambda: control.paused
     station.scheduler = scheduler

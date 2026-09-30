@@ -560,7 +560,7 @@ async function loadPlaylists(d) {
 async function loadProgrammes(d) {
   d = d || await api("/api/programmes");
   PROGRAMMES.kids = d.programmes.map(p => mk({ id: "pg:" + p.name.toLowerCase(), kind: "programme", title: p.name, start: p.start, auto: p.auto, days: p.days,
-    then: p.then, chain: p.chain, once: !!p.once, wake: p.wake !== false, gap: typeof p.gap === "object" ? { id: refObj(p.gap)?.id } : p.gap || "show", blocks: p.blocks.map(b => ({ ...b, items: b.items.map(refObj).filter(Boolean).map(o => o.id) })) }).id);
+    then: p.then, chain: p.chain, once: !!p.once, wake: p.wake !== false, every: p.every || 0, until: p.until || "", gap: typeof p.gap === "object" ? { id: refObj(p.gap)?.id } : p.gap || "show", blocks: p.blocks.map(b => ({ ...b, items: b.items.map(refObj).filter(Boolean).map(o => o.id) })) }).id);
   PROGRAMMES.loaded = true;
 }
 // a programme's saved things <-> the objects on the desktop
@@ -592,7 +592,7 @@ function noteWhen(m) {            // "Sundays at 09:00", "25 Dec", "with the oth
   return [date, days, when].filter(Boolean).join(" · ") + (m.until ? ` · until ${m.until}` : "");
 }
 const messageObj = text => mk({ id: "msg:" + hue(text) + ":" + text.length, kind: "message", title: text.length > 38 ? text.slice(0, 36) + "…" : text, text });
-const ACTION = Object.fromEntries([["time", "Time check", "◷"], ["news", "The news", "N"], ["sleep", "Sleep timer", "☾"]]
+const ACTION = Object.fromEntries([["time", "The time, spoken", "◷"], ["pips", "The pips", "♪"], ["news", "The news", "N"], ["sleep", "Sleep timer", "☾"]]
   .map(([a, title, sym]) => [a, mk({ id: "act:" + a, kind: "action", action: a, title, sym, h: 200 })]));
 function objRef(o) {
   if (!o) return null;
@@ -1634,7 +1634,7 @@ function scheduleView(o, box, win) {
   const progs = PROGRAMMES.kids.map(id => O[id]).filter(Boolean);
   const occ = progs.flatMap(p => occurrences(p)).sort((a, b) => a.start - b.start);
   const clash = new Set(), notes = [];
-  occ.forEach((a, i) => occ.slice(i + 1).forEach(b => { if (a.o !== b.o && a.start < b.end && b.start < a.end) { clash.add(a); clash.add(b);
+  occ.forEach((a, i) => occ.slice(i + 1).forEach(b => { if (a.o !== b.o && !momentsOnly(a.o) && !momentsOnly(b.o) && a.start < b.end && b.start < a.end) { clash.add(a); clash.add(b);
     notes.push(`${a.o.title} and ${b.o.title} overlap ${when(b.start)}: ${b.start > a.start ? b.o.title : a.o.title} would take over.`); } }));
   const modeSw = el("button", { className: "sw", type: "button", role: "switch", title: "Quiet unless a programme is on" });
   modeSw.setAttribute("aria-checked", String(!!S?.programme_mode)); modeSw.setAttribute("aria-label", "Programme mode");
@@ -1651,13 +1651,23 @@ function scheduleView(o, box, win) {
   for (let k = 0; k < 7; k++) {
     const day0 = new Date(today0.getTime() + k * 864e5), day1 = new Date(day0.getTime() + 864e5);
     const lane = el("div", { className: "lane", style: `height:44px;width:${W_}px;--hourpx:${180 * px}px` });
-    occ.filter(x => x.start < day1 && x.end > day0).forEach(x => {
+    const today = occ.filter(x => x.start < day1 && x.end > day0), seen = new Set();
+    const shown = today.flatMap(x => {                // every-N-minutes: one band from its first to its last
+      if (!x.o.every || x.chained) return [x];
+      if (seen.has(x.o)) return [];
+      seen.add(x.o);
+      const mine = today.filter(y => y.o === x.o && !y.chained);
+      return [{ ...x, end: mine[mine.length - 1].end, every: x.o.every }];
+    });
+    shown.forEach(x => {
       const a = Math.max(0, (x.start - day0) / 60000), b = Math.min(1440, (x.end - day0) / 60000);
       const first = O[x.o.blocks[0]?.items[0]];
       const bar = el("div", { className: "blk", title: `${x.o.title}: ${x.start.toTimeString().slice(0, 5)}–${x.end.toTimeString().slice(0, 5)}${x.chained ? " (after " + x.chained + ")" : ""}` });
       bar.style.cssText = `top:5px;bottom:5px;left:${a * px}px;width:${Math.max(6, (b - a) * px - 1)}px;--h:${first ? TINT[first.kind] ?? first.h : 40};padding:3px 6px;cursor:pointer` +
         (clash.has(x) ? ";outline:2px solid var(--red)" : "") + (x.chained ? ";opacity:.8" : "");
-      bar.append(el("div", { className: "bt", textContent: (x.chained ? "↳ " : (x.o.wake === false ? "🔕 " : "🔔 ") + (x.o.once ? "" : "↻ ")) + x.o.title }));
+      bar.append(el("div", { className: "bt", textContent: (x.chained ? "↳ " : (x.o.wake === false ? "🔕 " : "🔔 ") + (x.o.once ? "" : "↻ ")) + x.o.title +
+        (x.every ? ` · every ${x.every === 60 ? "hour" : x.every + " min"}` : "") }));
+      if (x.every) bar.style.background = `repeating-linear-gradient(90deg, hsl(var(--h) 45% 38%) 0 ${x.every * px - 1}px, hsl(var(--h) 45% 26%) ${x.every * px - 1}px ${x.every * px}px)`;
       bar.onclick = () => open(x.o.id);
       lane.append(bar);
     });
@@ -1677,6 +1687,7 @@ async function saveProgrammes(note) {
     const d = await api("/api/programmes", { programmes: progs.map(p => ({ name: p.title, start: p.start, auto: !!p.auto, days: p.days || [], then: p.then || "show",
       gap: p.gap && typeof p.gap === "object" ? (objRef(O[p.gap.id]) || "show") : p.gap || "show", ...(p.then === "chain" ? { chain: p.chain } : {}),
       ...(p.auto && p.once ? { once: true } : {}), ...(p.wake === false ? { wake: false } : {}),
+      ...(p.every ? { every: p.every, until: p.until || "23:59" } : {}),
       blocks: p.blocks.map(b => ({ name: b.name, rule: b.rule, order: b.order || "inorder", ...(b.rule === "for" || b.rule === "at" ? { min: b.min || 60 } : {}),
         ...(b.rule === "at" ? { at: b.at } : {}), ...(b.rule === "until" ? { until: b.until } : {}), items: b.items.map(id => objRef(O[id])).filter(Boolean) })) })) });
     const open_ = W.map(w => w.id);
@@ -1721,23 +1732,29 @@ const same = (a, b) => a.length === b.length && a.every((x, i) => x === b[i]);
 function repeatOf(o) {
   const d = [...(o.days || [])].sort();
   const byDays = !d.length ? "daily" : same(d, WEEKDAYS) ? "weekdays" : same(d, WEEKEND) ? "weekends" : "days";
+  if (o.every) return "q" + o.every;
   if (o.auto) return o.once ? "once" : byDays;
   return o.pendingRepeat || (d.length ? byDays : "once");
 }
 function setRepeat(o, v) {
   o.pendingRepeat = v;
+  if (v.startsWith("q")) { o.every = +v.slice(1); o.until = o.until || "21:00"; o.days = []; if (o.auto) o.once = false; return; }
+  o.every = 0;
   o.days = v === "weekdays" ? [...WEEKDAYS] : v === "weekends" ? [...WEEKEND] : v === "days" ? (o.days?.length ? o.days : [6]) : [];
   if (o.auto) o.once = v === "once";
 }
-const repeatWords = o => ({ daily: "every day", weekdays: "on weekdays", weekends: "at weekends", days: "on " + (o.days || []).map(d => DAYN[d]).join(", ") })[repeatOf(o)] || "";
+const repeatWords = o => o.every ? `every ${o.every === 60 ? "hour" : o.every + " min"} until ${o.until || "23:59"}` : ({ daily: "every day", weekdays: "on weekdays", weekends: "at weekends", days: "on " + (o.days || []).map(d => DAYN[d]).join(", ") })[repeatOf(o)] || "";
 const progLen = o => { const tl = timeline(o); return tl.length ? tl[tl.length - 1].end - tl[0].start : 0; };
 // when an armed programme will play over the next week: [{o, start: Date, end: Date, chained?}]
 function occurrences(o, horizon = 7) {
   const out = [];
   if (!o.auto || !o.blocks?.length) return out;
   const now = new Date(), [h, m] = o.start.split(":").map(Number), days = o.once ? [] : o.days || [];
+  const [uh, um] = (o.until || "23:59").split(":").map(Number);
   for (let k = 0; k < horizon; k++) {
-    const st = new Date(now.getFullYear(), now.getMonth(), now.getDate() + k, h, m);
+   const first = new Date(now.getFullYear(), now.getMonth(), now.getDate() + k, h, m);
+   const last = o.every ? new Date(now.getFullYear(), now.getMonth(), now.getDate() + k, uh, um) : first;
+   for (let st = first; st <= last; st = new Date(st.getTime() + (o.every || 1440) * 60000)) {
     if (st.getTime() + 60000 <= now.getTime()) continue;
     if (days.length && !days.includes((st.getDay() + 6) % 7)) continue;
     const end = new Date(st.getTime() + Math.max(1, progLen(o)) * 60000);
@@ -1751,13 +1768,17 @@ function occurrences(o, horizon = 7) {
       prev = { o: c, start: cs, end: new Date(cs.getTime() + Math.max(1, progLen(c)) * 60000), chained: q.title };
       out.push(prev); q = c;
     }
-    if (o.once) break;
+    if (o.once) return out;
+   }
   }
   return out;
 }
+// a programme of only moments (a talking clock) plays over whatever's on: it can't clash
+const momentsOnly = o => o.blocks?.length && o.blocks.every(b => b.items.length && b.items.every(id => INSTANT.includes(O[id]?.kind)));
 function clashesFor(o) {
+  if (momentsOnly(o)) return [];
   const mine = occurrences({ ...o, auto: true, once: repeatOf(o) === "once" });
-  const others = PROGRAMMES.kids.map(id => O[id]).filter(x => x && x !== o && x.auto).flatMap(x => occurrences(x));
+  const others = PROGRAMMES.kids.map(id => O[id]).filter(x => x && x !== o && x.auto && !momentsOnly(x)).flatMap(x => occurrences(x));
   return mine.flatMap(a => others.filter(b => b.o !== a.o && a.start < b.end && b.start < a.end).map(b => ({ a, b })));
 }
 const when = d => { const k = Math.round((new Date(d).setHours(0, 0, 0, 0) - new Date().setHours(0, 0, 0, 0)) / 864e5);
@@ -1789,11 +1810,11 @@ function armText(o) {
   const run = S?.programme && S.programme.name.toLowerCase() === o.title.toLowerCase() ? S.programme : null;
   if (run) return `Playing since ${run.started}${run.next ? " · next: " + run.next : ""}`;
   if (!o.auto) return "Not armed: press Arm to have it start by itself, or Play now";
-  const d = nextStartAt(o);
-  if (!d) return "Pick a day for it to repeat on";
+  const d = o.every ? (occurrences(o, 2)[0]?.start || null) : nextStartAt(o);
+  if (!d) return o.every ? "Nothing more today or tomorrow in its hours" : "Pick a day for it to repeat on";
   const mins = Math.max(0, Math.round((d - new Date()) / 60000)), k = Math.round((new Date(d).setHours(0, 0, 0, 0) - new Date().setHours(0, 0, 0, 0)) / 864e5);
   const day = k === 0 ? "today" : k === 1 ? "tomorrow" : d.toLocaleDateString(undefined, { weekday: "long" });
-  return `${o.wake === false ? "🔕" : "🔔"} Armed: ${o.once ? "starts" : "repeats " + repeatWords(o) + "; next"} ${day} at ${o.start}` + (mins < 120 ? ` · in ${mins < 1 ? "under a minute" : mins + " min"}` : "");
+  return `${o.wake === false ? "🔕" : "🔔"} Armed: ${o.once ? "starts" : "repeats " + repeatWords(o) + "; next"} ${day} at ${d.toTimeString().slice(0, 5)}` + (mins < 120 ? ` · in ${mins < 1 ? "under a minute" : mins + " min"}` : "");
 }
 function programmeView(o, box, win) {
   const run = S?.programme && S.programme.name.toLowerCase() === o.title.toLowerCase() ? S.programme : null;
@@ -1830,7 +1851,11 @@ function programmeView(o, box, win) {
   const rep = repeatOf(o);
   const repSel = el("select", { id: "rep-" + o.id });
   repSel.setAttribute("aria-label", "Repeat");
-  for (const [v, t] of [["once", "once"], ["daily", "every day"], ["weekdays", "weekdays"], ["weekends", "weekends"], ["days", "on chosen days…"]]) repSel.append(new Option(t, v, false, rep === v));
+  for (const [v, t] of [["once", "once"], ["daily", "every day"], ["weekdays", "weekdays"], ["weekends", "weekends"], ["days", "on chosen days…"],
+                        ["q15", "every 15 min"], ["q30", "every 30 min"], ["q60", "every hour"]]) repSel.append(new Option(t, v, false, rep === v));
+  const untilIn = el("input", { type: "time", value: o.until || "21:00", id: "until-" + o.id, title: "The last time it repeats, each day" });
+  untilIn.setAttribute("aria-label", "Repeats until");
+  untilIn.onchange = () => { o.until = untilIn.value; saveProgrammes(); };
   repSel.onchange = () => { setRepeat(o, repSel.value); saveProgrammes(o.auto ? `${o.title}: ${armText(o).toLowerCase()}.` : ""); };
   const days = el("span", { className: "days" });
   "MTWTFSS".split("").forEach((c, i) => { const b = el("button", { type: "button", textContent: c, title: ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"][i] });
@@ -1842,7 +1867,8 @@ function programmeView(o, box, win) {
     playing ? T("■ Stop", async () => { await api("/api/programmes/stop", {}); poll(); drawDesk(); }, "primary")
             : T("▶ Play now", () => play(o), "", !o.blocks.length),
     playing ? null : armBtn, playing ? null : el("span", { className: "muted", textContent: "at" }), playing ? null : startIn,
-    playing ? null : repSel, rep === "days" && !playing ? days : null, status));
+    playing ? null : repSel, rep === "days" && !playing ? days : null,
+    rep.startsWith("q") && !playing ? el("span", { className: "muted", textContent: "until" }) : null, rep.startsWith("q") && !playing ? untilIn : null, status));
   const wakeSw = el("button", { className: "sw", type: "button", role: "switch", title: "If the radio's paused when it's due: on, it plays anyway (an alarm); off, the pause wins and it's skipped" });
   wakeSw.setAttribute("aria-checked", String(o.wake !== false)); wakeSw.setAttribute("aria-label", "Wake the radio if it's paused");
   wakeSw.onclick = () => { o.wake = o.wake === false; saveProgrammes(o.wake ? `${o.title} wakes the radio even if it's paused.` : `${o.title} only starts if the radio's playing: a pause wins.`); };
