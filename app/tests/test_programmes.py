@@ -246,3 +246,18 @@ def test_validate_the_new_things() -> None:
                 [{"name": "P", "blocks": [{"items": [{"kind": "action", "action": "explode"}]}]}], [{"name": "P", "gap": "loud"}]):
         with pytest.raises(ValueError):
             programmes.validate(bad)
+
+
+def test_a_one_song_block_isnt_over_before_it_starts(tmp_path, monkeypatch) -> None:
+    """A block of one song cuts in as the next thing; until it does it was
+    counted as finished, and the programme ended at once (and slept)."""
+    st, sched, clock, _, slept = _setup(tmp_path, monkeypatch, [{"name": "Test 1", "then": "sleep", "blocks": [
+        {"name": "Donna", "items": [{"kind": "track", "root": "music", "path": "Nick Drake/Pink Moon/01 - Pink Moon.mp3"}], "rule": "end"}]}])
+    st._track_started(st._take_next())                  # the show is playing a song
+    sched.play("Test 1")
+    clock.go(seconds=4); sched.tick()
+    assert sched.run is not None and slept == []
+    st._track_started(st._jump)                          # it cuts in and plays
+    st._jump = None
+    sched.tick()
+    assert sched.run is not None

@@ -386,7 +386,15 @@ The cards:
   **on chosen days**; **once a year on a date** (e.g. Happy Christmas on 25
   December); **until** a date; paused. Hear it now, delete (or drag it to the
   Trash), drag it into a programme, or drop it on the radio to hear it. *When
-  they're read…* holds the shared settings. **Birthdays** is a calendar. Stations and podcasts are found
+  they're read…* holds the shared settings. **Birthdays** are objects too: the
+  calendar opens a folder of people, soonest first (today's glows), each with
+  a window (name, day, month, year for their age, hear the wish); New
+  birthday, the Trash, or drop one on the radio to hear the wish. **Artist
+  lists** each open their own window (rename, add and take off artists, play,
+  delete). **Voices** is a folder: double-click one to make it the DJ's (the
+  radio restarts), drop a voice archive on it to install it. A programme's
+  toolbar says when it will next start by itself ("next: today at 14:46"), or
+  that it only plays when you press Play. Stations and podcasts are found
   and followed from their windows (*Find a station*, *Follow a podcast*) and
   forgotten by dragging to the Trash. **Jingles** is a folder of its own
   (upload, download, delete) and **Artist lists** an editor (make a list with

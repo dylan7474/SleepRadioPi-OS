@@ -465,11 +465,12 @@ const PANEL = {};
 for (const [key, title, sym, h, page] of PANELS) PANEL[key] = mk({ id: "set:" + key, kind: "panel", key, title, sym, h, page });
 for (const [key, title, sym, h] of [["messages", "Messages", "✎", 55], ["birthdays", "Birthdays", "✿", 340], ["stations", "Stations", "R", 8],
                                     ["tests", "Test sounds", "▶", 150], ["stream", "Listen in a browser", "◠", 200], ["lists", "Artist lists", "A", 195],
-                                    ["findstation", "Find a station", "R", 8], ["findpodcast", "Follow a podcast", "P", 275]])
+                                    ["findstation", "Find a station", "R", 8], ["findpodcast", "Follow a podcast", "P", 275], ["newlist", "New artist list", "A", 195]])
   PANEL[key] = mk({ id: "set:" + key, kind: "panel", key, title, sym, h, page: key });
 const DJ = mk({ id: "dj", kind: "dj", title: "The DJ" });
 const NOTES = mk({ id: "notes", kind: "folder", box: "messages", title: "Messages", kids: [], sym: "✎" });   // a folder of sticky notes
-const BDAYS = mk({ id: "bdays", kind: "calendar", title: "Birthdays" });
+const BDAYS = mk({ id: "bdays", kind: "folder", box: "birthdays", title: "Birthdays", kids: [] });   // a folder of people
+const VOICES = mk({ id: "box:voices", kind: "folder", box: "voices", title: "Voices", kids: [], sym: "“", alt: true });
 const parentOf = id => Object.values(O).find(o => o.kids && o.kids.includes(id));
 
 // ---- loading from the radio ----
@@ -515,6 +516,17 @@ async function loadFolder(f) {
     f.kids = d.list.map((m, i) => mk({ id: "note:" + i, kind: "note", key: "note", idx: i, text: m.text, m,
       title: m.text.length > 34 ? m.text.slice(0, 32) + "…" : m.text }).id);
     for (const id of Object.keys(O)) if (id.startsWith("note:") && !f.kids.includes(id)) delete O[id];
+  } else if (f.box === "birthdays") {
+    const d = await api("/api/birthdays"), today = new Date();
+    const until = p_ => { let n = new Date(today.getFullYear(), p_.month - 1, p_.day); const t0 = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+                          if (n < t0) n = new Date(today.getFullYear() + 1, p_.month - 1, p_.day); return Math.round((n - t0) / 864e5); };
+    f.kids = d.birthdays.map((b, i) => ({ b, i, n: until(b) })).sort((x, y) => x.n - y.n).map(({ b, i, n }) =>
+      mk({ id: "bd:" + i, kind: "person", key: "person", idx: i, title: b.name, b, soon: n }).id);
+    for (const id of Object.keys(O)) if (id.startsWith("bd:") && !f.kids.includes(id)) delete O[id];
+  } else if (f.box === "voices") {
+    const d = await api("/api/voices");
+    f.kids = d.voices.map(v => mk({ id: "vc:" + v, kind: "voice", key: "voice", name: v, title: VOICE(v), current: v === d.current }).id);
+    f.data = d;
   } else if (f.box === "jingles") {
     const d = await api("/api/media?kind=jingles&path=");
     f.kids = d.files.filter(x => x.audio).map(x => mk({ id: "j:" + x.name, kind: "jingle", title: cleanName(x.name), root: "jingles", path: x.name, mb: x.size / 1e6 }).id);
@@ -634,7 +646,7 @@ function timeline(p) {
 const $ = id => document.getElementById(id);
 const el = (tag, props = {}, ...kids) => { const e = Object.assign(document.createElement(tag), props); e.append(...kids.filter(k => k != null)); return e; };
 const KIND = { folder: "Folder", album: "Album", track: "Track", station: "Station", podcast: "Podcast", episode: "Episode", book: "Audiobook",
-               playlist: "Playlist", programme: "Programme", list: "Artist list", jingle: "Jingle", message: "Message", action: "Action", show: "The show", trash: "Trash", panel: "Setting", dj: "The DJ", note: "Messages", calendar: "Birthdays" };
+               playlist: "Playlist", programme: "Programme", list: "Artist list", jingle: "Jingle", message: "Message", action: "Action", person: "Birthday", voice: "Voice", show: "The show", trash: "Trash", panel: "Setting", dj: "The DJ", note: "Messages", calendar: "Birthdays" };
 const TINT = { album: 30, track: 45, station: 8, podcast: 275, episode: 265, book: 150, playlist: 215, programme: 40, list: 195, show: 40, folder: 40 };
 function wave(seed) {
   let x = hue(seed), bars = "";
@@ -645,7 +657,8 @@ function glyph(o) {
   const g = el("div", { className: "glyph" });
   g.style.setProperty("--h", o.h);
   switch (o.kind) {
-    case "folder": if (o.box === "messages") { g.className += " g-note"; g.textContent = "Messages for the DJ to read"; break; }
+    case "folder": if (o.box === "birthdays") { const d = new Date(); g.className += " g-cal"; g.dataset.mon = MONN[d.getMonth()].toUpperCase(); g.dataset.day = d.getDate(); break; }
+      if (o.box === "messages") { g.className += " g-note"; g.textContent = "Messages for the DJ to read"; break; }
       g.className += " g-folder" + (o.alt ? " alt" : ""); g.textContent = o.sym || ""; break;
     case "album": if (o.root === "ondemand") { g.className += " g-sound"; g.innerHTML = wave(o.title); } else { g.className += " g-album"; g.textContent = initials(o.title); } break;
     case "track": if (o.root === "ondemand") { g.className += " g-sound"; g.innerHTML = wave(o.title); } else g.className += " g-track"; break;
@@ -671,6 +684,8 @@ function glyph(o) {
     case "trash": g.className += " g-trash" + (o.kids.length ? " full" : ""); break;
     case "panel": g.className += " g-panel"; g.textContent = o.sym; break;
     case "note": g.className += " g-note"; g.textContent = o.text; g.style.setProperty("--tilt", `${(hue(o.text) % 7) - 3}deg`); if (o.m?.off) g.style.opacity = .5; break;
+    case "person": { g.className += " g-cal"; g.dataset.mon = MONN[o.b.month - 1].toUpperCase(); g.dataset.day = o.b.day; if (o.soon === 0) g.style.boxShadow = "0 0 0 3px var(--amber), 0 4px 10px var(--shadow)"; break; }
+    case "voice": g.className += " g-dj"; if (!o.current) g.style.filter = "saturate(.35)"; break;
     case "calendar": { g.className += " g-cal"; const d = new Date(); g.dataset.mon = d.toLocaleDateString("en-GB", { month: "short" }).toUpperCase(); g.dataset.day = d.getDate(); break; }
     case "dj": g.className += " g-dj"; break;
   }
@@ -691,6 +706,11 @@ function subOf(o) {
     case "jingle": return o.mb ? `${o.mb.toFixed(1)} MB` : "";
     case "message": return "The DJ says it";
     case "note": return noteWhen(o.m);
+    case "person": { const t = new Date(), today0 = new Date(t.getFullYear(), t.getMonth(), t.getDate());
+      const nextYear = t.getFullYear() + (new Date(t.getFullYear(), o.b.month - 1, o.b.day) < today0 ? 1 : 0);   // the year of their next birthday
+      const age = o.b.year ? nextYear - o.b.year : null;
+      return (o.soon === 0 ? "Today!" : o.soon === 1 ? "Tomorrow" : `${o.b.day} ${MONN[o.b.month - 1]}`) + (age ? ` · ${age}` : ""); }
+    case "voice": return o.current ? "The DJ's voice now" : "Installed";
     case "action": return "At that moment";
     case "show": return "with the DJ";
   }
@@ -891,16 +911,20 @@ async function setPreset(i, o) {
 async function open(id) {
   const o = O[id];
   if (!o) return;
-  if (["track", "station", "episode", "show", "list", "book"].includes(o.kind)) return play(o);
+  if (["track", "station", "episode", "show", "book"].includes(o.kind)) return play(o);
   if (o.kind === "dj") return open(PANEL.dj.id);
   if (o.kind === "jingle") return toast(`“${o.title}”: the DJ plays jingles between songs, when jingles are on (the DJ's window).`);
   if (o.kind === "panel" && o.key === "library") return open(JINGLES.id);
+  if (o.kind === "panel" && o.key === "voices") return open(VOICES.id);
+  if (o.kind === "panel" && o.key === "birthdays") return open(BDAYS.id);
+  if (o.kind === "panel" && o.key === "lists") return open(LISTS.id);
 
-  if (o.kind === "calendar") return open(PANEL.birthdays.id);
+  if (o.kind === "calendar") return open(BDAYS.id);
+  if (o.kind === "list" && !o.key) o.key = "alist";
   const had = W.find(w => w.id === id);
   if (had) { had.z = ++zTop; drawDesk(); if (o.loaded) refreshOpen(); return; }
   const d = $("desk"), n = W.length;
-  const big = o.kind === "programme", page = (o.kind === "panel" && (o.page || UI[o.key])) || o.kind === "note", wide = ["album", "playlist", "podcast"].includes(o.kind);
+  const big = o.kind === "programme", page = (o.kind === "panel" && (o.page || UI[o.key])) || ["note", "person", "voice", "list"].includes(o.kind), wide = ["album", "playlist", "podcast"].includes(o.kind);
   const w = Math.min(d.clientWidth - 40, big ? 780 : page ? 560 : wide ? 480 : 560), h = Math.min(d.clientHeight - 40, big ? 460 : page ? 620 : 420);
   const win = { id, x: Math.max(8, Math.min(250 + n * 28, d.clientWidth - w - 10)), y: Math.max(8, Math.min(24 + n * 26, d.clientHeight - h - 10)), w, h, z: ++zTop, blk: 0, loading: false };
   W.push(win);
@@ -950,7 +974,7 @@ function winEl(win) {
   }, true);
   box.append(bar);
   if (win.loading) box.append(el("div", { className: "wbody" }, el("div", { className: "loading", textContent: "Asking the radio…" })));
-  else ({ note: nativePanel, folder: folderView, trash: folderView, album: albumView, playlist: playlistView, podcast: podcastView, programme: programmeView, panel: panelView }[o.kind])(o, box, win);
+  else ({ note: nativePanel, person: nativePanel, voice: nativePanel, list: nativePanel, folder: folderView, trash: folderView, album: albumView, playlist: playlistView, podcast: podcastView, programme: programmeView, panel: panelView }[o.kind])(o, box, win);
   const rs = el("div", { className: "resize" });
   rs.addEventListener("pointerdown", e => resizeThing(e, box, win));
   box.append(rs);
@@ -983,7 +1007,14 @@ function folderView(o, box, win) {
   else if (o.box === "programmes") tools.append(T("New programme", newProgramme), el("span", { className: "note", textContent: "A running order the radio plays by itself" }));
   else if (o.box === "stations") tools.append(T("Find a station", () => open(PANEL.findstation.id)), el("span", { className: "note", textContent: "Drag a station onto a button to keep it there" }));
   else if (o.box === "podcasts") tools.append(T("Follow a podcast", () => open(PANEL.findpodcast.id)), el("span", { className: "note", textContent: "Open a show for its episodes" }));
-  else if (o.box === "lists") tools.append(T("Make an artist list", () => open(PANEL.lists.id)), el("span", { className: "note", textContent: "The show, playing only these artists" }));
+  else if (o.box === "lists") tools.append(T("New artist list", () => open(PANEL.newlist.id)), el("span", { className: "note", textContent: "Double-click a list to change it · drag one onto the radio to play it" }));
+  else if (o.box === "birthdays") tools.append(T("New birthday", () => newBirthday()), el("span", { className: "note", textContent: "Soonest first · the DJ wishes them a happy birthday on the day · drag one onto the radio to hear it" }));
+  else if (o.box === "voices") {
+    const up = el("input", { type: "file", hidden: true, accept: ".tar.bz2,.tar.gz,.zip" });
+    up.onchange = () => { const f = up.files[0]; up.value = ""; if (f) uploadVoice(f); };
+    tools.append(o.data && !o.data.has_standard ? T("Download the standard voice", async () => { try { await api("/api/voices/standard", {}); toast("Downloading the standard voice onto the radio…"); } catch (e) { toast(e.message); } }) : null,
+      T("Upload a voice…", () => up.click()), up, el("span", { className: "note", textContent: "Double-click a voice to make it the DJ's (the radio restarts) · drop a voice archive here to install it" }));
+  }
   else if (o.box === "messages") tools.append(T("New message", () => newMessage()), T("When they're read…", () => open(PANEL.messages.id)),
     el("span", { className: "note", textContent: "Double-click a note to change it or when it's said · drag one into a programme, or onto the radio to hear it" }));
   else if (o.box === "jingles") {
@@ -1003,6 +1034,11 @@ function folderView(o, box, win) {
   o.kids.forEach(id => O[id] && grid.append(iconEl(O[id], { where: o.id, parent: o.id })));
   if (!o.kids.length) grid.append(el("div", { className: "empty", textContent: o.kind === "trash" ? "The Trash is empty." : o.root === "ondemand" && !o.path ? "Nothing here yet: add files under Settings › Media library › On demand." : "Nothing here yet." }));
   const body = el("div", { className: "wbody" }, grid);
+  if (o.box === "voices") {
+    body.addEventListener("dragover", e => { if ([...e.dataTransfer.types].includes("Files")) { e.preventDefault(); box.classList.add("over"); } });
+    body.addEventListener("dragleave", () => box.classList.remove("over"));
+    body.addEventListener("drop", e => { e.preventDefault(); box.classList.remove("over"); const f = e.dataTransfer.files[0]; if (f) uploadVoice(f); });
+  }
   if (o.root || o.box === "books" || o.box === "jingles") {   // files and folders from the computer
     body.addEventListener("dragover", e => { if ([...e.dataTransfer.types].includes("Files")) { e.preventDefault(); box.classList.add("over"); } });
     body.addEventListener("dragleave", () => box.classList.remove("over"));
@@ -1201,7 +1237,7 @@ const UI = {
         grp("The news", srow("News", sw(d.news_enabled, v => set({ news_enabled: v }), "The news"), help("On the hour, when the radio's online")),
           srow("News speed", ...range("news-speed", 0.5, 1.5, 0.05, d.news_speed, v => v.toFixed(2) + "×", v => set({ news_speed: v })))),
         grp("Waking up", srow("At power-on", seg([[true, "Chime"], [false, "Silent"]], d.startup_sound, v => set({ startup_sound: v })))),
-        grp("", line(sbtn("Messages…", () => open(NOTES.id)), sbtn("Birthdays…", () => open(BDAYS.id)), sbtn("Voices…", () => open(PANEL.voices.id)), sbtn("Jingles…", () => open(JINGLES.id)))),
+        grp("", line(sbtn("Messages…", () => open(NOTES.id)), sbtn("Birthdays…", () => open(BDAYS.id)), sbtn("Voices…", () => open(VOICES.id)), sbtn("Jingles…", () => open(JINGLES.id)))),
       ];
     },
   },
@@ -1374,6 +1410,74 @@ const UI = {
       ];
     },
   },
+  person: {
+    load: () => api("/api/birthdays"),
+    build: (all, act, win) => {
+      const o = O[win.id], idx = o?.idx, b = all.birthdays[idx];
+      if (!b) return [help("That birthday has gone.")];
+      const save = patch => act(async () => { const d = await api("/api/birthdays");
+        await api("/api/birthdays", { birthdays: d.birthdays.map((x, j) => j === idx ? Object.fromEntries(Object.entries({ ...x, ...patch }).filter(([, v]) => v !== undefined && v !== "")) : x) });
+        await loadFolder(BDAYS); });
+      const name = el("input", { type: "text", value: b.name, id: "bd-n" }); name.onchange = () => name.value.trim() && save({ name: name.value.trim() });
+      const day = el("input", { type: "number", min: 1, max: 31, value: b.day, id: "bd-d", style: "width:5em" }); day.onchange = () => save({ day: +day.value });
+      const mon = el("select", { id: "bd-m" }); MONN.forEach((m_, k) => mon.append(new Option(m_, k + 1, false, b.month === k + 1))); mon.onchange = () => save({ month: +mon.value });
+      const year = el("input", { type: "number", min: 1900, max: 2100, value: b.year || "", id: "bd-y", placeholder: "for their age", style: "width:9em" });
+      year.onchange = () => save({ year: year.value ? +year.value : undefined });
+      return [grp("Whose birthday", srow("Name", name), srow("On", line(day, mon)), srow("Born in", year, help(b.year ? "" : "Optional: the DJ can say their age"))),
+        grp("", line(sbtn("Hear the wish", () => act(() => api("/api/birthdays/hear", b))),
+          sbtn("Remove…", () => ask(`Take ${b.name} off the birthdays?`, "Remove", async () => { const d = await api("/api/birthdays");
+            await api("/api/birthdays", { birthdays: d.birthdays.filter((_, j) => j !== idx) }); closeFor(o); await loadFolder(BDAYS); drawDesk(); }), "danger")),
+          help("On the day, the DJ wishes them a happy birthday between songs."))];
+    },
+  },
+  alist: {
+    load: () => api("/api/artists"),
+    build: (d, act, win) => {
+      const o = O[win.id], cur = d.profiles.find(p => p.name === o?.name);
+      if (!cur) return [help("That list has gone.")];
+      const save = profiles => act(async () => { await api("/api/profiles", { profiles }); await loadFolder(LISTS).catch(() => {}); });
+      const names = d.artists.map(a => a.name);
+      const dl = el("datalist", { id: "artist-names-" + o.id.length }, ...names.map(n => el("option", { value: n })));
+      const add = el("input", { type: "text", placeholder: "Type an artist's name", id: "alist-add" }); add.setAttribute("list", dl.id);
+      const addTo = () => { const n = names.find(x => x.toLowerCase() === add.value.trim().toLowerCase()); if (!n) return toast("Pick an artist from the list as you type.");
+        save(d.profiles.map(p => p === cur ? { ...p, artists: [...new Set([...p.artists, n])] } : p)); };
+      add.onkeydown = e => { if (e.key === "Enter") addTo(); };
+      const rename = el("input", { type: "text", value: cur.name, id: "alist-name", maxLength: 40 });
+      rename.onchange = () => { const v = rename.value.trim(); if (!v || v === cur.name) return; o.name = v; o.title = v; save(d.profiles.map(p => p === cur ? { ...p, name: v } : p)); };
+      return [dl, grp("The list", srow("Name", rename),
+          el("div", { className: "line" }, ...cur.artists.map(a => el("span", { className: "chipx" }, a, Object.assign(el("button", { type: "button", textContent: "✕", title: "Take " + a + " off" }),
+            { onclick: () => cur.artists.length > 1 ? save(d.profiles.map(p => p === cur ? { ...p, artists: p.artists.filter(x => x !== a) } : p)) : toast("A list needs at least one artist: delete the list instead.") })))),
+          line(add, sbtn("Add", addTo, "primary"))),
+        grp("", line(sbtn("▶ Play it", () => play(o)), sbtn("Delete this list…", () => ask(`Delete the list “${cur.name}”? The music stays.`, "Delete list", async () => {
+          await api("/api/profiles", { profiles: d.profiles.filter(p => p !== cur) }); closeFor(o); await loadFolder(LISTS); drawDesk(); }), "danger")),
+          help("The show, playing only these artists (\"welcome to " + cur.name + " on Sleep Radio\"). A button can hold it: drag it onto one."))];
+    },
+  },
+  newlist: {
+    load: () => api("/api/artists"),
+    build: (d, act, win) => {
+      const names = d.artists.map(a => a.name);
+      const dl = el("datalist", { id: "artist-names-new" }, ...names.map(n => el("option", { value: n })));
+      const name = el("input", { type: "text", placeholder: "e.g. Friday List", id: "newlist-name", maxLength: 40 });
+      const first = el("input", { type: "text", placeholder: "Type an artist's name", id: "newlist-first" }); first.setAttribute("list", dl.id);
+      const make = () => { const n = names.find(x => x.toLowerCase() === first.value.trim().toLowerCase()), v = name.value.trim();
+        if (!v || !n) return toast("Give the list a name and pick its first artist.");
+        act(async () => { await api("/api/profiles", { profiles: [...d.profiles, { name: v, artists: [n] }] }); await loadFolder(LISTS);
+          closeWin(win); open(mk({ id: "ls:" + v, kind: "list", name: v, title: v, key: "alist" }).id); }); };
+      return [dl, grp("A new artist list", srow("Name", name), srow("First artist", first), line(sbtn("Make it", make, "primary")),
+        help("Then add more artists in its window.")), ];
+    },
+  },
+  voice: {
+    load: () => api("/api/voices"),
+    build: (v, act, win) => {
+      const o = O[win.id], cur = v.current === o?.name;
+      return [grp("This voice", srow("Voice", el("b", { textContent: VOICE(o.name) })), srow("Used by", el("span", { textContent: cur ? "The DJ, now" : "Nobody at the moment" })),
+          cur ? help("It's the DJ's voice.") : line(sbtn("Make it the DJ's voice", () => ask(`Make ${VOICE(o.name)} the DJ's voice? The radio restarts to load it (about a minute).`, "Change and restart",
+            () => act(async () => { await api("/api/dj", { voice: o.name }); await loadFolder(VOICES); })), "primary"))),
+        v.credit && o.name === v.standard_name ? help(v.credit) : null];
+    },
+  },
   birthdays: {
     load: () => api("/api/birthdays"),
     build: (b, act) => {
@@ -1461,6 +1565,7 @@ const SUMS = {
   backup: () => "Your settings, in a file you keep",
   power: () => "Restart it, or shut it down",
   note: () => "",
+  person: () => "", alist: d => "", voice: v => "", newlist: () => "",
   messages: m => `${m.list.length} note${m.list.length === 1 ? "" : "s"} · ${m.on ? `read every ${m.every_min} min, ${hhmm(m.start_min)}–${hhmm(m.end_min)}` : "not being read"}`,
   birthdays: b => `${b.birthdays.length} ${b.birthdays.length === 1 ? "person" : "people"}${b.today?.length ? " · a birthday today!" : ""}`,
   lists: d => `${d.profiles.length} list${d.profiles.length === 1 ? "" : "s"} · ${d.artists.length} artists to choose from`,
@@ -1530,6 +1635,18 @@ async function newPlaylist() {
     drawDesk(); toast(`${name}: drop songs, albums or folders onto it.`);
   } catch (e) { toast("Not made: " + e.message + "."); }
 }
+// when a programme will next start by itself ("today at 14:46"), or that it won't
+function nextStart(o) {
+  if (!o.auto) return "· only when you press Play";
+  const now = new Date(), [h, m] = o.start.split(":").map(Number), days = o.days || [];
+  for (let k = 0; k < 8; k++) {
+    const d = new Date(now.getFullYear(), now.getMonth(), now.getDate() + k, h, m);
+    const wd = (d.getDay() + 6) % 7;                  // 0 Monday
+    if (d >= now - 60000 && (!days.length || days.includes(wd)))
+      return "· next: " + (k === 0 ? "today" : k === 1 ? "tomorrow" : d.toLocaleDateString(undefined, { weekday: "long" })) + " at " + o.start;
+  }
+  return "· pick a day for it";
+}
 function programmeView(o, box, win) {
   const run = S?.programme && S.programme.name.toLowerCase() === o.title.toLowerCase() ? S.programme : null;
   // playing: drawn from when it really started (and the block playing from when it did), with a line at now
@@ -1565,7 +1682,8 @@ function programmeView(o, box, win) {
   const playing = !!run;
   box.append(el("div", { className: "wtools" },
     playing ? T("■ Stop", async () => { await api("/api/programmes/stop", {}); poll(); drawDesk(); }, "primary") : T("▶ Play now", () => play(o), "primary", !o.blocks.length),
-    nameIn, el("span", { className: "muted", textContent: "starts" }), startIn, auto, o.auto ? days : null, then, gapSel,
+    nameIn, el("span", { className: "muted", textContent: "starts" }), startIn, auto, o.auto ? days : null,
+    el("span", { className: "muted", style: "font-weight:600", textContent: nextStart(o) }), then, gapSel,
     T("＋ Moment", () => { const tl2 = timeline(o), end = tl2.length ? tl2[tl2.length - 1].end : toMin(o.start);
       o.blocks.push({ name: "A moment", items: [], rule: "at", at: hhmm(Math.ceil((end + 1) / 15) * 15), min: 1, order: "inorder" }); win.blk = o.blocks.length - 1; saveProgrammes("A moment: add a message, a jingle or an action to it below."); })));
   if (win.gapPick || gapObj) {
@@ -1696,6 +1814,8 @@ async function drop(src, target, ev) {
   }
   if (kind === "play") {
     if (o.kind === "panel") return open(o.id);
+    if (o.kind === "person") return api("/api/birthdays/hear", o.b).then(() => toast(`The DJ is wishing ${o.title} a happy birthday.`)).catch(e => toast(e.message));
+    if (o.kind === "voice") return open(o.id);
     if (o.kind === "note" || o.kind === "message") return api("/api/messages/hear", { text: o.text }).then(() => toast(`The DJ is saying: “${o.title}”`)).catch(e => toast(e.message));
     return play(o);
   }
@@ -1751,6 +1871,11 @@ function trash(src) {
     const all = PLAYLISTS.kids.map(id => O[id]).map(p => ({ name: p.name, tracks: (p === from ? items : p.items).map(id => [O[id].root, O[id].path]) }));
     return api("/api/playlists", { playlists: all }).then(d => { loadPlaylists(d); drawDesk(); toast(`Took “${o.title}” out of ${from.title}.`); }).catch(e => toast(e.message));
   }
+  if (o.kind === "person") return ask(`Take ${o.title} off the birthdays?`, "Remove", async () => {
+    try { const d = await api("/api/birthdays"); await api("/api/birthdays", { birthdays: d.birthdays.filter((_, j) => j !== o.idx) }); closeFor(o); await loadFolder(BDAYS); drawDesk(); toast(`${o.title} taken off.`); } catch (e) { toast(e.message); } });
+  if (o.kind === "list" && from === LISTS) return ask(`Delete the artist list “${o.title}”? The music stays.`, "Delete list", async () => {
+    try { const d = await api("/api/artists"); await api("/api/profiles", { profiles: d.profiles.filter(p => p.name !== o.name) }); closeFor(o); await loadFolder(LISTS); drawDesk(); toast(`Deleted ${o.title}.`); } catch (e) { toast(e.message); } });
+  if (o.kind === "voice") return toast("Voices can't be removed from here yet.");
   if (o.kind === "note") return ask(`Delete the message “${o.title}”?`, "Delete", async () => {
     try { const m = await api("/api/messages"); await api("/api/messages", { ...m, list: m.list.filter((_, j) => j !== o.idx) });
           closeFor(o); await loadFolder(NOTES); drawDesk(); toast("Message deleted."); } catch (e) { toast(e.message); } });
@@ -1847,6 +1972,23 @@ document.querySelectorAll("[data-open]").forEach(b => b.onclick = () => open(b.d
 $("tidy").onclick = () => { desk.forEach((p, i) => { p.x = 18 + Math.floor(i / 7) * 128; p.y = 14 + (i % 7) * 96; }); saveDesk(); drawDesk(); };
 $("settingsMenu").onclick = () => { if (!radioBack) turnRadio(); toast("Every setting is on the back of the radio. Or click a part of it: the speakers, the knob, the buttons, its name."); };
 $("wifiMenu").onclick = () => open(PANEL.wifi.id);
+async function newBirthday() {
+  try {
+    const d = await api("/api/birthdays"), t = new Date();
+    await api("/api/birthdays", { birthdays: [...d.birthdays, { name: "Someone", day: t.getDate(), month: t.getMonth() + 1 }] });
+    await loadFolder(BDAYS); await open(BDAYS.id); await open("bd:" + d.birthdays.length);
+    setTimeout(() => { const n = $("bd-n"); if (n) { n.focus(); n.select(); } }, 900);
+    toast("A new birthday: type their name and the day.");
+  } catch (e) { toast("Not added: " + e.message + "."); }
+}
+function uploadVoice(f) {
+  const x = new XMLHttpRequest();
+  x.open("POST", `/api/voices/upload?name=${encodeURIComponent(f.name.replace(/\..*$/, ""))}&file=${encodeURIComponent(f.name)}`);
+  x.upload.onprogress = e => e.lengthComputable && toast(`Uploading the voice · ${Math.round(e.loaded / e.total * 100)}%`, true);
+  x.onload = () => { toast(x.status < 300 ? "The voice is on the radio: it's installed in the background." : "The radio didn't take that voice."); loadFolder(VOICES).then(drawDesk).catch(() => {}); };
+  x.onerror = () => toast("The upload was cut off.");
+  x.send(f);
+}
 async function newMessage() {
   try {
     const m = await api("/api/messages");
@@ -1865,8 +2007,8 @@ document.querySelectorAll("[data-new]").forEach(b => b.onclick = async () => {
   if (what === "programme") return newProgramme();
   if (what === "playlist") { await newPlaylist(); return open(PLAYLISTS.id); }
   if (what === "message") return newMessage();
-  if (what === "birthday") { await open(PANEL.birthdays.id); setTimeout(() => $("bd-name")?.focus(), 900); return toast("Type their name and day at the bottom, then Add."); }
-  if (what === "list") { await open(PANEL.lists.id); setTimeout(() => $("list-new")?.focus(), 900); return; }
+  if (what === "birthday") return newBirthday();
+  if (what === "list") return open(PANEL.newlist.id);
   if (what.startsWith("folder-")) { const f = what.endsWith("music") ? MUSIC : ONDEMAND; await open(f.id); const w = W.find(w => w.id === f.id); if (w) { w.mkdir = true; drawDesk(); } return; }
   if (what === "station") return open(PANEL.findstation.id);
   if (what === "podcast") return open(PANEL.findpodcast.id);
