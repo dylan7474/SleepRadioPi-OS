@@ -359,7 +359,7 @@ The cards:
   Programmes and Theme radio (folders load from `/api/browse` as you open
   them); windows you move and resize; **the radio on the desktop** showing
   what's on air (polled every 2.5 s), with **Back** (like a CD player) and **Skip** keys under the dial (pause is the knob): drop anything on its dial to play it,
-  on one of its buttons to keep it there (including an **action** from the Actions folder: the sleep timer, the time, the news, the address, noise on/off, DJ on/off; or pick from each button's *Change…* list in the Buttons window), scroll the knob for the volume,
+  on one of its buttons to keep it there (including an **action** from the Actions folder: the sleep timer, the time, the news, the address, noise on/off, DJ on/off; or pick from each button's *Change…* list in the Buttons window), a **☀ Day / ☾ Night** switch above them shows either set, and dropping on a button programmes the set shown without swapping the radio's (*Use it now* swaps), scroll the knob for the volume,
   click it to pause. Programmes are built in their window: drop things on the
   timeline for new blocks or on a block to add to it, drag a block to move it
   or its right edge to change its length, and set its rule, order, start time,
@@ -860,7 +860,7 @@ everything but the page itself and the login needs the session cookie
 | `POST /api/buttons/bank` / `/api/buttons/auto` | `{"bank": "day" \| "night"}` (or `{}` to swap), announced on the radio / `{"on", "night_min", "day_min"}`: the timetable. `GET /api/buttons` has `bank` and `auto` |
 | `POST /api/buttons/key` | `{"button": 1-4, "down": bool}` — the page's button going down / up, through the real buttons' timers (tap, 3 s hold, 1+4 for 5 s); one held over 30 s is let go |
 | `GET /api/buttons` | The four preset buttons (`preset`, `label`, `playing`), what's playing now as a preset, and the actions |
-| `POST /api/buttons` | `{"button": 1-4, "preset": {...} \| null}` or `{"button", "now": true}` (keep what's playing on it); a podcast preset is `{"kind": "podcast", "show", "title", "start": gid, "start_title"}` |
+| `POST /api/buttons` | `{"button": 1-4, "preset": {...} \| null, "bank"?: "day" \| "night"}` (bank: programme that set without swapping; `GET` has both in `sets`) or `{"button", "now": true}` (keep what's playing on it); a podcast preset is `{"kind": "podcast", "show", "title", "start": gid, "start_title"}` |
 | `POST /api/buttons/press` | `{"button": 1-4, "hold"?: bool}` — as if pressed (or held) on the case |
 | `POST /api/radio/stations` | `{"stations": [...]}` — replace the saved list |
 | `GET /api/artists` | Every artist with a track count, your lists, and what's playing |

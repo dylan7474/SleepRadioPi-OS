@@ -290,19 +290,23 @@ class Presets:
                 "count": self.count, "selector": self.selector,
                 "now": {"preset": now, "label": self.label(now)}, "actions": ACTIONS,
                 "bank": self.bank, "auto": self.auto,
+                "sets": {b: [{"preset": p, "label": self.label(p)} for p in self.banks[b][:self.count]] for b in BANKS},
                 "service": self.menu.state if self.menu is not None else None}
 
     # --- setting them -------------------------------------------------------------------
 
-    def set(self, index: int, preset) -> dict | None:
-        """Put a preset on a button (None empties it). Saved."""
+    def set(self, index: int, preset, bank: str | None = None) -> dict | None:
+        """Put a preset on a button (None empties it), in the set in use or the
+        one named (day or night: programming the other set without swapping). Saved."""
         if not 0 <= index < self.count:
             raise ValueError(f"buttons are 1 to {self.count}")
+        if bank is not None and bank not in BANKS:
+            raise ValueError("the set is day or night")
         preset = validate(preset)
         with self._lock:
-            self.presets[index] = preset
+            self.banks[bank or self.bank][index] = preset
             self._save()
-        log.info("button %d: %s", index + 1, self.label(preset))
+        log.info("button %d%s: %s", index + 1, f" ({bank})" if bank else "", self.label(preset))
         return preset
 
     def set_all(self, presets: list) -> None:

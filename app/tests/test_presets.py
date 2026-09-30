@@ -434,3 +434,10 @@ def test_the_back_button_swaps_day_and_night_or_confirms_the_menu() -> None:
     p.press(2)
     p.back_press()
     assert m.calls == ["open", ("select", 2), "confirm"] and p.bank == "night"
+
+
+def test_programming_the_other_set_without_swapping(tmp_path) -> None:
+    st, ctl, conf, p = _presets(tmp_path, [None] * 4)
+    p.set(0, {"kind": "action", "action": "sleep"}, bank="night")
+    assert p.bank == "day" and p.banks["night"][0] == {"kind": "action", "action": "sleep"} and p.banks["day"][0] is None
+    assert p.status()["sets"]["night"][0]["label"] == "Sleep timer (30 min)"

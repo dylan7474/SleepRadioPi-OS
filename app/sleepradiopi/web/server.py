@@ -1060,10 +1060,10 @@ def make_handler(station: Station, output: Mp3Output, speaker=None,
                 elif body.get("now"):
                     presets.set(n - 1, presets.current())
                 else:
-                    presets.set(n - 1, body["preset"])
+                    presets.set(n - 1, body["preset"], body.get("bank"))
             except (ValueError, TypeError, KeyError, AttributeError) as e:
                 self._error(str(e) if isinstance(e, ValueError) else
-                            "send {\"button\": 1-4, \"preset\": ...} or {\"button\", \"now\": true}")
+                            "send {\"button\": 1-4, \"preset\": ..., \"bank\"?} or {\"button\", \"now\": true}")
                 return
             self._send(json.dumps(presets.status()).encode(), "application/json")
 

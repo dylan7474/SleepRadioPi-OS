@@ -241,6 +241,9 @@
   .tkey:hover:not(:disabled) { color: #000; }
   .tkey:active:not(:disabled) { transform: translateY(1px); box-shadow: 0 1px 3px #0005, inset 0 -1px 2px #0002; }
   .tkey:disabled { opacity: .4; cursor: default; }
+  .banks { display: inline-flex; gap: 3px; padding: 2px; border-radius: 8px; background: #0000000f; box-shadow: inset 0 1px 2px #0002; }
+  .banks button { border: 0; background: none; border-radius: 6px; padding: 2px 8px; font-size: 10.5px; color: #6b6558; }
+  .banks button[aria-pressed="true"] { background: radial-gradient(circle at 40% 35%, #fff, #d8dbe0); color: #2b2a26; font-weight: 700; box-shadow: 0 1px 2px #0004; }
   .pbtn span { font-size: 10.5px; line-height: 1.15; text-align: center; color: #4d493f; max-width: 64px; height: 2.3em; overflow: hidden; }
   .badge { position: absolute; right: 14px; top: 16px; font: 700 8.5px var(--display); letter-spacing: .2em; color: #2f5cb4; }
 
@@ -831,11 +834,12 @@ function radioEl() {
   const gr = () => { const g = el("div", { className: "grille", title: "Speakers: stereo, EQ, low cut, the knob" }); g.onclick = () => open(PANEL.speakers.id); return g; };
   const face = el("div", { className: "rface" }, gr(), el("div", {}, knob, el("div", { className: "rvol", id: "rVol", textContent: S?.speaker ? (S.speaker.playing ? "Volume " + vol : "Paused") : "" })), gr());
   const pre = el("div", { className: "presets", id: "rPresets" });
-  buttons.forEach((b, i) => {
+  shownButtons().forEach((b, i) => {
     const pb = el("div", { className: "pbtn" + (b.playing ? " on" : "") });
     pb.dataset.drop = "preset"; pb.dataset.n = i;
     const btn = el("button", { type: "button", textContent: i + 1, title: `Button ${i + 1}: ${b.label}` });
-    btn.onclick = () => pressButton(i);
+    btn.onclick = () => shownBank() === bStatus?.bank ? pressButton(i)
+      : toast(`These are the ${shownBank()} buttons; the radio's using its ${bStatus.bank} set. Press "Use it now" to switch.`);
     pb.append(btn, el("span", { textContent: b.label }));
     pre.append(pb);
   });
@@ -851,7 +855,19 @@ function radioEl() {
   modeSw.onclick = () => setProgrammeMode(!S?.programme_mode);
   const modeRow = el("div", { className: "rfoot", style: "justify-content:flex-start;gap:8px" }, modeSw,
     el("span", { className: "plink", textContent: S?.programme_mode ? "Programme mode: quiet unless a programme is on" : "Programme mode (an alarm clock)" }));
-  r.append(handle, badge, dial, transport, face, pre, modeRow, el("div", { className: "rfoot" }, plink, turn));
+  const bankKeys = el("div", { className: "banks", id: "rBanks" });
+  for (const [b, label] of [["day", "☀ Day"], ["night", "☾ Night"]]) {
+    const k = el("button", { type: "button", textContent: label, title: `Show and programme the ${b} buttons` });
+    k.setAttribute("aria-pressed", String(shownBank() === b));
+    k.onclick = () => { viewBank = b === bStatus?.bank ? null : b; drawDesk(); };
+    bankKeys.append(k);
+  }
+  const other = bStatus && shownBank() !== bStatus.bank;
+  const useNow = el("button", { className: "plink", type: "button", textContent: `Use it now`, hidden: !other });
+  useNow.onclick = async () => { try { await api("/api/buttons/bank", { bank: shownBank() }); viewBank = null; await loadButtons(); drawDesk(); toast(`The radio's using its ${shownBank()} buttons.`); } catch (e) { toast(e.message); } };
+  const bankRow = el("div", { className: "rfoot", style: "margin-top:8px" }, bankKeys,
+    el("span", { className: "plink", id: "rBankNote", textContent: other ? `Programming the ${shownBank()} set · the radio's on ${bStatus.bank}` : `The ${shownBank()} set, in use` }), useNow);
+  r.append(handle, badge, dial, transport, face, bankRow, pre, modeRow, el("div", { className: "rfoot" }, plink, turn));
   setTimeout(updateRadio);
   r.addEventListener("pointerdown", e => { if (e.target === r || e.target === handle) moveThing(e, r, (x, y) => { radioPos = { x, y }; saveDesk(); }); });
   return r;
@@ -888,7 +904,7 @@ function updateRadio() {            // the live bits, without redrawing the desk
   if ($("rPrev")) { $("rPrev").disabled = !S?.can_previous; $("rNext").disabled = !S?.can_skip; }
   const msw = document.querySelector("#radio .sw"); if (msw) msw.setAttribute("aria-checked", String(!!S?.programme_mode));
   const pbs = $("rPresets")?.children || [];
-  buttons.forEach((b, i) => { if (pbs[i]) { pbs[i].classList.toggle("on", !!b.playing); pbs[i].querySelector("span").textContent = b.label; } });
+  shownButtons().forEach((b, i) => { if (pbs[i]) { pbs[i].classList.toggle("on", !!b.playing); pbs[i].querySelector("span").textContent = b.label; } });
   $("onair").hidden = !S?.on_air;
 }
 let volTimer = null, volStep = 0;
@@ -912,8 +928,16 @@ async function poll() {
   document.querySelectorAll(".cd[data-pid]").forEach(n => { const o = O[n.dataset.pid]; if (o) n.textContent = armText(o); });
   $("nextLine").textContent = nextLineText();
 }
+// the buttons: the set in use (day or night), and which set the radio on the desktop shows --
+// dropping on a button programmes the set shown, without swapping the radio's
+let bStatus = null, viewBank = null;
 async function loadButtons() {
-  try { buttons = (await api("/api/buttons")).buttons; } catch { buttons = []; }
+  try { bStatus = await api("/api/buttons"); buttons = bStatus.buttons; } catch { buttons = []; bStatus = null; }
+}
+const shownBank = () => viewBank || bStatus?.bank || "day";
+function shownButtons() {
+  if (!bStatus || !bStatus.sets || shownBank() === bStatus.bank) return buttons;
+  return bStatus.sets[shownBank()].map(b => ({ ...b, playing: false }));
 }
 async function pressButton(i) {
   try { await api("/api/buttons/press", { button: i + 1 }); toast(`Button ${i + 1}: ${buttons[i]?.label || ""}`); setTimeout(async () => { await loadButtons(); poll(); updateRadio(); }, 900); }
@@ -968,8 +992,10 @@ function buttonChoices() {
 async function setPreset(i, o) {
   const preset = presetOf(o);
   if (!preset) return toast(`A button can't hold a single ${KIND[o.kind].toLowerCase()}: try its album, show or a playlist.`);
-  try { buttons = (await api("/api/buttons", { button: i + 1, preset })).buttons; updateRadio();
-        toast(o.kind === "episode" ? `Button ${i + 1}: ${preset.title}, starting from “${o.title}”, then on through the newer ones.` : `Button ${i + 1} now plays “${o.title}”.`); }
+  try { const bank = shownBank();
+        bStatus = await api("/api/buttons", { button: i + 1, preset, ...(bank !== bStatus?.bank ? { bank } : {}) }); buttons = bStatus.buttons; drawDesk();
+        const where = shownBank() !== bStatus.bank ? ` (the ${shownBank()} set)` : "";
+        toast(o.kind === "episode" ? `Button ${i + 1}${where}: ${preset.title}, starting from “${o.title}”, then on through the newer ones.` : `Button ${i + 1}${where} now plays “${o.title}”.`); }
   catch (e) { toast("Not changed: " + e.message + "."); }
 }
 
