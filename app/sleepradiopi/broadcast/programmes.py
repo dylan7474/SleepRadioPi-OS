@@ -244,8 +244,19 @@ class Scheduler:
         if not p["blocks"]:
             raise ValueError(f"{p['name']} is empty: put something in it first")
         with self._lock:
-            self.run = {"name": p["name"], "prog": p, "i": -1, "ends": None, "expect": None, "started": self.now()}
-            self._start_block(0)
+            now = self.now()
+            self.run = {"name": p["name"], "prog": p, "i": -1, "ends": None, "expect": None, "started": now}
+            first = p["blocks"][0]
+            at = _next_clock(now, first["at"]) if first["rule"] == "at" else None
+            if at is not None and timedelta(minutes=1) <= at - now <= timedelta(hours=12):
+                # its first block is at a later time (e.g. chained on from another programme):
+                # the gaps' choice (silence, the show, something) until then
+                self.run.update(at_next=at, waiting=True)
+                self._drop_queued()
+                self._fill_gap()
+                log.info("programme %s: waiting for %s", p["name"], first["at"])
+            else:
+                self._start_block(0)
         log.info("programme: %s", p["name"])
         return self.status()
 
@@ -264,7 +275,7 @@ class Scheduler:
         if r is None:
             return None
         blocks = r["prog"]["blocks"]
-        b = blocks[r["i"]] if 0 <= r["i"] < len(blocks) else None
+        b = blocks[r["i"]] if 0 <= r["i"] < len(blocks) else None     # (-1: waiting for the first block)
         nxt = blocks[r["i"] + 1] if r["i"] + 1 < len(blocks) else None
         return {"name": r["name"], "index": r["i"], "of": len(blocks), "block": b["name"] if b else None,
                 "started": r["started"].strftime("%H:%M"),

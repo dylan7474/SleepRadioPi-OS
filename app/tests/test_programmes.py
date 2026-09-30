@@ -275,3 +275,17 @@ def test_armed_once_starts_at_its_time_then_switches_off(tmp_path, monkeypatch) 
     sched.stop(); clock.go(days=1); sched.tick()
     assert sched.run is None                                                     # not again tomorrow
     assert "once" not in programmes.validate([{"name": "A", "auto": False, "once": True}])[0]   # (only with auto)
+
+
+def test_a_chained_programme_waits_quietly_for_its_first_at_block(tmp_path, monkeypatch) -> None:
+    st, sched, clock, woke, _, did = _sched_with_hooks(tmp_path, monkeypatch, [
+        {"name": "Afternoon", "then": "chain", "chain": "Evening", "blocks": [{"name": "R4", "items": [R4], "rule": "for", "min": 30}]},
+        {"name": "Evening", "gap": "silence", "blocks": [{"name": "Beatles at six", "items": [RUBBER], "rule": "at", "at": "18:00", "min": 60}]}])
+    sched.play("Afternoon")
+    clock.go(minutes=30); sched.tick()                       # 12:30: Afternoon's over, Evening takes over...
+    assert sched.run["name"] == "Evening" and sched.status()["waiting"] is True and did == [("pause",)]
+    assert sched.status()["next"] == "Beatles at six at 18:00"
+    clock.go(hours=5, minutes=29); sched.tick()
+    assert sched.run["name"] == "Evening" and st.playlist_status() is None      # ...silent until 18:00
+    clock.go(minutes=1); sched.tick()
+    assert st.playlist_status()["name"] == "Beatles at six" and woke == [1]

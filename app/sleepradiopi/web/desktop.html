@@ -394,10 +394,12 @@
   <button class="m" type="button" data-open="root:music">Music</button>
   <button class="m" type="button" data-open="root:ondemand">On demand</button>
   <button class="m" type="button" data-open="box:programmes">Programmes</button>
+  <button class="m" type="button" id="scheduleMenu">Schedule</button>
   <button class="m" type="button" id="tidy">Tidy up</button>
   <button class="m" type="button" id="settingsMenu">Settings</button>
   <a class="m classic" href="/" id="classic" title="The page you know, also for phones">Classic page</a>
   <span class="grow"></span>
+  <button class="m" type="button" id="nextLine" title="The schedule" style="color:var(--ink);font-weight:600"></button>
   <button class="themebtn" type="button" id="theme" title="Light or dark">Dark</button>
   <button class="wifi" type="button" id="wifiMenu" title="Wi-Fi"><span class="bars"><i class="on" style="height:4px"></i><i class="on" style="height:7px"></i><i class="on" style="height:10px"></i><i class="on" style="height:12px"></i></span><span>Wi-Fi</span></button>
   <span class="onair" id="onair" hidden>On air</span>
@@ -700,7 +702,11 @@ function subOf(o) {
     case "podcast": return o.fresh ? `${o.fresh} new` : o.count ? `${o.count} episodes` : "";
     case "episode": return dur(o.min);
     case "playlist": return `${o.items.length} songs`;
-    case "programme": { const tl = timeline(o); return tl.length ? `${hhmm(tl[0].start)}–${hhmm(tl[tl.length - 1].end)}` : "empty"; }
+    case "programme": {
+      const tl = timeline(o), times = tl.length ? `${hhmm(tl[0].start)}–${hhmm(tl[tl.length - 1].end)}` : "empty";
+      const live = S?.programme && S.programme.name.toLowerCase() === o.title.toLowerCase();
+      return (live ? "● playing · " : o.auto ? (o.once ? "⏰ " : "↻ ") : "") + times;
+    }
     case "folder": return o.root && o.path ? `${o.count || 0} tracks` : "";
     case "list": return o.count ? `${o.count} artist${o.count === 1 ? "" : "s"}` : "";
     case "jingle": return o.mb ? `${o.mb.toFixed(1)} MB` : "";
@@ -864,6 +870,7 @@ async function poll() {
     }
   }
   document.querySelectorAll(".cd[data-pid]").forEach(n => { const o = O[n.dataset.pid]; if (o) n.textContent = armText(o); });
+  $("nextLine").textContent = nextLineText();
 }
 async function loadButtons() {
   try { buttons = (await api("/api/buttons")).buttons; } catch { buttons = []; }
@@ -934,7 +941,7 @@ async function open(id) {
   const had = W.find(w => w.id === id);
   if (had) { had.z = ++zTop; drawDesk(); if (o.loaded) refreshOpen(); return; }
   const d = $("desk"), n = W.length;
-  const big = o.kind === "programme", page = (o.kind === "panel" && (o.page || UI[o.key])) || ["note", "person", "voice", "list"].includes(o.kind), wide = ["album", "playlist", "podcast"].includes(o.kind);
+  const big = o.kind === "programme" || o.kind === "schedule", page = (o.kind === "panel" && (o.page || UI[o.key])) || ["note", "person", "voice", "list"].includes(o.kind), wide = ["album", "playlist", "podcast"].includes(o.kind);
   const w = Math.min(d.clientWidth - 40, big ? 780 : page ? 560 : wide ? 480 : 560), h = Math.min(d.clientHeight - 40, big ? 460 : page ? 620 : 420);
   const win = { id, x: Math.max(8, Math.min(250 + n * 28, d.clientWidth - w - 10)), y: Math.max(8, Math.min(24 + n * 26, d.clientHeight - h - 10)), w, h, z: ++zTop, blk: 0, loading: false };
   W.push(win);
@@ -984,7 +991,7 @@ function winEl(win) {
   }, true);
   box.append(bar);
   if (win.loading) box.append(el("div", { className: "wbody" }, el("div", { className: "loading", textContent: "Asking the radio…" })));
-  else ({ note: nativePanel, person: nativePanel, voice: nativePanel, list: nativePanel, folder: folderView, trash: folderView, album: albumView, playlist: playlistView, podcast: podcastView, programme: programmeView, panel: panelView }[o.kind])(o, box, win);
+  else ({ schedule: scheduleView, note: nativePanel, person: nativePanel, voice: nativePanel, list: nativePanel, folder: folderView, trash: folderView, album: albumView, playlist: playlistView, podcast: podcastView, programme: programmeView, panel: panelView }[o.kind])(o, box, win);
   const rs = el("div", { className: "resize" });
   rs.addEventListener("pointerdown", e => resizeThing(e, box, win));
   box.append(rs);
@@ -1611,6 +1618,44 @@ function nativePanel(o, box, win) {
   }
 }
 
+// ============ the Schedule: a week of armed programmes, at a glance ============
+const SCHEDULE = mk({ id: "schedule", kind: "schedule", title: "Schedule" });
+function scheduleView(o, box, win) {
+  const progs = PROGRAMMES.kids.map(id => O[id]).filter(Boolean);
+  const occ = progs.flatMap(p => occurrences(p)).sort((a, b) => a.start - b.start);
+  const clash = new Set(), notes = [];
+  occ.forEach((a, i) => occ.slice(i + 1).forEach(b => { if (a.o !== b.o && a.start < b.end && b.start < a.end) { clash.add(a); clash.add(b);
+    notes.push(`${a.o.title} and ${b.o.title} overlap ${when(b.start)}: ${b.start > a.start ? b.o.title : a.o.title} would take over.`); } }));
+  box.append(el("div", { className: "wtools" }, T("New programme", newProgramme), T("Programmes", () => open(PROGRAMMES.id)),
+    el("span", { className: "note", textContent: "Armed programmes over the next 7 days · click one to open it · the later start wins if two overlap" })));
+  const W_ = Math.max(360, win.w - 180), px = W_ / 1440;
+  const wrap = el("div", { style: "padding:12px 14px;display:grid;gap:6px" });
+  const hours = el("div", { style: `position:relative;height:16px;margin-left:110px;width:${W_}px` });
+  for (let h = 0; h <= 24; h += 3) hours.append(el("span", { textContent: String(h).padStart(2, "0") + ":00", style: `position:absolute;left:${h * 60 * px}px;transform:translateX(-50%);font-size:10.5px;color:var(--dim)` }));
+  wrap.append(hours);
+  const today0 = new Date(); today0.setHours(0, 0, 0, 0);
+  for (let k = 0; k < 7; k++) {
+    const day0 = new Date(today0.getTime() + k * 864e5), day1 = new Date(day0.getTime() + 864e5);
+    const lane = el("div", { className: "lane", style: `height:44px;width:${W_}px;--hourpx:${180 * px}px` });
+    occ.filter(x => x.start < day1 && x.end > day0).forEach(x => {
+      const a = Math.max(0, (x.start - day0) / 60000), b = Math.min(1440, (x.end - day0) / 60000);
+      const first = O[x.o.blocks[0]?.items[0]];
+      const bar = el("div", { className: "blk", title: `${x.o.title}: ${x.start.toTimeString().slice(0, 5)}–${x.end.toTimeString().slice(0, 5)}${x.chained ? " (after " + x.chained + ")" : ""}` });
+      bar.style.cssText = `top:5px;bottom:5px;left:${a * px}px;width:${Math.max(6, (b - a) * px - 1)}px;--h:${first ? TINT[first.kind] ?? first.h : 40};padding:3px 6px;cursor:pointer` +
+        (clash.has(x) ? ";outline:2px solid var(--red)" : "") + (x.chained ? ";opacity:.8" : "");
+      bar.append(el("div", { className: "bt", textContent: (x.chained ? "↳ " : x.o.once ? "⏰ " : "↻ ") + x.o.title }));
+      bar.onclick = () => open(x.o.id);
+      lane.append(bar);
+    });
+    if (k === 0) { const n = new Date(); lane.append(Object.assign(el("div", { className: "now" }), { style: `left:${(n.getHours() * 60 + n.getMinutes()) * px}px` })); }
+    wrap.append(el("div", { style: "display:grid;grid-template-columns:104px auto;gap:6px;align-items:center" },
+      el("b", { textContent: k === 0 ? "Today" : k === 1 ? "Tomorrow" : day0.toLocaleDateString(undefined, { weekday: "long", day: "numeric" }), style: "font-size:12.5px" }), lane));
+  }
+  if (!occ.length) wrap.append(el("p", { className: "muted", textContent: "Nothing armed. Open a programme, set its time and press Arm (once, or choose a repeat)." }));
+  if (notes.length) wrap.append(el("div", { className: "insp", style: "border-color:var(--red)" }, el("b", { textContent: "Overlaps" }), ...[...new Set(notes)].slice(0, 6).map(t => el("span", { className: "muted", textContent: t }))));
+  box.append(el("div", { className: "wbody" }, wrap));
+}
+
 // the programme window: blocks on a timeline, saved on the radio
 async function saveProgrammes(note) {
   const progs = PROGRAMMES.kids.map(id => O[id]).filter(Boolean);
@@ -1655,15 +1700,77 @@ function nextStartAt(o) {
   }
   return null;
 }
+const WEEKDAYS = [0, 1, 2, 3, 4], WEEKEND = [5, 6];
+const same = (a, b) => a.length === b.length && a.every((x, i) => x === b[i]);
+// the repeat shown: armed, from what it's armed with; not armed, what was chosen (else its
+// days, else once -- the default)
+function repeatOf(o) {
+  const d = [...(o.days || [])].sort();
+  const byDays = !d.length ? "daily" : same(d, WEEKDAYS) ? "weekdays" : same(d, WEEKEND) ? "weekends" : "days";
+  if (o.auto) return o.once ? "once" : byDays;
+  return o.pendingRepeat || (d.length ? byDays : "once");
+}
+function setRepeat(o, v) {
+  o.pendingRepeat = v;
+  o.days = v === "weekdays" ? [...WEEKDAYS] : v === "weekends" ? [...WEEKEND] : v === "days" ? (o.days?.length ? o.days : [6]) : [];
+  if (o.auto) o.once = v === "once";
+}
+const repeatWords = o => ({ daily: "every day", weekdays: "on weekdays", weekends: "at weekends", days: "on " + (o.days || []).map(d => DAYN[d]).join(", ") })[repeatOf(o)] || "";
+const progLen = o => { const tl = timeline(o); return tl.length ? tl[tl.length - 1].end - tl[0].start : 0; };
+// when an armed programme will play over the next week: [{o, start: Date, end: Date, chained?}]
+function occurrences(o, horizon = 7) {
+  const out = [];
+  if (!o.auto || !o.blocks?.length) return out;
+  const now = new Date(), [h, m] = o.start.split(":").map(Number), days = o.once ? [] : o.days || [];
+  for (let k = 0; k < horizon; k++) {
+    const st = new Date(now.getFullYear(), now.getMonth(), now.getDate() + k, h, m);
+    if (st.getTime() + 60000 <= now.getTime()) continue;
+    if (days.length && !days.includes((st.getDay() + 6) % 7)) continue;
+    const end = new Date(st.getTime() + Math.max(1, progLen(o)) * 60000);
+    out.push({ o, start: st, end });
+    let prev = out[out.length - 1];                   // what it chains on to
+    for (let n = 0, q = o; n < 4 && q.then === "chain"; n++) {
+      const c = PROGRAMMES.kids.map(id => O[id]).find(x => x && x.title.toLowerCase() === (q.chain || "").toLowerCase());
+      if (!c || c === o || !c.blocks?.length) break;
+      let cs = prev.end;
+      if (c.blocks[0].rule === "at") { const [ah, am] = c.blocks[0].at.split(":").map(Number); const at = new Date(cs); at.setHours(ah, am, 0, 0); if (at < cs) at.setDate(at.getDate() + 1); cs = at; }
+      prev = { o: c, start: cs, end: new Date(cs.getTime() + Math.max(1, progLen(c)) * 60000), chained: q.title };
+      out.push(prev); q = c;
+    }
+    if (o.once) break;
+  }
+  return out;
+}
+function clashesFor(o) {
+  const mine = occurrences({ ...o, auto: true, once: repeatOf(o) === "once" });
+  const others = PROGRAMMES.kids.map(id => O[id]).filter(x => x && x !== o && x.auto).flatMap(x => occurrences(x));
+  return mine.flatMap(a => others.filter(b => b.o !== a.o && a.start < b.end && b.start < a.end).map(b => ({ a, b })));
+}
+const when = d => { const k = Math.round((new Date(d).setHours(0, 0, 0, 0) - new Date().setHours(0, 0, 0, 0)) / 864e5);
+  return (k === 0 ? "today" : k === 1 ? "tomorrow" : d.toLocaleDateString(undefined, { weekday: "long" })) + " at " + d.toTimeString().slice(0, 5); };
+function armProgramme(o) {
+  const c = clashesFor(o);
+  const go = () => { o.once = repeatOf(o) === "once"; o.auto = true; saveProgrammes(`${o.title}: ${armText(o).toLowerCase()}.`); };
+  if (!c.length) return go();
+  const x = c[0];
+  ask(`${o.title} (${when(x.a.start)}–${x.a.end.toTimeString().slice(0, 5)}) overlaps ${x.b.o.title} (${when(x.b.start)}–${x.b.end.toTimeString().slice(0, 5)}). ` +
+      `If they overlap, the one starting later takes over. Arm it anyway?`, "Arm anyway", go);
+}
+function nextLineText() {
+  const pr = S?.programme;
+  if (pr) return `● ${pr.name}: ${pr.waiting ? "waiting" : pr.block}${pr.until ? " until " + pr.until : ""}`;
+  const next = PROGRAMMES.kids.map(id => O[id]).filter(x => x && x.auto).flatMap(x => occurrences(x)).filter(x => !x.chained).sort((a, b) => a.start - b.start)[0];
+  return next ? `⏰ Next: ${next.o.title} ${when(next.start)}` : "Schedule: nothing armed";
+}
 function armText(o) {
   const run = S?.programme && S.programme.name.toLowerCase() === o.title.toLowerCase() ? S.programme : null;
   if (run) return `Playing since ${run.started}${run.next ? " · next: " + run.next : ""}`;
-  if (!o.auto) return "Not set to start: press Start now, or Start at";
+  if (!o.auto) return "Not armed: press Arm to have it start by itself, or Play now";
   const d = nextStartAt(o);
   if (!d) return "Pick a day for it to repeat on";
   const mins = Math.max(0, Math.round((d - new Date()) / 60000)), k = Math.round((new Date(d).setHours(0, 0, 0, 0) - new Date().setHours(0, 0, 0, 0)) / 864e5);
   const day = k === 0 ? "today" : k === 1 ? "tomorrow" : d.toLocaleDateString(undefined, { weekday: "long" });
-  return `${o.once ? "Starts" : "Repeats; next"} ${day} at ${o.start}` + (mins < 120 ? ` · in ${mins < 1 ? "under a minute" : mins + " min"}` : "");
+  return `Armed: ${o.once ? "starts" : "repeats " + repeatWords(o) + "; next"} ${day} at ${o.start}` + (mins < 120 ? ` · in ${mins < 1 ? "under a minute" : mins + " min"}` : "");
 }
 function programmeView(o, box, win) {
   const run = S?.programme && S.programme.name.toLowerCase() === o.title.toLowerCase() ? S.programme : null;
@@ -1691,16 +1798,17 @@ function programmeView(o, box, win) {
   const gapObj = o.gap && typeof o.gap === "object" ? O[o.gap.id] : null;
   for (const [v, t] of [["show", "gaps: Sleep Radio"], ["silence", "gaps: silence"], ["pick", gapObj ? "gaps: " + gapObj.title : "gaps: something else…"]]) gapSel.append(new Option(t, v, false, (gapObj ? "pick" : o.gap || "show") === v));
   gapSel.onchange = () => { if (gapSel.value === "pick") { win.gapPick = true; drawDesk(); toast("Drop a station, album, playlist… onto the box that appeared, to play in the gaps."); } else { o.gap = gapSel.value; win.gapPick = false; saveProgrammes(); } };
-  const armed = !!(o.auto && o.once), repeating = !!(o.auto && !o.once);
-  const startAt = T(armed ? "⏰ Starts at " + o.start + " · cancel" : "⏰ Start at " + o.start, () => {
-    if (armed) { o.auto = false; o.once = false; return saveProgrammes(`${o.title} won't start by itself.`); }
-    o.auto = true; o.once = true; saveProgrammes(`${o.title}: ${armText(o).toLowerCase()}.`);
-  }, armed ? "primary" : "", !o.blocks.length);
-  startAt.title = "Once, at the time beside it: today, or tomorrow if that's gone";
-  const repeat = el("button", { className: "pill", type: "button", textContent: repeating ? "Repeats" : "Repeat…" });
-  repeat.setAttribute("aria-pressed", String(repeating));
-  repeat.title = "Start by itself at this time every day, or on the days you pick";
-  repeat.onclick = () => { if (repeating) { o.auto = false; } else { o.auto = true; o.once = false; } saveProgrammes(o.auto ? `${o.title}: ${armText(o).toLowerCase()}.` : `${o.title} won't repeat.`); };
+  // Arm: it starts by itself at its time -- once, unless the repeat says otherwise
+  const armBtn = T(o.auto ? `Armed ✓ · ${o.start} · Disarm` : "Arm", () => {
+    if (o.auto) { o.auto = false; return saveProgrammes(`${o.title} is disarmed: it won't start by itself.`); }
+    armProgramme(o);
+  }, o.auto ? "primary" : "", !o.blocks.length);
+  armBtn.title = o.auto ? "It will start by itself; press to disarm" : "Start by itself at the time beside it (once, unless you choose a repeat)";
+  const rep = repeatOf(o);
+  const repSel = el("select", { id: "rep-" + o.id });
+  repSel.setAttribute("aria-label", "Repeat");
+  for (const [v, t] of [["once", "once"], ["daily", "every day"], ["weekdays", "weekdays"], ["weekends", "weekends"], ["days", "on chosen days…"]]) repSel.append(new Option(t, v, false, rep === v));
+  repSel.onchange = () => { setRepeat(o, repSel.value); saveProgrammes(o.auto ? `${o.title}: ${armText(o).toLowerCase()}.` : ""); };
   const days = el("span", { className: "days" });
   "MTWTFSS".split("").forEach((c, i) => { const b = el("button", { type: "button", textContent: c, title: ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"][i] });
     b.setAttribute("aria-pressed", String((o.days || []).includes(i))); b.onclick = () => { o.days = (o.days || []).includes(i) ? o.days.filter(d => d !== i) : [...(o.days || []), i]; saveProgrammes(); }; days.append(b); });
@@ -1709,8 +1817,9 @@ function programmeView(o, box, win) {
   status.dataset.pid = o.id;
   box.append(el("div", { className: "wtools" }, nameIn,
     playing ? T("■ Stop", async () => { await api("/api/programmes/stop", {}); poll(); drawDesk(); }, "primary")
-            : T("▶ Start now", () => play(o), "primary", !o.blocks.length),
-    playing ? null : startAt, playing ? null : startIn, playing ? null : repeat, repeating && !playing ? days : null, status));
+            : T("▶ Play now", () => play(o), "", !o.blocks.length),
+    playing ? null : armBtn, playing ? null : el("span", { className: "muted", textContent: "at" }), playing ? null : startIn,
+    playing ? null : repSel, rep === "days" && !playing ? days : null, status));
   box.append(el("div", { className: "wtools" }, then, gapSel,
     T("＋ Moment", () => { const tl2 = timeline(o), end = tl2.length ? tl2[tl2.length - 1].end : toMin(o.start);
       o.blocks.push({ name: "A moment", items: [], rule: "at", at: hhmm(Math.ceil((end + 1) / 15) * 15), min: 1, order: "inorder" }); win.blk = o.blocks.length - 1; saveProgrammes("A moment: add a message, a jingle or an action to it below."); })));
@@ -2002,6 +2111,8 @@ document.querySelectorAll("[data-open]").forEach(b => b.onclick = () => open(b.d
 $("tidy").onclick = () => { desk.forEach((p, i) => { p.x = 18 + Math.floor(i / 7) * 128; p.y = 14 + (i % 7) * 96; }); saveDesk(); drawDesk(); };
 $("settingsMenu").onclick = () => { if (!radioBack) turnRadio(); toast("Every setting is on the back of the radio. Or click a part of it: the speakers, the knob, the buttons, its name."); };
 $("wifiMenu").onclick = () => open(PANEL.wifi.id);
+$("scheduleMenu").onclick = async () => { if (!PROGRAMMES.loaded) await loadProgrammes(); open(SCHEDULE.id); };
+$("nextLine").onclick = () => $("scheduleMenu").click();
 async function newBirthday() {
   try {
     const d = await api("/api/birthdays"), t = new Date();

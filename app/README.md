@@ -393,12 +393,19 @@ The cards:
   (sets of artists, once called artist lists) each open their own window (rename, add and take off artists, play,
   delete). **Voices** is a folder: double-click one to make it the DJ's (the
   radio restarts), drop a voice archive on it to install it. A programme's
-  window starts it three clear ways: **▶ Start now**; **⏰ Start at** the time
-  beside it, once (today, or tomorrow if that time's gone; it switches itself
-  off after); or **Repeat** at that time every day or on chosen days. A line
-  says what will happen ("Starts today at 15:11 · in 2 min", "Repeats; next
-  Sunday at 07:00", "Playing since 15:06"), kept up to date; while it plays,
-  the blocks show their real times. Stations and podcasts are found
+  window has **▶ Play now** and **Arm**: armed, it starts by itself at the time
+  beside it — **once** (today, or tomorrow if that time's gone; it disarms
+  itself after), unless its repeat says **every day**, **weekdays**,
+  **weekends** or **chosen days**. A line says what will happen ("Armed:
+  starts today at 10:00 · in 20 min", "Playing since 15:06"), kept up to date;
+  while it plays, the blocks show their real times. Several programmes can be
+  armed (e.g. 10:00–11:00 and 21:00–23:00); arming one that **overlaps**
+  another asks first, and if two do overlap the **later start takes over**.
+  The **Schedule** window (menu bar) shows the next 7 days of armed programmes
+  on 24-hour lines (overlaps outlined red, chained ones after them); the menu
+  bar says what's next or playing, and programme icons show ⏰ armed once, ↻
+  repeats, ● playing. A chained programme whose first block is *at* a later
+  time waits (with its gaps' choice: silence, the show, something) until then. Stations and podcasts are found
   and followed from their windows (*Find a station*, *Follow a podcast*) and
   forgotten by dragging to the Trash. **Jingles** is a folder of its own
   (upload, download, delete) and **Artist lists** an editor (make a list with
