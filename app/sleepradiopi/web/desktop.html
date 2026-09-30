@@ -309,7 +309,7 @@
   .set input[type=range]::-moz-range-thumb { width: 14px; height: 22px; border-radius: 4px; border: 1px solid #8f959e;
     background: linear-gradient(90deg, #eef0f3, #c8ccd2 45%, #7d838c 50%, #c8ccd2 55%, #eef0f3); box-shadow: 0 2px 3px #0005; }
   /* fields: inset, like the dial window */
-  .set input[type=text], .set input[type=time], .set input[type=password], .set input[type=number], .set input[type=search], .set select,
+  .set input[type=text], .set input[type=time], .set input[type=date], .set input[type=password], .set input[type=number], .set input[type=search], .set select,
   .insp input, .insp select, .wtools input, .wtools select {
     background: var(--field); border: 1px solid var(--key-line); border-radius: 7px; padding: 5px 9px; min-width: 0; color: var(--ink);
     box-shadow: inset 0 1px 2px var(--shadow); }
@@ -468,7 +468,7 @@ for (const [key, title, sym, h] of [["messages", "Messages", "✎", 55], ["birth
                                     ["findstation", "Find a station", "R", 8], ["findpodcast", "Follow a podcast", "P", 275]])
   PANEL[key] = mk({ id: "set:" + key, kind: "panel", key, title, sym, h, page: key });
 const DJ = mk({ id: "dj", kind: "dj", title: "The DJ" });
-const NOTES = mk({ id: "notes", kind: "note", title: "Messages", text: "Messages the DJ reads out" });
+const NOTES = mk({ id: "notes", kind: "folder", box: "messages", title: "Messages", kids: [], sym: "✎" });   // a folder of sticky notes
 const BDAYS = mk({ id: "bdays", kind: "calendar", title: "Birthdays" });
 const parentOf = id => Object.values(O).find(o => o.kids && o.kids.includes(id));
 
@@ -510,6 +510,11 @@ async function loadFolder(f) {
     await loadPlaylists();
   } else if (f.box === "programmes") {
     await loadProgrammes();
+  } else if (f.box === "messages") {
+    const d = await api("/api/messages");
+    f.kids = d.list.map((m, i) => mk({ id: "note:" + i, kind: "note", key: "note", idx: i, text: m.text, m,
+      title: m.text.length > 34 ? m.text.slice(0, 32) + "…" : m.text }).id);
+    for (const id of Object.keys(O)) if (id.startsWith("note:") && !f.kids.includes(id)) delete O[id];
   } else if (f.box === "jingles") {
     const d = await api("/api/media?kind=jingles&path=");
     f.kids = d.files.filter(x => x.audio).map(x => mk({ id: "j:" + x.name, kind: "jingle", title: cleanName(x.name), root: "jingles", path: x.name, mb: x.size / 1e6 }).id);
@@ -562,6 +567,16 @@ function refObj(r) {
   }
   return null;
 }
+const DAYN = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"], MONN = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+function noteWhen(m) {            // "Sundays at 09:00", "25 Dec", "with the others"
+  if (!m) return "";
+  if (m.off) return "Paused";
+  const FULL = ["Mondays", "Tuesdays", "Wednesdays", "Thursdays", "Fridays", "Saturdays", "Sundays"];
+  const days = m.days?.length ? (m.days.length === 7 ? "" : m.days.length === 1 ? FULL[m.days[0]] : m.days.map(d => DAYN[d]).join(", ")) : "";
+  const date = m.date ? `${+m.date.split("-")[1]} ${MONN[+m.date.split("-")[0] - 1]}` : "";
+  const when = m.times?.length ? "at " + m.times.join(", ") : "with the others";
+  return [date, days, when].filter(Boolean).join(" · ") + (m.until ? ` · until ${m.until}` : "");
+}
 const messageObj = text => mk({ id: "msg:" + hue(text) + ":" + text.length, kind: "message", title: text.length > 38 ? text.slice(0, 36) + "…" : text, text });
 const ACTION = Object.fromEntries([["time", "Time check", "◷"], ["news", "The news", "N"], ["sleep", "Sleep timer", "☾"]]
   .map(([a, title, sym]) => [a, mk({ id: "act:" + a, kind: "action", action: a, title, sym, h: 200 })]));
@@ -577,12 +592,12 @@ function objRef(o) {
   if (o.kind === "episode") return { kind: "episode", show: o.pid, guid: o.guid };
   if (o.kind === "show") return { kind: "show" };
   if (o.kind === "list") return { kind: "list", name: o.name };
-  if (o.kind === "message") return { kind: "message", text: o.text };
+  if (o.kind === "message" || o.kind === "note") return { kind: "message", text: o.text };
   if (o.kind === "jingle") return { kind: "jingle", path: o.path };
   if (o.kind === "action") return { kind: "action", action: o.action };
   return null;
 }
-const INSTANT = ["message", "jingle", "action"];
+const INSTANT = ["message", "jingle", "action", "note"];
 const lenOf = o => o.min != null && ["album", "folder", "track", "playlist"].includes(o.kind) ? o.min : o.kind === "album" ? (o.tracks ? o.tracks.length : o.count || 10) * TRACK_MIN
   : o.kind === "folder" && o.root ? (o.count || 10) * TRACK_MIN : o.kind === "track" ? TRACK_MIN
   : o.kind === "playlist" ? o.items.length * TRACK_MIN : ["book", "episode", "sound"].includes(o.kind) ? o.min ?? 30 : null;
@@ -630,7 +645,8 @@ function glyph(o) {
   const g = el("div", { className: "glyph" });
   g.style.setProperty("--h", o.h);
   switch (o.kind) {
-    case "folder": g.className += " g-folder" + (o.alt ? " alt" : ""); g.textContent = o.sym || ""; break;
+    case "folder": if (o.box === "messages") { g.className += " g-note"; g.textContent = "Messages for the DJ to read"; break; }
+      g.className += " g-folder" + (o.alt ? " alt" : ""); g.textContent = o.sym || ""; break;
     case "album": if (o.root === "ondemand") { g.className += " g-sound"; g.innerHTML = wave(o.title); } else { g.className += " g-album"; g.textContent = initials(o.title); } break;
     case "track": if (o.root === "ondemand") { g.className += " g-sound"; g.innerHTML = wave(o.title); } else g.className += " g-track"; break;
     case "station": g.className += " g-station"; g.dataset.short = o.short; break;
@@ -654,7 +670,7 @@ function glyph(o) {
     case "show": g.className += " g-show"; g.textContent = "SLEEP\nRADIO"; g.style.whiteSpace = "pre"; break;
     case "trash": g.className += " g-trash" + (o.kids.length ? " full" : ""); break;
     case "panel": g.className += " g-panel"; g.textContent = o.sym; break;
-    case "note": g.className += " g-note"; g.textContent = "Messages for the DJ to read"; break;
+    case "note": g.className += " g-note"; g.textContent = o.text; g.style.setProperty("--tilt", `${(hue(o.text) % 7) - 3}deg`); if (o.m?.off) g.style.opacity = .5; break;
     case "calendar": { g.className += " g-cal"; const d = new Date(); g.dataset.mon = d.toLocaleDateString("en-GB", { month: "short" }).toUpperCase(); g.dataset.day = d.getDate(); break; }
     case "dj": g.className += " g-dj"; break;
   }
@@ -674,6 +690,7 @@ function subOf(o) {
     case "list": return o.count ? `${o.count} artist${o.count === 1 ? "" : "s"}` : "";
     case "jingle": return o.mb ? `${o.mb.toFixed(1)} MB` : "";
     case "message": return "The DJ says it";
+    case "note": return noteWhen(o.m);
     case "action": return "At that moment";
     case "show": return "with the DJ";
   }
@@ -878,12 +895,12 @@ async function open(id) {
   if (o.kind === "dj") return open(PANEL.dj.id);
   if (o.kind === "jingle") return toast(`“${o.title}”: the DJ plays jingles between songs, when jingles are on (the DJ's window).`);
   if (o.kind === "panel" && o.key === "library") return open(JINGLES.id);
-  if (o.kind === "note") return open(PANEL.messages.id);
+
   if (o.kind === "calendar") return open(PANEL.birthdays.id);
   const had = W.find(w => w.id === id);
   if (had) { had.z = ++zTop; drawDesk(); if (o.loaded) refreshOpen(); return; }
   const d = $("desk"), n = W.length;
-  const big = o.kind === "programme", page = o.kind === "panel" && (o.page || UI[o.key]), wide = ["album", "playlist", "podcast"].includes(o.kind);
+  const big = o.kind === "programme", page = (o.kind === "panel" && (o.page || UI[o.key])) || o.kind === "note", wide = ["album", "playlist", "podcast"].includes(o.kind);
   const w = Math.min(d.clientWidth - 40, big ? 780 : page ? 560 : wide ? 480 : 560), h = Math.min(d.clientHeight - 40, big ? 460 : page ? 620 : 420);
   const win = { id, x: Math.max(8, Math.min(250 + n * 28, d.clientWidth - w - 10)), y: Math.max(8, Math.min(24 + n * 26, d.clientHeight - h - 10)), w, h, z: ++zTop, blk: 0, loading: false };
   W.push(win);
@@ -933,7 +950,7 @@ function winEl(win) {
   }, true);
   box.append(bar);
   if (win.loading) box.append(el("div", { className: "wbody" }, el("div", { className: "loading", textContent: "Asking the radio…" })));
-  else ({ folder: folderView, trash: folderView, album: albumView, playlist: playlistView, podcast: podcastView, programme: programmeView, panel: panelView }[o.kind])(o, box, win);
+  else ({ note: nativePanel, folder: folderView, trash: folderView, album: albumView, playlist: playlistView, podcast: podcastView, programme: programmeView, panel: panelView }[o.kind])(o, box, win);
   const rs = el("div", { className: "resize" });
   rs.addEventListener("pointerdown", e => resizeThing(e, box, win));
   box.append(rs);
@@ -967,6 +984,8 @@ function folderView(o, box, win) {
   else if (o.box === "stations") tools.append(T("Find a station", () => open(PANEL.findstation.id)), el("span", { className: "note", textContent: "Drag a station onto a button to keep it there" }));
   else if (o.box === "podcasts") tools.append(T("Follow a podcast", () => open(PANEL.findpodcast.id)), el("span", { className: "note", textContent: "Open a show for its episodes" }));
   else if (o.box === "lists") tools.append(T("Make an artist list", () => open(PANEL.lists.id)), el("span", { className: "note", textContent: "The show, playing only these artists" }));
+  else if (o.box === "messages") tools.append(T("New message", () => newMessage()), T("When they're read…", () => open(PANEL.messages.id)),
+    el("span", { className: "note", textContent: "Double-click a note to change it or when it's said · drag one into a programme, or onto the radio to hear it" }));
   else if (o.box === "jingles") {
     const up = el("input", { type: "file", multiple: true, hidden: true, accept: ".mp3,audio/mpeg" });
     up.onchange = () => { upload(o, [...up.files].map(f => [f, f.name])); up.value = ""; };
@@ -1303,18 +1322,6 @@ const UI = {
     load: () => api("/api/messages"),
     build: (m, act) => {
       const save = next => act(() => api("/api/messages", { on: m.on, every_min: m.every_min, offset_min: m.offset_min, start_min: m.start_min, end_min: m.end_min, date_first: m.date_first, list: m.list, ...next }));
-      const board = el("div", { style: "display:flex;flex-wrap:wrap;gap:12px" });
-      m.list.forEach((n, i) => {
-        const ta = el("textarea", { className: "notearea", value: n.text, id: "note-" + i, style: `width:220px;min-height:120px;transform:rotate(${(i % 3 - 1) * 1.2}deg);opacity:${n.off ? .5 : 1}` });
-        ta.setAttribute("aria-label", "Message " + (i + 1));
-        ta.onchange = () => save({ list: m.list.map((x, j) => j === i ? { ...x, text: ta.value } : x) });
-        const handle = el("span", { className: "muted", textContent: "⠿ drag into a programme", title: "Drag this note onto a programme's timeline, or onto one of its blocks",
-                                    style: "cursor:grab;touch-action:none;font-size:11px" });
-        handle.addEventListener("pointerdown", e => press(e, handle, { id: messageObj(n.text).id, where: "notes" }));
-        board.append(el("div", { style: "display:grid;gap:4px" }, ta, handle, line(sbtn(n.off ? "Turn on" : "Pause", () => save({ list: m.list.map((x, j) => j === i ? { ...x, off: !x.off } : x) })),
-          sbtn("Hear it", () => act(() => api("/api/messages/hear", { text: ta.value }))), sbtn("✕", () => ask("Delete this message?", "Delete", () => save({ list: m.list.filter((_, j) => j !== i) }))))));
-      });
-      board.append(el("button", { className: "sbtn", type: "button", textContent: "＋ New note", style: "width:220px;min-height:120px;border-style:dashed", onclick: () => save({ list: [...m.list, { text: "A new message" }] }) }));
       const start = el("input", { type: "time", value: hhmm(m.start_min), id: "msg-start" }), end = el("input", { type: "time", value: hhmm(m.end_min), id: "msg-end" });
       start.onchange = () => save({ start_min: minsOf(start.value) }); end.onchange = () => save({ end_min: minsOf(end.value) });
       return [grp("Messages the DJ reads out", srow("Reading them", sw(m.on, v => save({ on: v }), "Read the messages")),
@@ -1322,7 +1329,49 @@ const UI = {
           srow("Between", line(start, el("span", { textContent: "and" }), end)),
           srow("Say the date first", sw(m.date_first, v => save({ date_first: v }), "Date first")),
           help(m.next ? `Next: ${m.next}${m.next_day ? " tomorrow" : ""}` : "")),
-        grp("The notes", board)];
+        grp("The notes", help(`${m.list.length} in the Messages folder. Each can be said with the others in turn (every ${m.every_min} min, in these hours), or at its own times, days and dates.`),
+          line(sbtn("Open the Messages folder", () => open(NOTES.id)), sbtn("New message", () => newMessage())))];
+    },
+  },
+  note: {
+    load: () => api("/api/messages"),
+    build: (all, act, win) => {
+      const idx = O[win.id]?.idx, m = all.list[idx];
+      if (!m) return [help("That message has gone.")];
+      const save = patch => act(async () => { const fresh = await api("/api/messages");
+        const list = fresh.list.map((x, j) => j === idx ? Object.fromEntries(Object.entries({ ...x, ...patch }).filter(([, v]) => v !== undefined && v !== null && !(Array.isArray(v) && !v.length))) : x);
+        await api("/api/messages", { ...fresh, list }); await loadFolder(NOTES); });
+      const ta = el("textarea", { className: "notearea", value: m.text, id: "note-text", style: "min-height:110px" });
+      ta.setAttribute("aria-label", "The message");
+      ta.onchange = () => ta.value.trim() && save({ text: ta.value.trim() });
+      const timed = !!m.times?.length;
+      const times = el("div", { className: "line" }, ...(m.times || []).map((t, k) => {
+        const inp = el("input", { type: "time", value: t, id: "note-t" + k });
+        inp.onchange = () => save({ times: m.times.map((x, j) => j === k ? inp.value : x) });
+        return el("span", { className: "line" }, inp, sbtn("✕", () => save({ times: m.times.filter((_, j) => j !== k) })));
+      }), sbtn("＋ Time", () => save({ times: [...(m.times || []), "09:00"] })));
+      const dayKeys = el("span", { className: "days" });
+      DAYN.forEach((d, k) => { const b = el("button", { type: "button", textContent: d[0] + d[1], title: d }); b.setAttribute("aria-pressed", String(!!m.days?.includes(k)));
+        b.onclick = () => save({ days: m.days?.includes(k) ? m.days.filter(x => x !== k) : [...(m.days || []), k] }); dayKeys.append(b); });
+      const mon = el("select", { id: "note-mon" }); mon.append(new Option("—", "")); MONN.forEach((x, k) => mon.append(new Option(x, k + 1, false, m.date && +m.date.split("-")[0] === k + 1)));
+      const day = el("input", { type: "number", min: 1, max: 31, value: m.date ? +m.date.split("-")[1] : "", id: "note-day", placeholder: "day", style: "width:5em" });
+      const setDate = () => save({ date: mon.value && day.value ? `${String(mon.value).padStart(2, "0")}-${String(day.value).padStart(2, "0")}` : undefined });
+      mon.onchange = setDate; day.onchange = setDate;
+      const until = el("input", { type: "date", value: m.until || "", id: "note-until" });
+      until.onchange = () => save({ until: until.value || undefined });
+      return [
+        grp("The words", ta, line(sbtn("Hear it now", () => act(() => api("/api/messages/hear", { text: ta.value }))),
+          sbtn("Delete…", () => ask("Delete this message?", "Delete", async () => { const fresh = await api("/api/messages");
+            await api("/api/messages", { ...fresh, list: fresh.list.filter((_, j) => j !== idx) }); closeFor(O[win.id]); await loadFolder(NOTES); drawDesk(); }), "danger"))),
+        grp("When it's said",
+          srow("Said", seg([[false, "With the others"], [true, "At set times"]], timed, v => save({ times: v ? ["09:00"] : undefined }))),
+          timed ? srow("At", times) : help(`In turn with the other messages, every ${all.every_min} min between ${hhmm(all.start_min)} and ${hhmm(all.end_min)}.`),
+          srow("On days", dayKeys, help(m.days?.length ? "" : "Every day")),
+          srow("Once a year on", line(day, mon), help(m.date ? "Only that day" : "Any day")),
+          srow("Until", until, help(m.until ? "" : "Always")),
+          srow("Paused", sw(!!m.off, v => save({ off: v || undefined }), "Paused"))),
+        help("Drag this note (its icon in the Messages folder) into a programme for a moment at a set time, or onto the radio's dial to hear it now."),
+      ];
     },
   },
   birthdays: {
@@ -1411,6 +1460,7 @@ const SUMS = {
   updates: u => u.available ? `${u.version} · an update is ready` : u.version,
   backup: () => "Your settings, in a file you keep",
   power: () => "Restart it, or shut it down",
+  note: () => "",
   messages: m => `${m.list.length} note${m.list.length === 1 ? "" : "s"} · ${m.on ? `read every ${m.every_min} min, ${hhmm(m.start_min)}–${hhmm(m.end_min)}` : "not being read"}`,
   birthdays: b => `${b.birthdays.length} ${b.birthdays.length === 1 ? "person" : "people"}${b.today?.length ? " · a birthday today!" : ""}`,
   lists: d => `${d.profiles.length} list${d.profiles.length === 1 ? "" : "s"} · ${d.artists.length} artists to choose from`,
@@ -1644,7 +1694,11 @@ async function drop(src, target, ev) {
     else if (!desk.some(p => p.id === src.id)) { desk.push({ id: src.id, x, y, alias: true }); toast(`A shortcut to “${o.title}” is on the desktop.`); }
     saveDesk(); return drawDesk();
   }
-  if (kind === "play") { if (o.kind === "panel") return open(o.id); if (o.kind === "note") return open(PANEL.messages.id); return play(o); }
+  if (kind === "play") {
+    if (o.kind === "panel") return open(o.id);
+    if (o.kind === "note" || o.kind === "message") return api("/api/messages/hear", { text: o.text }).then(() => toast(`The DJ is saying: “${o.title}”`)).catch(e => toast(e.message));
+    return play(o);
+  }
   if (kind === "preset") return setPreset(+target.dataset.n, o);
   const dest = O[target.dataset.target];
   if (!dest) return;
@@ -1697,6 +1751,9 @@ function trash(src) {
     const all = PLAYLISTS.kids.map(id => O[id]).map(p => ({ name: p.name, tracks: (p === from ? items : p.items).map(id => [O[id].root, O[id].path]) }));
     return api("/api/playlists", { playlists: all }).then(d => { loadPlaylists(d); drawDesk(); toast(`Took “${o.title}” out of ${from.title}.`); }).catch(e => toast(e.message));
   }
+  if (o.kind === "note") return ask(`Delete the message “${o.title}”?`, "Delete", async () => {
+    try { const m = await api("/api/messages"); await api("/api/messages", { ...m, list: m.list.filter((_, j) => j !== o.idx) });
+          closeFor(o); await loadFolder(NOTES); drawDesk(); toast("Message deleted."); } catch (e) { toast(e.message); } });
   if (o.kind === "station" && from === STATIONS) return ask(`Forget the station “${o.title}”?`, "Forget it", async () => {
     try { await api("/api/radio/stations", { stations: STATIONS.kids.map(id => O[id]).filter(x => x !== o).map(x => ({ name: x.name, url: x.url, info: x.info })) });
           await loadFolder(STATIONS); drawDesk(); toast(`Forgot ${o.title}.`); } catch (e) { toast(e.message); } });
@@ -1790,6 +1847,14 @@ document.querySelectorAll("[data-open]").forEach(b => b.onclick = () => open(b.d
 $("tidy").onclick = () => { desk.forEach((p, i) => { p.x = 18 + Math.floor(i / 7) * 128; p.y = 14 + (i % 7) * 96; }); saveDesk(); drawDesk(); };
 $("settingsMenu").onclick = () => { if (!radioBack) turnRadio(); toast("Every setting is on the back of the radio. Or click a part of it: the speakers, the knob, the buttons, its name."); };
 $("wifiMenu").onclick = () => open(PANEL.wifi.id);
+async function newMessage() {
+  try {
+    const m = await api("/api/messages");
+    await api("/api/messages", { ...m, list: [...m.list, { text: "A new message" }] });
+    await loadFolder(NOTES); await open(NOTES.id); await open("note:" + m.list.length);
+    toast("A new note: type the words, then choose when it's said.");
+  } catch (e) { toast("No message made: " + e.message + "."); }
+}
 // The New menu: make any kind of thing from one place
 function closeNew() { $("newDrop").hidden = true; $("newMenu").setAttribute("aria-expanded", "false"); }
 $("newMenu").onclick = e => { e.stopPropagation(); const open_ = $("newDrop").hidden; $("newDrop").hidden = !open_; $("newMenu").setAttribute("aria-expanded", String(open_)); };
@@ -1799,11 +1864,7 @@ document.querySelectorAll("[data-new]").forEach(b => b.onclick = async () => {
   const what = b.dataset.new;
   if (what === "programme") return newProgramme();
   if (what === "playlist") { await newPlaylist(); return open(PLAYLISTS.id); }
-  if (what === "message") {
-    try { const m = await api("/api/messages"); await api("/api/messages", { ...m, list: [...m.list, { text: "A new message" }] }); } catch (e) { return toast(e.message); }
-    W.filter(w => w.id === PANEL.messages.id).forEach(w => { w.data = undefined; });
-    await open(PANEL.messages.id); return toast("A new note: type the message on it. The DJ reads it out at the times set above.");
-  }
+  if (what === "message") return newMessage();
   if (what === "birthday") { await open(PANEL.birthdays.id); setTimeout(() => $("bd-name")?.focus(), 900); return toast("Type their name and day at the bottom, then Add."); }
   if (what === "list") { await open(PANEL.lists.id); setTimeout(() => $("list-new")?.focus(), 900); return; }
   if (what.startsWith("folder-")) { const f = what.endsWith("music") ? MUSIC : ONDEMAND; await open(f.id); const w = W.find(w => w.id === f.id); if (w) { w.mkdir = true; drawDesk(); } return; }

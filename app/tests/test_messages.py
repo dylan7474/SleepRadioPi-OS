@@ -168,3 +168,31 @@ def test_a_message_waits_when_the_news_is_due(tmp_path: Path, monkeypatch) -> No
     st._news_ready = None                                     # read: the message goes in the next gap
     st._maybe_add_message(datetime.now())
     assert st._plan[0].speech.text.endswith(HOME)
+
+
+def test_each_message_can_have_its_own_days_date_and_times() -> None:
+    from datetime import datetime
+    from sleepradiopi.broadcast.messages import Messages
+    m = Messages({"on": True, "date_first": False, "list": [
+        {"text": "Remember your tablets", "days": [6], "times": ["09:00"]},
+        {"text": "Happy Christmas", "date": "12-25"},
+        {"text": "You're safe here"}]})
+    sunday_9 = datetime(2026, 10, 4, 9, 5)                 # a Sunday
+    assert m.due(sunday_9, True) == "Remember your tablets"   # its time comes first
+    m.played(sunday_9)
+    assert m.due(sunday_9, True) == "You're safe here"         # said once; then the rotation
+    monday_9 = datetime(2026, 10, 5, 9, 5)
+    assert m.due(monday_9, True) == "You're safe here"         # not on a Monday
+    xmas = datetime(2026, 12, 25, 11, 7)
+    assert {x["text"] for x in m.rotation(xmas.date())} == {"Happy Christmas", "You're safe here"}
+    assert m.next_slot(datetime(2026, 10, 3, 22, 0)) == datetime(2026, 10, 4, 8, 7)   # (tomorrow's first slot)
+
+
+def test_message_schedules_are_checked() -> None:
+    import pytest
+    from sleepradiopi.broadcast.messages import validate
+    ok = validate({"list": [{"text": "x", "days": [6, 6], "date": "2-29", "times": ["9:00", "18:30"]}]})
+    assert ok["list"][0] == {"text": "x", "days": [6], "date": "02-29", "times": ["09:00", "18:30"]}
+    for bad in ({"text": "x", "days": [7]}, {"text": "x", "date": "13-01"}, {"text": "x", "times": ["25:00"]}):
+        with pytest.raises(ValueError):
+            validate({"list": [bad]})

@@ -380,8 +380,13 @@ The cards:
   power-on chime), Noise, Sleep timer, Voices, Wi-Fi (join, forget, its own
   network), This radio (name, case, password, listening in a browser),
   Buttons (and the day and night sets), Updates, Save & load, Power.
-  **Messages** are a pinboard of sticky notes (edit in place, pause, hear it,
-  add, delete) and **Birthdays** a calendar. Stations and podcasts are found
+  **Messages** are objects: the desktop's sticky note opens a folder of notes,
+  each with its own window — the words, and **when it's said**: with the
+  others in turn (every N minutes in the day's hours), or **at set times**;
+  **on chosen days**; **once a year on a date** (e.g. Happy Christmas on 25
+  December); **until** a date; paused. Hear it now, delete (or drag it to the
+  Trash), drag it into a programme, or drop it on the radio to hear it. *When
+  they're read…* holds the shared settings. **Birthdays** is a calendar. Stations and podcasts are found
   and followed from their windows (*Find a station*, *Follow a podcast*) and
   forgotten by dragging to the Trash. **Jingles** is a folder of its own
   (upload, download, delete) and **Artist lists** an editor (make a list with
