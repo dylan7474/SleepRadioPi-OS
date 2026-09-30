@@ -1168,9 +1168,8 @@ class Station:
             return None
         ours = set(run["tracks"])
         left = sum(1 for t in list(self._queue)[:self._n_requested] if t in ours)
-        if self._jump is not None and self._jump in ours:
-            left += 1                         # (about to cut in: the run hasn't started yet)
-        if not left and self.current_track not in ours:
+        starting = self._jump is not None and self._jump in ours   # (about to cut in: not over, not begun)
+        if not left and self.current_track not in ours and not starting:
             self._playlist_run = None
             return None
         return {"name": run["name"], "left": left, "shuffle": run["shuffle"]}
