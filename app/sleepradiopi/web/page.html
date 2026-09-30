@@ -259,12 +259,13 @@
   .row.seg.as-switch > button[data-v] { display: none; }
   .row.seg.as-switch .swcap { margin-left: auto; color: var(--dim); font-size: .85rem; }
   .row.seg.as-switch .sw { margin-left: auto; }
+  .row.seg > button.sw, .card li button.sw { flex: none; padding: 0; min-width: 0; }   /* (not the pills' sizing) */
   .row.seg.as-switch .swcap:not(:empty) + .sw { margin-left: 0; }
   .msgwhen { flex-basis: 100%; border-top: 1px dashed var(--line); margin-top: .5rem; padding-top: .2rem; }
   .msgwhen .chips .chip { min-width: 44px; }
   .msgwhen input { min-height: 44px; }
   .proglist { list-style: none; margin: 0; padding: 0; display: grid; gap: .2rem; }
-  .proglist li { padding: .55rem 0; border-bottom: 1px solid var(--line); }
+  .proglist li { display: block; padding: .55rem 0; border-bottom: 1px solid var(--line); border-top: 0; }
   .proglist li:last-child { border-bottom: 0; }
   .proglist .who { display: block; font-weight: 600; } .proglist .who small { display: block; font-weight: 400; color: var(--dim); margin-top: .15rem; }
   .proglist .ep-do { display: flex; gap: .6rem; align-items: center; margin-top: .5rem; flex-wrap: wrap; }
@@ -1658,7 +1659,8 @@ async function saveProgs(next, note) {
   try { programmes = (await radioPost("/api/programmes", { programmes: next })).programmes; drawProgrammes(); drawSettings(); if (note) toast(note); return true; }
   catch (e) { toast("Not saved: " + e.message + "."); return false; }
 }
-const repPending = {};                                 // the repeat chosen for one not armed yet
+const repPending = {};
+let lastLitKey = "";                                 // the repeat chosen for one not armed yet
 function drawProgrammes() {
   if (!$("progList")) return;
   const s = lastStatus;
@@ -2409,6 +2411,10 @@ async function poll() {
     $("next").textContent = s.on_air && s.next ? `Next: ${s.next.title}${s.next.artist ? " — " + s.next.artist : ""}` : "";
     showHistory(s.history);
     drawSettings();
+    // what's lit on Find and the Programmes page follow the radio (not just when they were opened)
+    const k = JSON.stringify([s.source && (s.source.url || s.source.folder || s.source.key || s.source.guid), s.speaker && s.speaker.playing,
+                              s.playlist && s.playlist.name, s.profile, s.artist, s.programme && s.programme.name, s.programme_mode, s.switches]);
+    if (k !== lastLitKey) { lastLitKey = k; if (!$("viewFind").hidden) drawHome(); if (pageNow === "programmes") drawProgrammes(); }
   } catch {}
 }
 
@@ -3483,7 +3489,7 @@ function tile(title, sub, on, onclick) {
   return t;
 }
 function drawHome() {
-  const showOn = !lastSource, [kind, name] = selNow ? [selNow[0], selNow.slice(2)] : ["", ""];
+  const showOn = !(lastStatus ? lastStatus.source : lastSource) && !(lastStatus && lastStatus.playlist), [kind, name] = selNow ? [selNow[0], selNow.slice(2)] : ["", ""];
   const tiles = [tile("All artists", "The whole library", showOn && !selNow, () => playShow({}))];
   for (const p of allLists) tiles.push(tile(p.name, `Your theme · ${plural(p.artists.length, "artist")}`,
                                             showOn && kind === "p" && name === p.name, () => playShow({ profile: p.name })));
@@ -3661,7 +3667,7 @@ function start() {
   offerTune();
   poll();
   setInterval(poll, 3000);
-  loadArtists(); loadBirthdays(); loadMessages(); loadDj(); loadButtons(); loadRadio(); loadBooks(); loadPodcasts();
+  loadArtists(); loadBirthdays(); loadMessages(); loadDj(); loadButtons(); loadRadio(); loadBooks(); loadPodcasts(); loadProgrammes();
 }
 function showLogin() {
   if (started) { location.reload(); return; }   // logged out while using it: start clean
