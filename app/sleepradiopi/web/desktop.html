@@ -197,8 +197,8 @@
   .blk .pin { position: absolute; right: 16px; bottom: 6px; font-size: 10px; background: #0006; border-radius: 4px; padding: 0 4px; }
   .blk .grab { position: absolute; right: 0; top: 0; bottom: 0; width: 10px; cursor: ew-resize; background: linear-gradient(90deg, transparent, #ffffff30); }
   .swlane { height: 40px; margin-top: 6px; }
-  .blk.sw { top: 5px; bottom: 5px; padding: 4px 14px; background: linear-gradient(180deg, hsl(var(--h) 38% 44%), hsl(var(--h) 38% 32%)); }
-  .blk.sw .bt { display: inline; } .blk.sw .bw { display: inline; margin-left: 8px; }
+  .blk.swbar { top: 5px; bottom: 5px; padding: 4px 14px; background: linear-gradient(180deg, hsl(var(--h) 38% 44%), hsl(var(--h) 38% 32%)); }
+  .blk.swbar .bt { display: inline; } .blk.swbar .bw { display: inline; margin-left: 8px; }
   .blk .grabl { position: absolute; left: 0; top: 0; bottom: 0; width: 10px; cursor: ew-resize; background: linear-gradient(270deg, transparent, #ffffff30); }
   .swhint { position: absolute; top: 12px; font-size: 11px; color: var(--dim); pointer-events: none; white-space: nowrap; }
   .daystrip .dsw { position: absolute; top: 15px; height: 3px; border-radius: 2px; background: hsl(var(--h) 45% 45%); pointer-events: none; }
@@ -2017,7 +2017,7 @@ function programmeView(o, box, win) {
   const s0 = run ? toMin(run.started) : toMin(o.start);
   const sw = (o.switches || []).map(w => ({ start: s0 + w.from, end: s0 + w.from + w.min, len: w.min }));
   const all = [...tl, ...sw], endAll = all.length ? Math.max(...all.map(s => s.end)) : 0;
-  const lo = all.length ? Math.floor(Math.min(...all.map(s => s.start)) / 30) * 30 : toMin(o.start);
+  const lo = all.length ? Math.floor(Math.min(...all.map(s => s.start), ...(sw.length ? [s0] : [])) / 30) * 30 : toMin(o.start);   // (a switch's programme: from its start)
   const hi = Math.max(lo + 60, all.length ? Math.ceil(endAll / 30) * 30 : lo + 180);   // "the programme": zoomed to it
   // the whole day (and on past midnight, if it runs on), with the part in view chosen by zoom and scroll
   const D1 = Math.max(1440, Math.ceil(endAll / 60) * 60);
@@ -2079,7 +2079,7 @@ function programmeView(o, box, win) {
   if (!sw.length) swl.append(el("span", { className: "swhint", style: `left:${view0 * px + 8}px`, textContent: "Drop Noise or the DJ here: on for as long as its bar, then off" }));
   sw.forEach((s, k) => {
     const w = o.switches[k];
-    const bar = el("div", { className: "blk sw" + (win.sw === k ? " sel" : "") });
+    const bar = el("div", { className: "blk swbar" + (win.sw === k ? " sel" : "") });
     bar.style.cssText = `left:${s.start * px + 1}px;width:${Math.max(18, s.len * px - 2)}px;--h:${SWITCH_HUE[w.what]}`;
     bar.title = `${SWITCH_NAME[w.what]} on ${hhmm(s.start)}, off ${hhmm(s.end)} (drag it, or its ends)`;
     bar.append(el("span", { className: "bt", textContent: `${SWITCH_NAME[w.what]} on` }), el("span", { className: "bw", textContent: `${hhmm(s.start)}–${hhmm(s.end)} · ${dur(s.len)}` }));
