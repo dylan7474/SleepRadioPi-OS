@@ -319,3 +319,18 @@ def test_programme_mode_web(tmp_path, monkeypatch) -> None:
             assert json.load(resp)["programme_mode"] is True and sched.quiet
     finally:
         httpd.shutdown()
+
+
+def test_a_programme_that_doesnt_wake_a_paused_radio(tmp_path, monkeypatch) -> None:
+    st, sched, clock, woke, _ = _setup(tmp_path, monkeypatch, [
+        {"name": "News", "start": "12:05", "auto": True, "wake": False, "blocks": [{"name": "R4", "items": [R4], "rule": "for", "min": 10}]},
+        {"name": "Alarm", "start": "12:10", "auto": True, "blocks": [{"name": "R4", "items": [R4], "rule": "for", "min": 10}]}])
+    assert sched.programmes[0]["wake"] is False and "wake" not in sched.programmes[1]
+    sched.paused = lambda: True                              # someone pressed pause
+    clock.go(minutes=5); sched.tick()
+    assert sched.run is None and woke == []                  # the pause wins
+    clock.go(minutes=5); sched.tick()
+    assert sched.run["name"] == "Alarm" and woke == [1]      # an alarm still wakes it
+    sched.stop(); sched.paused = lambda: False
+    clock.go(days=1, minutes=-5); sched.tick()               # tomorrow, playing: it starts
+    assert sched.run["name"] == "News"

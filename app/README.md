@@ -410,7 +410,11 @@ The cards:
   setting `programme_mode`) makes it an alarm clock: quiet unless a programme
   is on — silent between programmes and at power-on, armed programmes wake
   it, gaps are silent, and when a programme ends (unless it chains on or
-  repeats) it goes quiet again. The knob or Play still plays as usual. Stations and podcasts are found
+  repeats) it goes quiet again. The knob or Play still plays as usual.
+  Each programme can **wake the radio if it's paused** (🔔, the default: an
+  alarm) or not (🔕: if you've paused the radio when it's due, the pause wins
+  and that start is skipped). Pausing during a programme keeps it paused for
+  the rest of that programme; the next armed 🔔 programme wakes it. Stations and podcasts are found
   and followed from their windows (*Find a station*, *Follow a podcast*) and
   forgotten by dragging to the Trash. **Jingles** is a folder of its own
   (upload, download, delete) and **Artist lists** an editor (make a list with

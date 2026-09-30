@@ -560,7 +560,7 @@ async function loadPlaylists(d) {
 async function loadProgrammes(d) {
   d = d || await api("/api/programmes");
   PROGRAMMES.kids = d.programmes.map(p => mk({ id: "pg:" + p.name.toLowerCase(), kind: "programme", title: p.name, start: p.start, auto: p.auto, days: p.days,
-    then: p.then, chain: p.chain, once: !!p.once, gap: typeof p.gap === "object" ? { id: refObj(p.gap)?.id } : p.gap || "show", blocks: p.blocks.map(b => ({ ...b, items: b.items.map(refObj).filter(Boolean).map(o => o.id) })) }).id);
+    then: p.then, chain: p.chain, once: !!p.once, wake: p.wake !== false, gap: typeof p.gap === "object" ? { id: refObj(p.gap)?.id } : p.gap || "show", blocks: p.blocks.map(b => ({ ...b, items: b.items.map(refObj).filter(Boolean).map(o => o.id) })) }).id);
   PROGRAMMES.loaded = true;
 }
 // a programme's saved things <-> the objects on the desktop
@@ -1641,7 +1641,7 @@ function scheduleView(o, box, win) {
   modeSw.onclick = () => setProgrammeMode(!S?.programme_mode);
   box.append(el("div", { className: "wtools" }, T("New programme", newProgramme), T("Programmes", () => open(PROGRAMMES.id)),
     el("span", { className: "line", style: "display:inline-flex;gap:6px;align-items:center" }, modeSw, el("span", { className: "muted", textContent: "Programme mode (quiet unless a programme is on)" })),
-    el("span", { className: "note", textContent: "Armed programmes over the next 7 days · click one to open it · the later start wins if two overlap" })));
+    el("span", { className: "note", textContent: "Armed programmes, next 7 days · 🔔 wakes a paused radio, 🔕 a pause wins · ↻ repeats · the later start wins an overlap" })));
   const W_ = Math.max(360, win.w - 180), px = W_ / 1440;
   const wrap = el("div", { style: "padding:12px 14px;display:grid;gap:6px" });
   const hours = el("div", { style: `position:relative;height:16px;margin-left:110px;width:${W_}px` });
@@ -1657,7 +1657,7 @@ function scheduleView(o, box, win) {
       const bar = el("div", { className: "blk", title: `${x.o.title}: ${x.start.toTimeString().slice(0, 5)}–${x.end.toTimeString().slice(0, 5)}${x.chained ? " (after " + x.chained + ")" : ""}` });
       bar.style.cssText = `top:5px;bottom:5px;left:${a * px}px;width:${Math.max(6, (b - a) * px - 1)}px;--h:${first ? TINT[first.kind] ?? first.h : 40};padding:3px 6px;cursor:pointer` +
         (clash.has(x) ? ";outline:2px solid var(--red)" : "") + (x.chained ? ";opacity:.8" : "");
-      bar.append(el("div", { className: "bt", textContent: (x.chained ? "↳ " : x.o.once ? "⏰ " : "↻ ") + x.o.title }));
+      bar.append(el("div", { className: "bt", textContent: (x.chained ? "↳ " : (x.o.wake === false ? "🔕 " : "🔔 ") + (x.o.once ? "" : "↻ ")) + x.o.title }));
       bar.onclick = () => open(x.o.id);
       lane.append(bar);
     });
@@ -1676,7 +1676,7 @@ async function saveProgrammes(note) {
   try {
     const d = await api("/api/programmes", { programmes: progs.map(p => ({ name: p.title, start: p.start, auto: !!p.auto, days: p.days || [], then: p.then || "show",
       gap: p.gap && typeof p.gap === "object" ? (objRef(O[p.gap.id]) || "show") : p.gap || "show", ...(p.then === "chain" ? { chain: p.chain } : {}),
-      ...(p.auto && p.once ? { once: true } : {}),
+      ...(p.auto && p.once ? { once: true } : {}), ...(p.wake === false ? { wake: false } : {}),
       blocks: p.blocks.map(b => ({ name: b.name, rule: b.rule, order: b.order || "inorder", ...(b.rule === "for" || b.rule === "at" ? { min: b.min || 60 } : {}),
         ...(b.rule === "at" ? { at: b.at } : {}), ...(b.rule === "until" ? { until: b.until } : {}), items: b.items.map(id => objRef(O[id])).filter(Boolean) })) })) });
     const open_ = W.map(w => w.id);
@@ -1793,7 +1793,7 @@ function armText(o) {
   if (!d) return "Pick a day for it to repeat on";
   const mins = Math.max(0, Math.round((d - new Date()) / 60000)), k = Math.round((new Date(d).setHours(0, 0, 0, 0) - new Date().setHours(0, 0, 0, 0)) / 864e5);
   const day = k === 0 ? "today" : k === 1 ? "tomorrow" : d.toLocaleDateString(undefined, { weekday: "long" });
-  return `Armed: ${o.once ? "starts" : "repeats " + repeatWords(o) + "; next"} ${day} at ${o.start}` + (mins < 120 ? ` · in ${mins < 1 ? "under a minute" : mins + " min"}` : "");
+  return `${o.wake === false ? "🔕" : "🔔"} Armed: ${o.once ? "starts" : "repeats " + repeatWords(o) + "; next"} ${day} at ${o.start}` + (mins < 120 ? ` · in ${mins < 1 ? "under a minute" : mins + " min"}` : "");
 }
 function programmeView(o, box, win) {
   const run = S?.programme && S.programme.name.toLowerCase() === o.title.toLowerCase() ? S.programme : null;
@@ -1843,7 +1843,11 @@ function programmeView(o, box, win) {
             : T("▶ Play now", () => play(o), "", !o.blocks.length),
     playing ? null : armBtn, playing ? null : el("span", { className: "muted", textContent: "at" }), playing ? null : startIn,
     playing ? null : repSel, rep === "days" && !playing ? days : null, status));
-  box.append(el("div", { className: "wtools" }, then, gapSel,
+  const wakeSw = el("button", { className: "sw", type: "button", role: "switch", title: "If the radio's paused when it's due: on, it plays anyway (an alarm); off, the pause wins and it's skipped" });
+  wakeSw.setAttribute("aria-checked", String(o.wake !== false)); wakeSw.setAttribute("aria-label", "Wake the radio if it's paused");
+  wakeSw.onclick = () => { o.wake = o.wake === false; saveProgrammes(o.wake ? `${o.title} wakes the radio even if it's paused.` : `${o.title} only starts if the radio's playing: a pause wins.`); };
+  box.append(el("div", { className: "wtools" }, el("span", { className: "line", style: "display:inline-flex;gap:6px;align-items:center" }, wakeSw,
+      el("span", { className: "muted", textContent: o.wake !== false ? "🔔 wakes the radio if it's paused" : "🔕 skipped if the radio's paused" })), then, gapSel,
     T("＋ Moment", () => { const tl2 = timeline(o), end = tl2.length ? tl2[tl2.length - 1].end : toMin(o.start);
       o.blocks.push({ name: "A moment", items: [], rule: "at", at: hhmm(Math.ceil((end + 1) / 15) * 15), min: 1, order: "inorder" }); win.blk = o.blocks.length - 1; saveProgrammes("A moment: add a message, a jingle or an action to it below."); })));
   if (win.gapPick || gapObj) {

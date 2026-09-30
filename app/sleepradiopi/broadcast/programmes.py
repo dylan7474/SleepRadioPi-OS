@@ -171,6 +171,8 @@ def validate(programmes) -> list[dict]:
         entry = {"name": name, "start": _hhmm(p.get("start", "12:00"), f"{name}'s start time"),
                  "auto": p.get("auto") is True, "days": sorted(set(days)), "then": then, "gap": gap,
                  "blocks": [_block(b) for b in blocks]}
+        if p.get("wake") is False:
+            entry["wake"] = False             # starts by itself only if the radio's playing (a pause wins)
         if entry["auto"] and p.get("once") is True:
             entry["once"] = True              # armed for its next start only, then off
         if then == "chain":
@@ -213,6 +215,7 @@ class Scheduler:
         self.action = action          # "time", "news", "sleep": as the radio's buttons do them
         self.on_change: Callable[[list], None] | None = None   # the list changed by itself (a one-off start): save it
         self.quiet = False            # programme mode: silent unless a programme is on
+        self.paused: Callable[[], bool] = lambda: False   # is the radio paused (by a person)?
         self.programmes: list[dict] = []
         self.run: dict | None = None      # the programme playing, and where it's got to
         self._lock = threading.RLock()
@@ -352,8 +355,10 @@ class Scheduler:
             if key in self._auto_done or not p["blocks"]:
                 continue
             self._auto_done.add(key)
-            log.info("programme %s starts by itself%s", p["name"], " (once)" if p.get("once") else "")
-            if p.get("once"):                 # a one-off: not again tomorrow
+            skip = p.get("wake") is False and self.paused()
+            log.info("programme %s %s%s", p["name"], "skipped: the radio's paused" if skip else "starts by itself",
+                     " (once)" if p.get("once") else "")
+            if p.get("once"):                 # a one-off: not again tomorrow (it had its turn)
                 p["auto"] = False
                 p.pop("once", None)
                 if self.on_change:
@@ -361,6 +366,8 @@ class Scheduler:
                         self.on_change(self.programmes)
                     except Exception:
                         log.exception("couldn't save the programmes")
+            if skip:
+                continue
             self.play(p["name"])
             if self.wake:
                 self.wake()

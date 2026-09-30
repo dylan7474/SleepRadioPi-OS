@@ -509,6 +509,8 @@ def main() -> None:
         logging.getLogger(__name__).warning("programmes ignored: %s", e)
     scheduler.on_change = lambda progs: save_setting(args.config, "programmes", progs)
     scheduler.quiet = settings.programme_mode
+    if control is not None:
+        scheduler.paused = lambda: control.paused
     station.scheduler = scheduler
     scheduler.start()
     # Podcasts: the shows followed are settings; their episode lists refresh in the background.
