@@ -356,3 +356,55 @@ def test_repeating_every_needs_a_proper_interval() -> None:
     assert ok[0]["every"] == 30 and ok[0]["until"] == "23:59"
     with pytest.raises(ValueError):
         programmes.validate([{"name": "P", "every": 7}])
+
+
+def test_switches_validate() -> None:
+    ok = programmes.validate([{"name": "A", "switches": [{"what": "noise", "from": 30, "min": 90}]}, {"name": "B", "switches": []}])
+    assert ok[0]["switches"] == [{"what": "noise", "from": 30, "min": 90}] and "switches" not in ok[1]
+    for bad in ({"what": "lights"}, {"what": "dj", "min": 0}, {"what": "dj", "from": -1}, {"what": "noise", "min": True}):
+        with pytest.raises(ValueError):
+            programmes.validate([{"name": "A", "switches": [bad]}])
+
+
+def test_switches_on_at_the_start_off_at_the_end_beside_the_blocks(tmp_path, monkeypatch) -> None:
+    st, sched, clock, woke, _, did = _sched_with_hooks(tmp_path, monkeypatch, [{"name": "P", "blocks": [
+        {"name": "Radio 4", "items": [R4], "rule": "for", "min": 30},
+        {"name": "Beatles", "items": [RUBBER], "rule": "for", "min": 30}],
+        "switches": [{"what": "noise", "from": 20, "min": 20}, {"what": "dj", "from": 0, "min": 60}]}])
+    sched.play("P")
+    assert did == [("action", "dj_on")] and st.source["name"] == "BBC Radio 4"   # (whatever it was before)
+    clock.go(minutes=20); sched.tick()
+    assert did[-1] == ("action", "noise_on")
+    clock.go(minutes=10); sched.tick()                  # the next block: the noise carries on over it
+    assert st.playlist_status()["name"] == "Beatles" and did[-1] == ("action", "noise_on")
+    clock.go(minutes=10); sched.tick()
+    assert did[-1] == ("action", "noise_off")
+    clock.go(minutes=20); sched.tick()
+    assert did[-1] == ("action", "dj_off") and sched.spans == []
+
+
+def test_a_noise_only_programme_plays_over_whats_on(tmp_path, monkeypatch) -> None:
+    st, sched, clock, woke, _, did = _sched_with_hooks(tmp_path, monkeypatch, [
+        {"name": "Noise", "start": "12:05", "auto": True, "switches": [{"what": "noise", "from": 0, "min": 60}]}])
+    st.tune(R4 | {"kind": "radio"})
+    clock.go(minutes=5); sched.tick()                   # starts by itself, over the station, no wake
+    assert did == [("action", "noise_on")] and woke == [] and sched.run is None and st.source["name"] == "BBC Radio 4"
+    assert sched.switches_status()[0]["until"] == "13:05"
+    clock.go(minutes=60); sched.tick()
+    assert did[-1] == ("action", "noise_off")
+    sched.play("Noise")                                 # Play now, then Stop: off at once
+    assert sched.run is None and did[-1] == ("action", "noise_on")
+    sched.stop(name="noise")
+    assert did[-1] == ("action", "noise_off") and sched.spans == []
+
+
+def test_switches_when_the_programme_gives_way(tmp_path, monkeypatch) -> None:
+    st, sched, clock, woke, _, did = _sched_with_hooks(tmp_path, monkeypatch, [{"name": "P", "blocks": [
+        {"name": "Radio 4", "items": [R4], "rule": "for", "min": 60}],
+        "switches": [{"what": "noise", "from": 0, "min": 30}, {"what": "dj", "from": 40, "min": 10}]}])
+    sched.play("P")
+    st.play_album(root="music", folder="The Beatles/Rubber Soul")   # something else chosen
+    sched.tick()
+    assert sched.run is None and [s["what"] for s in sched.spans] == ["noise"]   # started: runs on; the DJ's: dropped
+    clock.go(minutes=30); sched.tick()
+    assert did == [("action", "noise_on"), ("action", "noise_off")] and sched.spans == []

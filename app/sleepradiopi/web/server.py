@@ -209,6 +209,7 @@ def make_handler(station: Station, output: Mp3Output, speaker=None,
                 status["can_power_off"] = can_power_off()
                 sched = getattr(station, "scheduler", None)
                 status["programme"] = sched.status() if sched else None
+                status["switches"] = sched.switches_status() if sched else []
                 status["programme_mode"] = bool(sched and sched.quiet)
                 status["buttons_bank"] = presets.bank if presets is not None else None
                 status["stream"] = output is not None and output.enabled
@@ -819,7 +820,7 @@ def make_handler(station: Station, output: Mp3Output, speaker=None,
 
         def _programmes_post(self, path: str) -> None:
             """POST /api/programmes {"programmes": [...]} (the whole list, saved),
-            /api/programmes/play {"name"}, /api/programmes/stop."""
+            /api/programmes/play {"name"}, /api/programmes/stop {"name"?}."""
             sched = station.scheduler
             try:
                 body = self._body()
@@ -829,10 +830,10 @@ def make_handler(station: Station, output: Mp3Output, speaker=None,
                         save_setting(config_file, "programmes", sched.programmes)
                 elif path == "/api/programmes/play":
                     sched.play(body["name"])
-                    if speaker is not None:
+                    if speaker is not None and sched.run is not None:   # (only moments and switches: over what's on)
                         speaker.play()
                 else:
-                    sched.stop()
+                    sched.stop(name=body.get("name") if isinstance(body.get("name"), str) else None)
             except (ValueError, TypeError, KeyError, AttributeError) as e:
                 self._error(str(e) if isinstance(e, ValueError) else "send {\"name\"} or {\"programmes\": [...]}")
                 return

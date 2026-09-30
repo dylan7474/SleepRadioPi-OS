@@ -11,6 +11,13 @@ artist list -- and a rule for how long it runs:
              block before it plays on until then, and a block still playing
              is cut off (the news at 13:00)
 
+Beside the running order, switches: the noise or the DJ on for a stretch of
+the programme ("switches": [{"what": "noise", "from": 0, "min": 60}], minutes
+from its start). On at the start of the stretch and off at its end, whatever
+they were before -- apart from the blocks, so they overlap them freely. A
+stretch that has started runs to its end even if the programme gives way; one
+not yet started is dropped; Stop ends them all at once.
+
 and what happens after the last one ("then"): back to the show, fade out and
 pause (like the sleep timer), or start again. A programme can also start by
 itself at its start time on chosen days.
@@ -53,6 +60,8 @@ ITEM_KINDS = ("album", "track", "station", "playlist", "book", "podcast", "episo
 INSTANT = ("message", "jingle", "action")     # happen at once: said, played or done, then on
 ACTIONS = ("time", "news", "sleep", "pips", "address",   # (what a button can do, but on or off, not a switch:
            "noise_on", "noise_off", "dj_on", "dj_off")     #  at a set time, a switch could go either way)
+SWITCHES = ("noise", "dj")                   # on for a stretch, then off (not in the running order)
+MAX_SWITCHES = 10
 EVERY = (15, 30, 60)                         # repeating within the day, from start to until
 MOMENT_LEAD = timedelta(seconds=60)          # a moment with the time gets ready this early (the voice is slow)
 DEFAULT_MIN = 60
@@ -140,6 +149,16 @@ def _block(b) -> dict:
     return out
 
 
+def _switch(w) -> dict:
+    if not isinstance(w, dict) or w.get("what") not in SWITCHES:
+        raise ValueError(f"a switch is one of: {', '.join(SWITCHES)}")
+    f, m = w.get("from", 0), w.get("min", DEFAULT_MIN)
+    for v, lo, what in ((f, 0, "starts 0 minutes to 24 hours in"), (m, 1, "lasts 1 minute to 24 hours")):
+        if isinstance(v, bool) or not isinstance(v, int) or not lo <= v <= 24 * 60:
+            raise ValueError(f"a switch {what}")
+    return {"what": w["what"], "from": f, "min": m}
+
+
 def validate(programmes) -> list[dict]:
     """Check a list from the page or a settings file; returns it cleaned up.
     ValueError says what's wrong."""
@@ -174,6 +193,11 @@ def validate(programmes) -> list[dict]:
         entry = {"name": name, "start": _hhmm(p.get("start", "12:00"), f"{name}'s start time"),
                  "auto": p.get("auto") is True, "days": sorted(set(days)), "then": then, "gap": gap,
                  "blocks": [_block(b) for b in blocks]}
+        switches = p.get("switches") or []
+        if not isinstance(switches, list) or len(switches) > MAX_SWITCHES:
+            raise ValueError(f"{name}: up to {MAX_SWITCHES} switches")
+        if switches:
+            entry["switches"] = [_switch(w) for w in switches]
         if p.get("wake") is False:
             entry["wake"] = False
         every = p.get("every")
@@ -229,6 +253,7 @@ class Scheduler:
         self.time_signal: Callable[[datetime, bool, bool], None] | None = None
         self.programmes: list[dict] = []
         self.run: dict | None = None      # the programme playing, and where it's got to
+        self.spans: list[dict] = []       # switches due or on: {"prog", "what", "on", "off", "is_on"}
         self._lock = threading.RLock()
         self._auto_done: set[str] = set()   # "name@2026-09-30 12:00": started by itself already
         self._thread: threading.Thread | None = None
@@ -267,10 +292,17 @@ class Scheduler:
         p = find(self.programmes, name)
         if p is None:
             raise ValueError("there's no programme of that name")
-        if not p["blocks"]:
+        if not p["blocks"] and not p.get("switches"):
             raise ValueError(f"{p['name']} is empty: put something in it first")
         with self._lock:
             now = self.now()
+            self._arm_switches(p, now)
+            if self._overlay(p):              # only moments and switches: over whatever's on
+                for b in p["blocks"]:
+                    self._instants(b, now)
+                self._switch_now(now)
+                log.info("programme %s: over what's on", p["name"])
+                return self.status()
             self.run = {"name": p["name"], "prog": p, "i": -1, "ends": None, "expect": None, "started": now}
             first = p["blocks"][0]
             at = _next_clock(now, first["at"]) if first["rule"] == "at" else None
@@ -283,11 +315,20 @@ class Scheduler:
                 log.info("programme %s: waiting for %s", p["name"], first["at"])
             else:
                 self._start_block(0)
+            self._switch_now(now)
         log.info("programme: %s", p["name"])
         return self.status()
 
-    def stop(self, why: str = "stopped") -> bool:
+    def stop(self, why: str = "stopped", name: str | None = None) -> bool:
+        """Stop the programme playing (Stop: its switches go off too). With a name:
+        that programme -- its switches, even when only they are on."""
         with self._lock:
+            if name is not None and not (self.run and self.run["name"].lower() == name.lower()):
+                p = find(self.programmes, name)
+                self._end_switches(p["name"] if p else name, True)
+                return False
+            if why != "something else was chosen":
+                self._end_switches(self.run["name"] if self.run else None, why == "stopped")
             if self.run is None:
                 return False
             log.info("programme %s: %s", self.run["name"], why)
@@ -328,10 +369,12 @@ class Scheduler:
         now = self.now()
         with self._lock:
             self._auto_start(now)
+            self._switch_now(now)
             r = self.run
             if r is None:
                 return
             if self._taken_over():
+                self._end_switches(r["name"], False)   # (started ones run on to their end)
                 self.stop("something else was chosen")
                 return
             blocks = r["prog"]["blocks"]
@@ -363,6 +406,59 @@ class Scheduler:
     def _moments_only(self, p: dict) -> bool:
         return bool(p["blocks"]) and all(self._is_moment(b) for b in p["blocks"])
 
+    def _overlay(self, p: dict) -> bool:
+        """Only moments and switches (or only switches): it plays over what's on."""
+        return all(self._is_moment(b) for b in p["blocks"]) and bool(p["blocks"] or p.get("switches"))
+
+    # --- switches: the noise or the DJ on for a stretch -------------------------------
+
+    def _arm_switches(self, p: dict, t0: datetime) -> None:
+        """The programme starts at t0: its switches' stretches, from then. Started
+        again, its stretches not yet begun are replaced (ones already on run on)."""
+        self.spans = [s for s in self.spans if s["prog"] != p["name"] or s["is_on"]]
+        for w in p.get("switches", []):
+            on = t0 + timedelta(minutes=w["from"])
+            self.spans.append({"prog": p["name"], "what": w["what"], "on": on,
+                               "off": on + timedelta(minutes=w["min"]), "is_on": False})
+
+    def _switch(self, what: str, on: bool) -> None:
+        log.info("programme: %s %s", what, "on" if on else "off")
+        if self.action:
+            try:
+                self.action(f"{what}_{'on' if on else 'off'}")
+            except Exception:
+                log.exception("programme: %s didn't switch", what)
+
+    def _switch_now(self, now: datetime) -> None:
+        """On at a stretch's start, off at its end -- whatever it was before."""
+        for s in list(self.spans):
+            if not s["is_on"] and now >= s["on"]:
+                if now >= s["off"]:              # (missed it altogether: nothing)
+                    self.spans.remove(s)
+                    continue
+                s["is_on"] = True
+                self._switch(s["what"], True)
+            if s["is_on"] and now >= s["off"]:
+                self.spans.remove(s)
+                if not any(o["is_on"] and o["what"] == s["what"] for o in self.spans):
+                    self._switch(s["what"], False)   # (unless another stretch keeps it on)
+
+    def _end_switches(self, name: str | None, now_too: bool) -> None:
+        """A programme's stretches not yet begun are dropped; now_too (Stop): the
+        ones on end at once, switched off."""
+        for s in list(self.spans):
+            if name is not None and s["prog"] != name:
+                continue
+            if s["is_on"] and not now_too:
+                continue
+            self.spans.remove(s)
+            if s["is_on"] and not any(o["is_on"] and o["what"] == s["what"] for o in self.spans):
+                self._switch(s["what"], False)
+
+    def switches_status(self) -> list[dict]:
+        return [{"programme": s["prog"], "what": s["what"], "on": s["is_on"],
+                 "from": s["on"].strftime("%H:%M"), "until": s["off"].strftime("%H:%M")} for s in self.spans]
+
     def _times_today(self, p: dict, day: datetime) -> list[datetime]:
         """When an armed programme starts on this day (several, repeating every N minutes)."""
         h, m = map(int, p["start"].split(":"))
@@ -379,10 +475,10 @@ class Scheduler:
 
     def _auto_start(self, now: datetime) -> None:
         for p in self.programmes:
-            if not p["auto"] or not p["blocks"]:
+            if not p["auto"] or not (p["blocks"] or p.get("switches")):
                 continue
-            moments = self._moments_only(p)
-            lead = MOMENT_LEAD if moments else timedelta(0)
+            moments = self._overlay(p)
+            lead = MOMENT_LEAD if moments and p["blocks"] else timedelta(0)   # (the voice is slow; a switch isn't)
             for due in self._times_today(p, now) + self._times_today(p, now + timedelta(days=1)):
                 if p["days"] and due.weekday() not in p["days"]:
                     continue
@@ -408,6 +504,7 @@ class Scheduler:
                 if moments:                   # a talking clock and the like: over whatever's on
                     for b in p["blocks"]:
                         self._instants(b, due)
+                    self._arm_switches(p, due)
                     continue
                 self.play(p["name"])
                 if self.wake:

@@ -427,9 +427,16 @@ The cards:
   on (it never stops another programme, and can't clash with one); its
   moments all happen at each of its starts, and the timeline shows them there.
   Anything
-  a button can do goes in a programme too: the button's switches go in as
-  **on or off** (*Noise on*, *DJ off*: flip one with → on / → off on its block,
-  as a switch at a set time could go either way), a sleep timer already
+  a button can do goes in a programme too. **Noise** and **the DJ** go in as
+  **switches**: dropped on a programme, each is a bar in its own lane under the
+  running order (dropped on a block, it covers that block). Drag the bar to
+  move it, or drag either end to stretch it. It switches **on at the bar's
+  start and off at its end**, whatever it was before, beside the blocks rather
+  than taking a turn (the noise can run over two albums). A programme of only
+  a switch (noise 22:00-23:00) plays over whatever's on. A bar that has
+  started runs to its end even if something else is chosen; one not yet
+  started is dropped. *■ Stop* switches them off at once. (Older programmes'
+  *Noise on*/*DJ off* moments still work as before.) A sleep timer already
   counting down is left alone, and a programme dropped onto another plays
   next (its *then*). Stations and podcasts are found
   and followed from their windows (*Find a station*, *Follow a podcast*) and
