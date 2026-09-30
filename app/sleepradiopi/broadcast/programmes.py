@@ -198,6 +198,13 @@ def validate(programmes) -> list[dict]:
             raise ValueError(f"{name}: up to {MAX_SWITCHES} switches")
         if switches:
             entry["switches"] = [_switch(w) for w in switches]
+            first = min(w["from"] for w in entry["switches"])
+            if not entry["blocks"] and first:   # only switches: it starts when the first one does
+                h, m = map(int, entry["start"].split(":"))
+                t = (h * 60 + m + first) % 1440
+                entry["start"] = f"{t // 60:02d}:{t % 60:02d}"
+                for w in entry["switches"]:
+                    w["from"] -= first
         if p.get("wake") is False:
             entry["wake"] = False
         every = p.get("every")

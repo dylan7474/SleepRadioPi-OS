@@ -6,6 +6,7 @@ nothing more. No auth: meant for a trusted LAN only.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 from http.cookies import SimpleCookie
@@ -40,6 +41,7 @@ log = logging.getLogger(__name__)
 
 PAGE = (Path(__file__).parent / "page.html").read_bytes()
 DESKTOP = (Path(__file__).parent / "desktop.html").read_bytes()   # the new desktop page (for computers)
+DESKTOP_TAG = hashlib.sha1(DESKTOP).hexdigest()[:12]   # an open desktop page that sees this change reloads itself
 # The speaker analyser (also on GitHub Pages): served here too, for tuning with no internet.
 ANALYSER = (Path(__file__).parent / "analyser" / "index.html").read_bytes()
 KEY_HELD_MAX_S = 30  # a page's button held longer than this is let go (a lost "up")
@@ -214,6 +216,7 @@ def make_handler(station: Station, output: Mp3Output, speaker=None,
                 status["buttons_bank"] = presets.bank if presets is not None else None
                 status["stream"] = output is not None and output.enabled
                 status["version"] = updater_mod.this_version()
+                status["desktop"] = DESKTOP_TAG
                 self._send(json.dumps(status).encode(), "application/json")
             elif path == "/api/settings" and config_file is not None:
                 self._save_settings()

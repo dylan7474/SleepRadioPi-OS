@@ -359,8 +359,10 @@ def test_repeating_every_needs_a_proper_interval() -> None:
 
 
 def test_switches_validate() -> None:
-    ok = programmes.validate([{"name": "A", "switches": [{"what": "noise", "from": 30, "min": 90}]}, {"name": "B", "switches": []}])
+    ok = programmes.validate([{"name": "A", "blocks": [{"items": [R4]}], "switches": [{"what": "noise", "from": 30, "min": 90}]}, {"name": "B", "switches": []}])
     assert ok[0]["switches"] == [{"what": "noise", "from": 30, "min": 90}] and "switches" not in ok[1]
+    only = programmes.validate([{"name": "N", "start": "19:07", "switches": [{"what": "noise", "from": 173, "min": 540}, {"what": "dj", "from": 180, "min": 5}]}])[0]
+    assert only["start"] == "22:00" and only["switches"] == [{"what": "noise", "from": 0, "min": 540}, {"what": "dj", "from": 7, "min": 5}]   # starts with its first switch
     for bad in ({"what": "lights"}, {"what": "dj", "min": 0}, {"what": "dj", "from": -1}, {"what": "noise", "min": True}):
         with pytest.raises(ValueError):
             programmes.validate([{"name": "A", "switches": [bad]}])

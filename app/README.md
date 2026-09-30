@@ -433,9 +433,16 @@ The cards:
   move it, or drag either end to stretch it. It switches **on at the bar's
   start and off at its end**, whatever it was before, beside the blocks rather
   than taking a turn (the noise can run over two albums). A programme of only
-  a switch (noise 22:00-23:00) plays over whatever's on. A bar that has
+  switches (noise 22:00-07:00) plays over whatever's on, and **starts when its
+  first bar does** (move the bar and the programme's time follows; its window
+  says "Armed: noise on 22:00 → 07:00 · today only", fades the *then* and
+  *gaps* choices it doesn't use, and it doesn't end programme mode's quiet). In
+  a programme with blocks a bar can't start before the programme does. A
+  dashed amber line marks **midnight** on the timeline, with the next day's
+  name. A bar that has
   started runs to its end even if something else is chosen; one not yet
-  started is dropped. *■ Stop* switches them off at once. (Older programmes'
+  started is dropped. *■ Stop* switches them off at once. An open desktop
+  page reloads itself when the radio has been updated with a new one. (Older programmes'
   *Noise on*/*DJ off* moments still work as before.) A sleep timer already
   counting down is left alone, and a programme dropped onto another plays
   next (its *then*). Stations and podcasts are found
