@@ -46,6 +46,7 @@
     color-scheme: dark;
   }
   * { box-sizing: border-box; }
+  [hidden] { display: none !important; }
   html, body { height: 100%; }
   body { margin: 0; background: var(--desk); color: var(--ink); font: 13px/1.4 var(--body); overflow: hidden; user-select: none; -webkit-user-select: none; }
   button, input, select { font: inherit; color: inherit; }
@@ -319,6 +320,11 @@
 </style>
 <style>
   .frame { flex: 1; border: 0; width: 100%; background: var(--win); }
+  .menu { position: relative; }
+  .drop { position: absolute; left: 0; top: 26px; min-width: 230px; background: var(--win); border: 1px solid var(--menubar-line); border-radius: 8px;
+          box-shadow: 0 12px 30px var(--shadow); padding: 4px; display: grid; z-index: 1001; }
+  .drop button { text-align: left; border: 0; background: none; padding: 6px 10px; border-radius: 5px; color: var(--ink); }
+  .drop button:hover, .drop button:focus-visible { background: var(--amber); color: var(--amber-ink); }
   .chipx .glyph svg, .blk .bi .glyph svg { inset: 2px; width: calc(100% - 4px); height: calc(100% - 4px); }
   .classic { color: var(--dim) !important; }
   .login { position: fixed; inset: 0; z-index: 4000; display: grid; place-items: center; background: #0007; }
@@ -336,6 +342,18 @@
 <body>
 <header class="menubar">
   <span class="logo" id="logo">SLEEP <span>RADIO</span></span>
+  <span class="menu"><button class="m" type="button" id="newMenu" aria-haspopup="true" aria-expanded="false">New</button>
+    <span class="drop" id="newDrop" hidden>
+      <button type="button" data-new="programme">Programme</button>
+      <button type="button" data-new="playlist">Playlist</button>
+      <button type="button" data-new="message">Message for the DJ to read</button>
+      <button type="button" data-new="birthday">Birthday</button>
+      <button type="button" data-new="list">Artist list</button>
+      <button type="button" data-new="folder-music">Folder in Music</button>
+      <button type="button" data-new="folder-ondemand">Folder in On demand</button>
+      <button type="button" data-new="station">Station…</button>
+      <button type="button" data-new="podcast">Podcast…</button>
+    </span></span>
   <button class="m" type="button" data-open="root:music">Music</button>
   <button class="m" type="button" data-open="root:ondemand">On demand</button>
   <button class="m" type="button" data-open="box:programmes">Programmes</button>
@@ -474,7 +492,7 @@ async function loadAlbum(a) {
 }
 async function loadEpisodes(p) {
   const d = await api(`/api/podcasts/episodes?id=${encodeURIComponent(p.pid)}`);
-  p.eps = d.episodes.map(e => mk({ id: `ep:${p.pid}:${e.guid}`, kind: "episode", pid: p.pid, guid: e.guid, title: e.title, min: e.duration_ms ? e.duration_ms / 60000 : null, h: p.h, done: e.done }).id);
+  p.eps = d.episodes.map(e => mk({ id: `ep:${p.pid}:${e.guid}`, kind: "episode", pid: p.pid, guid: e.guid, gid: e.gid, title: e.title, min: e.duration_ms ? e.duration_ms / 60000 : null, h: p.h, done: e.done }).id);
   p.loaded = true;
 }
 async function loadPlaylists(d) {
@@ -486,7 +504,7 @@ async function loadPlaylists(d) {
 async function loadProgrammes(d) {
   d = d || await api("/api/programmes");
   PROGRAMMES.kids = d.programmes.map(p => mk({ id: "pg:" + p.name.toLowerCase(), kind: "programme", title: p.name, start: p.start, auto: p.auto, days: p.days,
-    then: p.then, blocks: p.blocks.map(b => ({ ...b, items: b.items.map(refObj).filter(Boolean).map(o => o.id) })) }).id);
+    then: p.then, chain: p.chain, gap: typeof p.gap === "object" ? { id: refObj(p.gap)?.id } : p.gap || "show", blocks: p.blocks.map(b => ({ ...b, items: b.items.map(refObj).filter(Boolean).map(o => o.id) })) }).id);
   PROGRAMMES.loaded = true;
 }
 // a programme's saved things <-> the objects on the desktop
@@ -501,9 +519,15 @@ function refObj(r) {
     case "episode": return O[`ep:${r.show}:${r.guid}`] || mk({ id: `ep:${r.show}:${r.guid}`, kind: "episode", pid: r.show, guid: r.guid, title: "An episode" });
     case "show": return SHOW;
     case "list": return O["ls:" + r.name] || mk({ id: "ls:" + r.name, kind: "list", name: r.name, title: r.name });
+    case "message": return messageObj(r.text);
+    case "jingle": return O["j:" + r.path] || mk({ id: "j:" + r.path, kind: "jingle", title: cleanName(r.path), root: "jingles", path: r.path });
+    case "action": return ACTION[r.action];
   }
   return null;
 }
+const messageObj = text => mk({ id: "msg:" + hue(text) + ":" + text.length, kind: "message", title: text.length > 38 ? text.slice(0, 36) + "…" : text, text });
+const ACTION = Object.fromEntries([["time", "Time check", "◷"], ["news", "The news", "N"], ["sleep", "Sleep timer", "☾"]]
+  .map(([a, title, sym]) => [a, mk({ id: "act:" + a, kind: "action", action: a, title, sym, h: 200 })]));
 function objRef(o) {
   if (!o) return null;
   if (o.kind === "album") return { kind: "album", root: o.root, folder: o.path };
@@ -516,8 +540,12 @@ function objRef(o) {
   if (o.kind === "episode") return { kind: "episode", show: o.pid, guid: o.guid };
   if (o.kind === "show") return { kind: "show" };
   if (o.kind === "list") return { kind: "list", name: o.name };
+  if (o.kind === "message") return { kind: "message", text: o.text };
+  if (o.kind === "jingle") return { kind: "jingle", path: o.path };
+  if (o.kind === "action") return { kind: "action", action: o.action };
   return null;
 }
+const INSTANT = ["message", "jingle", "action"];
 const lenOf = o => o.min != null && ["album", "folder", "track", "playlist"].includes(o.kind) ? o.min : o.kind === "album" ? (o.tracks ? o.tracks.length : o.count || 10) * TRACK_MIN
   : o.kind === "folder" && o.root ? (o.count || 10) * TRACK_MIN : o.kind === "track" ? TRACK_MIN
   : o.kind === "playlist" ? o.items.length * TRACK_MIN : ["book", "episode", "sound"].includes(o.kind) ? o.min ?? 30 : null;
@@ -541,7 +569,8 @@ function timeline(p) {
   return p.blocks.map(b => {
     const start = b.rule === "at" ? Math.max(toMin(b.at), now) : now;
     const contents = b.items.map(id => O[id] && lenOf(O[id])).filter(n => n != null);
-    const len = b.rule === "for" || b.rule === "at" ? (b.min || 60)
+    const moment = b.items.length && b.items.every(id => INSTANT.includes(O[id]?.kind));
+    const len = moment ? 1 : b.rule === "for" || b.rule === "at" ? (b.min || 60)
               : b.rule === "until" ? Math.max(1, (toMin(b.until) - start + 1440) % 1440)
               : contents.length ? contents.reduce((a, n) => a + n, 0) : 60;
     now = start + len;
@@ -553,7 +582,7 @@ function timeline(p) {
 const $ = id => document.getElementById(id);
 const el = (tag, props = {}, ...kids) => { const e = Object.assign(document.createElement(tag), props); e.append(...kids.filter(k => k != null)); return e; };
 const KIND = { folder: "Folder", album: "Album", track: "Track", station: "Station", podcast: "Podcast", episode: "Episode", book: "Audiobook",
-               playlist: "Playlist", programme: "Programme", list: "Artist list", jingle: "Jingle", show: "The show", trash: "Trash", panel: "Setting", dj: "The DJ", note: "Messages", calendar: "Birthdays" };
+               playlist: "Playlist", programme: "Programme", list: "Artist list", jingle: "Jingle", message: "Message", action: "Action", show: "The show", trash: "Trash", panel: "Setting", dj: "The DJ", note: "Messages", calendar: "Birthdays" };
 const TINT = { album: 30, track: 45, station: 8, podcast: 275, episode: 265, book: 150, playlist: 215, programme: 40, list: 195, show: 40, folder: 40 };
 function wave(seed) {
   let x = hue(seed), bars = "";
@@ -583,6 +612,8 @@ function glyph(o) {
     }
     case "list": g.className += " g-list"; g.textContent = initials(o.title); break;
     case "jingle": g.className += " g-sound"; g.innerHTML = wave(o.title); break;
+    case "message": g.className += " g-note"; g.textContent = o.text; break;
+    case "action": g.className += " g-panel"; g.textContent = o.sym; break;
     case "show": g.className += " g-show"; g.textContent = "SLEEP\nRADIO"; g.style.whiteSpace = "pre"; break;
     case "trash": g.className += " g-trash" + (o.kids.length ? " full" : ""); break;
     case "panel": g.className += " g-panel"; g.textContent = o.sym; break;
@@ -605,6 +636,8 @@ function subOf(o) {
     case "folder": return o.root && o.path ? `${o.count || 0} tracks` : "";
     case "list": return o.count ? `${o.count} artist${o.count === 1 ? "" : "s"}` : "";
     case "jingle": return o.mb ? `${o.mb.toFixed(1)} MB` : "";
+    case "message": return "The DJ says it";
+    case "action": return "At that moment";
     case "show": return "with the DJ";
   }
   return "";
@@ -786,6 +819,7 @@ function presetOf(o) {
     case "folder": return o.root && o.path ? { kind: "album", folder: o.path, title: o.title, artist: "", deep: true, ...(o.root === "ondemand" ? { root: "ondemand" } : {}) } : null;
     case "book": return { kind: "book", key: o.key, title: o.title };
     case "podcast": return { kind: "podcast", show: o.pid, title: o.title };
+    case "episode": return o.gid ? { kind: "podcast", show: o.pid, title: O["pod:" + o.pid]?.title || "Podcast", start: o.gid, start_title: o.title } : null;
     case "playlist": return { kind: "playlist", name: o.name, shuffle: false };
     case "programme": return { kind: "programme", name: o.title };
   }
@@ -794,7 +828,8 @@ function presetOf(o) {
 async function setPreset(i, o) {
   const preset = presetOf(o);
   if (!preset) return toast(`A button can't hold a single ${KIND[o.kind].toLowerCase()}: try its album, show or a playlist.`);
-  try { buttons = (await api("/api/buttons", { button: i + 1, preset })).buttons; updateRadio(); toast(`Button ${i + 1} now plays “${o.title}”.`); }
+  try { buttons = (await api("/api/buttons", { button: i + 1, preset })).buttons; updateRadio();
+        toast(o.kind === "episode" ? `Button ${i + 1}: ${preset.title}, starting from “${o.title}”, then on through the newer ones.` : `Button ${i + 1} now plays “${o.title}”.`); }
   catch (e) { toast("Not changed: " + e.message + "."); }
 }
 
@@ -1236,7 +1271,10 @@ const UI = {
         const ta = el("textarea", { className: "notearea", value: n.text, id: "note-" + i, style: `width:220px;min-height:120px;transform:rotate(${(i % 3 - 1) * 1.2}deg);opacity:${n.off ? .5 : 1}` });
         ta.setAttribute("aria-label", "Message " + (i + 1));
         ta.onchange = () => save({ list: m.list.map((x, j) => j === i ? { ...x, text: ta.value } : x) });
-        board.append(el("div", { style: "display:grid;gap:4px" }, ta, line(sbtn(n.off ? "Turn on" : "Pause", () => save({ list: m.list.map((x, j) => j === i ? { ...x, off: !x.off } : x) })),
+        const handle = el("span", { className: "muted", textContent: "⠿ drag into a programme", title: "Drag this note onto a programme's timeline, or onto one of its blocks",
+                                    style: "cursor:grab;touch-action:none;font-size:11px" });
+        handle.addEventListener("pointerdown", e => press(e, handle, { id: messageObj(n.text).id, where: "notes" }));
+        board.append(el("div", { style: "display:grid;gap:4px" }, ta, handle, line(sbtn(n.off ? "Turn on" : "Pause", () => save({ list: m.list.map((x, j) => j === i ? { ...x, off: !x.off } : x) })),
           sbtn("Hear it", () => act(() => api("/api/messages/hear", { text: ta.value }))), sbtn("✕", () => ask("Delete this message?", "Delete", () => save({ list: m.list.filter((_, j) => j !== i) }))))));
       });
       board.append(el("button", { className: "sbtn", type: "button", textContent: "＋ New note", style: "width:220px;min-height:120px;border-style:dashed", onclick: () => save({ list: [...m.list, { text: "A new message" }] }) }));
@@ -1343,6 +1381,7 @@ async function saveProgrammes(note) {
   const progs = PROGRAMMES.kids.map(id => O[id]).filter(Boolean);
   try {
     const d = await api("/api/programmes", { programmes: progs.map(p => ({ name: p.title, start: p.start, auto: !!p.auto, days: p.days || [], then: p.then || "show",
+      gap: p.gap && typeof p.gap === "object" ? (objRef(O[p.gap.id]) || "show") : p.gap || "show", ...(p.then === "chain" ? { chain: p.chain } : {}),
       blocks: p.blocks.map(b => ({ name: b.name, rule: b.rule, order: b.order || "inorder", ...(b.rule === "for" || b.rule === "at" ? { min: b.min || 60 } : {}),
         ...(b.rule === "at" ? { at: b.at } : {}), ...(b.rule === "until" ? { until: b.until } : {}), items: b.items.map(id => objRef(O[id])).filter(Boolean) })) })) });
     const open_ = W.map(w => w.id);
@@ -1388,8 +1427,15 @@ function programmeView(o, box, win) {
   startIn.onchange = () => { o.start = startIn.value; saveProgrammes(); };
   const then = el("select", { id: "then-" + o.id });
   then.setAttribute("aria-label", "When it's over");
-  for (const [v, s] of [["show", "then back to Sleep Radio"], ["sleep", "then fade out and pause"], ["repeat", "then start again"]]) then.append(new Option(s, v, false, o.then === v));
-  then.onchange = () => { o.then = then.value; saveProgrammes(); };
+  for (const [v, s] of [["show", "then back to Sleep Radio"], ["stop", "then stop (silence)"], ["sleep", "then fade out and pause"], ["repeat", "then start again"], ["keep", "then leave what's playing"]])
+    then.append(new Option(s, v, false, o.then === v));
+  for (const q of PROGRAMMES.kids.map(id => O[id]).filter(q => q && q !== o)) then.append(new Option("then play " + q.title, "chain:" + q.title, false, o.then === "chain" && (o.chain || "").toLowerCase() === q.title.toLowerCase()));
+  then.onchange = () => { if (then.value.startsWith("chain:")) { o.then = "chain"; o.chain = then.value.slice(6); } else { o.then = then.value; delete o.chain; } saveProgrammes(); };
+  const gapSel = el("select", { id: "gap-" + o.id });
+  gapSel.setAttribute("aria-label", "In the gaps");
+  const gapObj = o.gap && typeof o.gap === "object" ? O[o.gap.id] : null;
+  for (const [v, t] of [["show", "gaps: Sleep Radio"], ["silence", "gaps: silence"], ["pick", gapObj ? "gaps: " + gapObj.title : "gaps: something else…"]]) gapSel.append(new Option(t, v, false, (gapObj ? "pick" : o.gap || "show") === v));
+  gapSel.onchange = () => { if (gapSel.value === "pick") { win.gapPick = true; drawDesk(); toast("Drop a station, album, playlist… onto the box that appeared, to play in the gaps."); } else { o.gap = gapSel.value; win.gapPick = false; saveProgrammes(); } };
   const auto = el("button", { className: "pill", type: "button", textContent: o.auto ? "Starts by itself" : "Only when played" });
   auto.setAttribute("aria-pressed", String(!!o.auto));
   auto.onclick = () => { o.auto = !o.auto; saveProgrammes(o.auto ? `${o.title} starts by itself at ${o.start}${(o.days || []).length ? " on its days" : " every day"}.` : ""); };
@@ -1399,7 +1445,15 @@ function programmeView(o, box, win) {
   const playing = !!run;
   box.append(el("div", { className: "wtools" },
     playing ? T("■ Stop", async () => { await api("/api/programmes/stop", {}); poll(); drawDesk(); }, "primary") : T("▶ Play now", () => play(o), "primary", !o.blocks.length),
-    nameIn, el("span", { className: "muted", textContent: "starts" }), startIn, auto, o.auto ? days : null, then));
+    nameIn, el("span", { className: "muted", textContent: "starts" }), startIn, auto, o.auto ? days : null, then, gapSel,
+    T("＋ Moment", () => { const tl2 = timeline(o), end = tl2.length ? tl2[tl2.length - 1].end : toMin(o.start);
+      o.blocks.push({ name: "A moment", items: [], rule: "at", at: hhmm(Math.ceil((end + 1) / 15) * 15), min: 1, order: "inorder" }); win.blk = o.blocks.length - 1; saveProgrammes("A moment: add a message, a jingle or an action to it below."); })));
+  if (win.gapPick || gapObj) {
+    const zone = el("div", { className: "insp", style: "margin:8px 14px 0;border-style:dashed" }, el("span", { className: "muted", textContent: gapObj ? "In the gaps: " : "Drop something here to play in the gaps" }),
+      gapObj ? el("span", { className: "chipx" }, glyph(gapObj), gapObj.title) : null);
+    zone.dataset.drop = "gapzone"; zone.dataset.target = o.id;
+    box.append(zone);
+  }
   const body = el("div", { className: "wbody" });
   const wrap = el("div", { className: "prog" });
   const lo = tl.length ? Math.floor(tl[0].start / 30) * 30 : toMin(o.start);
@@ -1424,7 +1478,7 @@ function programmeView(o, box, win) {
     const grab = el("div", { className: "grab", title: "Drag to change how long" });
     grab.addEventListener("pointerdown", e => stretch(e, o, i, px));
     blk.append(grab);
-    blk.addEventListener("pointerdown", e => { if (e.target === grab) return; win.blk = i; pressBlock(e, blk, o, i, win); });
+    blk.addEventListener("pointerdown", e => { if (e.target === grab) return; win.blk = i; pressBlock(e, blk, o, i, win, px, lo); });
     lane.append(blk);
   });
   if (run) {
@@ -1449,7 +1503,11 @@ function inspector(o, b, win) {
   for (const [v, s] of [["for", "Play for"], ["until", "Play until"], ["end", "Play until it ends"], ["at", "Start at, sharp"]]) rule.append(new Option(s, v, false, b.rule === v));
   const tl = timeline(o)[i];
   rule.onchange = () => { b.rule = rule.value; if (b.rule === "until" && !b.until) b.until = hhmm(tl.end); if (b.rule === "at" && !b.at) b.at = hhmm(tl.start); if (!b.min) b.min = 60; saveProgrammes(); };
-  const line1 = el("div", { className: "line" }, name, rule);
+  const startAt = el("input", { type: "time", value: hhmm(tl.start), id: `st-${o.id}-${i}`, title: "When it starts" });
+  startAt.setAttribute("aria-label", "Starts at");
+  startAt.onchange = () => setBlockStart(o, i, toMin(startAt.value), win);
+  const moment = b.items.length && b.items.every(id => INSTANT.includes(O[id]?.kind));
+  const line1 = el("div", { className: "line" }, name, el("span", { className: "muted", textContent: moment ? "happens at" : "starts" }), startAt, moment ? null : rule);
   if (b.rule === "at") { const at = el("input", { type: "time", value: b.at, id: `at-${o.id}-${i}` }); at.setAttribute("aria-label", "At"); at.onchange = () => { b.at = at.value; saveProgrammes(); }; line1.append(at, el("span", { className: "muted", textContent: "for" })); }
   if (b.rule === "for" || b.rule === "at") { const m = el("select", { id: `min-${o.id}-${i}` }); m.setAttribute("aria-label", "For");
     const MINS = [1, 3, 5, 10, 15, 30, 45, 60, 90, 120, 180, 240];
@@ -1457,17 +1515,25 @@ function inspector(o, b, win) {
     m.onchange = () => { b.min = +m.value; saveProgrammes(); }; line1.append(m); }
   if (b.rule === "until") { const u = el("input", { type: "time", value: b.until, id: `until-${o.id}-${i}` }); u.setAttribute("aria-label", "Until"); u.onchange = () => { b.until = u.value; saveProgrammes(); }; line1.append(u); }
   const line2 = el("div", { className: "line" });
-  for (const [v, s] of [["inorder", "In order"], ["shuffle", "Shuffle"]]) { const p = el("button", { className: "pill", type: "button", textContent: s }); p.setAttribute("aria-pressed", String((b.order || "inorder") === v)); p.onclick = () => { b.order = v; saveProgrammes(); }; line2.append(p); }
+  if (moment) line2.append(el("span", { className: "muted", textContent: "A moment: the DJ says it or it's done at that time, over what's playing, then the programme carries on." }));
+  else for (const [v, s] of [["inorder", "In order"], ["shuffle", "Shuffle"]]) { const p = el("button", { className: "pill", type: "button", textContent: s }); p.setAttribute("aria-pressed", String((b.order || "inorder") === v)); p.onclick = () => { b.order = v; saveProgrammes(); }; line2.append(p); }
   const dj = b.items.some(id => ["album", "track", "playlist", "folder"].includes(O[id]?.kind) && O[id]?.root !== "ondemand") || b.items.some(id => ["list", "show"].includes(O[id]?.kind));
-  line2.append(el("span", { className: "muted", textContent: dj ? "The DJ follows your DJ setting" : "No DJ over stations, books, podcasts or On demand" }));
+  if (!moment) line2.append(el("span", { className: "muted", textContent: dj ? "The DJ follows your DJ setting" : "No DJ over stations, books, podcasts or On demand" }));
   const del = el("button", { className: "pill", type: "button", textContent: "Delete block", style: "margin-left:auto" });
   del.onclick = () => { o.blocks.splice(i, 1); win.blk = Math.max(0, i - 1); saveProgrammes(); };
   line2.append(del);
   const line3 = el("div", { className: "line" });
   b.items.forEach(id => { const it = O[id]; if (!it) return; const x = el("button", { type: "button", textContent: "✕", title: "Take it out" }); x.onclick = () => { b.items = b.items.filter(v => v !== id); saveProgrammes(); };
     line3.append(el("span", { className: "chipx" }, glyph(it), it.title, x)); });
-  if (!b.items.length) line3.append(el("span", { className: "muted", textContent: "Empty: drop things onto the block." }));
-  return el("div", { className: "insp" }, line1, line2, line3);
+  if (!b.items.length) line3.append(el("span", { className: "muted", textContent: "Empty: drop things onto the block (empty, it plays what the gaps do)." }));
+  const say = el("input", { type: "text", placeholder: "Something for the DJ to say", id: `say-${o.id}-${i}`, style: "flex:1;min-width:10em" });
+  const addItem = it => { b.items.push(it.id); saveProgrammes(`Added “${it.title}” to “${b.name}”.`); };
+  const sayBtn = el("button", { className: "pill", type: "button", textContent: "＋ Say it" });
+  sayBtn.onclick = () => say.value.trim() && addItem(messageObj(say.value.trim()));
+  say.onkeydown = e => { if (e.key === "Enter") sayBtn.click(); };
+  const line4 = el("div", { className: "line" }, say, sayBtn, ...Object.values(ACTION).map(a => Object.assign(el("button", { className: "pill", type: "button", textContent: "＋ " + a.title }), { onclick: () => addItem(a) })),
+    el("span", { className: "muted", textContent: "Jingles: drag one from the Jingles folder" }));
+  return el("div", { className: "insp" }, line1, line2, line3, line4);
 }
 
 // ============ pointer: select, open, drag and drop ============
@@ -1514,11 +1580,19 @@ async function drop(src, target, ev) {
   if (!dest) return;
   if (dest.kind === "trash") return trash(src);
   if (dest.kind === "playlist") return addToPlaylist(dest, o);
+  if (kind === "gapzone" && dest.kind === "programme") {
+    if (!objRef(o) || INSTANT.includes(o.kind)) return toast("The gaps need something that plays: a station, an album, a playlist…");
+    dest.gap = { id: o.id }; const w = W.find(w => w.id === dest.id); if (w) w.gapPick = false;
+    return saveProgrammes(`In the gaps: ${o.title}.`);
+  }
   if (dest.kind === "programme") {
     if (!objRef(o)) return toast(`“${o.title}” can't go in a programme.`);
     await fetchLengths([o]);                         // its real running time, from the radio
     if (kind === "blk") { const b = dest.blocks[+target.dataset.i]; if (!b.items.includes(o.id)) b.items.push(o.id); await saveProgrammes(`Added “${o.title}” to “${b.name}”.`); }
-    else { dest.blocks.push({ name: o.title.slice(0, 40), items: [o.id], rule: lenOf(o) == null ? "for" : "end", min: 60, order: "inorder" });
+    else if (INSTANT.includes(o.kind)) { const tl2 = timeline(dest), end = tl2.length ? tl2[tl2.length - 1].end : toMin(dest.start);
+           dest.blocks.push({ name: o.title.slice(0, 40), items: [o.id], rule: "at", at: hhmm(Math.round(end)), min: 1, order: "inorder" });
+           const w = W.find(w => w.id === dest.id); if (w) w.blk = dest.blocks.length - 1; await saveProgrammes(`A moment: “${o.title}”. Set its time below, or drag it along the timeline.`); }
+    else { dest.blocks.push({ name: o.title.slice(0, 40), items: [o.id], rule: lenOf(o) != null ? "end" : "for", min: 60, order: "inorder" });
            const w = W.find(w => w.id === dest.id); if (w) w.blk = dest.blocks.length - 1; await saveProgrammes(`New block: “${o.title}”.`); }
     return;
   }
@@ -1577,18 +1651,30 @@ function trash(src) {
   toast(`“${o.title}” can't go in the Trash.`);
 }
 function closeFor(o) { for (let i = W.length - 1; i >= 0; i--) if (W[i].id === o.id) W.splice(i, 1); desk = desk.filter(p => p.id !== o.id); saveDesk(); drawDesk(); }
-function pressBlock(e, blkEl, prog, i, win) {
+function setBlockStart(prog, i, startMin, win) {
+  const tl = timeline(prog), b = prog.blocks[i];
+  if (i === 0 && b.rule !== "at") { prog.start = hhmm(startMin); return saveProgrammes(`${prog.title} starts at ${prog.start}.`); }
+  const len = Math.max(1, Math.round(tl[i].len));
+  b.min = b.rule === "for" || b.rule === "at" ? (b.min || len) : len;
+  b.rule = "at"; b.at = hhmm(startMin);
+  // keep the running order in time order
+  const order = prog.blocks.map((x, k) => ({ x, t: k === i ? startMin + (startMin < toMin(prog.start) ? 1440 : 0) : tl[k].start }));
+  order.sort((a, c) => a.t - c.t);
+  prog.blocks = order.map(o => o.x);
+  win.blk = prog.blocks.indexOf(b);
+  saveProgrammes(`“${b.name}” starts at ${b.at}.`);
+}
+function pressBlock(e, blkEl, prog, i, win, px, lo) {
   e.stopPropagation();
   const x0 = e.clientX; let moved = false;
   blkEl.setPointerCapture?.(e.pointerId);
-  const blocks = [...blkEl.parentElement.querySelectorAll(".blk")];
-  const move = ev => { if (Math.abs(ev.clientX - x0) > 5) { moved = true; blkEl.style.transform = `translateX(${ev.clientX - x0}px)`; blkEl.style.zIndex = 5; } };
+  const left0 = parseFloat(blkEl.style.left) || 0, step = px >= 6 ? 1 : px >= 2 ? 5 : 15;
+  const at = ev => Math.round((lo + (left0 + ev.clientX - x0) / px) / step) * step;
+  const move = ev => { if (Math.abs(ev.clientX - x0) > 5) { moved = true; blkEl.style.transform = `translateX(${ev.clientX - x0}px)`; blkEl.style.zIndex = 5; blkEl.title = "Starts " + hhmm(at(ev)); blkEl.querySelector(".bw").textContent = "starts " + hhmm(at(ev)); } };
   const up = ev => {
     blkEl.removeEventListener("pointermove", move); blkEl.removeEventListener("pointerup", up);
     if (!moved) return drawDesk();
-    const xs = blocks.map(b => b.getBoundingClientRect()).map(r => r.left + r.width / 2);
-    let to = xs.filter(x => x < ev.clientX).length; if (to > i) to--;
-    const [b] = prog.blocks.splice(i, 1); prog.blocks.splice(to, 0, b); win.blk = to; saveProgrammes();
+    setBlockStart(prog, i, at(ev), win);
   };
   blkEl.addEventListener("pointermove", move); blkEl.addEventListener("pointerup", up);
 }
@@ -1634,6 +1720,26 @@ document.querySelectorAll("[data-open]").forEach(b => b.onclick = () => open(b.d
 $("tidy").onclick = () => { desk.forEach((p, i) => { p.x = 18 + Math.floor(i / 7) * 128; p.y = 14 + (i % 7) * 96; }); saveDesk(); drawDesk(); };
 $("settingsMenu").onclick = () => { if (!radioBack) turnRadio(); toast("Every setting is on the back of the radio. Or click a part of it: the speakers, the knob, the buttons, its name."); };
 $("wifiMenu").onclick = () => open(PANEL.wifi.id);
+// The New menu: make any kind of thing from one place
+function closeNew() { $("newDrop").hidden = true; $("newMenu").setAttribute("aria-expanded", "false"); }
+$("newMenu").onclick = e => { e.stopPropagation(); const open_ = $("newDrop").hidden; $("newDrop").hidden = !open_; $("newMenu").setAttribute("aria-expanded", String(open_)); };
+document.addEventListener("pointerdown", e => { if (!e.target.closest(".menu")) closeNew(); });
+document.querySelectorAll("[data-new]").forEach(b => b.onclick = async () => {
+  closeNew();
+  const what = b.dataset.new;
+  if (what === "programme") return newProgramme();
+  if (what === "playlist") { await newPlaylist(); return open(PLAYLISTS.id); }
+  if (what === "message") {
+    try { const m = await api("/api/messages"); await api("/api/messages", { ...m, list: [...m.list, { text: "A new message" }] }); } catch (e) { return toast(e.message); }
+    W.filter(w => w.id === PANEL.messages.id).forEach(w => { w.data = undefined; });
+    await open(PANEL.messages.id); return toast("A new note: type the message on it. The DJ reads it out at the times set above.");
+  }
+  if (what === "birthday") { await open(PANEL.birthdays.id); setTimeout(() => $("bd-name")?.focus(), 900); return toast("Type their name and day at the bottom, then Add."); }
+  if (what === "list") { await open(PANEL.lists.id); setTimeout(() => $("list-new")?.focus(), 900); return; }
+  if (what.startsWith("folder-")) { const f = what.endsWith("music") ? MUSIC : ONDEMAND; await open(f.id); const w = W.find(w => w.id === f.id); if (w) { w.mkdir = true; drawDesk(); } return; }
+  if (what === "station") return open(PANEL.findstation.id);
+  if (what === "podcast") return open(PANEL.findpodcast.id);
+});
 $("classic").onclick = () => { try { localStorage.setItem("srd.stay", "classic"); } catch {} };
 let tt;
 function toast(msg, sticky) { const t = $("toast"); t.textContent = msg; t.hidden = false; clearTimeout(tt); if (!sticky) tt = setTimeout(() => t.hidden = true, 4500); }

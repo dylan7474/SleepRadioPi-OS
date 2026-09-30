@@ -183,3 +183,66 @@ def test_web_api(tmp_path, monkeypatch) -> None:
             req("/api/programmes/play", {"name": "Nope"})
     finally:
         httpd.shutdown()
+
+
+def _sched_with_hooks(tmp_path, monkeypatch, progs, start=SUNDAY):
+    st, sched, clock, woke, slept = _setup(tmp_path, monkeypatch, progs, start)
+    did = []
+    sched.say = lambda text: did.append(("say", text))
+    sched.jingle = lambda path: did.append(("jingle", path))
+    sched.action = lambda name: did.append(("action", name))
+    sched.pause = lambda: did.append(("pause",))
+    return st, sched, clock, woke, slept, did
+
+
+def test_moments_happen_then_the_programme_goes_on(tmp_path, monkeypatch) -> None:
+    st, sched, clock, woke, _, did = _sched_with_hooks(tmp_path, monkeypatch, [{"name": "P", "blocks": [
+        {"name": "Radio 4", "items": [R4], "rule": "for", "min": 10},
+        {"name": "Dad's note", "items": [{"kind": "message", "text": "Lunch is at half past twelve."}, {"kind": "action", "action": "time"}], "rule": "at", "at": "12:30", "min": 1},
+        {"name": "Beatles", "items": [{"kind": "jingle", "path": "ident.mp3"}, RUBBER], "rule": "for", "min": 20}]}])
+    sched.play("P")
+    clock.go(minutes=30); sched.tick()                  # 12:30: the note, and a time check
+    assert did == [("say", "Lunch is at half past twelve."), ("action", "time")]
+    sched.tick()                                        # a moment: straight on to the next block
+    assert did[-1] == ("jingle", "ident.mp3") and st.playlist_status()["name"] == "Beatles"
+
+
+def test_gaps_can_be_silent_or_filled(tmp_path, monkeypatch) -> None:
+    progs = [{"name": "Quiet", "gap": "silence", "blocks": [
+                {"name": "R4", "items": [R4], "rule": "for", "min": 10},
+                {"name": "Beatles at one", "items": [RUBBER], "rule": "at", "at": "13:00", "min": 30}]},
+             {"name": "Filled", "gap": R4, "blocks": [
+                {"name": "Empty hour", "items": [], "rule": "for", "min": 60}]}]
+    st, sched, clock, woke, _, did = _sched_with_hooks(tmp_path, monkeypatch, progs)
+    sched.play("Quiet")
+    clock.go(minutes=10); sched.tick()
+    assert did == [("pause",)] and sched.status()["waiting"] is True
+    clock.go(minutes=50); sched.tick()
+    assert woke == [1] and st.playlist_status()["name"] == "Beatles at one"   # sound again for the next block
+    sched.play("Filled")                                                      # an empty block: the gap's choice
+    assert st.source["name"] == "BBC Radio 4"
+
+
+def test_when_its_over_stop_keep_or_chain(tmp_path, monkeypatch) -> None:
+    progs = [{"name": "A", "then": "chain", "chain": "B", "blocks": [{"name": "R4", "items": [R4], "rule": "for", "min": 5}]},
+             {"name": "B", "then": "stop", "blocks": [{"name": "Beatles", "items": [RUBBER], "rule": "for", "min": 5}]},
+             {"name": "C", "then": "keep", "blocks": [{"name": "R4", "items": [R4], "rule": "for", "min": 5}]}]
+    st, sched, clock, woke, _, did = _sched_with_hooks(tmp_path, monkeypatch, progs)
+    sched.play("A")
+    clock.go(minutes=5); sched.tick()
+    assert sched.run["name"] == "B" and st.playlist_status()["name"] == "Beatles"
+    clock.go(minutes=5); sched.tick()
+    assert sched.run is None and did == [("pause",)]
+    sched.play("C")
+    clock.go(minutes=5); sched.tick()
+    assert sched.run is None and st.source["name"] == "BBC Radio 4"           # left playing
+
+
+def test_validate_the_new_things() -> None:
+    ok = programmes.validate([{"name": "P", "gap": {"kind": "station", "name": "R3", "url": "http://example.com/r3"}, "then": "chain", "chain": "Bedtime",
+                               "blocks": [{"items": [{"kind": "message", "text": " Hello "}, {"kind": "action", "action": "news"}, {"kind": "jingle", "path": "a.mp3"}]}]}])
+    assert ok[0]["chain"] == "Bedtime" and ok[0]["gap"]["kind"] == "station" and ok[0]["blocks"][0]["items"][0]["text"] == "Hello"
+    for bad in ([{"name": "P", "then": "chain"}], [{"name": "P", "gap": {"kind": "message", "text": "x"}}],
+                [{"name": "P", "blocks": [{"items": [{"kind": "action", "action": "explode"}]}]}], [{"name": "P", "gap": "loud"}]):
+        with pytest.raises(ValueError):
+            programmes.validate(bad)

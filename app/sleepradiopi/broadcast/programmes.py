@@ -42,8 +42,12 @@ MAX_BLOCKS = 40
 MAX_ITEMS = 50
 NAME_MAX = 40
 RULES = ("for", "until", "end", "at")
-THENS = ("show", "sleep", "repeat")
-ITEM_KINDS = ("album", "track", "station", "playlist", "book", "podcast", "episode", "show", "list")
+THENS = ("show", "stop", "sleep", "repeat", "keep", "chain")
+GAPS = ("show", "silence")
+ITEM_KINDS = ("album", "track", "station", "playlist", "book", "podcast", "episode", "show", "list",
+              "message", "jingle", "action")
+INSTANT = ("message", "jingle", "action")     # happen at once: said, played or done, then on
+ACTIONS = ("time", "news", "sleep")
 DEFAULT_MIN = 60
 _HHMM = re.compile(r"^([01]\d|2[0-3]):[0-5]\d$")
 
@@ -91,6 +95,17 @@ def _item(it) -> dict:
         return {"kind": k, "show": _text(it.get("show"), "a podcast"), "guid": _text(it.get("guid"), "an episode", limit=2000)}
     if k == "list":
         return {"kind": k, "name": _text(it.get("name"), "an artist list's name")}
+    if k == "message":
+        return {"kind": k, "text": _text(it.get("text"), "a message", limit=1000)}
+    if k == "jingle":
+        path = it.get("path")
+        if not isinstance(path, str) or not path or len(path) > 1000 or ".." in path.split("/"):
+            raise ValueError("a jingle needs its file")
+        return {"kind": k, "path": path.strip("/")}
+    if k == "action":
+        if it.get("action") not in ACTIONS:
+            raise ValueError(f"an action is one of: {', '.join(ACTIONS)}")
+        return {"kind": k, "action": it["action"]}
     return {"kind": "show", "artist": _text(it.get("artist"), "an artist", need=False)}
 
 
@@ -142,9 +157,19 @@ def validate(programmes) -> list[dict]:
         then = p.get("then", "show")
         if then not in THENS:
             raise ValueError(f"{name}: then is one of {', '.join(THENS)}")
-        out.append({"name": name, "start": _hhmm(p.get("start", "12:00"), f"{name}'s start time"),
-                    "auto": p.get("auto") is True, "days": sorted(set(days)), "then": then,
-                    "blocks": [_block(b) for b in blocks]})
+        gap = p.get("gap", "show")
+        if isinstance(gap, dict):
+            gap = _item(gap)
+            if gap["kind"] in INSTANT:
+                raise ValueError(f"{name}: the gaps need something that plays")
+        elif gap not in GAPS:
+            raise ValueError(f"{name}: in the gaps, the show, silence or something to play")
+        entry = {"name": name, "start": _hhmm(p.get("start", "12:00"), f"{name}'s start time"),
+                 "auto": p.get("auto") is True, "days": sorted(set(days)), "then": then, "gap": gap,
+                 "blocks": [_block(b) for b in blocks]}
+        if then == "chain":
+            entry["chain"] = _text(p.get("chain"), f"{name}: the programme to play next", limit=NAME_MAX)
+        out.append(entry)
     return out
 
 
@@ -169,11 +194,17 @@ class Scheduler:
     `sleep` fades it out and pauses it."""
 
     def __init__(self, station, now: Callable[[], datetime] = datetime.now,
-                 wake: Callable[[], None] | None = None, sleep: Callable[[], None] | None = None) -> None:
+                 wake: Callable[[], None] | None = None, sleep: Callable[[], None] | None = None,
+                 pause: Callable[[], None] | None = None, say: Callable[[str], None] | None = None,
+                 jingle: Callable[[str], None] | None = None, action: Callable[[str], None] | None = None) -> None:
         self.station = station
         self.now = now
-        self.wake = wake
-        self.sleep = sleep
+        self.wake = wake              # the speaker on
+        self.sleep = sleep            # fade out and pause
+        self.pause = pause            # pause at once
+        self.say = say                # the DJ says a message
+        self.jingle = jingle          # a jingle's file (in the jingles folder) played
+        self.action = action          # "time", "news", "sleep": as the radio's buttons do them
         self.programmes: list[dict] = []
         self.run: dict | None = None      # the programme playing, and where it's got to
         self._lock = threading.RLock()
@@ -271,17 +302,16 @@ class Scheduler:
                 return
             done = (r["ends"] is not None and now >= r["ends"]) or (r["ends"] is None and self._content_over())
             if r.get("waiting"):
-                return                        # filling in with the show until the "at" block's time
+                return                        # filling the gap until the "at" block's time
             if not done:
                 return
             if nxt is None:
                 self._finish()
             elif nxt["rule"] == "at" and r["at_next"] is not None and now < r["at_next"]:
-                r["waiting"] = True           # too early for it: the show until then
+                r["waiting"] = True           # too early for it: the gap until then
                 self._drop_queued()
-                r["expect"] = None
-                self.station.tune(None)
-                log.info("programme %s: the show until %s", r["name"], nxt["at"])
+                self._fill_gap()
+                log.info("programme %s: the gap until %s", r["name"], nxt["at"])
             else:
                 self._start_block(r["i"] + 1)
 
@@ -311,12 +341,33 @@ class Scheduler:
             if pl is not None and pl["name"] == exp[1]:
                 self.station.stop_playlist()
 
+    def _fill_gap(self) -> None:
+        """Nothing in the programme for now: the show, silence, or its gap filler."""
+        r, gap = self.run, self.run["prog"].get("gap", "show")
+        r["expect"], r["filling"] = None, True
+        if gap == "silence":
+            self.station.tune(None)           # (let go of the last block's station or album)
+            if self.pause:
+                self.pause()
+                r["paused"] = True
+            return
+        if isinstance(gap, dict):
+            try:
+                r["expect"] = self._play_block({"name": "In the gap", "items": [gap], "order": "inorder"})
+                r["filling"] = False
+                return
+            except (ValueError, LookupError) as e:
+                log.warning("programme %s: the gap filler can't play (%s): the show", r["name"], e)
+        self.station.tune(None)
+
     def _start_block(self, i: int) -> None:
         r = self.run
         self._drop_queued()
         prog, now = r["prog"], self.now()
         b = prog["blocks"][i]
-        r["i"], r["waiting"], r["block_started"] = i, False, now
+        r["i"], r["waiting"], r["block_started"], r["filling"] = i, False, now, False
+        if r.pop("paused", False) and self.wake:
+            self.wake()                        # (a silent gap is over)
         if b["rule"] in ("for", "at"):
             r["ends"] = now + timedelta(minutes=b["min"])
         elif b["rule"] == "until":
@@ -329,6 +380,14 @@ class Scheduler:
             at = _next_clock(now, nxt["at"])
             # its time has gone today (played late): it just follows on, like any block
             r["at_next"] = at if at - now <= timedelta(hours=12) else None
+        self._instants(b)
+        if b["items"] and all(it["kind"] in INSTANT for it in b["items"]):
+            r["expect"], r["ends"] = None, now      # a moment: said or done, then straight on
+            log.info("programme %s: moment %s", r["name"], b["name"])
+            return
+        if not [it for it in b["items"] if it["kind"] not in INSTANT]:
+            self._fill_gap()                         # an empty block: the gap's choice, for its time
+            return
         try:
             r["expect"] = self._play_block(b)
         except (ValueError, LookupError) as e:          # e.g. a station gone: skip it
@@ -339,12 +398,25 @@ class Scheduler:
 
     @staticmethod
     def _has_end(b: dict) -> bool:
-        return any(it["kind"] not in ("show", "list", "station") for it in b["items"])
+        return any(it["kind"] not in ("show", "list", "station") + INSTANT for it in b["items"])
+
+    def _instants(self, b: dict) -> None:
+        """A block's messages, jingles and actions, at its start."""
+        for it in b["items"]:
+            try:
+                if it["kind"] == "message" and self.say:
+                    self.say(it["text"])
+                elif it["kind"] == "jingle" and self.jingle:
+                    self.jingle(it["path"])
+                elif it["kind"] == "action" and self.action:
+                    self.action(it["action"])
+            except Exception:
+                log.exception("programme: %s didn't happen", it)
 
     def _play_block(self, b: dict):
         """Start a block on the station; returns what to watch for its end (and
         for something else being chosen): ("source", dict) or ("run", name) or None."""
-        st, items = self.station, b["items"]
+        st, items = self.station, [it for it in b["items"] if it["kind"] not in INSTANT]
         if not items:
             st.tune(None)
             return None
@@ -413,10 +485,8 @@ class Scheduler:
         """Something other than the programme was chosen (a station, an album,
         another playlist...): the programme gives way."""
         exp, st = self.run["expect"], self.station
-        if self.run.get("waiting"):           # the show, filling in: anything chosen now wins
-            return st.source is not None
-        if exp is None:
-            return False
+        if exp is None:                        # the show or silence filling a gap: anything chosen wins
+            return bool(self.run.get("filling")) and st.source is not None
         kind, what = exp
         if kind == "source":
             return st.source is not None and st.source is not what
@@ -432,9 +502,28 @@ class Scheduler:
         if then == "repeat":
             self._start_block(0)
             return
+        if then == "chain":
+            nxt = find(self.programmes, r["prog"].get("chain"))
+            if nxt is not None and nxt["blocks"]:
+                self._drop_queued()
+                paused = r.get("paused")
+                self.play(nxt["name"])        # (itself: the same as starting again)
+                if paused and self.wake:
+                    self.wake()
+                return
+            log.warning("programme %s: no programme %s to play next: back to the show", r["name"], r["prog"].get("chain"))
+            then = "show"
+        if then == "keep":                    # leave whatever's playing as it is
+            self.run = None
+            return
         self._drop_queued()
+        paused = r.get("paused")
         self.run = None
         if self.station.source is not None:
             self.station.tune(None)
         if then == "sleep" and self.sleep:
             self.sleep()
+        elif then == "stop" and self.pause:
+            self.pause()
+        elif paused and self.wake:
+            self.wake()                        # (it was silent in a gap: back to sound)

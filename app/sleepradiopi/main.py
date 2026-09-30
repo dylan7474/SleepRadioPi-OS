@@ -483,8 +483,25 @@ def main() -> None:
         presets.keep_auto()
     # Programmes: running orders the radio plays by itself (and may start at a set time).
     from sleepradiopi.broadcast.programmes import Scheduler
+    def play_jingle(name: str) -> None:        # a programme's jingle, over whatever's on
+        if control is None:
+            return
+        path = (cfg["jingles_folder"] / name).resolve()
+        if cfg["jingles_folder"].resolve() not in path.parents or not path.is_file():
+            logging.getLogger(__name__).warning("programme: no jingle %s", name)
+            return
+        def run():
+            import numpy as np
+            from sleepradiopi.audio import pcm
+            from sleepradiopi.io.announce import Clip
+            audio = np.concatenate(list(pcm.decode(path)) or [pcm.silence(0.1)])
+            control.play_clip(Clip(audio, "jingle", path.stem))
+        threading.Thread(target=run, name="programme-jingle", daemon=True).start()
     scheduler = Scheduler(station, wake=control.play if control else None,
-                          sleep=(lambda: control.set_sleep(1)) if control else None)
+                          sleep=(lambda: control.set_sleep(1)) if control else None,
+                          pause=control.pause if control else None,
+                          say=lambda text: _say_now(station, control, text),
+                          jingle=play_jingle, action=presets._action)
     try:
         scheduler.set_programmes(settings.programmes)
     except ValueError as e:              # a hand-edited config: don't stop the station

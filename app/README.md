@@ -363,7 +363,14 @@ The cards:
   click it to pause. Programmes are built in their window: drop things on the
   timeline for new blocks or on a block to add to it, drag a block to move it
   or its right edge to change its length, and set its rule, order, start time,
-  days and what happens after; they're saved on the radio. Drop songs, albums
+  days, what fills the gaps and what happens after; every block has a start
+  time you can type, and dragging a block along the timeline moves it in time
+  (the order follows); *＋ Moment* and the block's *Say it / Time check / The
+  news / Sleep timer* add moments; drag a sticky note or a jingle in too.
+  They're saved on the radio. The menu bar's **New** menu makes anything: a
+  programme, playlist, message, birthday, artist list, folder, station or
+  podcast. Dropping a podcast **episode** on a button keeps the podcast there,
+  starting from that episode. Drop songs, albums
   or folders on a playlist; the Trash deletes playlists and programmes (asks
   first) or takes shortcuts off the desktop. Settings: click the part of the
   radio they affect (the speakers, the knob, the buttons, its name) or turn it
@@ -397,8 +404,12 @@ The cards:
   rule: **for** so many minutes, **until** a clock time, **until it ends**, or
   **at** a clock time sharp (the block before plays on until then and one still
   playing is cut off: the news at 13:00; too early, the show fills in). In
-  order or shuffled. After the last block: back to the show, fade out and
-  pause, or start again. A programme can **start by itself** at its start time
+  order or shuffled. Blocks can also be **moments**: a message the DJ says, a
+  jingle, or an action (a time check, the news now, the sleep timer), done at
+  their time over what's playing, then on. **In the gaps** (before an "at"
+  block, or an empty block): the show, silence, or something you choose.
+  After the last block: back to the show, stop, fade out and pause, start
+  again, leave what's playing, or **play another programme** (chained). A programme can **start by itself** at its start time
   on chosen days (and plays even if the radio was paused). Blocks use what the
   radio already does, so the DJ follows its setting: music goes through the
   show's queue (the DJ as set); a station, book, episode or a single On demand
