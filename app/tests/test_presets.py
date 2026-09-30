@@ -171,6 +171,10 @@ def test_messages_jingles_and_birthdays_on_buttons(tmp_path: Path) -> None:
     p.press(0); p.press(1); p.press(2)
     assert played == ["Station ID.mp3"] and said[0][1] and "Tea time" in said[0][0] and "Mum" in said[1][0]
     assert ctl.calls == []                                                    # (nothing played or paused)
+    p.set(3, presets_mod.validate({"kind": "action", "action": "pips"}))       # the pips, too
+    assert p.label(p.presets[3]) == "The pips"
+    p.press(3)
+    assert ctl.clips[-1] == "The pips" and ctl.calls == []
 
 
 def test_a_programme_sets_things_on_or_off_where_a_button_switches(tmp_path: Path) -> None:

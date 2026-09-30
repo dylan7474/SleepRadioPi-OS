@@ -509,17 +509,10 @@ def main() -> None:
             import datetime as dt
             import numpy as np
             from sleepradiopi.audio import pcm
-            from sleepradiopi.io.announce import Clip
+            from sleepradiopi.io.announce import Clip, pips as pips_audio
             parts = []
             if pips:
-                rate = pcm.SAMPLE_RATE
-                def tone(sec):
-                    t = np.arange(int(rate * sec)) / rate
-                    wave = (np.sin(2 * np.pi * 1000 * t) * 9000).astype(np.int16)
-                    return np.repeat(wave[:, None], pcm.CHANNELS, axis=1)
-                for _ in range(5):
-                    parts += [tone(0.1), pcm.silence(0.9)]
-                parts.append(tone(0.5))
+                parts.append(pips_audio())
             if speak and station._has_voice:
                 try:
                     if pips:

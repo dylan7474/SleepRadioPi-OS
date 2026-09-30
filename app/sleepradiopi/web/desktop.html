@@ -668,6 +668,7 @@ async function fetchLengths(objs) {
 const toMin = s => { const [h, m] = (s || "0:0").split(":").map(Number); return h * 60 + m; };
 const hhmm = m => { m = ((Math.round(m) % 1440) + 1440) % 1440; return String(Math.floor(m / 60)).padStart(2, "0") + ":" + String(m % 60).padStart(2, "0"); };
 function timeline(p) {
+  if (momentsOnly(p)) return p.blocks.map(() => ({ start: toMin(p.start), end: toMin(p.start) + 1, len: 1 }));   // (all at each start)
   let now = toMin(p.start);
   return p.blocks.map(b => {
     const start = b.rule === "at" ? Math.max(toMin(b.at), now) : now;
@@ -754,7 +755,7 @@ function subOf(o) {
       const age = o.b.year ? nextYear - o.b.year : null;
       return (o.soon === 0 ? "Today!" : o.soon === 1 ? "Tomorrow" : `${o.b.day} ${MONN[o.b.month - 1]}`) + (age ? ` · ${age}` : ""); }
     case "voice": return o.current ? "The DJ's voice now" : "Installed";
-    case "action": return o.action === "pips" ? "For a programme" : SWITCHED[o.action] ? "A button, or on / off in a programme" : "A button, or a programme";
+    case "action": return SWITCHED[o.action] ? "A button, or on / off in a programme" : "A button, or a programme";
     case "show": return "with the DJ";
   }
   return "";
@@ -1000,7 +1001,7 @@ function presetOf(o) {
     case "episode": return o.gid ? { kind: "podcast", show: o.pid, title: O["pod:" + o.pid]?.title || "Podcast", start: o.gid, start_title: o.title } : null;
     case "playlist": return { kind: "playlist", name: o.name, shuffle: false };
     case "programme": return { kind: "programme", name: o.title };
-    case "action": return o.action === "pips" ? null : { kind: "action", action: FLIP[o.action] ? o.action.split("_")[0] : o.action };   // (a button switches)
+    case "action": return { kind: "action", action: FLIP[o.action] ? o.action.split("_")[0] : o.action };   // (a button switches)
     case "note": case "message": return { kind: "message", text: o.text };
     case "jingle": return { kind: "jingle", path: o.path };
     case "person": return { kind: "birthday", name: o.b.name, day: o.b.day, month: o.b.month, ...(o.b.year ? { year: o.b.year } : {}) };
@@ -1010,7 +1011,7 @@ function presetOf(o) {
 // what a button can hold, from what the desktop has loaded (the Buttons window's list)
 function buttonChoices() {
   const kids = f => f.kids.map(id => O[id]).filter(Boolean);
-  return [["Actions", Object.values(ACTION).filter(a => a.action !== "pips" && !FLIP[a.action])],
+  return [["Actions", Object.values(ACTION).filter(a => !FLIP[a.action])],
           ["Sleep Radio and themes", [SHOW, ...kids(LISTS).filter(o => o.kind === "list")]],
           ["Stations", kids(STATIONS)], ["Playlists", kids(PLAYLISTS)], ["Programmes", kids(PROGRAMMES)],
           ["Podcasts", kids(PODCASTS)], ["Audiobooks", kids(BOOKS)],
@@ -1032,7 +1033,7 @@ async function open(id) {
   if (!o) return;
   if (["track", "station", "episode", "show", "book"].includes(o.kind)) return play(o);
   if (o.kind === "dj") return open(PANEL.dj.id);
-  if (o.kind === "action") return toast(`“${o.title}”: drag it onto ${o.action === "pips" ? "" : "a button on the radio, or "}a programme's timeline.`);
+  if (o.kind === "action") return toast(`“${o.title}”: drag it onto a button on the radio, or a programme's timeline.`);
   if (o.kind === "jingle") return toast(`“${o.title}”: the DJ plays jingles between songs, when jingles are on (the DJ's window).`);
   if (o.kind === "panel" && o.key === "library") return open(JINGLES.id);
   if (o.kind === "panel" && o.key === "voices") return open(VOICES.id);
@@ -2094,8 +2095,9 @@ function inspector(o, b, win) {
   if (win.running) { startAt.disabled = true; startAt.title = "The real time, while it plays"; }
   const moment = b.items.length && b.items.every(id => INSTANT.includes(O[id]?.kind));
   const line1 = el("div", { className: "line" }, name, el("span", { className: "muted", textContent: win.running ? (i <= (S?.programme?.index ?? -1) ? "started" : "due") : moment ? "happens at" : "starts" }), startAt, moment ? null : rule);
-  if (b.rule === "at") { const at = el("input", { type: "time", value: b.at, id: `at-${o.id}-${i}` }); at.setAttribute("aria-label", "At"); at.onchange = () => { b.at = at.value; saveProgrammes(); }; line1.append(at, el("span", { className: "muted", textContent: "for" })); }
-  if (b.rule === "for" || b.rule === "at") { const m = el("select", { id: `min-${o.id}-${i}` }); m.setAttribute("aria-label", "For");
+  if (moment && momentsOnly(o) && o.every) line1.append(el("span", { className: "muted", textContent: `then ${repeatWords(o)}, as the programme repeats` }));
+  if (b.rule === "at" && !moment) { const at = el("input", { type: "time", value: b.at, id: `at-${o.id}-${i}` }); at.setAttribute("aria-label", "At"); at.onchange = () => { b.at = at.value; saveProgrammes(); }; line1.append(at, el("span", { className: "muted", textContent: "for" })); }
+  if ((b.rule === "for" || b.rule === "at") && !moment) { const m = el("select", { id: `min-${o.id}-${i}` }); m.setAttribute("aria-label", "For");
     const MINS = [1, 3, 5, 10, 15, 30, 45, 60, 90, 120, 180, 240];
     for (const v of MINS) m.append(new Option(dur(v), v, false, (b.min || 60) === v)); if (!MINS.includes(b.min || 60)) m.append(new Option(dur(b.min), b.min, false, true));
     m.onchange = () => { b.min = +m.value; saveProgrammes(); }; line1.append(m); }
@@ -2266,6 +2268,7 @@ function trash(src) {
 function closeFor(o) { for (let i = W.length - 1; i >= 0; i--) if (W[i].id === o.id) W.splice(i, 1); desk = desk.filter(p => p.id !== o.id); saveDesk(); drawDesk(); }
 function setBlockStart(prog, i, startMin, win) {
   const tl = timeline(prog), b = prog.blocks[i];
+  if (momentsOnly(prog)) { prog.start = hhmm(startMin); return saveProgrammes(`${prog.title} happens at ${prog.start}${prog.every ? `, then ${repeatWords(prog)}` : ""}.`); }
   if (i === 0 && b.rule !== "at") { prog.start = hhmm(startMin); return saveProgrammes(`${prog.title} starts at ${prog.start}.`); }
   const len = Math.max(1, Math.round(tl[i].len));
   b.min = b.rule === "for" || b.rule === "at" ? (b.min || len) : len;

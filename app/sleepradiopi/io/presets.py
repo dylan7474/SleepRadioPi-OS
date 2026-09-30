@@ -31,7 +31,7 @@ import numpy as np
 
 from sleepradiopi.config.clock import clock_trusted
 from sleepradiopi.config.settings import save_setting
-from sleepradiopi.io.announce import Clip, beep
+from sleepradiopi.io.announce import Clip, beep, pips
 from sleepradiopi.playback import radio as radio_mod
 
 log = logging.getLogger(__name__)
@@ -46,7 +46,7 @@ SETTLE_S = 0.6            # the selector: a position counts once it's been there
 BACK_HOLD_S = 5.0         # the back button held this long: the service menu
 INSTANT = ("action", "message", "jingle", "birthday")     # done at once over what's on: nothing to pause
 ACTIONS = {"time": "Say the time", "news": "The news now", "sleep": "Sleep timer (30 min)",
-           "address": "Say the address", "noise": "Noise on/off", "dj": "DJ on/off"}
+           "address": "Say the address", "noise": "Noise on/off", "dj": "DJ on/off", "pips": "The pips"}
 BANKS = ("day", "night")
 BANK_KEYS = (3, 4)          # buttons 2 and 3...
 BANK_HOLD_S = 1.0           # ...held together this long swap day and night
@@ -561,6 +561,8 @@ class Presets:
             on = not self.control.status().get("sleep_min")
             self.control.set_sleep(SLEEP_MIN if on else 0)
             self._say(f"Sleep timer, {SLEEP_MIN} minutes." if on else "Sleep timer off.")
+        elif action == "pips":
+            self._clip(pips(), "The pips")
         elif action == "address" and self.announcer is not None:
             self.announcer.speak()
         elif action == "noise" and self.control is not None:
