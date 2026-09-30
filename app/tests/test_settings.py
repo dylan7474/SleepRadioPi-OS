@@ -41,3 +41,23 @@ def test_the_radios_name() -> None:
         assert announcement([], "x").startswith("Phonosphere here.")
     finally:
         brand.set_name(old)
+
+
+def test_save_setting_never_wipes_the_file(tmp_path) -> None:
+    """2026-09-30: two saves at once shared one temp file, the config couldn't be
+    read, and a save wrote {} plus its one key -- every other setting was lost."""
+    import json, threading
+    from sleepradiopi.config.settings import save_setting
+    cfg = tmp_path / "config.json"
+    cfg.write_text(json.dumps({f"k{i}": i for i in range(50)}))
+    def many(n):
+        for j in range(40):
+            save_setting(cfg, f"t{n}", j)
+    ts = [threading.Thread(target=many, args=(n,)) for n in range(6)]
+    [t.start() for t in ts]; [t.join() for t in ts]
+    conf = json.loads(cfg.read_text())
+    assert all(conf[f"k{i}"] == i for i in range(50)) and all(conf[f"t{n}"] == 39 for n in range(6))
+    assert not list(tmp_path.glob("*.tmp"))
+    cfg.write_text('{"broken": ')                  # unreadable: nothing written, a copy kept
+    save_setting(cfg, "x", 1)
+    assert cfg.read_text() == '{"broken": ' and list(tmp_path.glob("config.json.unreadable-*"))

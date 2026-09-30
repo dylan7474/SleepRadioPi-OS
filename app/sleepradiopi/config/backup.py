@@ -26,7 +26,7 @@ from sleepradiopi.broadcast import playlists as playlists_mod
 from sleepradiopi.broadcast import programmes as programmes_mod
 from sleepradiopi.broadcast.models import Chattiness
 from sleepradiopi.config.atomic import write_atomic
-from sleepradiopi.config.settings import Settings, load
+from sleepradiopi.config.settings import CONFIG_LOCK, Settings, load, read_config
 from sleepradiopi.playback import radio
 from sleepradiopi.io import presets
 from sleepradiopi.playback import podcasts as podcasts_mod
@@ -186,13 +186,11 @@ def parse(data) -> tuple[dict, int | None]:
 def apply(config_file: Path, settings: dict) -> set[str]:
     """Write the settings into config_file, keeping everything else in it.
     Returns the names of the settings that changed."""
-    try:
-        conf = json.loads(config_file.read_text())
-    except (OSError, ValueError):
-        conf = {}
-    before = asdict(load(config_file)) if config_file.exists() else asdict(Settings())
-    changed = {k for k, v in settings.items() if before.get(k) != v}
-    conf.update(settings)
-    Settings(**{k: v for k, v in conf.items() if k in {f.name for f in fields(Settings)}})
-    write_atomic(config_file, json.dumps(conf, indent=2) + "\n")
+    with CONFIG_LOCK:
+        conf = read_config(config_file)          # (unreadable: ValueError, nothing written)
+        before = asdict(load(config_file)) if config_file.exists() else asdict(Settings())
+        changed = {k for k, v in settings.items() if before.get(k) != v}
+        conf.update(settings)
+        Settings(**{k: v for k, v in conf.items() if k in {f.name for f in fields(Settings)}})
+        write_atomic(config_file, json.dumps(conf, indent=2) + "\n")
     return changed

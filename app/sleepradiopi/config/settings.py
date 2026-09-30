@@ -11,6 +11,9 @@ the station from starting.
 """
 
 import json
+import logging
+import threading
+import time
 from dataclasses import asdict, dataclass, field, fields
 from pathlib import Path
 
@@ -93,14 +96,43 @@ def load(path: Path) -> Settings:
     return Settings(**{k: v for k, v in raw.items() if k in known})
 
 
-def save_setting(path: Path, key: str, value) -> None:
-    """Set one key in the config file, keeping everything else in it as it is."""
+log = logging.getLogger(__name__)
+CONFIG_LOCK = threading.RLock()   # one read-change-write of the config file at a time
+
+
+def read_config(path: Path) -> dict:
+    """The config file as a dict ({} if there isn't one). If it's there but can't
+    be read, ValueError -- and a copy is kept aside -- never {}: writing {} plus
+    one key back lost every other setting once (2026-09-30)."""
     try:
-        conf = json.loads(path.read_text())
-    except (OSError, ValueError):
-        conf = {}
-    conf[key] = value
-    write_atomic(path, json.dumps(conf, indent=2) + "\n")
+        text = path.read_text()
+    except FileNotFoundError:
+        return {}
+    try:
+        conf = json.loads(text)
+        if not isinstance(conf, dict):
+            raise ValueError("not a JSON object")
+        return conf
+    except ValueError as e:
+        bad = path.with_name(f"{path.name}.unreadable-{time.strftime('%Y%m%d-%H%M%S')}")
+        try:
+            bad.write_text(text)
+        except OSError:
+            pass
+        raise ValueError(f"the settings file couldn't be read ({e}); nothing was saved, and a copy is kept as {bad.name}") from e
+
+
+def save_setting(path: Path, key: str, value) -> None:
+    """Set one key in the config file, keeping everything else in it as it is.
+    If the file can't be read, nothing is written (logged)."""
+    with CONFIG_LOCK:
+        try:
+            conf = read_config(path)
+        except (OSError, ValueError) as e:
+            log.error("setting %s not saved: %s", key, e)
+            return
+        conf[key] = value
+        write_atomic(path, json.dumps(conf, indent=2) + "\n")
 
 
 def save(path: Path, settings: Settings) -> None:

@@ -515,7 +515,11 @@ def make_handler(station: Station, output: Mp3Output, speaker=None,
                 self.end_headers()
                 self.wfile.write(body)
                 return
-            changed = backup.apply(config_file, settings)     # before the live ones save theirs
+            try:
+                changed = backup.apply(config_file, settings)     # before the live ones save theirs
+            except ValueError as e:                               # (the settings file can't be read: nothing written)
+                self._error(str(e))
+                return
             dj_keys = {"broadcast_chattiness", "broadcast_dj_hooks", "broadcast_jingle_enabled",
                        "broadcast_jingle_every", "news_enabled", "broadcast_announcer_speed", "news_speed"}
             if changed & dj_keys:
