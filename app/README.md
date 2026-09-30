@@ -355,8 +355,12 @@ The cards:
   breadcrumb to step back out — for anything untagged or laid out its own
   way. A folder with tracks has *Play now* / *Play next*; a folder of
   folders (a box set's CDs, a series' episodes) has **Play all** / *Play all
-  next*, everything under it in path order (`Station.browse`,
-  `Station.albums`).
+  next*, everything under it in path order. **Tap an album or folder's name**
+  (in Browse, A–Z or the search) to see its tracks, each with **Play** (just
+  that track now: from the music, it cuts into the show and the show carries
+  on, the DJ as set; from On demand, on its own with no DJ, then the show),
+  **From here** (the album from that track to the end, no DJ) and **＋** (into
+  a playlist) (`Station.browse`, `Station.play_track`).
 - **On demand** (`/media/ondemand`) — a second library for anything to pick
   and play yourself but **never in the show**: storms, old radio shows, long
   classical pieces, your own recordings. Any layout: each folder is shown by
@@ -720,7 +724,8 @@ everything but the page itself and the login needs the session cookie
 | `POST /api/update/check` / `/api/update/install` | Look for a newer release / install it (the root helper does the work) |
 | `GET /api/search?q=` | Up to 40 tracks and 20 albums matching every word, each with an `id` |
 | `GET /api/albums` | Every album and folder with tracks: `id`, `root` (`music` \| `ondemand`), `folder`, `title`, `artist`, `tracks` |
-| `GET /api/browse?root=&path=` | One folder: the `folders` in it holding audio (`name`, `tracks`, `folders`, `own`: tracks of its own) and its own `album`, if any |
+| `GET /api/browse?root=&path=` | One folder: the `folders` in it holding audio (`name`, `tracks`, `folders`, `own`: tracks of its own) and its own `album`, if any, with its tracks in `list` (`n`, `title`, `artist`, `path`) |
+| `POST /api/track/play` | `{"root", "path"}` — that one track now (music: in the show; On demand: on its own, no DJ), then the show |
 | `POST /api/album` / `/api/album/stop` | `{"id": n}` or `{"root", "folder", "deep"}` — play it next (music: in the show with the DJ; On demand: no DJ, after the song playing; `up_next_source`) / drop the rest of it, or the queued one |
 | `POST /api/request` | `{"id": n}` — play that track next; the status's `requests` lists what's queued |
 | `GET /api/radio` | Streaming: the saved stations, what's playing instead of the show (`source`: a station with its `title`, or an album with its `track`), why the last one stopped, and the directory copy's state |
@@ -734,7 +739,7 @@ everything but the page itself and the login needs the session cookie
 | `GET /api/podcasts/episodes?id=&refresh=1` | A show's episodes, newest first (`guid`, `gid`, `title`, `pub`, `duration_ms`, `pos_ms`, `done`); `refresh=1` fetches the feed first (`note` if it couldn't) |
 | `POST /api/podcasts/follow` / `/unfollow` | `{"feed_url"}` / `{"id"}` |
 | `POST /api/podcasts/play` / `/heard` | `{"id", "guid"?}` — that episode (none: the one part-heard, else the newest unheard), then on through the newer ones / `{"id", "guid", "heard": bool}`; seek with `/api/books/seek` |
-| `POST /api/album/play` | `{"id": n}` or `{"root", "folder", "deep"}` (`deep`: everything under the folder) — play it straight through instead of the show |
+| `POST /api/album/play` | `{"id": n}` or `{"root", "folder", "deep", "track"?}` (`deep`: everything under the folder; `track`: start at that one) — play it straight through instead of the show |
 | `GET /api/media?kind=music\|jingles\|audiobooks\|ondemand&path=` | A folder of the library: its folders (with item counts) and files, and the space left |
 | `POST /api/media/upload?kind=&dir=&name=` | The file as the body (`name` may include folders); `{"path", "status": "added" \| "same"}` |
 | `POST /api/media/mkdir` / `/api/media/delete` | `{"kind", "path", "name"}` / `{"kind", "path"}` (a file or a folder) |

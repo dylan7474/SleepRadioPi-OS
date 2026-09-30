@@ -530,6 +530,9 @@ class Station:
                 out["root"] = root
             if deep:
                 out["deep"] = True
+            if source.get("one") is True:     # just that one track
+                out["one"] = True
+                out["title"] = album["tracks"][out["track"]].title
             return out
         if source["kind"] == "episode":
             show = self.podcasts.show(source.get("show")) if isinstance(source.get("show"), str) else None
@@ -564,24 +567,43 @@ class Station:
                  f"{source['kind']} {source.get('name') or source['title']}")
         self._notify_source()
 
-    def album_source(self, album_id=None, root="music", folder=None, deep=False) -> dict:
-        """A source for an album: an id from the search or list, or a folder."""
+    def album_source(self, album_id=None, root="music", folder=None, deep=False, track=0, one=False) -> dict:
+        """A source for an album: an id from the search or list, or a folder;
+        from `track` on (or, with `one`, only that track)."""
         if album_id is not None:
             albums = self.albums()
             if isinstance(album_id, bool) or not isinstance(album_id, int) or not 0 <= album_id < len(albums):
                 raise ValueError("no such album")
             a = albums[album_id]
             root, folder, deep = a["root"], a["folder"], False
-        return self._check_source({"kind": "album", "root": root, "folder": folder, "deep": deep is True})
+        return self._check_source({"kind": "album", "root": root, "folder": folder, "deep": deep is True,
+                                    "track": track, "one": one is True})
 
-    def play_album(self, album_id=None, root="music", folder=None, deep=False) -> dict:
-        """Play an album or folder straight through instead of the show: no DJ,
-        jingles or news. Back to the show when it ends."""
+    def play_album(self, album_id=None, root="music", folder=None, deep=False, track=0) -> dict:
+        """Play an album or folder straight through instead of the show (from
+        `track` on): no DJ, jingles or news. Back to the show when it ends."""
         self._next_source = None
-        self.tune(self.album_source(album_id, root, folder, deep))
+        self.tune(self.album_source(album_id, root, folder, deep, track))
         return self._source
 
-    def play_next(self, album_id=None, root="music", folder=None, deep=False) -> dict:
+    def play_track(self, root: str, path: str) -> dict:
+        """One track now. From the music: in the show at once (whatever's on),
+        then the show carries on, the DJ as set. From On demand: that track on
+        its own, no DJ, then the show."""
+        t = self._by_ref(root, path) if isinstance(path, str) else None
+        if t is None:
+            raise ValueError("that track isn't in the library")
+        if root == "ondemand":
+            folder = path.rsplit("/", 1)[0] if "/" in path else ""
+            album = self._album_by_folder(folder, "ondemand")
+            self._next_source = None
+            self.tune(self.album_source(root="ondemand", folder=folder, track=album["tracks"].index(t), one=True))
+        else:
+            self._play_now([t])
+        log.info("play now: %s", t.title)
+        return {"title": t.title, "artist": t.artist}
+
+    def play_next(self, album_id=None, root="music", folder=None, deep=False, track=0) -> dict:
         """Play next: music albums go into the show, introduced by the DJ; On
         demand plays with no DJ once the song (or the album) playing ends."""
         src = self.album_source(album_id, root, folder, deep)
@@ -685,6 +707,8 @@ class Station:
             self.history.appendleft({"kind": "track", "text": f"{t.title} — {t.artist}", "at": time.time()})
             self._play_file(t.path, OnAir("track", t.title, t.artist, t.album))
             jump, self._album_jump = self._album_jump, None
+            if jump is None and source.get("one"):
+                break
             i = i + 1 if jump is None else jump
         if self._halted():
             return
@@ -1025,6 +1049,16 @@ class Station:
         if shuffle:
             random.shuffle(tracks)
         self._drop_playlist()
+        self._play_now(tracks)
+        with self._lock:
+            self._playlist_run = {"name": p["name"], "tracks": tracks, "shuffle": shuffle}
+        log.info("playlist: %s (%d tracks%s)", p["name"], len(tracks), ", shuffled" if shuffle else "")
+        return {"name": p["name"], "tracks": len(tracks), "shuffle": shuffle}
+
+    def _play_now(self, tracks: list[BroadcastTrack]) -> None:
+        """These tracks at once, through the show's queue (the DJ as set), then
+        the show: cutting in if the show's on, back from a station or album if
+        one's playing, or opening the show with them if it's off."""
         playing = self._source is not None
         with self._lock:
             show_on = self.is_on_air and not playing
@@ -1033,7 +1067,6 @@ class Station:
                 self._queue.insert(i, t)
             self._n_requested += len(rest)
             self._pending = deque(t for t in self._pending if t not in tracks)
-            self._playlist_run = {"name": p["name"], "tracks": tracks, "shuffle": shuffle}
             if show_on:
                 self._jump = tracks[0]        # at once, whatever's on (a song or the DJ)
             elif not self.is_on_air:
@@ -1050,8 +1083,6 @@ class Station:
             self.tune(None)
         else:
             self._prepare_opening()
-        log.info("playlist: %s (%d tracks%s)", p["name"], len(tracks), ", shuffled" if shuffle else "")
-        return {"name": p["name"], "tracks": len(tracks), "shuffle": shuffle}
 
     def _drop_playlist(self) -> bool:
         run = self._playlist_run
@@ -1150,8 +1181,12 @@ class Station:
         folders = sorted(subs.values(), key=lambda f: _natural(f["name"]))
         for f in folders:
             f["folders"] = len(f.pop("inner"))
-        return {"root": root, "path": path, "folders": folders,
-                "album": None if here is None else self._album_info(here)}
+        album = None
+        if here is not None:
+            album = {**self._album_info(here),
+                     "list": [{"n": i, "title": t.title, "artist": t.artist, "path": self._ref(t)[1]}
+                              for i, t in enumerate(here["tracks"])]}
+        return {"root": root, "path": path, "folders": folders, "album": album}
 
     @staticmethod
     def _album_info(a: dict) -> dict:

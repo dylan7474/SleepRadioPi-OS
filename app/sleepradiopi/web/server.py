@@ -324,6 +324,16 @@ def make_handler(station: Station, output: Mp3Output, speaker=None,
                 self._send(json.dumps({"previous": station.previous()}).encode(), "application/json")
             elif path == "/api/playlists":
                 self._set_playlists()
+            elif path == "/api/track/play":
+                try:
+                    body = self._body()
+                    reply = station.play_track(body.get("root") or "music", body.get("path"))
+                except (ValueError, TypeError, KeyError, AttributeError) as e:
+                    self._error(str(e) if isinstance(e, ValueError) else "send {\"root\", \"path\"}")
+                    return
+                if speaker is not None:
+                    speaker.play()
+                self._send(json.dumps(reply).encode(), "application/json")
             elif path == "/api/playlists/add":
                 self._playlist_add()
             elif path == "/api/playlists/play":
@@ -813,7 +823,12 @@ def make_handler(station: Station, output: Mp3Output, speaker=None,
                 return {"album_id": body["id"]}
             if not isinstance(body.get("folder"), str):
                 raise ValueError("send {\"id\": n} or {\"root\", \"folder\"}")
-            return {"root": body.get("root") or "music", "folder": body["folder"], "deep": body.get("deep") is True}
+            out = {"root": body.get("root") or "music", "folder": body["folder"], "deep": body.get("deep") is True}
+            if "track" in body:
+                if isinstance(body["track"], bool) or not isinstance(body["track"], int):
+                    raise ValueError("track is a number")
+                out["track"] = body["track"]
+            return out
 
         def _album(self) -> None:
             """POST /api/album: play it next. Music goes into the show, introduced by

@@ -169,3 +169,41 @@ def test_web_api(tmp_path: Path) -> None:
         assert nxt["dj"] is False and nxt["now"] is True    # off air: chosen straight away
     finally:
         httpd.shutdown()
+
+
+def test_browse_lists_an_albums_tracks(tmp_path: Path) -> None:
+    st = _od_station(tmp_path)
+    s1 = st.browse("ondemand", "Old radio shows/Hancock/Series 1")["album"]
+    assert [(t["n"], t["title"]) for t in s1["list"]] == [(0, "The First Night"), (1, "The Diary")]
+    assert s1["list"][1]["path"] == "Old radio shows/Hancock/Series 1/02 - The Diary.mp3"
+
+
+def test_play_one_track_or_from_a_track(tmp_path: Path, monkeypatch) -> None:
+    st = _od_station(tmp_path)
+    st.play_album(root="ondemand", folder="Classical/Beethoven Symphony 9", track=2)
+    assert st.source["track"] == 2 and "one" not in st.source
+    st.play_track("ondemand", "Classical/Beethoven Symphony 9/02 - Molto vivace.mp3")
+    assert st.source["one"] is True and st.source["track"] == 1 and st.source["title"] == "Molto vivace"
+    _on_air(st, monkeypatch)
+    st.tune(None)
+    st._take_next()
+    st.on_air = __import__("sleepradiopi.broadcast.station", fromlist=["OnAir"]).OnAir("track", "x")
+    st.play_track("music", "Nick Drake/Pink Moon/02 - Place to Be.mp3")
+    assert st._jump.title == "Place to Be" and st.source is None     # the show, at once
+    with __import__("pytest").raises(ValueError):
+        st.play_track("music", "No/Such.mp3")
+
+
+def test_one_track_plays_just_that_track_then_the_show(tmp_path: Path, monkeypatch) -> None:
+    st = _od_station(tmp_path)
+    played = []
+    monkeypatch.setattr(st, "_play_file", lambda path, on_air, near_end=None: played.append(on_air.title))
+    st.play_track("ondemand", "Classical/Beethoven Symphony 9/02 - Molto vivace.mp3")
+    st._switch.clear()
+    st._run_album(st.source)
+    assert played == ["Molto vivace"] and st.source is None
+    st.play_album(root="ondemand", folder="Classical/Beethoven Symphony 9", track=2)
+    st._switch.clear()
+    played.clear()
+    st._run_album(st.source)
+    assert played == ["Adagio", "Presto"]
