@@ -244,7 +244,8 @@
   .banks { display: inline-flex; gap: 3px; padding: 2px; border-radius: 8px; background: #0000000f; box-shadow: inset 0 1px 2px #0002; }
   .banks button { border: 0; background: none; border-radius: 6px; padding: 2px 9px; font-size: 10.5px; color: #6b6558; white-space: nowrap; }
   .bankrow { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; margin-top: 8px; }
-  .bankrow .bnote { flex-basis: 100%; font-size: 10px; color: #7b7568; }
+  .bankrow .bnote { flex-basis: 100%; font-size: 10px; line-height: 14px; height: 14px; color: #7b7568; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .bankrow .usenow[aria-disabled="true"] { opacity: 0; pointer-events: none; }
   .banks button[aria-pressed="true"] { background: radial-gradient(circle at 40% 35%, #fff, #d8dbe0); color: #2b2a26; font-weight: 700; box-shadow: 0 1px 2px #0004; }
   .pbtn span { font-size: 10.5px; line-height: 1.15; text-align: center; color: #4d493f; max-width: 64px; height: 2.3em; overflow: hidden; }
   .badge { position: absolute; right: 14px; top: 16px; font: 700 8.5px var(--display); letter-spacing: .2em; color: #2f5cb4; }
@@ -865,7 +866,8 @@ function radioEl() {
     bankKeys.append(k);
   }
   const other = bStatus && shownBank() !== bStatus.bank;
-  const useNow = el("button", { className: "plink", type: "button", textContent: `Use it now`, hidden: !other });
+  const useNow = el("button", { className: "plink usenow", type: "button", textContent: `Use it now` });
+  useNow.setAttribute("aria-disabled", String(!other));   // (faded, not removed: nothing below moves)
   useNow.onclick = async () => { try { await api("/api/buttons/bank", { bank: shownBank() }); viewBank = null; await loadButtons(); drawDesk(); toast(`The radio's using its ${shownBank()} buttons.`); } catch (e) { toast(e.message); } };
   useNow.style.marginLeft = "auto";
   const bankRow = el("div", { className: "bankrow" }, bankKeys, useNow,
