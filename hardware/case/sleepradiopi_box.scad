@@ -69,7 +69,7 @@ pcb_t      = 1.6;
 hole_in    = 3.5;
 port_otg_u = 41.4;       // port centres along the long edge, from the SD end
 port_pwr_u = 54;
-amp_gap    = 12;         // 12 mm M2.5 standoffs between the Pi and the amp
+amp_gap    = 12;         // Pi to amp, on the header
 term_u0    = 23.9;       // MiniAmp speaker terminal, along the port edge
 term_u1    = 44.4;
 term_h     = 10;
@@ -110,16 +110,10 @@ pi_dx       = 0;         // Pi position: offset from the centre line
 post_h      = 7;         // room under the Pi for header stubs + encoder wires
 post_d      = 6;         // tip, under the Pi
 post_d2     = 7.6;       // below the tip
-pi_screw    = "outside"; // "outside": M2.5 x 8 from the back through the posts into
-                         //            the 12 mm standoffs (heads sit in deep counterbores)
-                         // "self_tap": M2.5 self-tappers into the posts from the Pi side
-screw_clear_d = 2.8;
-screw_head_d  = 5.6;
-post_tip_h    = 3;       // the narrow (post_d) tip next to the board
-screw_floor   = 3;       // plastic under the screw head: the whole narrow tip, so the
-                         // counterbore stays in the wide part (1 mm wall). It was 2, which
-                         // left 0.2 mm of wall and the floors broke out (see post_adapter.scad)
-pi_tap_d      = 2.2;
+// The Pi: four M2.5 self-tappers down through its corner holes into solid
+// posts (the heads sit on the Pi). The back of the panel stays plain. The
+// amp sits on the Pi's header; no standoffs.
+pi_tap_d      = 2.2;     // pilot for an M2.5 self-tapper (prints ~2.0; tested)
 
 cable_dx    = 32;        // power cable slot: this far out from the Pi's port edge
 cable_w     = 14;
@@ -440,17 +434,14 @@ module tab_print() translate([0, 0, tab_drop + tab_t]) mirror([0, 0, 1]) tab(); 
 /* ---------- Rear panel ---------- */
 // Built in place (outside face at y = D), so the Pi coordinates line up.
 module rear() {
-    assert(pi_screw != "outside" || screw_floor >= post_tip_h,
-           "the screw-head counterbore would cut into the narrow post tip");
-    assert(post_d2 - screw_head_d >= 2, "under 1 mm of wall round the screw head");
     difference() {
         union() {
             translate([0, D, 0]) mirror([0, 1, 0]) panel_blank();
-            // Narrow tip next to the board (clear of the header pins), thicker
-            // below, so the wall round the screw-head counterbore is 1 mm.
+            // Solid posts: a narrow tip next to the board (clear of the header
+            // pins), thicker below.
             for (h = pi_holes) {
-                ycyl(h[0], h[1], pi_y, pi_y + post_tip_h, post_d);
-                ycyl(h[0], h[1], pi_y + post_tip_h - 0.01, to + 0.01, post_d2);
+                ycyl(h[0], h[1], pi_y, pi_y + 3, post_d);
+                ycyl(h[0], h[1], pi_y + 3 - 0.01, to + 0.01, post_d2);
             }
             if (rtc) yext(to - 3, to + 0.01) translate(rtc_pos) difference() {
                 square([rtc_w + 2.4, rtc_l + 2.4], center = true);
@@ -461,13 +452,8 @@ module rear() {
         }
         if (rear_port) port_bore();
         translate([0, D, 0]) mirror([0, 1, 0]) panel_screw_holes();
-        for (h = pi_holes) {
-            if (pi_screw == "outside") {
-                ycyl(h[0], h[1], pi_y - 1, D + 1, screw_clear_d);
-                ycyl(h[0], h[1], pi_y + screw_floor, D + 1, screw_head_d);
-            } else
-                ycyl(h[0], h[1], pi_y - 1, D - 1.2, pi_tap_d);
-        }
+        // Self-tapper pilots, stopping 1.2 mm short of the outside face
+        for (h = pi_holes) ycyl(h[0], h[1], pi_y - 1, D - 1.2, pi_tap_d);
         // Power cable slot (the micro-USB plug threads through it) + zip-tie slots
         yext(to - 1, D + 1) {
             translate(cable_pos) rrect(-cable_w / 2, -cable_h / 2, cable_w / 2, cable_h / 2, 3);
@@ -624,8 +610,6 @@ module pi_stack_model() {
     // Amp speaker terminal
     color("dimgray") yext(amp_top - term_h, amp_top)
         translate([port_x - 7.5, pi_z0 + term_u0]) square([7.9, term_u1 - term_u0]);
-    // Standoffs
-    color("gold") for (h = pi_holes) ycyl(h[0], h[1], amp_y, pi_top, 4.5, 4.5);
     // Micro-USB power plug + cable bend: keep-out volume
     color("white", 0.8) yext(pi_top - 8, pi_top + 1)
         translate([port_x - 0.5, pi_z0 + port_pwr_u - 5.5]) square([24, 11]);
