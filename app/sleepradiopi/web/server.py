@@ -210,6 +210,7 @@ def make_handler(station: Station, output: Mp3Output, speaker=None,
                 sched = getattr(station, "scheduler", None)
                 status["programme"] = sched.status() if sched else None
                 status["programme_mode"] = bool(sched and sched.quiet)
+                status["buttons_bank"] = presets.bank if presets is not None else None
                 status["stream"] = output is not None and output.enabled
                 status["version"] = updater_mod.this_version()
                 self._send(json.dumps(status).encode(), "application/json")

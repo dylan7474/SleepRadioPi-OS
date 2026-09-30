@@ -246,6 +246,9 @@ def test_web_api_and_backups(tmp_path: Path) -> None:
         assert code == 400
         code, d = call("/api/album/play", {"id": 0})
         assert code == 200 and d["source"]["kind"] == "album"
+        assert call("/api/status")[1]["buttons_bank"] == "day"            # the desktop's "Follow the radio" look
+        p.set_bank("night")
+        assert call("/api/status")[1]["buttons_bank"] == "night"
     finally:
         httpd.shutdown()
     saved = backup.export(conf, None)

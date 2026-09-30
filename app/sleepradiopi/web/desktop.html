@@ -91,7 +91,7 @@
                display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; text-shadow: var(--label-shadow); background: var(--label-bg); }
   .icon .sub { font-size: 10.5px; color: var(--dim); margin-top: -3px; text-align: center; max-width: 94px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .icon.sel .lbl { background: var(--amber); color: var(--amber-ink); text-shadow: none; }
-  .themebtn { border: 1px solid var(--line); background: var(--win); color: var(--ink); border-radius: 99px; padding: 1px 10px; font-size: 12px; }
+  .themebtn { border: 1px solid var(--line); background: var(--win); color: var(--ink); border-radius: 99px; padding: 1px 8px; font: 12px var(--body); }
   .icon.sel .glyph { filter: brightness(1.15); }
   .icon.over .glyph { outline: 2px solid var(--blue); outline-offset: 3px; }
   .icon.alias .lbl { font-style: italic; }
@@ -415,7 +415,7 @@
   <a class="m classic" href="/" id="classic" title="The page you know, also for phones">Classic page</a>
   <span class="grow"></span>
   <button class="m" type="button" id="nextLine" title="The schedule" style="color:var(--ink);font-weight:600"></button>
-  <button class="themebtn" type="button" id="theme" title="Light or dark">Dark</button>
+  <select class="themebtn" id="theme" title="Light or dark: or dark while the radio uses its Night buttons"><option value="radio">Follow the radio</option><option value="light">Light</option><option value="dark">Dark</option></select>
   <button class="wifi" type="button" id="wifiMenu" title="Wi-Fi"><span class="bars"><i class="on" style="height:4px"></i><i class="on" style="height:7px"></i><i class="on" style="height:10px"></i><i class="on" style="height:12px"></i></span><span>Wi-Fi</span></button>
   <span class="onair" id="onair" hidden>On air</span>
   <span class="clock" id="clock"></span>
@@ -921,7 +921,7 @@ function volume(delta) {
 }
 let lastProg = "";
 async function poll() {
-  try { S = await api("/api/status"); radioName = S.radio_name || radioName; updateRadio(); } catch { return; }
+  try { S = await api("/api/status"); radioName = S.radio_name || radioName; updateRadio(); applyTheme(); } catch { return; }
   const p = S.programme ? `${S.programme.name}/${S.programme.index}/${S.programme.waiting}` : "";
   if (p !== lastProg) {
     lastProg = p;
@@ -2240,12 +2240,16 @@ function resizeThing(e, node, win) {
 // ============ the rest ============
 (function () {
   const root = document.documentElement;
-  let saved = null; try { saved = localStorage.getItem("srd.theme"); } catch {}
-  root.dataset.theme = saved || "light";
-  const label = () => { $("theme").textContent = root.dataset.theme === "dark" ? "Light" : "Dark"; };
-  $("theme").onclick = () => { root.dataset.theme = root.dataset.theme === "dark" ? "light" : "dark"; try { localStorage.setItem("srd.theme", root.dataset.theme); } catch {} label(); };
-  label();
+  let saved = null; try { saved = localStorage.getItem("srd.look"); } catch {}
+  $("theme").value = ["light", "dark"].includes(saved) ? saved : "radio";
+  $("theme").onchange = () => { try { localStorage.setItem("srd.look", $("theme").value); } catch {} applyTheme(); };
+  applyTheme();
 })();
+// light, dark, or following the radio: dark while it uses its Night buttons (the set in use, not the one shown)
+function applyTheme() {
+  const pick = $("theme").value;
+  document.documentElement.dataset.theme = pick === "radio" ? ((S?.buttons_bank ?? bStatus?.bank) === "night" ? "dark" : "light") : pick;
+}
 $("desk").addEventListener("pointerdown", e => { if (e.target === $("desk") && sel) { sel = null; drawDesk(); } });
 document.querySelectorAll("[data-open]").forEach(b => b.onclick = () => open(b.dataset.open));
 $("tidy").onclick = () => { desk.forEach((p, i) => { p.x = 18 + Math.floor(i / 7) * 128; p.y = 14 + (i % 7) * 96; }); saveDesk(); drawDesk(); };
