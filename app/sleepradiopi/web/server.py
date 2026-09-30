@@ -230,6 +230,16 @@ def make_handler(station: Station, output: Mp3Output, speaker=None,
                 q = parse_qs(urlparse(self.path).query).get("q", [""])[0][:200]
                 self._send(json.dumps({"results": station.search(q), "albums": station.search_albums(q)}).encode(),
                            "application/json")
+            elif path == "/api/albums":
+                self._send(json.dumps({"albums": station.all_albums()}).encode(), "application/json")
+            elif path == "/api/browse":
+                qs = parse_qs(urlparse(self.path).query)
+                try:
+                    reply = station.browse(qs.get("root", ["music"])[0], qs.get("path", [""])[0][:1000])
+                except ValueError as e:
+                    self._error(str(e))
+                    return
+                self._send(json.dumps(reply).encode(), "application/json")
             elif path == "/api/artists":
                 self._send(json.dumps({**self._selection(), "artists": station.artists(),
                                        "profiles": station.profiles}).encode(), "application/json")
@@ -730,18 +740,28 @@ def make_handler(station: Station, output: Mp3Output, speaker=None,
             if restarting:
                 _restart_soon(speaker)
 
+        def _album_args(self) -> dict:
+            """{"id": n} (from /api/search or /api/albums) or {"root", "folder", "deep"}
+            (from /api/browse)."""
+            body = self._body()
+            if "id" in body:
+                return {"album_id": body["id"]}
+            if not isinstance(body.get("folder"), str):
+                raise ValueError("send {\"id\": n} or {\"root\", \"folder\"}")
+            return {"root": body.get("root") or "music", "folder": body["folder"], "deep": body.get("deep") is True}
+
         def _album(self) -> None:
-            """POST /api/album {"id": n} (from /api/search's albums): play it next,
-            start to finish."""
+            """POST /api/album: play it next. Music goes into the show, introduced by
+            the DJ; On demand plays with no DJ when the song (or album) playing ends."""
             try:
-                album_id = self._body()["id"]
-                if isinstance(album_id, bool) or not isinstance(album_id, int):
-                    raise ValueError("id must be a number from /api/search")
-                reply = station.request_album(album_id)
+                reply = station.play_next(**self._album_args())
             except (ValueError, TypeError, KeyError, AttributeError) as e:
                 self._error(str(e) if isinstance(e, ValueError) else "send {\"id\": n}")
                 return
+            if reply.get("now") and speaker is not None:
+                speaker.play()
             self._send(json.dumps({**reply, "album": station.album_status(),
+                                   "up_next_source": station.next_source_status(),
                                    "requests": station.requests()}).encode(), "application/json")
 
         def _radio_stations(self) -> list[dict]:
@@ -938,13 +958,10 @@ def make_handler(station: Station, output: Mp3Output, speaker=None,
             self._send(json.dumps(reply).encode(), "application/json")
 
         def _play_album(self) -> None:
-            """POST /api/album/play {"id": n} (from /api/search's albums): play it
+            """POST /api/album/play {"id": n} or {"root", "folder", "deep"}: play it
             straight through instead of the show -- no DJ -- then back to the show."""
             try:
-                album_id = self._body()["id"]
-                if isinstance(album_id, bool) or not isinstance(album_id, int):
-                    raise ValueError("id must be a number from /api/search")
-                station.play_album(album_id)
+                station.play_album(**self._album_args())
             except (ValueError, TypeError, KeyError, AttributeError) as e:
                 self._error(str(e) if isinstance(e, ValueError) else "send {\"id\": n}")
                 return

@@ -389,6 +389,8 @@ def main() -> None:
     cfg["jingles_folder"] = Path(settings.jingles_folder or MEDIA / "jingles").expanduser()
     # (next to the music by default: /media/audiobooks on the radio, whose config names /media/music)
     cfg["audiobooks_folder"] = Path(settings.audiobooks_folder or cfg["music_folder"].parent / "audiobooks").expanduser()
+    # On demand: played only when asked for, never in the show (/media/ondemand on the radio)
+    cfg["ondemand_folder"] = cfg["music_folder"].parent / "ondemand"
     cfg["book_cache"] = Path.home() / ".cache" / "sleepradiopi" / "books.json"
     cfg["book_positions"] = Path.home() / ".local" / "state" / "sleepradiopi" / "book-positions.json"
     cfg["podcast_cache"] = Path.home() / ".cache" / "sleepradiopi" / "podcasts"
@@ -494,7 +496,7 @@ def main() -> None:
     directory.keep_fresh()
     # The web page's music library manager (upload / delete); the library is rescanned after.
     media = MediaLibrary({"music": cfg["music_folder"], "jingles": cfg["jingles_folder"],
-                          "audiobooks": cfg["audiobooks_folder"]},
+                          "audiobooks": cfg["audiobooks_folder"], "ondemand": cfg["ondemand_folder"]},
                          on_changed=station.reload_library)
     serve(station, stream, args.port or settings.http_port, control, args.config, announcer, jobs, updates,
           presets, directory, media, lamps)

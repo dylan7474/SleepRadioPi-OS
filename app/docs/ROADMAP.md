@@ -13,10 +13,13 @@ left.
 
 ## Next
 
-1. **Wire the knob and the RTC** — check the knob's direction and step and
-   the long press on the real switch; that a press wakes the radio after
-   the sleep timer has faded it out and paused it (playing again, speaker
-   back at its normal level, the page showing it); the RTC with no network.
+1. **Wire the knob and the RTC** — done 2026-09-30 (amp unplugged): the knob's
+   direction, one step a click, short press (pause) and long press all right;
+   the RTC (a DS3231) sets the clock at boot over a power cut, before Wi-Fi.
+   Still to check: that a press wakes the radio after the sleep timer has
+   faded it out and paused it (needs the amp); the RTC over a night unplugged
+   (it flags "oscillator stopped" at every boot, likely a clone chip or a
+   tired CR2032, being replaced).
 2. **Library tools** — the web page's *Media library* (Settings) adds and
    deletes music and jingles (2026-09-29). Still to do: syncing a whole
    desktop library in one go (e.g. an rsync-style script from the PC).

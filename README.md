@@ -63,7 +63,11 @@ software, and the case to print.
   through the newer ones in order, pausing after the latest.
 - **Album mode** — or pick a whole album: the DJ introduces it, then it plays
   start to finish like a record (no talk between tracks), and the DJ
-  back-announces it at the end.
+  back-announces it at the end. **Browse** the albums A–Z, or the folders as
+  they are on the radio, for anything untagged.
+- **On demand** — a second library for things you pick yourself but never
+  want in the show (storms, old radio shows, long classical pieces): any
+  layout, played straight through with no DJ, now or after the song playing.
 - **Jingles** from your own collection, shuffled, and a short one to open
   the show (on the main mix only, since they say "Sleep Radio").
 
@@ -125,7 +129,7 @@ software, and the case to print.
   **Radio** tab drawn like the radio itself. **Find** searches everything at
   once: artists and lists, albums, songs and internet stations. Under
   **Settings**: the music
-  library (add and delete music and jingles from the page), the
+  library (add and delete music, jingles, audiobooks and On demand from the page), the
   speakers (stereo/mono, EQ, low cut), the DJ (voice, how often it talks,
   hooks, jingles, news, DJ and news speaking speeds), voices (download the standard one, upload your
   own), your artist lists, birthdays, test sounds for

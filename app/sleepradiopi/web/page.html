@@ -247,8 +247,9 @@
   .page-head { display: grid; gap: .3rem; }
   .page-head h1 { margin: 0; font-family: var(--display); font-size: 1.4rem; letter-spacing: .02em; }
   .back { background: none; border: 0; padding: .2rem 0; color: var(--amber); font-size: .95rem; justify-self: start; }
-  #mCrumbs { display: flex; flex-wrap: wrap; gap: .3rem; align-items: center; margin: 0 0 .4rem; }
-  #mCrumbs a { text-decoration: none; }
+  #mCrumbs, #bCrumbs { display: flex; flex-wrap: wrap; gap: .3rem; align-items: center; margin: 0 0 .4rem; }
+  #mCrumbs a, #bCrumbs a { text-decoration: none; }
+  #bList a.open { text-decoration: none; color: inherit; font-weight: 600; }
   #mList a.open { color: var(--ink); text-decoration: none; }
   #mUploads progress { width: 5rem; accent-color: var(--amber); }
   #listArtists { max-height: 16rem; overflow-y: auto; margin-top: .6rem; border: 1px solid var(--line);
@@ -458,6 +459,9 @@
       <p id="artistNote" class="muted" style="margin:-.4rem 0 0;font-size:.85rem">Play one artist only (e.g. Beatles
         Radio), or one of your lists of artists.</p>
 
+      <h2 class="eyebrow">Browse</h2>
+      <div class="tiles" id="browseTiles"></div>
+
       <h2 class="eyebrow">Podcasts</h2>
       <div class="tiles" id="podTiles"></div>
       <button id="podAdd" class="linkish" type="button">Add or remove podcasts</button>
@@ -483,6 +487,17 @@
       </div>
     </div>
     <div id="findResults" class="view" hidden></div>
+
+    <div id="browse" class="view" hidden>
+      <button class="back" type="button" data-to="#find">‹ Find</button>
+      <div class="row seg" role="group" aria-label="Albums A to Z, or folders" style="margin-top:0">
+        <button type="button" data-bv="folders" aria-pressed="true">Folders</button>
+        <button type="button" data-bv="az" aria-pressed="false">Albums A–Z</button>
+      </div>
+      <div id="bCrumbs"></div>
+      <ul id="bList" class="list"><li class="muted">Loading…</li></ul>
+      <p id="bNote" class="muted" style="margin:.4rem 0 0;font-size:.85rem"></p>
+    </div>
 
     <div id="podList" class="view" hidden>
       <button class="back" type="button" data-to="#find">‹ Find</button>
@@ -770,11 +785,15 @@
       <button type="button" data-kind="music" aria-pressed="true">Music</button>
       <button type="button" data-kind="jingles" aria-pressed="false">Jingles</button>
       <button type="button" data-kind="audiobooks" aria-pressed="false">Audiobooks</button>
+      <button type="button" data-kind="ondemand" aria-pressed="false">On demand</button>
       <span id="mSpace" class="muted" style="font-size:.85rem;margin-left:auto"></span>
     </div>
   </section>
 
   <section class="card">
+    <p id="mKindNote" class="muted" style="margin:0 0 .5rem;font-size:.85rem" hidden>On demand is for anything
+      you want to pick and play yourself (storms, old radio shows, long classical pieces, your own recordings):
+      it's never played in the show. Lay it out however you like; each folder shows under Find › Browse.</p>
     <div id="mCrumbs"></div>
     <ul id="mList"><li class="muted">Loading…</li></ul>
     <div id="mTools" class="row">
@@ -1322,9 +1341,7 @@ function renderFind() {
       [act("Play", true, () => playShow({ profile: p.name }))])),
     ...d.artists.map(a => resultRow(a.name, `${a.tracks} song${a.tracks === 1 ? "" : "s"}`,
       [act("Artist radio", true, () => playShow({ artist: a.name }))]))]);
-  group("Albums", d.albums.map(a => resultRow(a.title, `${a.artist} · ${a.tracks} tracks`,
-    [act("Play", true, () => playAlbum(a), "Play it start to finish, no DJ"),
-     act("With the DJ", false, b => requestAlbum(a, b.currentTarget), "Play it next in the show, introduced by the DJ")])));
+  group("Albums and folders", d.albums.map(a => resultRow(a.title, albumWords(a), albumActs(a))));
   const songs = fFilter === "song" ? d.songs : d.songs.slice(0, 8);
   group("Songs", songs.map(r => resultRow(r.title, [r.artist, r.album].filter(Boolean).join(" · "),
     [act("Play next", true, b => requestTrack(r, b.currentTarget))])));
@@ -1366,31 +1383,54 @@ async function requestTrack(r, button) {
     showRequests(reply.requests);
   } catch { toast("Couldn't reach the radio."); button.disabled = false; }
 }
+function albumWords(a) {
+  const n = `${a.tracks} track${a.tracks === 1 ? "" : "s"}`;
+  if (a.root !== "ondemand") return [a.artist, n].filter(Boolean).join(" · ");
+  const where = a.folder.split("/").slice(0, -1).join(" › ");
+  return ["On demand" + (where ? " › " + where : ""), a.artist, n].filter(Boolean).join(" · ");
+}
+function albumActs(a) {           // one album or folder: the same two buttons everywhere
+  const all = a.deep ? " all" : "";
+  return [act("Play" + (all || " now"), true, () => playAlbum(a), "Start it now, beginning to end, no DJ"),
+          act("Play" + all + " next", false, b => requestAlbum(a, b.currentTarget),
+              a.root === "ondemand" ? "After the song playing now, no DJ" : "After the song playing now, introduced by the DJ")];
+}
+const albumBody = a => a.id != null && !a.deep ? { id: a.id } : { root: a.root, folder: a.folder, deep: !!a.deep };
 async function requestAlbum(a, button) {
   button.disabled = true;
   try {
     const resp = await fetch("/api/album", { method: "POST", headers: { "Content-Type": "application/json" },
-                                            body: JSON.stringify({ id: a.id }) });
+                                            body: JSON.stringify(albumBody(a)) });
     const reply = await resp.json();
     if (!resp.ok) { toast("Couldn't: " + reply.error + "."); button.disabled = false; return; }
     button.textContent = "Queued ✓";
-    toast(`“${a.title}” plays next, start to finish: the DJ introduces it, then it's straight through.`);
-    showAlbum(reply.album); showRequests(reply.requests);
+    toast(reply.dj ? `“${a.title}” is up next, after this song: the DJ introduces it, then it's straight through.`
+          : reply.now ? `“${a.title}” is ready: it plays when the radio's on.`
+          : `“${a.title}” is up next, after this song, with no DJ.`);
+    showAlbum(reply.album, reply.up_next_source); showRequests(reply.requests);
+    setTimeout(poll, 800);
   } catch { toast("Couldn't reach the radio."); button.disabled = false; }
 }
-function showAlbum(album) {
-  $("albumBox").hidden = !album;
+function showAlbum(album, nextSrc) {
+  $("albumBox").hidden = !album && !nextSrc;
   upNextShown();
-  if (!album) return;
-  const b = document.createElement("b"); b.textContent = "Album: ";
-  $("albumNow").replaceChildren(b, `${album.title} — ${album.artist} ` +
-    (album.track ? `(${album.track} of ${album.of})` : `(${album.of} tracks, up next)`));
+  if (!album && !nextSrc) return;
+  const b = document.createElement("b");
+  if (album) {
+    b.textContent = "Album: ";
+    $("albumNow").replaceChildren(b, `${album.title}${album.artist ? " — " + album.artist : ""} ` +
+      (album.track ? `(${album.track} of ${album.of})` : `(${album.of} tracks, up next)`));
+  } else {
+    b.textContent = "Up next: ";
+    $("albumNow").replaceChildren(b, `${nextSrc.title}${nextSrc.artist ? " — " + nextSrc.artist : ""} (after this song, no DJ)`);
+  }
+  $("albumStop").textContent = album ? "Stop album" : "Cancel";
 }
 $("albumStop").onclick = async () => {
   try {
     const reply = await (await fetch("/api/album/stop", { method: "POST" })).json();
-    toast("Album stopped: back to the usual mix after this song.");
-    showAlbum(null); showRequests(reply.requests);
+    toast("Stopped: back to the usual mix after this song.");
+    showAlbum(null, null); showRequests(reply.requests);
   } catch { toast("Couldn't reach the radio."); }
 };
 function upNextShown() { $("upNext").hidden = $("albumBox").hidden && $("reqBox").hidden && $("qRadio").hidden; }
@@ -2009,7 +2049,7 @@ async function poll() {
     if (s.station_name && selValue(s.artist, s.profile) !== selNow && document.activeElement !== $("artistRadio"))
       showSelection(s.artist, s.profile, s.station_name);    // changed on another phone
     showRequests(s.requests);
-    showAlbum(s.album);
+    showAlbum(s.album, s.up_next_source);
     showRadio(s.source, s.source_error);
     const badge = $("badge");
     badge.textContent = s.on_air ? "On air" : (s.voices_ready ? "Off air" : "Warming up");
@@ -2667,7 +2707,7 @@ async function pressButton(n) {
 
 async function playAlbum(a) {
   try {
-    const d = await radioPost("/api/album/play", { id: a.id });
+    const d = await radioPost("/api/album/play", albumBody(a));
     showRadio(d.source, null);
     toast(`Playing ${a.title}, start to finish`);
     setTimeout(poll, 800);
@@ -2685,6 +2725,7 @@ async function loadMedia() {
   for (const b of document.querySelectorAll("#page-library [data-kind]"))
     b.setAttribute("aria-pressed", String(b.dataset.kind === mKind));
   $("mAddFolder").hidden = mKind === "jingles";
+  $("mKindNote").hidden = mKind !== "ondemand";
   try {
     const r = await fetch(`/api/media?kind=${mKind}&path=${encodeURIComponent(mPath)}`, { cache: "no-store" });
     const d = await r.json();
@@ -2697,7 +2738,7 @@ async function loadMedia() {
 }
 function showMedia(d) {
   $("mSpace").textContent = `${fmtSize(d.usage.free)} free of ${fmtSize(d.usage.total)}`;
-  const crumbs = [[{ music: "Music", jingles: "Jingles", audiobooks: "Audiobooks" }[mKind], ""]];
+  const crumbs = [[{ music: "Music", jingles: "Jingles", audiobooks: "Audiobooks", ondemand: "On demand" }[mKind], ""]];
   d.path.split("/").filter(Boolean).forEach((p, i, a) => crumbs.push([p, a.slice(0, i + 1).join("/")]));
   $("mCrumbs").replaceChildren(...crumbs.flatMap(([name, path], i) => {
     const last = i === crumbs.length - 1;
@@ -2750,8 +2791,8 @@ async function mediaDone(before = "") {
     const d = await radioPost("/api/media/done");
     if (d.changed) {
       const text = `${before}Library updated: ${d.library.tracks.toLocaleString()} songs, ${d.library.jingles} jingles, ` +
-                   `${d.library.books ?? 0} audiobooks.`;
-      loadBooks();
+                   `${d.library.books ?? 0} audiobooks, ${(d.library.ondemand ?? 0).toLocaleString()} on demand.`;
+      loadBooks(); bAlbums = null;
       if (!$("page-library").hidden) mNote(text); else toast(text);
       loadArtists();                              // new (or gone) artists in Artist radio and the lists
     }
@@ -2830,6 +2871,7 @@ const PAGES = ["identity", "speakers", "noise", "stream", "tests", "dj", "voices
 function route() {
   const h = location.hash.slice(1);
   if (h === "podcasts" || h.startsWith("pod-")) return ["find", h];
+  if (h === "browse") return ["find", h];
   if (h === "radio" || h === "find") return ["find", null];
   if (h === "media") return ["settings", "library"];
   if (h === "settings") return ["settings", null];
@@ -2849,16 +2891,18 @@ function showView() {
   for (const p of PAGES) $("page-" + p).hidden = p !== setPage;
   pageNow = setPage;
   if (tab === "find") { loadRadio(); loadBooks(); loadPodcasts(); drawHome(); }
-  const podPage = tab === "find" && page && (page === "podcasts" || page.startsWith("pod-")) ? page : null;
+  const podPage = tab === "find" && page && (page === "podcasts" || page.startsWith("pod-") || page === "browse") ? page : null;
   $("podList").hidden = podPage !== "podcasts";
-  $("podShow").hidden = !podPage || podPage === "podcasts";
+  $("podShow").hidden = !podPage || podPage === "podcasts" || podPage === "browse";
+  $("browse").hidden = podPage !== "browse";
   if (tab === "find") {
     $("q").closest(".search").hidden = $("filters").hidden = !!podPage;
     $("qNote").hidden = !!podPage || !$("qNote").textContent;
     $("findHome").hidden = !!podPage || $("q").value.trim().length >= 2;
     $("findResults").hidden = !!podPage || $("q").value.trim().length < 2;
   }
-  if (podPage && podPage !== "podcasts") loadEpisodes(podPage.slice(4), true);
+  if (podPage === "browse") loadBrowse();
+  if (podPage && podPage.startsWith("pod-")) loadEpisodes(podPage.slice(4), true);
   if (tab === "settings" && !page) { loadAuth(); loadVoices(); loadUpdate(); loadWifi(); loadRadio(); drawSettings(); }
   if (page === "lists") { fillListPick(); showListEditor(); }
   if (page === "voices") loadVoices();
@@ -2891,6 +2935,75 @@ $("sheetDone").onclick = closeSheet;
 $("scrim").onclick = closeSheet;
 document.addEventListener("keydown", e => { if (e.key === "Escape" && !$("sheet").hidden) closeSheet(); });
 
+// Browse: the albums A-Z (named from the tags), or the folders as they are on the
+// radio -- Music and On demand -- for anything untagged or laid out its own way.
+let bView = "folders", bRoot = null, bPath = "", bAlbums = null;
+for (const b of document.querySelectorAll("#browse [data-bv]"))
+  b.onclick = () => { bView = b.dataset.bv; loadBrowse(); };
+function openBrowse(root) { bView = "folders"; bRoot = root; bPath = ""; go("#browse"); }
+function crumbLink(name, onclick) {
+  const a = Object.assign(document.createElement("a"), { href: "#browse", textContent: name });
+  a.onclick = e => { e.preventDefault(); onclick(); };
+  return a;
+}
+function folderRow(name, sub, open, acts) {
+  const li = document.createElement("li");
+  const t = document.createElement("span"); t.className = "t";
+  const a = Object.assign(document.createElement("a"), { className: "open", href: "#browse", textContent: "📁 " + name });
+  a.onclick = e => { e.preventDefault(); open(); };
+  t.append(a, Object.assign(document.createElement("small"), { textContent: sub }));
+  li.append(t, ...acts);
+  return li;
+}
+const plural = (n, w) => `${n.toLocaleString()} ${w}${n === 1 ? "" : "s"}`;
+async function loadBrowse() {
+  for (const b of document.querySelectorAll("#browse [data-bv]")) b.setAttribute("aria-pressed", String(b.dataset.bv === bView));
+  $("bNote").textContent = "";
+  try {
+    if (bView === "az") {
+      $("bCrumbs").replaceChildren();
+      if (!bAlbums) bAlbums = (await (await fetch("/api/albums", { cache: "no-store" })).json()).albums;
+      $("bList").replaceChildren(...bAlbums.map(a => resultRow(a.title, albumWords(a), albumActs(a))));
+      $("bNote").textContent = bAlbums.length ? "Named from the files' tags. Untagged or odd ones: try Folders."
+                                              : "No albums on the radio yet.";
+      return;
+    }
+    if (!bRoot) {                              // the top: the two libraries
+      $("bCrumbs").replaceChildren();
+      const [m, o] = await Promise.all(["music", "ondemand"].map(r =>
+        fetch(`/api/browse?root=${r}`, { cache: "no-store" }).then(x => x.json())));
+      const count = d => d.folders.reduce((n, f) => n + f.tracks, 0) + (d.album ? d.album.tracks : 0);
+      $("bList").replaceChildren(
+        folderRow("Music", `${plural(m.folders.length, "folder")} · on the radio and here`, () => { bRoot = "music"; bPath = ""; loadBrowse(); }, []),
+        folderRow("On demand", `${plural(o.folders.length, "folder")} · only when you pick it, no DJ`, () => { bRoot = "ondemand"; bPath = ""; loadBrowse(); }, []));
+      $("bNote").textContent = count(o) ? "" : "On demand is empty: add things in Settings › Media library › On demand.";
+      return;
+    }
+    const d = await (await fetch(`/api/browse?root=${bRoot}&path=${encodeURIComponent(bPath)}`, { cache: "no-store" })).json();
+    const top = bRoot === "music" ? "Music" : "On demand";
+    const parts = bPath.split("/").filter(Boolean);
+    const crumbs = [crumbLink("Browse", () => { bRoot = null; bPath = ""; loadBrowse(); }),
+                    parts.length ? crumbLink(top, () => { bPath = ""; loadBrowse(); }) : Object.assign(document.createElement("b"), { textContent: top })];
+    parts.forEach((p, i) => crumbs.push(i === parts.length - 1 ? Object.assign(document.createElement("b"), { textContent: p })
+                                        : crumbLink(p, () => { bPath = parts.slice(0, i + 1).join("/"); loadBrowse(); })));
+    $("bCrumbs").replaceChildren(...crumbs.flatMap((el, i) => i ? [Object.assign(document.createElement("span"),
+                                                      { className: "muted", textContent: "›" }), el] : [el]));
+    const rows = [];
+    if (d.album) rows.push(resultRow(d.folders.length ? "The tracks in this folder" : d.album.title,
+                                     albumWords(d.album), albumActs(d.album)));
+    for (const f of d.folders) {
+      const path = bPath ? `${bPath}/${f.name}` : f.name;
+      const open = () => { bPath = path; loadBrowse(); };
+      const leaf = f.own && !f.folders;          // just tracks: play it from here
+      const item = { root: bRoot, folder: path, title: f.name, deep: !leaf, tracks: f.tracks };
+      const sub = [f.folders ? plural(f.folders, "folder") : "", plural(f.tracks, "track")].filter(Boolean).join(" · ");
+      rows.push(folderRow(f.name, sub, open, albumActs(item)));
+    }
+    $("bList").replaceChildren(...rows);
+    if (!rows.length) $("bNote").textContent = "Nothing playable in this folder.";
+  } catch { $("bList").replaceChildren(Object.assign(document.createElement("li"), { className: "muted", textContent: "Couldn't reach the radio." })); }
+}
+
 // Find with nothing typed: Sleep Radio (everything, your lists, the artist
 // playing) and your saved stations, as tiles; the one playing is lit.
 function tile(title, sub, on, onclick) {
@@ -2908,6 +3021,8 @@ function drawHome() {
                                             showOn && kind === "p" && name === p.name, () => playShow({ profile: p.name })));
   if (kind === "a") tiles.push(tile(`${name}`, "Artist radio", showOn, () => playShow({ artist: name })));
   $("mixTiles").replaceChildren(...tiles);
+  $("browseTiles").replaceChildren(tile("Albums and folders", "Everything, as it is on the radio", false, () => openBrowse(null)),
+                                   tile("On demand", "Only when you pick it, no DJ", false, () => openBrowse("ondemand")));
   $("stationTiles").replaceChildren(...(rStations.length ? rStations.map(st =>
     tile(st.name, st.info || "Internet radio", !!rTuned && rTuned.url === st.url, () => tuneTo(st)))
     : [Object.assign(document.createElement("p"), { className: "muted", style: "margin:0;font-size:.9rem",

@@ -75,9 +75,16 @@ def validate(preset) -> dict | None:
     if kind == "radio":
         return {"kind": "radio", **radio_mod.validate_station(preset)}
     if kind == "album":
-        return {"kind": "album", "folder": _text(preset.get("folder"), "album folder", True),
-                "title": _text(preset.get("title"), "album title") or "",
-                "artist": _text(preset.get("artist"), "artist") or ""}
+        out = {"kind": "album", "folder": _text(preset.get("folder"), "album folder", True),
+               "title": _text(preset.get("title"), "album title") or "",
+               "artist": _text(preset.get("artist"), "artist") or ""}
+        if preset.get("root", "music") not in ("music", "ondemand"):
+            raise ValueError("an album is in music or ondemand")
+        if preset.get("root") == "ondemand":
+            out["root"] = "ondemand"
+        if preset.get("deep") is True:
+            out["deep"] = True
+        return out
     if kind == "podcast":
         return {"kind": "podcast", "show": _text(preset.get("show"), "podcast", True),
                 "title": _text(preset.get("title"), "podcast title") or "",
@@ -156,7 +163,8 @@ def same(a: dict | None, b: dict | None) -> bool:
     if a["kind"] == "radio":
         return a["url"] == b["url"]
     if a["kind"] == "album":
-        return a["folder"] == b["folder"]
+        return (a["folder"], a.get("root", "music"), a.get("deep", False)) == \
+            (b["folder"], b.get("root", "music"), b.get("deep", False))
     if a["kind"] == "book":
         return a["key"] == b["key"]
     if a["kind"] == "podcast":
@@ -226,7 +234,8 @@ class Presets:
             return validate({"kind": "book", "key": src["key"], "title": src.get("title", "")})
         if src is not None and src["kind"] == "album":
             return validate({"kind": "album", "folder": src["folder"], "title": src["title"],
-                             "artist": src["artist"]})
+                             "artist": src["artist"], "root": src.get("root", "music"),
+                             "deep": src.get("deep", False)})
         return validate({"kind": "show", "artist": self.station.artist, "profile": self.station.profile})
 
     def label(self, preset: dict | None) -> str:

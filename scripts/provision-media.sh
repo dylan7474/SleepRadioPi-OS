@@ -116,6 +116,7 @@ if [ -n "$VOICES" ]; then
 else
 	mkdir -p -m 755 "$MNT/voices"   # the radio downloads the standard voice into it
 fi
+mkdir -p -m 755 "$MNT/ondemand"     # On demand: filled from the web page (never in the show)
 if [ -n "$JINGLES" ]; then
 	echo "jingles:"; "${RSYNC[@]}" --include='*/' --include='*.mp3' --exclude='*' \
 		"$JINGLES/" "$MNT/jingles/"

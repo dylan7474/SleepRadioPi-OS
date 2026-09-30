@@ -151,6 +151,24 @@ def artist_key(artist: str) -> str:
     return key[4:] if key.startswith("the ") and len(key) > 4 else key
 
 
+def _album_names(tracks: list[BroadcastTrack], rel: str, root: str, deep: bool = False) -> dict:
+    """An album's title and artist: from the tags where most tracks agree, else
+    the folder. On demand has no set layout, so there it's the folder's own
+    name, and its artist only if the tags give one."""
+    parts = [p for p in rel.split("/") if p]
+    name = parts[-1] if parts else ("On demand" if root == "ondemand" else "Music")
+    titles = Counter(t.album.strip() for t in tracks if t.album.strip())
+    artists = Counter(t.artist.strip() for t in tracks if t.artist.strip())
+    artist, n = artists.most_common(1)[0] if artists else ("", 0)
+    if root == "ondemand":
+        tagged = [t for t in tracks if t.album.strip() and t.album.strip() != t.path.parent.name]
+        title = name if deep or not tagged else titles.most_common(1)[0][0]
+        folder_artist = parts[0] if len(parts) >= 2 else ""   # (read_track's guess from Artist/Album/x)
+        return {"title": title, "artist": artist if artist != folder_artist and n >= 0.6 * len(tracks) else ""}
+    title = name if deep else (titles.most_common(1)[0][0] if titles else name)
+    return {"title": title, "artist": artist if n >= 0.6 * len(tracks) else ("Various artists" if artists else "")}
+
+
 class Station:
     def __init__(self, cfg: dict, tts: TtsWorker | None, output: Output) -> None:
         self.music_dir: Path = cfg["music_folder"]
@@ -203,6 +221,10 @@ class Station:
 
         self._tag_cache = cfg.get("tag_cache")
         self.tracks = scan_music(self.music_dir, self._tag_cache)
+        # On demand: anything played only when asked for (storms, radio shows, long
+        # classical pieces...), any layout. Never in the show, the song search or lists.
+        self.ondemand_dir: Path | None = cfg.get("ondemand_folder")
+        self.ondemand_tracks = self._scan_ondemand()
         self.selector = BroadcastSelector(self.tracks)
         self.artist: str | None = None      # artist radio: only this artist's tracks
         self.profile: str | None = None     # ...or only the artists on this list
@@ -242,6 +264,7 @@ class Station:
         self._pending: deque[BroadcastTrack] = deque()   # requests made during a gap
         self._albums: list[dict] = []        # album runs being played start to finish
         self._album_index: list[dict] | None = None
+        self._next_source: dict | None = None  # "Play next" with no DJ: tuned when the song (or album) ends
         self._gap_is_album = False           # this gap is between two tracks of an album
         self.current_track: BroadcastTrack | None = None
         self._took_request = False
@@ -440,7 +463,7 @@ class Station:
             while not self._halted():
                 opened = True
                 self._play_track(track)
-                if self._halted():
+                if self._halted() or self._take_next_source():
                     break
                 with self._lock:
                     self._in_gap = True       # a request now plays after the announced next song
@@ -471,13 +494,19 @@ class Station:
         if source.get("kind", "radio") == "radio":
             return {"kind": "radio", **radio_mod.validate_station(source)}
         if source["kind"] == "album":
-            album = self._album_by_folder(source.get("folder"))
+            root, deep = source.get("root") or "music", source.get("deep") is True
+            album = self._album_by_folder(source.get("folder"), root, deep)
             if album is None:
-                raise ValueError("that album isn't in the library")
+                raise ValueError("that isn't in the library")
             track = source.get("track", 0)
             track = track if isinstance(track, int) and not isinstance(track, bool) else 0
-            return {"kind": "album", "folder": album["folder"], "title": album["title"],
-                    "artist": album["artist"], "track": max(0, min(track, len(album["tracks"]) - 1))}
+            out = {"kind": "album", "folder": album["folder"], "title": album["title"],
+                   "artist": album["artist"], "track": max(0, min(track, len(album["tracks"]) - 1))}
+            if root != "music":
+                out["root"] = root
+            if deep:
+                out["deep"] = True
+            return out
         if source["kind"] == "episode":
             show = self.podcasts.show(source.get("show")) if isinstance(source.get("show"), str) else None
             eps = self.podcasts.episodes(show["id"]) if show else []
@@ -511,14 +540,55 @@ class Station:
                  f"{source['kind']} {source.get('name') or source['title']}")
         self._notify_source()
 
-    def play_album(self, album_id: int) -> dict:
-        """Play an album (an id from the search) straight through instead of the
-        show: no DJ, jingles or news. Back to the show when it ends."""
-        albums = self.albums()
-        if not 0 <= album_id < len(albums):
-            raise ValueError("no such album")
-        self.tune({"kind": "album", "folder": albums[album_id]["folder"]})
+    def album_source(self, album_id=None, root="music", folder=None, deep=False) -> dict:
+        """A source for an album: an id from the search or list, or a folder."""
+        if album_id is not None:
+            albums = self.albums()
+            if isinstance(album_id, bool) or not isinstance(album_id, int) or not 0 <= album_id < len(albums):
+                raise ValueError("no such album")
+            a = albums[album_id]
+            root, folder, deep = a["root"], a["folder"], False
+        return self._check_source({"kind": "album", "root": root, "folder": folder, "deep": deep is True})
+
+    def play_album(self, album_id=None, root="music", folder=None, deep=False) -> dict:
+        """Play an album or folder straight through instead of the show: no DJ,
+        jingles or news. Back to the show when it ends."""
+        self._next_source = None
+        self.tune(self.album_source(album_id, root, folder, deep))
         return self._source
+
+    def play_next(self, album_id=None, root="music", folder=None, deep=False) -> dict:
+        """Play next: music albums go into the show, introduced by the DJ; On
+        demand plays with no DJ once the song (or the album) playing ends."""
+        src = self.album_source(album_id, root, folder, deep)
+        if src.get("root", "music") == "music":
+            album = self._album_by_folder(src["folder"], "music", src.get("deep", False))
+            return {**self._request_album(album), "dj": True}
+        playing = self._source
+        if not self.is_on_air or (playing is not None and playing["kind"] in ("radio", "book", "episode")):
+            self.tune(src)                       # nothing to wait for: it plays (when the radio's on)
+            return {"title": src["title"], "artist": src["artist"], "now": True, "dj": False}
+        with self._lock:
+            self._next_source = src
+        log.info("up next (no DJ): %s", src["title"])
+        return {"title": src["title"], "artist": src["artist"], "now": False, "dj": False}
+
+    def _take_next_source(self) -> bool:
+        """(show thread) a song or album has ended: a queued Play next takes over."""
+        with self._lock:
+            src, self._next_source = self._next_source, None
+            if src is None:
+                return False
+            self._source = src
+            self.source_error = None
+            self._switch.set()
+        log.info("streaming: album %s (played next)", src["title"])
+        self._notify_source()
+        return True
+
+    def next_source_status(self) -> dict | None:
+        src = self._next_source
+        return None if src is None else {"title": src["title"], "artist": src["artist"]}
 
     @property
     def source(self) -> dict | None:
@@ -544,16 +614,27 @@ class Station:
         log.warning("radio: giving up on %s (%s): back to the show", tuned["name"], why)
         # (still saved: after a restart, e.g. with the Wi-Fi back, it's tried again)
 
-    def _album_by_folder(self, folder) -> dict | None:
-        if not isinstance(folder, str):
+    def _album_by_folder(self, folder, root="music", deep=False) -> dict | None:
+        """The album in a folder; with deep, everything under the folder (e.g. a
+        box set's CD1, CD2 or a series' seasons) as one, in path order."""
+        if not isinstance(folder, str) or root not in ("music", "ondemand"):
             return None
-        return next((a for a in self.albums() if a["folder"] == folder), None)
+        if not deep:
+            return next((a for a in self.albums() if a["root"] == root and a["folder"] == folder), None)
+        prefix = folder + "/" if folder else ""
+        parts = [a for a in self.albums() if a["root"] == root and (a["folder"] == folder or a["folder"].startswith(prefix))]
+        if not parts:
+            return None
+        parts.sort(key=lambda a: [_natural(p) for p in a["folder"].split("/")])
+        tracks = [t for a in parts for t in a["tracks"]]
+        return {"root": root, "folder": folder, "deep": True, "tracks": tracks,
+                **_album_names(tracks, folder, root, deep=True)}
 
     def _run_album(self, source: dict) -> None:
         """Play an album from source["track"] to the end, like a record: no DJ,
         jingles or news; Skip goes to the next track. Then back to the show."""
-        album = self._album_by_folder(source["folder"])
-        if album is None:                       # (checked when tuned; the library doesn't change)
+        album = self._album_by_folder(source["folder"], source.get("root", "music"), source.get("deep", False))
+        if album is None:                       # (checked when tuned; gone after a library change)
             with self._lock:
                 if self._source is source:
                     self._source = None
@@ -579,12 +660,13 @@ class Station:
             self._play_file(t.path, OnAir("track", t.title, t.artist, t.album))
         if self._halted():
             return
-        log.info("album finished: %s; back to the show", album["title"])
+        log.info("album finished: %s", album["title"])
         with self._lock:
             if self._source is source:
                 self._source = None
         self.next_track = None
-        self._notify_source()
+        if not self._take_next_source():
+            self._notify_source()
 
     def _run_radio(self, tuned: dict) -> None:
         """Play a station until the source changes, the show ends, or it stays
@@ -807,47 +889,99 @@ class Station:
 
     # --- albums: played start to finish -----------------------------------------------
 
+    def _scan_ondemand(self) -> list[BroadcastTrack]:
+        if self.ondemand_dir is None:
+            return []
+        cache = None if self._tag_cache is None else Path(self._tag_cache).with_name("tags-ondemand.json")
+        return scan_music(self.ondemand_dir, cache)
+
+    def _roots(self) -> dict[str, tuple[Path | None, list[BroadcastTrack]]]:
+        return {"music": (self.music_dir, self.tracks), "ondemand": (self.ondemand_dir, self.ondemand_tracks)}
+
     def albums(self) -> list[dict]:
-        """The library's albums: one per folder (Artist/Album/NN - Title), its
-        tracks in file order. Cached (the library doesn't change while running)."""
+        """Every folder with audio in it, in music (Artist/Album/NN - Title) and On
+        demand (any layout): its tracks in file order, named from the tags where
+        they agree, else from the folder. Cached (the library changes only
+        through reload_library)."""
         if self._album_index is None:
-            folders: dict[Path, list[BroadcastTrack]] = {}
-            for t in self.tracks:
-                folders.setdefault(t.path.parent, []).append(t)
             index = []
-            for folder, tracks in folders.items():
-                tracks.sort(key=lambda t: _natural(t.path.name))
-                titles = Counter(t.album.strip() for t in tracks if t.album.strip())
-                artists = Counter(t.artist.strip() for t in tracks if t.artist.strip())
-                artist, n = artists.most_common(1)[0] if artists else ("", 0)
-                try:
-                    rel = str(folder.relative_to(self.music_dir))
-                except ValueError:
-                    rel = str(folder)
-                index.append({"folder": rel, "title": titles.most_common(1)[0][0] if titles else folder.name,
-                              "artist": artist if n >= 0.6 * len(tracks) else "Various artists",
-                              "tracks": tracks})
-            index.sort(key=lambda a: (artist_key(a["artist"]), a["title"].lower()))
+            for root, (base, root_tracks) in self._roots().items():
+                folders: dict[Path, list[BroadcastTrack]] = {}
+                for t in root_tracks:
+                    folders.setdefault(t.path.parent, []).append(t)
+                for folder, tracks in folders.items():
+                    tracks.sort(key=lambda t: _natural(t.path.name))
+                    try:
+                        rel = folder.relative_to(base).as_posix()
+                    except ValueError:
+                        rel = str(folder)
+                    rel = "" if rel == "." else rel
+                    index.append({"root": root, "folder": rel, "tracks": tracks,
+                                  **_album_names(tracks, rel, root)})
+            index.sort(key=lambda a: (a["root"] != "music", artist_key(a["artist"]), a["title"].lower()))
             for i, a in enumerate(index):
                 a["id"] = i
             self._album_index = index
         return self._album_index
 
+    def browse(self, root: str, path: str = "") -> dict:
+        """One folder of music or On demand, for the page's folder view: the
+        folders in it that hold audio (at any depth), and its own tracks if any."""
+        if root not in ("music", "ondemand"):
+            raise ValueError("root is music or ondemand")
+        path = "/".join(p for p in (path or "").split("/") if p)
+        if ".." in path.split("/"):
+            raise ValueError("that isn't a folder in the library")
+        prefix = path + "/" if path else ""
+        subs: dict[str, dict] = {}
+        here = None
+        for a in self.albums():
+            if a["root"] != root:
+                continue
+            if a["folder"] == path:
+                here = a
+            elif a["folder"].startswith(prefix):
+                name = a["folder"][len(prefix):].split("/")[0]
+                sub = subs.setdefault(name, {"name": name, "tracks": 0, "own": False, "inner": set()})
+                sub["tracks"] += len(a["tracks"])
+                if a["folder"] == prefix + name:
+                    sub["own"] = True           # it has tracks of its own
+                else:                           # the folders inside it (holding audio somewhere)
+                    sub["inner"].add(a["folder"][len(prefix + name) + 1:].split("/")[0])
+        folders = sorted(subs.values(), key=lambda f: _natural(f["name"]))
+        for f in folders:
+            f["folders"] = len(f.pop("inner"))
+        return {"root": root, "path": path, "folders": folders,
+                "album": None if here is None else self._album_info(here)}
+
+    @staticmethod
+    def _album_info(a: dict) -> dict:
+        return {"id": a.get("id"), "root": a["root"], "folder": a["folder"], "deep": a.get("deep", False),
+                "title": a["title"], "artist": a["artist"], "tracks": len(a["tracks"])}
+
+    def all_albums(self) -> list[dict]:
+        """The A-Z list for the page (no tracks)."""
+        return [self._album_info(a) for a in self.albums()]
+
     def search_albums(self, query: str, limit: int = 20) -> list[dict]:
         words = query.lower().split()
         if not words:
             return []
-        hits = [a for a in self.albums() if all(w in f"{a['title']} {a['artist']}".lower() for w in words)]
-        return [{"id": a["id"], "title": a["title"], "artist": a["artist"], "tracks": len(a["tracks"])}
-                for a in hits[:limit]]
+        hits = [a for a in self.albums()
+                if all(w in f"{a['title']} {a['artist']} {a['folder']}".lower() for w in words)]
+        return [self._album_info(a) for a in hits[:limit]]
 
     def request_album(self, album_id: int) -> dict:
         """Queue a whole album to play next, in order, straight through: the DJ
         introduces it and back-announces it, with nothing in between."""
         albums = self.albums()
-        if not 0 <= album_id < len(albums):
+        if isinstance(album_id, bool) or not isinstance(album_id, int) or not 0 <= album_id < len(albums):
             raise ValueError("no such album")
-        album = albums[album_id]
+        if albums[album_id]["root"] != "music":
+            return self.play_next(album_id)
+        return self._request_album(albums[album_id])
+
+    def _request_album(self, album: dict) -> dict:
         run = {"title": album["title"], "artist": album["artist"], "tracks": list(album["tracks"])}
         with self._lock:
             self._albums.append(run)          # before the requests, so the gap is worded for it
@@ -860,8 +994,9 @@ class Station:
     def stop_album(self) -> bool:
         """Drop the rest of the album(s) from the queue; the track playing finishes."""
         with self._lock:
+            had_next, self._next_source = self._next_source is not None, None
             if not self._albums:
-                return False
+                return had_next
             in_albums = {t for run in self._albums for t in run["tracks"]}
             front = list(self._queue)[:self._n_requested]
             keep = [t for t in front if t not in in_albums]
@@ -1596,10 +1731,12 @@ class Station:
         jingles, keeping the artist or list playing; songs lined up whose files
         have gone are dropped. The song on air carries on."""
         tracks = scan_music(self.music_dir, self._tag_cache)
+        ondemand = self._scan_ondemand()
         self._scan_books()
         jingles = scan_jingles(self.jingles_dir) if self.config.jingle_every or self.jingles else []
         with self._lock:
             self.tracks = tracks
+            self.ondemand_tracks = ondemand
             self._album_index = None
             self._use_selection(self.artist, self.profile)
             requested = list(self._queue)[:self._n_requested]
@@ -1617,7 +1754,8 @@ class Station:
             self._prepare_opening()
         log.info("library reloaded: %d tracks, %d jingles, %d audiobooks", len(tracks), len(jingles),
                  len(self.books.all()))
-        return {"tracks": len(tracks), "jingles": len(jingles), "books": len(self.books.all())}
+        return {"tracks": len(tracks), "jingles": len(jingles), "books": len(self.books.all()),
+                "ondemand": len(ondemand)}
 
     # --- artist radio ------------------------------------------------------------------
 
@@ -1764,7 +1902,7 @@ class Station:
         if src["kind"] == "radio":
             return {**src, "title": self.radio_title,
                     "playing": self.radio_playing and on_air is not None and on_air.kind == "radio"}
-        album = self._album_by_folder(src["folder"])
+        album = self._album_by_folder(src["folder"], src.get("root", "music"), src.get("deep", False))
         return {**src, "tracks": len(album["tracks"]) if album else 0,
                 "playing": on_air is not None and on_air.kind == "track"}
 
@@ -1788,11 +1926,13 @@ class Station:
             "can_skip": self.is_on_air and on_air is not None and on_air.kind not in ("radio", "book", "episode"),
             "news_ready": None if news is None else news.due.mark.strftime("%H:%M"),
             "history": list(self.history),
-            "library": {"tracks": len(self.tracks), "jingles": len(self.jingles), "books": len(self.books.all())},
+            "library": {"tracks": len(self.tracks), "jingles": len(self.jingles), "books": len(self.books.all()),
+                        "ondemand": len(self.ondemand_tracks)},
             "artist": self.artist,
             "profile": self.profile,
             "requests": self.requests(),
             "album": self.album_status(),
+            "up_next_source": self.next_source_status(),
             "source": self._source_status(on_air),
             "source_error": self.source_error,
             "station_name": self.builder.station,

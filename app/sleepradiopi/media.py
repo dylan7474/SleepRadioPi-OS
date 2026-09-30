@@ -78,7 +78,7 @@ class MediaLibrary:
 
     def _root(self, kind: str) -> Path:
         if kind not in self.roots:
-            raise MediaError("that's neither music nor jingles")
+            raise MediaError("that isn't one of the radio's media folders")
         return self.roots[kind]
 
     def resolve(self, kind: str, rel: str | None) -> Path:
@@ -102,6 +102,9 @@ class MediaLibrary:
 
     def list(self, kind: str, rel: str | None = "") -> dict:
         path = self.resolve(kind, rel)
+        if path == self._root(kind) and not path.exists():      # not made yet: empty
+            return {"kind": kind, "path": "", "folders": [], "files": [], "usage": self.usage(),
+                    "writable": self._writable(path)}
         if not path.is_dir():
             raise MediaError("that folder isn't there any more")
         folders, files = [], []
@@ -130,7 +133,7 @@ class MediaLibrary:
 
     @staticmethod
     def _writable(root: Path) -> bool:
-        return os.access(root, os.W_OK)
+        return os.access(root if root.exists() else root.parent, os.W_OK)
 
     def _open(self, root: Path) -> None:
         """Keep /media writable (renewing the lease), waiting for it the first time."""
@@ -144,6 +147,10 @@ class MediaLibrary:
             if time.monotonic() > deadline:
                 raise MediaError("the radio couldn't make its music storage writable")
             time.sleep(0.5)
+        try:
+            root.mkdir(exist_ok=True)                 # (On demand, on a card from before it)
+        except OSError as e:
+            raise MediaError(f"couldn't make the folder ({e.strerror})") from None
 
     def _changed(self) -> None:
         with self._lock:
