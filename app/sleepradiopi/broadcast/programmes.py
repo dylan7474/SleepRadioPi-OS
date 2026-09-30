@@ -233,6 +233,8 @@ class Scheduler:
         b = blocks[r["i"]] if 0 <= r["i"] < len(blocks) else None
         nxt = blocks[r["i"] + 1] if r["i"] + 1 < len(blocks) else None
         return {"name": r["name"], "index": r["i"], "of": len(blocks), "block": b["name"] if b else None,
+                "started": r["started"].strftime("%H:%M"),
+                "block_started": r["block_started"].strftime("%H:%M") if r.get("block_started") else None,
                 "until": r["ends"].strftime("%H:%M") if r["ends"] else None,
                 "waiting": r.get("waiting", False),
                 "next": (nxt["name"] + (f" at {nxt['at']}" if nxt["rule"] == "at" else "")) if nxt else None}
@@ -314,7 +316,7 @@ class Scheduler:
         self._drop_queued()
         prog, now = r["prog"], self.now()
         b = prog["blocks"][i]
-        r["i"], r["waiting"] = i, False
+        r["i"], r["waiting"], r["block_started"] = i, False, now
         if b["rule"] in ("for", "at"):
             r["ends"] = now + timedelta(minutes=b["min"])
         elif b["rule"] == "until":

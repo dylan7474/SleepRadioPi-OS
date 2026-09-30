@@ -28,8 +28,12 @@ left.
       with progress), new folder, download (zip for folders), delete via the
       Trash, and move by dragging (music ↔ on demand; playlists, programmes and
       buttons follow); real lengths from the files for the timelines.
-   4. **Every setting wired up** (speakers, knob, DJ, noise, Wi-Fi, buttons,
-      voices, this radio, updates, save and load, power, messages, birthdays).
+   4. **Every setting wired up** — DONE 2026-09-30: native windows for speakers,
+      knob, DJ, noise, sleep timer, voices, Wi-Fi, this radio (+ password,
+      browser stream), buttons (+ day/night), updates, save and load, power;
+      messages as sticky notes, birthdays as a calendar; stations and podcasts
+      found/followed in their windows. Still the classic editor in a window:
+      jingles, artist lists.
    5. **The switchover**: the desktop is the main page on a computer; this
       page stays as the phone remote.
 

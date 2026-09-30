@@ -364,8 +364,19 @@ The cards:
   or folders on a playlist; the Trash deletes playlists and programmes (asks
   first) or takes shortcuts off the desktop. Settings: click the part of the
   radio they affect (the speakers, the knob, the buttons, its name) or turn it
-  round (**Settings on the back**); for now each opens this page's own
-  setting inside a window (`/?embedded#set-…`). Your icon layout and light or
+  round (**Settings on the back**): each has its own window reading and
+  writing the radio — Speakers (knob, stereo/mono, EQ, low cut, test sounds),
+  the DJ (on/off, voice, how often, hooks, jingles, speeds, the news, the
+  power-on chime), Noise, Sleep timer, Voices, Wi-Fi (join, forget, its own
+  network), This radio (name, case, password, listening in a browser),
+  Buttons (and the day and night sets), Updates, Save & load, Power.
+  **Messages** are a pinboard of sticky notes (edit in place, pause, hear it,
+  add, delete) and **Birthdays** a calendar. Stations and podcasts are found
+  and followed from their windows (*Find a station*, *Follow a podcast*) and
+  forgotten by dragging to the Trash. Jingles and artist lists still open
+  this page's own editor in a window (`/?embedded#set-…`). Open windows ask
+  the radio again every 20 s (and when you come back to the tab or close a
+  setting), so changes made elsewhere show up. Your icon layout and light or
   dark are kept in the browser. **The media manager is built in**: in Music,
   On demand and Audiobooks windows, *Upload…* / *Upload a folder…* or drop
   files and whole folders from your computer (one at a time, with progress);
