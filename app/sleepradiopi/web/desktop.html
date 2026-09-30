@@ -759,12 +759,15 @@ const W = [];
 let zTop = 10;
 function drawDesk() {
   const d = $("desk"), w = d.clientWidth, h = d.clientHeight;
+  const scrolls = {};                                // each window keeps its scroll position
+  d.querySelectorAll(".win[data-win]").forEach(win => { const b = win.querySelector(".wbody"); if (b) scrolls[win.dataset.win] = b.scrollTop; });
   if (!radioPos) radioPos = { x: Math.max(300, w - 330), y: 40 };
   const kids = desk.filter(p => O[p.id]).map(p => { const i = iconEl(O[p.id], { where: "desk", alias: p.alias }); i.style.left = p.x + "px"; i.style.top = p.y + "px"; return i; });
   kids.push(radioEl());
   const tr = iconEl(TRASH, { where: "desk" }); tr.style.left = (w - 110) + "px"; tr.style.top = (h - 110) + "px"; kids.push(tr);
   for (const win of W) kids.push(winEl(win));
   d.replaceChildren(...kids.filter(Boolean));
+  d.querySelectorAll(".win[data-win]").forEach(win => { const b = win.querySelector(".wbody"), y = scrolls[win.dataset.win]; if (b && y) b.scrollTop = y; });
 }
 
 // ============ the radio on the desktop, live ============
@@ -1987,8 +1990,13 @@ function press(e, node, src) {
     if (!ghost && src.where === "back") { open(src.id); return; }
     if (!ghost) {
       const t = Date.now();
-      if (lastTap.key === key && t - lastTap.t < 380) { lastTap = { key: "", t: 0 }; open(src.id); return; }
-      lastTap = { key, t }; sel = key; drawDesk(); return;
+      if (lastTap.key === key && t - lastTap.t < 450) { lastTap = { key: "", t: 0 }; open(src.id); return; }
+      lastTap = { key, t }; sel = key;
+      // just move the highlight: a redraw here reset the window's scroll, so the second click of
+      // a double-click landed on another icon (long folders like Music)
+      document.querySelectorAll(".icon.sel, .row.sel").forEach(n => n.classList.remove("sel"));
+      node.classList.add("sel");
+      return;
     }
     drop(src, over, ev);
   };
