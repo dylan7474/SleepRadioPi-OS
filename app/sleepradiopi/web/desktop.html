@@ -202,7 +202,7 @@
   .blk .grabl { position: absolute; left: 0; top: 0; bottom: 0; width: 10px; cursor: ew-resize; background: linear-gradient(270deg, transparent, #ffffff30); }
   .swhint { position: absolute; top: 12px; font-size: 11px; color: var(--dim); pointer-events: none; white-space: nowrap; }
   .daystrip .dsw { position: absolute; top: 15px; height: 3px; border-radius: 2px; background: hsl(var(--h) 45% 45%); pointer-events: none; }
-  .blk.ghost { opacity: .35; pointer-events: none; padding: 0; }
+  .blk.repeat { opacity: .35; pointer-events: none; padding: 0; }   /* (not .ghost: that's the thing being dragged) */
   .midline { position: absolute; top: 0; bottom: 0; width: 0; border-left: 2px dashed var(--amber); opacity: .7; pointer-events: none; z-index: 1; }
   .ruler span.midn, .daystrip span.midn { color: var(--amber); font-weight: 700; }
   .daystrip .dh.dmid { background: var(--amber); width: 2px; }
@@ -477,7 +477,7 @@ const O = {};
 const hue = s => [...String(s)].reduce((a, c) => (a * 31 + c.charCodeAt(0)) % 360, 7);
 function mk(o) { if (O[o.id]) return Object.assign(O[o.id], o); o.h = o.h ?? hue(o.title); O[o.id] = o; return o; }
 const lastPart = p => p.split("/").pop();
-const cleanName = p => lastPart(p).replace(/\.[^.]+$/, "").replace(/^\d+\s*[-.]\s*/, "").replace(/_+/g, " ").replace(/\s+/g, " ").trim();
+const cleanName = p => lastPart(p).replace(/\.[^.]+$/, "").replace(/^\d+\s*[-.]\s*/, "").replace(/([A-Za-z])_s(?=_|$)/g, "$1's").replace(/_+/g, " ").replace(/\s+/g, " ").trim();   // (Daylight_s_End: Daylight's End)
 const initials = s => String(s).replace(/^The /, "").split(/\s+/).filter(Boolean).slice(0, 2).map(w => w[0]).join("").toUpperCase();
 const dur = m => m == null ? "" : m >= 60 ? `${Math.floor(m / 60)} h${Math.round(m % 60) ? " " + Math.round(m % 60) : ""}` : `${Math.max(1, Math.round(m))} min`;
 const TRACK_MIN = 3.5;       // a guess for lengths the library doesn't report
@@ -639,7 +639,7 @@ const FLIP = { noise_on: "noise_off", noise_off: "noise_on", dj_on: "dj_off", dj
 const SWITCH_OF = { noise: "noise", noise_on: "noise", noise_off: "noise", dj: "dj", dj_on: "dj", dj_off: "dj" };
 const SWITCH_NAME = { noise: "Noise", dj: "The DJ" }, SWITCH_WORD = { noise: "noise", dj: "the DJ" }, SWITCH_HUE = { noise: 175, dj: 320 };
 const QUICK = ["time", "pips", "news", "sleep"];              // the ＋ pills under a block
-const ACTION_SUB = { time: "Says the time", pips: "Six pips on the hour", news: "The latest news", sleep: "Fades out, then pauses", address: "Says its web address",
+const ACTION_SUB = { time: "Says the time", pips: "Six pips", news: "The latest news", sleep: "Fades, then pauses", address: "Says its address",
                      noise: "Noise on or off", dj: "The DJ on or off", noise_on: "Switches the noise on", noise_off: "Switches the noise off", dj_on: "Switches the DJ on", dj_off: "Switches the DJ off" };
 const messageObj = text => mk({ id: "msg:" + hue(text) + ":" + text.length, kind: "message", title: text.length > 38 ? text.slice(0, 36) + "…" : text, text });
 const ACTION = Object.fromEntries([["time", "The time, spoken", "◷"], ["pips", "The pips", "♪"], ["news", "The news", "N"], ["sleep", "Sleep timer", "☾"],
@@ -1819,7 +1819,7 @@ function scheduleView(o, box, win) {
         (cont ? ";border-top-left-radius:0;border-bottom-left-radius:0" : "") + (goesOn ? ";border-top-right-radius:0;border-bottom-right-radius:0" : "") +
         (clash.has(x) ? ";outline:2px solid var(--red)" : "") + (x.chained ? ";opacity:.8" : "");
       const icons = x.chained ? "↳ " : (x.o.wake === false ? "🔕 " : "🔔 ") + (x.o.once ? "" : "↻ ");
-      bar.append(el("div", { className: "bt", textContent: cont ? `… ${x.o.title}, until ${t1}` : (w < 110 ? "" : icons) + x.o.title + (goesOn ? " →" : "") +
+      bar.append(el("div", { className: "bt", textContent: cont ? `… ${x.o.title}, until ${t1}` : w < 80 ? t0 + (goesOn ? " →" : "") : (w < 110 ? "" : icons) + x.o.title + (goesOn ? " →" : "") +
         (x.every ? ` · every ${x.every === 60 ? "hour" : x.every + " min"}` : "") }));
       if (x.every) bar.style.background = `repeating-linear-gradient(90deg, hsl(var(--h) 45% 38%) 0 ${x.every * px - 1}px, hsl(var(--h) 45% 26%) ${x.every * px - 1}px ${x.every * px}px)`;
       bar.onclick = () => open(x.o.id);
@@ -2124,7 +2124,7 @@ function programmeView(o, box, win) {
     blk.addEventListener("pointerdown", e => { if (e.target === grab) return; const was = win.blk === i; win.blk = i; win.sw = null; pressBlock(e, blk, o, i, win, px, was); });
     lane.append(blk);
   });
-  reps.forEach(r => lane.append(Object.assign(el("div", { className: "blk ghost", title: `Again at ${hhmm(r.start)}` }),
+  reps.forEach(r => lane.append(Object.assign(el("div", { className: "blk repeat", title: `Again at ${hhmm(r.start)}` }),
     { style: `left:${r.start * px + 1}px;width:${Math.max(18, px - 2)}px;--h:${TINT[O[o.blocks[0]?.items[0]]?.kind] ?? 200}` })));
   if (run) {
     const d = new Date(), nowMin = d.getHours() * 60 + d.getMinutes() + d.getSeconds() / 60;
