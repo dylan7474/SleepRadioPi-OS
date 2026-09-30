@@ -385,7 +385,7 @@
       <button type="button" data-new="playlist">Playlist</button>
       <button type="button" data-new="message">Message for the DJ to read</button>
       <button type="button" data-new="birthday">Birthday</button>
-      <button type="button" data-new="list">Artist list</button>
+      <button type="button" data-new="list">Theme (a set of artists)</button>
       <button type="button" data-new="folder-music">Folder in Music</button>
       <button type="button" data-new="folder-ondemand">Folder in On demand</button>
       <button type="button" data-new="station">Station…</button>
@@ -450,7 +450,7 @@ const PODCASTS = mk({ id: "box:podcasts", kind: "folder", title: "Podcasts", box
 const STATIONS = mk({ id: "box:stations", kind: "folder", title: "Stations", box: "stations", kids: [], sym: "R", alt: true });
 const PLAYLISTS = mk({ id: "box:playlists", kind: "folder", title: "Playlists", box: "playlists", kids: [], sym: "≡" });
 const PROGRAMMES = mk({ id: "box:programmes", kind: "folder", title: "Programmes", box: "programmes", kids: [], sym: "◷" });
-const LISTS = mk({ id: "box:lists", kind: "folder", title: "Artist radio", box: "lists", kids: [], sym: "A", alt: true });
+const LISTS = mk({ id: "box:lists", kind: "folder", title: "Theme radio", box: "lists", kids: [], sym: "A", alt: true });
 const TRASH = mk({ id: "trash", kind: "trash", title: "Trash", kids: [] });
 const JINGLES = mk({ id: "box:jingles", kind: "folder", title: "Jingles", box: "jingles", kids: [], sym: "J", alt: true });
 const SHOW = mk({ id: "show", kind: "show", title: "Sleep Radio" });
@@ -464,8 +464,8 @@ const PANELS = [
 const PANEL = {};
 for (const [key, title, sym, h, page] of PANELS) PANEL[key] = mk({ id: "set:" + key, kind: "panel", key, title, sym, h, page });
 for (const [key, title, sym, h] of [["messages", "Messages", "✎", 55], ["birthdays", "Birthdays", "✿", 340], ["stations", "Stations", "R", 8],
-                                    ["tests", "Test sounds", "▶", 150], ["stream", "Listen in a browser", "◠", 200], ["lists", "Artist lists", "A", 195],
-                                    ["findstation", "Find a station", "R", 8], ["findpodcast", "Follow a podcast", "P", 275], ["newlist", "New artist list", "A", 195]])
+                                    ["tests", "Test sounds", "▶", 150], ["stream", "Listen in a browser", "◠", 200], ["lists", "Themes", "A", 195],
+                                    ["findstation", "Find a station", "R", 8], ["findpodcast", "Follow a podcast", "P", 275], ["newlist", "New theme", "A", 195]])
   PANEL[key] = mk({ id: "set:" + key, kind: "panel", key, title, sym, h, page: key });
 const DJ = mk({ id: "dj", kind: "dj", title: "The DJ" });
 const NOTES = mk({ id: "notes", kind: "folder", box: "messages", title: "Messages", kids: [], sym: "✎" });   // a folder of sticky notes
@@ -646,7 +646,7 @@ function timeline(p) {
 const $ = id => document.getElementById(id);
 const el = (tag, props = {}, ...kids) => { const e = Object.assign(document.createElement(tag), props); e.append(...kids.filter(k => k != null)); return e; };
 const KIND = { folder: "Folder", album: "Album", track: "Track", station: "Station", podcast: "Podcast", episode: "Episode", book: "Audiobook",
-               playlist: "Playlist", programme: "Programme", list: "Artist list", jingle: "Jingle", message: "Message", action: "Action", person: "Birthday", voice: "Voice", show: "The show", trash: "Trash", panel: "Setting", dj: "The DJ", note: "Messages", calendar: "Birthdays" };
+               playlist: "Playlist", programme: "Programme", list: "Theme", jingle: "Jingle", message: "Message", action: "Action", person: "Birthday", voice: "Voice", show: "The show", trash: "Trash", panel: "Setting", dj: "The DJ", note: "Messages", calendar: "Birthdays" };
 const TINT = { album: 30, track: 45, station: 8, podcast: 275, episode: 265, book: 150, playlist: 215, programme: 40, list: 195, show: 40, folder: 40 };
 function wave(seed) {
   let x = hue(seed), bars = "";
@@ -1007,7 +1007,7 @@ function folderView(o, box, win) {
   else if (o.box === "programmes") tools.append(T("New programme", newProgramme), el("span", { className: "note", textContent: "A running order the radio plays by itself" }));
   else if (o.box === "stations") tools.append(T("Find a station", () => open(PANEL.findstation.id)), el("span", { className: "note", textContent: "Drag a station onto a button to keep it there" }));
   else if (o.box === "podcasts") tools.append(T("Follow a podcast", () => open(PANEL.findpodcast.id)), el("span", { className: "note", textContent: "Open a show for its episodes" }));
-  else if (o.box === "lists") tools.append(T("New artist list", () => open(PANEL.newlist.id)), el("span", { className: "note", textContent: "Double-click a list to change it · drag one onto the radio to play it" }));
+  else if (o.box === "lists") tools.append(T("New theme", () => open(PANEL.newlist.id)), el("span", { className: "note", textContent: "Double-click a theme to change it · drag one onto the radio to play it" }));
   else if (o.box === "birthdays") tools.append(T("New birthday", () => newBirthday()), el("span", { className: "note", textContent: "Soonest first · the DJ wishes them a happy birthday on the day · drag one onto the radio to hear it" }));
   else if (o.box === "voices") {
     const up = el("input", { type: "file", hidden: true, accept: ".tar.bz2,.tar.gz,.zip" });
@@ -1089,7 +1089,7 @@ function openPage(title, hash) {
 }
 function panelView(o, box, win) {
   if (UI[o.key]) return nativePanel(o, box, win);
-  // the rest (jingles, artist lists): the classic page's own, inside the window
+  // anything else: the classic page's own, inside the window
   const hash = o.rawHash || "#set-" + o.page;
   box.append(el("iframe", { className: "frame", src: "/?embedded#" + hash.slice(1), title: o.title }));
 }
@@ -1444,11 +1444,11 @@ const UI = {
       add.onkeydown = e => { if (e.key === "Enter") addTo(); };
       const rename = el("input", { type: "text", value: cur.name, id: "alist-name", maxLength: 40 });
       rename.onchange = () => { const v = rename.value.trim(); if (!v || v === cur.name) return; o.name = v; o.title = v; save(d.profiles.map(p => p === cur ? { ...p, name: v } : p)); };
-      return [dl, grp("The list", srow("Name", rename),
+      return [dl, grp("The theme", srow("Name", rename),
           el("div", { className: "line" }, ...cur.artists.map(a => el("span", { className: "chipx" }, a, Object.assign(el("button", { type: "button", textContent: "✕", title: "Take " + a + " off" }),
-            { onclick: () => cur.artists.length > 1 ? save(d.profiles.map(p => p === cur ? { ...p, artists: p.artists.filter(x => x !== a) } : p)) : toast("A list needs at least one artist: delete the list instead.") })))),
+            { onclick: () => cur.artists.length > 1 ? save(d.profiles.map(p => p === cur ? { ...p, artists: p.artists.filter(x => x !== a) } : p)) : toast("A theme needs at least one artist: delete the theme instead.") })))),
           line(add, sbtn("Add", addTo, "primary"))),
-        grp("", line(sbtn("▶ Play it", () => play(o)), sbtn("Delete this list…", () => ask(`Delete the list “${cur.name}”? The music stays.`, "Delete list", async () => {
+        grp("", line(sbtn("▶ Play it", () => play(o)), sbtn("Delete this theme…", () => ask(`Delete the theme “${cur.name}”? The music stays.`, "Delete theme", async () => {
           await api("/api/profiles", { profiles: d.profiles.filter(p => p !== cur) }); closeFor(o); await loadFolder(LISTS); drawDesk(); }), "danger")),
           help("The show, playing only these artists (\"welcome to " + cur.name + " on Sleep Radio\"). A button can hold it: drag it onto one."))];
     },
@@ -1461,10 +1461,10 @@ const UI = {
       const name = el("input", { type: "text", placeholder: "e.g. Friday List", id: "newlist-name", maxLength: 40 });
       const first = el("input", { type: "text", placeholder: "Type an artist's name", id: "newlist-first" }); first.setAttribute("list", dl.id);
       const make = () => { const n = names.find(x => x.toLowerCase() === first.value.trim().toLowerCase()), v = name.value.trim();
-        if (!v || !n) return toast("Give the list a name and pick its first artist.");
+        if (!v || !n) return toast("Give the theme a name and pick its first artist.");
         act(async () => { await api("/api/profiles", { profiles: [...d.profiles, { name: v, artists: [n] }] }); await loadFolder(LISTS);
           closeWin(win); open(mk({ id: "ls:" + v, kind: "list", name: v, title: v, key: "alist" }).id); }); };
-      return [dl, grp("A new artist list", srow("Name", name), srow("First artist", first), line(sbtn("Make it", make, "primary")),
+      return [dl, grp("A new theme", srow("Name", name), srow("First artist", first), line(sbtn("Make it", make, "primary")),
         help("Then add more artists in its window.")), ];
     },
   },
@@ -1510,16 +1510,16 @@ const UI = {
       const first = el("input", { type: "text", placeholder: "and its first artist", id: "list-first" });
       first.setAttribute("list", "artist-names");
       const make = () => { const n = names.find(x => x.toLowerCase() === first.value.trim().toLowerCase());
-        if (!newName.value.trim() || !n) return toast("Give the list a name and pick its first artist.");
+        if (!newName.value.trim() || !n) return toast("Give the theme a name and pick its first artist.");
         win.pickList = newName.value.trim(); save([...d.profiles, { name: newName.value.trim(), artists: [n] }]); };
       return [dl,
-        grp("Your artist lists", d.profiles.length ? seg(d.profiles.map(p => [p.name, `${p.name} (${p.artists.length})`]), pick, v => { win.pickList = v; drawDesk(); }) : help("None yet: make one below."),
-          help("The show, playing only these artists (\"welcome to Friday List on Sleep Radio\"). Play one from the Artist radio folder, or put it on a button.")),
+        grp("Your themes", d.profiles.length ? seg(d.profiles.map(p => [p.name, `${p.name} (${p.artists.length})`]), pick, v => { win.pickList = v; drawDesk(); }) : help("None yet: make one below."),
+          help("The show, playing only these artists (\"welcome to Friday List on Sleep Radio\"). Play one from the Theme radio folder, or put it on a button.")),
         cur ? grp(cur.name, el("div", { className: "line" }, ...cur.artists.map(a => el("span", { className: "chipx" }, a, Object.assign(el("button", { type: "button", textContent: "✕", title: "Take " + a + " off" }),
-            { onclick: () => cur.artists.length > 1 ? save(d.profiles.map(p => p === cur ? { ...p, artists: p.artists.filter(x => x !== a) } : p)) : toast("A list needs at least one artist: delete the list instead.") })))),
+            { onclick: () => cur.artists.length > 1 ? save(d.profiles.map(p => p === cur ? { ...p, artists: p.artists.filter(x => x !== a) } : p)) : toast("A theme needs at least one artist: delete the theme instead.") })))),
           line(add, sbtn("Add", addTo, "primary")),
           line(sbtn("▶ Play it", () => play(mk({ id: "ls:" + cur.name, kind: "list", name: cur.name, title: cur.name }))),
-               sbtn("Delete this list…", () => ask(`Delete the list “${cur.name}”? The music stays.`, "Delete list", () => { win.pickList = null; save(d.profiles.filter(p => p !== cur)); }), "danger"))) : null,
+               sbtn("Delete this theme…", () => ask(`Delete the theme “${cur.name}”? The music stays.`, "Delete theme", () => { win.pickList = null; save(d.profiles.filter(p => p !== cur)); }), "danger"))) : null,
         grp("Make a list", line(newName, first, sbtn("Make it", make, "primary")))];
     },
   },
@@ -1568,7 +1568,7 @@ const SUMS = {
   person: () => "", alist: d => "", voice: v => "", newlist: () => "",
   messages: m => `${m.list.length} note${m.list.length === 1 ? "" : "s"} · ${m.on ? `read every ${m.every_min} min, ${hhmm(m.start_min)}–${hhmm(m.end_min)}` : "not being read"}`,
   birthdays: b => `${b.birthdays.length} ${b.birthdays.length === 1 ? "person" : "people"}${b.today?.length ? " · a birthday today!" : ""}`,
-  lists: d => `${d.profiles.length} list${d.profiles.length === 1 ? "" : "s"} · ${d.artists.length} artists to choose from`,
+  lists: d => `${d.profiles.length} theme${d.profiles.length === 1 ? "" : "s"} · ${d.artists.length} artists to choose from`,
   findstation: () => "From the internet radio directory",
   findpodcast: () => "From Apple's podcast directory",
 };
@@ -1727,7 +1727,7 @@ function programmeView(o, box, win) {
   wrap.append(ruler, lane);
   const b = o.blocks[win.blk];
   if (b) wrap.append(inspector(o, b, win));
-  else wrap.append(el("p", { className: "muted", textContent: "Drop anything from the desktop or a window onto the timeline to add a block: an album, a folder, songs, a station, a playlist, a book, a podcast, Sleep Radio or an artist list. Drop onto a block to add to it. Lengths of music are estimates." }));
+  else wrap.append(el("p", { className: "muted", textContent: "Drop anything from the desktop or a window onto the timeline to add a block: an album, a folder, songs, a station, a playlist, a book, a podcast, Sleep Radio or a theme. Drop onto a block to add to it. Lengths of music are estimates." }));
   body.append(wrap);
   box.append(body);
 }
@@ -1873,7 +1873,7 @@ function trash(src) {
   }
   if (o.kind === "person") return ask(`Take ${o.title} off the birthdays?`, "Remove", async () => {
     try { const d = await api("/api/birthdays"); await api("/api/birthdays", { birthdays: d.birthdays.filter((_, j) => j !== o.idx) }); closeFor(o); await loadFolder(BDAYS); drawDesk(); toast(`${o.title} taken off.`); } catch (e) { toast(e.message); } });
-  if (o.kind === "list" && from === LISTS) return ask(`Delete the artist list “${o.title}”? The music stays.`, "Delete list", async () => {
+  if (o.kind === "list" && from === LISTS) return ask(`Delete the theme “${o.title}”? The music stays.`, "Delete theme", async () => {
     try { const d = await api("/api/artists"); await api("/api/profiles", { profiles: d.profiles.filter(p => p.name !== o.name) }); closeFor(o); await loadFolder(LISTS); drawDesk(); toast(`Deleted ${o.title}.`); } catch (e) { toast(e.message); } });
   if (o.kind === "voice") return toast("Voices can't be removed from here yet.");
   if (o.kind === "note") return ask(`Delete the message “${o.title}”?`, "Delete", async () => {

@@ -356,7 +356,7 @@ The cards:
   desktop's *Classic page* link keeps you here, and this page's *Desktop* link
   goes back). A menu bar;
   icons for Music, On demand, Audiobooks, Podcasts, Stations, Playlists,
-  Programmes and Artist radio (folders load from `/api/browse` as you open
+  Programmes and Theme radio (folders load from `/api/browse` as you open
   them); windows you move and resize; **the radio on the desktop** showing
   what's on air (polled every 2.5 s): drop anything on its dial to play it,
   on one of its buttons to keep it there, scroll the knob for the volume,
@@ -389,8 +389,8 @@ The cards:
   they're read…* holds the shared settings. **Birthdays** are objects too: the
   calendar opens a folder of people, soonest first (today's glows), each with
   a window (name, day, month, year for their age, hear the wish); New
-  birthday, the Trash, or drop one on the radio to hear the wish. **Artist
-  lists** each open their own window (rename, add and take off artists, play,
+  birthday, the Trash, or drop one on the radio to hear the wish. **Themes**
+  (sets of artists, once called artist lists) each open their own window (rename, add and take off artists, play,
   delete). **Voices** is a folder: double-click one to make it the DJ's (the
   radio restarts), drop a voice archive on it to install it. A programme's
   toolbar says when it will next start by itself ("next: today at 14:46"), or
@@ -563,7 +563,7 @@ The cards:
   to ffmpeg, which decodes them (`sleepradiopi/playback/radio.py`).
 - **Artist radio** — play one artist only: the DJ then calls the station
   after them ("welcome to Beatles Radio"; a leading "The" is dropped), and
-  so do the page heading and tab. **Artist lists…** makes your own named lists of
+  so do the page heading and tab. **Themes…** makes your own named lists of
   artists (e.g. a "Friday List"; find and tick artists), which appear in the
   same dropdown ("welcome to Friday List on Sleep Radio"). On air, the song
   already lined up next still plays first. If the library has nothing for

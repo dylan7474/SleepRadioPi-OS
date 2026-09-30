@@ -465,7 +465,7 @@
         <select id="artistRadio" aria-label="Artist radio: play one artist or list">
           <option value="">All artists</option>
         </select>
-        <button id="listsBtn" type="button" title="Make lists of artists, e.g. a Friday List">Artist lists…</button>
+        <button id="listsBtn" type="button" title="Themes: sets of artists, e.g. a Friday List">Themes…</button>
       </div>
       <p id="artistNote" class="muted" style="margin:-.4rem 0 0;font-size:.85rem">Play one artist only (e.g. Beatles
         Radio), or one of your lists of artists.</p>
@@ -769,7 +769,7 @@
   </section>
     </div>
     <div class="page" id="page-lists" hidden>
-      <div class="page-head"><button class="back" type="button">‹ Settings</button><h1>Artist lists</h1></div>
+      <div class="page-head"><button class="back" type="button">‹ Settings</button><h1>Themes</h1></div>
   <section id="lists" class="card">
     <p class="muted" style="margin:0;font-size:.85rem">Your own lists of artists, e.g. a Friday List: choose
       one under Artist radio on the main page.</p>
@@ -1271,7 +1271,7 @@ async function loadArtists() {
     const sel = $("artistRadio");
     sel.replaceChildren(new Option(`All artists (${RADIO})`, ""));
     if (allLists.length) {
-      const g = Object.assign(document.createElement("optgroup"), { label: "Your artist lists" });
+      const g = Object.assign(document.createElement("optgroup"), { label: "Your themes" });
       allLists.forEach(p => g.append(new Option(`${p.name} (${p.artists.length} artists)`, "p:" + p.name)));
       sel.append(g);
     }
@@ -1421,7 +1421,7 @@ function renderFind() {
     { className: "group-title", textContent: name }), Object.assign(document.createElement("ul"), { className: "list" }));
     if (rows.length) out[out.length - 1].append(...rows); };
   group("Artists and lists", [
-    ...d.lists.map(p => resultRow(p.name, `Your artist list · ${plural(p.artists.length, "artist")}`,
+    ...d.lists.map(p => resultRow(p.name, `Your theme · ${plural(p.artists.length, "artist")}`,
       [act("Play", true, () => playShow({ profile: p.name }))])),
     ...d.artists.map(a => resultRow(a.name, `${a.tracks} song${a.tracks === 1 ? "" : "s"}`,
       [act("Artist radio", true, () => playShow({ artist: a.name }))]))]);
@@ -3272,7 +3272,7 @@ function tile(title, sub, on, onclick) {
 function drawHome() {
   const showOn = !lastSource, [kind, name] = selNow ? [selNow[0], selNow.slice(2)] : ["", ""];
   const tiles = [tile("All artists", "The whole library", showOn && !selNow, () => playShow({}))];
-  for (const p of allLists) tiles.push(tile(p.name, `Your artist list · ${plural(p.artists.length, "artist")}`,
+  for (const p of allLists) tiles.push(tile(p.name, `Your theme · ${plural(p.artists.length, "artist")}`,
                                             showOn && kind === "p" && name === p.name, () => playShow({ profile: p.name })));
   if (kind === "a") tiles.push(tile(`${name}`, "Artist radio", showOn, () => playShow({ artist: name })));
   $("mixTiles").replaceChildren(...tiles);
@@ -3330,7 +3330,7 @@ function settingRows() {
         : dj && dj.voice ? `${cap(dj.voice)} voice in use` : "…", "voices"],
       ["buttons", "The radio's buttons", bState ? `${bState.bank === "night" ? "☾ Night" : "☀ Day"}: ` +
         bState.buttons.map((b, i) => `${i + 1} ${b.preset ? b.label : "empty"}`).join(" · ") : "…", "sheet"],
-      ["list", "Artist lists", allLists.length ? allLists.map(p => p.name).join(", ") : "None yet: make one", "lists"],
+      ["list", "Themes", allLists.length ? allLists.map(p => p.name).join(", ") : "None yet: make one", "lists"],
       ["cake", "Birthdays", bdList.length ? `${bdList.length} ${bdList.length === 1 ? "person" : "people"}` : "None yet", "birthdays"],
       ["note", "Messages", !msgState ? "…" : !msgState.list.length ? "None yet: the DJ can read notes through the day"
         : `${msgState.list.length} · ${msgState.on ? `every ${msgState.every_min} min, ${minHM(msgState.start_min)}–${minHM(msgState.end_min)}` : "off"}`, "messages"]]],
