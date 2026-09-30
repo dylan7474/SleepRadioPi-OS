@@ -202,6 +202,7 @@
   .blk .grabl { position: absolute; left: 0; top: 0; bottom: 0; width: 10px; cursor: ew-resize; background: linear-gradient(270deg, transparent, #ffffff30); }
   .swhint { position: absolute; top: 12px; font-size: 11px; color: var(--dim); pointer-events: none; white-space: nowrap; }
   .daystrip .dsw { position: absolute; top: 15px; height: 3px; border-radius: 2px; background: hsl(var(--h) 45% 45%); pointer-events: none; }
+  .blk.ghost { opacity: .35; pointer-events: none; padding: 0; }
   .midline { position: absolute; top: 0; bottom: 0; width: 0; border-left: 2px dashed var(--amber); opacity: .7; pointer-events: none; z-index: 1; }
   .ruler span.midn, .daystrip span.midn { color: var(--amber); font-weight: 700; }
   .daystrip .dh.dmid { background: var(--amber); width: 2px; }
@@ -476,7 +477,7 @@ const O = {};
 const hue = s => [...String(s)].reduce((a, c) => (a * 31 + c.charCodeAt(0)) % 360, 7);
 function mk(o) { if (O[o.id]) return Object.assign(O[o.id], o); o.h = o.h ?? hue(o.title); O[o.id] = o; return o; }
 const lastPart = p => p.split("/").pop();
-const cleanName = p => lastPart(p).replace(/\.[^.]+$/, "").replace(/^\d+\s*[-.]\s*/, "");
+const cleanName = p => lastPart(p).replace(/\.[^.]+$/, "").replace(/^\d+\s*[-.]\s*/, "").replace(/_+/g, " ").replace(/\s+/g, " ").trim();
 const initials = s => String(s).replace(/^The /, "").split(/\s+/).filter(Boolean).slice(0, 2).map(w => w[0]).join("").toUpperCase();
 const dur = m => m == null ? "" : m >= 60 ? `${Math.floor(m / 60)} h${Math.round(m % 60) ? " " + Math.round(m % 60) : ""}` : `${Math.max(1, Math.round(m))} min`;
 const TRACK_MIN = 3.5;       // a guess for lengths the library doesn't report
@@ -638,6 +639,8 @@ const FLIP = { noise_on: "noise_off", noise_off: "noise_on", dj_on: "dj_off", dj
 const SWITCH_OF = { noise: "noise", noise_on: "noise", noise_off: "noise", dj: "dj", dj_on: "dj", dj_off: "dj" };
 const SWITCH_NAME = { noise: "Noise", dj: "The DJ" }, SWITCH_WORD = { noise: "noise", dj: "the DJ" }, SWITCH_HUE = { noise: 175, dj: 320 };
 const QUICK = ["time", "pips", "news", "sleep"];              // the ＋ pills under a block
+const ACTION_SUB = { time: "Says the time", pips: "Six pips on the hour", news: "The latest news", sleep: "Fades out, then pauses", address: "Says its web address",
+                     noise: "Noise on or off", dj: "The DJ on or off", noise_on: "Switches the noise on", noise_off: "Switches the noise off", dj_on: "Switches the DJ on", dj_off: "Switches the DJ off" };
 const messageObj = text => mk({ id: "msg:" + hue(text) + ":" + text.length, kind: "message", title: text.length > 38 ? text.slice(0, 36) + "…" : text, text });
 const ACTION = Object.fromEntries([["time", "The time, spoken", "◷"], ["pips", "The pips", "♪"], ["news", "The news", "N"], ["sleep", "Sleep timer", "☾"],
                                     ["address", "Say the address", "@"], ["noise", "Noise on/off", "≈"], ["dj", "DJ on/off", "DJ"],
@@ -751,9 +754,12 @@ function subOf(o) {
     case "book": return o.left;
     case "podcast": return o.fresh ? `${o.fresh} new` : o.count ? `${o.count} episodes` : "";
     case "episode": return dur(o.min);
-    case "playlist": return `${o.items.length} songs`;
+    case "playlist": return `${o.items.length} song${o.items.length === 1 ? "" : "s"}`;
     case "programme": {
-      const tl = timeline(o), times = tl.length ? `${hhmm(tl[0].start)}–${hhmm(tl[tl.length - 1].end)}` : "empty";
+      const tl = timeline(o), s0 = toMin(o.start);
+      const times = !o.blocks.length && o.switches?.length ? o.switches.map(w => `${SWITCH_WORD[w.what]} ${hhmm(s0 + w.from)}–${hhmm(s0 + w.from + w.min)}`).join(", ")
+        : o.every ? `every ${o.every === 60 ? "hour" : o.every + " min"} · ${o.start}–${o.until || "23:59"}`
+        : tl.length ? `${hhmm(tl[0].start)}–${hhmm(Math.max(tl[tl.length - 1].end, ...(o.switches || []).map(w => s0 + w.from + w.min)))}` : "empty";
       const live = S?.programme && S.programme.name.toLowerCase() === o.title.toLowerCase();
       return (live ? "● playing · " : o.auto ? (o.once ? "⏰ " : "↻ ") : "") + times;
     }
@@ -767,8 +773,8 @@ function subOf(o) {
       const age = o.b.year ? nextYear - o.b.year : null;
       return (o.soon === 0 ? "Today!" : o.soon === 1 ? "Tomorrow" : `${o.b.day} ${MONN[o.b.month - 1]}`) + (age ? ` · ${age}` : ""); }
     case "voice": return o.current ? "The DJ's voice now" : "Installed";
-    case "action": return SWITCHED[o.action] ? "A button, or on / off in a programme" : "A button, or a programme";
-    case "show": return "with the DJ";
+    case "action": return ACTION_SUB[o.action] || "";
+    case "show": return S && S.dj_on === false ? "music only, no DJ" : "with the DJ";
   }
   return "";
 }
@@ -943,7 +949,7 @@ function updateRadio() {            // the live bits, without redrawing the desk
   const msw = document.querySelector("#radio .sw"); if (msw) msw.setAttribute("aria-checked", String(!!S?.programme_mode));
   const pbs = $("rPresets")?.children || [];
   shownButtons().forEach((b, i) => { if (pbs[i]) { pbs[i].classList.toggle("on", !!b.playing); pbs[i].querySelector("span").textContent = b.label; } });
-  $("onair").hidden = !S?.on_air;
+  $("onair").hidden = !S?.on_air || S?.speaker?.playing === false;   // (paused: not on air, whatever the station's doing)
 }
 let volTimer = null, volStep = 0;
 function volume(delta) {
@@ -1136,6 +1142,13 @@ const T = (txt, fn, cls = "", dis = false) => { const b = el("button", { classNa
 function selectedIn(o) { return sel && sel.endsWith("@" + o.id) ? O[sel.slice(0, sel.lastIndexOf("@"))] : null; }
 function folderView(o, box, win) {
   const tools = el("div", { className: "wtools" });
+  const asSetting = { voices: PANEL.voices, jingles: PANEL.library }[o.box];   // (settings on the back that are folders)
+  if (asSetting) {
+    const cur = o.kids.map(id => O[id]).find(v => v && v.current);
+    const sum = o.box === "voices" ? (cur ? `The DJ's voice: ${cur.title}` : `${o.kids.length} voice${o.kids.length === 1 ? "" : "s"}`)
+      : `${o.kids.length} jingle${o.kids.length === 1 ? "" : "s"}`;
+    box.append(el("div", { className: "shead" }, glyph(asSetting), el("div", { style: "min-width:0" }, el("h2", { textContent: o.title }), el("p", { textContent: sum, title: sum }))));
+  }
   if (o.root) {
     const picked = selectedIn(o);
     const up = el("input", { type: "file", multiple: true, hidden: true }), upDir = el("input", { type: "file", multiple: true, hidden: true });
@@ -1163,8 +1176,8 @@ function folderView(o, box, win) {
   else if (o.box === "voices") {
     const up = el("input", { type: "file", hidden: true, accept: ".tar.bz2,.tar.gz,.zip" });
     up.onchange = () => { const f = up.files[0]; up.value = ""; if (f) uploadVoice(f); };
-    tools.append(o.data && !o.data.has_standard ? T("Download the standard voice", async () => { try { await api("/api/voices/standard", {}); toast("Downloading the standard voice onto the radio…"); } catch (e) { toast(e.message); } }) : null,
-      T("Upload a voice…", () => up.click()), up, el("span", { className: "note", textContent: "Double-click a voice to make it the DJ's (the radio restarts) · drop a voice archive here to install it" }));
+    tools.append(...[o.data && !o.data.has_standard ? T("Download the standard voice", async () => { try { await api("/api/voices/standard", {}); toast("Downloading the standard voice onto the radio…"); } catch (e) { toast(e.message); } }) : null,
+      T("Upload a voice…", () => up.click()), up, el("span", { className: "note", textContent: "Double-click a voice to make it the DJ's (the radio restarts) · drop a voice archive here to install it" })].filter(Boolean));
   }
   else if (o.box === "actions") tools.append(el("span", { className: "note", textContent: "Drag an action onto a button on the radio; the time, the pips, the news and the sleep timer can go into programmes too" }));
   else if (o.box === "messages") tools.append(T("New message", () => newMessage()), T("When they're read…", () => open(PANEL.messages.id)),
@@ -1452,7 +1465,7 @@ const UI = {
       const name = el("input", { type: "text", value: id.station_name, placeholder: id.default_names[id.hardware], id: "radio-name" });
       const pw = el("input", { type: "password", placeholder: auth.protected ? "A new password" : "Choose a password", id: "radio-pw" });
       return [
-        grp("This radio", srow("Name", name, sbtn("Save", () => ask(`Call the radio “${name.value || id.default_names[id.hardware]}”? It restarts to take the new name up.`, "Rename and restart", () => act(() => api("/api/identity", { hardware: id.hardware, station_name: name.value.trim() }))))),
+        grp("This radio", srow("Name", name, sbtn("Save", () => ask(`Call the radio “${name.value || id.default_names[id.hardware]}”? It restarts to take the new name up.`, "Rename and restart", () => act(() => api("/api/identity", { hardware: id.hardware, station_name: name.value.trim() }))), "primary")),
           srow("Case", seg([["box", "Box"], ["cathedral", "Cathedral"]], id.hardware, v => ask(`Set this radio up as the ${v}? It restarts.`, "Change and restart", () => act(() => api("/api/identity", { hardware: v, station_name: id.station_name }))))),
           help("The name is what the DJ says and what the pages are called.")),
         grp("Password", help(auth.protected ? "The page asks for a password, once per browser." : "Off: anyone on your Wi-Fi can use the page."),
@@ -1472,7 +1485,7 @@ const UI = {
       night.onchange = () => saveAuto(!!auto.on); day.onchange = () => saveAuto(!!auto.on);
       return [
         grp("The radio's buttons", ...b.buttons.map((x, i) => {
-            const pick = el("select", { id: "btn-pick-" + i }); pick.setAttribute("aria-label", `Change what button ${i + 1} plays`);
+            const pick = el("select", { id: "btn-pick-" + i, style: "width:8.5em" }); pick.setAttribute("aria-label", `Change what button ${i + 1} plays`);
             pick.append(new Option("Change…", ""));
             const choices = buttonChoices(), flat = [];
             for (const [label, items] of choices) { if (!items.length) continue; const g = el("optgroup"); g.label = label; pick.append(g);
@@ -1480,7 +1493,7 @@ const UI = {
             pick.append(new Option("Empty", "empty"));
             pick.onchange = () => { if (pick.value === "empty") act(() => api("/api/buttons", { button: i + 1, preset: null }));
                                     else if (pick.value !== "") setPreset(i, flat[+pick.value]).then(() => act(async () => {})); };
-            return srow(`Button ${i + 1}`, el("span", { textContent: x.label + (x.playing ? " · playing" : "") }), line(sbtn("▶", () => pressButton(i)), pick));
+            return srow(`Button ${i + 1}`, el("span", { textContent: x.label + (x.playing ? (S?.speaker?.playing === false ? " · tuned, paused" : " · playing") : "") }), line(sbtn("▶", () => pressButton(i)), pick));
           }),
           help("Or drag anything onto a button on the radio: an album, a folder, a station, a podcast or one of its episodes, a book, a playlist, a programme, a message, a jingle, a birthday, or an action from the Actions folder. Messages, jingles, birthdays and actions happen over what's playing. On the radio itself, hold a button for 3 seconds to keep what's playing on it."),
           line(sbtn("Actions folder", () => open(ACTIONS_BOX.id)))),
@@ -1492,7 +1505,7 @@ const UI = {
   },
   updates: {
     load: () => api("/api/update"),
-    build: (u, act) => [grp("Updates", srow("On the radio", el("b", { textContent: u.version })),
+    build: (u, act) => [grp("Updates", srow("On the radio", el("b", { textContent: niceVersion(u.version), title: u.version })),
       u.available ? srow("New", el("span", { textContent: u.available.version || u.available.tag || "ready" }), sbtn("Install", () => ask("Install the update? The radio restarts; the old version is kept to go back to.", "Install", () => act(() => api("/api/update/install", {}))), "primary")) : help("Press Look for updates to check."),
       u.job && u.job.state !== "idle" ? help(`Working: ${u.job.state}`) : null,
       line(sbtn("Look for updates", () => act(() => api("/api/update/check", {})))),
@@ -1712,6 +1725,8 @@ const UI = {
   },
 };
 // each setting's one-line summary, under its name in the window's header
+// "v1.0.4-107-g8d88d15-dirty" (a build between releases) -> "1.0.4, build 107"; "v1.0.4" -> "1.0.4"
+const niceVersion = v => { const m = /^v?(\d+(?:\.\d+)*)(?:-(\d+)-g[0-9a-f]+)?/.exec(v || ""); return m ? m[1] + (m[2] ? `, build ${m[2]}` : "") : v || "unknown"; };
 const SUMS = {
   speakers: sp => [sp.mono ? "Mono" : "Stereo", ...["bass", "mid", "treble"].map(b => `${b} ${db(sp.eq?.[b] ?? 0)}`), sp.highpass_hz ? `low cut ${sp.highpass_hz} Hz` : "no low cut",
                    `knob ${({ auto: "automatic", fine: "fine", normal: "normal", coarse: "coarse" })[sp.knob_mode] || sp.knob_mode}`].join(" · "),
@@ -1723,7 +1738,7 @@ const SUMS = {
   wifi: w => w.mode === "hotspot" ? `Its own network: ${w.hotspot.ssid}` : w.ssid ? `${w.ssid} · ${w.ip}` : "Not connected",
   identity: ({ id, auth, status }) => [id.name, id.hardware === "cathedral" ? "cathedral case" : "box case", auth.protected ? "password on" : "no password", status.stream ? "browser listening on" : ""].filter(Boolean).join(" · "),
   buttons: b => b.buttons.map((x, i) => `${i + 1} ${x.label}`).join(" · ") + (b.bank ? ` · ${b.bank} set` : ""),
-  updates: u => u.available ? `${u.version} · an update is ready` : u.version,
+  updates: u => u.available ? `${niceVersion(u.version)} · an update is ready` : niceVersion(u.version),
   backup: () => "Your settings, in a file you keep",
   power: () => "Restart it, or shut it down",
   note: () => "",
@@ -1796,11 +1811,15 @@ function scheduleView(o, box, win) {
     });
     shown.forEach(x => {
       const a = Math.max(0, (x.start - day0) / 60000), b = Math.min(1440, (x.end - day0) / 60000);
-      const first = O[x.o.blocks[0]?.items[0]];
-      const bar = el("div", { className: "blk", title: `${x.o.title}: ${x.start.toTimeString().slice(0, 5)}–${x.end.toTimeString().slice(0, 5)}${x.chained ? " (after " + x.chained + ")" : ""}` });
-      bar.style.cssText = `top:5px;bottom:5px;left:${a * px}px;width:${Math.max(6, (b - a) * px - 1)}px;--h:${first ? TINT[first.kind] ?? first.h : 40};padding:3px 6px;cursor:pointer` +
+      const first = O[x.o.blocks[0]?.items[0]], sw0 = !x.o.blocks.length && x.o.switches?.[0];
+      // over midnight: the evening part says it goes on, the morning part says it's the same one, carrying on
+      const cont = x.start < day0, goesOn = x.end > day1, w = Math.max(6, (b - a) * px - 1), t0 = x.start.toTimeString().slice(0, 5), t1 = x.end.toTimeString().slice(0, 5);
+      const bar = el("div", { className: "blk", title: `${x.o.title}: ${t0}–${t1}${x.chained ? " (after " + x.chained + ")" : ""}${x.o.once ? "" : " · repeats"}${x.o.wake === false ? " · skipped if the radio's paused" : ""}` });
+      bar.style.cssText = `top:5px;bottom:5px;left:${a * px}px;width:${w}px;--h:${sw0 ? SWITCH_HUE[sw0.what] : first ? TINT[first.kind] ?? first.h : 40};padding:3px 6px;cursor:pointer` +
+        (cont ? ";border-top-left-radius:0;border-bottom-left-radius:0" : "") + (goesOn ? ";border-top-right-radius:0;border-bottom-right-radius:0" : "") +
         (clash.has(x) ? ";outline:2px solid var(--red)" : "") + (x.chained ? ";opacity:.8" : "");
-      bar.append(el("div", { className: "bt", textContent: (x.chained ? "↳ " : (x.o.wake === false ? "🔕 " : "🔔 ") + (x.o.once ? "" : "↻ ")) + x.o.title +
+      const icons = x.chained ? "↳ " : (x.o.wake === false ? "🔕 " : "🔔 ") + (x.o.once ? "" : "↻ ");
+      bar.append(el("div", { className: "bt", textContent: cont ? `… ${x.o.title}, until ${t1}` : (w < 110 ? "" : icons) + x.o.title + (goesOn ? " →" : "") +
         (x.every ? ` · every ${x.every === 60 ? "hour" : x.every + " min"}` : "") }));
       if (x.every) bar.style.background = `repeating-linear-gradient(90deg, hsl(var(--h) 45% 38%) 0 ${x.every * px - 1}px, hsl(var(--h) 45% 26%) ${x.every * px - 1}px ${x.every * px}px)`;
       bar.onclick = () => open(x.o.id);
@@ -1950,7 +1969,8 @@ function nextLineText() {
   const pr = S?.programme;
   if (pr) return `● ${pr.name}: ${pr.waiting ? "waiting" : pr.block}${pr.until ? " until " + pr.until : ""}`;
   if (S?.programme_mode) { const nx = nextArmed(), ov = nextOver(nx);
-    return (nx ? `☾ Programme mode · next: ${nx.o.title} ${when(nx.start)}` : `☾ Programme mode · ${ov ? "quiet" : "nothing armed"}`) + (ov ? ` · ${overWords(ov)}` : ""); }
+    const playingNow = S?.speaker?.playing;     // (something chosen by hand plays even in programme mode)
+    return (nx ? `☾ Programme mode · next: ${nx.o.title} ${when(nx.start)}` : `☾ Programme mode · ${playingNow ? "playing what you chose" : ov ? "quiet" : "nothing armed"}`) + (ov ? ` · ${overWords(ov)}` : ""); }
   const next = PROGRAMMES.kids.map(id => O[id]).filter(x => x && x.auto).flatMap(x => occurrences(x)).filter(x => !x.chained).sort((a, b) => a.start - b.start)[0];
   return next ? `⏰ Next: ${next.o.title} ${when(next.start)}` : "Schedule: nothing armed";
 }
@@ -1965,7 +1985,7 @@ function armText(o) {
   if (!o.blocks.length && o.switches?.length) {      // only switches: say what comes on, and when
     const d0 = d.getHours() * 60 + d.getMinutes();
     return `${o.wake === false ? "🔕" : "🔔"} Armed: ` + o.switches.map(w => `${SWITCH_WORD[w.what]} on ${hhmm(d0 + w.from)} → ${hhmm(d0 + w.from + w.min)}`).join(", ")
-      + ` · ${o.once ? "" : "next "}${day}${o.once ? " only" : ", then " + repeatWords(o)}` + (mins < 120 ? ` · in ${mins < 1 ? "under a minute" : mins + " min"}` : "");
+      + ` · ${day}${o.once ? " only" : ", then " + repeatWords(o)}` + (mins < 120 ? ` · in ${mins < 1 ? "under a minute" : mins + " min"}` : "");
   }
   return `${o.wake === false ? "🔕" : "🔔"} Armed: ${o.once ? "starts" : "repeats " + repeatWords(o) + "; next"} ${day} at ${d.toTimeString().slice(0, 5)}` + (mins < 120 ? ` · in ${mins < 1 ? "under a minute" : mins + " min"}` : "");
 }
@@ -2044,7 +2064,10 @@ function programmeView(o, box, win) {
   // the switches (noise, the DJ): bars from the programme's start (or when it really started)
   const s0 = run ? toMin(run.started) : toMin(o.start);
   const sw = (o.switches || []).map(w => ({ start: s0 + w.from, end: s0 + w.from + w.min, len: w.min }));
-  const all = [...tl, ...sw], endAll = all.length ? Math.max(...all.map(s => s.end)) : 0;
+  // moments repeating every N minutes (a talking clock): each repeat drawn faintly, and the fit covers them all
+  const reps = [];
+  if (momentsOnly(o) && o.every && !run) for (let t = toMin(o.start) + o.every; t <= toMin(o.until || "23:59"); t += o.every) reps.push({ start: t, end: t + 1, len: 1 });
+  const all = [...tl, ...sw, ...reps], endAll = all.length ? Math.max(...all.map(s => s.end)) : 0;
   const lo = all.length ? Math.floor(Math.min(...all.map(s => s.start), ...(sw.length ? [s0] : [])) / 30) * 30 : toMin(o.start);   // (a switch's programme: from its start)
   const hi = Math.max(lo + 60, all.length ? Math.ceil(endAll / 30) * 30 : lo + 180);   // "the programme": zoomed to it
   // the whole day (and on past midnight, if it runs on), with the part in view chosen by zoom and scroll
@@ -2101,6 +2124,8 @@ function programmeView(o, box, win) {
     blk.addEventListener("pointerdown", e => { if (e.target === grab) return; const was = win.blk === i; win.blk = i; win.sw = null; pressBlock(e, blk, o, i, win, px, was); });
     lane.append(blk);
   });
+  reps.forEach(r => lane.append(Object.assign(el("div", { className: "blk ghost", title: `Again at ${hhmm(r.start)}` }),
+    { style: `left:${r.start * px + 1}px;width:${Math.max(18, px - 2)}px;--h:${TINT[O[o.blocks[0]?.items[0]]?.kind] ?? 200}` })));
   if (run) {
     const d = new Date(), nowMin = d.getHours() * 60 + d.getMinutes() + d.getSeconds() / 60;
     const x = (nowMin + (nowMin < lo - 720 ? 1440 : 0)) * px;
@@ -2544,6 +2569,7 @@ async function newMessage() {
 function closeNew() { $("newDrop").hidden = true; $("newMenu").setAttribute("aria-expanded", "false"); }
 $("newMenu").onclick = e => { e.stopPropagation(); const open_ = $("newDrop").hidden; $("newDrop").hidden = !open_; $("newMenu").setAttribute("aria-expanded", String(open_)); };
 document.addEventListener("pointerdown", e => { if (!e.target.closest(".menu")) closeNew(); });
+document.addEventListener("keydown", e => { if (e.key === "Escape" && !$("newDrop").hidden) { closeNew(); $("newMenu").focus(); } });
 document.querySelectorAll("[data-new]").forEach(b => b.onclick = async () => {
   closeNew();
   const what = b.dataset.new;

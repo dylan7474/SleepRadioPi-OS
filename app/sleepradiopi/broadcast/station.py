@@ -2209,6 +2209,7 @@ class Station:
         return {
             "radio_name": brand.name,
             "on_air": self.is_on_air,
+            "dj_on": self.dj_on,
             "listeners": self._listeners,
             "now": None if on_air is None else {
                 "kind": on_air.kind, "title": on_air.title, "artist": on_air.artist,
