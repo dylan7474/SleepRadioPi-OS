@@ -154,6 +154,25 @@ def _presets(tmp_path, buttons=None):
     return st, ctl, conf, Presets(st, ctl, conf, buttons)
 
 
+def test_messages_jingles_and_birthdays_on_buttons(tmp_path: Path) -> None:
+    """Every object can go on a button: these happen over what's on, nothing paused."""
+    msg, jin, bd = {"kind": "message", "text": " Tea  time "}, {"kind": "jingle", "path": "/Station ID.mp3"}, {"kind": "birthday", "name": "Mum", "day": 3, "month": 5}
+    assert presets_mod.validate(msg) == {"kind": "message", "text": "Tea time"}
+    assert presets_mod.validate(jin) == {"kind": "jingle", "path": "Station ID.mp3"}
+    assert presets_mod.validate(bd)["name"] == "Mum"
+    for bad in ({"kind": "message", "text": " "}, {"kind": "jingle", "path": "../x.mp3"}, {"kind": "birthday", "name": "Mum"}):
+        with pytest.raises(ValueError):
+            presets_mod.validate(bad)
+    st, ctl, conf, p = _presets(tmp_path, [msg, jin, bd])
+    assert [p.label(x) for x in p.presets[:3]] == ["“Tea time”", "Station ID", "Mum's birthday"]
+    played, said = [], []
+    p.jingle = played.append
+    p._say = lambda text, beep_first=True, always=False: said.append((text, always))
+    p.press(0); p.press(1); p.press(2)
+    assert played == ["Station ID.mp3"] and said[0][1] and "Tea time" in said[0][0] and "Mum" in said[1][0]
+    assert ctl.calls == []                                                    # (nothing played or paused)
+
+
 def test_a_programme_sets_things_on_or_off_where_a_button_switches(tmp_path: Path) -> None:
     """A programme's moment says on or off: a switch at a set time could go either way."""
     st, ctl, conf, p = _presets(tmp_path)

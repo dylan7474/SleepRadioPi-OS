@@ -44,6 +44,7 @@ WORDS = ("one", "two", "three", "four", "five", "six")
 SETTLE_S = 0.6            # the selector: a position counts once it's been there this long (turning
                           # from 1 to 4 passes 2 and 3 without playing them)
 BACK_HOLD_S = 5.0         # the back button held this long: the service menu
+INSTANT = ("action", "message", "jingle", "birthday")     # done at once over what's on: nothing to pause
 ACTIONS = {"time": "Say the time", "news": "The news now", "sleep": "Sleep timer (30 min)",
            "address": "Say the address", "noise": "Noise on/off", "dj": "DJ on/off"}
 BANKS = ("day", "night")
@@ -102,7 +103,21 @@ def validate(preset) -> dict | None:
         if preset.get("action") not in ACTIONS:
             raise ValueError(f"a button's action is one of {', '.join(ACTIONS)}")
         return {"kind": "action", "action": preset["action"]}
-    raise ValueError("a button holds the show, a radio station, an album, a playlist, a programme, an audiobook, a podcast or an action")
+    if kind == "message":                                     # (instants: said or played over what's on)
+        text = preset.get("text")
+        if not isinstance(text, str) or not text.strip() or len(text) > 1000:
+            raise ValueError("a message button needs its words")
+        return {"kind": "message", "text": " ".join(text.split())}
+    if kind == "jingle":
+        path = preset.get("path")
+        if not isinstance(path, str) or not path.strip("/") or len(path) > 1000 or ".." in path.split("/"):
+            raise ValueError("a jingle button needs its file")
+        return {"kind": "jingle", "path": path.strip("/")}
+    if kind == "birthday":
+        from sleepradiopi.broadcast import birthdays
+        return {"kind": "birthday", **birthdays.validate([{k: preset.get(k) for k in ("name", "day", "month", "year") if preset.get(k) is not None}])[0]}
+    raise ValueError("a button holds the show, a radio station, an album, a playlist, a programme, an audiobook, a podcast, "
+                     "an action, a message, a jingle or a birthday")
 
 
 def validate_all(presets, n: int = N) -> list:
@@ -159,6 +174,12 @@ def label(preset: dict | None, station_name: Callable[[dict], str] | None = None
         return preset["title"] or "Podcast"
     if kind == "action":
         return ACTIONS[preset["action"]]
+    if kind == "message":
+        return "“" + (preset["text"] if len(preset["text"]) <= 30 else preset["text"][:28] + "…") + "”"
+    if kind == "jingle":
+        return Path(preset["path"]).stem
+    if kind == "birthday":
+        return f"{preset['name']}'s birthday"
     if station_name is not None:
         return station_name(preset)
     from sleepradiopi.config import brand
@@ -201,6 +222,7 @@ class Presets:
         self._settle: threading.Timer | None = None
         self.station = station
         self.control = control           # SpeakerControl: play/pause, sleep timer, clips
+        self.jingle: Callable[[str], None] | None = None     # plays a jingle file over what's on (main sets it)
         self.menu = None                 # the service menu (io/service.py): gets the presses while it's open
         self.keys = None                 # the knob's key handlers {keycode: (down, up)}: the page's buttons use them too
         self.config_file = config_file
@@ -448,8 +470,8 @@ class Presets:
         if preset is None:
             self._say(f"Button {WORDS[index]} is empty. Hold it down to keep what's playing on it.")
             return
-        if preset["kind"] == "action":
-            self._action(preset["action"])
+        if preset["kind"] in INSTANT:
+            self._instant(preset)
             return
         if same(preset, self.current()) and self.control is not None:
             self.control.toggle()
@@ -471,8 +493,8 @@ class Presets:
         if preset is None:
             self._clip(beep((440.0, 330.0)), "Button")
             return
-        if preset["kind"] == "action":
-            self._action(preset["action"])
+        if preset["kind"] in INSTANT:
+            self._instant(preset)
             return
         if not same(preset, self.current()):
             try:
@@ -549,6 +571,27 @@ class Presets:
             if self.config_file is not None:
                 save_setting(self.config_file, "broadcast_dj", on)
             self._say("DJ on." if on else "DJ off. Just the music.")
+
+    def _instant(self, preset: dict) -> None:
+        """An action, or words or a jingle over whatever's on (asked for: said even with the DJ off)."""
+        kind = preset["kind"]
+        if kind == "action":
+            self._action(preset["action"])
+        elif kind == "message":
+            from datetime import date
+            messages = getattr(self.station, "messages", None)
+            self._say(messages.words(preset["text"], date.today()) if messages is not None else preset["text"], always=True)
+        elif kind == "birthday":
+            from datetime import date
+            from sleepradiopi.broadcast import birthdays
+            age = date.today().year - preset["year"] if preset.get("year") else None
+            self._say(birthdays.wish_text([{"name": preset["name"], "age": age if age and 1 <= age <= 120 else None}],
+                                          self.station.builder.station), always=True)
+        elif kind == "jingle":
+            if self.jingle is not None:
+                self.jingle(preset["path"])
+            else:
+                self._clip(beep((440.0, 330.0)), "Button")
 
     def scheduled(self, action: str) -> None:
         """An action at a programme's moment: set things on or off (a button's

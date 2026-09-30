@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import email.utils
 import hashlib
+import html
 import json
 import logging
 import re
@@ -70,7 +71,7 @@ def search(query: str, fetch=_get) -> list[dict]:
     out, seen = [], set()
     for o in data.get("results", []) if isinstance(data, dict) else []:
         url = str(o.get("feedUrl") or "").strip()
-        title = str(o.get("collectionName") or o.get("trackName") or "").strip()
+        title = html.unescape(str(o.get("collectionName") or o.get("trackName") or "")).strip()
         if not url or not title or url in seen or urlparse(url).scheme not in ("http", "https"):
             continue
         seen.add(url)
@@ -98,7 +99,7 @@ def _child(el, name: str, itunes: bool = False):
 
 
 def _text(el) -> str:
-    return "".join(el.itertext()).strip() if el is not None else ""
+    return html.unescape("".join(el.itertext())).strip() if el is not None else ""   # (some feeds escape twice: "&amp;")
 
 
 def parse_duration(raw: str) -> int:
@@ -330,5 +331,5 @@ def validate_shows(shows) -> list[dict]:
                 or urlparse(s["feed_url"]).scheme not in ("http", "https"):
             raise ValueError("a podcast needs its feed's address")
         out.append({"id": feed_id(s["feed_url"]), "feed_url": s["feed_url"].strip(),
-                    "title": str(s.get("title") or s["feed_url"])[:200], "author": str(s.get("author") or "")[:200]})
+                    "title": html.unescape(str(s.get("title") or s["feed_url"]))[:200], "author": str(s.get("author") or "")[:200]})
     return out

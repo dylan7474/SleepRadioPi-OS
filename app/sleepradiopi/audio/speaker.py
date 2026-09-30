@@ -132,12 +132,12 @@ class SpeakerOutput:
     def _sync(self) -> None:
         """(Under _lock.) aplay open while the show plays or the noise is on; the
         pump running while the noise is on and the show isn't."""
-        want = self._show_on or self.noise is not None or self.hold is not None
+        want = self._show_on or self.noise is not None or self.hold is not None or self.test is not None
         if want and self._proc is None:
             self._open()
         elif not want and self._proc is not None:
             self._close()
-        if (self.noise is not None or self.hold is not None) and not self._show_on \
+        if (self.noise is not None or self.hold is not None or self.test is not None) and not self._show_on \
                 and (self._pump is None or not self._pump.is_alive()):
             self._pump = threading.Thread(target=self._pump_run, name="noise", daemon=True)
             self._pump.start()
@@ -145,7 +145,9 @@ class SpeakerOutput:
     def _pump_run(self) -> None:
         while True:
             with self._lock:
-                if (self.noise is None and self.hold is None) or self._show_on or self._proc is None:
+                if (self.noise is None and self.hold is None and self.test is None) or self._show_on or self._proc is None:
+                    if not self._show_on:
+                        self._sync()         # (a clip over while paused: the speaker off again)
                     return
             if not self._emit(None, SLICE_FRAMES):   # blocks on aplay: real time
                 time.sleep(0.1)
@@ -257,6 +259,13 @@ class SpeakerOutput:
             return 1.0
         return max(0.0, min(1.0, (self.fade_end - time.monotonic()) / SLEEP_FADE_S))
 
+    def play_test(self, sound) -> None:
+        """A test sound or clip, instead of the show -- or, paused, on its own:
+        the show stays paused (no burst of it before or after)."""
+        with self._lock:
+            self.test = sound
+            self._sync()
+
     def set_hold(self, sound) -> None:
         """The service menu's sound (something with next(n)), played instead of
         everything -- even while paused -- until set back to None."""
@@ -314,7 +323,6 @@ class SpeakerControl:
         self._save_timer: threading.Timer | None = None
         self._sleep_timer: threading.Timer | None = None
         self._sleep_min = 0
-        self._pause_after_clip = False   # a clip started while paused: pause again after it
         # Says a line in the DJ voice (int16 stereo), for the "sides" test's
         # "Left speaker" / "Right speaker"; None (or returning None) = no voice.
         self.speech: Callable[[str], np.ndarray | None] | None = None
@@ -456,7 +464,6 @@ class SpeakerControl:
         log.info("speaker: knob %s", mode)
 
     def play(self) -> None:
-        self._pause_after_clip = False       # asked to play: stay playing after a clip
         self.slept = False
         with self._lock:
             if not self.paused:
@@ -503,28 +510,8 @@ class SpeakerControl:
 
     def play_clip(self, clip) -> None:
         """Play ready-made audio (e.g. the spoken address) on the speaker instead
-        of the show. If the radio was paused it plays anyway, then pauses again."""
-        if self.paused:
-            self.play()
-            self._pause_after_clip = True
-            threading.Thread(target=self._pause_when_clips_end, name="clip-pause", daemon=True).start()
-        with self._lock:
-            self.speaker.test = clip
-
-    def _pause_when_clips_end(self) -> None:
-        quiet_since = None
-        deadline = time.monotonic() + 300
-        while self._pause_after_clip and time.monotonic() < deadline:
-            if self.speaker.test is None:
-                quiet_since = quiet_since or time.monotonic()
-                if time.monotonic() - quiet_since > 0.5:     # not just between two clips
-                    break
-            else:
-                quiet_since = None
-            time.sleep(0.05)
-        if self._pause_after_clip:
-            self._pause_after_clip = False
-            self.pause()
+        of the show. Paused, it plays on its own and the radio stays paused."""
+        self.speaker.play_test(clip)
 
     def stop_test(self) -> None:
         with self._lock:

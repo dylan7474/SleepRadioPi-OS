@@ -359,13 +359,17 @@ The cards:
   Programmes and Theme radio (folders load from `/api/browse` as you open
   them); windows you move and resize; **the radio on the desktop** showing
   what's on air (polled every 2.5 s), with **Back** (like a CD player) and **Skip** keys under the dial (pause is the knob): drop anything on its dial to play it,
-  on one of its buttons to keep it there (including an **action** from the Actions folder: the sleep timer, the time, the news, the address, noise on/off, DJ on/off; or pick from each button's *Change…* list in the Buttons window), a **☀ Day / ☾ Night** switch above them shows either set, and dropping on a button programmes the set shown without swapping the radio's (*Use it now* swaps), scroll the knob for the volume,
+  on one of its buttons to keep it there (including a **message**, a **jingle** or a **birthday** — said or played over what's on — and an **action** from the Actions folder: the sleep timer, the time, the news, the address, noise on/off, DJ on/off; or pick from each button's *Change…* list in the Buttons window), a **☀ Day / ☾ Night** switch above them shows either set, and dropping on a button programmes the set shown without swapping the radio's (*Use it now* swaps), scroll the knob for the volume,
   click it to pause. Programmes are built in their window: drop things on the
   timeline for new blocks or on a block to add to it, drag a block to move it
   or its right edge to change its length, and set its rule, order, start time,
   days, what fills the gaps and what happens after; every block has a start
   time you can type, and dragging a block along the timeline moves it in time
-  (the order follows); *＋ Moment* and the block's *Say it / Time check / The
+  (the order follows). The timeline covers the **whole day**: a day strip above
+  it shows where the programme's blocks are (click or drag it to move along),
+  *Show* zooms to the programme, 1, 3, 12 or 24 hours (or Ctrl+scroll), the
+  wheel scrolls along the day, a block dragged to an edge scrolls on, and a
+  second click on a chosen block opens a box to type its start time; *＋ Moment* and the block's *Say it / Time check / The
   news / Sleep timer* add moments; drag a sticky note or a jingle in too.
   They're saved on the radio. The menu bar's **New** menu makes anything: a
   programme, playlist, message, birthday, artist list, folder, station or

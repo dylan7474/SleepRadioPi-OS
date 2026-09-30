@@ -498,6 +498,7 @@ def main() -> None:
             audio = np.concatenate(list(pcm.decode(path)) or [pcm.silence(0.1)])
             control.play_clip(Clip(audio, "jingle", path.stem))
         threading.Thread(target=run, name="programme-jingle", daemon=True).start()
+    presets.jingle = play_jingle              # (a jingle on a button, too)
     def time_signal(at, pips: bool, speak: bool) -> None:
         """A programme's time signal for [at]: the pips (five short, the long one on
         the minute) and/or the time said. Made ahead (the voice is slow on a Zero),

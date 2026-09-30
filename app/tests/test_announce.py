@@ -73,7 +73,9 @@ def test_announcer_beeps_then_speaks_and_caches() -> None:
     assert _wait(lambda: len(played) == 4) and len(rendered) == 1
 
 
-def test_play_clip_while_paused_pauses_again_after(tmp_path: Path) -> None:
+def test_play_clip_while_paused_leaves_the_show_paused(tmp_path: Path) -> None:
+    """The time signal on a paused radio: it plays on its own -- the show isn't
+    woken for it (that let a burst of music out after the pips)."""
     spk = SpeakerOutput(command=["sh", "-c", "cat > /dev/null"])
     calls = []
     ctl = SpeakerControl(spk, lambda: calls.append("join"), lambda: calls.append("leave"))
@@ -81,10 +83,9 @@ def test_play_clip_while_paused_pauses_again_after(tmp_path: Path) -> None:
     assert ctl.paused
     clip = Clip(np.ones((2048, 2), dtype=np.int16), "announce", "Saying the address")
     ctl.play_clip(clip)
-    assert not ctl.paused and spk.test is clip
-    while spk.test is not None:
-        spk.write(np.zeros((1024, 2), dtype=np.int16))
-    assert _wait(lambda: ctl.paused and calls == ["join", "leave"], timeout=2)
+    assert ctl.paused and not spk.enabled and calls == []
+    assert _wait(lambda: spk.test is None and spk._proc is None, timeout=2)   # played by itself, the speaker off again
+    assert ctl.paused and calls == []
     # while playing, a clip leaves it playing
     ctl.play()
     ctl.play_clip(Clip(np.ones((1024, 2), dtype=np.int16), "beep", "x"))
