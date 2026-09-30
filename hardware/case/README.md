@@ -27,8 +27,10 @@ slot in the back is a small vent. An optional **bass port** back panel is below.
 | `twotone/front_white_face_blue_letters.3mf` | face down (PrusaSlicer project) | the lettered sunburst front in **two colours**: white face, **blue letters** (two filament changes built in); see *Two-tone front* below |
 | `twotone/front_blue_face_white_letters.3mf` | face down (PrusaSlicer project) | the same front with a **blue face and white letters** (one filament change) |
 | `twotone/test_white_face_blue_letters.3mf`, `twotone/test_blue_face_white_letters.3mf` | face down (PrusaSlicer projects) | **try these first**: a 50 × 16 mm tile with "SLEEP" at the front's size and depth and the same filament changes, ~9 minutes (`twotone_test.scad` → `stl/twotone_test.stl`) |
-| `stl/rear.stl` | outside face down | back panel with the Pi posts and RTC rim |
+| `stl/rear.stl` | outside face down | back panel with the Pi posts and RTC rim (posts fixed 2026-09-30; see *Pi posts: repair adapters* if yours was printed before) |
 | `stl/rear_port.stl` | outside face down, no supports | the same back panel with a **bass port** (`-D rear_port=true`); see *Bass port* below |
+| `post_adapter.scad` → `stl/post_adapter.stl` | flange down, no supports, 100 % infill | **repair adapters** for a back panel printed before 2026-09-30 whose Pi post floors broke out: four top hats, 5.2 mm stems, ~14 min; see *Pi posts: repair adapters* below |
+| `stl/post_adapter_test.stl` | flange down | one adapter each at 5.2 / 5.35 / 5.5 mm (1–3 notches on the flange), to find the push-fit for your printer first |
 | `stl/grommet.stl` | flange down | closes the power cable slot round the cable; use it with the bass port |
 | `stl/strap_loops.stl` | bar down, no supports | two **carry strap loops**, screwed to the sides from inside; see *Carry strap* below |
 | `stl/strap_guide.stl` | side down, no supports | a **drill guide** for the loops' screw holes in a tube printed without them |
@@ -240,7 +242,8 @@ front.
 ## Hardware
 
 - 4x M3 x 12 countersunk self-tapping screws per panel (8 in total), into the corner bosses of the tube.
-- 4x M2.5 x 6 screws + 4x 12 mm M2.5 standoffs (the pHAT kit), for the Pi and the amp.
+- 4x **M2.5 x 8** screws for the Pi (through the posts into the standoffs), 4x 12 mm M2.5 standoffs and 4x M2.5 x 6
+  (the pHAT kit) for the amp. The kit's x 6 are too short for the Pi now that the post floors are 3 mm.
 - Speakers: hot glue, **or** 6x M2.5 self-tappers with the printed clamp tabs: x 8 grips best (6 mm into the boss);
   x 6 works (4 mm).
 - Stick-on rubber feet; foam tape for the RTC.
@@ -251,9 +254,25 @@ front.
    rim, or screw on the three clamp tabs. Each tab sits on a 6 mm boss and has a foot under its nose that presses on the
    rim (the tabs print plate-down, foot-up, no supports); swing a tab aside round its screw while the speaker goes in. Turn the
    speaker so its solder tabs sit in a gap between the clamps.
-2. **Pi:** screw the M2.5 x 6 screws in **from the outside of the back panel** (the heads sit down in the deep
-   counterbores), through the posts and the Pi, into the 12 mm standoffs. Fit the MiniAmp on the header and screw
-   it to the standoffs. The posts leave 7 mm under the Pi for header stubs and encoder wires soldered underneath.
+2. **Pi:** the screws go in **from the outside of the back panel**. Each post is hollow from the outside, with
+   a 3 mm floor at the Pi end; the screw head sits on that floor, deep inside the post:
+
+   ```
+          MiniAmp        ← kit M2.5 x 6 screw into the top of the standoff
+      ════════════
+         ║ 12 mm ║     ← M2.5 standoff (the pHAT kit)
+      ═══╩═══════╩═══    Pi
+        ┌─┐ │ ┌─┐      ← 3 mm floor, 2.8 mm hole: the head clamps here
+        │ ┌─┴─┐ │
+        │ │   │ │      ← 5.6 mm hole for the head, 1 mm wall
+        │ │ ▲ │ │        (a hex key reaches down it)
+      ──┘ │   │ └──   back panel, outside face
+          └───┘        ← push the M2.5 x 8 in from here
+   ```
+
+   Drop an M2.5 x 8 into each post from outside, through the Pi, and screw it into a 12 mm standoff. Fit the
+   MiniAmp on the header and screw it to the standoffs. The posts leave 7 mm under the Pi for header stubs and
+   encoder wires soldered underneath.
    With the panel off, there's 58 mm free on the port side and 17 mm on the GPIO side (to the RTC), and 10 mm at
    each end inside the box.
 3. **Power:** thread the micro-USB plug in through the slot in the back panel, plug it in, and zip-tie the cable
@@ -264,6 +283,38 @@ front.
    screw the front and back panels onto the tube. Each panel has a lip that locates it inside the tube.
 
 The back panel comes off with all the electronics on it, so you don't need to reach inside the box.
+
+## Pi posts: repair adapters
+
+Back panels printed from this design **before 2026-09-30** have a fault: the screw head's hole reached into the
+thin tip of each post, leaving a 0.2 mm wall, too thin to print. The 2 mm floor the head was meant to sit on
+comes loose and falls out (or pulls out when a screw is tightened), leaving hollow posts and nothing to screw the
+Pi to. The current `rear.stl` is fixed (a 3 mm floor, wholly in the wide part of the post, and the model now
+refuses to render if the head's hole would reach the tip again). If you already have an old panel, **don't
+reprint it** (~3 h): print four adapters (~14 min) instead.
+
+```
+   ═══════ Pi ═══════     ← self-tapper (M2.5) down through the Pi's hole
+      ┌─┐  │  ┌─┐
+      │ └┐ │ ┌┘ │        ← the Pi clamps onto the post rim
+      │  │ │ │  │        ← stem: fills the hollow post, 2.2 mm pilot hole
+      │  │ │ │  │
+   ───┘  │ │ │  └───     back panel
+      ┌──┘ │ └──┐
+      └────┴────┘        ← flange on the OUTSIDE face, like a washer
+```
+
+1. Trim any ragged ring left at the top of each post flush with a craft knife.
+2. Push an adapter into each post **from the outside**, flange flat on the panel; a drop of superglue under the
+   flange stops it turning.
+3. Screw the Pi down with M2.5 self-tappers from the Pi side, into the adapters; stop when snug (PLA strips). The
+   stem is 0.5 mm shorter than the hole, so the Pi clamps onto the post rim and the flange pulls tight.
+4. The amp: the standoffs can't use the Pi's holes from below now, so screw them to the amp and let them rest on
+   the Pi, or use male–female standoffs whose studs go through the Pi into the adapters instead of the self-tappers.
+
+The Pi sits 3 mm lower than designed (the broken tips are gone), leaving 4 mm under it. The stems are 5.2 mm: on
+the MK2.5 that was the one of 5.2 / 5.35 / 5.5 that pushed in (`stl/post_adapter_test.stl` has all three); change
+`stem_d` in `post_adapter.scad` if yours are loose or tight.
 
 ## Checks done
 

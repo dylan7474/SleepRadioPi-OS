@@ -110,12 +110,15 @@ pi_dx       = 0;         // Pi position: offset from the centre line
 post_h      = 7;         // room under the Pi for header stubs + encoder wires
 post_d      = 6;         // tip, under the Pi
 post_d2     = 7.6;       // below the tip
-pi_screw    = "outside"; // "outside": M2.5 x 6 from the back through the posts into
+pi_screw    = "outside"; // "outside": M2.5 x 8 from the back through the posts into
                          //            the 12 mm standoffs (heads sit in deep counterbores)
                          // "self_tap": M2.5 self-tappers into the posts from the Pi side
 screw_clear_d = 2.8;
 screw_head_d  = 5.6;
-screw_floor   = 2;       // plastic under the screw head, at the post tip
+post_tip_h    = 3;       // the narrow (post_d) tip next to the board
+screw_floor   = 3;       // plastic under the screw head: the whole narrow tip, so the
+                         // counterbore stays in the wide part (1 mm wall). It was 2, which
+                         // left 0.2 mm of wall and the floors broke out (see post_adapter.scad)
 pi_tap_d      = 2.2;
 
 cable_dx    = 32;        // power cable slot: this far out from the Pi's port edge
@@ -437,14 +440,17 @@ module tab_print() translate([0, 0, tab_drop + tab_t]) mirror([0, 0, 1]) tab(); 
 /* ---------- Rear panel ---------- */
 // Built in place (outside face at y = D), so the Pi coordinates line up.
 module rear() {
+    assert(pi_screw != "outside" || screw_floor >= post_tip_h,
+           "the screw-head counterbore would cut into the narrow post tip");
+    assert(post_d2 - screw_head_d >= 2, "under 1 mm of wall round the screw head");
     difference() {
         union() {
             translate([0, D, 0]) mirror([0, 1, 0]) panel_blank();
             // Narrow tip next to the board (clear of the header pins), thicker
             // below, so the wall round the screw-head counterbore is 1 mm.
             for (h = pi_holes) {
-                ycyl(h[0], h[1], pi_y, pi_y + 3, post_d);
-                ycyl(h[0], h[1], pi_y + 3 - 0.01, to + 0.01, post_d2);
+                ycyl(h[0], h[1], pi_y, pi_y + post_tip_h, post_d);
+                ycyl(h[0], h[1], pi_y + post_tip_h - 0.01, to + 0.01, post_d2);
             }
             if (rtc) yext(to - 3, to + 0.01) translate(rtc_pos) difference() {
                 square([rtc_w + 2.4, rtc_l + 2.4], center = true);
