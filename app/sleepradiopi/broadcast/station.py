@@ -49,6 +49,7 @@ from sleepradiopi.tts.worker import TtsWorker
 from .library import scan_jingles, scan_music
 from .models import BroadcastConfig, BroadcastTrack, Chattiness, JingleClip, LinkKind
 from .news import DueNews, NewsRepository, NewsSlot, NewsSchedule, QuietHours, build_bulletin_body, bulletin_time_line
+from . import playlists as playlists_mod
 from . import profiles as profiles_mod
 from .birthdays import BirthdayWishes, wish_text
 from .messages import Messages
@@ -140,6 +141,8 @@ class OnAir:
     duration_s: float = 0.0
 
 
+PREVIOUS_RESTART_S = 5          # Previous later than this into a track restarts it
+
 def _natural(name: str) -> list:
     """'10 - x' after '9 - x': digits compare as numbers."""
     return [int(p) if p.isdigit() else p.lower() for p in re.split(r"(\d+)", name)]
@@ -225,6 +228,12 @@ class Station:
         # classical pieces...), any layout. Never in the show, the song search or lists.
         self.ondemand_dir: Path | None = cfg.get("ondemand_folder")
         self.ondemand_tracks = self._scan_ondemand()
+        try:
+            self.playlists: list[dict] = playlists_mod.validate(cfg.get("playlists") or [])
+        except ValueError as e:              # a hand-edited config: don't stop the station
+            log.warning("playlists ignored: %s", e)
+            self.playlists = []
+        self._path_index: dict | None = None   # (root, path in it) -> track, for playlists
         self.selector = BroadcastSelector(self.tracks)
         self.artist: str | None = None      # artist radio: only this artist's tracks
         self.profile: str | None = None     # ...or only the artists on this list
@@ -265,6 +274,10 @@ class Station:
         self._albums: list[dict] = []        # album runs being played start to finish
         self._album_index: list[dict] | None = None
         self._next_source: dict | None = None  # "Play next" with no DJ: tuned when the song (or album) ends
+        self._played: deque[BroadcastTrack] = deque(maxlen=30)   # the show's songs, for Previous
+        self._jump: BroadcastTrack | None = None   # Previous / a playlist now: play this at once, no gap
+        self._album_jump: int | None = None        # Previous in an album: this track next
+        self._playlist_run: dict | None = None     # the playlist being played: {"name", "tracks"}
         self._gap_is_album = False           # this gap is between two tracks of an album
         self.current_track: BroadcastTrack | None = None
         self._took_request = False
@@ -460,16 +473,27 @@ class Station:
             self._first_open = False
             self._run_steps(steps)
             track = first
+            with self._lock:
+                jump, self._jump = self._jump, None
+                if jump is not None:          # (a playlist started during the welcome)
+                    self._queue.insert(self._n_requested, first)
+                    track = jump
             while not self._halted():
                 opened = True
                 self._play_track(track)
                 if self._halted() or self._take_next_source():
                     break
                 with self._lock:
+                    jump, self._jump = self._jump, None
+                if jump is not None:          # Previous (or a playlist started): straight to it
+                    track = jump
+                    continue
+                with self._lock:
                     self._in_gap = True       # a request now plays after the announced next song
                 self._run_gap()
                 with self._lock:
-                    track = self._take_next()
+                    jump, self._jump = self._jump, None
+                    track = jump or self._take_next()
                     self._in_gap = False
                     self._place_pending()
         finally:
@@ -643,7 +667,9 @@ class Station:
         self.gap_plan = []
         self.history.appendleft({"kind": "album", "text": f"{album['title']} — {album['artist']}",
                                  "at": time.time()})
-        for i in range(source.get("track", 0), len(tracks)):
+        i = source.get("track", 0)
+        self._album_jump = None
+        while i < len(tracks):
             if self._halted():
                 return
             t = tracks[i]
@@ -658,6 +684,8 @@ class Station:
             self.current_track = t
             self.history.appendleft({"kind": "track", "text": f"{t.title} — {t.artist}", "at": time.time()})
             self._play_file(t.path, OnAir("track", t.title, t.artist, t.album))
+            jump, self._album_jump = self._album_jump, None
+            i = i + 1 if jump is None else jump
         if self._halted():
             return
         log.info("album finished: %s", album["title"])
@@ -849,7 +877,8 @@ class Station:
         for i, t in enumerate(self.tracks):
             hay = f"{t.title} {t.artist} {t.album}".lower()
             if all(w in hay for w in words):
-                out.append({"id": i, "title": t.title, "artist": t.artist, "album": t.album})
+                out.append({"id": i, "title": t.title, "artist": t.artist, "album": t.album,
+                            "path": t.path.relative_to(self.music_dir).as_posix()})
         out.sort(key=lambda r: (r["artist"].lower(), r["album"].lower(), r["title"].lower()))
         return out[:limit]
 
@@ -886,6 +915,176 @@ class Station:
             self._prepare_opening()
         return {"position": position, "after_announced": after_announced, "replanned": replanned,
                 "title": t.title, "artist": t.artist}
+
+    # --- Previous: like a CD player ---------------------------------------------------
+
+    def previous(self) -> bool:
+        """More than PREVIOUS_RESTART_S into a track: start it again; sooner, the
+        one before (in the show, then the one cut short again). In a gap
+        (the DJ, a jingle, the news): the song that's just ended. Stations,
+        books and podcasts have nothing to go back to: False."""
+        on_air = self.on_air
+        if not self.is_on_air or on_air is None or on_air.kind in ("radio", "book", "episode", "wait"):
+            return False
+        into = time.time() - on_air.started
+        src = self._source
+        if src is not None:                   # an album or On demand folder, straight through
+            if src.get("kind") != "album":
+                return False
+            i = src.get("track", 0)
+            self._album_jump = i if on_air.kind != "track" or into > PREVIOUS_RESTART_S else max(0, i - 1)
+            self._skip_for = on_air
+            log.info("previous: album track %d", self._album_jump + 1)
+            return True
+        cur = self.current_track
+        if cur is None:
+            return False
+        with self._lock:
+            if on_air.kind == "track" and into <= PREVIOUS_RESTART_S:
+                before = next((t for t in reversed(self._played) if t != cur), None)
+                if before is not None:
+                    self._queue.appendleft(cur)   # then the one cut short, again
+                    self._n_requested += 1
+                    target = before
+                else:
+                    target = cur
+            else:
+                target = cur                  # restart it, or (in a gap) the song just ended
+            self._jump = target
+        self._skip_for = on_air
+        log.info("previous: %s", target.title)
+        return True
+
+    # --- playlists: your own lists of tracks ----------------------------------------------
+
+    def _ref(self, t: BroadcastTrack) -> list[str] | None:
+        for root, (base, _) in self._roots().items():
+            if base is not None:
+                try:
+                    return [root, t.path.relative_to(base).as_posix()]
+                except ValueError:
+                    pass
+        return None
+
+    def _by_ref(self, root: str, path: str) -> BroadcastTrack | None:
+        if self._path_index is None:
+            self._path_index = {tuple(r): t for _, (_, ts) in self._roots().items() for t in ts
+                                if (r := self._ref(t)) is not None}
+        return self._path_index.get((root, path))
+
+    def set_playlists(self, entries: list[dict]) -> None:
+        self.playlists = playlists_mod.validate(entries)
+
+    def playlist_view(self, p: dict) -> dict:
+        tracks = []
+        for root, path in p["tracks"]:
+            t = self._by_ref(root, path)
+            tracks.append({"root": root, "path": path, "title": t.title if t else Path(path).stem,
+                           "artist": t.artist if t else "", "missing": t is None})
+        return {"name": p["name"], "tracks": tracks}
+
+    def refs_for(self, root=None, path=None, folder=None, deep=False, now=False) -> list[list[str]]:
+        """What to add to a playlist: one track (root + path), a folder (+ deep:
+        everything under it), or the song playing now."""
+        if now:
+            t = self.current_track
+            ref = self._ref(t) if t is not None else None
+            if ref is None:
+                raise ValueError("no song is playing")
+            return [ref]
+        if folder is not None:
+            album = self._album_by_folder(folder, root or "music", deep)
+            if album is None:
+                raise ValueError("that folder isn't in the library")
+            return [r for t in album["tracks"] if (r := self._ref(t)) is not None]
+        if not isinstance(path, str) or self._by_ref(root or "music", path) is None:
+            raise ValueError("that track isn't in the library")
+        return [[root or "music", path]]
+
+    def add_to_playlist(self, name: str, refs: list[list[str]]) -> dict:
+        """Add tracks to the end of a playlist (made if it isn't there)."""
+        lists = [dict(p, tracks=list(p["tracks"])) for p in self.playlists]
+        p = playlists_mod.find(lists, name)
+        if p is None:
+            p = {"name": name, "tracks": []}
+            lists.append(p)
+        p["tracks"].extend(refs)
+        self.set_playlists(lists)
+        return playlists_mod.find(self.playlists, name)
+
+    def play_playlist(self, name: str, shuffle: bool = False) -> dict:
+        """Play a playlist now, in order or shuffled, through the show's queue: the
+        DJ talks between songs as usual if it's on, not at all if it's off; then
+        the show carries on. Replaces a playlist already playing."""
+        p = playlists_mod.find(self.playlists, name)
+        if p is None:
+            raise ValueError("there's no playlist of that name")
+        tracks = [t for root, path in p["tracks"] if (t := self._by_ref(root, path)) is not None]
+        if not tracks:
+            raise ValueError(f"{p['name']} has nothing on the radio to play")
+        if shuffle:
+            random.shuffle(tracks)
+        self._drop_playlist()
+        playing = self._source is not None
+        with self._lock:
+            show_on = self.is_on_air and not playing
+            rest = tracks[1:] if show_on else tracks
+            for i, t in enumerate(rest):
+                self._queue.insert(i, t)
+            self._n_requested += len(rest)
+            self._pending = deque(t for t in self._pending if t not in tracks)
+            self._playlist_run = {"name": p["name"], "tracks": tracks, "shuffle": shuffle}
+            if show_on:
+                self._jump = tracks[0]        # at once, whatever's on (a song or the DJ)
+            elif not self.is_on_air:
+                if self._opening is not None:
+                    self._queue.insert(len(rest), self._opening[2])   # (its song goes back)
+                self._opening = None
+        for t in tracks[:2]:
+            self._scan(t.path)
+        if show_on:
+            self._skip_for = self.on_air
+        elif playing:
+            self._next_source = None
+            self._opening = None              # the show comes back opening with it
+            self.tune(None)
+        else:
+            self._prepare_opening()
+        log.info("playlist: %s (%d tracks%s)", p["name"], len(tracks), ", shuffled" if shuffle else "")
+        return {"name": p["name"], "tracks": len(tracks), "shuffle": shuffle}
+
+    def _drop_playlist(self) -> bool:
+        run = self._playlist_run
+        if run is None:
+            return False
+        with self._lock:
+            ours = set(run["tracks"])
+            front = list(self._queue)[:self._n_requested]
+            keep = [t for t in front if t not in ours]
+            self._queue = deque(keep + list(self._queue)[self._n_requested:])
+            self._n_requested = len(keep)
+            self._playlist_run = None
+        return True
+
+    def stop_playlist(self) -> bool:
+        """The rest of the playlist is dropped; the song playing finishes."""
+        stopped = self._drop_playlist()
+        if stopped:
+            with self._lock:
+                self._refill()
+            log.info("playlist stopped")
+        return stopped
+
+    def playlist_status(self) -> dict | None:
+        run = self._playlist_run
+        if run is None:
+            return None
+        ours = set(run["tracks"])
+        left = sum(1 for t in list(self._queue)[:self._n_requested] if t in ours)
+        if not left and self.current_track not in ours:
+            self._playlist_run = None
+            return None
+        return {"name": run["name"], "left": left, "shuffle": run["shuffle"]}
 
     # --- albums: played start to finish -----------------------------------------------
 
@@ -1060,7 +1259,9 @@ class Station:
         if self._opening is not None and self._opening_requested:
             queued.insert(0, self._opening[2])
         in_albums = {t for run in self._albums for t in run["tracks"]}
-        return [{"title": t.title, "artist": t.artist, "album": t in in_albums} for t in queued]
+        in_list = set(self._playlist_run["tracks"]) if self._playlist_run else set()
+        return [{"title": t.title, "artist": t.artist, "album": t in in_albums, **({"playlist": True} if t in in_list else {})}
+                for t in queued]
 
     def _play_file(self, path: Path, on_air: OnAir, near_end=None) -> None:
         """Play a file to its end (or until skipped). near_end(end_at, again) is called
@@ -1092,6 +1293,7 @@ class Station:
 
     def _track_started(self, track: BroadcastTrack) -> None:
         self.current_track = track
+        self._played.append(track)
         for run in self._albums:              # an album counts as under way from its first track
             if not run.get("started") and run["tracks"][0] == track:
                 run["started"] = True
@@ -1380,7 +1582,7 @@ class Station:
 
     def _run_steps(self, steps: list[Step]) -> None:
         for step in steps:
-            if self._halted():
+            if self._halted() or self._jump is not None:
                 return
             if not self.dj_on and step.kind in ("say", "clock", "news"):
                 continue                      # the DJ went off after this was planned: music only
@@ -1738,6 +1940,7 @@ class Station:
             self.tracks = tracks
             self.ondemand_tracks = ondemand
             self._album_index = None
+            self._path_index = None
             self._use_selection(self.artist, self.profile)
             requested = list(self._queue)[:self._n_requested]
             self._n_requested = sum(1 for t in requested if t.path.exists())
@@ -1924,6 +2127,9 @@ class Station:
             else {"title": nxt.title, "artist": nxt.artist},
             "gap_plan": self.gap_plan,
             "can_skip": self.is_on_air and on_air is not None and on_air.kind not in ("radio", "book", "episode"),
+            "can_previous": self.is_on_air and on_air is not None
+            and on_air.kind not in ("radio", "book", "episode", "wait")
+            and (self._source is None or self._source.get("kind") == "album"),
             "news_ready": None if news is None else news.due.mark.strftime("%H:%M"),
             "history": list(self.history),
             "library": {"tracks": len(self.tracks), "jingles": len(self.jingles), "books": len(self.books.all()),
@@ -1933,6 +2139,7 @@ class Station:
             "requests": self.requests(),
             "album": self.album_status(),
             "up_next_source": self.next_source_status(),
+            "playlist": self.playlist_status(),
             "source": self._source_status(on_air),
             "source_error": self.source_error,
             "station_name": self.builder.station,

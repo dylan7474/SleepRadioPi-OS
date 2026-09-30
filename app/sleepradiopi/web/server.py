@@ -230,6 +230,8 @@ def make_handler(station: Station, output: Mp3Output, speaker=None,
                 q = parse_qs(urlparse(self.path).query).get("q", [""])[0][:200]
                 self._send(json.dumps({"results": station.search(q), "albums": station.search_albums(q)}).encode(),
                            "application/json")
+            elif path == "/api/playlists":
+                self._send(json.dumps(self._playlists()).encode(), "application/json")
             elif path == "/api/albums":
                 self._send(json.dumps({"albums": station.all_albums()}).encode(), "application/json")
             elif path == "/api/browse":
@@ -317,6 +319,19 @@ def make_handler(station: Station, output: Mp3Output, speaker=None,
             elif path == "/api/skip":
                 self.rfile.read(int(self.headers.get("Content-Length", 0)))  # no body needed
                 self._send(json.dumps({"skipped": station.skip()}).encode(), "application/json")
+            elif path == "/api/previous":
+                self.rfile.read(int(self.headers.get("Content-Length", 0)))
+                self._send(json.dumps({"previous": station.previous()}).encode(), "application/json")
+            elif path == "/api/playlists":
+                self._set_playlists()
+            elif path == "/api/playlists/add":
+                self._playlist_add()
+            elif path == "/api/playlists/play":
+                self._playlist_play()
+            elif path == "/api/playlists/stop":
+                self.rfile.read(int(self.headers.get("Content-Length", 0)))
+                self._send(json.dumps({"stopped": station.stop_playlist(), **self._playlists()}).encode(),
+                           "application/json")
             elif path == "/api/speaker" and speaker is not None:
                 self._speaker()
             elif path == "/api/settings" and config_file is not None:
@@ -470,6 +485,10 @@ def make_handler(station: Station, output: Mp3Output, speaker=None,
                     station.set_artist(settings.get("broadcast_artist"))
             if "birthdays" in changed:
                 station.set_birthdays(settings["birthdays"])
+            if "playlists" in changed:
+                station.set_playlists(settings["playlists"])
+            if "knob_mode" in changed and speaker is not None:
+                speaker.set_knob_mode(settings["knob_mode"])
             if "messages" in changed:
                 station.set_messages(settings["messages"])
             if changed & {"buttons", "buttons_night", "buttons_bank", "buttons_auto"} and presets is not None:
@@ -739,6 +758,52 @@ def make_handler(station: Station, output: Mp3Output, speaker=None,
                                    "restarting": restarting}).encode(), "application/json")
             if restarting:
                 _restart_soon(speaker)
+
+        def _playlists(self) -> dict:
+            return {"playlists": [station.playlist_view(p) for p in station.playlists],
+                    "playing": station.playlist_status()}
+
+        def _save_playlists(self) -> None:
+            if config_file is not None:
+                save_setting(config_file, "playlists", station.playlists)
+
+        def _set_playlists(self) -> None:
+            """POST /api/playlists {"playlists": [{"name", "tracks": [[root, path], ...]}]}:
+            the whole list (new, renamed, reordered, removed), saved."""
+            try:
+                station.set_playlists(self._body()["playlists"])
+            except (ValueError, TypeError, KeyError, AttributeError) as e:
+                self._error(str(e) if isinstance(e, ValueError) else "send {\"playlists\": [...]}")
+                return
+            self._save_playlists()
+            self._send(json.dumps(self._playlists()).encode(), "application/json")
+
+        def _playlist_add(self) -> None:
+            """POST /api/playlists/add {"name", and "root" + "path" (a track), "root" +
+            "folder" (+ "deep") (a folder), or "now": true (the song playing)}."""
+            try:
+                body = self._body()
+                refs = station.refs_for(root=body.get("root"), path=body.get("path"), folder=body.get("folder"),
+                                        deep=body.get("deep") is True, now=body.get("now") is True)
+                p = station.add_to_playlist(body["name"], refs)
+            except (ValueError, TypeError, KeyError, AttributeError) as e:
+                self._error(str(e) if isinstance(e, ValueError) else "send {\"name\", ...}")
+                return
+            self._save_playlists()
+            self._send(json.dumps({"name": p["name"], "added": len(refs), "tracks": len(p["tracks"]),
+                                   **self._playlists()}).encode(), "application/json")
+
+        def _playlist_play(self) -> None:
+            """POST /api/playlists/play {"name", "shuffle": bool}: now, then the show."""
+            try:
+                body = self._body()
+                reply = station.play_playlist(body["name"], body.get("shuffle") is True)
+            except (ValueError, TypeError, KeyError, AttributeError) as e:
+                self._error(str(e) if isinstance(e, ValueError) else "send {\"name\"}")
+                return
+            if speaker is not None:
+                speaker.play()
+            self._send(json.dumps({**reply, **self._playlists()}).encode(), "application/json")
 
         def _album_args(self) -> dict:
             """{"id": n} (from /api/search or /api/albums) or {"root", "folder", "deep"}
@@ -1115,6 +1180,8 @@ def make_handler(station: Station, output: Mp3Output, speaker=None,
                     speaker.set_volume(int(body["volume"]))
                 if "step" in body:
                     speaker.step(int(body["step"]))
+                if "knob_mode" in body:
+                    speaker.set_knob_mode(body["knob_mode"])
                 if "mono" in body:
                     if not isinstance(body["mono"], bool):
                         raise ValueError("mono must be true or false")

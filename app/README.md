@@ -246,7 +246,9 @@ Most of these are set from the web page; the rest are in the config file.
 | `speaker_eq` | flat | `{"bass", "mid", "treble"}` in dB, -12 to 12. |
 | `noise_on`, `noise_kind`, `noise_mix` | off, `pink`, `50` | The noise layer: on/off, its colour, and the balance with the programme (0 programme only, 50 both full, 100 noise only). |
 | `speaker_highpass_hz` | `0` | Low cut for the speaker (~140 with the case's bass port); 0 = off. |
-| `knob_step` | `2` | Volume steps per click (1 dB). |
+| `knob_step` | `2` | Volume steps per click (1 dB) in the knob's Normal mode. |
+| `knob_mode` | `"auto"` | The volume knob: `auto` (a slow turn a step a click, a quick spin 2, 3 or 5 a click), `fine` (1), `normal` (`knob_step`) or `coarse` (5). Settings → Speakers → Knob. |
+| `playlists` | `[]` | `[{"name": "Sunday", "tracks": [["music" \| "ondemand", "path/in/it.mp3"], ...]}]` (see *Playlists*) |
 | `broadcast_voice` | `"stock"` | `"stock"` or `"personal"` (a folder in the voices folder). |
 | `buttons_night`, `buttons_bank` | `[]`, `"day"` | The night set of four (like `buttons`, which is the day set), and the set in use. Hold buttons 2 and 3 together for 1 s to swap: three notes, rising for day, falling for night. |
 | `buttons_auto` | `{}` | `{"on", "night_min", "day_min"}` (defaults off, 21:00, 07:00): swap the sets by the clock, quietly; a swap by hand lasts until the next switch time. |
@@ -310,7 +312,13 @@ The cards:
   its own, a tap starts or stops listening in the browser. The sleep timer
   sits under it.
 
-- **Now playing** with a progress bar, what's next, and **Skip**.
+- **Now playing** with a progress bar, what's next, **⏮ Back** and **Skip**.
+  Back works like a CD player: more than 5 seconds into a song it starts it
+  again, sooner it goes to the one before (and then the one cut short plays
+  again), with no DJ in between; while the DJ talks it replays the song that
+  just ended. In an album or On demand it steps back a track. Not on stations,
+  books or podcasts (they have ⏪ 1 min). **＋** adds the song on air to a
+  playlist.
 - **Listen here** (only when *Listen in a browser* is on, under Settings →
   Sound; off by default): an MP3 stream of the same show in the browser. Off,
   no encoder runs (it costs a Zero 2 W CPU all the time), `/stream` answers
@@ -331,6 +339,16 @@ The cards:
   record, with no talk, jingles or news between tracks, and a
   back-announcement at the end. *Stop album* goes back to the usual mix
   after the song playing.
+- **Playlists** (Find → Playlists) — your own lists of songs, from the music
+  or On demand: make one, press *Add songs*, then **＋** on songs in Find, on
+  albums and folders (search or Browse), or beside Skip for the song on air;
+  in the playlist, move songs up or down, take them out, rename or delete it.
+  **Play** or **Shuffle** starts it at once, through the show's queue, so **the
+  DJ talks between songs if the DJ is on, and not at all if it's off** — then
+  the show carries on. It shows under *Coming up* with **Stop playlist**. A
+  preset button can hold one, in order or shuffled. A song whose file has gone
+  is skipped. Kept in the settings (`playlists`), so *Save settings* has them
+  (`broadcast/playlists.py`, `Station.play_playlist`).
 - **Browse** (Find → *Albums and folders*, or *On demand*) — everything
   playable without typing: **Albums A–Z** (named from the tags) or
   **Folders**, the libraries exactly as they are on the radio, with a
@@ -460,7 +478,7 @@ The cards:
   to ffmpeg, which decodes them (`sleepradiopi/playback/radio.py`).
 - **Artist radio** — play one artist only: the DJ then calls the station
   after them ("welcome to Beatles Radio"; a leading "The" is dropped), and
-  so do the page heading and tab. **Lists…** makes your own named lists of
+  so do the page heading and tab. **Artist lists…** makes your own named lists of
   artists (e.g. a "Friday List"; find and tick artists), which appear in the
   same dropdown ("welcome to Friday List on Sleep Radio"). On air, the song
   already lined up next still plays first. If the library has nothing for
@@ -681,13 +699,17 @@ everything but the page itself and the login needs the session cookie
 | `POST /api/login` / `/api/logout` | `{"password"}` → a session cookie (401 if wrong) / forget it |
 | `POST /api/password` | `{"password": "..." \| null}` — set, change or remove (needs to be logged in) |
 | `GET /api/status` | What's on air, next, history, the library, the voice, the speaker (volume, playing, mono, EQ, low cut, sleep timer, test sound), artist/list playing |
-| `POST /api/speaker` | Any of `{"volume": 0-100}`, `{"step": n}`, `{"pause": true \| false \| "toggle"}`, `{"sleep": minutes}` (0 = off), `{"mono": bool}`, `{"noise": true \| false \| "toggle", "noise_kind": "pink", "noise_mix": 0-100}`, `{"eq": {"bass": dB, ...}}`, `{"highpass": Hz}`, `{"test": "bass" \| "sweep" \| "pink" \| "left" \| "right" \| "sides" \| "phase" \| "tune" \| "stop"}` |
+| `POST /api/speaker` | Any of `{"volume": 0-100}`, `{"step": n}`, `{"knob_mode": "auto" \| "fine" \| "normal" \| "coarse"}`, `{"pause": true \| false \| "toggle"}`, `{"sleep": minutes}` (0 = off), `{"mono": bool}`, `{"noise": true \| false \| "toggle", "noise_kind": "pink", "noise_mix": 0-100}`, `{"eq": {"bass": dB, ...}}`, `{"highpass": Hz}`, `{"test": "bass" \| "sweep" \| "pink" \| "left" \| "right" \| "sides" \| "phase" \| "tune" \| "stop"}` |
 | `POST /api/stream` | `{"enabled": bool}` — listening in a browser on/off (saved as `web_stream`) |
 | `POST /api/knob` | `{"press": "short" \| "long" \| "service"}` — the knob's switch; `service` opens the service menu (then `/api/buttons/press` answers it; `GET /api/buttons` has its `service` state) |
 | `GET` / `POST /api/identity` | `{"hardware", "station_name"}` — which radio this is and its name; a POST saves and restarts the station |
 | `GET` / `POST /api/lamps` | The cathedral's `{"glow_day", "glow_night", "meter_trim_db", "needle", "glow"}` (the last two: is the PWM there) / any of the first three, saved |
 | `POST /api/lamps/sweep` | The needle up to full scale and back over 4 s, to set the meter's trimmer |
 | `POST /api/skip` | Skip what's on air (track, link, jingle or bulletin) |
+| `POST /api/previous` | Back, like a CD player (see *Now playing*); `{"previous": false}` if there's nothing to go back to. The status's `can_previous` says when it works |
+| `GET` / `POST /api/playlists` | `{"playlists": [{"name", "tracks": [{"root", "path", "title", "artist", "missing"}]}], "playing"}` / `{"playlists": [{"name", "tracks": [[root, path], ...]}]}` — the whole list, saved |
+| `POST /api/playlists/add` | `{"name"` + `"root", "path"` (a song; search results have `path`) or `"root", "folder", "deep"` (a folder) or `"now": true` (the song on air)`}` — added at the end; a new name makes the playlist |
+| `POST /api/playlists/play` / `/stop` | `{"name", "shuffle": bool}` — now, then the show / drop the rest of it |
 | `GET` / `POST /api/dj` | The DJ settings (and the voices there are) / any of `{"voice", "chattiness", "dj_hooks", "jingle_every", "news_enabled", "startup_sound", "dj_speed", "news_speed"}` |
 | `GET /api/wifi` | Wi-Fi: mode (station / hotspot / connecting), network and address, saved networks, nearby ones |
 | `POST /api/wifi/add` / `remove` / `scan` / `hotspot` / `try` | `{"ssid", "password"}` / `{"ssid"}` / – / `{"ssid", "password"}` / – |

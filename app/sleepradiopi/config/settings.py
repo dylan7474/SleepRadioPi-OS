@@ -29,6 +29,7 @@ class Settings:
     broadcast_voice: str | None = "stock"      # "stock" or "personal"; None = music and jingles only
     broadcast_artist: str | None = None   # artist radio ("The Beatles" -> "Beatles Radio"); None = everything
     profiles: list = field(default_factory=list)   # [{"name": "Friday List", "artists": [...]}]
+    playlists: list = field(default_factory=list)  # [{"name": "Sunday", "tracks": [["music", "A/B/01 - x.mp3"], ...]}]
     broadcast_profile: str | None = None  # the profile playing (instead of an artist); None = none
     broadcast_chattiness: str = "maximum"
     podcasts: list = field(default_factory=list)  # the shows followed: [{"feed_url", "title", "author"}]
@@ -76,7 +77,8 @@ class Settings:
     noise_kind: str = "pink"          # white, pink, brown, deep, blue, violet, ambient
     noise_mix: int = 50               # balance: 0 programme only, 50 both full, 100 noise only
     speaker_highpass_hz: int = 0      # low cut for the speaker (~140 with the box's bass port); 0 = off
-    knob_step: int = 2                # volume change per click of the knob
+    knob_step: int = 2                # volume change per click of the knob ("normal")
+    knob_mode: str = "auto"           # auto (slow = fine, fast = big steps), fine (1), normal (knob_step), coarse (5)
     gpio_pin_mapping: dict = field(default_factory=dict)
     lcd_panel_type: str | None = None
 

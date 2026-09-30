@@ -19,7 +19,9 @@ left.
    Still to check: that a press wakes the radio after the sleep timer has
    faded it out and paused it (needs the amp); the RTC over a night unplugged
    (it flags "oscillator stopped" at every boot, likely a clone chip or a
-   tired CR2032, being replaced).
+   tired CR2032, being replaced). The knob now has volume modes (Automatic:
+   faster turns take bigger steps; Fine, Normal, Coarse; 2026-09-30): try
+   Automatic on the real knob and tune `KNOB_ACCEL` if it jumps too much.
 2. **Library tools** — the web page's *Media library* (Settings) adds and
    deletes music and jingles (2026-09-29). Still to do: syncing a whole
    desktop library in one go (e.g. an rsync-style script from the PC).

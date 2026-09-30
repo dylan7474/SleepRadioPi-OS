@@ -415,7 +415,8 @@ def main() -> None:
             speaker, station.listener_joined, station.listener_left,
             state_file=Path.home() / ".local" / "state" / "sleepradiopi" / "speaker.json",
             default_volume=settings.speaker_volume, config_file=args.config,
-            noise=(settings.noise_on, settings.noise_kind, settings.noise_mix))
+            noise=(settings.noise_on, settings.noise_kind, settings.noise_mix),
+            knob_mode=settings.knob_mode, knob_step=settings.knob_step)
         # A long press says the radio's address (for finding the web page away from home).
         # Made only once the show is playing music, so it never holds up the opening.
         on_air = lambda: bool(tts and tts.ready) and station.music_started
@@ -461,7 +462,7 @@ def main() -> None:
                            on_fire=presets.toggle_bank, on_tick=lambda: presets._clip(tick, "Button"))]
         # (SLEEPRADIOPI_INPUT_DIR: somewhere else to look for the knob and buttons -- e.g. an empty
         # folder for a test run on a desktop, whose keyboard would otherwise count as buttons 1-4)
-        knob = Knob(lambda clicks: control.step(clicks * settings.knob_step), control.toggle,
+        knob = Knob(control.knob, control.toggle,
                     devices=Path(os.environ.get("SLEEPRADIOPI_INPUT_DIR", "/dev/input")),
                     on_long_press=announcer.speak, buttons=buttons, chord=chord, raw_keys=raw_keys)
         presets.keys = knob.keys         # the page's buttons go down and up through the same timers

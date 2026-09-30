@@ -22,6 +22,7 @@ from pathlib import Path
 
 from sleepradiopi.audio.eq import BANDS, MAX_DB
 from sleepradiopi.broadcast import birthdays, messages, profiles
+from sleepradiopi.broadcast import playlists as playlists_mod
 from sleepradiopi.broadcast.models import Chattiness
 from sleepradiopi.config.atomic import write_atomic
 from sleepradiopi.config.settings import Settings, load
@@ -42,7 +43,7 @@ LIVE = {"speaker_mono", "speaker_eq", "speaker_highpass_hz", "broadcast_artist",
         "broadcast_jingle_enabled", "broadcast_jingle_every", "news_enabled", "startup_sound", "web_stream",
         "broadcast_announcer_speed", "news_speed", "radio_stations", "buttons", "noise_on", "noise_kind", "noise_mix",
         "podcasts", "messages", "buttons_night", "buttons_bank", "buttons_auto", "broadcast_dj",
-        "glow_day", "glow_night", "meter_trim_db"}
+        "glow_day", "glow_night", "meter_trim_db", "playlists", "knob_mode"}
 
 CHOICES = {
     "buttons_bank": {"day", "night"},
@@ -51,6 +52,7 @@ CHOICES = {
     "news_voice": {"same", "stock", "personal"},
     "broadcast_chattiness": {c.ident for c in Chattiness},
     "noise_kind": {"white", "pink", "brown", "deep", "blue", "violet", "ambient"},
+    "knob_mode": {"auto", "fine", "normal", "coarse"},
 }
 RANGES = {
     "broadcast_jingle_every": (1, 50),
@@ -114,6 +116,11 @@ def _check(name: str, value):
             return profiles.validate(value)
         except ValueError as e:
             raise BadSettings(f"profiles: {e}") from None
+    if name == "playlists":
+        try:
+            return playlists_mod.validate(value)
+        except ValueError as e:
+            raise BadSettings(f"playlists: {e}") from None
     if name == "podcasts":
         try:
             return podcasts_mod.validate_shows(value)

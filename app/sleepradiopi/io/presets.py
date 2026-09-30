@@ -85,6 +85,9 @@ def validate(preset) -> dict | None:
         if preset.get("deep") is True:
             out["deep"] = True
         return out
+    if kind == "playlist":
+        return {"kind": "playlist", "name": _text(preset.get("name"), "playlist", True),
+                "shuffle": preset.get("shuffle") is True}
     if kind == "podcast":
         return {"kind": "podcast", "show": _text(preset.get("show"), "podcast", True),
                 "title": _text(preset.get("title"), "podcast title") or "",
@@ -97,7 +100,7 @@ def validate(preset) -> dict | None:
         if preset.get("action") not in ACTIONS:
             raise ValueError(f"a button's action is one of {', '.join(ACTIONS)}")
         return {"kind": "action", "action": preset["action"]}
-    raise ValueError("a button holds the show, a radio station, an album, an audiobook, a podcast or an action")
+    raise ValueError("a button holds the show, a radio station, an album, a playlist, an audiobook, a podcast or an action")
 
 
 def validate_all(presets, n: int = N) -> list:
@@ -146,6 +149,8 @@ def label(preset: dict | None, station_name: Callable[[dict], str] | None = None
         return f"{preset['title']} — {preset['artist']}" if preset["artist"] else preset["title"]
     if kind == "book":
         return preset["title"] or preset["key"]
+    if kind == "playlist":
+        return preset["name"] + (" (shuffled)" if preset["shuffle"] else "")
     if kind == "podcast":
         return preset["title"] or "Podcast"
     if kind == "action":
@@ -167,6 +172,8 @@ def same(a: dict | None, b: dict | None) -> bool:
             (b["folder"], b.get("root", "music"), b.get("deep", False))
     if a["kind"] == "book":
         return a["key"] == b["key"]
+    if a["kind"] == "playlist":
+        return (a["name"].lower(), a["shuffle"]) == (b["name"].lower(), b["shuffle"])
     if a["kind"] == "podcast":
         return a["show"] == b["show"]
     if a["kind"] == "show":
@@ -236,6 +243,9 @@ class Presets:
             return validate({"kind": "album", "folder": src["folder"], "title": src["title"],
                              "artist": src["artist"], "root": src.get("root", "music"),
                              "deep": src.get("deep", False)})
+        pl = self.station.playlist_status() if hasattr(self.station, "playlist_status") else None
+        if src is None and pl is not None:
+            return validate({"kind": "playlist", "name": pl["name"], "shuffle": pl["shuffle"]})
         return validate({"kind": "show", "artist": self.station.artist, "profile": self.station.profile})
 
     def label(self, preset: dict | None) -> str:
@@ -472,6 +482,8 @@ class Presets:
                 save_setting(self.config_file, "broadcast_profile", self.station.profile)
         elif preset["kind"] in ("radio", "album", "book"):
             self.station.tune(preset)
+        elif preset["kind"] == "playlist":
+            self.station.play_playlist(preset["name"], preset["shuffle"])
         elif preset["kind"] == "podcast":
             self.station.play_episode(preset["show"], start=preset.get("start"))   # on through, in order
         else:

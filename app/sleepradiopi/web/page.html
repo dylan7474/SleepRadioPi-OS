@@ -247,9 +247,9 @@
   .page-head { display: grid; gap: .3rem; }
   .page-head h1 { margin: 0; font-family: var(--display); font-size: 1.4rem; letter-spacing: .02em; }
   .back { background: none; border: 0; padding: .2rem 0; color: var(--amber); font-size: .95rem; justify-self: start; }
-  #mCrumbs, #bCrumbs { display: flex; flex-wrap: wrap; gap: .3rem; align-items: center; margin: 0 0 .4rem; }
-  #mCrumbs a, #bCrumbs a { text-decoration: none; }
-  #bList a.open { text-decoration: none; color: inherit; font-weight: 600; }
+  #mCrumbs, #brCrumbs { display: flex; flex-wrap: wrap; gap: .3rem; align-items: center; margin: 0 0 .4rem; }
+  #mCrumbs a, #brCrumbs a { text-decoration: none; }
+  #brList a.open { text-decoration: none; color: inherit; font-weight: 600; }
   #mList a.open { color: var(--ink); text-decoration: none; }
   #mUploads progress { width: 5rem; accent-color: var(--amber); }
   #listArtists { max-height: 16rem; overflow-y: auto; margin-top: .6rem; border: 1px solid var(--line);
@@ -370,6 +370,8 @@
       </div>
       <div class="now-foot">
         <p id="next"></p>
+        <button id="addNow" type="button" hidden title="Add this song to a playlist">＋</button>
+        <button id="prev" type="button" hidden title="Back: this one from the start, or (in its first 5 seconds) the one before">⏮︎</button>
         <button id="skip" type="button" hidden title="Skip to what's next">Skip ⏭︎</button>
         <button id="radioOff" type="button" hidden title="Stop streaming">Back to <span class="radioName">Sleep Radio</span></button>
       </div>
@@ -454,13 +456,17 @@
         <select id="artistRadio" aria-label="Artist radio: play one artist or list">
           <option value="">All artists</option>
         </select>
-        <button id="listsBtn" type="button" title="Make lists of artists, e.g. a Friday List">Lists…</button>
+        <button id="listsBtn" type="button" title="Make lists of artists, e.g. a Friday List">Artist lists…</button>
       </div>
       <p id="artistNote" class="muted" style="margin:-.4rem 0 0;font-size:.85rem">Play one artist only (e.g. Beatles
         Radio), or one of your lists of artists.</p>
 
       <h2 class="eyebrow">Browse</h2>
       <div class="tiles" id="browseTiles"></div>
+
+      <h2 class="eyebrow">Playlists</h2>
+      <div class="tiles" id="plTiles"></div>
+      <button id="plManage" class="linkish" type="button">Make or change playlists</button>
 
       <h2 class="eyebrow">Podcasts</h2>
       <div class="tiles" id="podTiles"></div>
@@ -481,6 +487,10 @@
           <div class="card-head"><span id="albumNow" style="flex:1;min-width:0"></span>
             <button id="albumStop" type="button">Stop album</button></div>
         </div>
+        <div id="plBox" class="card" hidden>
+          <div class="card-head"><span id="plNow" style="flex:1;min-width:0"></span>
+            <button id="plStop" type="button">Stop playlist</button></div>
+        </div>
         <div id="reqBox" hidden><ul id="reqList" class="list"></ul></div>
         <p id="qRadio" class="muted" style="margin:0;font-size:.85rem" hidden>Something is streaming: songs you pick
           play when you go back to <span class="radioName">Sleep Radio</span>.</p>
@@ -494,9 +504,38 @@
         <button type="button" data-bv="folders" aria-pressed="true">Folders</button>
         <button type="button" data-bv="az" aria-pressed="false">Albums A–Z</button>
       </div>
-      <div id="bCrumbs"></div>
-      <ul id="bList" class="list"><li class="muted">Loading…</li></ul>
-      <p id="bNote" class="muted" style="margin:.4rem 0 0;font-size:.85rem"></p>
+      <div id="brCrumbs"></div>
+      <ul id="brList" class="list"><li class="muted">Loading…</li></ul>
+      <p id="brNote" class="muted" style="margin:.4rem 0 0;font-size:.85rem"></p>
+    </div>
+
+    <div id="plView" class="view" hidden>
+      <button class="back" type="button" data-to="#find">‹ Find</button>
+      <h2 class="eyebrow">Your playlists</h2>
+      <ul id="plRows" class="list"></ul>
+      <form id="plNew" class="row" autocomplete="off">
+        <input id="plNewName" placeholder="A new playlist's name, e.g. Sunday" aria-label="New playlist's name" maxlength="40" required>
+        <button type="submit">Make it</button>
+      </form>
+      <p class="muted" style="margin:0;font-size:.85rem">To fill one: <b>Add songs</b>, then search in Find, or
+        Browse, and press <b>＋</b> on a song, an album or a folder (or ＋ beside Skip on the Radio tab for the song
+        playing). A playlist plays through the show: the DJ talks between songs if the DJ is on, and not if it's off.</p>
+    </div>
+
+    <div id="plEdit" class="view" hidden>
+      <button class="back" type="button" data-to="#playlists">‹ Playlists</button>
+      <h1 id="plTitle"></h1>
+      <div class="row">
+        <button id="plPlay" class="primary" type="button">Play</button>
+        <button id="plShuffle" type="button">Shuffle</button>
+        <button id="plAddHere" type="button" title="Search or Browse, then ＋ adds to this playlist">Add songs</button>
+      </div>
+      <ul id="plTracks" class="list"></ul>
+      <form id="plRename" class="row" autocomplete="off">
+        <input id="plRenameName" aria-label="Playlist's name" maxlength="40" required>
+        <button type="submit">Rename</button>
+        <button id="plDelete" type="button">Delete playlist</button>
+      </form>
     </div>
 
     <div id="podList" class="view" hidden>
@@ -534,6 +573,13 @@
         <button id="tuneBtn" type="button" title="Measure the speakers with a phone and set the EQ for them">Tune speakers…</button>
         <button id="eqFlat" type="button">Flat EQ</button>
       </div>
+    </div>
+    <div id="knobMode" class="row seg" role="group" aria-label="Volume knob" hidden>
+      <label title="Automatic: a slow turn moves a step a click, a quick spin bigger steps">Knob</label>
+      <button type="button" data-knob="auto" aria-pressed="true" title="A slow turn a step a click, a quick spin bigger steps">Automatic</button>
+      <button type="button" data-knob="fine" aria-pressed="false" title="1 a click">Fine</button>
+      <button type="button" data-knob="normal" aria-pressed="false" title="2 a click">Normal</button>
+      <button type="button" data-knob="coarse" aria-pressed="false" title="5 a click">Coarse</button>
     </div>
     <div id="mode" class="row seg" role="group" aria-label="Radio speakers" hidden>
       <label>Speakers</label>
@@ -1118,6 +1164,17 @@ document.querySelectorAll("#mode button").forEach(b => b.onclick = async () => {
   } catch {}
 });
 
+// The volume knob: Automatic (a slow turn a step a click, a quick spin bigger
+// steps), Fine (1), Normal (2) or Coarse (5). The radio remembers it.
+let knobMode = null, knobSent = 0;
+function showKnob() {
+  document.querySelectorAll("#knobMode button").forEach(b => b.setAttribute("aria-pressed", String(b.dataset.knob === knobMode)));
+}
+document.querySelectorAll("#knobMode button").forEach(b => b.onclick = async () => {
+  knobMode = b.dataset.knob; knobSent = Date.now(); showKnob();
+  try { await radioPost("/api/speaker", { knob_mode: knobMode }); toast(`Knob: ${b.textContent}`); } catch {}
+});
+
 // Bass / mid / treble (dB) on the radio's own speakers. The radio saves it.
 const BANDS = ["bass", "mid", "treble"];
 let eq = { bass: 0, mid: 0, treble: 0 }, eqInput = 0, eqTimer = null;
@@ -1187,7 +1244,7 @@ async function loadArtists() {
     const sel = $("artistRadio");
     sel.replaceChildren(new Option(`All artists (${RADIO})`, ""));
     if (allLists.length) {
-      const g = Object.assign(document.createElement("optgroup"), { label: "Your lists" });
+      const g = Object.assign(document.createElement("optgroup"), { label: "Your artist lists" });
       allLists.forEach(p => g.append(new Option(`${p.name} (${p.artists.length} artists)`, "p:" + p.name)));
       sel.append(g);
     }
@@ -1337,14 +1394,15 @@ function renderFind() {
     { className: "group-title", textContent: name }), Object.assign(document.createElement("ul"), { className: "list" }));
     if (rows.length) out[out.length - 1].append(...rows); };
   group("Artists and lists", [
-    ...d.lists.map(p => resultRow(p.name, `Your list · ${p.artists.length} artists`,
+    ...d.lists.map(p => resultRow(p.name, `Your artist list · ${p.artists.length} artists`,
       [act("Play", true, () => playShow({ profile: p.name }))])),
     ...d.artists.map(a => resultRow(a.name, `${a.tracks} song${a.tracks === 1 ? "" : "s"}`,
       [act("Artist radio", true, () => playShow({ artist: a.name }))]))]);
   group("Albums and folders", d.albums.map(a => resultRow(a.title, albumWords(a), albumActs(a))));
   const songs = fFilter === "song" ? d.songs : d.songs.slice(0, 8);
   group("Songs", songs.map(r => resultRow(r.title, [r.artist, r.album].filter(Boolean).join(" · "),
-    [act("Play next", true, b => requestTrack(r, b.currentTarget))])));
+    [act("Play next", true, b => requestTrack(r, b.currentTarget)),
+     plusButton(() => addToPlaylist({ root: "music", path: r.path }, `“${r.title}”`))])));
   const stationRow = (st, saved) => resultRow(st.name, st.info, [act("Play", true, () => tuneTo(st)),
     ...(saved ? [] : [act("Save", false, b => { b.currentTarget.disabled = true; saveStations([...rStations, st]); })])]);
   group("Audiobooks", d.books.map(b => resultRow(b.title, bookWords(b), [act("Play", true, () => playBook(b))])));
@@ -1389,11 +1447,12 @@ function albumWords(a) {
   const where = a.folder.split("/").slice(0, -1).join(" › ");
   return ["On demand" + (where ? " › " + where : ""), a.artist, n].filter(Boolean).join(" · ");
 }
-function albumActs(a) {           // one album or folder: the same two buttons everywhere
+function albumActs(a) {           // one album or folder: the same buttons everywhere
   const all = a.deep ? " all" : "";
   return [act("Play" + (all || " now"), true, () => playAlbum(a), "Start it now, beginning to end, no DJ"),
           act("Play" + all + " next", false, b => requestAlbum(a, b.currentTarget),
-              a.root === "ondemand" ? "After the song playing now, no DJ" : "After the song playing now, introduced by the DJ")];
+              a.root === "ondemand" ? "After the song playing now, no DJ" : "After the song playing now, introduced by the DJ"),
+          plusButton(() => addToPlaylist({ root: a.root || "music", folder: a.folder, deep: !!a.deep }, `“${a.title}”`))];
 }
 const albumBody = a => a.id != null && !a.deep ? { id: a.id } : { root: a.root, folder: a.folder, deep: !!a.deep };
 async function requestAlbum(a, button) {
@@ -1433,9 +1492,9 @@ $("albumStop").onclick = async () => {
     showAlbum(null, null); showRequests(reply.requests);
   } catch { toast("Couldn't reach the radio."); }
 };
-function upNextShown() { $("upNext").hidden = $("albumBox").hidden && $("reqBox").hidden && $("qRadio").hidden; }
+function upNextShown() { $("upNext").hidden = $("albumBox").hidden && $("plBox").hidden && $("reqBox").hidden && $("qRadio").hidden; }
 function showRequests(list) {
-  list = (list || []).filter(r => !r.album);        // an album shows as one line above
+  list = (list || []).filter(r => !r.album && !r.playlist);   // an album or a playlist shows as one line above
   $("reqBox").hidden = !list.length;
   $("reqList").replaceChildren(...list.map((r, i) => resultRow(r.title, `${r.artist} · by request${i ? "" : ", next"}`, [])));
   upNextShown();
@@ -2017,6 +2076,10 @@ async function poll() {
     pressSeg("streamSeg", streamOn);
     $("volNote").hidden = !hasSpeaker || !streamOn;
     $("mode").hidden = !hasSpeaker;
+    $("knobMode").hidden = !hasSpeaker || !s.speaker.knob_mode;
+    if (hasSpeaker && Date.now() - knobSent > 2000 && s.speaker.knob_mode && s.speaker.knob_mode !== knobMode) {
+      knobMode = s.speaker.knob_mode; showKnob();
+    }
     $("test").hidden = !hasSpeaker;
     $("knob").hidden = !hasSpeaker;
     if (hasSpeaker) showTest(s.speaker.test);
@@ -2050,6 +2113,7 @@ async function poll() {
       showSelection(s.artist, s.profile, s.station_name);    // changed on another phone
     showRequests(s.requests);
     showAlbum(s.album, s.up_next_source);
+    showPlaylistNow(s.playlist);
     showRadio(s.source, s.source_error);
     const badge = $("badge");
     badge.textContent = s.on_air ? "On air" : (s.voices_ready ? "Off air" : "Warming up");
@@ -2070,6 +2134,8 @@ async function poll() {
       $("progress").style.width = "0";
     }
     $("skip").hidden = !s.can_skip;
+    $("prev").hidden = !s.can_previous;
+    $("addNow").hidden = !(s.now && s.now.kind === "track");
     $("noSpeaker").hidden = hasSpeaker;
     $("nowCard").classList.toggle("talk", !!s.now && ["dj", "news", "wait"].includes(s.now.kind));
     $("progress").parentElement.hidden = !(s.now && s.now.duration_s);
@@ -2306,6 +2372,12 @@ $("skip").onclick = async () => {
   try { await fetch("/api/skip", { method: "POST" }); } catch {}
   setTimeout(() => { $("skip").disabled = false; poll(); }, 1500);
 };
+$("prev").onclick = async () => {
+  $("prev").disabled = true;
+  try { await fetch("/api/previous", { method: "POST" }); } catch {}
+  setTimeout(() => { $("prev").disabled = false; poll(); }, 1500);
+};
+$("addNow").onclick = () => addToPlaylist({ now: true }, "this song");
 
 // Save is a plain download. Load sends the chosen file to the radio, which
 // checks it first; volume, mono and EQ change at once, anything else makes
@@ -2377,7 +2449,7 @@ $("off").onclick = async () => {
   tuneOut();
   $("off").disabled = true;
   $("tune").disabled = true;
-  $("skip").hidden = true;
+  $("skip").hidden = $("prev").hidden = $("addNow").hidden = true;
   $("progress").style.width = "0";
   $("badge").textContent = "Off"; $("badge").classList.remove("live");
   $("kind").textContent = "Shutting down";
@@ -2536,6 +2608,8 @@ function buttonChoices() {
   const groups = [[RADIO, [[`${RADIO} (all artists)`, { kind: "show", artist: null, profile: null }],
                                    ...bLists.map(l => [l.name, { kind: "show", profile: l.name }])]],
                   ["My stations", rStations.map(st => [st.name, { kind: "radio", ...st }])],
+                  ["Playlists", playlists.flatMap(p => [[p.name, { kind: "playlist", name: p.name, shuffle: false }],
+                                                        [p.name + " (shuffled)", { kind: "playlist", name: p.name, shuffle: true }]])],
                   ["Audiobooks", books.map(b => [b.title, { kind: "book", key: b.key, title: b.title }])],
                   ["Podcasts (the latest, or the one part-heard)", podShows.map(p => [p.title, { kind: "podcast", show: p.id, title: p.title }])],
                   ["Actions", Object.entries(bState.actions).map(([a, text]) => [text, { kind: "action", action: a }])],
@@ -2871,7 +2945,7 @@ const PAGES = ["identity", "speakers", "noise", "stream", "tests", "dj", "voices
 function route() {
   const h = location.hash.slice(1);
   if (h === "podcasts" || h.startsWith("pod-")) return ["find", h];
-  if (h === "browse") return ["find", h];
+  if (h === "browse" || h === "playlists" || h.startsWith("pl-")) return ["find", h];
   if (h === "radio" || h === "find") return ["find", null];
   if (h === "media") return ["settings", "library"];
   if (h === "settings") return ["settings", null];
@@ -2890,11 +2964,15 @@ function showView() {
   $("setHome").hidden = !!setPage;
   for (const p of PAGES) $("page-" + p).hidden = p !== setPage;
   pageNow = setPage;
-  if (tab === "find") { loadRadio(); loadBooks(); loadPodcasts(); drawHome(); }
-  const podPage = tab === "find" && page && (page === "podcasts" || page.startsWith("pod-") || page === "browse") ? page : null;
+  if (tab === "find") { loadRadio(); loadBooks(); loadPodcasts(); loadPlaylists().then(drawHome); drawHome(); }
+  const podPage = tab === "find" && page && (page === "podcasts" || page.startsWith("pod-") || page === "browse" ||
+                                              page === "playlists" || page.startsWith("pl-")) ? page : null;
   $("podList").hidden = podPage !== "podcasts";
-  $("podShow").hidden = !podPage || podPage === "podcasts" || podPage === "browse";
+  $("podShow").hidden = !podPage || !podPage.startsWith("pod-");
   $("browse").hidden = podPage !== "browse";
+  $("plView").hidden = podPage !== "playlists";
+  $("plEdit").hidden = !podPage || !podPage.startsWith("pl-");
+  if (podPage === "playlists" || (podPage && podPage.startsWith("pl-"))) loadPlaylists().then(() => drawPlaylists(podPage));
   if (tab === "find") {
     $("q").closest(".search").hidden = $("filters").hidden = !!podPage;
     $("qNote").hidden = !!podPage || !$("qNote").textContent;
@@ -2921,12 +2999,13 @@ document.querySelectorAll(".page .back").forEach(b => b.onclick = () => go("#set
 $("listsBtn").onclick = () => go("#set-lists");
 $("stationsManage").onclick = () => go("#set-stations");
 $("podAdd").onclick = () => go("#podcasts");
+$("plManage").onclick = () => go("#playlists");
 document.querySelectorAll("#viewFind .back[data-to]").forEach(b => b.onclick = () => go(b.dataset.to));
 
 // The buttons' sheet: from the radio panel or Settings.
 async function openSheet() {
   $("sheet").hidden = $("scrim").hidden = false; $("sheetDone").focus();
-  await Promise.all([loadBooks(), loadRadio(), loadPodcasts()]);   // the choices: the latest books, stations, podcasts
+  await Promise.all([loadBooks(), loadRadio(), loadPodcasts(), loadPlaylists()]);   // the choices: the latest books, stations, podcasts, playlists
   loadButtons();
 }
 function closeSheet() { $("sheet").hidden = $("scrim").hidden = true; }
@@ -2934,6 +3013,114 @@ $("presetsEdit").onclick = openSheet;
 $("sheetDone").onclick = closeSheet;
 $("scrim").onclick = closeSheet;
 document.addEventListener("keydown", e => { if (e.key === "Escape" && !$("sheet").hidden) closeSheet(); });
+
+// Playlists: your own lists of songs (music or On demand), played in order or
+// shuffled through the show -- so the DJ talks between songs if it's on, not if
+// it's off. ＋ on a song, album or folder adds to the one chosen with "Add songs"
+// (remembered in this browser), or the only one, or a new "My playlist".
+let playlists = [];
+const PL_KEY = "sleepradio.plTarget";
+function plTarget() { try { return localStorage.getItem(PL_KEY) || ""; } catch { return ""; } }
+function setPlTarget(name) { try { localStorage.setItem(PL_KEY, name); } catch {} }
+async function loadPlaylists() {
+  try { playlists = (await (await fetch("/api/playlists", { cache: "no-store" })).json()).playlists || []; } catch {}
+}
+function plusButton(onclick) {
+  const b = button("＋", "Add to a playlist", e => onclick(e));
+  b.setAttribute("aria-label", "Add to a playlist");
+  return b;
+}
+async function addToPlaylist(what, label) {
+  if (!playlists.length) await loadPlaylists();
+  let name = plTarget();
+  if (!playlists.some(p => p.name.toLowerCase() === name.toLowerCase()))
+    name = playlists.length === 1 ? playlists[0].name : playlists.length ? "" : "My playlist";
+  if (!name) { toast("Which playlist? Open one under Find › Playlists and press Add songs."); go("#playlists"); return; }
+  try {
+    const d = await radioPost("/api/playlists/add", { name, ...what });
+    playlists = d.playlists; setPlTarget(d.name);
+    toast(`Added ${d.added === 1 ? label : plural(d.added, "song")} to ${d.name} (${plural(d.tracks, "song")}).`);
+  } catch (e) { toast("Not added: " + e.message + "."); }
+}
+async function savePlaylists(next, note) {
+  try {
+    playlists = (await radioPost("/api/playlists", { playlists: next.map(p => ({ name: p.name,
+      tracks: p.tracks.map(t => [t.root, t.path]) })) })).playlists;
+    if (note) toast(note);
+    return true;
+  } catch (e) { toast("Not saved: " + e.message + "."); return false; }
+}
+async function playPlaylist(name, shuffle) {
+  try {
+    const d = await radioPost("/api/playlists/play", { name, shuffle });
+    toast(`${d.name}${d.shuffle ? ", shuffled" : ""}: ${plural(d.tracks, "song")}, then back to the show.`);
+    setTimeout(poll, 800);
+  } catch (e) { toast("Couldn't: " + e.message + "."); }
+}
+function showPlaylistNow(pl) {
+  $("plBox").hidden = !pl;
+  upNextShown();
+  if (!pl) return;
+  const b = document.createElement("b"); b.textContent = "Playlist: ";
+  $("plNow").replaceChildren(b, `${pl.name}${pl.shuffle ? " (shuffled)" : ""}, ${plural(pl.left, "more song")} to come`);
+}
+$("plStop").onclick = async () => {
+  try { await radioPost("/api/playlists/stop"); toast("Playlist stopped: back to the usual mix after this song."); showPlaylistNow(null); }
+  catch { toast("Couldn't reach the radio."); }
+};
+function drawPlaylists(page) {
+  if (page === "playlists") {
+    const target = plTarget().toLowerCase();
+    $("plRows").replaceChildren(...(playlists.length ? playlists.map((p, i) => {
+      const sub = plural(p.tracks.length, "song") + (p.name.toLowerCase() === target ? " · ＋ adds here" : "");
+      return folderRow(p.name, sub, () => go("#pl-" + i),
+        [act("Play", true, () => playPlaylist(p.name, false)), act("Shuffle", false, () => playPlaylist(p.name, true))]);
+    }) : [Object.assign(document.createElement("li"), { className: "muted", textContent: "None yet: name one below." })]));
+    return;
+  }
+  const i = +page.slice(3), p = playlists[i];
+  if (!p) { go("#playlists"); return; }
+  $("plTitle").textContent = p.name;
+  $("plRenameName").value = p.name;
+  $("plDelete").textContent = "Delete playlist"; $("plDelete").dataset.sure = "";
+  const move = async (from, to) => {
+    const next = structuredClone(playlists), t = next[i].tracks;
+    t.splice(to, 0, t.splice(from, 1)[0]);
+    if (await savePlaylists(next)) drawPlaylists(page);
+  };
+  const rows = p.tracks.map((t, j) => {
+    const up = button("↑", "Move up", () => move(j, j - 1)), down = button("↓", "Move down", () => move(j, j + 1));
+    up.disabled = j === 0; down.disabled = j === p.tracks.length - 1;
+    const del = button("✕", "Take it out of the playlist", async () => {
+      const next = structuredClone(playlists); next[i].tracks.splice(j, 1);
+      if (await savePlaylists(next)) drawPlaylists(page);
+    });
+    return resultRow(t.title, t.missing ? "Not on the radio any more: skipped" : t.artist, [up, down, del]);
+  });
+  $("plTracks").replaceChildren(...(rows.length ? rows : [Object.assign(document.createElement("li"),
+    { className: "muted", textContent: "Empty: press Add songs, then ＋ on songs in Find." })]));
+  $("plPlay").onclick = () => playPlaylist(p.name, false);
+  $("plShuffle").onclick = () => playPlaylist(p.name, true);
+  $("plAddHere").onclick = () => { setPlTarget(p.name); toast(`＋ now adds to ${p.name}: search or Browse.`); go("#find"); setTimeout(() => $("q").focus(), 100); };
+  $("plRename").onsubmit = async e => {
+    e.preventDefault();
+    const next = structuredClone(playlists), was = next[i].name;
+    next[i].name = $("plRenameName").value.trim();
+    if (await savePlaylists(next, "Renamed.")) { if (plTarget() === was) setPlTarget(next[i].name); drawPlaylists(page); }
+  };
+  $("plDelete").onclick = async () => {
+    if (!$("plDelete").dataset.sure) { $("plDelete").dataset.sure = "1"; $("plDelete").textContent = "Delete it? Press again"; return; }
+    const next = structuredClone(playlists); next.splice(i, 1);
+    if (await savePlaylists(next, `${p.name} deleted.`)) go("#playlists");
+  };
+}
+$("plNew").onsubmit = async e => {
+  e.preventDefault();
+  const name = $("plNewName").value.trim();
+  if (await savePlaylists([...playlists, { name, tracks: [] }], `${name} made: press Add songs to fill it.`)) {
+    $("plNewName").value = ""; setPlTarget(name); go("#pl-" + (playlists.length - 1));
+  }
+};
 
 // Browse: the albums A-Z (named from the tags), or the folders as they are on the
 // radio -- Music and On demand -- for anything untagged or laid out its own way.
@@ -2958,25 +3145,25 @@ function folderRow(name, sub, open, acts) {
 const plural = (n, w) => `${n.toLocaleString()} ${w}${n === 1 ? "" : "s"}`;
 async function loadBrowse() {
   for (const b of document.querySelectorAll("#browse [data-bv]")) b.setAttribute("aria-pressed", String(b.dataset.bv === bView));
-  $("bNote").textContent = "";
+  $("brNote").textContent = "";
   try {
     if (bView === "az") {
-      $("bCrumbs").replaceChildren();
+      $("brCrumbs").replaceChildren();
       if (!bAlbums) bAlbums = (await (await fetch("/api/albums", { cache: "no-store" })).json()).albums;
-      $("bList").replaceChildren(...bAlbums.map(a => resultRow(a.title, albumWords(a), albumActs(a))));
-      $("bNote").textContent = bAlbums.length ? "Named from the files' tags. Untagged or odd ones: try Folders."
+      $("brList").replaceChildren(...bAlbums.map(a => resultRow(a.title, albumWords(a), albumActs(a))));
+      $("brNote").textContent = bAlbums.length ? "Named from the files' tags. Untagged or odd ones: try Folders."
                                               : "No albums on the radio yet.";
       return;
     }
     if (!bRoot) {                              // the top: the two libraries
-      $("bCrumbs").replaceChildren();
+      $("brCrumbs").replaceChildren();
       const [m, o] = await Promise.all(["music", "ondemand"].map(r =>
         fetch(`/api/browse?root=${r}`, { cache: "no-store" }).then(x => x.json())));
       const count = d => d.folders.reduce((n, f) => n + f.tracks, 0) + (d.album ? d.album.tracks : 0);
-      $("bList").replaceChildren(
+      $("brList").replaceChildren(
         folderRow("Music", `${plural(m.folders.length, "folder")} · on the radio and here`, () => { bRoot = "music"; bPath = ""; loadBrowse(); }, []),
         folderRow("On demand", `${plural(o.folders.length, "folder")} · only when you pick it, no DJ`, () => { bRoot = "ondemand"; bPath = ""; loadBrowse(); }, []));
-      $("bNote").textContent = count(o) ? "" : "On demand is empty: add things in Settings › Media library › On demand.";
+      $("brNote").textContent = count(o) ? "" : "On demand is empty: add things in Settings › Media library › On demand.";
       return;
     }
     const d = await (await fetch(`/api/browse?root=${bRoot}&path=${encodeURIComponent(bPath)}`, { cache: "no-store" })).json();
@@ -2986,7 +3173,7 @@ async function loadBrowse() {
                     parts.length ? crumbLink(top, () => { bPath = ""; loadBrowse(); }) : Object.assign(document.createElement("b"), { textContent: top })];
     parts.forEach((p, i) => crumbs.push(i === parts.length - 1 ? Object.assign(document.createElement("b"), { textContent: p })
                                         : crumbLink(p, () => { bPath = parts.slice(0, i + 1).join("/"); loadBrowse(); })));
-    $("bCrumbs").replaceChildren(...crumbs.flatMap((el, i) => i ? [Object.assign(document.createElement("span"),
+    $("brCrumbs").replaceChildren(...crumbs.flatMap((el, i) => i ? [Object.assign(document.createElement("span"),
                                                       { className: "muted", textContent: "›" }), el] : [el]));
     const rows = [];
     if (d.album) rows.push(resultRow(d.folders.length ? "The tracks in this folder" : d.album.title,
@@ -2999,9 +3186,9 @@ async function loadBrowse() {
       const sub = [f.folders ? plural(f.folders, "folder") : "", plural(f.tracks, "track")].filter(Boolean).join(" · ");
       rows.push(folderRow(f.name, sub, open, albumActs(item)));
     }
-    $("bList").replaceChildren(...rows);
-    if (!rows.length) $("bNote").textContent = "Nothing playable in this folder.";
-  } catch { $("bList").replaceChildren(Object.assign(document.createElement("li"), { className: "muted", textContent: "Couldn't reach the radio." })); }
+    $("brList").replaceChildren(...rows);
+    if (!rows.length) $("brNote").textContent = "Nothing playable in this folder.";
+  } catch { $("brList").replaceChildren(Object.assign(document.createElement("li"), { className: "muted", textContent: "Couldn't reach the radio." })); }
 }
 
 // Find with nothing typed: Sleep Radio (everything, your lists, the artist
@@ -3017,10 +3204,15 @@ function tile(title, sub, on, onclick) {
 function drawHome() {
   const showOn = !lastSource, [kind, name] = selNow ? [selNow[0], selNow.slice(2)] : ["", ""];
   const tiles = [tile("All artists", "The whole library", showOn && !selNow, () => playShow({}))];
-  for (const p of allLists) tiles.push(tile(p.name, `Your list · ${p.artists.length} artists`,
+  for (const p of allLists) tiles.push(tile(p.name, `Your artist list · ${p.artists.length} artists`,
                                             showOn && kind === "p" && name === p.name, () => playShow({ profile: p.name })));
   if (kind === "a") tiles.push(tile(`${name}`, "Artist radio", showOn, () => playShow({ artist: name })));
   $("mixTiles").replaceChildren(...tiles);
+  const plNow = lastStatus && lastStatus.playlist;
+  $("plTiles").replaceChildren(...(playlists.length ? playlists.map(pl =>
+    tile(pl.name, `${plural(pl.tracks.length, "song")} · tap to play`, !!plNow && plNow.name === pl.name, () => playPlaylist(pl.name, false)))
+    : [Object.assign(document.createElement("p"), { className: "muted", style: "margin:0;font-size:.9rem",
+                                                   textContent: "None yet: make one below." })]));
   $("browseTiles").replaceChildren(tile("Albums and folders", "Everything, as it is on the radio", false, () => openBrowse(null)),
                                    tile("On demand", "Only when you pick it, no DJ", false, () => openBrowse("ondemand")));
   $("stationTiles").replaceChildren(...(rStations.length ? rStations.map(st =>

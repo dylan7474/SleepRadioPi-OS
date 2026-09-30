@@ -31,6 +31,10 @@ from sleepradiopi.config.settings import save_setting
 
 log = logging.getLogger(__name__)
 
+KNOB_MODES = ("auto", "fine", "normal", "coarse")
+# auto: the gap since the last click (same way) -> volume steps per click
+KNOB_ACCEL = ((0.05, 5), (0.12, 3), (0.25, 2))
+
 SLICE_FRAMES = 1024          # ~23 ms: how often the volume can change
 PIPE_BYTES = 16384           # ~93 ms of audio queued in the pipe to aplay
 ALSA_BUFFER_US = 500_000     # aplay's own buffer; 250 / 350 ms under-ran now and then while the voice reloaded
@@ -295,8 +299,12 @@ class SpeakerControl:
     def __init__(self, speaker: SpeakerOutput, join: Callable[[], None],
                  leave: Callable[[], None], state_file: Path | None = None,
                  default_volume: int = 30, config_file: Path | None = None,
-                 noise: tuple[bool, str, int] = (False, "pink", 50)) -> None:
+                 noise: tuple[bool, str, int] = (False, "pink", 50),
+                 knob_mode: str = "auto", knob_step: int = 2) -> None:
         self.speaker = speaker
+        self.knob_mode = knob_mode if knob_mode in KNOB_MODES else "auto"
+        self.knob_step = max(1, int(knob_step))
+        self._knob_last = (0.0, 0)       # (when, direction) of the last click
         self._join, self._leave = join, leave
         self.state_file = state_file
         self.config_file = config_file
@@ -424,6 +432,29 @@ class SpeakerControl:
     def step(self, delta: int) -> None:
         self.set_volume(self.speaker.volume + delta)
 
+    def knob(self, clicks: int, now: float | None = None) -> None:
+        """The knob turned: fine, normal or coarse steps, or (auto) by how fast it's
+        turned -- a slow turn a step a click, a quick spin bigger ones."""
+        if not clicks:
+            return
+        now = time.monotonic() if now is None else now
+        direction = 1 if clicks > 0 else -1
+        if self.knob_mode == "auto":
+            last, last_dir = self._knob_last
+            gap = now - last if last_dir == direction else 1.0
+            per = next((n for limit, n in KNOB_ACCEL if gap < limit), 1)
+        else:
+            per = {"fine": 1, "normal": self.knob_step, "coarse": 5}[self.knob_mode]
+        self._knob_last = (now, direction)
+        self.step(clicks * per)
+
+    def set_knob_mode(self, mode: str) -> None:
+        if mode not in KNOB_MODES:
+            raise ValueError(f"the knob is one of {', '.join(KNOB_MODES)}")
+        self.knob_mode = mode
+        self._save_setting("knob_mode", mode)
+        log.info("speaker: knob %s", mode)
+
     def play(self) -> None:
         self._pause_after_clip = False       # asked to play: stay playing after a clip
         self.slept = False
@@ -537,7 +568,7 @@ class SpeakerControl:
             self.pause()
 
     def status(self) -> dict:
-        status = {"volume": self.speaker.volume, "playing": not self.paused,
+        status = {"volume": self.speaker.volume, "playing": not self.paused, "knob_mode": self.knob_mode,
                   "mono": self.speaker.mono, "sleep_min": None, "sleep_left_s": None,
                   "noise": {"on": self.speaker.noise is not None, "kind": self.noise_kind,
                             "mix": self.speaker.noise_mix,

@@ -74,7 +74,7 @@ def test_control_joins_once_and_remembers_volume(tmp_path: Path, monkeypatch) ->
                          state_file=state, default_volume=40)
     status = ctl.status()
     assert status.pop("noise")["on"] is False
-    assert status == {"volume": 40, "playing": False, "mono": False,
+    assert status == {"volume": 40, "playing": False, "mono": False, "knob_mode": "auto",
                       "test": None, "sleep_min": None, "sleep_left_s": None}
     ctl.play(); ctl.play(); ctl.toggle(); ctl.toggle()
     assert calls == ["join", "leave", "join"]

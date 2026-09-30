@@ -65,6 +65,10 @@ software, and the case to print.
   start to finish like a record (no talk between tracks), and the DJ
   back-announces it at the end. **Browse** the albums A–Z, or the folders as
   they are on the radio, for anything untagged.
+- **Playlists** — your own lists of songs (add with ＋ from search, Browse or
+  the song playing), played in order or shuffled, with the DJ between songs
+  only if the DJ is on; one can go on a preset button. **⏮ Back** beside Skip
+  works like a CD player.
 - **On demand** — a second library for things you pick yourself but never
   want in the show (storms, old radio shows, long classical pieces): any
   layout, played straight through with no DJ, now or after the song playing.
