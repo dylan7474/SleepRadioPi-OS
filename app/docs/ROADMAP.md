@@ -24,7 +24,10 @@ left.
    2. **The desktop served from the radio** — DONE 2026-09-30 (`/desktop`): the
       real library, playing, buttons, playlists and programmes; settings open
       the classic page's own in a window until stage 4.
-   3. **The media manager in it**, with a new move between Music and On demand.
+   3. **The media manager in it** — DONE 2026-09-30: upload (files and folders,
+      with progress), new folder, download (zip for folders), delete via the
+      Trash, and move by dragging (music ↔ on demand; playlists, programmes and
+      buttons follow); real lengths from the files for the timelines.
    4. **Every setting wired up** (speakers, knob, DJ, noise, Wi-Fi, buttons,
       voices, this radio, updates, save and load, power, messages, birthdays).
    5. **The switchover**: the desktop is the main page on a computer; this

@@ -1084,6 +1084,54 @@ class Station:
         else:
             self._prepare_opening()
 
+    # --- real lengths (for the desktop's timelines) -----------------------------------
+
+    def track_seconds(self, t: BroadcastTrack) -> float | None:
+        """A track's length, from its file's tags (cached)."""
+        cache = self.__dict__.setdefault("_lengths", {})
+        if t.path not in cache:
+            from .library import _tags
+            tags = _tags(t.path)
+            cache[t.path] = float(getattr(getattr(tags, "info", None), "length", 0) or 0) or None
+        return cache[t.path]
+
+    def minutes_of(self, item: dict) -> float | None:
+        """Minutes of a track, an album or folder (deep: all under it) or a playlist."""
+        from . import playlists as pl
+        k = item.get("kind") if isinstance(item, dict) else None
+        if k == "track":
+            t = self._by_ref(item.get("root", "music"), item.get("path"))
+            tracks = [t] if t else []
+        elif k == "album":
+            a = self._album_by_folder(item.get("folder"), item.get("root", "music"), item.get("deep") is True)
+            tracks = list(a["tracks"]) if a else []
+        elif k == "playlist":
+            p = pl.find(self.playlists, item.get("name"))
+            tracks = [t for r, path in (p["tracks"] if p else []) if (t := self._by_ref(r, path))]
+        else:
+            return None
+        secs = [self.track_seconds(t) for t in tracks]
+        known = [s for s in secs if s]
+        if not known:
+            return None
+        return round(sum(known) / 60 * len(secs) / len(known), 1)   # (any unreadable ones: the average)
+
+    def rename_refs(self, old_root: str, old: str, new_root: str, new: str) -> bool:
+        """A file or folder was moved: playlists that pointed into it follow it."""
+        def moved(root, path):
+            if root == old_root and (path == old or path.startswith(old + "/")):
+                return new_root, new + path[len(old):]
+            return root, path
+        changed = False
+        lists = []
+        for p in self.playlists:
+            tracks = [list(moved(r, path)) for r, path in p["tracks"]]
+            changed |= tracks != p["tracks"]
+            lists.append({"name": p["name"], "tracks": tracks})
+        if changed:
+            self.set_playlists(lists)
+        return changed
+
     def play_tracks_as(self, name: str, tracks: list[BroadcastTrack]) -> None:
         """Tracks now, like a playlist of this name (a programme's block):
         through the show's queue, the DJ as set; playlist_status() has it."""

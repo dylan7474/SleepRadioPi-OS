@@ -189,6 +189,18 @@ class Scheduler:
             if self.run and not find(self.programmes, self.run["name"]):
                 self.stop("it was deleted")
 
+    def rename_refs(self, old_root: str, old: str, new_root: str, new: str) -> bool:
+        """A file or folder was moved: blocks that pointed into it follow it."""
+        changed = False
+        for p in self.programmes:
+            for b in p["blocks"]:
+                for it in b["items"]:
+                    key = "folder" if it["kind"] == "album" else "path" if it["kind"] == "track" else None
+                    if key and it.get("root", "music") == old_root and (it[key] == old or it[key].startswith(old + "/")):
+                        it["root"], it[key] = new_root, new + it[key][len(old):]
+                        changed = True
+        return changed
+
     # --- playing ----------------------------------------------------------------------
 
     def play(self, name: str) -> dict:

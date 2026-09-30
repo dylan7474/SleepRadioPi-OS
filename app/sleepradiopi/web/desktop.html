@@ -430,6 +430,14 @@ async function loadFolder(f) {
       return o.id;
     });
     if (d.album) for (const t of d.album.list) kids.push(trackObj(f.root, t, d.album.title).id);
+    try {                                            // empty folders too (the library only lists ones with music)
+      const m = await api(`/api/media?kind=${f.root}&path=${encodeURIComponent(f.path)}`);
+      for (const x of m.folders) {
+        const path = f.path ? f.path + "/" + x.name : x.name;
+        if (!kids.includes("f:" + f.root + ":" + path) && !kids.includes("a:" + f.root + ":" + path))
+          kids.push(mk({ id: "f:" + f.root + ":" + path, kind: "folder", title: x.name, root: f.root, path, kids: [], count: 0, alt: f.root === "ondemand" }).id);
+      }
+    } catch {}
     f.kids = kids;
   } else if (f.box === "books") {
     const d = await api("/api/books");
@@ -505,9 +513,20 @@ function objRef(o) {
   if (o.kind === "list") return { kind: "list", name: o.name };
   return null;
 }
-const lenOf = o => o.kind === "album" ? (o.tracks ? o.tracks.length : o.count || 10) * TRACK_MIN
+const lenOf = o => o.min != null && ["album", "folder", "track", "playlist"].includes(o.kind) ? o.min : o.kind === "album" ? (o.tracks ? o.tracks.length : o.count || 10) * TRACK_MIN
   : o.kind === "folder" && o.root ? (o.count || 10) * TRACK_MIN : o.kind === "track" ? TRACK_MIN
   : o.kind === "playlist" ? o.items.length * TRACK_MIN : ["book", "episode", "sound"].includes(o.kind) ? o.min ?? 30 : null;
+
+// real lengths from the radio (read from the files), for the timelines
+async function fetchLengths(objs) {
+  const want = objs.filter(o => o && o.min == null && ["album", "folder", "track", "playlist"].includes(o.kind) && objRef(o));
+  if (!want.length) return false;
+  try {
+    const d = await api("/api/lengths", { items: want.map(o => o.kind === "playlist" ? { kind: "playlist", name: o.name } : objRef(o)) });
+    d.minutes.forEach((m, i) => { if (m != null) want[i].min = m; });
+    return true;
+  } catch { return false; }
+}
 
 // ============ times, for programmes ============
 const toMin = s => { const [h, m] = (s || "0:0").split(":").map(Number); return h * 60 + m; };
@@ -787,6 +806,7 @@ async function open(id) {
   const w = Math.min(d.clientWidth - 40, big ? 780 : page ? 560 : wide ? 480 : 560), h = Math.min(d.clientHeight - 40, big ? 460 : page ? 620 : 420);
   const win = { id, x: Math.max(8, Math.min(250 + n * 28, d.clientWidth - w - 10)), y: Math.max(8, Math.min(24 + n * 26, d.clientHeight - h - 10)), w, h, z: ++zTop, blk: 0, loading: false };
   W.push(win);
+  if (o.kind === "programme") fetchLengths(o.blocks.flatMap(b => b.items.map(id => O[id]))).then(got => got && drawDesk());
   const needs = (o.kind === "folder" && !o.loaded) || (o.kind === "album" && !o.loaded) || (o.kind === "podcast" && !o.loaded);
   if (needs) {
     win.loading = true; drawDesk();
@@ -825,22 +845,50 @@ function winEl(win) {
 }
 const T = (txt, fn, cls = "", dis = false) => { const b = el("button", { className: "t " + cls, type: "button", textContent: txt, disabled: dis }); b.onclick = fn; return b; };
 
-function folderView(o, box) {
+function selectedIn(o) { return sel && sel.endsWith("@" + o.id) ? O[sel.slice(0, sel.lastIndexOf("@"))] : null; }
+function folderView(o, box, win) {
   const tools = el("div", { className: "wtools" });
-  if (o.root) tools.append(T(o.path ? "▶ Play all" : "▶ Play everything", () => play(o), "primary", !o.kids.length),
-                            el("span", { className: "note", textContent: "Double-click to open or play · drag onto the radio, a button, a playlist or a programme" }));
+  if (o.root) {
+    const picked = selectedIn(o);
+    const up = el("input", { type: "file", multiple: true, hidden: true }), upDir = el("input", { type: "file", multiple: true, hidden: true });
+    upDir.setAttribute("webkitdirectory", "");
+    up.onchange = () => { upload(o, [...up.files].map(f => [f, f.name])); up.value = ""; };
+    upDir.onchange = () => { upload(o, [...upDir.files].map(f => [f, f.webkitRelativePath || f.name])); upDir.value = ""; };
+    tools.append(T(o.path ? "▶ Play all" : "▶ Play everything", () => play(o), "primary", !o.kids.length),
+      T("Upload…", () => up.click()), T("Upload a folder…", () => upDir.click()),
+      T("New folder", () => { win.mkdir = !win.mkdir; drawDesk(); }),
+      T("Download", () => download(picked || o), "", !(picked || o.path) || (picked && !picked.root)), up, upDir);
+    if (win.mkdir) {
+      const name = el("input", { type: "text", placeholder: "Folder name", id: "mk-" + o.id, style: "background:var(--win);border:1px solid var(--line);border-radius:6px;padding:3px 7px" });
+      const ok = T("Make it", () => mkdir(o, name.value.trim(), win), "primary");
+      name.onkeydown = e => { if (e.key === "Enter") ok.click(); };
+      tools.append(name, ok);
+      setTimeout(() => name.focus(), 0);
+    } else tools.append(el("span", { className: "note", textContent: o.root === "music" ? "Drag to On demand to take things out of the show · drop files from your computer here" : "Drop files or folders from your computer here" }));
+  }
   else if (o.box === "playlists") tools.append(T("New playlist", newPlaylist), el("span", { className: "note", textContent: "Drop songs, albums or folders onto a playlist" }));
   else if (o.box === "programmes") tools.append(T("New programme", newProgramme), el("span", { className: "note", textContent: "A running order the radio plays by itself" }));
   else if (o.box === "stations") tools.append(T("Find more stations", () => open(PANEL.stations.id)), el("span", { className: "note", textContent: "Drag a station onto a button to keep it there" }));
   else if (o.box === "podcasts") tools.append(T("Follow more", () => openPage("Podcasts", "#podcasts")), el("span", { className: "note", textContent: "Open a show for its episodes" }));
   else if (o.box === "lists") tools.append(T("Make an artist list", () => open(PANEL.lists.id)), el("span", { className: "note", textContent: "The show, playing only these artists" }));
-  else if (o.box === "books") tools.append(el("span", { className: "note", textContent: "Each book remembers its place" }));
+  else if (o.box === "books") {
+    const up = el("input", { type: "file", multiple: true, hidden: true, accept: ".mp3,.m4b,audio/*" });
+    up.onchange = () => { upload(o, [...up.files].map(f => [f, f.name])); up.value = ""; };
+    tools.append(T("Upload a book…", () => up.click()), up, el("span", { className: "note", textContent: "A folder of mp3s or one m4b is a book · each remembers its place" }));
+  }
   if (tools.children.length) box.append(tools);
   const grid = el("div", { className: "grid" });
   o.kids.forEach(id => O[id] && grid.append(iconEl(O[id], { where: o.id, parent: o.id })));
   if (!o.kids.length) grid.append(el("div", { className: "empty", textContent: o.kind === "trash" ? "The Trash is empty." : o.root === "ondemand" && !o.path ? "Nothing here yet: add files under Settings › Media library › On demand." : "Nothing here yet." }));
-  box.append(el("div", { className: "wbody" }, grid));
-  box.append(el("div", { className: "wfoot" }, `${o.kids.length} item${o.kids.length === 1 ? "" : "s"}`));
+  const body = el("div", { className: "wbody" }, grid);
+  if (o.root || o.box === "books") {                // files and folders from the computer
+    body.addEventListener("dragover", e => { if ([...e.dataTransfer.types].includes("Files")) { e.preventDefault(); box.classList.add("over"); } });
+    body.addEventListener("dragleave", () => box.classList.remove("over"));
+    body.addEventListener("drop", async e => { e.preventDefault(); box.classList.remove("over"); upload(o, await dropped(e.dataTransfer)); });
+  }
+  box.append(body);
+  box.append(el("div", { className: "wfoot" }, `${o.kids.length} item${o.kids.length === 1 ? "" : "s"}`, o.root || o.box === "books" ? el("span", { id: "space-" + o.id }) : null));
+  if (o.root || o.box === "books") space(o);
 }
 function albumView(o, box) {
   box.append(el("div", { className: "wtools" }, T("▶ Play", () => play(o), "primary"),
@@ -900,6 +948,93 @@ function panelView(o, box) {
   // everything else: the classic page's setting, inside the window, until it gets its desktop design
   const hash = o.rawHash || "#set-" + o.page;
   box.append(el("iframe", { className: "frame", src: "/?embedded#" + hash.slice(1), title: o.title }));
+}
+
+// ============ the media manager ============
+const kindOf = o => o.root || (o.box === "books" ? "audiobooks" : null);
+async function space(o) {
+  try { const d = await api(`/api/media?kind=${kindOf(o)}&path=`); const n = $("space-" + o.id); if (n) n.textContent = ` · ${gb(d.usage.free)} free of ${gb(d.usage.total)}`; } catch {}
+}
+const gb = n => n >= 1e9 ? (n / 1e9).toFixed(1) + " GB" : Math.round(n / 1e6) + " MB";
+async function dropped(dt) {                         // files, and folders (with what's in them), from the computer
+  const out = [], entries = [...dt.items].map(i => i.webkitGetAsEntry && i.webkitGetAsEntry()).filter(Boolean);
+  if (!entries.length) return [...dt.files].map(f => [f, f.name]);
+  const walk = async (entry, path) => {
+    if (entry.isFile) out.push([await new Promise((ok, no) => entry.file(ok, no)), path + entry.name]);
+    else if (entry.isDirectory) {
+      const reader = entry.createReader();
+      for (;;) { const batch = await new Promise((ok, no) => reader.readEntries(ok, no)); if (!batch.length) break; for (const e of batch) await walk(e, path + entry.name + "/"); }
+    }
+  };
+  for (const e of entries) await walk(e, "");
+  return out;
+}
+function sendFile(kind, dir, name, file, onprogress) {
+  return new Promise((ok, no) => {
+    const x = new XMLHttpRequest();
+    x.open("POST", `/api/media/upload?kind=${kind}&dir=${encodeURIComponent(dir)}&name=${encodeURIComponent(name)}`);
+    x.upload.onprogress = e => e.lengthComputable && onprogress(e.loaded / e.total);
+    x.onload = () => { let d = {}; try { d = JSON.parse(x.responseText); } catch {} x.status < 300 ? ok(d) : no(new Error(d.error || `the radio said no (${x.status})`)); };
+    x.onerror = () => no(new Error("the upload was cut off"));
+    x.send(file);
+  });
+}
+let uploading = false;
+async function upload(o, files) {
+  const kind = kindOf(o);
+  files = files.filter(([f, name]) => !name.split("/").some(p => p.startsWith(".")));
+  if (!files.length) return;
+  if (uploading) return toast("An upload is already going: wait for it to finish.");
+  uploading = true;
+  let added = 0, same = 0, failed = [];
+  for (let i = 0; i < files.length; i++) {
+    const [f, name] = files[i];
+    const say = pct => toast(`Uploading ${i + 1} of ${files.length} to ${o.title}: ${lastPart(name)}${pct != null ? " · " + Math.round(pct * 100) + "%" : ""}`, true);
+    say(0);
+    try { const d = await sendFile(kind, o.path || "", name, f, say); d.status === "same" ? same++ : added++; }
+    catch (e) { failed.push(`${lastPart(name)} (${e.message})`); }
+  }
+  uploading = false;
+  await afterChange([o]);
+  toast(`${added} added${same ? `, ${same} already there` : ""}${failed.length ? `. Not added: ${failed.slice(0, 3).join(", ")}${failed.length > 3 ? "…" : ""}` : "."}`);
+}
+async function afterChange(folders) {                // the radio rescans; the windows show it
+  try { await api("/api/media/done", {}); } catch {}
+  for (const f of folders) if (f) { try { await loadFolder(f); } catch {} }
+  for (const w of W) { const wo = O[w.id]; if (wo && wo.kind === "album" && folders.some(f => f && wo.path.startsWith(f.path))) wo.loaded = false; }
+  if (PLAYLISTS.loaded) await loadPlaylists().catch(() => {});
+  if (PROGRAMMES.loaded) await loadProgrammes().catch(() => {});
+  drawDesk();
+}
+async function mkdir(o, name, win) {
+  if (!name) return toast("Give the folder a name.");
+  try { await api("/api/media/mkdir", { kind: kindOf(o), path: o.path || "", name }); win.mkdir = false; await afterChange([o]); toast(`Made ${name}.`); }
+  catch (e) { toast("No folder made: " + e.message + "."); }
+}
+function download(o) {
+  const kind = kindOf(o) || o.root;
+  const path = o.kind === "book" ? o.key : o.path;
+  if (!kind || !path) return toast("Pick something in the window to download.");
+  const a = el("a", { href: `/api/media/download?kind=${kind}&path=${encodeURIComponent(path)}`, download: "" });
+  document.body.append(a); a.click(); a.remove();
+  toast(o.kind === "track" || o.kind === "book" ? `Downloading ${o.title}.` : `Downloading ${o.title} as a zip.`);
+}
+async function moveInto(src, dest) {
+  const o = O[src.id];
+  if (!o.root || !o.path) return toast(`“${o.title}” can't be moved into a folder.`);
+  if (!dest.root) return;
+  const from = parentOf(o.id);
+  if (from === dest) return;
+  if (o.kind === "folder" && (dest.path === o.path || (dest.root === o.root && dest.path.startsWith(o.path + "/")))) return toast("A folder can't go inside itself.");
+  try {
+    const d = await api("/api/media/move", { kind: o.root, path: o.path, to_kind: dest.root, to: dest.path || "" });
+    const oldPrefix = o.root + ":" + o.path;          // shortcuts on the desktop follow it
+    desk = desk.filter(p => !(p.id.includes(":" + oldPrefix) && p.alias));
+    saveDesk();
+    await afterChange([from, dest].filter(Boolean));
+    toast(`Moved “${o.title}” to ${dest.title}.` + (o.root === "music" && dest.root === "ondemand" ? " It's out of the show now: it only plays when you pick it."
+          : o.root === "ondemand" && dest.root === "music" ? " The show can pick it now." : ""));
+  } catch (e) { toast("Not moved: " + e.message + "."); }
 }
 
 // the programme window: blocks on a timeline, saved on the radio
@@ -1068,6 +1203,7 @@ async function drop(src, target, ev) {
   if (dest.kind === "playlist") return addToPlaylist(dest, o);
   if (dest.kind === "programme") {
     if (!objRef(o)) return toast(`“${o.title}” can't go in a programme.`);
+    await fetchLengths([o]);                         // its real running time, from the radio
     if (kind === "blk") { const b = dest.blocks[+target.dataset.i]; if (!b.items.includes(o.id)) b.items.push(o.id); await saveProgrammes(`Added “${o.title}” to “${b.name}”.`); }
     else { dest.blocks.push({ name: o.title.slice(0, 40), items: [o.id], rule: lenOf(o) == null ? "for" : "end", min: 60, order: "inorder" });
            const w = W.find(w => w.id === dest.id); if (w) w.blk = dest.blocks.length - 1; await saveProgrammes(`New block: “${o.title}”.`); }
@@ -1075,7 +1211,7 @@ async function drop(src, target, ev) {
   }
   if (dest.box === "playlists") return toast("Drop it onto one of the playlists.");
   if (dest.box === "programmes") return toast("Drop it onto one programme, or into its timeline.");
-  if (dest.kind === "folder" && (dest.root || src.parent && O[src.parent]?.root)) return toast("Moving music between folders comes with the media manager, the next stage. For now: Settings › Media library.");
+  if (dest.kind === "folder" && dest.root) return moveInto(src, dest);
 }
 async function addToPlaylist(pl, o) {
   const what = o.kind === "track" ? { root: o.root, path: o.path } : o.kind === "album" ? { root: o.root, folder: o.path }
@@ -1111,7 +1247,15 @@ function trash(src) {
   if (o.kind === "programme") return ask(`Delete the programme “${o.title}”?`, "Delete programme", async () => {
     PROGRAMMES.kids = PROGRAMMES.kids.filter(id => id !== o.id); closeFor(o); await saveProgrammes(`Deleted ${o.title}.`);
   });
-  toast("Deleting music, books and sounds comes with the media manager, the next stage. For now: Settings › Media library.");
+  if ((o.root && o.path) || o.kind === "book") {
+    const what = o.kind === "folder" ? "the folder and everything in it" : o.kind === "album" ? "the album (its folder)" : "it";
+    return ask(`Delete “${o.title}” from the radio for good? This deletes ${what}, and can't be undone.`, "Delete for good", async () => {
+      try { await api("/api/media/delete", { kind: o.kind === "book" ? "audiobooks" : o.root, path: o.kind === "book" ? o.key : o.path });
+            closeFor(o); await afterChange([from, o.kind === "book" ? BOOKS : null].filter(Boolean)); toast(`Deleted ${o.title}.`); }
+      catch (e) { toast("Not deleted: " + e.message + "."); }
+    });
+  }
+  toast(`“${o.title}” can't go in the Trash.`);
 }
 function closeFor(o) { for (let i = W.length - 1; i >= 0; i--) if (W[i].id === o.id) W.splice(i, 1); desk = desk.filter(p => p.id !== o.id); saveDesk(); drawDesk(); }
 function pressBlock(e, blkEl, prog, i, win) {
@@ -1171,7 +1315,7 @@ $("tidy").onclick = () => { desk.forEach((p, i) => { p.x = 18 + Math.floor(i / 7
 $("settingsMenu").onclick = () => { if (!radioBack) turnRadio(); toast("Every setting is on the back of the radio. Or click a part of it: the speakers, the knob, the buttons, its name."); };
 $("wifiMenu").onclick = () => open(PANEL.wifi.id);
 let tt;
-function toast(msg) { const t = $("toast"); t.textContent = msg; t.hidden = false; clearTimeout(tt); tt = setTimeout(() => t.hidden = true, 4000); }
+function toast(msg, sticky) { const t = $("toast"); t.textContent = msg; t.hidden = false; clearTimeout(tt); if (!sticky) tt = setTimeout(() => t.hidden = true, 4500); }
 function tick() { const d = new Date(); $("clock").textContent = d.toLocaleDateString(undefined, { weekday: "short" }) + " " + d.toTimeString().slice(0, 5); }
 window.addEventListener("resize", () => drawDesk());
 let booted = false;

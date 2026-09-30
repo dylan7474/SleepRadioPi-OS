@@ -366,8 +366,15 @@ The cards:
   radio they affect (the speakers, the knob, the buttons, its name) or turn it
   round (**Settings on the back**); for now each opens this page's own
   setting inside a window (`/?embedded#set-…`). Your icon layout and light or
-  dark are kept in the browser. Moving and deleting music come with the next
-  stage (the media manager).
+  dark are kept in the browser. **The media manager is built in**: in Music,
+  On demand and Audiobooks windows, *Upload…* / *Upload a folder…* or drop
+  files and whole folders from your computer (one at a time, with progress);
+  *New folder*; *Download* (a file, or a folder as a zip); **drag a folder,
+  album or song onto another folder to move it** (Music → On demand takes it
+  out of the show) — playlists, programmes and buttons that pointed at it
+  follow it; drag to the Trash to delete for good (asks first). Dropping music
+  into a programme asks the radio for its **real running time** (read from the
+  files, `POST /api/lengths`), so the timeline is right.
 - **Programmes** — a running order the radio plays **by itself**, with no
   browser open (`broadcast/programmes.py`, a `Scheduler` ticking once a
   second). Each block holds things (albums, tracks, folders, playlists,
@@ -779,6 +786,9 @@ everything but the page itself and the login needs the session cookie
 | `POST /api/album/play` | `{"id": n}` or `{"root", "folder", "deep", "track"?}` (`deep`: everything under the folder; `track`: start at that one) — play it straight through instead of the show |
 | `GET /api/media?kind=music\|jingles\|audiobooks\|ondemand&path=` | A folder of the library: its folders (with item counts) and files, and the space left |
 | `POST /api/media/upload?kind=&dir=&name=` | The file as the body (`name` may include folders); `{"path", "status": "added" \| "same"}` |
+| `POST /api/media/move` | `{"kind", "path", "to_kind", "to"}` — move a file or folder into the folder `to` (same library or the other: music ↔ ondemand); playlists, programmes and album buttons follow it. `{"path", "kind"}`: where it is now |
+| `GET /api/media/download?kind=&path=` | The file, or the folder as a zip (stored), as a download |
+| `POST /api/lengths` | `{"items": [{"kind": "track", "root", "path"} \| {"kind": "album", "root", "folder", "deep"?} \| {"kind": "playlist", "name"}]}` → `{"minutes": [n \| null]}`, read from the files' tags (cached) |
 | `POST /api/media/mkdir` / `/api/media/delete` | `{"kind", "path", "name"}` / `{"kind", "path"}` (a file or a folder) |
 | `POST /api/media/done` | Changes finished: /media read-only again, and the library rescanned |
 | `POST /api/buttons/bank` / `/api/buttons/auto` | `{"bank": "day" \| "night"}` (or `{}` to swap), announced on the radio / `{"on", "night_min", "day_min"}`: the timetable. `GET /api/buttons` has `bank` and `auto` |

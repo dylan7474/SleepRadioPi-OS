@@ -232,6 +232,22 @@ class Presets:
     def presets(self, value: list) -> None:
         self.banks[self.bank] = value
 
+    def rename_refs(self, old_root: str, old: str, new_root: str, new: str) -> bool:
+        """A folder was moved: album buttons that held it (or something in it) follow it."""
+        changed = False
+        for bank in self.banks.values():
+            for p in bank:
+                if p and p["kind"] == "album" and p.get("root", "music") == old_root and (p["folder"] == old or p["folder"].startswith(old + "/")):
+                    p["folder"] = new + p["folder"][len(old):]
+                    if new_root == "music":
+                        p.pop("root", None)
+                    else:
+                        p["root"] = new_root
+                    changed = True
+        if changed:
+            self._save()
+        return changed
+
     # --- what's playing -----------------------------------------------------------------
 
     def current(self) -> dict:

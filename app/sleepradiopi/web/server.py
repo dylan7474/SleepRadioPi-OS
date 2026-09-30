@@ -262,6 +262,8 @@ def make_handler(station: Station, output: Mp3Output, speaker=None,
                     self._error(str(e))
                     return
                 self._send(json.dumps(listing).encode(), "application/json")
+            elif path == "/api/media/download" and media is not None:
+                self._download()
             elif path == "/api/books":
                 self._send(json.dumps({"books": station.book_list(), "scanning": station.books_scanning}).encode(),
                            "application/json")
@@ -344,6 +346,16 @@ def make_handler(station: Station, output: Mp3Output, speaker=None,
             elif path in ("/api/programmes", "/api/programmes/play", "/api/programmes/stop") \
                     and getattr(station, "scheduler", None) is not None:
                 self._programmes_post(path)
+            elif path == "/api/lengths":
+                try:
+                    items = self._body()["items"]
+                    if not isinstance(items, list) or len(items) > 200:
+                        raise ValueError("send up to 200 items")
+                    reply = {"minutes": [station.minutes_of(it) for it in items]}
+                except (ValueError, TypeError, KeyError, AttributeError) as e:
+                    self._error(str(e) if isinstance(e, ValueError) else "send {\"items\": [...]}")
+                    return
+                self._send(json.dumps(reply).encode(), "application/json")
             elif path == "/api/playlists/add":
                 self._playlist_add()
             elif path == "/api/playlists/play":
@@ -945,11 +957,27 @@ def make_handler(station: Station, output: Mp3Output, speaker=None,
                 elif action == "delete":
                     media.delete(kind, body.get("path", ""))
                     reply = {"deleted": body.get("path")}
+                elif action == "move":
+                    old = body.get("path", "")
+                    to_kind = body.get("to_kind", kind)
+                    new = media.move(kind, old, to_kind, body.get("to", ""))
+                    reply = {"path": new, "kind": to_kind}
+                    old_root, new_root = kind, to_kind          # playlists, programmes and buttons follow it
+                    if old_root in ("music", "ondemand") and new_root in ("music", "ondemand"):
+                        old_rel = "/".join(p for p in old.split("/") if p)
+                        if station.rename_refs(old_root, old_rel, new_root, new) and config_file is not None:
+                            save_setting(config_file, "playlists", station.playlists)
+                        sched = getattr(station, "scheduler", None)
+                        if sched and sched.rename_refs(old_root, old_rel, new_root, new) and config_file is not None:
+                            save_setting(config_file, "programmes", sched.programmes)
+                        if presets is not None:
+                            presets.rename_refs(old_root, old_rel, new_root, new)
                 elif action == "done":
                     changed = media.done()
                     reply = {"changed": changed,
                              "library": {"tracks": len(station.tracks), "jingles": len(station.jingles),
-                                         "books": len(station.books.all()) if hasattr(station, "books") else 0}}
+                                         "books": len(station.books.all()) if hasattr(station, "books") else 0,
+                                         "ondemand": len(getattr(station, "ondemand_tracks", []))}}
                 else:
                     self.send_error(404)
                     return
@@ -957,6 +985,51 @@ def make_handler(station: Station, output: Mp3Output, speaker=None,
                 self._error(str(e) if isinstance(e, media_mod.MediaError) else "send {\"kind\", \"path\"}")
                 return
             self._send(json.dumps(reply).encode(), "application/json")
+
+        def _download(self) -> None:
+            """GET /api/media/download?kind=&path=: a file as it is, or a folder as a
+            zip (stored, not squeezed: audio doesn't shrink), streamed."""
+            import zipfile
+            q = parse_qs(urlparse(self.path).query)
+            try:
+                target = media.resolve(q.get("kind", ["music"])[0], q.get("path", [""])[0])
+            except media_mod.MediaError as e:
+                self._error(str(e))
+                return
+            if not target.exists() or target == media._root(q.get("kind", ["music"])[0]):
+                self._error("that isn't there to download")
+                return
+            name = target.name.replace('"', "'")
+            from urllib.parse import quote
+            self.send_response(200)
+            self.send_header("Cache-Control", "no-store")
+            if target.is_file():
+                self.send_header("Content-Type", "application/octet-stream")
+                self.send_header("Content-Length", str(target.stat().st_size))
+                self.send_header("Content-Disposition", f"attachment; filename*=UTF-8''{quote(target.name)}")
+                self.end_headers()
+                with open(target, "rb") as f:
+                    while chunk := f.read(1 << 16):
+                        self.wfile.write(chunk)
+                return
+            self.send_header("Content-Type", "application/zip")
+            self.send_header("Content-Disposition", f"attachment; filename*=UTF-8''{quote(target.name + '.zip')}")
+            self.send_header("Connection", "close")
+            self.end_headers()
+            self.close_connection = True
+
+            class Out:                                   # zipfile writes to a stream it can't seek
+                def __init__(self, w): self.w, self.n = w, 0
+                def write(self, b): self.w.write(b); self.n += len(b); return len(b)
+                def tell(self): return self.n
+                def flush(self): self.w.flush()
+            try:
+                with zipfile.ZipFile(Out(self.wfile), "w", zipfile.ZIP_STORED) as z:
+                    for f in sorted(target.rglob("*")):
+                        if f.is_file() and not any(part.startswith(".") for part in f.relative_to(target).parts):
+                            z.write(f, str(Path(name) / f.relative_to(target)))
+            except (BrokenPipeError, ConnectionResetError):
+                pass
 
         def _buttons(self, press: bool) -> None:
             """POST /api/buttons {"button": 1-4, "preset": {...} | null} (null

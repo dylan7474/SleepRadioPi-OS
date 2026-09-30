@@ -212,6 +212,35 @@ class MediaLibrary:
         log.info("media: deleted %s/%s", kind, rel)
         self._changed()
 
+    def move(self, kind: str, rel: str, to_kind: str, to_folder: str) -> str:
+        """Move a file or folder into another folder, in the same library or
+        another (music <-> ondemand): /media is one filesystem, so it's a rename.
+        Returns its new path in to_kind."""
+        src_root, dst_root = self._root(kind), self._root(to_kind)
+        src = self.resolve(kind, rel)
+        if src == src_root:
+            raise MediaError("a whole library can't be moved")
+        if not src.exists():
+            raise MediaError("that isn't there any more")
+        self._open(dst_root)
+        dst_dir = self.resolve(to_kind, to_folder)
+        if not dst_dir.is_dir():
+            raise MediaError("that folder isn't there any more")
+        if src.is_dir() and (dst_dir == src or src in dst_dir.parents):
+            raise MediaError("a folder can't go inside itself")
+        dest = dst_dir / src.name
+        if dest == src:
+            return str(dest.relative_to(dst_root))
+        if dest.exists():
+            raise MediaError(f"there's already a {src.name} there")
+        try:
+            os.rename(src, dest)
+        except OSError as e:
+            raise MediaError(f"couldn't move it ({e.strerror})") from None
+        log.info("media: moved %s/%s to %s/%s", kind, rel, to_kind, dest.relative_to(dst_root))
+        self._changed()
+        return str(dest.relative_to(dst_root))
+
     def receive(self, kind: str, folder: str, name: str, length: int, read: Callable[[int], bytes]) -> dict:
         """One uploaded file: `name` may be a path inside `folder` (a folder upload,
         e.g. 'Rubber Soul/01 - Drive My Car.mp3'). Streamed to a hidden .part file,
