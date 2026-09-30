@@ -204,6 +204,8 @@ def make_handler(station: Station, output: Mp3Output, speaker=None,
                 if speaker is not None:
                     status["speaker"] = speaker.status()
                 status["can_power_off"] = can_power_off()
+                sched = getattr(station, "scheduler", None)
+                status["programme"] = sched.status() if sched else None
                 status["stream"] = output is not None and output.enabled
                 status["version"] = updater_mod.this_version()
                 self._send(json.dumps(status).encode(), "application/json")
@@ -232,6 +234,8 @@ def make_handler(station: Station, output: Mp3Output, speaker=None,
                            "application/json")
             elif path == "/api/playlists":
                 self._send(json.dumps(self._playlists()).encode(), "application/json")
+            elif path == "/api/programmes" and getattr(station, "scheduler", None) is not None:
+                self._send(json.dumps(self._programmes()).encode(), "application/json")
             elif path == "/api/albums":
                 self._send(json.dumps({"albums": station.all_albums()}).encode(), "application/json")
             elif path == "/api/browse":
@@ -334,6 +338,9 @@ def make_handler(station: Station, output: Mp3Output, speaker=None,
                 if speaker is not None:
                     speaker.play()
                 self._send(json.dumps(reply).encode(), "application/json")
+            elif path in ("/api/programmes", "/api/programmes/play", "/api/programmes/stop") \
+                    and getattr(station, "scheduler", None) is not None:
+                self._programmes_post(path)
             elif path == "/api/playlists/add":
                 self._playlist_add()
             elif path == "/api/playlists/play":
@@ -497,6 +504,8 @@ def make_handler(station: Station, output: Mp3Output, speaker=None,
                 station.set_birthdays(settings["birthdays"])
             if "playlists" in changed:
                 station.set_playlists(settings["playlists"])
+            if "programmes" in changed and getattr(station, "scheduler", None) is not None:
+                station.scheduler.set_programmes(settings["programmes"])
             if "knob_mode" in changed and speaker is not None:
                 speaker.set_knob_mode(settings["knob_mode"])
             if "messages" in changed:
@@ -772,6 +781,31 @@ def make_handler(station: Station, output: Mp3Output, speaker=None,
         def _playlists(self) -> dict:
             return {"playlists": [station.playlist_view(p) for p in station.playlists],
                     "playing": station.playlist_status()}
+
+        def _programmes(self) -> dict:
+            sched = station.scheduler
+            return {"programmes": sched.programmes, "playing": sched.status()}
+
+        def _programmes_post(self, path: str) -> None:
+            """POST /api/programmes {"programmes": [...]} (the whole list, saved),
+            /api/programmes/play {"name"}, /api/programmes/stop."""
+            sched = station.scheduler
+            try:
+                body = self._body()
+                if path == "/api/programmes":
+                    sched.set_programmes(body["programmes"])
+                    if config_file is not None:
+                        save_setting(config_file, "programmes", sched.programmes)
+                elif path == "/api/programmes/play":
+                    sched.play(body["name"])
+                    if speaker is not None:
+                        speaker.play()
+                else:
+                    sched.stop()
+            except (ValueError, TypeError, KeyError, AttributeError) as e:
+                self._error(str(e) if isinstance(e, ValueError) else "send {\"name\"} or {\"programmes\": [...]}")
+                return
+            self._send(json.dumps(self._programmes()).encode(), "application/json")
 
         def _save_playlists(self) -> None:
             if config_file is not None:

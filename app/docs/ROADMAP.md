@@ -13,6 +13,22 @@ left.
 
 ## Next
 
+0. **The new desktop interface** (the user's direction, 2026-09-30) — the web page
+   becomes a desktop: icons for every thing (albums, tracks, stations,
+   podcasts, books, playlists, programmes), windows as containers, the radio
+   itself on the desktop (drop anything on its dial to play it, on a button to
+   keep it there), settings kept on the thing they affect and on the radio's
+   back panel, messages as sticky notes, a built-in media manager. Light theme
+   first. The clickable prototype is `docs/prototypes/desktop.html`. Stages:
+   1. **Programmes in the radio** — DONE 2026-09-30 (the scheduler, API, buttons).
+   2. **The desktop served from the radio** on the real library and the APIs
+      that exist (browse, playlists, stations, podcasts, books, buttons, play).
+   3. **The media manager in it**, with a new move between Music and On demand.
+   4. **Every setting wired up** (speakers, knob, DJ, noise, Wi-Fi, buttons,
+      voices, this radio, updates, save and load, power, messages, birthdays).
+   5. **The switchover**: the desktop is the main page on a computer; this
+      page stays as the phone remote.
+
 1. **Wire the knob and the RTC** — done 2026-09-30 (amp unplugged): the knob's
    direction, one step a click, short press (pause) and long press all right;
    the RTC (a DS3231) sets the clock at boot over a power cut, before Wi-Fi.

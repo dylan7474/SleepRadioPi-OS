@@ -30,6 +30,7 @@ class Settings:
     broadcast_artist: str | None = None   # artist radio ("The Beatles" -> "Beatles Radio"); None = everything
     profiles: list = field(default_factory=list)   # [{"name": "Friday List", "artists": [...]}]
     playlists: list = field(default_factory=list)  # [{"name": "Sunday", "tracks": [["music", "A/B/01 - x.mp3"], ...]}]
+    programmes: list = field(default_factory=list) # running orders of blocks: see broadcast/programmes.py
     broadcast_profile: str | None = None  # the profile playing (instead of an artist); None = none
     broadcast_chattiness: str = "maximum"
     podcasts: list = field(default_factory=list)  # the shows followed: [{"feed_url", "title", "author"}]

@@ -488,6 +488,10 @@
           <div class="card-head"><span id="albumNow" style="flex:1;min-width:0"></span>
             <button id="albumStop" type="button">Stop album</button></div>
         </div>
+        <div id="progBox" class="card" hidden>
+          <div class="card-head"><span id="progNow" style="flex:1;min-width:0"></span>
+            <button id="progStop" type="button">Stop programme</button></div>
+        </div>
         <div id="plBox" class="card" hidden>
           <div class="card-head"><span id="plNow" style="flex:1;min-width:0"></span>
             <button id="plStop" type="button">Stop playlist</button></div>
@@ -1504,7 +1508,23 @@ $("albumStop").onclick = async () => {
     showAlbum(null, null); showRequests(reply.requests);
   } catch { toast("Couldn't reach the radio."); }
 };
-function upNextShown() { $("upNext").hidden = $("albumBox").hidden && $("plBox").hidden && $("reqBox").hidden && $("qRadio").hidden; }
+function upNextShown() { $("upNext").hidden = $("albumBox").hidden && $("plBox").hidden && $("progBox").hidden && $("reqBox").hidden && $("qRadio").hidden; }
+function showProgramme(pr) {
+  $("progBox").hidden = !pr;
+  upNextShown();
+  if (!pr) return;
+  const b = document.createElement("b"); b.textContent = "Programme: ";
+  $("progNow").replaceChildren(b, `${pr.name} · ${pr.waiting ? "the show until the next block" : pr.block}` +
+    (pr.until ? ` until ${pr.until}` : "") + (pr.next ? ` · then ${pr.next}` : ""));
+}
+$("progStop").onclick = async () => {
+  try { await radioPost("/api/programmes/stop"); toast("Programme stopped: whatever's on carries on."); showProgramme(null); }
+  catch { toast("Couldn't reach the radio."); }
+};
+let programmes = [];
+async function loadProgrammes() {
+  try { const r = await fetch("/api/programmes", { cache: "no-store" }); if (r.ok) programmes = (await r.json()).programmes || []; } catch {}
+}
 function showRequests(list) {
   list = (list || []).filter(r => !r.album && !r.playlist);   // an album or a playlist shows as one line above
   $("reqBox").hidden = !list.length;
@@ -2126,6 +2146,7 @@ async function poll() {
     showRequests(s.requests);
     showAlbum(s.album, s.up_next_source);
     showPlaylistNow(s.playlist);
+    showProgramme(s.programme);
     showRadio(s.source, s.source_error);
     const badge = $("badge");
     badge.textContent = s.on_air ? "On air" : (s.voices_ready ? "Off air" : "Warming up");
@@ -2622,6 +2643,7 @@ function buttonChoices() {
                   ["My stations", rStations.map(st => [st.name, { kind: "radio", ...st }])],
                   ["Playlists", playlists.flatMap(p => [[p.name, { kind: "playlist", name: p.name, shuffle: false }],
                                                         [p.name + " (shuffled)", { kind: "playlist", name: p.name, shuffle: true }]])],
+                  ["Programmes", programmes.map(p => [p.name, { kind: "programme", name: p.name }])],
                   ["Audiobooks", books.map(b => [b.title, { kind: "book", key: b.key, title: b.title }])],
                   ["Podcasts (the latest, or the one part-heard)", podShows.map(p => [p.title, { kind: "podcast", show: p.id, title: p.title }])],
                   ["Actions", Object.entries(bState.actions).map(([a, text]) => [text, { kind: "action", action: a }])],
@@ -3017,7 +3039,7 @@ document.querySelectorAll("#viewFind .back[data-to]").forEach(b => b.onclick = (
 // The buttons' sheet: from the radio panel or Settings.
 async function openSheet() {
   $("sheet").hidden = $("scrim").hidden = false; $("sheetDone").focus();
-  await Promise.all([loadBooks(), loadRadio(), loadPodcasts(), loadPlaylists()]);   // the choices: the latest books, stations, podcasts, playlists
+  await Promise.all([loadBooks(), loadRadio(), loadPodcasts(), loadPlaylists(), loadProgrammes()]);   // the choices: the latest books, stations, podcasts, playlists
   loadButtons();
 }
 function closeSheet() { $("sheet").hidden = $("scrim").hidden = true; }

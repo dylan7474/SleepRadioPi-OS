@@ -1,0 +1,185 @@
+"""Programmes: running orders of blocks the radio plays by itself, on a clock."""
+
+import json
+import threading
+import urllib.error
+import urllib.request
+from datetime import datetime, timedelta
+from http.server import ThreadingHTTPServer
+from pathlib import Path
+
+import pytest
+
+from sleepradiopi.broadcast import programmes
+from sleepradiopi.broadcast.programmes import Scheduler
+from sleepradiopi.io import presets
+from sleepradiopi.web.server import make_handler
+
+from test_albums import _on_air
+from test_ondemand import _od_station
+
+R4 = {"kind": "station", "name": "BBC Radio 4", "url": "http://example.com/radio4"}
+RUBBER = {"kind": "album", "root": "music", "folder": "The Beatles/Rubber Soul"}
+STORM = {"kind": "album", "root": "ondemand", "folder": "Thunderstorms"}
+SUNDAY = datetime(2026, 10, 4, 12, 0)          # a Sunday
+
+
+class Clock:
+    def __init__(self, t): self.t = t
+    def __call__(self): return self.t
+    def go(self, **kw): self.t += timedelta(**kw)
+
+
+def _setup(tmp_path, monkeypatch, progs, start=SUNDAY):
+    st = _od_station(tmp_path)
+    _on_air(st, monkeypatch)
+    clock, woke, slept = Clock(start), [], []
+    sched = Scheduler(st, now=clock, wake=lambda: woke.append(1), sleep=lambda: slept.append(1))
+    sched.set_programmes(progs)
+    st.scheduler = sched
+    return st, sched, clock, woke, slept
+
+
+def test_validate() -> None:
+    ok = programmes.validate([{"name": " Sunday  lunch ", "start": "12:00", "then": "sleep", "days": [6, 6],
+                               "blocks": [{"name": "Beatles", "items": [RUBBER], "rule": "for", "min": 30},
+                                          {"name": "News", "items": [R4], "rule": "at", "at": "13:00", "min": 30}]}])
+    assert ok[0]["name"] == "Sunday lunch" and ok[0]["days"] == [6] and ok[0]["auto"] is False
+    assert ok[0]["blocks"][1] == {"name": "News", "items": [R4], "rule": "at", "order": "inorder", "min": 30, "at": "13:00"}
+    for bad in ([{"name": "A", "blocks": [{"rule": "sometimes"}]}], [{"name": "A"}, {"name": "a"}],
+                [{"name": "A", "start": "25:00"}], [{"name": "A", "blocks": [{"rule": "at", "at": "9am"}]}],
+                [{"name": "A", "blocks": [{"items": [{"kind": "album", "folder": "../x"}]}]}], [{"name": "A", "then": "explode"}]):
+        with pytest.raises(ValueError):
+            programmes.validate(bad)
+
+
+def test_blocks_follow_on_by_their_rules(tmp_path, monkeypatch) -> None:
+    st, sched, clock, *_ = _setup(tmp_path, monkeypatch, [{"name": "Lunch", "blocks": [
+        {"name": "Beatles", "items": [RUBBER], "rule": "for", "min": 30},
+        {"name": "Radio 4", "items": [R4], "rule": "until", "until": "13:15"},
+        {"name": "Rain", "items": [STORM], "rule": "end"}]}])
+    sched.play("lunch")
+    assert st.playlist_status()["name"] == "Beatles" and st.source is None      # music: through the show (DJ as set)
+    assert sched.status()["until"] == "12:30" and sched.status()["next"] == "Radio 4"
+    clock.go(minutes=29); sched.tick()
+    assert sched.status()["index"] == 0
+    clock.go(minutes=2); sched.tick()
+    assert st.source["kind"] == "radio" and sched.status()["until"] == "13:15"
+    assert st.requests() == [] and st.playlist_status() is None                 # the Beatles' rest doesn't linger
+    clock.go(minutes=45); sched.tick()
+    assert st.source["kind"] == "album" and st.source["root"] == "ondemand"     # On demand alone: straight through, no DJ
+    assert sched.status()["until"] is None                                      # until it ends
+    st._source = None; sched.tick()                                             # (the rain finished)
+    assert sched.run is None                                                    # then back to the show
+
+
+def test_an_at_block_cuts_in_on_time(tmp_path, monkeypatch) -> None:
+    st, sched, clock, *_ = _setup(tmp_path, monkeypatch, [{"name": "P", "blocks": [
+        {"name": "Rain", "items": [STORM], "rule": "end"},
+        {"name": "The news", "items": [R4], "rule": "at", "at": "13:00", "min": 30}]}], start=SUNDAY.replace(minute=50))
+    sched.play("P")
+    assert sched.status()["next"] == "The news at 13:00"
+    clock.go(minutes=9); sched.tick()
+    assert st.source["kind"] == "album"
+    clock.go(minutes=1); sched.tick()
+    assert st.source["name"] == "BBC Radio 4" and sched.status()["until"] == "13:30"
+
+
+def test_too_early_for_an_at_block_the_show_fills_in(tmp_path, monkeypatch) -> None:
+    st, sched, clock, *_ = _setup(tmp_path, monkeypatch, [{"name": "P", "blocks": [
+        {"name": "Radio 4", "items": [R4], "rule": "for", "min": 10},
+        {"name": "Beatles at one", "items": [RUBBER], "rule": "at", "at": "13:00", "min": 30}]}])
+    sched.play("P")
+    clock.go(minutes=10); sched.tick()
+    assert st.source is None and sched.status()["waiting"] is True                # the show until 13:00
+    clock.go(minutes=50); sched.tick()
+    assert st.playlist_status()["name"] == "Beatles at one"
+
+
+def test_played_after_an_at_time_it_just_follows_on(tmp_path, monkeypatch) -> None:
+    st, sched, clock, *_ = _setup(tmp_path, monkeypatch, [{"name": "P", "blocks": [
+        {"name": "Radio 4", "items": [R4], "rule": "for", "min": 10},
+        {"name": "News", "items": [RUBBER], "rule": "at", "at": "13:00", "min": 30}]}], start=SUNDAY.replace(hour=13, minute=10))
+    sched.play("P")
+    clock.go(minutes=10); sched.tick()
+    assert st.playlist_status()["name"] == "News"                                 # not tomorrow at 13:00
+
+
+def test_choosing_something_else_stops_the_programme(tmp_path, monkeypatch) -> None:
+    st, sched, clock, *_ = _setup(tmp_path, monkeypatch, [{"name": "P", "blocks": [{"name": "Radio 4", "items": [R4], "rule": "for", "min": 60}]}])
+    sched.play("P")
+    st.play_album(root="ondemand", folder="Thunderstorms")                        # picked on the page
+    sched.tick()
+    assert sched.run is None and st.source["folder"] == "Thunderstorms"
+
+
+def test_then_sleep_and_repeat(tmp_path, monkeypatch) -> None:
+    st, sched, clock, _, slept = _setup(tmp_path, monkeypatch, [
+        {"name": "Bed", "then": "sleep", "blocks": [{"name": "R4", "items": [R4], "rule": "for", "min": 20}]},
+        {"name": "Loop", "then": "repeat", "blocks": [{"name": "R4", "items": [R4], "rule": "for", "min": 5}]}])
+    sched.play("Bed")
+    clock.go(minutes=20); sched.tick()
+    assert sched.run is None and slept == [1] and st.source is None
+    sched.play("Loop")
+    clock.go(minutes=5); sched.tick()
+    assert sched.run is not None and sched.status()["index"] == 0
+
+
+def test_starts_by_itself_on_its_days(tmp_path, monkeypatch) -> None:
+    st, sched, clock, woke, _ = _setup(tmp_path, monkeypatch, [
+        {"name": "Morning", "start": "07:00", "auto": True, "days": [6], "blocks": [{"name": "R4", "items": [R4], "rule": "for", "min": 60}]}],
+        start=SUNDAY.replace(hour=6, minute=59))
+    sched.tick()
+    assert sched.run is None
+    clock.go(minutes=1); sched.tick()
+    assert sched.run["name"] == "Morning" and woke == [1]
+    sched.stop(); clock.go(seconds=20); sched.tick()
+    assert sched.run is None                                                     # once, not every tick of 07:00
+    clock.go(days=1); sched.tick()                                               # Monday: not one of its days
+    assert sched.run is None
+
+
+def test_a_block_that_cant_play_is_skipped(tmp_path, monkeypatch) -> None:
+    st, sched, clock, *_ = _setup(tmp_path, monkeypatch, [{"name": "P", "blocks": [
+        {"name": "Gone", "items": [{"kind": "album", "root": "music", "folder": "Nobody/Nothing"}], "rule": "for", "min": 30},
+        {"name": "R4", "items": [R4], "rule": "for", "min": 30}]}])
+    sched.play("P")
+    sched.tick()
+    assert st.source["name"] == "BBC Radio 4"
+
+
+def test_the_show_or_an_artist_list_as_a_block(tmp_path, monkeypatch) -> None:
+    st, sched, clock, *_ = _setup(tmp_path, monkeypatch, [{"name": "P", "blocks": [
+        {"name": "Beatles radio", "items": [{"kind": "show", "artist": "The Beatles"}], "rule": "end"}]}])
+    st.tune({"kind": "radio", "name": "x", "url": "http://example.com/x"})
+    sched.play("P")
+    assert st.artist == "The Beatles" and st.source is None
+    assert sched.status()["until"] == "13:00"                                    # the show has no end: an hour
+
+
+def test_on_a_button() -> None:
+    p = presets.validate({"kind": "programme", "name": "Sunday lunch"})
+    assert presets.label(p) == "Sunday lunch" and presets.same(p, {"kind": "programme", "name": "sunday LUNCH"})
+
+
+def test_web_api(tmp_path, monkeypatch) -> None:
+    st, sched, clock, *_ = _setup(tmp_path, monkeypatch, [])
+    httpd = ThreadingHTTPServer(("127.0.0.1", 0), make_handler(st, None, None, None))
+    threading.Thread(target=httpd.serve_forever, daemon=True).start()
+    base = f"http://127.0.0.1:{httpd.server_address[1]}"
+
+    def req(path, body=None):
+        r = urllib.request.Request(base + path, data=None if body is None else json.dumps(body).encode(),
+                                   method="GET" if body is None else "POST", headers={"Content-Type": "application/json"})
+        with urllib.request.urlopen(r) as resp:
+            return json.load(resp)
+    try:
+        got = req("/api/programmes", {"programmes": [{"name": "Lunch", "blocks": [{"name": "R4", "items": [R4], "rule": "for", "min": 30}]}]})
+        assert got["programmes"][0]["name"] == "Lunch" and got["playing"] is None
+        assert req("/api/programmes/play", {"name": "Lunch"})["playing"]["block"] == "R4"
+        assert req("/api/programmes")["playing"]["name"] == "Lunch"
+        assert req("/api/programmes/stop", {})["playing"] is None
+        with pytest.raises(urllib.error.HTTPError):
+            req("/api/programmes/play", {"name": "Nope"})
+    finally:
+        httpd.shutdown()

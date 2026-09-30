@@ -475,11 +475,22 @@ def main() -> None:
         control.play()   # a bedside radio plays as soon as it's powered
     else:
         station = Station(cfg, tts, stream)
+        control = None
         cathedral = settings.hardware == "cathedral"
         presets = presets_mod.Presets(station, None, args.config, settings.buttons, None,
                                       settings.buttons_night, settings.buttons_bank, settings.buttons_auto,
                                       count=presets_mod.MAX_N if cathedral else presets_mod.N, selector=cathedral)
         presets.keep_auto()
+    # Programmes: running orders the radio plays by itself (and may start at a set time).
+    from sleepradiopi.broadcast.programmes import Scheduler
+    scheduler = Scheduler(station, wake=control.play if control else None,
+                          sleep=(lambda: control.set_sleep(1)) if control else None)
+    try:
+        scheduler.set_programmes(settings.programmes)
+    except ValueError as e:              # a hand-edited config: don't stop the station
+        logging.getLogger(__name__).warning("programmes ignored: %s", e)
+    station.scheduler = scheduler
+    scheduler.start()
     # Podcasts: the shows followed are settings; their episode lists refresh in the background.
     station.podcasts.save = lambda shows: save_setting(args.config, "podcasts", shows)
     station.podcasts.keep_fresh()

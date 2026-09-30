@@ -1084,6 +1084,14 @@ class Station:
         else:
             self._prepare_opening()
 
+    def play_tracks_as(self, name: str, tracks: list[BroadcastTrack]) -> None:
+        """Tracks now, like a playlist of this name (a programme's block):
+        through the show's queue, the DJ as set; playlist_status() has it."""
+        self._drop_playlist()
+        self._play_now(tracks)
+        with self._lock:
+            self._playlist_run = {"name": name, "tracks": tracks, "shuffle": False}
+
     def _drop_playlist(self) -> bool:
         run = self._playlist_run
         if run is None:

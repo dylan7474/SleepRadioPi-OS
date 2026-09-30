@@ -248,6 +248,7 @@ Most of these are set from the web page; the rest are in the config file.
 | `speaker_highpass_hz` | `0` | Low cut for the speaker (~140 with the case's bass port); 0 = off. |
 | `knob_step` | `2` | Volume steps per click (1 dB) in the knob's Normal mode. |
 | `knob_mode` | `"auto"` | The volume knob: `auto` (a slow turn a step a click, a quick spin 2, 3 or 5 a click), `fine` (1), `normal` (`knob_step`) or `coarse` (5). Settings → Speakers → Knob. |
+| `programmes` | `[]` | Running orders the radio plays by itself (see *Programmes*) |
 | `playlists` | `[]` | `[{"name": "Sunday", "tracks": [["music" \| "ondemand", "path/in/it.mp3"], ...]}]` (see *Playlists*) |
 | `broadcast_voice` | `"stock"` | `"stock"` or `"personal"` (a folder in the voices folder). |
 | `buttons_night`, `buttons_bank` | `[]`, `"day"` | The night set of four (like `buttons`, which is the day set), and the set in use. Hold buttons 2 and 3 together for 1 s to swap: three notes, rising for day, falling for night. |
@@ -349,6 +350,22 @@ The cards:
   preset button can hold one, in order or shuffled. A song whose file has gone
   is skipped. Kept in the settings (`playlists`), so *Save settings* has them
   (`broadcast/playlists.py`, `Station.play_playlist`).
+- **Programmes** — a running order the radio plays **by itself**, with no
+  browser open (`broadcast/programmes.py`, a `Scheduler` ticking once a
+  second). Each block holds things (albums, tracks, folders, playlists,
+  stations, audiobooks, podcast episodes, the show or an artist list) and a
+  rule: **for** so many minutes, **until** a clock time, **until it ends**, or
+  **at** a clock time sharp (the block before plays on until then and one still
+  playing is cut off: the news at 13:00; too early, the show fills in). In
+  order or shuffled. After the last block: back to the show, fade out and
+  pause, or start again. A programme can **start by itself** at its start time
+  on chosen days (and plays even if the radio was paused). Blocks use what the
+  radio already does, so the DJ follows its setting: music goes through the
+  show's queue (the DJ as set); a station, book, episode or a single On demand
+  folder plays alone, no DJ. Choosing something else stops the programme. A
+  preset button can hold one; *Coming up* shows it with **Stop programme**.
+  Made and edited on the new desktop page (coming: see the roadmap), or
+  through `POST /api/programmes`.
 - **Browse** (Find → *Albums and folders*, or *On demand*) — everything
   playable without typing: **Albums A–Z** (named from the tags) or
   **Folders**, the libraries exactly as they are on the radio, with a
@@ -710,6 +727,8 @@ everything but the page itself and the login needs the session cookie
 | `GET` / `POST /api/lamps` | The cathedral's `{"glow_day", "glow_night", "meter_trim_db", "needle", "glow"}` (the last two: is the PWM there) / any of the first three, saved |
 | `POST /api/lamps/sweep` | The needle up to full scale and back over 4 s, to set the meter's trimmer |
 | `POST /api/skip` | Skip what's on air (track, link, jingle or bulletin) |
+| `GET` / `POST /api/programmes` | `{"programmes": [...], "playing"}` / `{"programmes": [{"name", "start", "auto", "days": [0-6], "then": "show" \| "sleep" \| "repeat", "blocks": [{"name", "items": [{"kind": "album", "root", "folder"} \| {"kind": "track", "root", "path"} \| {"kind": "station", "name", "url"} \| {"kind": "playlist", "name"} \| {"kind": "book", "key"} \| {"kind": "podcast", "show"} \| {"kind": "episode", "show", "guid"} \| {"kind": "show", "artist"?} \| {"kind": "list", "name"}], "rule": "for" \| "until" \| "end" \| "at", "min", "at", "until", "order"}]}]}` — the whole list, saved. The status's `programme` has the one playing (`name`, `block`, `until`, `next`, `waiting`) |
+| `POST /api/programmes/play` / `/stop` | `{"name"}` — start it now (and the speaker) / stop it (what's on carries on) |
 | `POST /api/previous` | Back, like a CD player (see *Now playing*); `{"previous": false}` if there's nothing to go back to. The status's `can_previous` says when it works |
 | `GET` / `POST /api/playlists` | `{"playlists": [{"name", "tracks": [{"root", "path", "title", "artist", "missing"}]}], "playing"}` / `{"playlists": [{"name", "tracks": [[root, path], ...]}]}` — the whole list, saved |
 | `POST /api/playlists/add` | `{"name"` + `"root", "path"` (a song; search results have `path`) or `"root", "folder", "deep"` (a folder) or `"now": true` (the song on air)`}` — added at the end; a new name makes the playlist |
