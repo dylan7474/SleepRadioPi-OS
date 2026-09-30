@@ -558,7 +558,7 @@ async function loadPlaylists(d) {
 async function loadProgrammes(d) {
   d = d || await api("/api/programmes");
   PROGRAMMES.kids = d.programmes.map(p => mk({ id: "pg:" + p.name.toLowerCase(), kind: "programme", title: p.name, start: p.start, auto: p.auto, days: p.days,
-    then: p.then, chain: p.chain, gap: typeof p.gap === "object" ? { id: refObj(p.gap)?.id } : p.gap || "show", blocks: p.blocks.map(b => ({ ...b, items: b.items.map(refObj).filter(Boolean).map(o => o.id) })) }).id);
+    then: p.then, chain: p.chain, once: !!p.once, gap: typeof p.gap === "object" ? { id: refObj(p.gap)?.id } : p.gap || "show", blocks: p.blocks.map(b => ({ ...b, items: b.items.map(refObj).filter(Boolean).map(o => o.id) })) }).id);
   PROGRAMMES.loaded = true;
 }
 // a programme's saved things <-> the objects on the desktop
@@ -852,8 +852,18 @@ function volume(delta) {
   clearTimeout(volTimer);
   volTimer = setTimeout(async () => { const step = volStep; volStep = 0; try { S.speaker = await api("/api/speaker", { step }); updateRadio(); } catch (e) { toast(e.message); } }, 200);
 }
+let lastProg = "";
 async function poll() {
-  try { S = await api("/api/status"); radioName = S.radio_name || radioName; updateRadio(); } catch {}
+  try { S = await api("/api/status"); radioName = S.radio_name || radioName; updateRadio(); } catch { return; }
+  const p = S.programme ? `${S.programme.name}/${S.programme.index}/${S.programme.waiting}` : "";
+  if (p !== lastProg) {
+    lastProg = p;
+    if (W.some(w => O[w.id]?.kind === "programme") && !dragging && !document.querySelector(".win input:focus, .win select:focus")) {
+      if (PROGRAMMES.loaded) await loadProgrammes().catch(() => {});    // (a one-off start switches itself off)
+      drawDesk();
+    }
+  }
+  document.querySelectorAll(".cd[data-pid]").forEach(n => { const o = O[n.dataset.pid]; if (o) n.textContent = armText(o); });
 }
 async function loadButtons() {
   try { buttons = (await api("/api/buttons")).buttons; } catch { buttons = []; }
@@ -1607,6 +1617,7 @@ async function saveProgrammes(note) {
   try {
     const d = await api("/api/programmes", { programmes: progs.map(p => ({ name: p.title, start: p.start, auto: !!p.auto, days: p.days || [], then: p.then || "show",
       gap: p.gap && typeof p.gap === "object" ? (objRef(O[p.gap.id]) || "show") : p.gap || "show", ...(p.then === "chain" ? { chain: p.chain } : {}),
+      ...(p.auto && p.once ? { once: true } : {}),
       blocks: p.blocks.map(b => ({ name: b.name, rule: b.rule, order: b.order || "inorder", ...(b.rule === "for" || b.rule === "at" ? { min: b.min || 60 } : {}),
         ...(b.rule === "at" ? { at: b.at } : {}), ...(b.rule === "until" ? { until: b.until } : {}), items: b.items.map(id => objRef(O[id])).filter(Boolean) })) })) });
     const open_ = W.map(w => w.id);
@@ -1635,17 +1646,24 @@ async function newPlaylist() {
     drawDesk(); toast(`${name}: drop songs, albums or folders onto it.`);
   } catch (e) { toast("Not made: " + e.message + "."); }
 }
-// when a programme will next start by itself ("today at 14:46"), or that it won't
-function nextStart(o) {
-  if (!o.auto) return "· only when you press Play";
-  const now = new Date(), [h, m] = o.start.split(":").map(Number), days = o.days || [];
+// when a programme starts next, in words ("starts today at 15:11, in 2 min"), kept fresh by the poll
+function nextStartAt(o) {
+  const now = new Date(), [h, m] = o.start.split(":").map(Number), days = o.once ? [] : o.days || [];
   for (let k = 0; k < 8; k++) {
     const d = new Date(now.getFullYear(), now.getMonth(), now.getDate() + k, h, m);
-    const wd = (d.getDay() + 6) % 7;                  // 0 Monday
-    if (d >= now - 60000 && (!days.length || days.includes(wd)))
-      return "· next: " + (k === 0 ? "today" : k === 1 ? "tomorrow" : d.toLocaleDateString(undefined, { weekday: "long" })) + " at " + o.start;
+    if (d.getTime() + 60000 > now.getTime() && (!days.length || days.includes((d.getDay() + 6) % 7))) return d;
   }
-  return "· pick a day for it";
+  return null;
+}
+function armText(o) {
+  const run = S?.programme && S.programme.name.toLowerCase() === o.title.toLowerCase() ? S.programme : null;
+  if (run) return `Playing since ${run.started}${run.next ? " · next: " + run.next : ""}`;
+  if (!o.auto) return "Not set to start: press Start now, or Start at";
+  const d = nextStartAt(o);
+  if (!d) return "Pick a day for it to repeat on";
+  const mins = Math.max(0, Math.round((d - new Date()) / 60000)), k = Math.round((new Date(d).setHours(0, 0, 0, 0) - new Date().setHours(0, 0, 0, 0)) / 864e5);
+  const day = k === 0 ? "today" : k === 1 ? "tomorrow" : d.toLocaleDateString(undefined, { weekday: "long" });
+  return `${o.once ? "Starts" : "Repeats; next"} ${day} at ${o.start}` + (mins < 120 ? ` · in ${mins < 1 ? "under a minute" : mins + " min"}` : "");
 }
 function programmeView(o, box, win) {
   const run = S?.programme && S.programme.name.toLowerCase() === o.title.toLowerCase() ? S.programme : null;
@@ -1673,17 +1691,27 @@ function programmeView(o, box, win) {
   const gapObj = o.gap && typeof o.gap === "object" ? O[o.gap.id] : null;
   for (const [v, t] of [["show", "gaps: Sleep Radio"], ["silence", "gaps: silence"], ["pick", gapObj ? "gaps: " + gapObj.title : "gaps: something else…"]]) gapSel.append(new Option(t, v, false, (gapObj ? "pick" : o.gap || "show") === v));
   gapSel.onchange = () => { if (gapSel.value === "pick") { win.gapPick = true; drawDesk(); toast("Drop a station, album, playlist… onto the box that appeared, to play in the gaps."); } else { o.gap = gapSel.value; win.gapPick = false; saveProgrammes(); } };
-  const auto = el("button", { className: "pill", type: "button", textContent: o.auto ? "Starts by itself" : "Only when played" });
-  auto.setAttribute("aria-pressed", String(!!o.auto));
-  auto.onclick = () => { o.auto = !o.auto; saveProgrammes(o.auto ? `${o.title} starts by itself at ${o.start}${(o.days || []).length ? " on its days" : " every day"}.` : ""); };
+  const armed = !!(o.auto && o.once), repeating = !!(o.auto && !o.once);
+  const startAt = T(armed ? "⏰ Starts at " + o.start + " · cancel" : "⏰ Start at " + o.start, () => {
+    if (armed) { o.auto = false; o.once = false; return saveProgrammes(`${o.title} won't start by itself.`); }
+    o.auto = true; o.once = true; saveProgrammes(`${o.title}: ${armText(o).toLowerCase()}.`);
+  }, armed ? "primary" : "", !o.blocks.length);
+  startAt.title = "Once, at the time beside it: today, or tomorrow if that's gone";
+  const repeat = el("button", { className: "pill", type: "button", textContent: repeating ? "Repeats" : "Repeat…" });
+  repeat.setAttribute("aria-pressed", String(repeating));
+  repeat.title = "Start by itself at this time every day, or on the days you pick";
+  repeat.onclick = () => { if (repeating) { o.auto = false; } else { o.auto = true; o.once = false; } saveProgrammes(o.auto ? `${o.title}: ${armText(o).toLowerCase()}.` : `${o.title} won't repeat.`); };
   const days = el("span", { className: "days" });
   "MTWTFSS".split("").forEach((c, i) => { const b = el("button", { type: "button", textContent: c, title: ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"][i] });
     b.setAttribute("aria-pressed", String((o.days || []).includes(i))); b.onclick = () => { o.days = (o.days || []).includes(i) ? o.days.filter(d => d !== i) : [...(o.days || []), i]; saveProgrammes(); }; days.append(b); });
   const playing = !!run;
-  box.append(el("div", { className: "wtools" },
-    playing ? T("■ Stop", async () => { await api("/api/programmes/stop", {}); poll(); drawDesk(); }, "primary") : T("▶ Play now", () => play(o), "primary", !o.blocks.length),
-    nameIn, el("span", { className: "muted", textContent: "starts" }), startIn, auto, o.auto ? days : null,
-    el("span", { className: "muted", style: "font-weight:600", textContent: nextStart(o) }), then, gapSel,
+  const status = el("span", { className: "note cd", textContent: armText(o), style: "font-weight:600;color:var(--ink)" });
+  status.dataset.pid = o.id;
+  box.append(el("div", { className: "wtools" }, nameIn,
+    playing ? T("■ Stop", async () => { await api("/api/programmes/stop", {}); poll(); drawDesk(); }, "primary")
+            : T("▶ Start now", () => play(o), "primary", !o.blocks.length),
+    playing ? null : startAt, playing ? null : startIn, playing ? null : repeat, repeating && !playing ? days : null, status));
+  box.append(el("div", { className: "wtools" }, then, gapSel,
     T("＋ Moment", () => { const tl2 = timeline(o), end = tl2.length ? tl2[tl2.length - 1].end : toMin(o.start);
       o.blocks.push({ name: "A moment", items: [], rule: "at", at: hhmm(Math.ceil((end + 1) / 15) * 15), min: 1, order: "inorder" }); win.blk = o.blocks.length - 1; saveProgrammes("A moment: add a message, a jingle or an action to it below."); })));
   if (win.gapPick || gapObj) {
@@ -1692,6 +1720,7 @@ function programmeView(o, box, win) {
     zone.dataset.drop = "gapzone"; zone.dataset.target = o.id;
     box.append(zone);
   }
+  win.tl = tl; win.running = playing;
   const body = el("div", { className: "wbody" });
   const wrap = el("div", { className: "prog" });
   const lo = tl.length ? Math.floor(tl[0].start / 30) * 30 : toMin(o.start);
@@ -1739,13 +1768,14 @@ function inspector(o, b, win) {
   const rule = el("select", { id: `rule-${o.id}-${i}` });
   rule.setAttribute("aria-label", "How long it plays");
   for (const [v, s] of [["for", "Play for"], ["until", "Play until"], ["end", "Play until it ends"], ["at", "Start at, sharp"]]) rule.append(new Option(s, v, false, b.rule === v));
-  const tl = timeline(o)[i];
+  const tl = (win.tl && win.tl[i]) || timeline(o)[i];
   rule.onchange = () => { b.rule = rule.value; if (b.rule === "until" && !b.until) b.until = hhmm(tl.end); if (b.rule === "at" && !b.at) b.at = hhmm(tl.start); if (!b.min) b.min = 60; saveProgrammes(); };
   const startAt = el("input", { type: "time", value: hhmm(tl.start), id: `st-${o.id}-${i}`, title: "When it starts" });
   startAt.setAttribute("aria-label", "Starts at");
   startAt.onchange = () => setBlockStart(o, i, toMin(startAt.value), win);
+  if (win.running) { startAt.disabled = true; startAt.title = "The real time, while it plays"; }
   const moment = b.items.length && b.items.every(id => INSTANT.includes(O[id]?.kind));
-  const line1 = el("div", { className: "line" }, name, el("span", { className: "muted", textContent: moment ? "happens at" : "starts" }), startAt, moment ? null : rule);
+  const line1 = el("div", { className: "line" }, name, el("span", { className: "muted", textContent: win.running ? (i <= (S?.programme?.index ?? -1) ? "started" : "due") : moment ? "happens at" : "starts" }), startAt, moment ? null : rule);
   if (b.rule === "at") { const at = el("input", { type: "time", value: b.at, id: `at-${o.id}-${i}` }); at.setAttribute("aria-label", "At"); at.onchange = () => { b.at = at.value; saveProgrammes(); }; line1.append(at, el("span", { className: "muted", textContent: "for" })); }
   if (b.rule === "for" || b.rule === "at") { const m = el("select", { id: `min-${o.id}-${i}` }); m.setAttribute("aria-label", "For");
     const MINS = [1, 3, 5, 10, 15, 30, 45, 60, 90, 120, 180, 240];

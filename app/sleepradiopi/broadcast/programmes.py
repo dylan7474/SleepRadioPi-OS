@@ -167,6 +167,8 @@ def validate(programmes) -> list[dict]:
         entry = {"name": name, "start": _hhmm(p.get("start", "12:00"), f"{name}'s start time"),
                  "auto": p.get("auto") is True, "days": sorted(set(days)), "then": then, "gap": gap,
                  "blocks": [_block(b) for b in blocks]}
+        if entry["auto"] and p.get("once") is True:
+            entry["once"] = True              # armed for its next start only, then off
         if then == "chain":
             entry["chain"] = _text(p.get("chain"), f"{name}: the programme to play next", limit=NAME_MAX)
         out.append(entry)
@@ -205,6 +207,7 @@ class Scheduler:
         self.say = say                # the DJ says a message
         self.jingle = jingle          # a jingle's file (in the jingles folder) played
         self.action = action          # "time", "news", "sleep": as the radio's buttons do them
+        self.on_change: Callable[[list], None] | None = None   # the list changed by itself (a one-off start): save it
         self.programmes: list[dict] = []
         self.run: dict | None = None      # the programme playing, and where it's got to
         self._lock = threading.RLock()
@@ -326,7 +329,15 @@ class Scheduler:
             if key in self._auto_done or not p["blocks"]:
                 continue
             self._auto_done.add(key)
-            log.info("programme %s starts by itself", p["name"])
+            log.info("programme %s starts by itself%s", p["name"], " (once)" if p.get("once") else "")
+            if p.get("once"):                 # a one-off: not again tomorrow
+                p["auto"] = False
+                p.pop("once", None)
+                if self.on_change:
+                    try:
+                        self.on_change(self.programmes)
+                    except Exception:
+                        log.exception("couldn't save the programmes")
             self.play(p["name"])
             if self.wake:
                 self.wake()

@@ -393,8 +393,12 @@ The cards:
   (sets of artists, once called artist lists) each open their own window (rename, add and take off artists, play,
   delete). **Voices** is a folder: double-click one to make it the DJ's (the
   radio restarts), drop a voice archive on it to install it. A programme's
-  toolbar says when it will next start by itself ("next: today at 14:46"), or
-  that it only plays when you press Play. Stations and podcasts are found
+  window starts it three clear ways: **▶ Start now**; **⏰ Start at** the time
+  beside it, once (today, or tomorrow if that time's gone; it switches itself
+  off after); or **Repeat** at that time every day or on chosen days. A line
+  says what will happen ("Starts today at 15:11 · in 2 min", "Repeats; next
+  Sunday at 07:00", "Playing since 15:06"), kept up to date; while it plays,
+  the blocks show their real times. Stations and podcasts are found
   and followed from their windows (*Find a station*, *Follow a podcast*) and
   forgotten by dragging to the Trash. **Jingles** is a folder of its own
   (upload, download, delete) and **Artist lists** an editor (make a list with

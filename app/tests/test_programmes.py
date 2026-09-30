@@ -261,3 +261,17 @@ def test_a_one_song_block_isnt_over_before_it_starts(tmp_path, monkeypatch) -> N
     st._jump = None
     sched.tick()
     assert sched.run is not None
+
+
+def test_armed_once_starts_at_its_time_then_switches_off(tmp_path, monkeypatch) -> None:
+    st, sched, clock, woke, _ = _setup(tmp_path, monkeypatch, [
+        {"name": "Once", "start": "12:05", "auto": True, "once": True, "blocks": [{"name": "R4", "items": [R4], "rule": "for", "min": 5}]}])
+    saved = []
+    sched.on_change = lambda progs: saved.append(progs)
+    assert sched.programmes[0]["once"] is True
+    clock.go(minutes=5); sched.tick()
+    assert sched.run["name"] == "Once" and woke == [1]
+    assert sched.programmes[0]["auto"] is False and "once" not in sched.programmes[0] and saved
+    sched.stop(); clock.go(days=1); sched.tick()
+    assert sched.run is None                                                     # not again tomorrow
+    assert "once" not in programmes.validate([{"name": "A", "auto": False, "once": True}])[0]   # (only with auto)

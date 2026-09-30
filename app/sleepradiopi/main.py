@@ -506,6 +506,7 @@ def main() -> None:
         scheduler.set_programmes(settings.programmes)
     except ValueError as e:              # a hand-edited config: don't stop the station
         logging.getLogger(__name__).warning("programmes ignored: %s", e)
+    scheduler.on_change = lambda progs: save_setting(args.config, "programmes", progs)
     station.scheduler = scheduler
     scheduler.start()
     # Podcasts: the shows followed are settings; their episode lists refresh in the background.
