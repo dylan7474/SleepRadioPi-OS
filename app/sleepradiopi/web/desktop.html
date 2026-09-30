@@ -232,11 +232,15 @@
                  box-shadow: 0 3px 6px #0005, inset 0 -2px 3px #0002; font: 700 14px var(--display); color: #444; }
   .pbtn.over button { box-shadow: 0 0 0 3px var(--blue); }
   .pbtn.on button { box-shadow: 0 0 0 2px var(--amber), 0 3px 6px #0005; }
-  .transport { display: flex; justify-content: center; gap: 10px; margin-top: 9px; }
-  .tkey { width: 46px; height: 30px; border-radius: 15px; border: 0; background: radial-gradient(circle at 40% 30%, #fff, #c8ccd2 75%, #9aa0a8);
-          box-shadow: 0 3px 6px #0005, inset 0 -2px 3px #0002; font: 700 14px var(--display); color: #444; }
-  .tkey:active { transform: translateY(1px); box-shadow: 0 1px 3px #0005; }
-  .tkey:disabled { opacity: .45; cursor: default; }
+  /* Back and Skip: round steel keys like the preset buttons, with drawn icons */
+  .transport { display: flex; justify-content: center; align-items: center; gap: 14px; margin-top: 9px; }
+  .transport .tlabel { font: 700 8.5px var(--display); letter-spacing: .2em; color: #8a8474; }
+  .tkey { width: 34px; height: 34px; border-radius: 50%; border: 0; padding: 0; display: grid; place-items: center; color: #3d3a33;
+          background: radial-gradient(circle at 40% 35%, #fff, #c8ccd2 70%, #9aa0a8); box-shadow: 0 3px 6px #0005, inset 0 -2px 3px #0002; }
+  .tkey svg { width: 16px; height: 16px; }
+  .tkey:hover:not(:disabled) { color: #000; }
+  .tkey:active:not(:disabled) { transform: translateY(1px); box-shadow: 0 1px 3px #0005, inset 0 -1px 2px #0002; }
+  .tkey:disabled { opacity: .4; cursor: default; }
   .pbtn span { font-size: 10.5px; line-height: 1.15; text-align: center; color: #4d493f; max-width: 64px; height: 2.3em; overflow: hidden; }
   .badge { position: absolute; right: 14px; top: 16px; font: 700 8.5px var(--display); letter-spacing: .2em; color: #2f5cb4; }
 
@@ -815,11 +819,15 @@ function radioEl() {
   knob.ondblclick = () => open(PANEL.speakers.id);
   knob.onwheel = e => { e.preventDefault(); volume(-Math.sign(e.deltaY) * 2); };
   // like a CD player: Back (the start of this one, or the one before in its first 5 s), play/pause, Skip
-  const tk = (id, txt, title, fn) => { const b = el("button", { className: "tkey", type: "button", id, textContent: txt, title }); b.setAttribute("aria-label", title); b.onclick = fn; return b; };
+  const ICON = {      // drawn, so they're crisp at any size and match the case
+    back: '<svg viewBox="0 0 16 16" aria-hidden="true"><rect x="2" y="3" width="2.2" height="10" rx="1" fill="currentColor"/><path d="M13.5 3.6v8.8a.8.8 0 0 1-1.2.7L5.6 8.7a.8.8 0 0 1 0-1.4l6.7-4.4a.8.8 0 0 1 1.2.7z" fill="currentColor"/></svg>',
+    skip: '<svg viewBox="0 0 16 16" aria-hidden="true"><rect x="11.8" y="3" width="2.2" height="10" rx="1" fill="currentColor"/><path d="M2.5 3.6v8.8a.8.8 0 0 0 1.2.7l6.7-4.4a.8.8 0 0 0 0-1.4L3.7 2.9a.8.8 0 0 0-1.2.7z" fill="currentColor"/></svg>',
+  };
+  const tk = (id, icon, title, fn) => { const b = el("button", { className: "tkey", type: "button", id, title }); b.innerHTML = ICON[icon]; b.setAttribute("aria-label", title); b.onclick = fn; return b; };
   const transport = el("div", { className: "transport" },
-    tk("rPrev", "⏮", "Back: this one from the start, or (in its first 5 seconds) the one before", async () => { try { await api("/api/previous", {}); setTimeout(poll, 600); } catch (e) { toast(e.message); } }),
-    tk("rPlay", S?.speaker?.playing ? "⏸" : "▶", "Pause or play", async () => { try { S.speaker = await api("/api/speaker", { pause: "toggle" }); updateRadio(); } catch (e) { toast(e.message); } }),
-    tk("rNext", "⏭", "Skip to what's next", async () => { try { await api("/api/skip", {}); setTimeout(poll, 600); } catch (e) { toast(e.message); } }));
+    tk("rPrev", "back", "Back: this one from the start, or (in its first 5 seconds) the one before", async () => { try { await api("/api/previous", {}); setTimeout(poll, 600); } catch (e) { toast(e.message); } }),
+    el("span", { className: "tlabel", textContent: "BACK · SKIP" }),
+    tk("rNext", "skip", "Skip to what's next", async () => { try { await api("/api/skip", {}); setTimeout(poll, 600); } catch (e) { toast(e.message); } }));
   const gr = () => { const g = el("div", { className: "grille", title: "Speakers: stereo, EQ, low cut, the knob" }); g.onclick = () => open(PANEL.speakers.id); return g; };
   const face = el("div", { className: "rface" }, gr(), el("div", {}, knob, el("div", { className: "rvol", id: "rVol", textContent: S?.speaker ? (S.speaker.playing ? "Volume " + vol : "Paused") : "" })), gr());
   const pre = el("div", { className: "presets", id: "rPresets" });
@@ -877,7 +885,7 @@ function updateRadio() {            // the live bits, without redrawing the desk
   const vol = S?.speaker?.volume ?? 0;
   $("rKnob").style.setProperty("--rot", (vol / 100 * 270 - 135) + "deg");
   $("rVol").textContent = S?.speaker ? (S.speaker.playing ? "Volume " + vol : "Paused") : "";
-  if ($("rPrev")) { $("rPrev").disabled = !S?.can_previous; $("rNext").disabled = !S?.can_skip; $("rPlay").textContent = S?.speaker?.playing ? "⏸" : "▶"; }
+  if ($("rPrev")) { $("rPrev").disabled = !S?.can_previous; $("rNext").disabled = !S?.can_skip; }
   const msw = document.querySelector("#radio .sw"); if (msw) msw.setAttribute("aria-checked", String(!!S?.programme_mode));
   const pbs = $("rPresets")?.children || [];
   buttons.forEach((b, i) => { if (pbs[i]) { pbs[i].classList.toggle("on", !!b.playing); pbs[i].querySelector("span").textContent = b.label; } });

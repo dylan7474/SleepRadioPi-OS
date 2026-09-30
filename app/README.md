@@ -358,7 +358,7 @@ The cards:
   icons for Music, On demand, Audiobooks, Podcasts, Stations, Playlists,
   Programmes and Theme radio (folders load from `/api/browse` as you open
   them); windows you move and resize; **the radio on the desktop** showing
-  what's on air (polled every 2.5 s), with **⏮ Back** (like a CD player), **▶/⏸** and **⏭ Skip** keys under the dial: drop anything on its dial to play it,
+  what's on air (polled every 2.5 s), with **Back** (like a CD player) and **Skip** keys under the dial (pause is the knob): drop anything on its dial to play it,
   on one of its buttons to keep it there (including an **action** from the Actions folder: the sleep timer, the time, the news, the address, noise on/off, DJ on/off; or pick from each button's *Change…* list in the Buttons window), scroll the knob for the volume,
   click it to pause. Programmes are built in their window: drop things on the
   timeline for new blocks or on a block to add to it, drag a block to move it
