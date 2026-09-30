@@ -242,7 +242,9 @@
   .tkey:active:not(:disabled) { transform: translateY(1px); box-shadow: 0 1px 3px #0005, inset 0 -1px 2px #0002; }
   .tkey:disabled { opacity: .4; cursor: default; }
   .banks { display: inline-flex; gap: 3px; padding: 2px; border-radius: 8px; background: #0000000f; box-shadow: inset 0 1px 2px #0002; }
-  .banks button { border: 0; background: none; border-radius: 6px; padding: 2px 8px; font-size: 10.5px; color: #6b6558; }
+  .banks button { border: 0; background: none; border-radius: 6px; padding: 2px 9px; font-size: 10.5px; color: #6b6558; white-space: nowrap; }
+  .bankrow { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; margin-top: 8px; }
+  .bankrow .bnote { flex-basis: 100%; font-size: 10px; color: #7b7568; }
   .banks button[aria-pressed="true"] { background: radial-gradient(circle at 40% 35%, #fff, #d8dbe0); color: #2b2a26; font-weight: 700; box-shadow: 0 1px 2px #0004; }
   .pbtn span { font-size: 10.5px; line-height: 1.15; text-align: center; color: #4d493f; max-width: 64px; height: 2.3em; overflow: hidden; }
   .badge { position: absolute; right: 14px; top: 16px; font: 700 8.5px var(--display); letter-spacing: .2em; color: #2f5cb4; }
@@ -865,8 +867,9 @@ function radioEl() {
   const other = bStatus && shownBank() !== bStatus.bank;
   const useNow = el("button", { className: "plink", type: "button", textContent: `Use it now`, hidden: !other });
   useNow.onclick = async () => { try { await api("/api/buttons/bank", { bank: shownBank() }); viewBank = null; await loadButtons(); drawDesk(); toast(`The radio's using its ${shownBank()} buttons.`); } catch (e) { toast(e.message); } };
-  const bankRow = el("div", { className: "rfoot", style: "margin-top:8px" }, bankKeys,
-    el("span", { className: "plink", id: "rBankNote", textContent: other ? `Programming the ${shownBank()} set · the radio's on ${bStatus.bank}` : `The ${shownBank()} set, in use` }), useNow);
+  useNow.style.marginLeft = "auto";
+  const bankRow = el("div", { className: "bankrow" }, bankKeys, useNow,
+    el("span", { className: "bnote", id: "rBankNote", textContent: other ? `Programming the ${shownBank()} buttons · the radio's using ${bStatus.bank}` : `The ${shownBank()} buttons, in use` }));
   r.append(handle, badge, dial, transport, face, bankRow, pre, modeRow, el("div", { className: "rfoot" }, plink, turn));
   setTimeout(updateRadio);
   r.addEventListener("pointerdown", e => { if (e.target === r || e.target === handle) moveThing(e, r, (x, y) => { radioPos = { x, y }; saveDesk(); }); });
