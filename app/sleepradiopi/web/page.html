@@ -1045,6 +1045,14 @@
 <div id="toast" role="status" hidden></div>
 <audio id="audio" preload="none"></audio>
 <script>
+  // Shown inside a window of the desktop (/desktop): just the setting, no header or tabs.
+  if (location.search.includes("embedded") || window.self !== window.top) document.documentElement.classList.add("embedded");
+</script>
+<style>
+  .embedded header.top, .embedded #tabs, .embedded .page-head .back { display: none !important; }
+  .embedded body { padding-top: 0; }
+</style>
+<script>
 const $ = id => document.getElementById(id);
 let RADIO = "Sleep Radio";                // the radio's name (from its status: showRadioName)
 function toast(text) {

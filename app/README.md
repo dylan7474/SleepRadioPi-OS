@@ -350,6 +350,24 @@ The cards:
   preset button can hold one, in order or shuffled. A song whose file has gone
   is skipped. Kept in the settings (`playlists`), so *Save settings* has them
   (`broadcast/playlists.py`, `Station.play_playlist`).
+- **The desktop** (`http://<radio>/desktop`, `web/desktop.html`) — the new
+  interface for a computer (the page above stays, for phones): a menu bar;
+  icons for Music, On demand, Audiobooks, Podcasts, Stations, Playlists,
+  Programmes and Artist radio (folders load from `/api/browse` as you open
+  them); windows you move and resize; **the radio on the desktop** showing
+  what's on air (polled every 2.5 s): drop anything on its dial to play it,
+  on one of its buttons to keep it there, scroll the knob for the volume,
+  click it to pause. Programmes are built in their window: drop things on the
+  timeline for new blocks or on a block to add to it, drag a block to move it
+  or its right edge to change its length, and set its rule, order, start time,
+  days and what happens after; they're saved on the radio. Drop songs, albums
+  or folders on a playlist; the Trash deletes playlists and programmes (asks
+  first) or takes shortcuts off the desktop. Settings: click the part of the
+  radio they affect (the speakers, the knob, the buttons, its name) or turn it
+  round (**Settings on the back**); for now each opens this page's own
+  setting inside a window (`/?embedded#set-…`). Your icon layout and light or
+  dark are kept in the browser. Moving and deleting music come with the next
+  stage (the media manager).
 - **Programmes** — a running order the radio plays **by itself**, with no
   browser open (`broadcast/programmes.py`, a `Scheduler` ticking once a
   second). Each block holds things (albums, tracks, folders, playlists,

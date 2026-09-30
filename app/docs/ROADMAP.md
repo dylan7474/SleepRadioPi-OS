@@ -21,8 +21,9 @@ left.
    back panel, messages as sticky notes, a built-in media manager. Light theme
    first. The clickable prototype is `docs/prototypes/desktop.html`. Stages:
    1. **Programmes in the radio** — DONE 2026-09-30 (the scheduler, API, buttons).
-   2. **The desktop served from the radio** on the real library and the APIs
-      that exist (browse, playlists, stations, podcasts, books, buttons, play).
+   2. **The desktop served from the radio** — DONE 2026-09-30 (`/desktop`): the
+      real library, playing, buttons, playlists and programmes; settings open
+      the classic page's own in a window until stage 4.
    3. **The media manager in it**, with a new move between Music and On demand.
    4. **Every setting wired up** (speakers, knob, DJ, noise, Wi-Fi, buttons,
       voices, this radio, updates, save and load, power, messages, birthdays).
