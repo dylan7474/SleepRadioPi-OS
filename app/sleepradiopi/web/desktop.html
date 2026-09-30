@@ -20,6 +20,9 @@
     --menubar: #fbfaf7e6; --menubar-line: #bdb7aa; --label-shadow: 0 1px 0 #ffffffb0; --label-bg: #fbfaf7cc;
     --zebra: #00000006; --hover: #0000000c; --lane: #0000000a; --toast: #24221df0; --toast-ink: #fbfaf7;
     --shadow: #3a33251f; --close: #cfc9bc;
+    --plate: #fbfaf7; --plate-line: #ddd7ca; --plate-ground: #efece5; --engrave: #8a8474;
+    --key: linear-gradient(180deg, #ffffff, #ebe7de); --key-line: #cfc8b8; --key-ink: #4d493f;
+    --groove: #d8d2c4; --field: #f4f1ea;
     --display: "Futura", "Century Gothic", "Avenir Next", "Trebuchet MS", system-ui, sans-serif;
     --body: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
     --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
@@ -33,6 +36,9 @@
     --menubar: #0d0f18ee; --menubar-line: #000; --label-shadow: 0 1px 2px #000c; --label-bg: transparent;
     --zebra: #ffffff05; --hover: #ffffff0d; --lane: #0000002a; --toast: #0d0f18f2; --toast-ink: #ece6d6;
     --shadow: #000a; --close: #d9d4c7;
+    --plate: #20253a; --plate-line: #343b52; --plate-ground: #181c2c; --engrave: #8f8a7e;
+    --key: linear-gradient(180deg, #2c3350, #232941); --key-line: #3b4360; --key-ink: #c9c3b4;
+    --groove: #11141f; --field: #161a28;
     color-scheme: dark;
   } }
   :root[data-theme="dark"] {
@@ -43,6 +49,9 @@
     --menubar: #0d0f18ee; --menubar-line: #000; --label-shadow: 0 1px 2px #000c; --label-bg: transparent;
     --zebra: #ffffff05; --hover: #ffffff0d; --lane: #0000002a; --toast: #0d0f18f2; --toast-ink: #ece6d6;
     --shadow: #000a; --close: #d9d4c7;
+    --plate: #20253a; --plate-line: #343b52; --plate-ground: #181c2c; --engrave: #8f8a7e;
+    --key: linear-gradient(180deg, #2c3350, #232941); --key-line: #3b4360; --key-ink: #c9c3b4;
+    --groove: #11141f; --field: #161a28;
     color-scheme: dark;
   }
   * { box-sizing: border-box; }
@@ -146,8 +155,6 @@
   .win.front .tbar .ttl span { background: var(--stripe-b); padding: 0 8px; }
   .tbar .kindtag { width: 13px; }
   .wtools { display: flex; gap: 6px; padding: 7px 10px; border-bottom: 1px solid var(--line); background: var(--win-2); flex-wrap: wrap; align-items: center; }
-  .wtools .t { border: 1px solid var(--line); background: var(--win); border-radius: 6px; padding: 3px 9px; font-size: 12px; }
-  .wtools .t.primary { background: var(--amber); color: var(--amber-ink); border-color: var(--amber); font-weight: 600; }
   .wtools .t:disabled { opacity: .4; cursor: default; }
   .wtools .note { color: var(--dim); font-size: 11.5px; margin-left: auto; }
   .wbody { flex: 1; overflow: auto; position: relative; }
@@ -191,12 +198,9 @@
   .blk .grab { position: absolute; right: 0; top: 0; bottom: 0; width: 10px; cursor: ew-resize; background: linear-gradient(90deg, transparent, #ffffff30); }
   .gapmark { position: absolute; top: 40px; height: 2px; border-top: 2px dotted var(--line); }
   .now { position: absolute; top: -4px; bottom: -4px; width: 2px; background: var(--red); box-shadow: 0 0 8px var(--red); }
-  .insp { background: var(--win-2); color: var(--ink); border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; display: grid; gap: 8px; }
+  .insp { background: var(--plate); color: var(--ink); border: 1px solid var(--plate-line); border-radius: 11px; box-shadow: 0 1px 2px var(--shadow); padding: 10px 12px; display: grid; gap: 8px; }
   .insp .line { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
-  .insp input, .insp select { background: var(--win); border: 1px solid var(--line); border-radius: 6px; padding: 3px 7px; }
   .insp input.name { font-weight: 600; min-width: 0; flex: 1; }
-  .pill { border: 1px solid var(--line); background: var(--win); border-radius: 99px; padding: 2px 10px; font-size: 12px; color: var(--dim); }
-  .pill[aria-pressed="true"] { color: var(--ink); border-color: var(--dim); background: var(--hover); }
   .chipx { display: inline-flex; align-items: center; gap: 6px; background: var(--win); border: 1px solid var(--line); border-radius: 6px; padding: 2px 4px 2px 3px; font-size: 12px; }
   .chipx .glyph { width: 18px; height: 18px; box-shadow: none; }
   .chipx .glyph::before, .chipx .glyph::after { display: none; }
@@ -266,27 +270,60 @@
   .g-dj::before { content: ""; position: absolute; left: 13px; right: 13px; top: 9px; height: 20px; border: 4px solid #222; border-bottom: 0; border-radius: 20px 20px 0 0; }
   .g-dj::after { content: ""; position: absolute; left: 10px; right: 10px; top: 22px; height: 11px; background: linear-gradient(90deg, #222 0 8px, transparent 8px calc(100% - 8px), #222 calc(100% - 8px)); border-radius: 4px; }
   /* settings windows */
-  .set { padding: 14px 16px; display: grid; gap: 14px; }
-  .set h3 { margin: 0; font-size: 11px; letter-spacing: .14em; text-transform: uppercase; color: var(--dim); font-weight: 600; }
-  .set .grp { display: grid; gap: 9px; padding-bottom: 12px; border-bottom: 1px solid var(--line); }
-  .set .grp:last-child { border-bottom: 0; }
-  .srow { display: grid; grid-template-columns: 130px minmax(0, 1fr) auto; gap: 10px; align-items: center; }
-  .srow > label { color: var(--ink); }
-  .srow output { color: var(--dim); font-variant-numeric: tabular-nums; min-width: 3.2em; text-align: right; }
-  .seg { display: inline-flex; flex-wrap: wrap; background: var(--win-2); border: 1px solid var(--line); border-radius: 8px; padding: 2px; gap: 2px; }
-  .seg button { border: 0; background: none; border-radius: 6px; padding: 3px 10px; color: var(--dim); font-size: 12px; }
-  .seg button[aria-pressed="true"] { background: var(--win); color: var(--ink); box-shadow: 0 1px 3px var(--shadow); font-weight: 600; }
-  .sw { width: 38px; height: 22px; border-radius: 99px; border: 0; background: var(--line); position: relative; padding: 0; }
-  .sw::after { content: ""; position: absolute; left: 3px; top: 3px; width: 16px; height: 16px; border-radius: 50%; background: #fff; box-shadow: 0 1px 3px #0005; transition: left .15s; }
-  .sw[aria-checked="true"] { background: var(--green); }
-  .sw[aria-checked="true"]::after { left: 19px; }
-  .set input[type=range] { width: 100%; accent-color: var(--amber); }
-  .set input[type=text], .set input[type=time], .set input[type=password], .set select { background: var(--win-2); border: 1px solid var(--line); border-radius: 6px; padding: 4px 8px; min-width: 0; }
-  .sbtn { border: 1px solid var(--line); background: var(--win-2); border-radius: 7px; padding: 4px 11px; font-size: 12px; }
-  .sbtn.primary { background: var(--amber); border-color: var(--amber); color: var(--amber-ink); font-weight: 600; }
+  /* settings windows: a header, then engraved plates of radio-like controls */
+  .win .wbody:has(> .set) { background: var(--plate-ground); }
+  .shead { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 12px; align-items: center; padding: 14px 16px 12px;
+           border-bottom: 1px solid var(--plate-line); background: var(--win); position: sticky; top: 0; z-index: 2; }
+  .shead .glyph { width: 42px; height: 42px; --gs: 18px; }
+  .shead h2 { margin: 0; font: 700 17px/1.2 var(--display); letter-spacing: .03em; }
+  .shead p { margin: 2px 0 0; color: var(--dim); font-size: 12.5px; font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .set { padding: 14px 16px 18px; display: grid; gap: 12px; }
+  .set .grp { display: grid; gap: 10px; padding: 12px 14px 14px; background: var(--plate); border: 1px solid var(--plate-line); border-radius: 11px;
+              box-shadow: 0 1px 0 #ffffff80 inset, 0 1px 2px var(--shadow); position: relative; }
+  .set h3 { margin: 0 0 2px; font: 700 9.5px var(--display); letter-spacing: .2em; text-transform: uppercase; color: var(--engrave); }
+  .srow { display: grid; grid-template-columns: 128px minmax(0, 1fr) auto; gap: 12px; align-items: center; min-height: 30px; }
+  .srow > label { color: var(--dim); font-size: 12.5px; }
+  .srow output { color: var(--ink); font-variant-numeric: tabular-nums; min-width: 3.4em; text-align: right; font-size: 12px; font-weight: 600; }
+  /* rows of keys, like the radio's buttons: the chosen one pressed in */
+  .srow > .seg, .srow > .sw { justify-self: start; }
+  .seg { display: inline-flex; flex-wrap: wrap; gap: 4px; padding: 3px; border-radius: 9px; background: var(--plate-ground); box-shadow: inset 0 1px 2px var(--shadow); }
+  .seg button { border: 1px solid var(--key-line); background: var(--key); color: var(--key-ink); border-radius: 7px; padding: 4px 11px; font-size: 12px;
+                box-shadow: 0 1px 0 #ffffff90 inset, 0 1px 1px var(--shadow); transition: transform .05s; }
+  .seg button:hover { border-color: var(--engrave); }
+  .seg button:active { transform: translateY(1px); }
+  .seg button[aria-pressed="true"] { background: linear-gradient(180deg, #f7c86d, var(--amber)); border-color: var(--amber-deep); color: var(--amber-ink);
+                                     font-weight: 700; box-shadow: inset 0 1px 3px #0000003a; }
+  /* a switch: a cream slot and a steel knob, amber when on */
+  .sw { width: 44px; height: 24px; border-radius: 99px; border: 1px solid var(--key-line); background: var(--groove); position: relative; padding: 0;
+        box-shadow: inset 0 1px 3px var(--shadow); transition: background .15s; }
+  .sw::after { content: ""; position: absolute; left: 2px; top: 2px; width: 18px; height: 18px; border-radius: 50%;
+               background: radial-gradient(circle at 40% 35%, #fff, #c8ccd2 70%, #9aa0a8); box-shadow: 0 1px 3px #0006; transition: left .15s; }
+  .sw[aria-checked="true"] { background: linear-gradient(180deg, #f7c86d, var(--amber)); border-color: var(--amber-deep); }
+  .sw[aria-checked="true"]::after { left: 22px; }
+  /* a fader: a groove and a steel cap */
+  .set input[type=range] { -webkit-appearance: none; appearance: none; width: 100%; height: 22px; background: transparent; cursor: pointer; }
+  .set input[type=range]::-webkit-slider-runnable-track { height: 6px; border-radius: 3px; background: var(--groove); box-shadow: inset 0 1px 2px var(--shadow); }
+  .set input[type=range]::-moz-range-track { height: 6px; border-radius: 3px; background: var(--groove); box-shadow: inset 0 1px 2px var(--shadow); }
+  .set input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; width: 14px; height: 22px; margin-top: -8px; border-radius: 4px; border: 1px solid #8f959e;
+    background: linear-gradient(90deg, #eef0f3, #c8ccd2 45%, #7d838c 50%, #c8ccd2 55%, #eef0f3); box-shadow: 0 2px 3px #0005; }
+  .set input[type=range]::-moz-range-thumb { width: 14px; height: 22px; border-radius: 4px; border: 1px solid #8f959e;
+    background: linear-gradient(90deg, #eef0f3, #c8ccd2 45%, #7d838c 50%, #c8ccd2 55%, #eef0f3); box-shadow: 0 2px 3px #0005; }
+  /* fields: inset, like the dial window */
+  .set input[type=text], .set input[type=time], .set input[type=password], .set input[type=number], .set input[type=search], .set select,
+  .insp input, .insp select, .wtools input, .wtools select {
+    background: var(--field); border: 1px solid var(--key-line); border-radius: 7px; padding: 5px 9px; min-width: 0; color: var(--ink);
+    box-shadow: inset 0 1px 2px var(--shadow); }
+  .set input:focus, .set select:focus, .insp input:focus, .wtools input:focus { outline: 2px solid var(--amber); outline-offset: 0; }
+  .sbtn, .pill, .wtools .t { border: 1px solid var(--key-line); background: var(--key); color: var(--key-ink); border-radius: 8px; padding: 5px 12px; font-size: 12px;
+          box-shadow: 0 1px 0 #ffffff90 inset, 0 1px 1px var(--shadow); }
+  .sbtn:hover, .pill:hover, .wtools .t:hover:not(:disabled) { border-color: var(--engrave); color: var(--ink); }
+  .sbtn:active, .pill:active, .wtools .t:active { transform: translateY(1px); }
+  .sbtn.primary, .wtools .t.primary { background: linear-gradient(180deg, #f7c86d, var(--amber)); border-color: var(--amber-deep); color: var(--amber-ink); font-weight: 700; }
   .sbtn.danger { color: var(--red); }
-  .shelp { color: var(--dim); font-size: 12px; margin: 0; }
+  .pill { border-radius: 99px; padding: 3px 11px; }
+  .pill[aria-pressed="true"] { background: linear-gradient(180deg, #f7c86d, var(--amber)); border-color: var(--amber-deep); color: var(--amber-ink); font-weight: 700; box-shadow: inset 0 1px 3px #0000003a; }
   .set .line { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+  .shelp { color: var(--dim); font-size: 12px; margin: 0; }
   @media (max-width: 560px) { .srow { grid-template-columns: minmax(0, 1fr); } }
   .netrow { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; gap: 10px; align-items: center; padding: 5px 8px; border-radius: 6px; }
   .netrow:nth-child(odd) { background: var(--zebra); }
@@ -1298,6 +1335,7 @@ const UI = {
       const year = el("input", { type: "number", min: 1900, max: 2100, placeholder: "Year (for their age)", id: "bd-year", style: "width:11em" });
       return [grp("The DJ wishes them a happy birthday on the day",
           ...b.birthdays.map((x, i) => srow(x.name, el("span", { textContent: `${x.day} ${MON[x.month - 1]}${x.year ? " " + x.year : ""}` }), sbtn("✕", () => ask(`Take ${x.name} off the list?`, "Remove", () => save(b.birthdays.filter((_, j) => j !== i)))))),
+          b.birthdays.length ? null : help("Nobody yet: add someone below."),
           b.today?.length ? help(`Today: ${b.today.map(t => t.name || t).join(", ")}!`) : null),
         grp("Add someone", line(name, day, mon, year, sbtn("Add", () => { if (name.value && day.value) save([...b.birthdays, { name: name.value.trim(), day: +day.value, month: +mon.value, ...(year.value ? { year: +year.value } : {}) }]); }, "primary")))];
     },
@@ -1358,6 +1396,27 @@ const UI = {
     },
   },
 };
+// each setting's one-line summary, under its name in the window's header
+const SUMS = {
+  speakers: sp => [sp.mono ? "Mono" : "Stereo", ...["bass", "mid", "treble"].map(b => `${b} ${db(sp.eq?.[b] ?? 0)}`), sp.highpass_hz ? `low cut ${sp.highpass_hz} Hz` : "no low cut",
+                   `knob ${({ auto: "automatic", fine: "fine", normal: "normal", coarse: "coarse" })[sp.knob_mode] || sp.knob_mode}`].join(" · "),
+  dj: d => d.dj_on ? [VOICE(d.voice), ({ maximum: "talks every song", chatty: "chatty", balanced: "balanced", minimal: "talks rarely" })[d.chattiness], d.news_enabled ? "the news on the hour" : "no news",
+                      d.jingle_every ? `a jingle every ${d.jingle_every}` : "no jingles"].join(" · ") : "Off: music only, no speech",
+  noise: n => n.on ? `${n.kinds[n.kind]?.label || n.kind} noise · balance ${n.mix}` : "Off",
+  sleep: sp => sp.sleep_left_s != null ? `Fading out in ${Math.ceil(sp.sleep_left_s / 60)} min` : "Off",
+  voices: v => `${VOICE(v.current)} · ${v.voices.length} installed`,
+  wifi: w => w.mode === "hotspot" ? `Its own network: ${w.hotspot.ssid}` : w.ssid ? `${w.ssid} · ${w.ip}` : "Not connected",
+  identity: ({ id, auth, status }) => [id.name, id.hardware === "cathedral" ? "cathedral case" : "box case", auth.protected ? "password on" : "no password", status.stream ? "browser listening on" : ""].filter(Boolean).join(" · "),
+  buttons: b => b.buttons.map((x, i) => `${i + 1} ${x.label}`).join(" · ") + (b.bank ? ` · ${b.bank} set` : ""),
+  updates: u => u.available ? `${u.version} · an update is ready` : u.version,
+  backup: () => "Your settings, in a file you keep",
+  power: () => "Restart it, or shut it down",
+  messages: m => `${m.list.length} note${m.list.length === 1 ? "" : "s"} · ${m.on ? `read every ${m.every_min} min, ${hhmm(m.start_min)}–${hhmm(m.end_min)}` : "not being read"}`,
+  birthdays: b => `${b.birthdays.length} ${b.birthdays.length === 1 ? "person" : "people"}${b.today?.length ? " · a birthday today!" : ""}`,
+  lists: d => `${d.profiles.length} list${d.profiles.length === 1 ? "" : "s"} · ${d.artists.length} artists to choose from`,
+  findstation: () => "From the internet radio directory",
+  findpodcast: () => "From Apple's podcast directory",
+};
 function win4(data) { const w = W.find(w => w.data === data); if (w) drawDesk(); }
 async function panelData(win, o) {
   const ui = UI[o.key];
@@ -1373,7 +1432,18 @@ function nativePanel(o, box, win) {
     try { win.data = await ui.load(); } catch {}
     drawDesk(); poll();
   };
-  box.append(el("div", { className: "wbody" }, el("div", { className: "set" }, ...ui.build(win.data, act, win).filter(Boolean))));
+  let sum = ""; try { sum = SUMS[o.key] ? SUMS[o.key](win.data) : ""; } catch {}
+  const head = el("div", { className: "shead" }, glyph(o), el("div", { style: "min-width:0" }, el("h2", { textContent: o.title }), el("p", { textContent: sum, title: sum })));
+  box.append(el("div", { className: "wbody" }, head, el("div", { className: "set" }, ...ui.build(win.data, act, win).filter(Boolean))));
+  if (!win.fitted) {                                  // the first time: the window fits what's in it
+    win.fitted = true;
+    requestAnimationFrame(() => {
+      const body = document.querySelector(`.win[data-win="${CSS.escape(win.id)}"] .wbody`);
+      if (!body) return;
+      const want = [...body.children].reduce((h, c) => h + c.offsetHeight, 0) + 34, room = $("desk").clientHeight - win.y - 12;
+      win.h = Math.max(200, Math.min(want, room)); drawDesk();
+    });
+  }
 }
 
 // the programme window: blocks on a timeline, saved on the radio
