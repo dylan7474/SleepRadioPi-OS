@@ -350,6 +350,16 @@ The cards:
   preset button can hold one, in order or shuffled. A song whose file has gone
   is skipped. Kept in the settings (`playlists`), so *Save settings* has them
   (`broadcast/playlists.py`, `Station.play_playlist`).
+- **The phone page** (`web/page.html`) follows the desktop's names and ways:
+  on/off settings are switches, a delete that can be taken back (a message, a
+  birthday, a station, a playlist, a theme) happens at once with **Undo**, and
+  only what can't come back asks first, in the page's own box with Cancel as the
+  default (no browser pop-ups). Settings → **Programmes** lists the programmes
+  with an Arm switch, how often, ▶ Play now / ■ Stop, the week coming up, and
+  the programme-mode switch (making or changing them stays on the desktop).
+  Each message's **When…** sets its days, a date each year, set times and a last
+  day. Paused, the dial still names what's tuned and says when programme mode is
+  quiet ("· noise today at 22:00"). Buttons are at least 44 px for a thumb.
 - **The desktop** (`http://<radio>/desktop`, `web/desktop.html`) — the
   interface for a computer: opening the radio's address on a wide screen with a
   mouse goes straight to it (this page stays for phones and tablets; the

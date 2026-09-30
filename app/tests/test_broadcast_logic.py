@@ -140,3 +140,13 @@ def test_hook_pool_uses_every_hook_before_repeating():
 
 def test_parse_hooks_skips_blanks_and_comments():
     assert parse_hooks("# header\n\nOne.\n  Two.  \n#x\n") == ["One.", "Two."]
+
+
+def test_jingles_counted_even_when_off(tmp_path) -> None:
+    """The phone's Settings said "0 jingles" with 35 in the folder: jingles only load while on."""
+    from sleepradiopi.broadcast.station import Station
+    st = Station.__new__(Station)
+    st.jingles, st.jingles_dir = [], str(tmp_path)
+    for n in ("a.mp3", "b.MP3", "notes.txt"):
+        (tmp_path / n).write_bytes(b"x")
+    assert st._jingle_count() == 2

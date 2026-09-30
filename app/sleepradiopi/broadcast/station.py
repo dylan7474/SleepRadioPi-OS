@@ -2049,8 +2049,24 @@ class Station:
             self._prepare_opening()
         log.info("library reloaded: %d tracks, %d jingles, %d audiobooks", len(tracks), len(jingles),
                  len(self.books.all()))
-        return {"tracks": len(tracks), "jingles": len(jingles), "books": len(self.books.all()),
+        return {"tracks": len(tracks), "jingles": self._jingle_count(), "books": len(self.books.all()),
                 "ondemand": len(ondemand)}
+
+    def _jingle_count(self) -> int:
+        """How many jingles there are: loaded only while jingles are on, so counted from
+        the folder otherwise (the page said "0 jingles" with 35 in the folder)."""
+        if self.jingles:
+            return len(self.jingles)
+        cached = getattr(self, "_jingle_n", None)
+        if cached is not None and time.monotonic() - cached[0] < 60:     # (asked every few seconds by the pages)
+            return cached[1]
+        from .library import _audio_files
+        try:
+            n = len(_audio_files(Path(self.jingles_dir)))
+        except OSError:
+            n = 0
+        self._jingle_n = (time.monotonic(), n)
+        return n
 
     # --- artist radio ------------------------------------------------------------------
 
@@ -2225,7 +2241,7 @@ class Station:
             and (self._source is None or self._source.get("kind") == "album"),
             "news_ready": None if news is None else news.due.mark.strftime("%H:%M"),
             "history": list(self.history),
-            "library": {"tracks": len(self.tracks), "jingles": len(self.jingles), "books": len(self.books.all()),
+            "library": {"tracks": len(self.tracks), "jingles": self._jingle_count(), "books": len(self.books.all()),
                         "ondemand": len(self.ondemand_tracks)},
             "artist": self.artist,
             "profile": self.profile,

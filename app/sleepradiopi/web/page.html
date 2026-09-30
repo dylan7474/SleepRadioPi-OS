@@ -74,6 +74,8 @@
   .row > label { color: var(--dim); font-size: .9rem; min-width: 5.5rem; }
   .row > output { font-variant-numeric: tabular-nums; min-width: 3.3rem; text-align: right; }
   .seg button { padding: .4rem .8rem; font-size: .9rem; }
+  .row.seg > label { flex-basis: 100%; }
+  .row.seg > button { flex: 1 1 0; min-width: 0; padding-inline: .3rem; }
   .seg button[aria-pressed=true], .chip[aria-pressed=true] { background: var(--amber); color: var(--amber-ink);
     border-color: var(--amber); font-weight: 600; }
   .card ul { list-style: none; margin: .4rem 0 0; padding: 0; }
@@ -227,7 +229,8 @@
   .tile.on { border-color: var(--amber); box-shadow: inset 0 0 0 1px var(--amber); }
   .tile.on small { color: var(--amber); }
   .sel-row { display: flex; gap: .6rem; align-items: center; }
-  .sel-row select { flex: 1; }
+  .sel-row select { flex: 1; min-width: 0; max-width: 100%; }   /* (a long option stretched Find past the screen) */
+  .view { grid-template-columns: minmax(0, 1fr); }
   .group-title { margin: .2rem 0 -.5rem; font-size: .8rem; color: var(--dim); }
   #qNote { margin: 0; font-size: .85rem; color: var(--dim); }
 
@@ -247,6 +250,36 @@
   .page-head { display: grid; gap: .3rem; }
   .page-head h1 { margin: 0; font-family: var(--display); font-size: 1.4rem; letter-spacing: .02em; }
   .back { background: none; border: 0; padding: .2rem 0; color: var(--amber); font-size: .95rem; justify-self: start; }
+  .sw { position: relative; width: 52px; height: 32px; min-height: 32px; padding: 0; border-radius: 99px; border: 1px solid var(--line); background: var(--panel-2); flex: none; }
+  .sw::after { content: ""; position: absolute; top: 3px; left: 3px; width: 24px; height: 24px; border-radius: 50%; background: #e9e4d8; box-shadow: 0 1px 3px #0008; transition: left .15s; }
+  .sw[aria-checked=true] { background: var(--amber); border-color: var(--amber); }
+  .sw[aria-checked=true]::after { left: 23px; }
+  .row.seg.as-switch { min-height: 44px; }
+  .row.seg.as-switch > label { flex-basis: auto; }
+  .row.seg.as-switch > button[data-v] { display: none; }
+  .row.seg.as-switch .swcap { margin-left: auto; color: var(--dim); font-size: .85rem; }
+  .row.seg.as-switch .sw { margin-left: auto; }
+  .row.seg.as-switch .swcap:not(:empty) + .sw { margin-left: 0; }
+  .msgwhen { flex-basis: 100%; border-top: 1px dashed var(--line); margin-top: .5rem; padding-top: .2rem; }
+  .msgwhen .chips .chip { min-width: 44px; }
+  .msgwhen input { min-height: 44px; }
+  .proglist { list-style: none; margin: 0; padding: 0; display: grid; gap: .2rem; }
+  .proglist li { padding: .55rem 0; border-bottom: 1px solid var(--line); }
+  .proglist li:last-child { border-bottom: 0; }
+  .proglist .who { display: block; font-weight: 600; } .proglist .who small { display: block; font-weight: 400; color: var(--dim); margin-top: .15rem; }
+  .proglist .ep-do { display: flex; gap: .6rem; align-items: center; margin-top: .5rem; flex-wrap: wrap; }
+  .proglist select, .proglist .ep-do > button:not(.sw) { min-height: 44px; }
+  .ask { position: fixed; inset: 0; z-index: 90; background: #0008; display: grid; place-items: center; padding: 16px; }
+  .askbox { background: var(--panel); border: 1px solid var(--line); border-radius: var(--r); padding: 1.1rem 1.1rem .9rem; width: min(24rem, 100%); box-shadow: 0 20px 60px #000c; }
+  .askbox p { margin: 0 0 .6rem; } .askbox .askq { font-weight: 600; }
+  .askbtns { display: flex; gap: .6rem; justify-content: flex-end; margin-top: .9rem; }
+  .askbtns button { min-height: 44px; padding-inline: 1.1rem; }
+  .askbtns .danger { background: #b3402e; border-color: #b3402e; color: #fff; }
+  .askbtns .primary { background: var(--amber); border-color: var(--amber); color: var(--amber-ink); }
+  #toast .undo { margin-left: .8rem; min-height: 36px; padding: 0 .9rem; border: 1px solid var(--amber); background: none; color: var(--amber); font-weight: 600; }
+  /* big enough for a thumb (44 px), everywhere */
+  .seg button, .chip, .card li button, .back, .linkish, .rowbtn, .sheetbtn, .tab { min-height: 44px; }
+  .linkish { display: inline-flex; align-items: center; }
   #mCrumbs, #brCrumbs { display: flex; flex-wrap: wrap; gap: .3rem; align-items: center; margin: 0 0 .4rem; }
   #mCrumbs a, #brCrumbs a { text-decoration: none; }
   #brList a.open, #findResults a.open { text-decoration: none; color: inherit; font-weight: 600; }
@@ -627,6 +660,21 @@
   </section>
       <p id="noSpeaker" class="muted" hidden>This radio has no speaker of its own (it only plays in a browser), so there's nothing to set here.</p>
     </div>
+    <div class="page" id="page-programmes" hidden>
+      <div class="page-head"><button class="back" type="button">‹ Settings</button><h1>Programmes</h1></div>
+      <section class="card">
+        <div class="row seg" id="progMode" role="group" aria-label="Programme mode" style="margin-top:0">
+          <label>Programme mode</label>
+          <button type="button" data-v="true">On</button><button type="button" data-v="false">Off</button>
+        </div>
+        <p class="muted" style="margin:.5rem 0 0;font-size:.85rem">On: the radio is quiet unless a programme is on, and armed
+          programmes wake it, like an alarm. Noise and the time play over the quiet.</p>
+      </section>
+      <section class="card"><h2>Your programmes</h2><ul id="progList" class="proglist"><li class="muted">Loading…</li></ul></section>
+      <section class="card"><h2>Coming up</h2><ul id="progSched" class="proglist"></ul></section>
+      <p class="muted" style="margin:0;font-size:.85rem">Arm a programme to have it start by itself at its time; ▶ plays it now.
+        To make or change programmes (what's in them, and when), use the desktop on a computer: its Programmes folder.</p>
+    </div>
     <div class="page" id="page-noise" hidden>
       <div class="page-head"><button class="back" type="button">‹ Settings</button><h1>Noise</h1></div>
       <section class="card">
@@ -716,19 +764,18 @@
     <div class="row"><label for="djVoice">Voice</label><select id="djVoice"></select></div>
     <div class="row seg" id="djChat" role="group" aria-label="How chatty">
       <label>Talks</label>
+      <button type="button" data-v="minimal" title="A link every 5 songs">Rarely</button>
+      <button type="button" data-v="balanced" title="A link every 3 songs">Balanced</button>
+      <button type="button" data-v="chatty" title="A link every 2 songs">Chatty</button>
       <button type="button" data-v="maximum" title="A link before every song">Every song</button>
-      <button type="button" data-v="chatty" title="A link every 2 songs">Every 2</button>
-      <button type="button" data-v="balanced" title="A link every 3 songs">Every 3</button>
-      <button type="button" data-v="minimal" title="A link every 5 songs">Every 5</button>
     </div>
     <div class="row seg" id="djHooks" role="group" aria-label="70s DJ hooks">
       <label>70s hooks</label>
       <button type="button" data-v="true">On</button><button type="button" data-v="false">Off</button>
     </div>
-    <div class="row" id="djJingleRow"><label for="djJingles">Jingles</label><select id="djJingles">
-      <option value="0">Off</option><option value="2">Every 2 songs</option><option value="3">Every 3 songs</option>
-      <option value="4">Every 4 songs</option><option value="5">Every 5 songs</option>
-      <option value="6">Every 6 songs</option><option value="8">Every 8 songs</option></select></div>
+    <div class="row seg" id="djJingleRow" role="group" aria-label="Jingles"><label>Jingles</label>
+      <button type="button" data-v="0">Off</button><button type="button" data-v="2">Every 2</button>
+      <button type="button" data-v="4">Every 4</button><button type="button" data-v="8">Every 8</button></div>
     <div class="row"><label for="djSpeed">DJ speed</label>
       <input id="djSpeed" type="range" min="0.5" max="1.5" step="0.05" value="1">
       <output id="djSpeedNum" for="djSpeed" class="muted">1.00×</output></div>
@@ -1025,7 +1072,7 @@
 <div id="scrim" hidden></div>
 <div id="sheet" role="dialog" aria-modal="true" aria-labelledby="sheetTitle" hidden>
   <div class="grab"></div>
-  <h3 id="sheetTitle">The radio's buttons</h3>
+  <h3 id="sheetTitle">Buttons</h3>
   <div class="seg bank" id="bankSeg2" role="group" aria-label="Which set of buttons to see and change">
     <button type="button" data-v="day">☀ Day set</button><button type="button" data-v="night">☾ Night set</button>
   </div>
@@ -1069,10 +1116,38 @@
 <script>
 const $ = id => document.getElementById(id);
 let RADIO = "Sleep Radio";                // the radio's name (from its status: showRadioName)
-function toast(text) {
+// "v1.0.4-107-g8d88d15-dirty" (a build between releases) -> "1.0.4, build 107"; "v1.0.4" -> "1.0.4" (as the desktop)
+const niceVersion = v => { const m = /^v?(\d+(?:\.\d+)*)(?:-(\d+)-g[0-9a-f]+)?/.exec(v || ""); return m ? "Version " + m[1] + (m[2] ? `, build ${m[2]}` : "") : v || ""; };
+function toast(text, undo) {
   const t = $("toast");
   t.textContent = text; t.hidden = false;
-  clearTimeout(t._h); t._h = setTimeout(() => { t.hidden = true; }, 3200);
+  if (undo) {                                        // something that can come back: Undo, for a while (as on the desktop)
+    const b = Object.assign(document.createElement("button"), { type: "button", className: "undo", textContent: "Undo" });
+    b.onclick = async () => { t.hidden = true; try { await undo(); toast("Put back."); } catch (e) { toast("Couldn't put it back."); } };
+    t.append(b);
+  }
+  clearTimeout(t._h); t._h = setTimeout(() => { t.hidden = true; }, undo ? 9000 : 3200);
+}
+// Asking first, in the page's own look (not the browser's box): Cancel is the default, and Escape
+// or a tap outside cancels. Only for what can't be taken back. Resolves true for yes.
+function ask(text, yes, danger = true) {
+  return new Promise(done => {
+    const scrim = Object.assign(document.createElement("div"), { className: "ask" });
+    const box = Object.assign(document.createElement("div"), { className: "askbox" });
+    box.setAttribute("role", "alertdialog"); box.setAttribute("aria-modal", "true");
+    const [head, ...more] = text.split("\n\n");
+    box.append(Object.assign(document.createElement("p"), { className: "askq", textContent: head }),
+               ...more.map(m => Object.assign(document.createElement("p"), { className: "muted", textContent: m })));
+    const no = Object.assign(document.createElement("button"), { type: "button", textContent: "Cancel" });
+    const go_ = Object.assign(document.createElement("button"), { type: "button", textContent: yes, className: danger ? "danger" : "primary" });
+    const end = v => { scrim.remove(); done(v); };
+    no.onclick = () => end(false); go_.onclick = () => end(true);
+    scrim.onclick = e => { if (e.target === scrim) end(false); };
+    scrim.onkeydown = e => { if (e.key === "Escape") { e.preventDefault(); end(false); } };
+    const btns = Object.assign(document.createElement("div"), { className: "askbtns" });
+    btns.append(no, go_); box.append(btns);
+    scrim.append(box); document.body.append(scrim); no.focus();
+  });
 }
 const audio = $("audio");
 let wanted = false, sleepEnd = 0, shuttingDown = false, pageVersion = null;
@@ -1342,7 +1417,7 @@ async function saveLists(lists, done) {
                                              body: JSON.stringify({ profiles: lists }) });
     const reply = await r.json();
     if (!r.ok) { $("listCount").textContent = "Not saved: " + reply.error + "."; return false; }
-    $("listCount").textContent = done;
+    if (done) $("listCount").textContent = done;
     return true;
   } catch { $("listCount").textContent = "Couldn't reach the radio."; return false; }
 }
@@ -1358,8 +1433,10 @@ $("listSave").onclick = async () => {
 };
 $("listDelete").onclick = async () => {
   const old = $("listPick").value;
-  if (!old || !confirm(`Delete the list “${old}”?`)) return;
-  if (await saveLists(allLists.filter(p => p.name !== old), `Deleted “${old}”.`)) { await loadArtists(); fillListPick(""); showListEditor(); }
+  if (!old) return;
+  const before = allLists.slice();                   // (a theme can come back: Undo, no question)
+  if (await saveLists(allLists.filter(p => p.name !== old))) { await loadArtists(); fillListPick(""); showListEditor();
+    toast(`Deleted the theme “${old}”. The music stays.`, async () => { await saveLists(before); await loadArtists(); fillListPick(old); showListEditor(); }); }
 };
 
 // Find: one search over artists (and your lists), albums, songs and internet
@@ -1544,6 +1621,97 @@ $("progStop").onclick = async () => {
   catch { toast("Couldn't reach the radio."); }
 };
 let programmes = [];
+// --- Programmes: when armed ones start, in words (the desktop edits them; here: arm, play, the mode)
+const DAYW = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+const hm = t => { const [h, m] = t.split(":").map(Number); return h * 60 + m; };
+const hhmm2 = m => { m = ((Math.round(m) % 1440) + 1440) % 1440; return String(Math.floor(m / 60)).padStart(2, "0") + ":" + String(m % 60).padStart(2, "0"); };
+const isMoment = b => b.items.length && b.items.every(it => ["message", "jingle", "action"].includes(it.kind));
+const overOnly = p => p.blocks.every(isMoment) && (p.blocks.length > 0 || (p.switches || []).length > 0);   // plays over what's on
+const switchWords = p => (p.switches || []).map(w => `${w.what === "dj" ? "the DJ" : "noise"} ${hhmm2(hm(p.start) + w.from)}–${hhmm2(hm(p.start) + w.from + w.min)}`).join(", ");
+function progStarts(p, days = 7) {                     // its start times over the next days (armed ones)
+  const out = [], now = new Date();
+  if (!p.auto) return out;
+  for (let k = 0; k < days; k++) {
+    const d0 = new Date(now.getFullYear(), now.getMonth(), now.getDate() + k);
+    if (p.days.length && !p.days.includes((d0.getDay() + 6) % 7)) continue;
+    const first = hm(p.start), last = p.every ? hm(p.until || "23:59") : first;
+    for (let t = first; t <= last; t += p.every || 1440) {
+      const d = new Date(d0.getTime() + t * 60000);
+      if (d.getTime() + 60000 > now.getTime()) { out.push(d); if (p.once) return out; }
+    }
+  }
+  return out;
+}
+function dayWords(d) {
+  const k = Math.round((new Date(d).setHours(0, 0, 0, 0) - new Date().setHours(0, 0, 0, 0)) / 864e5);
+  return (k === 0 ? "today" : k === 1 ? "tomorrow" : d.toLocaleDateString(undefined, { weekday: "long" })) + " at " + d.toTimeString().slice(0, 5);
+}
+const repeatOf = p => p.every ? `every ${p.every === 60 ? "hour" : p.every + " min"} until ${p.until}` : !p.auto ? "" : p.once ? "once"
+  : !p.days.length ? "every day" : p.days.join() === "0,1,2,3,4" ? "weekdays" : p.days.join() === "5,6" ? "weekends" : p.days.map(d => DAYW[d]).join(", ");
+// the next armed thing, for the dial ("quiet · noise today at 22:00")
+function nextProgWords() {
+  const all = programmes.flatMap(p => progStarts(p, 2).slice(0, 1).map(d => ({ p, d }))).sort((a, b) => a.d - b.d)[0];
+  if (!all) return "";
+  return `${!all.p.blocks.length && all.p.switches?.length ? (all.p.switches[0].what === "dj" ? "the DJ" : "noise") : all.p.name} ${dayWords(all.d)}`;
+}
+async function saveProgs(next, note) {
+  try { programmes = (await radioPost("/api/programmes", { programmes: next })).programmes; drawProgrammes(); drawSettings(); if (note) toast(note); return true; }
+  catch (e) { toast("Not saved: " + e.message + "."); return false; }
+}
+const repPending = {};                                 // the repeat chosen for one not armed yet
+function drawProgrammes() {
+  if (!$("progList")) return;
+  const s = lastStatus;
+  pressSeg("progMode", !!(s && s.programme_mode));
+  $("progList").replaceChildren(...(programmes.length ? programmes.map((p, i) => {
+    const li = document.createElement("li");
+    const running = s && s.programme && s.programme.name.toLowerCase() === p.name.toLowerCase();
+    const swOn = s && (s.switches || []).some(x => x.programme.toLowerCase() === p.name.toLowerCase());
+    const what = !p.blocks.length ? switchWords(p) : `${p.blocks.length} block${p.blocks.length === 1 ? "" : "s"}` + (p.switches?.length ? " · " + switchWords(p) : "");
+    const next = progStarts(p)[0];
+    const who = Object.assign(document.createElement("span"), { className: "who", textContent: p.name });
+    who.append(Object.assign(document.createElement("small"), { textContent: running ? `Playing since ${s.programme.started}` + (s.programme.until ? ` · until ${s.programme.until}` : "")
+      : `${p.start} · ${what}` + (p.auto ? (next ? ` · next ${dayWords(next)}` : "") + ` · ${repeatOf(p)}` : " · not armed") }));
+    const acts = Object.assign(document.createElement("div"), { className: "ep-do" });
+    // Arm: a switch, and how often
+    const arm = Object.assign(document.createElement("button"), { type: "button", className: "sw" });
+    arm.setAttribute("role", "switch"); arm.setAttribute("aria-checked", String(!!p.auto)); arm.setAttribute("aria-label", "Armed: starts by itself");
+    const rep = document.createElement("select"); rep.setAttribute("aria-label", "How often");
+    const cur = p.every ? "every" : p.auto ? (p.once ? "once" : !p.days.length ? "daily" : p.days.join() === "0,1,2,3,4" ? "weekdays" : p.days.join() === "5,6" ? "weekends" : "days")
+      : repPending[p.name] || (p.days.length ? "days" : "once");
+    for (const [v, t] of [["once", "Once"], ["daily", "Every day"], ["weekdays", "Weekdays"], ["weekends", "Weekends"], ...(cur === "days" ? [["days", p.days.map(d => DAYW[d]).join(" ")]] : []),
+                          ...(p.every ? [["every", repeatOf(p)]] : [])]) rep.append(new Option(t, v, false, v === cur));
+    rep.disabled = !!p.every;
+    const withRepeat = (q, v) => { if (v === "every" || v === "days") return q;
+      return { ...q, days: v === "weekdays" ? [0, 1, 2, 3, 4] : v === "weekends" ? [5, 6] : [], once: v === "once" }; };
+    arm.onclick = () => { const on = !p.auto; const q = on ? { ...withRepeat(p, cur), auto: true } : { ...p, auto: false };
+      if (!on) delete q.once;
+      saveProgs(programmes.map((x, j) => j === i ? q : x), on ? `${p.name} is armed: ${dayWords(progStarts({ ...q })[0] || new Date())}.` : `${p.name} won't start by itself.`); };
+    rep.onchange = () => { if (!p.auto) { repPending[p.name] = rep.value; return; }
+      saveProgs(programmes.map((x, j) => j === i ? { ...withRepeat(p, rep.value), auto: true } : x), `${p.name}: ${rep.options[rep.selectedIndex].text.toLowerCase()}.`); };
+    const play = Object.assign(document.createElement("button"), { type: "button", textContent: running || swOn ? "■ Stop" : "▶ Play now" });
+    play.onclick = async () => { try { await radioPost(running || swOn ? "/api/programmes/stop" : "/api/programmes/play", { name: p.name });
+      toast(running || swOn ? `${p.name} stopped.` : `Playing ${p.name}.`); poll(); setTimeout(drawProgrammes, 800); } catch (e) { toast(e.message); } };
+    acts.append(arm, rep, play);
+    li.append(who, acts);
+    return li;
+  }) : [Object.assign(document.createElement("li"), { className: "muted", textContent: "No programmes yet: make them on the desktop, on a computer." })]));
+  // coming up: the next week of armed starts
+  const occ = programmes.flatMap(p => progStarts(p).map(d => ({ p, d }))).sort((a, b) => a.d - b.d);
+  const seen = new Set(), rows = [];
+  for (const { p, d } of occ) {                         // (a repeating one: once a day)
+    const key = p.name + d.toDateString(); if (p.every && seen.has(key)) continue; seen.add(key);
+    rows.push(Object.assign(document.createElement("li"), { textContent: `${dayWords(d)[0].toUpperCase() + dayWords(d).slice(1)} · ${p.name}` +
+      (!p.blocks.length ? ` (${switchWords(p)})` : p.every ? ` (${repeatOf(p)})` : "") }));
+    if (rows.length >= 12) break;
+  }
+  $("progSched").replaceChildren(...(rows.length ? rows : [Object.assign(document.createElement("li"), { className: "muted", textContent: "Nothing armed." })]));
+}
+document.querySelectorAll("#progMode button").forEach(b => b.onclick = async () => {
+  try { await radioPost("/api/programmes/mode", { on: b.dataset.v === "true" }); await poll(); drawProgrammes();
+    toast(b.dataset.v === "true" ? "Programme mode: quiet unless a programme is on." : "Programme mode off: the radio plays as usual."); } catch (e) { toast(e.message); }
+});
+setInterval(() => { if (started) loadProgrammes().then(() => { if (pageNow === "programmes") drawProgrammes(); }); }, 60000);
 async function loadProgrammes() {
   try { const r = await fetch("/api/programmes", { cache: "no-store" }); if (r.ok) programmes = (await r.json()).programmes || []; } catch {}
 }
@@ -1565,7 +1733,7 @@ function showDj(d) {
   lastDj = d; drawSettings();
   $("dj").hidden = false;
   const v = $("djVoice");
-  v.replaceChildren(...d.voices.map(n => new Option(n[0].toUpperCase() + n.slice(1), n)));
+  v.replaceChildren(...d.voices.map(n => new Option(VOICE(n), n)));
   if (d.voice && !d.voices.includes(d.voice)) v.append(new Option(d.voice, d.voice));
   v.value = d.voice || "";
   v.disabled = d.voices.length < 2;
@@ -1573,9 +1741,10 @@ function showDj(d) {
   pressSeg("djChat", d.chattiness);
   pressSeg("djHooks", d.dj_hooks);
   $("djHooks").hidden = !d.hooks_available;
-  const j = $("djJingles");
-  if (![...j.options].some(o => +o.value === d.jingle_every)) j.append(new Option(`Every ${d.jingle_every} songs`, d.jingle_every));
-  j.value = String(d.jingle_every);
+  if (![0, 2, 4, 8].includes(d.jingle_every) && !$("djJingleRow").querySelector(`[data-v="${d.jingle_every}"]`)) {   // (an odd one from before)
+    const b = Object.assign(document.createElement("button"), { type: "button", textContent: `Every ${d.jingle_every}` }); b.dataset.v = d.jingle_every;
+    b.onclick = jingleClick; $("djJingleRow").append(b); }
+  pressSeg("djJingleRow", d.jingle_every);
   $("djJingleRow").hidden = !d.jingles_available;
   pressSeg("djNews", d.news_enabled);
   pressSeg("djStartup", d.startup_sound);
@@ -1602,16 +1771,19 @@ async function setDj(change, done) {
     else djNote(done);
   } catch { djNote("Couldn't reach the radio.", true); }
 }
-$("djVoice").onchange = e => {
-  if (!confirm(`Change the DJ's voice to “${e.target.value}”?\n\nThe radio restarts (about a minute).`)) { loadDj(); return; }
+$("djVoice").onchange = async e => {
+  if (!await ask(`Change the DJ's voice to “${VOICE(e.target.value)}”?\n\nThe radio restarts (about a minute).`, "Change and restart", false)) { loadDj(); return; }
   setDj({ voice: e.target.value });
 };
 const CHAT = { maximum: "before every song", chatty: "every 2 songs", balanced: "every 3 songs", minimal: "every 5 songs" };
+const CHAT_NAME = { maximum: "talks every song", chatty: "chatty", balanced: "balanced", minimal: "talks rarely" };   // (the desktop's words)
+const VOICE = v => ({ personal: "My voice", stock: "Standard" })[v] || (v ? v[0].toUpperCase() + v.slice(1) : v);
 document.querySelectorAll("#djChat button").forEach(b => b.onclick = () => setDj({ chattiness: b.dataset.v }, `The DJ now talks ${CHAT[b.dataset.v]}.`));
 document.querySelectorAll("#djOn button").forEach(b => b.onclick = () => setDj({ dj_on: b.dataset.v === "true" },
   b.dataset.v === "true" ? "The DJ is on." : "The DJ is off: just the music, no speech at all (no links, time checks, news or messages)."));
 document.querySelectorAll("#djHooks button").forEach(b => b.onclick = () => setDj({ dj_hooks: b.dataset.v === "true" }, `70s hooks ${b.textContent.toLowerCase()}.`));
-$("djJingles").onchange = e => setDj({ jingle_every: +e.target.value }, +e.target.value ? `A jingle every ${e.target.value} songs.` : "No jingles.");
+function jingleClick(e) { const v = +e.currentTarget.dataset.v; setDj({ jingle_every: v }, v ? `A jingle every ${v} songs.` : "No jingles."); }
+document.querySelectorAll("#djJingleRow button").forEach(b => b.onclick = jingleClick);
 document.querySelectorAll("#djStartup button").forEach(b => b.onclick = () => setDj({ startup_sound: b.dataset.v === "true" },
   b.dataset.v === "true" ? "At power-on: a chime, then the DJ says it's warming up." : "Silent at power-on."));
 // Speeds: the number follows the slider; saved when it's let go.
@@ -1717,8 +1889,8 @@ async function updPost(path, busyText) {
   } catch { updNote("Couldn't reach the radio."); }
 }
 $("updCheck").onclick = () => updPost("/api/update/check", "Checking GitHub…");
-$("updInstall").onclick = () => {
-  if (confirm($("updInstall").textContent + "?\n\nThe music carries on while it downloads, then the radio restarts."))
+$("updInstall").onclick = async () => {
+  if (await ask($("updInstall").textContent + "?\n\nThe music carries on while it downloads, then the radio restarts.", "Install", false))
     updPost("/api/update/install", "Starting the update…");
 };
 
@@ -1748,7 +1920,8 @@ function showWifi(w) {
   $("wifiTry").hidden = w.mode !== "hotspot";
   $("wifiSaved").replaceChildren(
     ...w.on_card.map(s => li(`${s} — set up on the card`)),
-    ...w.saved.map(s => li(s, "Remove", () => wifiPost("remove", { ssid: s }, `Removed ${s}.`))));
+    ...w.saved.map(s => li(s, "Remove", async () => { if (await ask(`Forget the network “${s}”?\n\nIts password goes too: you'd type it again to use it.`, "Forget it"))
+      wifiPost("remove", { ssid: s }, `Forgot ${s}.`); })));
   $("wifiNearby").replaceChildren(...(w.nearby || []).map(n =>
     li(`${n.ssid} (${n.signal} dBm)`, "Use", () => { $("wifiSsid").value = n.ssid; $("wifiPw").focus(); })));
   if (document.activeElement !== $("spotSsid")) $("spotSsid").value = w.hotspot_settings.ssid;
@@ -1778,9 +1951,9 @@ $("wifiAdd").onsubmit = async e => {
       ? " Tap “Try saved networks now” to join it." : " The radio will use it when it's in range.")))
     { $("wifiSsid").value = ""; $("wifiPw").value = ""; }
 };
-$("spotNow").onclick = () => {
-  if (!confirm("Switch the radio to its own network now?\n\nThis page loses the radio until you join " +
-               `${$("spotSsid").value || "SleepRadio-Setup"} on this phone and open http://192.168.4.1.`)) return;
+$("spotNow").onclick = async () => {
+  if (!await ask("Switch the radio to its own network now?\n\nThis page loses the radio until you join " +
+               `${$("spotSsid").value || "SleepRadio-Setup"} on this phone and open http://192.168.4.1.`, "Switch now")) return;
   wifiPost("hotspot-now", {}, "Switching: join the radio's own network, then open http://192.168.4.1.");
 };
 $("spotForm").onsubmit = async e => {
@@ -1811,7 +1984,8 @@ function showBirthdays(state) {
       li.append(hear);
     }
     const del = document.createElement("button"); del.type = "button"; del.textContent = "Remove";
-    del.onclick = () => saveBirthdays(bdList.filter((_, j) => j !== i), `Removed ${b.name}.`);
+    del.onclick = async () => { const before = bdList.slice();
+      if (await saveBirthdays(bdList.filter((_, j) => j !== i))) toast(`${b.name} is off the birthdays.`, () => saveBirthdays(before)); };
     li.append(del);
     return li;
   }) : [Object.assign(document.createElement("li"), { className: "muted", textContent: "No birthdays yet." })]));
@@ -1830,7 +2004,7 @@ async function saveBirthdays(list, done) {
                                               body: JSON.stringify({ birthdays: list }) });
     const reply = await r.json();
     if (!r.ok) return bdNote("Not saved: " + reply.error + ".", true), false;
-    showBirthdays(reply); bdNote(done);
+    showBirthdays(reply); if (done) bdNote(done);
     return true;
   } catch { bdNote("Couldn't reach the radio.", true); return false; }
 }
@@ -1857,6 +2031,35 @@ function fillOffsets(every, offset) {
   $("msgOffset").value = Math.min(offset, every - 1);
   $("msgAt").textContent = "at " + msgSlots(every, +$("msgOffset").value) + " past";
 }
+// one message's own schedule: days, a date each year, set times, a last day (messages.py)
+let msgOpen = null;
+function msgWhen(m, i, state) {
+  const box = Object.assign(document.createElement("div"), { className: "msgwhen" });
+  const put = (change, note) => saveMessages({ list: state.list.map((x, j) => { if (j !== i) return x; const y = { ...x, ...change };
+    for (const k of Object.keys(change)) if (change[k] == null || (Array.isArray(change[k]) && !change[k].length)) delete y[k]; return y; }) }, note);
+  const days = Object.assign(document.createElement("div"), { className: "chips" });
+  DAYW.forEach((d, k) => { const b = Object.assign(document.createElement("button"), { type: "button", className: "chip", textContent: d });
+    b.setAttribute("aria-pressed", String((m.days || []).includes(k)));
+    b.onclick = () => { const set = new Set(m.days || []); set.has(k) ? set.delete(k) : set.add(k); put({ days: [...set].sort() }, set.size ? "Only on those days." : "Every day."); };
+    days.append(b); });
+  const date = Object.assign(document.createElement("input"), { type: "date", value: m.date ? `${new Date().getFullYear()}-${m.date}` : "" });
+  date.setAttribute("aria-label", "Only on this date, every year");
+  date.onchange = () => put({ date: date.value ? date.value.slice(5) : null }, date.value ? "Only on that date, every year." : "Any date.");
+  const times = Object.assign(document.createElement("div"), { className: "chips" });
+  (m.times || []).forEach(t => { const b = Object.assign(document.createElement("button"), { type: "button", className: "chip", textContent: t + " ✕", title: "Take this time off" });
+    b.onclick = () => put({ times: (m.times || []).filter(x => x !== t) }, "Time taken off."); times.append(b); });
+  const addT = Object.assign(document.createElement("input"), { type: "time" }); addT.setAttribute("aria-label", "Add a time");
+  addT.onchange = () => addT.value && put({ times: [...new Set([...(m.times || []), addT.value])].sort() }, `Said at ${addT.value} too.`);
+  times.append(addT);
+  const until = Object.assign(document.createElement("input"), { type: "date", value: m.until || "" }); until.setAttribute("aria-label", "Last day");
+  until.onchange = () => put({ until: until.value || null }, until.value ? "Saved." : "No last day.");
+  const row = (label, ...kids) => { const r = Object.assign(document.createElement("div"), { className: "row" });
+    r.append(Object.assign(document.createElement("label"), { textContent: label }), ...kids); return r; };
+  box.append(row("Days", days), row("Every year on", date), row("At set times", times),
+    Object.assign(document.createElement("p"), { className: "muted", textContent: "With set times it's read then (within 20 minutes), apart from the others; without, in turn with them." }),
+    row("Until", until));
+  return box;
+}
 function showMessages(state) {
   msgState = state;
   $("msgOn").querySelectorAll("button").forEach(b => b.setAttribute("aria-pressed", String(b.dataset.v === String(state.on))));
@@ -1871,16 +2074,23 @@ function showMessages(state) {
     li.classList.toggle("off", !!(m.off || gone));
     const who = document.createElement("span"); who.className = "who"; who.textContent = m.text;
     const until = m.until ? (gone ? `Finished (last day ${m.until})` : `Until ${new Date(m.until + "T12:00").toLocaleDateString(undefined, { weekday: "short", day: "numeric", month: "short" })}`) : "";
-    const bits = [m.off ? "Paused" : "", until].filter(Boolean).join(" · ");
+    const MON = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+    const when = [m.date ? `${+m.date.split("-")[1]} ${MON[+m.date.split("-")[0] - 1]}` : "",
+                  m.days?.length && m.days.length < 7 ? m.days.map(d => DAYW[d]).join(", ") : "",
+                  m.times?.length ? "at " + m.times.join(", ") : ""].filter(Boolean).join(" · ");
+    const bits = [m.off ? "Paused" : "", when, until].filter(Boolean).join(" · ");
     if (bits) who.append(Object.assign(document.createElement("small"), { textContent: bits }));
     const acts = Object.assign(document.createElement("div"), { className: "ep-do" });
     li.append(who, acts);
+    if (msgOpen === i) li.append(msgWhen(m, i, state));
     const btn = (label, fn, title) => { const b = document.createElement("button"); b.type = "button";
       b.textContent = label; if (title) b.title = title; b.onclick = fn; acts.append(b); };
     if (state.can_hear) btn("Hear it", () => hearMessage(m.text), "The DJ says it on the radio now");
+    btn(msgOpen === i ? "Done" : "When…", () => { msgOpen = msgOpen === i ? null : i; showMessages(state); }, "Its own days, date or times (as on the desktop)");
     btn(m.off ? "Resume" : "Pause", () => saveMessages({ list: state.list.map((x, j) => j === i ? { ...x, off: !x.off } : x) },
                                                         m.off ? "Resumed." : "Paused: it's kept, but not read."));
-    btn("Remove", () => saveMessages({ list: state.list.filter((_, j) => j !== i) }, "Removed."));
+    btn("Remove", async () => { const before = state.list.slice();
+      if (await saveMessages({ list: state.list.filter((_, j) => j !== i) })) toast("Deleted the message.", () => saveMessages({ list: before })); });
     return li;
   }) : [Object.assign(document.createElement("li"), { className: "muted", textContent: "No messages yet." })]));
   drawSettings();
@@ -2120,7 +2330,7 @@ async function poll() {
     hasSpeaker = !!s.speaker;
     lastStatus = s;
     $("power").hidden = !s.can_power_off;
-    if (s.version) $("version").textContent = /^\d/.test(s.version) ? "v" + s.version : "build " + s.version;
+    if (s.version) { $("version").textContent = niceVersion(s.version); $("version").title = s.version; }
     // The radio was updated while this page was open: load the new page to match it.
     if (s.version && pageVersion && s.version !== pageVersion && !uploading) { location.reload(); return; }
     pageVersion = pageVersion || s.version;
@@ -2182,10 +2392,11 @@ async function poll() {
       const pct = s.now.duration_s ? Math.min(100, 100 * s.now.elapsed_s / s.now.duration_s) : 0;
       $("progress").style.width = pct + "%";
     } else if (!s.on_air) {
-      $("kind").textContent = hasSpeaker && !s.speaker.playing ? "Paused" : "Ready";
-      $("title").textContent = wanted ? "Starting the show…"
-        : hasSpeaker && !s.speaker.playing ? "Tap the knob to play" : "Nothing on air";
-      $("artist").textContent = "";
+      const paused = hasSpeaker && !s.speaker.playing, tuned = s.source ? (s.source.name || s.source.title || s.source.show_title) : null;
+      $("kind").textContent = paused ? (tuned ? "Tuned · paused" : "Paused") : "Ready";
+      $("title").textContent = wanted ? "Starting the show…" : paused ? (tuned || "Tap the knob to play") : "Nothing on air";
+      const nx = s.programme_mode ? nextProgWords() : "";
+      $("artist").textContent = paused ? [tuned ? "Tap the knob to play" : "", s.programme_mode ? "Programme mode: quiet" + (nx ? " · " + nx : "") : ""].filter(Boolean).join(" · ") : "";
       $("progress").style.width = "0";
     }
     $("skip").hidden = !s.can_skip;
@@ -2320,7 +2531,7 @@ function drawPodcasts() {
                                                     textContent: "None yet: add one below." })]));
   $("podShows").replaceChildren(...(podShows.length ? podShows.map(p => resultRow(p.title, p.author, [
       act("Episodes", false, () => go("#pod-" + p.id)),
-      act("Unfollow", false, async () => { if (!confirm(`Stop following ${p.title}?`)) return;
+      act("Unfollow", false, async () => { if (!await ask(`Stop following “${p.title}”?`, "Unfollow")) return;
         try { await radioPost("/api/podcasts/unfollow", { id: p.id }); loadPodcasts(); } catch (e) { toast(e.message); } })]))
     : [Object.assign(document.createElement("li"), { className: "muted", textContent: "None yet: find one below." })]));
 }
@@ -2446,7 +2657,7 @@ $("settingsFile").onchange = async e => {
   const file = e.target.files[0];
   e.target.value = "";
   if (!file) return;
-  if (!confirm(`Load the settings from "${file.name}"?\n\nThey replace this radio's settings.`)) return;
+  if (!await ask(`Load the settings from “${file.name}”?\n\nThey replace this radio's settings.`, "Load them")) return;
   try {
     const r = await fetch("/api/settings", { method: "POST", headers: { "Content-Type": "application/json" },
                                              body: await file.text() });
@@ -2464,7 +2675,7 @@ $("settingsFile").onchange = async e => {
 
 // Restart: the page says so, waits for the radio to answer again, then reloads.
 $("restart").onclick = async () => {
-  if (!confirm("Restart the radio?\n\nIt goes quiet and is back in about a minute.")) return;
+  if (!await ask("Restart the radio?\n\nIt goes quiet and is back in about a minute.", "Restart", false)) return;
   try {
     const r = await fetch("/api/power", { method: "POST", headers: { "Content-Type": "application/json" },
                                           body: JSON.stringify({ restart: true }) });
@@ -2492,7 +2703,7 @@ $("restart").onclick = async () => {
   }, 3000);
 };
 $("off").onclick = async () => {
-  if (!confirm("Shut down the radio?\n\nTo turn it back on, unplug it and plug it in again.")) return;
+  if (!await ask("Shut down the radio?\n\nTo turn it back on, unplug it and plug it in again.", "Shut down")) return;
   try {
     const r = await fetch("/api/power", { method: "POST" });
     if (!r.ok) throw new Error(r.status);
@@ -2597,7 +2808,8 @@ function showStations() {
     const play = button("▶ Play", "Play " + st.name, () => tuneTo(st));
     play.dataset.url = st.url;
     markPlay(play);
-    const rm = button("✕", "Remove " + st.name, () => saveStations(rStations.filter((_, j) => j !== i)));
+    const rm = button("✕", "Remove " + st.name, async () => { const before = rStations.slice();
+      if (await saveStations(rStations.filter((_, j) => j !== i))) toast(`Forgot the station “${st.name}”.`, () => saveStations(before)); });
     rm.className = "rm"; rm.setAttribute("aria-label", "Remove " + st.name);
     return stationItem(st, [play, rm]);
   }));
@@ -2900,7 +3112,7 @@ function showMedia(d) {
 function delButton(name, folder) {
   const b = button("🗑", `Delete ${name}`, async () => {
     const path = mPath ? `${mPath}/${name}` : name;
-    if (!confirm(`Delete ${folder ? "the folder" : ""} "${name}"${folder ? " and everything in it" : ""} from the radio?\n\nThis can't be undone.`)) return;
+    if (!await ask(`Delete ${folder ? "the folder " : ""}“${name}”${folder ? " and everything in it" : ""} from the radio?\n\nThis can't be undone.`, "Delete for good")) return;
     try {
       await radioPost("/api/media/delete", { kind: mKind, path });
       mediaDirty = true;
@@ -2996,7 +3208,7 @@ function uploadOne(file, name, folder, progress) {
 // --- Views: Radio · Find · Settings (and a page per setting), login -------------------
 // Links: "" (the radio), #find, #settings, #set-<page>. Old ones still work:
 // #radio (the old Streaming view) opens Find, #media the music library.
-const PAGES = ["identity", "speakers", "noise", "stream", "tests", "dj", "voices", "lists", "birthdays", "messages", "library", "stations",
+const PAGES = ["programmes", "identity", "speakers", "noise", "stream", "tests", "dj", "voices", "lists", "birthdays", "messages", "library", "stations",
                "wifi", "updates", "password", "backup", "power"];
 function route() {
   const h = location.hash.slice(1);
@@ -3045,6 +3257,7 @@ function showView() {
   if (page === "password") loadAuth();
   if (page === "stations") loadRadio();
   if (page === "library") loadMedia();
+  if (page === "programmes") loadProgrammes().then(drawProgrammes);
   window.scrollTo(0, 0);
 }
 window.addEventListener("hashchange", () => { if (started) showView(); });
@@ -3165,9 +3378,9 @@ function drawPlaylists(page) {
     if (await savePlaylists(next, "Renamed.")) { if (plTarget() === was) setPlTarget(next[i].name); drawPlaylists(page); }
   };
   $("plDelete").onclick = async () => {
-    if (!$("plDelete").dataset.sure) { $("plDelete").dataset.sure = "1"; $("plDelete").textContent = "Delete it? Press again"; return; }
-    const next = structuredClone(playlists); next.splice(i, 1);
-    if (await savePlaylists(next, `${p.name} deleted.`)) go("#playlists");
+    const before = structuredClone(playlists), next = structuredClone(playlists); next.splice(i, 1);   // (at once, with Undo: as the desktop)
+    if (await savePlaylists(next)) { go("#playlists");
+      toast(`Deleted the playlist “${p.name}”. The songs stay on the radio.`, async () => { await savePlaylists(before); drawPlaylists("playlists"); }); }
   };
 }
 $("plNew").onsubmit = async e => {
@@ -3265,7 +3478,7 @@ function tile(title, sub, on, onclick) {
   const t = document.createElement("button");
   t.type = "button"; t.className = "tile" + (on ? " on" : "");
   t.append(Object.assign(document.createElement("b"), { textContent: title }),
-           Object.assign(document.createElement("small"), { textContent: on ? "Playing now" : sub }));
+           Object.assign(document.createElement("small"), { textContent: on ? (lastStatus?.speaker?.playing === false ? "Tuned · paused" : "Playing now") : sub }));
   t.onclick = onclick;
   return t;
 }
@@ -3291,6 +3504,7 @@ function drawHome() {
 
 // Settings: a list with what each is set to now; each opens its own page.
 const ICONS = {
+  clock: '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3.5 2"/>',
   speaker: '<rect x="5" y="3" width="14" height="18" rx="2"/><circle cx="12" cy="14" r="3.5"/><circle cx="12" cy="7" r="1"/>',
   browser: '<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 9h18M10 13l4 2.5-4 2.5z"/>',
   test: '<path d="M3 12h3l3-7 4 14 3-7h5"/>',
@@ -3323,13 +3537,15 @@ function settingRows() {
       ["browser", "Listen in a browser", s ? (s.stream ? "On: Listen here on the Radio tab" : "Off") : "…", "stream"],
       sp ? ["test", "Test sounds and the knob", "Left, then right · sweeps · pink noise · the knob's switch", "tests"] : null]],
     ["The show", [
-      ["mic", "The DJ", dj ? (dj.dj_on === false ? "Off: music only · " : `Talks ${CHAT[dj.chattiness] || dj.chattiness} · `) +
+      ["mic", "The DJ", dj ? (dj.dj_on === false ? "Off: music only · " : `${cap(CHAT_NAME[dj.chattiness] || dj.chattiness)} · `) +
         `news ${dj.news_enabled ? "on" : "off"} · ` +
         `jingles ${dj.jingle_every ? "every " + dj.jingle_every : "off"}` : "…", "dj"],
-      ["voice", "Voices", lastVoices ? (lastVoices.current ? `${cap(lastVoices.current)} voice in use` : "No voice: the DJ is silent")
-        : dj && dj.voice ? `${cap(dj.voice)} voice in use` : "…", "voices"],
-      ["buttons", "The radio's buttons", bState ? `${bState.bank === "night" ? "☾ Night" : "☀ Day"}: ` +
+      ["voice", "Voices", lastVoices ? (lastVoices.current ? `The DJ's voice: ${VOICE(lastVoices.current)}` : "No voice: the DJ is silent")
+        : dj && dj.voice ? `The DJ's voice: ${VOICE(dj.voice)}` : "…", "voices"],
+      ["buttons", "Buttons", bState ? `${bState.bank === "night" ? "☾ Night" : "☀ Day"}: ` +
         bState.buttons.map((b, i) => `${i + 1} ${b.preset ? b.label : "empty"}`).join(" · ") : "…", "sheet"],
+      ["clock", "Programmes", !programmes.length ? "None yet: make them on the desktop"
+        : `${programmes.length} · ${programmes.filter(p => p.auto).length} armed` + (s && s.programme_mode ? " · programme mode on" : ""), "programmes"],
       ["list", "Themes", allLists.length ? allLists.map(p => p.name).join(", ") : "None yet: make one", "lists"],
       ["cake", "Birthdays", bdList.length ? `${bdList.length} ${bdList.length === 1 ? "person" : "people"}` : "None yet", "birthdays"],
       ["note", "Messages", !msgState ? "…" : !msgState.list.length ? "None yet: the DJ can read notes through the day"
@@ -3339,7 +3555,7 @@ function settingRows() {
         `${s.library.books ?? 0} audiobooks · add or delete` : "…", "library"],
       ["mic", "Podcasts", podShows.length ? `${podShows.length} followed: ${podShows.map(p => p.title).join(", ")}`
         : "None yet: find some", "podcasts"],
-      ["globe", "Internet stations", `${rStations.length} saved` + (lastDir && lastDir.stations
+      ["globe", "Stations", `${rStations.length} saved` + (lastDir && lastDir.stations
         ? ` · directory of ${lastDir.stations.toLocaleString()}` : ""), "stations"]]],
     ["The radio", [
       ["radio", "This radio", identState ? `${identState.hardware === "cathedral" ? "Cathedral" : "Box"} · called ${identState.name}`
@@ -3350,7 +3566,7 @@ function settingRows() {
       ["update", "Updates", s ? (lastUpd && lastUpd.available ? `Version ${lastUpd.available.version} available`
         : `${$("version").textContent || "…"}${lastUpd && lastUpd.job && lastUpd.job.state === "checked" ? " · up to date" : ""}`) : "…", "updates"],
       ["lock", "Password", lastAuth ? (lastAuth.protected ? "On" : "Off: anyone on your network can use this page") : "…", "password"],
-      ["save", "Save or load settings", "A backup of everything, as a file", "backup"],
+      ["save", "Save & load", "A backup of everything, as a file", "backup"],
       s && s.can_power_off ? ["power", "Restart or shut down", "Restart if something seems stuck; shut down before unplugging", "power", true] : null]],
   ];
 }
@@ -3422,6 +3638,20 @@ $("tuneClose").onclick = () => { $("tuneOffer").hidden = true; };
 window.addEventListener("hashchange", () => { if (started) offerTune(); });
 
 let started = false;
+function switchify(seg) {
+  const on = seg.querySelector(':scope > button[data-v="true"]'), off = seg.querySelector(':scope > button[data-v="false"]');
+  if (!on || !off || !/^(On|Yes)$/.test(on.textContent.trim()) || seg.classList.contains("as-switch")) return;
+  if (!seg.querySelector(":scope > label")) seg.prepend(Object.assign(document.createElement("label"), { textContent: (seg.getAttribute("aria-label") || "").replace(/ on or off$/i, "") }));
+  const cap = Object.assign(document.createElement("span"), { className: "swcap" });
+  const sw = Object.assign(document.createElement("button"), { type: "button", className: "sw" });
+  sw.setAttribute("role", "switch"); sw.setAttribute("aria-label", seg.getAttribute("aria-label") || on.textContent);
+  const sync = () => { const v = on.getAttribute("aria-pressed") === "true"; sw.setAttribute("aria-checked", String(v));
+    cap.textContent = v ? "" : off.textContent.trim() === "Off" || off.textContent.trim() === "No" ? "" : off.textContent.trim(); };
+  sw.onclick = () => (sw.getAttribute("aria-checked") === "true" ? off : on).click();
+  new MutationObserver(sync).observe(on, { attributes: true, attributeFilter: ["aria-pressed"] });
+  seg.classList.add("as-switch"); seg.append(cap, sw); sync();
+}
+document.querySelectorAll(".row.seg").forEach(switchify);
 function start() {
   if (started) return;
   started = true;
@@ -3480,8 +3710,8 @@ $("pwForm").onsubmit = e => {
   $("pwNew").value = $("pwAgain").value = "";
   setPassword(a, "Password set. Other phones and computers will be asked for it; this one stays logged in.");
 };
-$("pwRemove").onclick = () => {
-  if (confirm("Remove the password? Anyone on your network will be able to use this page.")) setPassword(null, "Password removed.");
+$("pwRemove").onclick = async () => {
+  if (await ask("Remove the password?\n\nAnyone on your network will be able to use this page.", "Remove it")) setPassword(null, "Password removed.");
 };
 $("pwLogout").onclick = async () => {
   try { await fetch("/api/logout", { method: "POST" }); } catch {}
