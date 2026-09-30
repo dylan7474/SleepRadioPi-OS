@@ -104,8 +104,7 @@
   .g-folder { background: linear-gradient(180deg, #f5c46b, #d99a35); border-radius: 4px 8px 8px 8px; margin-top: 6px; height: 50px;
               box-shadow: 0 3px 8px #0008, inset 0 1px 0 #ffe2a4; display: grid; place-items: center; color: #6b4410; font: 700 20px var(--display); }
   .g-folder::before { content: ""; position: absolute; left: 0; top: -7px; width: 26px; height: 9px; background: #e8ad4c; border-radius: 4px 4px 0 0; }
-  .g-folder.alt { background: linear-gradient(180deg, #9fb3d9, #6c83b3); color: #1d2a47; box-shadow: 0 3px 8px #0008, inset 0 1px 0 #cbd8f2; }
-  .g-folder.alt::before { background: #8ea3cc; }
+  .g-folder svg { width: 50%; height: auto; margin-top: 3px; color: #8d5a12; opacity: .8; filter: drop-shadow(0 1px 0 #ffe9b8b0); }   /* pressed in */
   .g-album { border-radius: 3px; background: linear-gradient(135deg, hsl(var(--h) 55% 50%), hsl(calc(var(--h) + 40) 55% 28%));
              box-shadow: 0 4px 10px #000a; display: grid; place-items: end start; padding: 5px; color: #fff; font: 700 13px/1 var(--display); letter-spacing: .03em; overflow: visible; }
   .g-album::before { content: ""; position: absolute; right: -9px; top: 4px; width: 52px; height: 52px; border-radius: 50%; z-index: -1;
@@ -708,13 +707,29 @@ function wave(seed) {
   for (let i = 0; i < 11; i++) { x = (x * 73 + 41) % 97; const h = 6 + (x % 30); bars += `<rect x="${i * 4}" y="${20 - h / 2}" width="2.4" height="${h}" rx="1.2" fill="#9fb3d9"/>`; }
   return `<svg viewBox="0 0 44 40" aria-hidden="true">${bars}</svg>`;
 }
+// the pictograms pressed into special folders (24x24 line drawings, drawn in the folder's own ink)
+const FOLDER_PIC = {
+  music: '<path d="M9 18V6l11-2v12"/><circle cx="6.5" cy="18" r="2.5"/><circle cx="17.5" cy="16" r="2.5"/>',
+  ondemand: '<circle cx="12" cy="12" r="9"/><path d="M10 8.5l5.5 3.5-5.5 3.5z"/>',
+  books: '<path d="M12 6.5c-2-1.6-5-2-8-1.5v13c3-.5 6-.1 8 1.5 2-1.6 5-2 8-1.5v-13c-3-.5-6-.1-8 1.5zM12 6.5v13"/>',
+  podcasts: '<rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5.5 11a6.5 6.5 0 0 0 13 0M12 17.5V21M8.5 21h7"/>',
+  stations: '<path d="M12 10.5 7.5 21M12 10.5l4.5 10.5M9.2 17h5.6"/><circle cx="12" cy="9" r="1.6"/><path d="M8.3 5.3a5.2 5.2 0 0 0 0 7.4M15.7 5.3a5.2 5.2 0 0 1 0 7.4M5.5 2.8a8.8 8.8 0 0 0 0 12.4M18.5 2.8a8.8 8.8 0 0 1 0 12.4"/>',
+  playlists: '<path d="M4 6h10M4 11h10M4 16h6"/><path d="M17 17.5V8l4-1"/><circle cx="15.3" cy="17.5" r="1.8"/>',
+  programmes: '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3.5 2"/>',
+  lists: '<circle cx="9" cy="8" r="3"/><path d="M3.5 19a5.5 5.5 0 0 1 11 0"/><circle cx="16.5" cy="9" r="2.4"/><path d="M15.5 14.2a4.6 4.6 0 0 1 5.5 4.8"/>',
+  actions: '<path d="M13 2.5 5 13.5h6l-1 8 8-11h-6z"/>',
+  jingles: '<path d="M6 16.5V11a6 6 0 0 1 12 0v5.5l1.5 1.5h-15z"/><path d="M10 20.5a2 2 0 0 0 4 0"/>',
+  voices: '<path d="M4 5.5h16v10H10l-4.5 4v-4H4z"/><path d="M8 9.5h8M8 12h5"/>',
+};
+const svgPic = d => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${d}</svg>`;
 function glyph(o) {
   const g = el("div", { className: "glyph" });
   g.style.setProperty("--h", o.h);
   switch (o.kind) {
     case "folder": if (o.box === "birthdays") { const d = new Date(); g.className += " g-cal"; g.dataset.mon = MONN[d.getMonth()].toUpperCase(); g.dataset.day = d.getDate(); break; }
       if (o.box === "messages") { g.className += " g-note"; g.textContent = "Messages for the DJ to read"; break; }
-      g.className += " g-folder" + (o.alt ? " alt" : ""); g.textContent = o.sym || ""; break;
+      // one colour for every folder, as on a Mac; a special folder has what's in it pressed into its front
+      g.className += " g-folder"; { const pic = FOLDER_PIC[o.box || (o.root && !o.path ? o.root : "")]; if (pic) g.innerHTML = svgPic(pic); } break;
     case "album": if (o.root === "ondemand") { g.className += " g-sound"; g.innerHTML = wave(o.title); } else { g.className += " g-album"; g.textContent = initials(o.title); } break;
     case "track": if (o.root === "ondemand") { g.className += " g-sound"; g.innerHTML = wave(o.title); } else g.className += " g-track"; break;
     case "station": g.className += " g-station"; g.dataset.short = o.short; break;
@@ -788,7 +803,7 @@ function iconEl(o, ctx) {
   const sub = subOf(o);
   d.append(glyph(o), el("div", { className: "lbl", textContent: o.title }));
   if (sub) d.append(el("div", { className: "sub", textContent: sub }));
-  d.title = `${KIND[o.kind]}: ${o.title}${sub ? " · " + sub : ""}`;
+  d.title = `${KIND[o.kind]}: ${o.title}${sub ? " · " + sub : ""}` + (o.kind === "show" ? " · double-click to play, like starting an app" : "");
   d.addEventListener("pointerdown", e => press(e, d, { id: o.id, ...ctx }));
   d.addEventListener("keydown", e => { if (e.key === "Enter") open(o.id); });
   return d;
