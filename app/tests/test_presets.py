@@ -11,6 +11,7 @@ import numpy as np
 import pytest
 
 from sleepradiopi.audio import pcm
+from sleepradiopi.broadcast import programmes
 from sleepradiopi.config import backup
 from sleepradiopi.config.settings import load
 from sleepradiopi.io import knob, presets as presets_mod
@@ -141,6 +142,7 @@ class Control:
     def play_clip(self, clip): self.clips.append(clip.label)
     def set_sleep(self, m): self.sleep = m
     def status(self): return {"sleep_min": self.sleep or None}
+    def set_noise(self, on=None): self.calls.append(f"noise {'on' if on else 'off'}")
 
 
 def _presets(tmp_path, buttons=None):
@@ -150,6 +152,22 @@ def _presets(tmp_path, buttons=None):
     conf.write_text("{}")
     ctl = Control()
     return st, ctl, conf, Presets(st, ctl, conf, buttons)
+
+
+def test_a_programme_sets_things_on_or_off_where_a_button_switches(tmp_path: Path) -> None:
+    """A programme's moment says on or off: a switch at a set time could go either way."""
+    st, ctl, conf, p = _presets(tmp_path)
+    p.scheduled("noise_on"); p.scheduled("noise_off")
+    assert ctl.calls == ["noise on", "noise off"]
+    st.set_dj(dj_on=True)
+    p.scheduled("dj_on")
+    assert st.dj_on
+    p.scheduled("dj_off"); p.scheduled("dj_off")
+    assert not st.dj_on and json.loads(conf.read_text())["broadcast_dj"] is False
+    p.scheduled("sleep"); ctl.sleep = 12; p.scheduled("sleep")             # (already counting down: not switched off)
+    assert ctl.sleep == 12
+    for a in ("address", "noise_on", "noise_off", "dj_on", "dj_off"):
+        assert programmes.validate([{"name": "P", "blocks": [{"name": "B", "items": [{"kind": "action", "action": a}]}]}])
 
 
 def test_a_press_plays_the_preset_and_again_pauses(tmp_path: Path) -> None:

@@ -546,7 +546,7 @@ async function loadFolder(f) {
     f.kids = d.voices.map(v => mk({ id: "vc:" + v, kind: "voice", key: "voice", name: v, title: VOICE(v), current: v === d.current }).id);
     f.data = d;
   } else if (f.box === "actions") {
-    f.kids = Object.values(ACTION).map(a => a.id);
+    f.kids = Object.values(ACTION).filter(a => !FLIP[a.action]).map(a => a.id);
   } else if (f.box === "jingles") {
     const d = await api("/api/media?kind=jingles&path=");
     f.kids = d.files.filter(x => x.audio).map(x => mk({ id: "j:" + x.name, kind: "jingle", title: cleanName(x.name), root: "jingles", path: x.name, mb: x.size / 1e6 }).id);
@@ -609,10 +609,14 @@ function noteWhen(m) {            // "Sundays at 09:00", "25 Dec", "with the oth
   const when = m.times?.length ? "at " + m.times.join(", ") : "with the others";
   return [date, days, when].filter(Boolean).join(" · ") + (m.until ? ` · until ${m.until}` : "");
 }
-const IN_PROGRAMMES = ["time", "pips", "news", "sleep"];     // the actions a programme can do; the rest are for buttons
+// a button's switches (noise, DJ) go into a programme as on or off: at a set time, a switch could go either way
+const SWITCHED = { noise: ["noise_on", "noise_off"], dj: ["dj_on", "dj_off"] };
+const FLIP = { noise_on: "noise_off", noise_off: "noise_on", dj_on: "dj_off", dj_off: "dj_on" };
+const QUICK = ["time", "pips", "news", "sleep"];              // the ＋ pills under a block
 const messageObj = text => mk({ id: "msg:" + hue(text) + ":" + text.length, kind: "message", title: text.length > 38 ? text.slice(0, 36) + "…" : text, text });
 const ACTION = Object.fromEntries([["time", "The time, spoken", "◷"], ["pips", "The pips", "♪"], ["news", "The news", "N"], ["sleep", "Sleep timer", "☾"],
-                                    ["address", "Say the address", "@"], ["noise", "Noise on/off", "≈"], ["dj", "DJ on/off", "DJ"]]
+                                    ["address", "Say the address", "@"], ["noise", "Noise on/off", "≈"], ["dj", "DJ on/off", "DJ"],
+                                    ["noise_on", "Noise on", "≈"], ["noise_off", "Noise off", "≈"], ["dj_on", "DJ on", "DJ"], ["dj_off", "DJ off", "DJ"]]
   .map(([a, title, sym]) => [a, mk({ id: "act:" + a, kind: "action", action: a, title, sym, h: 200 })]));
 function objRef(o) {
   if (!o) return null;
@@ -628,7 +632,7 @@ function objRef(o) {
   if (o.kind === "list") return { kind: "list", name: o.name };
   if (o.kind === "message" || o.kind === "note") return { kind: "message", text: o.text };
   if (o.kind === "jingle") return { kind: "jingle", path: o.path };
-  if (o.kind === "action") return IN_PROGRAMMES.includes(o.action) ? { kind: "action", action: o.action } : null;
+  if (o.kind === "action") return { kind: "action", action: SWITCHED[o.action]?.[0] || o.action };
   return null;
 }
 const INSTANT = ["message", "jingle", "action", "note"];
@@ -737,7 +741,7 @@ function subOf(o) {
       const age = o.b.year ? nextYear - o.b.year : null;
       return (o.soon === 0 ? "Today!" : o.soon === 1 ? "Tomorrow" : `${o.b.day} ${MONN[o.b.month - 1]}`) + (age ? ` · ${age}` : ""); }
     case "voice": return o.current ? "The DJ's voice now" : "Installed";
-    case "action": return IN_PROGRAMMES.includes(o.action) ? "A button, or a programme" : "For a button";
+    case "action": return o.action === "pips" ? "For a programme" : SWITCHED[o.action] ? "A button, or on / off in a programme" : "A button, or a programme";
     case "show": return "with the DJ";
   }
   return "";
@@ -989,7 +993,7 @@ function presetOf(o) {
 // what a button can hold, from what the desktop has loaded (the Buttons window's list)
 function buttonChoices() {
   const kids = f => f.kids.map(id => O[id]).filter(Boolean);
-  return [["Actions", Object.values(ACTION).filter(a => a.action !== "pips")],
+  return [["Actions", Object.values(ACTION).filter(a => a.action !== "pips" && !FLIP[a.action])],
           ["Sleep Radio and themes", [SHOW, ...kids(LISTS).filter(o => o.kind === "list")]],
           ["Stations", kids(STATIONS)], ["Playlists", kids(PLAYLISTS)], ["Programmes", kids(PROGRAMMES)],
           ["Podcasts", kids(PODCASTS)], ["Audiobooks", kids(BOOKS)]];
@@ -1010,7 +1014,7 @@ async function open(id) {
   if (!o) return;
   if (["track", "station", "episode", "show", "book"].includes(o.kind)) return play(o);
   if (o.kind === "dj") return open(PANEL.dj.id);
-  if (o.kind === "action") return toast(`“${o.title}”: drag it onto a button on the radio${IN_PROGRAMMES.includes(o.action) ? ", or into a programme" : ""}.`);
+  if (o.kind === "action") return toast(`“${o.title}”: drag it onto ${o.action === "pips" ? "" : "a button on the radio, or "}a programme's timeline.`);
   if (o.kind === "jingle") return toast(`“${o.title}”: the DJ plays jingles between songs, when jingles are on (the DJ's window).`);
   if (o.kind === "panel" && o.key === "library") return open(JINGLES.id);
   if (o.kind === "panel" && o.key === "voices") return open(VOICES.id);
@@ -2036,14 +2040,16 @@ function inspector(o, b, win) {
   line2.append(del);
   const line3 = el("div", { className: "line" });
   b.items.forEach(id => { const it = O[id]; if (!it) return; const x = el("button", { type: "button", textContent: "✕", title: "Take it out" }); x.onclick = () => { b.items = b.items.filter(v => v !== id); saveProgrammes(); };
-    line3.append(el("span", { className: "chipx" }, glyph(it), it.title, x)); });
+    const flip = FLIP[it.action] && el("button", { type: "button", textContent: it.action.endsWith("_on") ? "→ off" : "→ on", title: "Switch it on or off at this time" });
+    if (flip) flip.onclick = () => { const to = ACTION[FLIP[it.action]]; b.items = b.items.map(v => v === id ? to.id : v); if (b.name === it.title) b.name = to.title; saveProgrammes(`“${to.title}” at this time.`); };
+    line3.append(el("span", { className: "chipx" }, glyph(it), it.title, ...(flip ? [flip] : []), x)); });
   if (!b.items.length) line3.append(el("span", { className: "muted", textContent: "Empty: drop things onto the block (empty, it plays what the gaps do)." }));
   const say = el("input", { type: "text", placeholder: "Something for the DJ to say", id: `say-${o.id}-${i}`, style: "flex:1;min-width:10em" });
   const addItem = it => { b.items.push(it.id); saveProgrammes(`Added “${it.title}” to “${b.name}”.`); };
   const sayBtn = el("button", { className: "pill", type: "button", textContent: "＋ Say it" });
   sayBtn.onclick = () => say.value.trim() && addItem(messageObj(say.value.trim()));
   say.onkeydown = e => { if (e.key === "Enter") sayBtn.click(); };
-  const line4 = el("div", { className: "line" }, say, sayBtn, ...Object.values(ACTION).filter(a => IN_PROGRAMMES.includes(a.action)).map(a => Object.assign(el("button", { className: "pill", type: "button", textContent: "＋ " + a.title }), { onclick: () => addItem(a) })),
+  const line4 = el("div", { className: "line" }, say, sayBtn, ...Object.values(ACTION).filter(a => QUICK.includes(a.action)).map(a => Object.assign(el("button", { className: "pill", type: "button", textContent: "＋ " + a.title }), { onclick: () => addItem(a) })),
     el("span", { className: "muted", textContent: "Jingles: drag one from the Jingles folder" }));
   return el("div", { className: "insp" }, line1, line2, line3, line4);
 }
@@ -2082,7 +2088,7 @@ function press(e, node, src) {
   node.addEventListener("pointermove", move); node.addEventListener("pointerup", up); node.addEventListener("pointercancel", up);
 }
 async function drop(src, target, ev) {
-  const o = O[src.id];
+  let o = O[src.id];
   if (!target || !o) return;
   const kind = target.dataset.drop;
   if (kind === "desk") {
@@ -2109,7 +2115,13 @@ async function drop(src, target, ev) {
     return saveProgrammes(`In the gaps: ${o.title}.`);
   }
   if (dest.kind === "programme") {
-    if (!objRef(o)) return toast(o.kind === "action" ? `“${o.title}” is for buttons: in a programme, use the time, the pips, the news or the sleep timer.` : `“${o.title}” can't go in a programme.`);
+    if (o.kind === "programme") {                    // (a programme in a programme: it plays next)
+      if (o === dest) return toast("A programme can't play itself next: use Repeat at its end.");
+      dest.then = "chain"; dest.chain = o.title;
+      return saveProgrammes(`When “${dest.title}” ends, “${o.title}” plays next.`);
+    }
+    if (o.kind === "action" && SWITCHED[o.action]) o = ACTION[SWITCHED[o.action][0]];   // (on; flip it to off on the block)
+    if (!objRef(o)) return toast(`“${o.title}” can't go in a programme.`);
     await fetchLengths([o]);                         // its real running time, from the radio
     if (kind === "blk") { const b = dest.blocks[+target.dataset.i]; if (!b.items.includes(o.id)) b.items.push(o.id); await saveProgrammes(`Added “${o.title}” to “${b.name}”.`); }
     else if (INSTANT.includes(o.kind)) { const tl2 = timeline(dest), end = tl2.length ? tl2[tl2.length - 1].end : toMin(dest.start);

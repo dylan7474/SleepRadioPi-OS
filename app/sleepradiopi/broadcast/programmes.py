@@ -51,7 +51,8 @@ GAPS = ("show", "silence")
 ITEM_KINDS = ("album", "track", "station", "playlist", "book", "podcast", "episode", "show", "list",
               "message", "jingle", "action")
 INSTANT = ("message", "jingle", "action")     # happen at once: said, played or done, then on
-ACTIONS = ("time", "news", "sleep", "pips")
+ACTIONS = ("time", "news", "sleep", "pips", "address",   # (what a button can do, but on or off, not a switch:
+           "noise_on", "noise_off", "dj_on", "dj_off")     #  at a set time, a switch could go either way)
 EVERY = (15, 30, 60)                         # repeating within the day, from start to until
 MOMENT_LEAD = timedelta(seconds=60)          # a moment with the time gets ready this early (the voice is slow)
 DEFAULT_MIN = 60

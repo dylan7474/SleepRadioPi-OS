@@ -541,7 +541,7 @@ def main() -> None:
                           sleep=(lambda: control.set_sleep(1)) if control else None,
                           pause=control.pause if control else None,
                           say=lambda text: _say_now(station, control, text),
-                          jingle=play_jingle, action=presets._action)
+                          jingle=play_jingle, action=presets.scheduled)
     try:
         scheduler.set_programmes(settings.programmes)
     except ValueError as e:              # a hand-edited config: don't stop the station

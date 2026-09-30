@@ -550,6 +550,22 @@ class Presets:
                 save_setting(self.config_file, "broadcast_dj", on)
             self._say("DJ on." if on else "DJ off. Just the music.")
 
+    def scheduled(self, action: str) -> None:
+        """An action at a programme's moment: set things on or off (a button's
+        switch could go either way), else as the button does it."""
+        if action == "sleep" and self.control is not None:
+            if not self.control.status().get("sleep_min"):       # (already counting down: leave it be)
+                self.control.set_sleep(SLEEP_MIN)
+                self._say(f"Sleep timer, {SLEEP_MIN} minutes.")
+        elif action in ("noise_on", "noise_off") and self.control is not None:
+            self.control.set_noise(on=action == "noise_on")
+        elif action in ("dj_on", "dj_off"):
+            on = action == "dj_on"
+            if self.station.dj_on != on:
+                self._action("dj")
+        else:
+            self._action(action)
+
     def _news(self) -> None:
         try:
             audio = self.station.news_now()

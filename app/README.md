@@ -420,7 +420,12 @@ The cards:
   too — made a minute ahead (the voice is slow on a Zero), then played on the
   dot — so a programme of just those, repeating every 15 minutes from 08:00 to
   21:00, is a talking clock. A programme of only moments plays over whatever's
-  on (it never stops another programme, and can't clash with one). Stations and podcasts are found
+  on (it never stops another programme, and can't clash with one). Anything
+  a button can do goes in a programme too: the button's switches go in as
+  **on or off** (*Noise on*, *DJ off*: flip one with → on / → off on its block,
+  as a switch at a set time could go either way), a sleep timer already
+  counting down is left alone, and a programme dropped onto another plays
+  next (its *then*). Stations and podcasts are found
   and followed from their windows (*Find a station*, *Follow a podcast*) and
   forgotten by dragging to the Trash. **Jingles** is a folder of its own
   (upload, download, delete) and **Artist lists** an editor (make a list with
