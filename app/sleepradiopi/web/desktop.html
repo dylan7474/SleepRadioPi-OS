@@ -835,7 +835,8 @@ function nowWords() {
   const prog = pr ? `Programme: ${pr.name} · ${pr.waiting ? "waiting for the next block" : pr.block}${pr.until ? " until " + pr.until : ""}` : "";
   if (S.programme_mode && !pr && !(S.speaker && S.speaker.playing)) {
     const nx = nextArmed();
-    return ["Programme mode", nx ? `Quiet until ${nx.o.title}, ${when(nx.start)}` : "Quiet: nothing armed", "Arm a programme to wake it"];
+    const ov = nextOver(nx);
+    return ["Programme mode", nx ? `Quiet until ${nx.o.title}, ${when(nx.start)}` + (ov ? ` · ${overWords(ov)}` : "") : ov ? `Quiet · ${overWords(ov)}` : "Quiet: nothing armed", "Arm a programme to wake it"];
   }
   return [title, sub, prog];
 }
@@ -1929,6 +1930,14 @@ function armProgramme(o) {
   ask(`${o.title} (${when(x.a.start)}–${x.a.end.toTimeString().slice(0, 5)}) overlaps ${x.b.o.title} (${when(x.b.start)}–${x.b.end.toTimeString().slice(0, 5)}). ` +
       `If they overlap, the one starting later takes over. Arm it anyway?`, "Arm anyway", go);
 }
+// the next armed programme that plays over what's on (noise at night, a talking clock), if it
+// comes before the next one that wakes the radio: it doesn't end the quiet, but it's still due
+function nextOver(nx) {
+  const ov = PROGRAMMES.kids.map(id => O[id]).filter(x => x && x.auto && overOnly(x)).flatMap(x => occurrences(x)).sort((a, b) => a.start - b.start)[0];
+  return ov && (!nx || ov.start < nx.start) ? ov : null;
+}
+const overWords = ov => (!ov.o.blocks.length && ov.o.switches?.length
+  ? ov.o.switches.map(w => SWITCH_WORD[w.what]).filter((x, i, a) => a.indexOf(x) === i).join(" and ") : ov.o.title) + " " + when(ov.start);
 function nextArmed() {
   return PROGRAMMES.kids.map(id => O[id]).filter(x => x && x.auto && !overOnly(x)).flatMap(x => occurrences(x)).filter(x => !x.chained).sort((a, b) => a.start - b.start)[0] || null;
 }
@@ -1940,7 +1949,8 @@ async function setProgrammeMode(on) {
 function nextLineText() {
   const pr = S?.programme;
   if (pr) return `● ${pr.name}: ${pr.waiting ? "waiting" : pr.block}${pr.until ? " until " + pr.until : ""}`;
-  if (S?.programme_mode) { const nx = nextArmed(); return nx ? `☾ Programme mode · next: ${nx.o.title} ${when(nx.start)}` : "☾ Programme mode · nothing armed"; }
+  if (S?.programme_mode) { const nx = nextArmed(), ov = nextOver(nx);
+    return (nx ? `☾ Programme mode · next: ${nx.o.title} ${when(nx.start)}` : `☾ Programme mode · ${ov ? "quiet" : "nothing armed"}`) + (ov ? ` · ${overWords(ov)}` : ""); }
   const next = PROGRAMMES.kids.map(id => O[id]).filter(x => x && x.auto).flatMap(x => occurrences(x)).filter(x => !x.chained).sort((a, b) => a.start - b.start)[0];
   return next ? `⏰ Next: ${next.o.title} ${when(next.start)}` : "Schedule: nothing armed";
 }
