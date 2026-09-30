@@ -232,6 +232,11 @@
                  box-shadow: 0 3px 6px #0005, inset 0 -2px 3px #0002; font: 700 14px var(--display); color: #444; }
   .pbtn.over button { box-shadow: 0 0 0 3px var(--blue); }
   .pbtn.on button { box-shadow: 0 0 0 2px var(--amber), 0 3px 6px #0005; }
+  .transport { display: flex; justify-content: center; gap: 10px; margin-top: 9px; }
+  .tkey { width: 46px; height: 30px; border-radius: 15px; border: 0; background: radial-gradient(circle at 40% 30%, #fff, #c8ccd2 75%, #9aa0a8);
+          box-shadow: 0 3px 6px #0005, inset 0 -2px 3px #0002; font: 700 14px var(--display); color: #444; }
+  .tkey:active { transform: translateY(1px); box-shadow: 0 1px 3px #0005; }
+  .tkey:disabled { opacity: .45; cursor: default; }
   .pbtn span { font-size: 10.5px; line-height: 1.15; text-align: center; color: #4d493f; max-width: 64px; height: 2.3em; overflow: hidden; }
   .badge { position: absolute; right: 14px; top: 16px; font: 700 8.5px var(--display); letter-spacing: .2em; color: #2f5cb4; }
 
@@ -454,6 +459,7 @@ const PLAYLISTS = mk({ id: "box:playlists", kind: "folder", title: "Playlists", 
 const PROGRAMMES = mk({ id: "box:programmes", kind: "folder", title: "Programmes", box: "programmes", kids: [], sym: "◷" });
 const LISTS = mk({ id: "box:lists", kind: "folder", title: "Theme radio", box: "lists", kids: [], sym: "A", alt: true });
 const TRASH = mk({ id: "trash", kind: "trash", title: "Trash", kids: [] });
+const ACTIONS_BOX = mk({ id: "box:actions", kind: "folder", title: "Actions", box: "actions", kids: [], sym: "!", alt: true });
 const JINGLES = mk({ id: "box:jingles", kind: "folder", title: "Jingles", box: "jingles", kids: [], sym: "J", alt: true });
 const SHOW = mk({ id: "show", kind: "show", title: "Sleep Radio" });
 // settings: each one an object; for now each opens the classic page's version in a window
@@ -529,6 +535,8 @@ async function loadFolder(f) {
     const d = await api("/api/voices");
     f.kids = d.voices.map(v => mk({ id: "vc:" + v, kind: "voice", key: "voice", name: v, title: VOICE(v), current: v === d.current }).id);
     f.data = d;
+  } else if (f.box === "actions") {
+    f.kids = Object.values(ACTION).map(a => a.id);
   } else if (f.box === "jingles") {
     const d = await api("/api/media?kind=jingles&path=");
     f.kids = d.files.filter(x => x.audio).map(x => mk({ id: "j:" + x.name, kind: "jingle", title: cleanName(x.name), root: "jingles", path: x.name, mb: x.size / 1e6 }).id);
@@ -591,8 +599,10 @@ function noteWhen(m) {            // "Sundays at 09:00", "25 Dec", "with the oth
   const when = m.times?.length ? "at " + m.times.join(", ") : "with the others";
   return [date, days, when].filter(Boolean).join(" · ") + (m.until ? ` · until ${m.until}` : "");
 }
+const IN_PROGRAMMES = ["time", "pips", "news", "sleep"];     // the actions a programme can do; the rest are for buttons
 const messageObj = text => mk({ id: "msg:" + hue(text) + ":" + text.length, kind: "message", title: text.length > 38 ? text.slice(0, 36) + "…" : text, text });
-const ACTION = Object.fromEntries([["time", "The time, spoken", "◷"], ["pips", "The pips", "♪"], ["news", "The news", "N"], ["sleep", "Sleep timer", "☾"]]
+const ACTION = Object.fromEntries([["time", "The time, spoken", "◷"], ["pips", "The pips", "♪"], ["news", "The news", "N"], ["sleep", "Sleep timer", "☾"],
+                                    ["address", "Say the address", "@"], ["noise", "Noise on/off", "≈"], ["dj", "DJ on/off", "DJ"]]
   .map(([a, title, sym]) => [a, mk({ id: "act:" + a, kind: "action", action: a, title, sym, h: 200 })]));
 function objRef(o) {
   if (!o) return null;
@@ -608,7 +618,7 @@ function objRef(o) {
   if (o.kind === "list") return { kind: "list", name: o.name };
   if (o.kind === "message" || o.kind === "note") return { kind: "message", text: o.text };
   if (o.kind === "jingle") return { kind: "jingle", path: o.path };
-  if (o.kind === "action") return { kind: "action", action: o.action };
+  if (o.kind === "action") return IN_PROGRAMMES.includes(o.action) ? { kind: "action", action: o.action } : null;
   return null;
 }
 const INSTANT = ["message", "jingle", "action", "note"];
@@ -717,7 +727,7 @@ function subOf(o) {
       const age = o.b.year ? nextYear - o.b.year : null;
       return (o.soon === 0 ? "Today!" : o.soon === 1 ? "Tomorrow" : `${o.b.day} ${MONN[o.b.month - 1]}`) + (age ? ` · ${age}` : ""); }
     case "voice": return o.current ? "The DJ's voice now" : "Installed";
-    case "action": return "At that moment";
+    case "action": return IN_PROGRAMMES.includes(o.action) ? "A button, or a programme" : "For a button";
     case "show": return "with the DJ";
   }
   return "";
@@ -749,9 +759,10 @@ function loadDesk() {
   if (s && Array.isArray(s.icons)) {
     for (const p of s.icons) { if (!O[p.id] && p.snap) mk({ ...p.snap, kids: [], items: [], eps: [], blocks: [] }); if (O[p.id]) desk.push({ id: p.id, x: p.x, y: p.y, alias: !!p.alias }); }
     radioPos = s.radio || null;
+    if (!desk.some(p => p.id === ACTIONS_BOX.id)) desk.push({ id: ACTIONS_BOX.id, x: 262, y: 14 });   // (new since the layout was saved)
   }
   if (!desk.length) {
-    [MUSIC, ONDEMAND, BOOKS, PODCASTS, STATIONS, PLAYLISTS, PROGRAMMES, LISTS].forEach((f, i) => desk.push({ id: f.id, x: 18, y: 14 + i * 92 }));
+    [MUSIC, ONDEMAND, BOOKS, PODCASTS, STATIONS, PLAYLISTS, PROGRAMMES, LISTS, ACTIONS_BOX].forEach((f, i) => desk.push({ id: f.id, x: 18 + Math.floor(i / 8) * 122, y: 14 + (i % 8) * 92 }));
     [SHOW, DJ, NOTES, BDAYS].forEach((o, i) => desk.push({ id: o.id, x: 140, y: 14 + i * 100, alias: false }));
   }
 }
@@ -803,6 +814,12 @@ function radioEl() {
   knob.onclick = async () => { try { S.speaker = await api("/api/speaker", { pause: "toggle" }); updateRadio(); } catch (e) { toast(e.message); } };
   knob.ondblclick = () => open(PANEL.speakers.id);
   knob.onwheel = e => { e.preventDefault(); volume(-Math.sign(e.deltaY) * 2); };
+  // like a CD player: Back (the start of this one, or the one before in its first 5 s), play/pause, Skip
+  const tk = (id, txt, title, fn) => { const b = el("button", { className: "tkey", type: "button", id, textContent: txt, title }); b.setAttribute("aria-label", title); b.onclick = fn; return b; };
+  const transport = el("div", { className: "transport" },
+    tk("rPrev", "⏮", "Back: this one from the start, or (in its first 5 seconds) the one before", async () => { try { await api("/api/previous", {}); setTimeout(poll, 600); } catch (e) { toast(e.message); } }),
+    tk("rPlay", S?.speaker?.playing ? "⏸" : "▶", "Pause or play", async () => { try { S.speaker = await api("/api/speaker", { pause: "toggle" }); updateRadio(); } catch (e) { toast(e.message); } }),
+    tk("rNext", "⏭", "Skip to what's next", async () => { try { await api("/api/skip", {}); setTimeout(poll, 600); } catch (e) { toast(e.message); } }));
   const gr = () => { const g = el("div", { className: "grille", title: "Speakers: stereo, EQ, low cut, the knob" }); g.onclick = () => open(PANEL.speakers.id); return g; };
   const face = el("div", { className: "rface" }, gr(), el("div", {}, knob, el("div", { className: "rvol", id: "rVol", textContent: S?.speaker ? (S.speaker.playing ? "Volume " + vol : "Paused") : "" })), gr());
   const pre = el("div", { className: "presets", id: "rPresets" });
@@ -826,7 +843,8 @@ function radioEl() {
   modeSw.onclick = () => setProgrammeMode(!S?.programme_mode);
   const modeRow = el("div", { className: "rfoot", style: "justify-content:flex-start;gap:8px" }, modeSw,
     el("span", { className: "plink", textContent: S?.programme_mode ? "Programme mode: quiet unless a programme is on" : "Programme mode (an alarm clock)" }));
-  r.append(handle, badge, dial, face, pre, modeRow, el("div", { className: "rfoot" }, plink, turn));
+  r.append(handle, badge, dial, transport, face, pre, modeRow, el("div", { className: "rfoot" }, plink, turn));
+  setTimeout(updateRadio);
   r.addEventListener("pointerdown", e => { if (e.target === r || e.target === handle) moveThing(e, r, (x, y) => { radioPos = { x, y }; saveDesk(); }); });
   return r;
 }
@@ -859,6 +877,7 @@ function updateRadio() {            // the live bits, without redrawing the desk
   const vol = S?.speaker?.volume ?? 0;
   $("rKnob").style.setProperty("--rot", (vol / 100 * 270 - 135) + "deg");
   $("rVol").textContent = S?.speaker ? (S.speaker.playing ? "Volume " + vol : "Paused") : "";
+  if ($("rPrev")) { $("rPrev").disabled = !S?.can_previous; $("rNext").disabled = !S?.can_skip; $("rPlay").textContent = S?.speaker?.playing ? "⏸" : "▶"; }
   const msw = document.querySelector("#radio .sw"); if (msw) msw.setAttribute("aria-checked", String(!!S?.programme_mode));
   const pbs = $("rPresets")?.children || [];
   buttons.forEach((b, i) => { if (pbs[i]) { pbs[i].classList.toggle("on", !!b.playing); pbs[i].querySelector("span").textContent = b.label; } });
@@ -926,8 +945,17 @@ function presetOf(o) {
     case "episode": return o.gid ? { kind: "podcast", show: o.pid, title: O["pod:" + o.pid]?.title || "Podcast", start: o.gid, start_title: o.title } : null;
     case "playlist": return { kind: "playlist", name: o.name, shuffle: false };
     case "programme": return { kind: "programme", name: o.title };
+    case "action": return o.action === "pips" ? null : { kind: "action", action: o.action };
   }
   return null;
+}
+// what a button can hold, from what the desktop has loaded (the Buttons window's list)
+function buttonChoices() {
+  const kids = f => f.kids.map(id => O[id]).filter(Boolean);
+  return [["Actions", Object.values(ACTION).filter(a => a.action !== "pips")],
+          ["Sleep Radio and themes", [SHOW, ...kids(LISTS).filter(o => o.kind === "list")]],
+          ["Stations", kids(STATIONS)], ["Playlists", kids(PLAYLISTS)], ["Programmes", kids(PROGRAMMES)],
+          ["Podcasts", kids(PODCASTS)], ["Audiobooks", kids(BOOKS)]];
 }
 async function setPreset(i, o) {
   const preset = presetOf(o);
@@ -943,6 +971,7 @@ async function open(id) {
   if (!o) return;
   if (["track", "station", "episode", "show", "book"].includes(o.kind)) return play(o);
   if (o.kind === "dj") return open(PANEL.dj.id);
+  if (o.kind === "action") return toast(`“${o.title}”: drag it onto a button on the radio${IN_PROGRAMMES.includes(o.action) ? ", or into a programme" : ""}.`);
   if (o.kind === "jingle") return toast(`“${o.title}”: the DJ plays jingles between songs, when jingles are on (the DJ's window).`);
   if (o.kind === "panel" && o.key === "library") return open(JINGLES.id);
   if (o.kind === "panel" && o.key === "voices") return open(VOICES.id);
@@ -1045,6 +1074,7 @@ function folderView(o, box, win) {
     tools.append(o.data && !o.data.has_standard ? T("Download the standard voice", async () => { try { await api("/api/voices/standard", {}); toast("Downloading the standard voice onto the radio…"); } catch (e) { toast(e.message); } }) : null,
       T("Upload a voice…", () => up.click()), up, el("span", { className: "note", textContent: "Double-click a voice to make it the DJ's (the radio restarts) · drop a voice archive here to install it" }));
   }
+  else if (o.box === "actions") tools.append(el("span", { className: "note", textContent: "Drag an action onto a button on the radio; the time, the pips, the news and the sleep timer can go into programmes too" }));
   else if (o.box === "messages") tools.append(T("New message", () => newMessage()), T("When they're read…", () => open(PANEL.messages.id)),
     el("span", { className: "note", textContent: "Double-click a note to change it or when it's said · drag one into a programme, or onto the radio to hear it" }));
   else if (o.box === "jingles") {
@@ -1341,7 +1371,7 @@ const UI = {
     },
   },
   buttons: {
-    load: () => api("/api/buttons"),
+    load: async () => { await Promise.all([LISTS, STATIONS, PLAYLISTS, PROGRAMMES, PODCASTS, BOOKS].filter(f => !f.loaded).map(f => loadFolder(f).catch(() => {}))); return api("/api/buttons"); },
     build: (b, act) => {
       buttons = b.buttons; updateRadio();
       const auto = b.auto || {};
@@ -1349,9 +1379,19 @@ const UI = {
       const saveAuto = on => act(() => api("/api/buttons/auto", { on, night_min: minsOf(night.value), day_min: minsOf(day.value) }));
       night.onchange = () => saveAuto(!!auto.on); day.onchange = () => saveAuto(!!auto.on);
       return [
-        grp("The radio's buttons", ...b.buttons.map((x, i) => srow(`Button ${i + 1}`, el("span", { textContent: x.label + (x.playing ? " · playing" : "") }),
-            line(sbtn("▶", () => pressButton(i)), sbtn("Empty it", () => act(() => api("/api/buttons", { button: i + 1, preset: null })))))),
-          help("To change a button, drag anything onto it on the radio. On the radio itself, hold a button for 3 seconds to keep what's playing on it.")),
+        grp("The radio's buttons", ...b.buttons.map((x, i) => {
+            const pick = el("select", { id: "btn-pick-" + i }); pick.setAttribute("aria-label", `Change what button ${i + 1} plays`);
+            pick.append(new Option("Change…", ""));
+            const choices = buttonChoices(), flat = [];
+            for (const [label, items] of choices) { if (!items.length) continue; const g = el("optgroup"); g.label = label; pick.append(g);
+              for (const o of items) { flat.push(o); g.append(new Option(o.title, String(flat.length - 1))); } }
+            pick.append(new Option("Empty", "empty"));
+            pick.onchange = () => { if (pick.value === "empty") act(() => api("/api/buttons", { button: i + 1, preset: null }));
+                                    else if (pick.value !== "") setPreset(i, flat[+pick.value]).then(() => act(async () => {})); };
+            return srow(`Button ${i + 1}`, el("span", { textContent: x.label + (x.playing ? " · playing" : "") }), line(sbtn("▶", () => pressButton(i)), pick));
+          }),
+          help("Or drag anything onto a button on the radio: an album, a folder, a station, a podcast or one of its episodes, a book, a playlist, a programme, or an action from the Actions folder. On the radio itself, hold a button for 3 seconds to keep what's playing on it."),
+          line(sbtn("Actions folder", () => open(ACTIONS_BOX.id)))),
         b.bank ? grp("Day and night sets", srow("Set in use", seg([["day", "Day"], ["night", "Night"]], b.bank, v => act(() => api("/api/buttons/bank", { bank: v })))),
           srow("Swap by the clock", sw(auto.on, v => saveAuto(v), "Swap by the clock")), srow("Night from", night), srow("Day from", day),
           help("Or hold buttons 2 and 3 together for a second. Each set has its own four.")) : null,
@@ -1964,7 +2004,7 @@ function inspector(o, b, win) {
   const sayBtn = el("button", { className: "pill", type: "button", textContent: "＋ Say it" });
   sayBtn.onclick = () => say.value.trim() && addItem(messageObj(say.value.trim()));
   say.onkeydown = e => { if (e.key === "Enter") sayBtn.click(); };
-  const line4 = el("div", { className: "line" }, say, sayBtn, ...Object.values(ACTION).map(a => Object.assign(el("button", { className: "pill", type: "button", textContent: "＋ " + a.title }), { onclick: () => addItem(a) })),
+  const line4 = el("div", { className: "line" }, say, sayBtn, ...Object.values(ACTION).filter(a => IN_PROGRAMMES.includes(a.action)).map(a => Object.assign(el("button", { className: "pill", type: "button", textContent: "＋ " + a.title }), { onclick: () => addItem(a) })),
     el("span", { className: "muted", textContent: "Jingles: drag one from the Jingles folder" }));
   return el("div", { className: "insp" }, line1, line2, line3, line4);
 }
@@ -2030,7 +2070,7 @@ async function drop(src, target, ev) {
     return saveProgrammes(`In the gaps: ${o.title}.`);
   }
   if (dest.kind === "programme") {
-    if (!objRef(o)) return toast(`“${o.title}” can't go in a programme.`);
+    if (!objRef(o)) return toast(o.kind === "action" ? `“${o.title}” is for buttons: in a programme, use the time, the pips, the news or the sleep timer.` : `“${o.title}” can't go in a programme.`);
     await fetchLengths([o]);                         // its real running time, from the radio
     if (kind === "blk") { const b = dest.blocks[+target.dataset.i]; if (!b.items.includes(o.id)) b.items.push(o.id); await saveProgrammes(`Added “${o.title}” to “${b.name}”.`); }
     else if (INSTANT.includes(o.kind)) { const tl2 = timeline(dest), end = tl2.length ? tl2[tl2.length - 1].end : toMin(dest.start);
