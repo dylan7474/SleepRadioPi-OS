@@ -42,6 +42,26 @@ MEDIA = Path.home() / "media"
 BUNDLED_HOOKS = Path(__file__).resolve().parent / "data" / "dj_hooks_70s.txt"
 
 
+def default_theme(station: Station, config_file: Path | None) -> bool:
+    """Sleep Radio, the main show, becomes a theme like any other (all my music): made
+    once, first, if no theme plays all my music; and the radio's choice, if it was the
+    main show. True if anything changed (saved)."""
+    from sleepradiopi.config import brand
+    if station.default_theme():
+        return False
+    taken = {p["name"].lower() for p in station.profiles}
+    name = brand.name if brand.name.lower() not in taken else brand.name + " (all my music)"
+    was_main = not station.artist and not station.profile
+    station.set_profiles([{"name": name, "artists": [], "all": True}] + station.profiles)
+    if was_main:
+        station.set_profile(name)
+    if config_file is not None:
+        save_setting(config_file, "profiles", station.profiles)
+        save_setting(config_file, "broadcast_profile", station.profile)
+    logging.info("themes: %s is a theme now (all my music)", name)
+    return True
+
+
 def jingle_folders(media, station: Station) -> None:
     """Each station's jingles folder -- Jingles/<the radio's name> (the main show),
     Jingles/<theme> for each theme -- and Jingles/Power-on, made if they're missing;
@@ -599,6 +619,7 @@ def main() -> None:
             time.sleep(delay)
             jingle_folders(media, station)
         threading.Thread(target=run, name="jingle-folders", daemon=True).start()
+    default_theme(station, args.config)   # (once: Sleep Radio, the main show, as a theme)
     station.on_profiles = folders
     folders(60.0)
     serve(station, stream, args.port or settings.http_port, control, args.config, announcer, jobs, updates,

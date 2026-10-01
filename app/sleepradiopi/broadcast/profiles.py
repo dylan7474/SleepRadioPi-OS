@@ -36,13 +36,16 @@ def validate(profiles) -> list[dict]:
         if name.lower() in seen:
             raise ValueError(f"there are two lists called {name}")
         seen.add(name.lower())
-        artists = p.get("artists")
-        if not isinstance(artists, list) or not artists:
+        everything = p.get("all") is True               # all my music (the main show is one of these)
+        artists = p.get("artists") or ([] if everything else None)
+        if not isinstance(artists, list) or (not artists and not everything):
             raise ValueError(f"{name}: pick at least one artist")
         if len(artists) > MAX_ARTISTS or not all(isinstance(a, str) and a.strip() and len(a) <= 200
                                                  for a in artists):
             raise ValueError(f"{name}: the artists must be names")
         entry = {"name": name, "artists": sorted({" ".join(a.split()) for a in artists}, key=str.lower)}
+        if everything:
+            entry["all"] = True
         own = validate_settings(p.get("settings"), name)
         if own:
             entry["settings"] = own

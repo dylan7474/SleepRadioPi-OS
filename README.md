@@ -43,10 +43,11 @@ software, and the case to print.
   someone with a poor memory, *"It's Tuesday, the twenty-ninth of September.
   You're at Willow Court, and you're safe here."* A message can have a last
   day (for "coming to see you on Sunday").
-- **Artist radio and your own lists** — play only one artist (the DJ then
-  says *"welcome to Beatles Radio"*) or a theme: a named list of artists,
-  which is a station of its own (a theme called "Carisbrooke" is
-  *"Carisbrooke Radio"*).
+- **Themes: the radio's stations** — Sleep Radio itself is the first, playing
+  all your music; make more from named lists of artists, each a station of
+  its own (a theme called "Carisbrooke" is *"Carisbrooke Radio"*) with its own
+  jingles, messages and DJ settings. **Artist radio** plays just one artist
+  (the DJ says *"welcome to Beatles Radio"*).
 - **Play next** — search the library from your phone and queue songs; the
   DJ introduces them.
 - **Internet radio** — when it's online, play a station instead of the show

@@ -160,3 +160,28 @@ def test_renaming_a_theme_takes_its_things_with_it(tmp_path: Path) -> None:
     assert saved["messages"]["list"][0]["station"] == "Carisbrooke Lodge"
     with pytest.raises(ValueError):
         st.rename_profile("Nobody", "X")
+
+
+def test_sleep_radio_becomes_a_theme_of_all_my_music(tmp_path: Path) -> None:
+    """The main show is a theme like any other: everything means it."""
+    import json
+    from sleepradiopi.main import default_theme
+    st = _station(tmp_path, {"Sleep Radio": ["Main.mp3"]})
+    config = tmp_path / "config.json"
+    config.write_text("{}")
+    assert default_theme(st, config) and not default_theme(st, config)          # once
+    assert [p["name"] for p in st.profiles] == ["Sleep Radio", "Carisbrooke"] and st.profiles[0]["all"]
+    assert st.profile == "Sleep Radio" and st.builder.station == "Sleep Radio"
+    assert len(st.selector.pool) == len(st.tracks) and [j.path.name for j in st.jingles] == ["Main.mp3"]
+    saved = json.loads(config.read_text())
+    assert saved["broadcast_profile"] == "Sleep Radio" and saved["profiles"][0] == {"name": "Sleep Radio", "artists": [], "all": True}
+    st.set_profile("Carisbrooke")
+    st.set_artist(None)                                                          # "everything": the theme
+    assert st.profile == "Sleep Radio" and st.artist is None
+    st.set_artist("ABBA")                                                        # artist radio still works
+    assert st.artist == "ABBA" and st.builder.station == "ABBA Radio"
+    st.set_profile(None)
+    assert st.profile == "Sleep Radio"
+    st.messages.set({"list": [{"text": "Main show only", "station": "Sleep Radio"}], "date_first": False})
+    from datetime import datetime
+    assert st.messages.due(datetime(2026, 10, 1, 10, 8), True, st.profile) == "Main show only"

@@ -618,7 +618,8 @@ async function loadFolder(f) {
                                                             path: pre + x.name, mb: x.size / 1e6, bytes: x.size }).id)];
   } else if (f.box === "lists") {
     const d = await api("/api/artists");
-    f.kids = [SHOW.id, ...d.profiles.map(p => mk({ id: "ls:" + p.name, kind: "list", name: p.name, title: p.name, count: p.artists.length }).id)];
+    const themes = d.profiles.map(p => mk({ id: "ls:" + p.name, kind: "list", name: p.name, title: p.name, count: p.artists.length, all: !!p.all }).id);
+    f.kids = d.profiles.some(p => p.all) ? themes : [SHOW.id, ...themes];   // (Sleep Radio is a theme of its own now)
   }
   f.loaded = true;
 }
@@ -824,7 +825,7 @@ function subOf(o) {
       return (live ? "● playing · " : o.auto ? (o.once ? "⏰ " : "↻ ") : "") + times;
     }
     case "folder": return o.root && o.path ? `${o.count || 0} tracks` : "";
-    case "list": return o.count ? `${o.count} artist${o.count === 1 ? "" : "s"}` : "";
+    case "list": return o.all ? "all my music" : o.count ? `${o.count} artist${o.count === 1 ? "" : "s"}` : "";
     case "jingle": return o.mb ? `${o.mb.toFixed(1)} MB` : "";
     case "message": return "The DJ says it";
     case "note": return noteWhen(o.m) + (o.m?.station ? ` · ${o.m.station} only` : "");
@@ -1387,17 +1388,31 @@ function themeView(o, box, win) {
     up.onchange = () => { upload(jf, [...up.files].map(f => [f, f.name])); up.value = ""; };
     const jsect = sect("Jingles", "its own · empty: none on this station", kids(jf), { where: o.id, parent: jf.id }, "None yet: drop jingle files here, or Upload.");
     jsect.append(el("div", { className: "line", style: "padding:0 0 6px" }, T("Upload…", () => up.click()), up));
+    const setAll = on => async () => { try {
+        const a = await api("/api/artists");
+        await api("/api/profiles", { profiles: a.profiles.map(p => p.name.toLowerCase() === n.toLowerCase() ? { ...p, all: on } : p) });
+        await loadFolder(LISTS); refreshTheme(n); toast(on ? `${stationOf(n)} plays all your music now.` : `${stationOf(n)} plays only its artists now.`);
+      } catch (e) { toast("Not changed: " + e.message + "."); } };
+    if (cur?.all) {
+      const allObj = mk({ id: "tall:" + n, kind: "folder", root: "music", path: "", title: "All my music", kids: MUSIC.kids, sym: "♫" });
+      const plays = sect("Plays", "every artist in Music", [allObj], { where: o.id, parent: o.id });
+      plays.append(el("div", { className: "line", style: "padding:0 0 6px" },
+        T("Choose artists instead", setAll(false), "", !arts.length), el("span", { className: "note", style: "margin-left:0",
+          textContent: arts.length ? `back to its ${arts.length}` : "(make another theme for chosen artists)" })));
+      body.append(plays);
+    }
     const SHOW_N = 10, many = arts.length > SHOW_N + 2;   // a long list: two rows, so the rest of it is in view
     const plays = sect("Plays", `${arts.length} artist${arts.length === 1 ? "" : "s"} · drag artists in from Music`,
                        many && !win.allArtists ? arts.slice(0, SHOW_N) : arts, { where: o.id, parent: o.id }, "Nothing yet: drag an artist's folder in from Music.");
-    if (many) plays.append(el("div", { className: "line", style: "padding:0 0 6px" },
-      T(win.allArtists ? "Show fewer" : `Show all ${arts.length}`, () => { win.allArtists = !win.allArtists; drawDesk(); })));
-    body.append(
-      plays,
+    plays.append(el("div", { className: "line", style: "padding:0 0 6px" },
+      many ? T(win.allArtists ? "Show fewer" : `Show all ${arts.length}`, () => { win.allArtists = !win.allArtists; drawDesk(); }) : null,
+      T("Play all my music instead", setAll(true))));
+    body.append(...[
+      cur?.all ? null : plays,
       sect("Messages", "its own · drag notes here · plus the radio's for every station", kids(mf).filter(x => x.kind === "note"), { where: o.id, parent: mf.id },
            "None of its own: drag a note in from Messages."),
       jsect,
-      sect("Settings", "each “As the radio” or its own", [sf], { where: o.id, parent: o.id }));
+      sect("Settings", "each “As the radio” or its own", [sf], { where: o.id, parent: o.id })].filter(Boolean));
     body.addEventListener("dragover", e => { if ([...e.dataTransfer.types].includes("Files")) { e.preventDefault(); body.classList.add("over"); } });
     body.addEventListener("dragleave", () => body.classList.remove("over"));
     body.addEventListener("drop", async e => { if (![...e.dataTransfer.types].includes("Files")) return;
@@ -1418,6 +1433,7 @@ async function dropOnTheme(t, o) {
   try {
     const a = await api("/api/artists"), cur = a.profiles.find(p => p.name.toLowerCase() === name.toLowerCase());
     if (!cur) return toast("That theme has gone.");
+    if (cur.all) return toast(`${stationOf(name)} plays all your music already.`);
     if (cur.artists.some(x => x.toLowerCase() === artist.toLowerCase())) return toast(`${artist} is on ${stationOf(name)} already.`);
     await api("/api/profiles", { profiles: a.profiles.map(p => p === cur ? { ...p, artists: [...p.artists, artist] } : p) });
     await loadFolder(LISTS); refreshTheme(name);

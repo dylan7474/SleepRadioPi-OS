@@ -2152,10 +2152,12 @@ class Station:
         profile, or everything. False, and back to everything, if the library
         has nothing to play for it (or there's no such profile)."""
         found, pool, name = True, self.tracks, artist_station_name(None)
+        if not artist and not profile:
+            profile = self.default_theme()   # (everything: the all-my-music theme, when there is one)
         if profile:
             match = next((p for p in self.profiles if p["name"].lower() == profile.lower()), None)
             keys = {artist_key(a) for a in match["artists"]} if match else set()
-            pool = [t for t in self.tracks if artist_key(t.artist) in keys]
+            pool = self.tracks if match and match.get("all") else [t for t in self.tracks if artist_key(t.artist) in keys]
             profile = match["name"] if match else profile
             name = profiles_mod.station_name(profile)
         elif artist:
@@ -2174,16 +2176,25 @@ class Station:
             self._load_jingles()
         return found
 
+    def default_theme(self) -> str | None:
+        """The theme that plays all my music (Sleep Radio, the main show, is one): what
+        "everything" means once there is one."""
+        return next((p["name"] for p in self.profiles if p.get("all")), None)
+
     def set_artist(self, artist: str | None) -> bool:
-        """Play only this artist (None = everything). On air, the track already
-        lined up next still plays (the DJ may have introduced it), then the
-        new choice. False if the library has nothing by that artist."""
+        """Play only this artist (None = everything: the all-my-music theme, if there
+        is one). On air, the track lined up next is kept only if it's being announced
+        or fits. False if the library has nothing by that artist."""
+        if not artist and self.default_theme():
+            return self.set_profile(None)
         if self._already(artist, None):
             return True
         return self._reselect(artist=artist)
 
     def set_profile(self, profile: str | None) -> bool:
-        """Play only the artists on this profile (None = everything)."""
+        """Play only the artists on this profile (None = everything: the all-my-music
+        theme, if there is one)."""
+        profile = profile or self.default_theme()
         if self._already(None, profile):
             return True
         return self._reselect(profile=profile)

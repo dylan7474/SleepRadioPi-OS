@@ -430,6 +430,11 @@ The cards:
   power-on chime), Noise, Sleep timer, Voices, Wi-Fi (join, forget, its own
   network), This radio (name, case, password, listening in a browser),
   Buttons (and the day and night sets), Updates, Save & load, Power.
+  **Sleep Radio, the main show, is a theme like any other**: one that plays
+  **all my music** (`"all": true`), made once at start-up if there isn't one
+  (`main.default_theme`); "everything" (the show's icon, the phone's All
+  artists, a button or programme set to the show) means it. There's always at
+  least one theme. Any theme can play all my music instead of chosen artists.
   **A theme is a folder of its own things** (the desktop's **Themes** folder
   holds them): its window has its name (renaming it takes everything of its
   own along), ▶ Play, and sections — **Plays** (artists: drag an artist's

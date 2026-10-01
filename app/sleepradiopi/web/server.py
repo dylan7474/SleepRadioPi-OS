@@ -1286,6 +1286,8 @@ def make_handler(station: Station, output: Mp3Output, speaker=None,
             replace the lists. Saved; the one playing follows the edit."""
             try:
                 entries = profiles.validate(self._body()["profiles"])
+                if not entries and station.profiles:
+                    raise ValueError("there's always at least one theme: make another before deleting this one")
             except (ValueError, TypeError, KeyError, AttributeError) as e:
                 self._error(str(e) if isinstance(e, ValueError) else "send {\"profiles\": [...]}")
                 return
