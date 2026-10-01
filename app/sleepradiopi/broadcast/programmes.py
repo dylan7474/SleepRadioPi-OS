@@ -292,6 +292,23 @@ class Scheduler:
                     changed = True
         return changed
 
+    def artists_to_themes(self, theme_for) -> bool:
+        """Artist radio is retired: a block (or gap) that played one artist plays
+        that artist's one-artist theme."""
+        changed = False
+        for p in self.programmes:
+            items = [it for b in p["blocks"] for it in b["items"]] + ([p["gap"]] if isinstance(p.get("gap"), dict) else [])
+            for it in items:
+                if it.get("kind") == "show" and it.get("artist"):
+                    name = theme_for(it["artist"])
+                    if name:
+                        it.clear()
+                        it.update({"kind": "list", "name": name})
+                    else:
+                        it.pop("artist")
+                    changed = True
+        return changed
+
     def rename_playlist(self, old: str, new: str) -> bool:
         """A playlist was renamed: blocks that play it follow it."""
         changed = False
@@ -681,8 +698,8 @@ class Scheduler:
         show = first("list") or first("show")
         if show["kind"] == "list":
             st.set_profile(show["name"])
-        else:
-            st.set_artist(show.get("artist"))
+        else:                                 # (an old artist one: its one-artist theme)
+            st.set_profile(st.theme_for_artist(show["artist"]) if show.get("artist") else None)
         if st.source is not None:
             st.tune(None)
         return ("show", None)

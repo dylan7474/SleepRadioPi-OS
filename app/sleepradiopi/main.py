@@ -42,6 +42,34 @@ MEDIA = Path.home() / "media"
 BUNDLED_HOOKS = Path(__file__).resolve().parent / "data" / "dj_hooks_70s.txt"
 
 
+def retire_artist_radio(station: Station, config_file: Path | None, presets, settings) -> bool:
+    """Artist radio is retired (2026-10-01): whatever was saved as one -- the radio
+    left on it, a button, a programme block -- becomes that artist's one-artist
+    theme (Station.theme_for_artist: "The Beatles" -> theme "Beatles", still
+    announced "Beatles Radio"). Saved. True if anything changed."""
+    before = len(station.profiles)
+    changed = False
+    if settings.broadcast_artist:
+        if not settings.broadcast_profile:
+            station.set_profile(station.theme_for_artist(settings.broadcast_artist))
+        if config_file is not None:
+            save_setting(config_file, "broadcast_artist", None)
+            save_setting(config_file, "broadcast_profile", station.profile)
+        changed = True
+    if presets is not None and presets.artists_to_themes(station.theme_for_artist):
+        changed = True
+    sched = getattr(station, "scheduler", None)
+    if sched is not None and sched.artists_to_themes(station.theme_for_artist):
+        if config_file is not None:
+            save_setting(config_file, "programmes", sched.programmes)
+        changed = True
+    if len(station.profiles) != before and config_file is not None:
+        save_setting(config_file, "profiles", station.profiles)
+    if changed:
+        logging.getLogger(__name__).info("artist radio retired: now %s", [p["name"] for p in station.profiles])
+    return changed
+
+
 def ensure_default_theme(station: Station, config_file: Path | None, media=None, presets=None) -> bool:
     """There's always a theme called Default (all my music unless given artists; its
     jingles are the start-up and fill-in ones when the theme playing has none). The
@@ -658,6 +686,7 @@ def main() -> None:
         threading.Thread(target=run, name="jingle-folders", daemon=True).start()
     ensure_default_theme(station, args.config, media, presets)   # (always there: Default)
     presets.pin_shows("Default")          # (buttons set to the old main show: Default)
+    retire_artist_radio(station, args.config, presets, settings)
     station.on_profiles = folders
     folders(60.0)
     serve(station, stream, args.port or settings.http_port, control, args.config, announcer, jobs, updates,

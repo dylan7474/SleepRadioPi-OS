@@ -208,9 +208,9 @@ def test_show_and_album_presets(tmp_path: Path) -> None:
         {"kind": "album", "folder": "Artist/Album", "title": "Album", "artist": "Artist"},
         {"kind": "album", "folder": "Gone/Away", "title": "Gone", "artist": "Away"}])
     st.tune(RP)
-    p.press(0)
-    assert st.source is None and st.artist == "Artist"
-    assert load(conf).broadcast_artist == "Artist"
+    p.press(0)                                       # (an old artist button: its one-artist theme)
+    assert st.source is None and st.profile == "Artist"
+    assert load(conf).broadcast_profile == "Artist" and load(conf).broadcast_artist is None
     p.press(1)
     assert st.source["kind"] == "album" and st.source["folder"] == "Artist/Album"
     before = st.source
@@ -226,7 +226,7 @@ def test_a_hold_keeps_whats_playing(tmp_path: Path) -> None:
     st.tune(None)
     st.set_artist("Artist")
     p.hold(0)
-    assert p.presets[0] == {"kind": "show", "artist": "Artist", "profile": None}
+    assert p.presets[0] == {"kind": "show", "artist": None, "profile": "Artist"}
     assert p.status()["buttons"][0]["label"] == "Artist Radio"
     assert ctl.clips == ["Button", "Button"]         # a beep each time
 

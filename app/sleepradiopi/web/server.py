@@ -570,8 +570,11 @@ def make_handler(station: Station, output: Mp3Output, speaker=None,
             if changed & {"broadcast_artist", "broadcast_profile", "profiles"}:
                 if settings.get("broadcast_profile"):
                     station.set_profile(settings["broadcast_profile"])
-                else:
+                else:                         # (an old file's artist radio: its one-artist theme)
                     station.set_artist(settings.get("broadcast_artist"))
+                    if config_file is not None:
+                        save_setting(config_file, "profiles", station.profiles)
+                self._save_selection()
             if "birthdays" in changed:
                 station.set_birthdays(settings["birthdays"])
             if "playlists" in changed:
@@ -765,26 +768,26 @@ def make_handler(station: Station, output: Mp3Output, speaker=None,
 
         def _save_selection(self) -> None:
             if config_file is not None:
-                save_setting(config_file, "broadcast_artist", station.artist)
+                save_setting(config_file, "broadcast_artist", None)    # (artist radio is retired)
                 save_setting(config_file, "broadcast_profile", station.profile)
 
         def _station(self) -> None:
-            """/api/station {"artist": "The Beatles"} (artist radio: only that
-            artist, and the DJ says "Beatles Radio"), {"profile": "Friday List"}
-            (only the artists on that list), or {"artist": null} (everything). Saved."""
+            """/api/station {"profile": "Carisbrooke"}: play that theme; {"profile": null}
+            or {"artist": null}: the theme last played, else Default. Saved. (Artist radio,
+            {"artist": "The Beatles"}, is retired: make a theme with the artist.)"""
             try:
                 body = self._body()
-                if "profile" in body:
-                    kind, value = "profile", body["profile"]
-                else:
-                    kind, value = "artist", body["artist"]
+                value = body.get("profile")
+                if body.get("artist"):
+                    self._error("artist radio has gone: make a theme with the artist in it")
+                    return
                 if value is not None and (not isinstance(value, str) or len(value) > 200):
                     raise ValueError("a name or null")
             except (ValueError, TypeError, KeyError, AttributeError):
                 self.send_error(400)
                 return
             value = value.strip() if value else None
-            found = station.set_profile(value) if kind == "profile" else station.set_artist(value)
+            found = station.set_profile(value)
             self._save_selection()
             self._send(json.dumps({"found": found, **self._selection()}).encode(), "application/json")
 

@@ -496,7 +496,7 @@
       <h2 class="eyebrow radioName">Sleep Radio</h2>
       <div class="tiles" id="mixTiles"></div>
       <div class="sel-row">
-        <select id="artistRadio" aria-label="Artist radio: play one artist or list">
+        <select id="artistRadio" aria-label="Play a theme">
           <option value="">All artists</option>
         </select>
         <button id="listsBtn" type="button" title="Themes: sets of artists, e.g. a Friday List">Themes…</button>
@@ -1353,9 +1353,6 @@ async function loadArtists() {
       allLists.forEach(p => g.append(new Option(`${p.name} (${p.artists.length} artists)`, "p:" + p.name)));
       sel.append(g);
     }
-    const g = Object.assign(document.createElement("optgroup"), { label: "Artists" });
-    allArtists.forEach(a => g.append(new Option(`${a.name} (${a.tracks})`, "a:" + a.name)));
-    sel.append(g);
     showSelection(data.artist, data.profile, data.station_name);
     fillListPick();
     drawHome(); drawSettings();
@@ -1512,7 +1509,7 @@ function renderFind() {
     ...d.lists.map(p => resultRow(p.name, `Your theme · ${plural(p.artists.length, "artist")}`,
       [act("Play", true, () => playShow({ profile: p.name }))])),
     ...d.artists.map(a => resultRow(a.name, `${a.tracks} song${a.tracks === 1 ? "" : "s"}`,
-      [act("Artist radio", true, () => playShow({ artist: a.name }))]))]);
+      []))]);
   group("Albums and folders", d.albums.map(albumRow));
   const songs = fFilter === "song" ? d.songs : d.songs.slice(0, 8);
   group("Songs", songs.map(r => resultRow(r.title, [r.artist, r.album].filter(Boolean).join(" · "),
@@ -3515,7 +3512,6 @@ function drawHome() {
   const tiles = [tile("All artists", "The whole library", showOn && !selNow, () => playShow({}))];
   for (const p of allLists) tiles.push(tile(p.name, `Your theme · ${plural(p.artists.length, "artist")}`,
                                             showOn && kind === "p" && name === p.name, () => playShow({ profile: p.name })));
-  if (kind === "a") tiles.push(tile(`${name}`, "Artist radio", showOn, () => playShow({ artist: name })));
   $("mixTiles").replaceChildren(...tiles);
   const plNow = lastStatus && lastStatus.playlist;
   $("plTiles").replaceChildren(...(playlists.length ? playlists.map(pl =>

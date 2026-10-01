@@ -153,7 +153,7 @@ def test_the_show_or_an_artist_list_as_a_block(tmp_path, monkeypatch) -> None:
         {"name": "Beatles radio", "items": [{"kind": "show", "artist": "The Beatles"}], "rule": "end"}]}])
     st.tune({"kind": "radio", "name": "x", "url": "http://example.com/x"})
     sched.play("P")
-    assert st.artist == "The Beatles" and st.source is None
+    assert st.profile == "Beatles" and st.source is None                         # (an old artist block: its theme)
     assert sched.status()["until"] == "13:00"                                    # the show has no end: an hour
 
 

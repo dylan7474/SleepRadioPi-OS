@@ -38,8 +38,8 @@ def test_a_profile_plays_only_its_artists(tmp_path: Path) -> None:
     assert st.builder.station == "Friday List Radio"
     assert {st._take_next().artist for _ in range(20)} == {"The Beatles", "Crowded House"}
     assert "welcome to Friday List Radio" in st._opening[0]
-    st.set_artist("Nick Drake")                                # choosing an artist replaces it
-    assert st.profile is None and st.artist == "Nick Drake"
+    st.set_artist("Nick Drake")                                # an artist: their own theme
+    assert st.profile == "Nick Drake" and st.artist is None
 
 
 def test_editing_the_playing_profile(tmp_path: Path) -> None:

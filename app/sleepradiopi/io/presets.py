@@ -267,6 +267,19 @@ class Presets:
             self._save()
         return changed
 
+    def artists_to_themes(self, theme_for) -> bool:
+        """Artist radio is retired: a button that played one artist plays that
+        artist's one-artist theme (theme_for makes it; Default if they've gone)."""
+        changed = False
+        for bank in self.banks.values():
+            for p in bank:
+                if p and p["kind"] == "show" and not p.get("profile") and p.get("artist"):
+                    p["profile"], p["artist"] = theme_for(p["artist"]) or "Default", None
+                    changed = True
+        if changed:
+            self._save()
+        return changed
+
     def rename_theme(self, old: str, new: str) -> bool:
         """A theme was renamed: buttons that play it follow it."""
         changed = False
@@ -561,14 +574,13 @@ class Presets:
     def apply(self, preset: dict) -> None:
         """Play a (non-action) preset. ValueError if it can't be played here."""
         if preset["kind"] == "show":
-            if preset["profile"]:                # the choice first, so the show starts with it
-                self.station.set_profile(preset["profile"])
-            else:
-                self.station.set_artist(preset["artist"])
+            # the choice first, so the show starts with it (an old artist button: its theme)
+            self.station.set_profile(preset["profile"] or (self.station.theme_for_artist(preset["artist"])
+                                                           if preset.get("artist") else None))
             if self.station.source is not None:
                 self.station.tune(None)
             if self.config_file is not None:
-                save_setting(self.config_file, "broadcast_artist", self.station.artist)
+                save_setting(self.config_file, "broadcast_artist", None)
                 save_setting(self.config_file, "broadcast_profile", self.station.profile)
         elif preset["kind"] in ("radio", "album", "book"):
             self.station.tune(preset)

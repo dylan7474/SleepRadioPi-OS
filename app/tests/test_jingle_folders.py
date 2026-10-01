@@ -194,8 +194,7 @@ def test_there_is_always_a_default_theme(tmp_path: Path) -> None:
     for old, new in (("Default", "Home"), ("Carisbrooke", "default")):
         with pytest.raises(ValueError, match="always there"):
             st.rename_profile(old, new)
-    st.set_artist("ABBA")
-    st.set_artist(None)
+    st.set_profile(None)
     assert st.profile == "Default"                                           # (Default played last)
     fresh = _station(tmp_path / "new", {})
     fresh.profiles = []

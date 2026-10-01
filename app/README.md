@@ -728,17 +728,15 @@ The cards:
   Icecast/Shoutcast streams (MP3, AAC, Ogg), .pls/.m3u playlists and HLS
   (.m3u8, e.g. the BBC); Python fetches them (http or https) and pipes them
   to ffmpeg, which decodes them (`sleepradiopi/playback/radio.py`).
-- **Artist radio** — play one artist only: the DJ then calls the station
-  after them ("welcome to Beatles Radio"; a leading "The" is dropped), and
-  so do the page heading and tab. **Themes…** makes your own named lists of
-  artists (e.g. a "Friday List"; find and tick artists), which appear in the
-  same dropdown ("welcome to Friday List Radio": a theme is a station). On air, it
-  takes over at once, like turning the dial (the song playing stops; its
-  welcome, or a short jingle, then its music). If the library has nothing for
-  the choice, it plays everything. Artist radio has the DJ like a theme; it
-  has no jingles folder of its own (Default's fill in). From the desktop, an
-  artist's folder dropped on the radio is different: their songs shuffled,
-  once each, no DJ, then the radio pauses.
+- **Artist radio is retired** (2026-10-01): themes do the same job. An
+  artist is a **one-artist theme** ("The Beatles" -> a theme "Beatles",
+  announced "welcome to Beatles Radio"); anything saved as artist radio
+  before -- the radio left on it, a button, a programme block -- becomes one
+  at start-up (`main.retire_artist_radio`, `Station.theme_for_artist`), and
+  `POST /api/station {"artist": ...}` is refused. Choosing another theme
+  takes over at once, like turning the dial. From the desktop, an artist's
+  folder dropped on the radio plays their songs shuffled, once each, no DJ,
+  then the radio pauses.
 - **The DJ** — **on or off** (off: the show is music only, with no speech at
   all — no welcome, links, track intros, time checks, news, Messages or
   birthday wishes, including lines already made before it was switched off;

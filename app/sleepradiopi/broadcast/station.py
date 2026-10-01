@@ -349,9 +349,7 @@ class Station:
         self.profiles = self.complete_settings(self.profiles)   # (each theme its own full set)
         if cfg.get("broadcast_profile"):
             self._use_selection(profile=cfg["broadcast_profile"])
-        elif cfg.get("broadcast_artist"):
-            self._use_selection(artist=cfg["broadcast_artist"])
-        elif self.profiles:
+        elif self.profiles:                   # (an old broadcast_artist: main makes it a theme)
             self._use_selection()             # (no theme chosen: Default)
         self._load_jingles()
         self._prepare_opening()
@@ -2372,7 +2370,7 @@ class Station:
             if songs:
                 self._album_index = None
                 self._path_index = None
-            self._use_selection(self.artist, self.profile)
+            self._use_selection(profile=self.profile)
             if "jingles" in kinds:
                 self._load_jingles(force=True)
             jingles = self.jingles
@@ -2418,12 +2416,13 @@ class Station:
         out = [{"name": c.most_common(1)[0][0], "tracks": sum(c.values())} for c in groups.values()]
         return sorted(out, key=lambda a: artist_key(a["name"]))
 
-    def _use_selection(self, artist: str | None = None, profile: str | None = None) -> bool:
-        """Switch the selector (and the DJ's station name) to one artist, one
-        profile, or everything. False, and back to everything, if the library
-        has nothing to play for it (or there's no such profile)."""
-        found, pool, name = True, self.tracks, artist_station_name(None)
-        if not artist and not profile:
+    def _use_selection(self, profile: str | None = None) -> bool:
+        """Switch the selector (and the DJ's station name) to a theme (None: the
+        theme last played, else Default). False, and back to that, if the library
+        has nothing to play for it (or there's no such theme). (Artist radio, one
+        artist on its own, is retired: an artist is a one-artist theme now.)"""
+        found, pool, name, artist = True, self.tracks, artist_station_name(None), None
+        if not profile:
             profile = self._fallback_theme()  # (no default station: the theme last played, else the first)
         if profile:
             match = next((p for p in self.profiles if p["name"].lower() == profile.lower()), None)
@@ -2431,18 +2430,14 @@ class Station:
             pool = self.tracks if match and match.get("all") else [t for t in self.tracks if artist_key(t.artist) in keys]
             profile = match["name"] if match else profile
             name = profiles_mod.station_name(profile)
-        elif artist:
-            key = artist_key(artist)
-            pool = [t for t in self.tracks if artist_key(t.artist) == key]
-            name = artist_station_name(artist)
-        if (artist or profile) and not pool:
+        if profile and not pool:
             fb = self._fallback_theme()
             if fb and fb.lower() != (profile or "").lower() and any(
                     p["name"] == fb and (p.get("all") or p["artists"]) for p in self.profiles):
-                log.warning("nothing to play for %r; playing %s", profile or artist, fb)
+                log.warning("nothing to play for %r; playing %s", profile, fb)
                 self._use_selection(profile=fb)
                 return False
-            log.warning("nothing to play for %r; playing everything", profile or artist)
+            log.warning("nothing to play for %r; playing everything", profile)
             found, artist, profile, pool, name = False, None, None, self.tracks, artist_station_name(None)
         self.artist, self.profile = (None, profile) if profile else (artist, None)
         if profile:
@@ -2465,29 +2460,48 @@ class Station:
         return next((n for n in names if n.lower() == profiles_mod.DEFAULT.lower()), names[0] if names else None)
 
     def set_artist(self, artist: str | None) -> bool:
-        """Play only this artist (None = everything: the all-my-music theme, if there
-        is one). On air, the track lined up next is kept only if it's being announced
-        or fits. False if the library has nothing by that artist."""
-        if not artist and self._fallback_theme():
+        """Play an artist: as a one-artist theme (theme_for_artist; artist radio is
+        retired). None: the theme last played, else Default. False if the library
+        has nothing by that artist (and nothing changes)."""
+        if not artist:
             return self.set_profile(None)
-        if self._already(artist, None):
-            return True
-        return self._reselect(artist=artist)
+        name = self.theme_for_artist(artist)
+        return self.set_profile(name) if name else False
+
+    def theme_for_artist(self, artist: str) -> str | None:
+        """The theme that is just this artist, made if there isn't one ("The
+        Beatles" -> a theme "Beatles", announced "Beatles Radio", as artist radio
+        was). None if the library has nothing by them."""
+        key = artist_key(artist)
+        for p in self.profiles:
+            if not p.get("all") and len(p["artists"]) == 1 and artist_key(p["artists"][0]) == key:
+                return p["name"]
+        tracks = [t for t in self.tracks if artist_key(t.artist) == key]
+        if not tracks:
+            return None
+        named = Counter(t.artist for t in tracks).most_common(1)[0][0]
+        station = artist_station_name(named)
+        base = station[:-len(" Radio")] if station.endswith(" Radio") else named
+        name, n = base, 2
+        while any(p["name"].lower() == name.lower() for p in self.profiles):
+            name, n = f"{base} {n}", n + 1
+        self.set_profiles([*self.profiles, {"name": name, "artists": [named]}])
+        log.info("a theme for %s: %s", named, name)
+        return name
 
     def set_profile(self, profile: str | None) -> bool:
         """Play only the artists on this profile (None = everything: the all-my-music
         theme, if there is one)."""
         profile = profile or self._fallback_theme()
-        if self._already(None, profile):
+        if self._already(profile):
             return True
         return self._reselect(profile=profile)
 
-    def _already(self, artist: str | None, profile: str | None) -> bool:
+    def _already(self, profile: str | None) -> bool:
         """Is that the choice already playing (or lined up)? Then nothing changes:
         a preset button for the show that's on mustn't throw away its welcome,
         which may be half made (slow on a Zero)."""
-        return (artist or "").lower() == (self.artist or "").lower() \
-            and (profile or "").lower() == (self.profile or "").lower() \
+        return (profile or "").lower() == (self.profile or "").lower() \
             and (self._in_music or self._opening is not None)
 
     def rename_profile(self, old: str, new: str) -> str:
@@ -2529,7 +2543,7 @@ class Station:
         if self.on_profiles is not None:      # (main: each new theme gets its jingles folder)
             self.on_profiles()
 
-    def _reselect(self, artist: str | None = None, profile: str | None = None) -> bool:
+    def _reselect(self, profile: str | None = None) -> bool:
         with self._lock:
             # A theme is a station: what it plays next is its own. Mid-show, the song
             # lined up next is kept only if the DJ is already announcing it (the gap
@@ -2541,13 +2555,13 @@ class Station:
             # Requests always stay.
             in_show = self._in_music
             was_next = self._queue[0] if self._queue else None
-            before = ((self.artist or "").lower(), (self.profile or "").lower())
-            found = self._use_selection(artist, profile)
+            before = (self.profile or "").lower()
+            found = self._use_selection(profile)
             # Another station, mid-show: it takes over now, like turning the dial -- the
             # song playing stops and the new one opens (its welcome if made, else a short
             # jingle of its own, else straight into its music). (It used to wait for the
             # song to end: a theme dropped on the radio seemed to do nothing.)
-            retune = in_show and before != ((self.artist or "").lower(), (self.profile or "").lower())
+            retune = in_show and before != (self.profile or "").lower()
             if retune:
                 in_show = False                   # (nothing lined up is kept, as off air)
                 self._retune = True

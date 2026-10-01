@@ -52,17 +52,19 @@ def test_artists_are_listed_with_their_track_counts(tmp_path: Path) -> None:
     assert names == {"The Beatles": 4, "Crowded House": 3, "Nick Drake": 2}
 
 
-def test_artist_radio_plays_only_that_artist(tmp_path: Path) -> None:
+def test_an_artist_plays_as_a_one_artist_theme(tmp_path: Path) -> None:
+    """Artist radio is retired: an artist is a theme of their own, made the first
+    time (still announced as artist radio was)."""
     st = _station(tmp_path)
     assert st.set_artist("Crowded House")
-    assert st.builder.station == "Crowded House Radio" and st.artist == "Crowded House"
+    assert st.builder.station == "Crowded House Radio" and st.profile == "Crowded House" and st.artist is None
+    assert [(p["name"], p["artists"]) for p in st.profiles] == [("Crowded House", ["Crowded House"])]
     picks = [st._take_next() for _ in range(12)]        # off air: the opening was rebuilt too
     assert {t.artist for t in picks} == {"Crowded House"}
     assert st._opening[2].artist == "Crowded House"
     assert "welcome to Crowded House Radio" in st._opening[0]
-    st.set_artist(None)
-    assert st.builder.station == "Sleep Radio" and st.artist is None
-    assert len({t.artist for t in (st._take_next() for _ in range(30))}) == 3
+    assert st.set_artist("the beatles") and st.profile == "Beatles"           # ("The" dropped, as before)
+    assert st.set_artist("Crowded House") and len(st.profiles) == 2           # (found again, not made twice)
 
 
 def test_on_air_another_station_takes_over_at_once(tmp_path: Path, monkeypatch) -> None:
@@ -102,7 +104,7 @@ def test_the_show_loop_opens_the_new_station(tmp_path: Path, monkeypatch) -> Non
     runs = []
 
     def run_music(back=False):
-        runs.append((back, st.artist))
+        runs.append((back, st.profile))
         if len(runs) == 1:
             st._in_music = True
             st.set_artist("beatles")             # chosen mid-show
@@ -111,7 +113,7 @@ def test_the_show_loop_opens_the_new_station(tmp_path: Path, monkeypatch) -> Non
             st._stop.set()
     monkeypatch.setattr(st, "_run_music", run_music)
     st._run_show()
-    assert runs[0] == (False, None) and runs[1][0] is True and runs[1][1].lower() == "beatles"   # opened as from elsewhere
+    assert runs[0] == (False, None) and runs[1] == (True, "Beatles")   # opened as from elsewhere
 
 
 def test_unknown_artist_falls_back_to_everything(tmp_path: Path) -> None:
@@ -120,10 +122,20 @@ def test_unknown_artist_falls_back_to_everything(tmp_path: Path) -> None:
     assert st.artist is None and st.builder.station == "Sleep Radio"
 
 
-def test_the_saved_artist_is_used_at_start_up(tmp_path: Path) -> None:
+def test_an_artist_saved_from_before_becomes_a_theme_at_start_up(tmp_path: Path) -> None:
+    from types import SimpleNamespace
+    from sleepradiopi.io.presets import Presets
+    from sleepradiopi.main import retire_artist_radio
     st = _station(tmp_path, broadcast_artist="Nick Drake")
-    assert st.artist == "Nick Drake" and st.builder.station == "Nick Drake Radio"
-    assert st._opening[2].artist == "Nick Drake"
+    conf = tmp_path / "config.json"
+    conf.write_text(json.dumps({"broadcast_artist": "Nick Drake"}))
+    presets = Presets(st, None, conf, [{"kind": "show", "artist": "The Beatles"}, {"kind": "show", "artist": "Nobody"}])
+    assert retire_artist_radio(st, conf, presets, SimpleNamespace(broadcast_artist="Nick Drake", broadcast_profile=None))
+    assert st.profile == "Nick Drake" and st.builder.station == "Nick Drake Radio"
+    assert [p["profile"] for p in presets.banks["day"][:2]] == ["Beatles", "Default"]   # (gone: Default)
+    saved = load(conf)
+    assert saved.broadcast_artist is None and saved.broadcast_profile == "Nick Drake"
+    assert [p["name"] for p in saved.profiles] == ["Nick Drake", "Beatles"]
 
 
 def test_web_api_lists_and_sets_the_artist(tmp_path: Path) -> None:
@@ -143,14 +155,16 @@ def test_web_api_lists_and_sets_the_artist(tmp_path: Path) -> None:
         with urllib.request.urlopen(base + "/api/artists") as r:
             data = json.load(r)
         assert [a["name"] for a in data["artists"]] == ["The Beatles", "Crowded House", "Nick Drake"]
-        assert post({"artist": "The Beatles"}) == {"found": True, "artist": "The Beatles", "profile": None,
-                                                   "station_name": "Beatles Radio"}
-        assert load(conf).broadcast_artist == "The Beatles"
-        assert json.loads(conf.read_text())["music_folder"] == "/media/music"
-        assert post({"artist": "Nobody"})["found"] is False and load(conf).broadcast_artist is None
-        assert post({"artist": None})["station_name"] == "Sleep Radio"
         with pytest.raises(urllib.error.HTTPError) as err:
-            post({"artist": 5})
+            post({"artist": "The Beatles"})                   # artist radio is retired
+        assert err.value.code == 400
+        st.set_profiles([{"name": "Fab", "artists": ["The Beatles"]}])
+        assert post({"profile": "Fab"}) == {"found": True, "artist": None, "profile": "Fab", "station_name": "Fab Radio"}
+        assert load(conf).broadcast_profile == "Fab" and load(conf).broadcast_artist is None
+        assert json.loads(conf.read_text())["music_folder"] == "/media/music"
+        assert post({"artist": None})["profile"] == "Fab"     # (nothing chosen: the theme last played)
+        with pytest.raises(urllib.error.HTTPError) as err:
+            post({"profile": 5})
         assert err.value.code == 400
     finally:
         httpd.shutdown()
@@ -163,5 +177,5 @@ def test_choosing_the_show_that_is_on_keeps_its_welcome(tmp_path) -> None:
     assert opening is not None
     assert st.set_artist("the beatles")               # the same: nothing thrown away
     assert st._opening is opening
-    st.set_artist(None)                                # a different choice: a new welcome
+    st.set_artist("Nick Drake")                        # a different choice: a new welcome
     assert st._opening is not opening
