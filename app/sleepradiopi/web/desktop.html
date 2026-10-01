@@ -476,7 +476,7 @@
   <a class="m classic" href="/?remote" id="classic" title="The phone remote (big keys), here">Phone remote</a>
   <span class="grow"></span>
   <button class="m" type="button" id="nextLine" title="The schedule" style="color:var(--ink);font-weight:600"></button>
-  <select class="themebtn" id="theme" title="Light or dark: or dark while the radio uses its Night buttons"><option value="radio">Follow the radio</option><option value="light">Light</option><option value="dark">Dark</option></select>
+  <select class="themebtn" id="theme" title="Light or dark: or dark at night (the Night from / Day from times) and while the radio uses its Night buttons"><option value="radio">Follow the radio</option><option value="light">Light</option><option value="dark">Dark</option></select>
   <button class="wifi" type="button" id="wifiMenu" title="Wi-Fi"><span class="bars"><i class="on" style="height:4px"></i><i class="on" style="height:7px"></i><i class="on" style="height:10px"></i><i class="on" style="height:12px"></i></span><span>Wi-Fi</span></button>
   <span class="onair" id="onair" hidden>On air</span>
   <span class="clock" id="clock"></span>
@@ -3124,10 +3124,14 @@ function resizeThing(e, node, win) {
   $("theme").onchange = () => { try { localStorage.setItem("srd.look", $("theme").value); } catch {} applyTheme(); };
   applyTheme();
 })();
-// light, dark, or following the radio: dark while it uses its Night buttons (the set in use, not the one shown)
+// light, dark, or following the radio: dark while it uses its Night buttons (the set in use, not the
+// one shown), and through the night by the clock (the buttons' Night from / Day from, 21:00-07:00 unless changed)
 function applyTheme() {
   const pick = $("theme").value;
-  document.documentElement.dataset.theme = pick === "radio" ? ((S?.buttons_bank ?? bStatus?.bank) === "night" ? "dark" : "light") : pick;
+  const d = new Date(), now = d.getHours() * 60 + d.getMinutes();
+  const from = bStatus?.auto?.night_min ?? 1260, to = bStatus?.auto?.day_min ?? 420;
+  const night = from > to ? (now >= from || now < to) : (now >= from && now < to);
+  document.documentElement.dataset.theme = pick === "radio" ? ((S?.buttons_bank ?? bStatus?.bank) === "night" || night ? "dark" : "light") : pick;
 }
 $("desk").addEventListener("pointerdown", e => { if (e.target === $("desk")) lasso(e, $("desk")); });
 // A box dragged over empty space picks what it touches (with Ctrl/Cmd: adds to what's picked); a

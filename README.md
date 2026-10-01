@@ -73,8 +73,10 @@ software, and the case to print.
   programmes; windows you open, move and resize; the radio itself on the
   desktop (drop anything on its dial to play it, on a button to keep it there,
   scroll its knob for the volume); programmes built on a timeline; settings on
-  the back of the radio. Light, dark, or following the radio (dark while it
-  uses its Night buttons, the default).
+  the back of the radio. Light, dark, or following the radio (the default:
+  dark at night by the clock -- the buttons' Night from / Day from times,
+  21:00-07:00 unless changed -- and while it uses its Night buttons); the
+  phone remote does the same.
 - **Playlists** — your own lists of songs (add with ＋ from search, Browse or
   the song playing), played in order or shuffled, with the DJ between songs
   only if the DJ is on; one can go on a preset button. **⏮ Back** beside Skip
