@@ -206,7 +206,7 @@ def test_play_one_track_or_from_a_track(tmp_path: Path, monkeypatch) -> None:
 def test_one_track_plays_just_that_track_then_the_show(tmp_path: Path, monkeypatch) -> None:
     st = _od_station(tmp_path)
     played = []
-    monkeypatch.setattr(st, "_play_file", lambda path, on_air, near_end=None: played.append(on_air.title))
+    monkeypatch.setattr(st, "_play_file", lambda path, on_air, near_end=None, **kw: played.append(on_air.title))
     st.play_track("ondemand", "Classical/Beethoven Symphony 9/02 - Molto vivace.mp3")
     st._switch.clear()
     st._run_album(st.source)

@@ -65,6 +65,7 @@ STARTUP_JINGLE_MAX_S = 20.0   # the opening ident: longer ones (most jingles) wa
                               # so the first song isn't held back after a slow start-up
 SPEECH_PAD_S = 0.25       # breath of silence either side of the DJ
 SPEECH_WAIT_S = 45.0      # give up on a line that still isn't synthesised after this
+SOURCE_SCAN_WAIT_S = 1.5  # an album or playlist starts at once: its first song needn't wait to be measured
 FILL_JINGLE_MAX_S = 40.0  # the DJ isn't ready (power-on, back to the show, a gap): one of the
                           # jingles this short instead of a wait, then the music, as a real station
                           # would (the user's shortest are ~31-38 s; the rest 55 s+)
@@ -735,7 +736,8 @@ class Station:
             self._notify_source()                   # resumes at this track after a restart
             self.current_track = t
             self.history.appendleft({"kind": "track", "text": f"{t.title} — {t.artist}", "at": time.time()})
-            self._play_file(t.path, OnAir("track", t.title, t.artist, t.album))
+            log.info("%s %s, track %d: %s by %s", source["kind"], album["title"], i + 1, t.title, t.artist)
+            self._play_file(t.path, OnAir("track", t.title, t.artist, t.album), scan_wait_s=SOURCE_SCAN_WAIT_S)
             jump, self._album_jump = self._album_jump, None
             if jump is None and source.get("one"):
                 break
@@ -1396,11 +1398,16 @@ class Station:
         in_albums = {t for run in self._albums for t in run["tracks"]}
         return [{"title": t.title, "artist": t.artist, "album": t in in_albums} for t in queued]
 
-    def _play_file(self, path: Path, on_air: OnAir, near_end=None) -> None:
+    def _play_file(self, path: Path, on_air: OnAir, near_end=None, scan_wait_s: float = 60) -> None:
         """Play a file to its end (or until skipped). near_end(end_at, again) is called
         once PREFETCH_S before the end -- and again, with again=True, if a skip then
-        makes that projected end wrong."""
-        scan = self._await(self._scan(path), 60) or pcm.NO_SCAN
+        makes that projected end wrong. scan_wait_s: how long to wait for its loudness
+        scan (a whole decode: tens of seconds for a long track on a Zero); not ready
+        by then, it plays as it is (the scan carries on, cached for next time)."""
+        fut = self._scan(path)
+        scan = self._await(fut, scan_wait_s) or pcm.NO_SCAN
+        if scan is pcm.NO_SCAN and not fut.done():
+            log.info("not measured yet, playing as it is: %s", path.name)
         if path not in self._jingle_paths:  # jingles recur; tracks' futures can go
             self._scan_futures.pop(path, None)
         playable_s = scan.playable_ms / 1000

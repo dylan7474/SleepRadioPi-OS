@@ -369,7 +369,10 @@ The cards:
   **Play** or **Shuffle** starts it at once, **straight through like an album:
   no DJ, jingles or news** (those are Theme Radio's), then back to the show.
   Skip and Back step through it; **Stop playlist** lets the song playing
-  finish. A programme's music block plays the same way. A new playlist on the
+  finish. A song whose loudness hasn't been measured yet (a whole decode,
+  tens of seconds for a long track on a Zero) doesn't hold it up: after
+  1.5 s it plays as it is, and the measurement is kept for next time
+  (`SOURCE_SCAN_WAIT_S`; albums too). A programme's music block plays the same way. A new playlist on the
   desktop opens with its name ready to type; the name box in its window
   renames it, and buttons and programmes that play it follow. A preset button
   can hold one, in order or shuffled. A song whose file has gone is skipped. Kept in the settings (`playlists`), so *Save settings* has them

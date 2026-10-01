@@ -108,7 +108,7 @@ def test_a_playlist_plays_with_no_dj_or_jingles_then_back_to_the_show(tmp_path: 
     _on_air(st, monkeypatch)
     st.add_to_playlist("Mix", [MICHELLE, STORM])
     played = []
-    monkeypatch.setattr(st, "_play_file", lambda path, on_air, near_end=None: played.append(on_air.kind + ":" + on_air.title))
+    monkeypatch.setattr(st, "_play_file", lambda path, on_air, near_end=None, **kw: played.append(on_air.kind + ":" + on_air.title))
     monkeypatch.setattr(st.output, "start", lambda: None)
     monkeypatch.setattr(st.output, "stop", lambda: None)
 
@@ -128,7 +128,7 @@ def test_a_stopped_playlist_ends_after_the_song_playing(tmp_path: Path, monkeypa
     st.add_to_playlist("Mix", [MICHELLE, STORM])
     played = []
 
-    def play_file(path, on_air, near_end=None):
+    def play_file(path, on_air, near_end=None, **kw):
         played.append(on_air.title)
         st.stop_playlist()
     monkeypatch.setattr(st, "_play_file", play_file)
@@ -310,3 +310,22 @@ def test_renaming_a_playlist_takes_its_buttons_and_the_one_playing_with_it(tmp_p
     assert st.playlist_status()["name"] == "Dad's favourites"           # the one playing too
     assert presets.banks["day"][0]["name"] == "Dad's favourites"
     assert json.loads(config.read_text())["playlists"][0]["name"] == "Dad's favourites"
+
+
+def test_a_playlist_song_not_measured_yet_plays_at_once(tmp_path: Path, monkeypatch) -> None:
+    """Its loudness scan is a whole decode (tens of seconds for a long track on
+    a Zero): a playlist doesn't wait for it -- the song plays as it is."""
+    from concurrent.futures import Future
+    from sleepradiopi.broadcast import station as station_mod
+    st = _od_station(tmp_path)
+    monkeypatch.setattr(st, "_write", lambda block: None)
+    monkeypatch.setattr(station_mod, "SOURCE_SCAN_WAIT_S", 0.05)
+    monkeypatch.setattr(st, "_scan", lambda path: Future())          # (never finishes)
+    decoded = []
+    monkeypatch.setattr(station_mod.pcm, "decode", lambda path, a, b: decoded.append(path.name) or iter(()))
+    st.add_to_playlist("Mix", [MICHELLE])
+    st.play_playlist("Mix")
+    st._switch.clear()
+    t0 = time.monotonic()
+    st._run_album(st.source)
+    assert decoded == ["02 - Michelle.mp3"] and time.monotonic() - t0 < 2

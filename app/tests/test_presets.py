@@ -69,9 +69,9 @@ def test_an_album_plays_straight_through_then_the_show(tmp_path: Path, monkeypat
     st._switch.clear()
     real_play = st._play_file
 
-    def play_file(path, on_air, near_end=None):
+    def play_file(path, on_air, near_end=None, **kw):
         titles.append(on_air.title)
-        real_play(path, on_air, near_end)
+        real_play(path, on_air, near_end, **kw)
     monkeypatch.setattr(st, "_play_file", play_file)
     st._run_album(st.source)
     assert titles == [t.title for t in album["tracks"]]      # in order, all of them
