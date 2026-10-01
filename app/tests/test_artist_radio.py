@@ -65,27 +65,54 @@ def test_artist_radio_plays_only_that_artist(tmp_path: Path) -> None:
     assert len({t.artist for t in (st._take_next() for _ in range(30))}) == 3
 
 
-def test_on_air_the_next_song_is_the_new_stations_unless_its_being_announced(tmp_path: Path, monkeypatch) -> None:
+def test_on_air_another_station_takes_over_at_once(tmp_path: Path, monkeypatch) -> None:
+    """Like turning the dial: the song playing stops and the new station opens
+    with its own music (it used to wait for the song's end, and a theme dropped
+    on the radio seemed to do nothing)."""
     from collections import deque
     st = _station(tmp_path)
     monkeypatch.setattr(st, "_thread", type("T", (), {"is_alive": lambda self: True})())
     st._in_music = True                      # the music show is what's on
     other = next(t for t in st.tracks if t.artist != "The Beatles")
     st._queue = deque([other])               # lined up next: not the Beatles
-    st.set_artist("beatles")                            # mid-song: not announced yet
-    assert {st._take_next().artist for _ in range(8)} == {"The Beatles"}
-    st.set_artist(None)
-    st._queue = deque([other])
-    st._in_gap = True                                   # the DJ is introducing it now
+    st._in_gap = True                        # (even with the DJ announcing it)
     st.set_artist("beatles")
-    st._in_gap = False
-    assert st._take_next() == other                     # so it still plays, then the station's own
-    assert {st._take_next().artist for _ in range(8)} == {"The Beatles"}
-    beatle = next(t for t in st.tracks if t.artist == "The Beatles")
-    st.set_artist(None)
-    st._queue = deque([beatle])
-    st.set_artist("beatles")                            # it's on the new station anyway: kept
-    assert st._take_next() == beatle
+    assert st._switch.is_set() and st._retune                # the show opens it now
+    assert list(st._queue) == [] and st._opening is None     # nothing of the old station's kept
+    st._switch.clear()
+    st.set_artist("beatles")                                 # the same station: nothing happens
+    assert not st._switch.is_set()
+
+
+def test_editing_the_theme_playing_doesnt_cut_in(tmp_path: Path, monkeypatch) -> None:
+    st = _station(tmp_path)
+    monkeypatch.setattr(st, "_thread", type("T", (), {"is_alive": lambda self: True})())
+    st.set_profiles([{"name": "Default", "all": True}, {"name": "Fab", "artists": ["The Beatles"]}])
+    st.set_profile("Fab")
+    st._in_music, st._retune = True, False
+    st._switch.clear()
+    st.set_profiles([{"name": "Default", "all": True}, {"name": "Fab", "artists": ["The Beatles", "Nick Drake"]}])
+    assert not st._switch.is_set() and not st._retune
+
+
+def test_the_show_loop_opens_the_new_station(tmp_path: Path, monkeypatch) -> None:
+    st = _station(tmp_path)
+    monkeypatch.setattr(st.output, "start", lambda: None, raising=False)
+    monkeypatch.setattr(st.output, "stop", lambda: None, raising=False)
+    runs = []
+
+    def run_music(back=False):
+        runs.append((back, st.artist))
+        if len(runs) == 1:
+            st._in_music = True
+            st.set_artist("beatles")             # chosen mid-show
+            st._in_music = False
+        else:
+            st._stop.set()
+    monkeypatch.setattr(st, "_run_music", run_music)
+    st._run_show()
+    assert runs[0] == (False, None) and runs[1][0] is True and runs[1][1].lower() == "beatles"   # opened as from elsewhere
+
 
 def test_unknown_artist_falls_back_to_everything(tmp_path: Path) -> None:
     st = _station(tmp_path)

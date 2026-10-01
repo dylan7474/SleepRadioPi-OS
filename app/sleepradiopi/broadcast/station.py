@@ -296,6 +296,7 @@ class Station:
         self._jump: BroadcastTrack | None = None   # Previous / a playlist now: play this at once, no gap
         self._album_jump: int | None = None        # Previous in an album: this track next
         self._file_seek: float | None = None       # the knob's press-and-turn: this far into the song (ms)
+        self._retune = False                       # another station chosen mid-show: it opens now
         self._file_pos: tuple = (None, 0)          # the song playing, and how far into its file (ms)
         self._gap_is_album = False           # this gap is between two tracks of an album
         self.current_track: BroadcastTrack | None = None
@@ -412,6 +413,7 @@ class Station:
                 self._switch.clear()
                 source = self._source
                 if source is None:
+                    back, self._retune = back or self._retune, False
                     self._run_music(back)
                     back = False
                 elif source["kind"] in ("album", "playlist"):
@@ -528,7 +530,7 @@ class Station:
                 self.on_air = None
                 self.gap_plan = []
                 self.next_track = None
-                if not opened:                # its lines may be half made (slow on a Zero): keep them
+                if not opened and not self._retune:   # its lines may be half made (slow on a Zero): keep them
                     self._opening = opening
                 else:
                     self._prepare_opening()   # ready for coming back from the station
@@ -2492,7 +2494,16 @@ class Station:
             # Requests always stay.
             in_show = self._in_music
             was_next = self._queue[0] if self._queue else None
+            before = ((self.artist or "").lower(), (self.profile or "").lower())
             found = self._use_selection(artist, profile)
+            # Another station, mid-show: it takes over now, like turning the dial -- the
+            # song playing stops and the new one opens (its welcome if made, else a short
+            # jingle of its own, else straight into its music). (It used to wait for the
+            # song to end: a theme dropped on the radio seemed to do nothing.)
+            retune = in_show and before != ((self.artist or "").lower(), (self.profile or "").lower())
+            if retune:
+                in_show = False                   # (nothing lined up is kept, as off air)
+                self._retune = True
             keep = self._n_requested
             if in_show and len(self._queue) > keep:
                 lined = self._queue[keep]
@@ -2510,8 +2521,11 @@ class Station:
                         if step.kind == "say":
                             step.speech.future.cancel()
                 self._opening = None
-        log.info("now playing from: %s (%s)", self.profile or self.artist or "everything", self.builder.station)
-        if not in_show and self.tracks:
+        log.info("now playing from: %s (%s)%s", self.profile or self.artist or "everything", self.builder.station,
+                 "; over to it now" if retune else "")
+        if retune:
+            self._switch.set()                    # (the show thread opens the new station)
+        elif not in_show and self.tracks:
             self._prepare_opening()
         return found
 
