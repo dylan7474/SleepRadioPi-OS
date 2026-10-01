@@ -863,8 +863,8 @@ function inherited(map, o, none) {      // map[o.id], else the folder it's in's,
 }
 const viewOf = o => inherited(views, o, "icons");
 function setView(id, v) { views[id] = v; try { localStorage.setItem("srd.views", JSON.stringify(views)); } catch {} drawDesk(); }
-// The list's sort, from its column headings: A-Z, Z-A, then back to the folder's own order
-// (which means something in Birthdays, Programmes...); kept like the view
+// A folder's sort, set from the list's column headings (icons follow it too): A-Z, Z-A, then
+// back to the folder's own order (which means something in Birthdays, Programmes...); kept like the view
 let sorts = {}; try { sorts = JSON.parse(localStorage.getItem("srd.sorts")) || {}; } catch {}
 const SORT_COLS = [["name", "Name"], ["det", "Details"], ["kind", "Kind"]];
 const sortOf = o => inherited(sorts, o, "own");
@@ -881,6 +881,10 @@ function sorted(o, ids) {
   const cmp = (a, b) => key(a).localeCompare(key(b), undefined, { numeric: true, sensitivity: "base" }) || a.title.localeCompare(b.title, undefined, { numeric: true });
   const out = ids.filter(id => O[id]).sort((a, b) => cmp(O[a], O[b]));
   return dir === "down" ? out.reverse() : out;
+}
+function sortWords(o) {                // for the footer: icons have no headings to show it
+  const [by, dir] = sortOf(o).split(":");
+  return by === "own" ? "" : `sorted by ${SORT_COLS.find(c => c[0] === by)[1].toLowerCase()}, ${dir === "up" ? "A–Z" : "Z–A"}`;
 }
 function listHead(o) {
   const [by, dir] = sortOf(o).split(":");
@@ -1315,7 +1319,7 @@ function folderView(o, box, win) {
   if (tools.children.length) box.append(tools);
   const asList = viewOf(o) === "list" && o.kids.length;
   const grid = asList ? el("ul", { className: "rows" }) : el("div", { className: "grid" });
-  (asList ? sorted(o, o.kids) : o.kids).forEach(id => O[id] && grid.append((asList ? listEl : iconEl)(O[id], { where: o.id, parent: o.id })));
+  sorted(o, o.kids).forEach(id => O[id] && grid.append((asList ? listEl : iconEl)(O[id], { where: o.id, parent: o.id })));
   if (!o.kids.length) grid.append(el("div", { className: "empty", textContent: o.kind === "trash" ? "The Trash is empty." : o.root === "ondemand" && !o.path ? "Nothing here yet: add files under Settings › Media library › On demand." : "Nothing here yet." }));
   const body = el("div", { className: "wbody" }, asList ? listHead(o) : null, grid);
   if (o.box === "voices") {
@@ -1330,7 +1334,9 @@ function folderView(o, box, win) {
   }
   box.append(body);
   const media = o.root || o.box === "books" || o.box === "jingles";
-  box.append(el("div", { className: "wfoot" }, `${o.kids.length} item${o.kids.length === 1 ? "" : "s"}`, media ? el("span", { id: "space-" + o.id }) : null));
+  const sortNote = o.kids.length > 1 ? sortWords(o) : "";
+  box.append(el("div", { className: "wfoot" }, `${o.kids.length} item${o.kids.length === 1 ? "" : "s"}`,
+    sortNote ? el("span", { textContent: "· " + sortNote, title: "Change it from the list view's column headings" }) : null, media ? el("span", { id: "space-" + o.id }) : null));
   if (media) space(o);
 }
 function albumView(o, box) {
