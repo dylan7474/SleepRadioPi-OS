@@ -43,10 +43,13 @@ dtoverlay=gpio-key,gpio=16,active_low=1,gpio_pull=up,keycode=4,label="PRESET3"
 dtoverlay=gpio-key,gpio=8,active_low=1,gpio_pull=up,keycode=5,label="PRESET4"
 
 # The cathedral radio (the Phonosphere, hardware "cathedral"): a 6-way
-# rotary selector instead of the buttons -- its common to GND, positions 1-4
-# on the preset pins above, 5 on GPIO23 (pin 16), 6 on GPIO24 (pin 18) --
-# and a hidden back button on GPIO25 (pin 22) to GND (KEY_MENU: day/night,
-# hold for the service menu). On the box radio: nothing fitted, harmless.
+# rotary selector instead of the buttons -- its common to GND, positions 1, 2
+# and 4 on the preset pins above (GPIO5, 6, 8), 3 on GPIO7 (pin 26) below, NOT
+# GPIO16 (the MiniAmp's MUTE: a selector holds its position, so it would stay
+# muted), 5 on GPIO23 (pin 16), 6 on GPIO24 (pin 18) -- and a hidden back
+# button on GPIO25 (pin 22) to GND (KEY_MENU: day/night, hold for the service
+# menu). On the box radio: nothing fitted, harmless.
+dtoverlay=gpio-key,gpio=7,active_low=1,gpio_pull=up,keycode=4,label="PRESET3B"
 dtoverlay=gpio-key,gpio=23,active_low=1,gpio_pull=up,keycode=6,label="PRESET5"
 dtoverlay=gpio-key,gpio=24,active_low=1,gpio_pull=up,keycode=7,label="PRESET6"
 dtoverlay=gpio-key,gpio=25,active_low=1,gpio_pull=up,keycode=139,label="BACK"

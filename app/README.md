@@ -133,7 +133,7 @@ a stacking header between the Pi and the amp.
 | RTC SDA / SCL | GPIO2 / GPIO3 | 3 / 5 |
 | RTC ground | GND | 9 |
 | Preset buttons 1 / 2 / 3 / 4 (each to GND) | GPIO5 / 6 / 16 / 8 | 29 / 31 / 36 / 24 |
-| *Cathedral:* selector positions 1–4 | as the preset buttons | |
+| *Cathedral:* selector positions 1–4 | GPIO5 / 6 / 7 / 8 (3 not on GPIO16: the MiniAmp's mute) | 29 / 31 / 26 / 24 |
 | *Cathedral:* selector positions 5 / 6 | GPIO23 / 24 | 16 / 18 |
 | *Cathedral:* selector common, back button's other side | GND | 30, 34 or 39 |
 | *Cathedral:* back button | GPIO25 | 22 |
@@ -162,6 +162,7 @@ dtoverlay=gpio-key,gpio=22,active_low=1,gpio_pull=up,keycode=164,label="PLAYPAUS
 # dtoverlay=i2c-rtc,ds3231              # once the RTC is fitted
 dtoverlay=gpio-key,gpio=5,active_low=1,gpio_pull=up,keycode=2,label="PRESET1"   # ... 6/3, 16/4, 8/5
 dtoverlay=gpio-key,gpio=23,active_low=1,gpio_pull=up,keycode=6,label="PRESET5"  # cathedral: 24/7
+dtoverlay=gpio-key,gpio=7,active_low=1,gpio_pull=up,keycode=4,label="PRESET3B"  # cathedral position 3
 dtoverlay=gpio-key,gpio=25,active_low=1,gpio_pull=up,keycode=139,label="BACK"   # cathedral
 dtoverlay=pwm-2chan,pin=12,func=4,pin2=13,func2=4                                # cathedral: needle, light
 ```
