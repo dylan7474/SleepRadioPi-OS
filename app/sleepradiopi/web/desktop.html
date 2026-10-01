@@ -166,6 +166,21 @@
   .wfoot { flex: none; padding: 4px 10px; border-top: 1px solid var(--line); color: var(--dim); font-size: 11.5px; display: flex; gap: 10px; font-variant-numeric: tabular-nums; }
   .resize { position: absolute; right: 0; bottom: 0; width: 16px; height: 16px; cursor: nwse-resize; touch-action: none;
             background: linear-gradient(135deg, transparent 50%, #ffffff33 50% 58%, transparent 58% 70%, #ffffff33 70% 78%, transparent 78%); }
+  /* folder list view */
+  .vseg { padding: 2px; gap: 2px; margin-left: 6px; }
+  .wtools .note + .vseg { margin-left: 10px; }
+  .vseg button { padding: 3px 7px; display: inline-grid; place-items: center; }
+  .vseg svg { width: 15px; height: 15px; display: block; }
+  .lhead, .row.lrow { grid-template-columns: 24px minmax(0, 1fr) minmax(0, .8fr) 92px; }
+  .lhead { display: grid; gap: 10px; padding: 6px 14px 4px; font-size: 11px; color: var(--dim); border-bottom: 1px solid var(--line);
+           position: sticky; top: 0; background: var(--win); z-index: 1; }
+  .lrow { position: relative; }
+  .lrow .gi { width: 24px; height: 24px; position: relative; }
+  .lrow .gi .glyph { position: absolute; left: 0; top: 0; transform: scale(.4); transform-origin: 0 0; pointer-events: none; }
+  .lrow .det, .lrow .knd { color: var(--dim); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .lrow.over { outline: 2px solid var(--blue); outline-offset: -2px; }
+  .lrow.nowon b::after { content: ""; display: inline-block; vertical-align: -2px; margin-left: 7px; width: 14px; height: 14px; border-radius: 50%;
+    background: var(--amber) center / 9px no-repeat url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23231703' stroke-width='2.6' stroke-linecap='round'%3E%3Cpath d='M5 10v4M9.5 6v12M14 8.5v7M18.5 5v14'/%3E%3C/svg%3E"); }
   .empty { color: var(--dim); padding: 22px; text-align: center; width: 100%; }
 
   /* list views (an album's tracks, a playlist, episodes) */
@@ -816,6 +831,41 @@ function iconEl(o, ctx) {
   d.addEventListener("keydown", e => { if (e.key === "Enter") open(o.id); });
   return d;
 }
+function listEl(o, ctx) {           // a folder's list view: one row, which drags, drops and opens as its icon does
+  const d = el("li", { className: "row lrow" + (sel === o.id + "@" + ctx.where ? " sel" : ""), tabIndex: 0 });
+  d.dataset.id = o.id;
+  if (["folder", "playlist", "programme", "trash"].includes(o.kind)) { d.dataset.drop = "icon"; d.dataset.target = o.id; }
+  const sub = subOf(o);
+  d.append(el("span", { className: "gi" }, glyph(o)), el("b", { textContent: o.title }),
+           el("span", { className: "det", textContent: sub }), el("span", { className: "knd", textContent: KIND[o.kind] || "" }));
+  d.title = `${KIND[o.kind]}: ${o.title}${sub ? " · " + sub : ""}`;
+  d._src = { id: o.id, ...ctx, row: true };
+  d.addEventListener("pointerdown", e => press(e, d, d._src));
+  d.addEventListener("keydown", e => { if (e.key === "Enter") open(o.id); });
+  return d;
+}
+// Icons or a list, chosen per folder window and kept in this browser; a music or On demand
+// folder nobody has chosen for looks like the folder it's in (as on a Mac)
+let views = {}; try { views = JSON.parse(localStorage.getItem("srd.views")) || {}; } catch {}
+function viewOf(o) {
+  for (let id = o.id; id;) {
+    if (views[id]) return views[id];
+    const m = /^f:(\w+):(.*)$/.exec(id);
+    id = m ? (m[2].includes("/") ? `f:${m[1]}:${m[2].slice(0, m[2].lastIndexOf("/"))}` : `root:${m[1]}`) : null;
+  }
+  return "icons";
+}
+function setView(id, v) { views[id] = v; try { localStorage.setItem("srd.views", JSON.stringify(views)); } catch {} drawDesk(); }
+const VIEW_SVG = {
+  icons: svgPic('<rect x="4" y="4" width="6.5" height="6.5" rx="1.2"/><rect x="13.5" y="4" width="6.5" height="6.5" rx="1.2"/><rect x="4" y="13.5" width="6.5" height="6.5" rx="1.2"/><rect x="13.5" y="13.5" width="6.5" height="6.5" rx="1.2"/>'),
+  list: svgPic('<path d="M9 6h11M9 12h11M9 18h11"/><circle cx="4.8" cy="6" r=".9"/><circle cx="4.8" cy="12" r=".9"/><circle cx="4.8" cy="18" r=".9"/>'),
+};
+function viewSwitch(o) {
+  const cur = viewOf(o);
+  const b = v => { const x = el("button", { type: "button", title: v === "list" ? "As a list" : "As icons" }); x.innerHTML = VIEW_SVG[v];
+    x.setAttribute("aria-label", x.title); x.setAttribute("aria-pressed", String(cur === v)); x.onclick = () => cur !== v && setView(o.id, v); return x; };
+  return el("div", { className: "seg vseg", role: "group", ariaLabel: "View" }, b("icons"), b("list"));
+}
 
 // ============ the desktop (its layout is kept in this browser) ============
 const SNAP = ["id", "kind", "title", "root", "path", "name", "url", "key", "pid", "guid", "artist", "info", "short", "alt", "sym"];
@@ -1225,11 +1275,14 @@ function folderView(o, box, win) {
     up.onchange = () => { upload(o, [...up.files].map(f => [f, f.name])); up.value = ""; };
     tools.append(T("Upload a book…", () => up.click()), up, el("span", { className: "note", textContent: "A folder of mp3s or one m4b is a book · each remembers its place" }));
   }
+  if (o.kids.length) tools.append(viewSwitch(o));
   if (tools.children.length) box.append(tools);
-  const grid = el("div", { className: "grid" });
-  o.kids.forEach(id => O[id] && grid.append(iconEl(O[id], { where: o.id, parent: o.id })));
+  const asList = viewOf(o) === "list" && o.kids.length;
+  const grid = asList ? el("ul", { className: "rows" }) : el("div", { className: "grid" });
+  o.kids.forEach(id => O[id] && grid.append((asList ? listEl : iconEl)(O[id], { where: o.id, parent: o.id })));
   if (!o.kids.length) grid.append(el("div", { className: "empty", textContent: o.kind === "trash" ? "The Trash is empty." : o.root === "ondemand" && !o.path ? "Nothing here yet: add files under Settings › Media library › On demand." : "Nothing here yet." }));
-  const body = el("div", { className: "wbody" }, grid);
+  const body = el("div", { className: "wbody" }, asList ? el("div", { className: "lhead" }, el("span"), el("span", { textContent: "Name" }),
+    el("span", { textContent: "Details" }), el("span", { textContent: "Kind" })) : null, grid);
   if (o.box === "voices") {
     body.addEventListener("dragover", e => { if ([...e.dataTransfer.types].includes("Files")) { e.preventDefault(); box.classList.add("over"); } });
     body.addEventListener("dragleave", () => box.classList.remove("over"));
@@ -2694,7 +2747,7 @@ function playingIds() {
 }
 function markPlaying() {
   const ids = playingIds();
-  document.querySelectorAll(".icon[data-id]").forEach(n => { const on = ids.has(n.dataset.id); n.classList.toggle("nowon", on); if (on) n.dataset.tip = "Playing now"; });
+  document.querySelectorAll(".icon[data-id], .lrow[data-id]").forEach(n => { const on = ids.has(n.dataset.id); n.classList.toggle("nowon", on); if (on) n.dataset.tip = "Playing now"; });
 }
 function tick() { const d = new Date(); $("clock").textContent = d.toLocaleDateString(undefined, { weekday: "short" }) + " " + d.toTimeString().slice(0, 5); }
 window.addEventListener("resize", () => drawDesk());
