@@ -332,6 +332,22 @@ def make_handler(station: Station, output: Mp3Output, speaker=None,
                 self._set_password()
             elif path == "/api/power":
                 self._power()
+            elif path == "/api/seek":
+                try:
+                    body = self._body()
+                    to_ms, delta_ms = body.get("to_ms"), body.get("delta_ms")
+                    for v in (to_ms, delta_ms):
+                        if v is not None and (isinstance(v, bool) or not isinstance(v, (int, float))):
+                            raise ValueError("send {\"to_ms\": n} or {\"delta_ms\": n}")
+                    if (to_ms is None) == (delta_ms is None):
+                        raise ValueError("send {\"to_ms\": n} or {\"delta_ms\": n}")
+                    moved = station.seek(to_ms=None if to_ms is None else int(to_ms),
+                                         delta_ms=None if delta_ms is None else int(delta_ms))
+                except (ValueError, TypeError, AttributeError) as e:
+                    self._error(str(e) if isinstance(e, ValueError) else "send {\"to_ms\": n} or {\"delta_ms\": n}")
+                    return
+                self._send(json.dumps({"moved": moved is not None, "position": station.position()}).encode(),
+                           "application/json")
             elif path == "/api/skip":
                 self.rfile.read(int(self.headers.get("Content-Length", 0)))  # no body needed
                 self._send(json.dumps({"skipped": station.skip()}).encode(), "application/json")

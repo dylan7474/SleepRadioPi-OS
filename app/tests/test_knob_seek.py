@@ -34,7 +34,7 @@ def test_a_book_moves_half_a_minute_a_click(tmp_path, books_dir) -> None:
     assert st.knob_seek(1) is None                                 # the show: nothing to move
     st.tune({"kind": "book", "key": "The Hobbit.m4b"})
     where = st.knob_seek(1)                                        # (a 5 s book: to its last second)
-    assert where == {"path": books_dir / "The Hobbit.m4b", "ms": 4000}
+    assert (where["path"], where["ms"], where["pos_ms"]) == (books_dir / "The Hobbit.m4b", 4000, 4000)
     assert st.book_positions.get("The Hobbit.m4b") == 4000
     assert st.knob_seek(-1)["ms"] == 0
 
@@ -136,3 +136,68 @@ def test_paused_a_snatch_plays_every_half_second_while_it_moves(monkeypatch) -> 
     seek.turn(1, speed_up=False)                                   # playing: it just jumps
     time.sleep(0.2)
     assert ctl.clips == []
+
+
+def test_a_show_song_moves_and_the_dj_words_the_time_again(tmp_path, monkeypatch) -> None:
+    """On Theme Radio too: the song jumps, and a gap already worded for the old
+    end (its time check) is worded again for the new one."""
+    st = _od_station(tmp_path)
+    _on_air(st, monkeypatch)
+    calls, ends = [], []
+
+    def decode(path, start_ms=0, end_ms=0):
+        calls.append(start_ms)
+        return (np.zeros((2205, 2), np.int16) for _ in range(6 if len(calls) == 1 else 2))
+    monkeypatch.setattr(pcm, "decode", decode)
+    monkeypatch.setattr(st, "_scan", lambda path: _done(pcm.TrackScan(1.0, 0, 0, 0)))
+    monkeypatch.setattr(st, "track_seconds", lambda t: None)
+    written = []
+
+    def write(block):
+        if len(block) != 2205:
+            return
+        written.append(1)
+        if len(written) == 2:
+            assert st.seek(to_ms=500)["pos_ms"] == 500
+    monkeypatch.setattr(st, "_write", write)
+    from sleepradiopi.broadcast.station import OnAir
+    t = st._take_next()
+    on_air = OnAir("track", t.title, t.artist)
+    st._play_file(t.path, on_air, near_end=lambda end, again: ends.append(again))
+    assert calls == [0, 500] and ends == [False]                 # (jumped; the end came as it played out)
+
+
+def _done(value):
+    from concurrent.futures import Future
+    f = Future()
+    f.set_result(value)
+    return f
+
+
+def test_the_web_seeks_and_reports_the_position(tmp_path) -> None:
+    import json
+    import urllib.request
+    from http.server import ThreadingHTTPServer
+    from sleepradiopi.web.server import make_handler
+    st = _od_station(tmp_path)
+    st.add_to_playlist("Mix", [MICHELLE])
+    st.play_playlist("Mix")
+    httpd = ThreadingHTTPServer(("127.0.0.1", 0), make_handler(st, None, None, None))
+    threading.Thread(target=httpd.serve_forever, daemon=True).start()
+
+    def req(body):
+        r = urllib.request.Request(f"http://127.0.0.1:{httpd.server_address[1]}/api/seek", data=json.dumps(body).encode(),
+                                   method="POST", headers={"Content-Type": "application/json"})
+        with urllib.request.urlopen(r) as resp:
+            return json.load(resp)
+    try:
+        got = req({"to_ms": 42_000})
+        assert got["moved"] and st.source["offset_ms"] == 42_000
+        assert got["position"]["pos_ms"] == 42_000
+        req({"delta_ms": -10_000})
+        assert st.source["offset_ms"] == 32_000
+        import pytest, urllib.error
+        with pytest.raises(urllib.error.HTTPError):
+            req({"to_ms": 1, "delta_ms": 1})
+    finally:
+        httpd.shutdown()

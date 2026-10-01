@@ -298,6 +298,7 @@ class Station:
         self._file_seek: float | None = None       # the knob's press-and-turn: this far into the song (ms)
         self._retune = False                       # another station chosen mid-show: it opens now
         self._file_pos: tuple = (None, 0)          # the song playing, and how far into its file (ms)
+        self._file_trim = 0                        # where its sound starts in the file (its scan's start)
         self._gap_is_album = False           # this gap is between two tracks of an album
         self.current_track: BroadcastTrack | None = None
         self._took_request = False
@@ -1469,7 +1470,9 @@ class Station:
         self.on_air = on_air
         pos = max(start_ms, scan.start_ms)       # (ms in the file)
         self._file_seek = None
+        self._file_trim = scan.start_ms          # (where the song's sound starts: position 0 for the page)
         fired = near_end is None
+        reword = False                           # moved after the gap was worded: word it again
         while True:
             on_air.started = time.time() - (pos - scan.start_ms) / 1000
             self._file_pos = (path, pos)
@@ -1482,7 +1485,7 @@ class Station:
                         near_end(datetime.now(), True)
                     break                        # (moved stays False: done)
                 paused = keep_place and self._listeners == 0 and self.speaker_paused()
-                if keep_place and (self._file_seek is not None or paused):
+                if self._file_seek is not None or paused:
                     if paused:                   # wait here (the knob may move it meanwhile)
                         while self._listeners == 0 and not self._halted():
                             time.sleep(0.2)
@@ -1498,9 +1501,16 @@ class Station:
                 left = playable_s - (pos - scan.start_ms) / 1000
                 if not fired and playable_s and left <= PREFETCH_S:
                     fired = True
-                    near_end(datetime.now() + timedelta(seconds=left), False)
+                    near_end(datetime.now() + timedelta(seconds=left), reword)
+                    reword = False
             if not moved:
                 break
+            if fired and near_end is not None:   # (moved: the end is somewhere else now)
+                left = playable_s - (pos - scan.start_ms) / 1000
+                if left <= PREFETCH_S:
+                    near_end(datetime.now() + timedelta(seconds=max(0, left)), True)
+                else:
+                    fired, reword = False, True
         if not fired:
             near_end(datetime.now(), False)
 
@@ -1996,48 +2006,85 @@ class Station:
 
     def knob_seek(self, clicks: int) -> dict | None:
         """The knob turned while held: back (clicks < 0) or on through what's playing --
-        a book or podcast SEEK_BOOK_MS a click, a song from an album or playlist
-        SEEK_SONG_MS (within it). Playing, it jumps at once; paused, the place moves
-        and the radio carries on from there. None if there's nothing to move (the
-        show, a station). Else {"path", "ms"} (where it is now in that file, for a
+        a book or podcast SEEK_BOOK_MS a click, a song SEEK_SONG_MS (within it).
+        None if there's nothing to move (a station). Else as seek()."""
+        if not clicks:
+            return None
+        src = self._source
+        unit = SEEK_BOOK_MS if src is not None and src["kind"] in ("book", "episode") else SEEK_SONG_MS
+        return self.seek(delta_ms=clicks * unit)
+
+    def seek(self, to_ms: int | None = None, delta_ms: int | None = None) -> dict | None:
+        """Move through what's playing: to to_ms from its start, or by delta_ms -- a
+        book or podcast (as book_seek), or a song: an album's or playlist's (paused
+        too: it plays on from there), or the show's (the DJ's time check is worded
+        again for the new end). Playing, it jumps at once. None if there's nothing
+        to move (a station, a jingle, the DJ talking, nothing on). Else {"pos_ms",
+        "total_ms", "path", "ms"}: path and ms are where that is in the file (for a
         snatch of it while paused; path None for a podcast: it's streamed)."""
         src = self._source
-        if not clicks or src is None:
-            return None
-        if src["kind"] in ("book", "episode"):
-            st = self.book_seek(delta_ms=clicks * SEEK_BOOK_MS)
+        if src is not None and src["kind"] in ("book", "episode"):
+            st = self.book_seek(delta_ms=delta_ms, to_ms=to_ms)
+            total = st.get("total_ms", 0)
             if src["kind"] == "episode":
-                return {"path": None, "ms": st["pos_ms"]}
+                return {"pos_ms": st["pos_ms"], "total_ms": total, "path": None, "ms": st["pos_ms"]}
             book = self.books.get(src["key"])
             i, into = book.at(st["pos_ms"])
             ch = book.chapters[i]
-            return {"path": ch.path, "ms": ch.start_ms + into}
-        if src["kind"] not in ("album", "playlist"):
+            return {"pos_ms": st["pos_ms"], "total_ms": total, "path": ch.path, "ms": ch.start_ms + into}
+        if src is not None and src["kind"] not in ("album", "playlist"):
             return None
-        album = self._source_album(src)
-        if album is None:
-            return None
-        t = album["tracks"][min(src.get("track", 0), len(album["tracks"]) - 1)]
-        length = (self.track_seconds(t) or 0) * 1000
-        playing = self._file_pos[0] == t.path and self.on_air is not None and self.on_air.kind == "track" \
-            and self.is_on_air and not self.speaker_paused()
-        now = self._file_pos[1] if self._file_pos[0] == t.path else src.get("offset_ms", 0)
-        if self._file_seek is not None:
-            now = self._file_seek
-        target = int(max(0, now + clicks * SEEK_SONG_MS))
-        if length:
-            target = min(target, int(length) - 1000)
-        if playing:
-            self._file_seek = target
+        on_air = self.on_air
+        if src is not None:                      # an album's or playlist's song: playing or paused
+            album = self._source_album(src)
+            if album is None:
+                return None
+            t = album["tracks"][min(src.get("track", 0), len(album["tracks"]) - 1)]
+            path = t.path
+        else:                                    # the show: only a song that's on now
+            if on_air is None or on_air.kind != "track" or not self.is_on_air or self._file_pos[0] is None:
+                return None
+            path = self._file_pos[0]
+        here = self._file_pos[0] == path
+        scan = self.scans.get(path)
+        trim = self._file_trim if here else (scan.start_ms if scan else 0)
+        length = int(((on_air.duration_s if here and on_air is not None and on_air.duration_s else 0)
+                      or (scan.playable_ms / 1000 if scan else 0)
+                      or (self.track_seconds(BroadcastTrack(path, "", "")) or 0)) * 1000)
+        now = self._file_seek if self._file_seek is not None and here else \
+            (self._file_pos[1] if here else trim + (src or {}).get("offset_ms", 0))
+        now = now - trim                         # (from the song's start)
+        target = int(to_ms if to_ms is not None else now + (delta_ms or 0))
+        target = max(0, min(target, length - 1000) if length else target)
+        playing = here and on_air is not None and on_air.kind == "track" and self.is_on_air \
+            and not self.speaker_paused()
+        if playing or (here and src is None):
+            self._file_seek = trim + target
         else:
             with self._lock:
-                src["offset_ms"] = target
-            if self._file_pos[0] == t.path:      # (waiting, paused, inside it: it picks this up on play)
-                self._file_seek = target
-                self._file_pos = (t.path, target)
+                src["offset_ms"] = trim + target
+            if here:                             # (waiting, paused, inside it: it picks this up on play)
+                self._file_seek = trim + target
+                self._file_pos = (path, trim + target)
             self._notify_source()
-        log.info("knob seek: %s at %d:%02d", t.title, target // 60000, target // 1000 % 60)
-        return {"path": t.path, "ms": target}
+        log.info("seek: %s to %d:%02d", path.stem, target // 60000, target // 1000 % 60)
+        return {"pos_ms": target, "total_ms": length, "path": path, "ms": trim + target}
+
+    def position(self) -> dict | None:
+        """Where the song, book or podcast playing is, for the page's bar:
+        {"pos_ms", "total_ms"}; None if it can't be moved (a station, a jingle,
+        the DJ talking, nothing on)."""
+        src = self._source
+        if src is not None and src["kind"] in ("book", "episode"):
+            now = self.book_now or {}
+            return {"pos_ms": int(now.get("pos_ms", 0)), "total_ms": int(now.get("total_ms") or 0)} if now else None
+        on_air = self.on_air
+        path, pos = self._file_pos
+        if on_air is None or on_air.kind != "track" or path is None:
+            if src is not None and src["kind"] in ("album", "playlist") and "offset_ms" in src:
+                return {"pos_ms": int(src["offset_ms"]), "total_ms": 0}
+            return None
+        return {"pos_ms": int(max(0, pos - self._file_trim)), "total_ms": int((on_air.duration_s or 0) * 1000)}
 
     def snatch(self, path: Path, ms: int, length_ms: int = 300) -> np.ndarray | None:
         """A moment of a file from ms (levelled as it would play, faded in and out):
@@ -2608,13 +2655,14 @@ class Station:
                 "album": on_air.album, "elapsed_s": round(time.time() - on_air.started, 1),
                 "duration_s": round(on_air.duration_s, 1),
             },
+            "position": self.position(),         # (a song, book or podcast that can be moved through)
             "next": None if nxt is None or (self._source or {}).get("kind") in ("radio", "book", "episode")
             else {"title": nxt.title, "artist": nxt.artist},
             "gap_plan": self.gap_plan,
             "can_skip": self.is_on_air and on_air is not None and on_air.kind not in ("radio", "book", "episode"),
             "can_previous": self.is_on_air and on_air is not None
             and on_air.kind not in ("radio", "book", "episode", "wait")
-            and (self._source is None or self._source.get("kind") == "album"),
+            and (self._source is None or self._source.get("kind") in ("album", "playlist")),
             "news_ready": None if news is None else news.due.mark.strftime("%H:%M"),
             "history": list(self.history),
             "library": {"tracks": len(self.tracks), "jingles": self._jingle_count(), "books": len(self.books.all()),
