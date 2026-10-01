@@ -540,6 +540,7 @@ const PANELS = [
   ["noise", "Noise", "≈", 250, "noise"], ["sleep", "Sleep timer", "☾", 265, null], ["voices", "Voices", "“", 300, "voices"],
   ["wifi", "Wi-Fi", "⌔", 190, "wifi"], ["identity", "This radio", "R", 40, "identity"], ["updates", "Updates", "↑", 130, "updates"],
   ["backup", "Save & load", "⇅", 170, "backup"], ["power", "Power", "⏻", 5, "power"], ["library", "Themes", "◎", 30, null],
+  ["onair", "On air", "♪", 20, null],
 ];
 const PANEL = {};
 for (const [key, title, sym, h, page] of PANELS) PANEL[key] = mk({ id: "set:" + key, kind: "panel", key, title, sym, h, page });
@@ -1705,8 +1706,21 @@ const minsOf = hhmm_ => toMin(hhmm_);
 // each: load() -> data; build(data, act) -> nodes. act(fn) runs a change, reloads, redraws.
 const UI = {
   speakers: {
-    load: async () => (await api("/api/status")).speaker,
+    load: async () => {
+      const [st, lamps, btns] = await Promise.all([api("/api/status"), api("/api/lamps").catch(() => ({})), api("/api/buttons").catch(() => ({}))]);
+      return { ...st.speaker, lamps, selector: !!btns.selector };
+    },
     build: (sp, act) => [
+      ...(TUNE ? [grp("Speaker settings from the analyser",
+        help(`The analyser suggests ${tuneWords(TUNE)}.` + (sp.eq ? ` Now: ${tuneWords({ ...sp.eq, lowcut: sp.highpass_hz || 0 })}.` : "")),
+        line(sbtn(TUNE.applied ? "Apply again" : "Apply", () => act(async () => {
+               TUNE.old = TUNE.old || (sp.eq ? { ...sp.eq, lowcut: sp.highpass_hz || 0 } : null);
+               await api("/api/speaker", { eq: { bass: TUNE.bass, mid: TUNE.mid, treble: TUNE.treble }, highpass: TUNE.lowcut });
+               TUNE.applied = true; }), "primary"),
+             ...(TUNE.applied && TUNE.old ? [sbtn("Undo", () => act(async () => {
+               await api("/api/speaker", { eq: { bass: TUNE.old.bass, mid: TUNE.old.mid, treble: TUNE.old.treble }, highpass: TUNE.old.lowcut });
+               TUNE.applied = false; }))] : []),
+             sbtn(TUNE.applied ? "Done" : "Not now", () => act(async () => { TUNE = null; }))))] : []),
       grp("How the knob turns", srow("Knob", seg([["auto", "Automatic"], ["fine", "Fine"], ["normal", "Normal"], ["coarse", "Coarse"]], sp.knob_mode, v => act(() => api("/api/speaker", { knob_mode: v })))),
         help("Automatic: a slow turn moves a step a click, a quick spin bigger steps. Fine 1, Normal 2, Coarse 5.")),
       grp("The radio's speakers",
@@ -1719,7 +1733,35 @@ const UI = {
       grp("Test sounds", line(...[["left", "Left"], ["right", "Right"], ["sides", "Left, then right"], ["phase", "Phase check"], ["sweep", "Bass sweep"], ["pink", "Pink noise"], ["stop", "Stop"]]
         .map(([k, t]) => sbtn(t, () => act(() => api("/api/speaker", { test: k })), k === "stop" ? "" : ""))),
         help(sp.test ? `Playing: ${sp.test.label}` : "They play on the speakers. A reversed speaker wire makes the phase check sound hollow.")),
+      grp("The knob and buttons",
+        line(sbtn("Press the knob", () => act(() => api("/api/knob", { press: "short" }))),
+             sbtn("Hold the knob", () => act(() => api("/api/knob", { press: "long" }))),
+             sbtn("Service menu", () => act(() => api("/api/knob", { press: "service" })))),
+        ...(sp.selector ? [line(sbtn("Back button", () => act(() => api("/api/knob", { press: "back" }))),
+                                sbtn("Hold the back button", () => act(() => api("/api/knob", { press: "back_long" }))))] : []),
+        line(sbtn("Press and turn: back", () => act(() => api("/api/knob", { press: "turn", clicks: -1 }))),
+             sbtn("Press and turn: on", () => act(() => api("/api/knob", { press: "turn", clicks: 1 })))),
+        help("The same as on the radio. Pressing pauses or plays; holding it 3 s says the radio's address; the service menu is read out, and the radio's buttons answer it (1 restart, 2 Wi-Fi reset, 3 status, 4 factory reset). Pressed and turned, the knob moves through a song, book or podcast.")),
+      ...(sp.lamps && sp.lamps.glow_day != null ? [grp("The grille light and the meter",
+        srow("Light by day", ...range("glow-day", 0, 100, 5, sp.lamps.glow_day, v => v + "%", v => act(() => api("/api/lamps", { glow_day: v })))),
+        srow("Light at night", ...range("glow-night", 0, 100, 5, sp.lamps.glow_night, v => v + "%", v => act(() => api("/api/lamps", { glow_night: v })))),
+        srow("Meter trim", ...range("meter-trim", -12, 12, 1, sp.lamps.meter_trim_db, db, v => act(() => api("/api/lamps", { meter_trim_db: v })))),
+        line(sbtn("Sweep the needle", () => act(() => api("/api/lamps/sweep", {})))))] : []),
     ],
+  },
+  onair: {
+    load: () => api("/api/status"),
+    build: s => {
+      const kinds = { track: "", dj: "The DJ", jingle: "Jingle", news: "News", radio: "Internet radio", book: "Audiobook", episode: "Podcast", album: "Album" };
+      const at = t => { const d = new Date(t * 1000); return String(d.getHours()).padStart(2, "0") + ":" + String(d.getMinutes()).padStart(2, "0"); };
+      const hist = (s.history || []).slice(0, 30);
+      return [
+        grp("Coming up", ...(s.requests?.length ? s.requests.map(r => srow("", el("span", { textContent: `${r.title} — ${r.artist}` }), el("span", { className: "shelp", textContent: r.album ? "album" : "asked for" })))
+          : [help(s.next ? `Next: ${s.next.title} — ${s.next.artist}` : "Nothing asked for.")])),
+        grp("Recently on air", ...(hist.length ? hist.map(h => srow(at(h.at), el("span", { textContent: h.text }), el("span", { className: "shelp", textContent: kinds[h.kind] || "" })))
+          : [help("Nothing yet.")])),
+      ];
+    },
   },
   tset: {                                          // a theme's own DJ settings (each theme its own full set)
     load: async () => { const [a, dj] = await Promise.all([api("/api/artists"), api("/api/dj")]); return { profiles: a.profiles, dj }; },
@@ -1804,7 +1846,13 @@ const UI = {
           line(sbtn("Look again", () => act(() => api("/api/wifi/scan", {}))), sbtn("Try the saved networks now", () => act(() => api("/api/wifi/try", {}))))),
         grp("Saved networks", ...[...known].map(n => srow(n, help(w.on_card?.includes(n) ? "From the card" : "Saved"), w.saved?.includes(n) ? sbtn("Forget", () => act(() => api("/api/wifi/remove", { ssid: n }))) : el("span"))),
           help("The radio reconnects quietly by itself if the Wi-Fi drops.")),
-        grp("The radio's own network", srow("Name", el("span", { textContent: w.hotspot.ssid })),
+        grp("The radio's own network",
+          srow("Name", Object.assign(el("input", { type: "text", id: "spot-ssid", maxLength: 32 }), { value: w.hotspot_settings?.ssid || w.hotspot.ssid })),
+          srow("Password", el("input", { type: "password", id: "spot-pw", placeholder: "8 to 63 characters" })),
+          line(sbtn("Save", () => act(async () => {
+            await api("/api/wifi/hotspot", { ssid: $("spot-ssid").value.trim(), password: $("spot-pw").value });
+            toast("Saved: used the next time the radio makes its own network.");
+          }))),
           help("It only starts its own network when you ask (below), after a settings reset, or with no network set up."),
           line(sbtn("Switch to its own network now…", () => ask("Switch the radio to its own network now? It leaves your Wi-Fi, so this page loses it until you join SleepRadio-Setup.", "Switch", () => act(() => api("/api/wifi/hotspot-now", {})))))),
       ];
@@ -3209,7 +3257,24 @@ async function boot() {
     }
     booted = true; drawDesk(); setInterval(tick, 10000); setInterval(poll, 2500); setInterval(refreshOpen, 20000);
     document.addEventListener("visibilitychange", () => { if (!document.hidden) { refreshOpen(); poll(); } }); setInterval(async () => { await loadButtons(); updateRadio(); }, 15000); }
+  takeTune();
 }
+// The speaker analyser (/analyser/) hands its suggestion over in the address,
+// #tune=bass,mid,treble,lowcut: the Speakers window offers it; nothing changes until Apply.
+let TUNE = null;
+const tuneDb = v => (v > 0 ? "+" : v < 0 ? "−" : "") + Math.abs(v) + " dB";
+const tuneWords = t => `bass ${tuneDb(t.bass)}, mid ${tuneDb(t.mid)}, treble ${tuneDb(t.treble)}, low cut ${t.lowcut ? t.lowcut + " Hz" : "off"}`;
+function takeTune() {
+  const m = /^#tune=(-?\d+),(-?\d+),(-?\d+),(\d+)$/.exec(location.hash);
+  if (!m) return;
+  history.replaceState(null, "", location.pathname);      // (a reload doesn't offer it again)
+  const [bass, mid, treble, lowcut] = m.slice(1).map(Number);
+  if ([bass, mid, treble].some(v => Math.abs(v) > 12) || lowcut > 300) return;
+  TUNE = { bass, mid, treble, lowcut };
+  if (S?.speaker?.test?.kind === "tune") api("/api/speaker", { test: "stop" }).catch(() => {});   // (measured: no more hiss)
+  closeFor(PANEL.speakers); open(PANEL.speakers.id);
+}
+window.addEventListener("hashchange", takeTune);
 boot();
 </script>
 

@@ -532,7 +532,7 @@ $("dlBtn").onclick = () => {
   setTimeout(() => URL.revokeObjectURL(a.href), 1000);
 };
 
-// The radio's page takes the settings in its address (#tune=bass,mid,treble,lowcut) and asks before
+// The radio's desktop takes the settings in its address (/desktop#tune=bass,mid,treble,lowcut) and asks before
 // applying them. A link, not a request: this page is HTTPS and the radio's is plain HTTP, so the
 // browser wouldn't let this page talk to it directly.
 const ADDR_STORE = "spectrum-analyser-radio";
@@ -544,7 +544,7 @@ $("sendBtn").onclick = () => {
   const addr = $("radioAddr").value.trim().replace(/^https?:\/\//i, "").replace(/\/.*$/, "");
   if (!/^[\w.:\[\]-]+$/.test(addr)) { setStatus("That isn't a radio address", true); return; }
   try { localStorage.setItem(ADDR_STORE, addr); } catch {}
-  window.open(`http://${addr}/#tune=${s.eq.bass},${s.eq.mid},${s.eq.treble},${s.lowcut}`, "_blank", "noopener");
+  window.open(`http://${addr}/desktop#tune=${s.eq.bass},${s.eq.mid},${s.eq.treble},${s.lowcut}`, "_blank", "noopener");
 };
 
 // --- Tune speakers: the automatic sequence ---------------------------------------------------------
