@@ -83,6 +83,11 @@ def validate(cfg) -> dict:
                 raise ValueError(f"“{text[:30]}…”: the last day isn't a date") from None
         if m.get("off") is True:
             entry["off"] = True
+        station = m.get("station")                   # a theme's name: only on that station; none: every station
+        if station not in (None, ""):
+            if not isinstance(station, str) or len(station.strip()) > 40:
+                raise ValueError(f"“{text[:30]}…”: the station is a theme's name")
+            entry["station"] = " ".join(station.split())
         days = m.get("days") or []
         if not isinstance(days, list) or not all(isinstance(d, int) and not isinstance(d, bool) and 0 <= d <= 6 for d in days):
             raise ValueError(f"“{text[:30]}…”: days are 0 (Monday) to 6 (Sunday)")
@@ -134,19 +139,22 @@ class Messages:
     def set(self, cfg: dict) -> None:
         self.cfg = validate(cfg)
 
-    def active(self, today: date) -> list[dict]:
-        """The messages for today (whatever their times)."""
+    def active(self, today: date, station: str | None = None) -> list[dict]:
+        """The messages for today (whatever their times) on this station: the radio-wide
+        ones, and those of the theme playing (station: its name; None: the main show)."""
+        here = (station or "").lower()
         return [m for m in self.cfg["list"]
                 if not m.get("off") and (not m.get("until") or date.fromisoformat(m["until"]) >= today)
+                and (not m.get("station") or m["station"].lower() == here)
                 and (not m.get("days") or today.weekday() in m["days"])
                 and (not m.get("date") or m["date"] == f"{today.month:02d}-{today.day:02d}")]
 
-    def rotation(self, today: date) -> list[dict]:
+    def rotation(self, today: date, station: str | None = None) -> list[dict]:
         """Today's messages that take turns in the slots (the ones without times)."""
-        return [m for m in self.active(today) if not m.get("times")]
+        return [m for m in self.active(today, station) if not m.get("times")]
 
-    def _timed_due(self, at: datetime) -> tuple[dict, str] | None:
-        for m in self.active(at.date()):
+    def _timed_due(self, at: datetime, station: str | None = None) -> tuple[dict, str] | None:
+        for m in self.active(at.date(), station):
             for t in m.get("times", []):
                 hh, mi = map(int, t.split(":"))
                 when = at.replace(hour=hh, minute=mi, second=0, microsecond=0)
@@ -168,48 +176,49 @@ class Messages:
         steps = int((at - base).total_seconds() // (every * 60))
         return base + timedelta(minutes=steps * every)
 
-    def next_slot(self, now: datetime) -> datetime | None:
+    def next_slot(self, now: datetime, station: str | None = None) -> datetime | None:
         """When the next message is due to play (for the page), or None."""
         if not self.cfg["on"]:
             return None
         timed = []
         for day in range(8):                       # the next timed one, this week
             d = (now + timedelta(days=day)).date()
-            for m in self.active(d):
+            for m in self.active(d, station):
                 for t in m.get("times", []):
                     hh, mi = map(int, t.split(":"))
                     when = datetime(d.year, d.month, d.day, hh, mi)
                     if when >= now:
                         timed.append(when)
-        rot = self._next_rotation(now)
+        rot = self._next_rotation(now, station)
         return min([x for x in (*timed, rot) if x is not None], default=None)
 
-    def _next_rotation(self, now: datetime) -> datetime | None:
-        if not self.rotation(now.date()):
+    def _next_rotation(self, now: datetime, station: str | None = None) -> datetime | None:
+        if not self.rotation(now.date(), station):
             return None
         t = self.slot(now)
         if self._done_slot == t or t < now - timedelta(minutes=self.cfg["every_min"]):
             t += timedelta(minutes=self.cfg["every_min"])
         for _ in range(24 * 60 // self.cfg["every_min"] + 1):
-            if self.in_hours(t) and self.rotation(t.date()):
+            if self.in_hours(t) and self.rotation(t.date(), station):
                 return t
             t += timedelta(minutes=self.cfg["every_min"])
         return None
 
-    def due(self, at: datetime, clock_ok: bool) -> str | None:
-        """The words to say in a gap at [at], or None if no message is due. A
-        timed message comes first; otherwise the next in the rotation."""
+    def due(self, at: datetime, clock_ok: bool, station: str | None = None) -> str | None:
+        """The words to say in a gap at [at] on this station (a theme's name; None: the
+        main show), or None if no message is due. A timed message comes first;
+        otherwise the next in the rotation."""
         self._pending = None
         if not clock_ok or not self.cfg["on"]:
             return None
-        timed = self._timed_due(at)
+        timed = self._timed_due(at, station)
         if timed is not None:
             self._pending = ("timed", timed[1])
             return self.words(timed[0]["text"], at.date())
         slot = self.slot(at)
         if slot == self._done_slot or not self.in_hours(slot):
             return None
-        todays = self.rotation(at.date())
+        todays = self.rotation(at.date(), station)
         if not todays:
             return None
         self._pending = ("slot", slot)

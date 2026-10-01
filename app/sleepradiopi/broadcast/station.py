@@ -1667,7 +1667,7 @@ class Station:
         if self.config.news_enabled and self._news_ready is not None \
                 and self.news_schedule.due_at(end_at) is not None:
             return
-        message = self.messages.due(end_at, clock_trusted())
+        message = self.messages.due(end_at, clock_trusted(), self.profile)   # (the radio-wide ones, and this theme's)
         if not message:
             return
         record = self.messages.played(end_at)

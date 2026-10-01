@@ -645,7 +645,7 @@ def make_handler(station: Station, output: Mp3Output, speaker=None,
 
         def _messages_state(self) -> dict:
             trusted = clock_trusted()
-            nxt = station.messages.next_slot(datetime.now()) if trusted else None
+            nxt = station.messages.next_slot(datetime.now(), station.profile) if trusted else None
             return {**station.messages.cfg, "next": nxt.strftime("%H:%M") if nxt else None,
                     "next_day": nxt.date() != date.today() if nxt else False,
                     "due_now": bool(nxt and nxt <= datetime.now()),

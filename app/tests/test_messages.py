@@ -210,3 +210,19 @@ def test_a_message_not_said_comes_round_again() -> None:
     assert timed.due(datetime(2026, 9, 29, 10, 1), True) == SUNDAY
     timed.unplayed(timed.played(datetime(2026, 9, 29, 10, 1)))
     assert timed.due(datetime(2026, 9, 29, 10, 5), True) == SUNDAY
+
+
+def test_a_message_can_belong_to_one_station() -> None:
+    """Radio-wide messages are read on every station; a theme's only on that theme."""
+    m = Messages({"list": [{"text": HOME}, {"text": SUNDAY, "station": "Carisbrooke"}], "date_first": False})
+    t = datetime(2026, 9, 29, 10, 8)
+    assert m.due(t, True) == HOME                                      # the main show: radio-wide only
+    m.played(t)
+    assert m.due(datetime(2026, 9, 29, 10, 23), True) == HOME
+    assert {m.due(datetime(2026, 9, 29, 10, 38), True, "carisbrooke"), m.due(datetime(2026, 9, 29, 10, 53), True, "Carisbrooke")} <= {HOME, SUNDAY}
+    only = Messages({"list": [{"text": SUNDAY, "station": "Carisbrooke"}], "date_first": False})
+    assert only.due(t, True) is None and only.due(t, True, "Classical") is None
+    assert only.due(t, True, "Carisbrooke") == SUNDAY
+    assert only.next_slot(t) is None and only.next_slot(t, "Carisbrooke") is not None
+    from sleepradiopi.broadcast.messages import validate
+    assert validate({"list": [{"text": "x", "station": "  Carisbrooke  "}]})["list"][0]["station"] == "Carisbrooke"

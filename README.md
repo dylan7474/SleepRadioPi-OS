@@ -35,7 +35,8 @@ software, and the case to print.
   wishes them a happy one between songs (*"happy forty-first birthday to
   Sarah"*), a few times through the day.
 - **Messages** — short notes written on the web page that the DJ reads
-  between songs through the day (by default at :07, :22, :37 and :52, between
+  between songs through the day — on every station, or only on one theme's
+  (each theme has its own as well as the radio-wide ones) (by default at :07, :22, :37 and :52, between
   8 am and 9 pm, one at a time in turn), opening with the day and date: for
   someone with a poor memory, *"It's Tuesday, the twenty-ninth of September.
   You're at Willow Court, and you're safe here."* A message can have a last

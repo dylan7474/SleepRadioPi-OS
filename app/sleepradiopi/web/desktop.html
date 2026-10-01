@@ -584,11 +584,12 @@ async function loadFolder(f) {
     await loadPlaylists();
   } else if (f.box === "programmes") {
     await loadProgrammes();
-  } else if (f.box === "messages") {
+  } else if (f.box === "messages") {                // every message, or (a theme's folder) that station's own
     const d = await api("/api/messages");
-    f.kids = d.list.map((m, i) => mk({ id: "note:" + i, kind: "note", key: "note", idx: i, text: m.text, m,
+    const all = d.list.map((m, i) => mk({ id: "note:" + i, kind: "note", key: "note", idx: i, text: m.text, m,
       title: m.text.length > 34 ? m.text.slice(0, 32) + "…" : m.text }).id);
-    for (const id of Object.keys(O)) if (id.startsWith("note:") && !f.kids.includes(id)) delete O[id];
+    for (const id of Object.keys(O)) if (id.startsWith("note:") && !all.includes(id)) delete O[id];
+    f.kids = f.station ? all.filter(id => (O[id].m.station || "").toLowerCase() === f.station.toLowerCase()) : all;
   } else if (f.box === "birthdays") {
     const d = await api("/api/birthdays"), today = new Date();
     const until = p_ => { let n = new Date(today.getFullYear(), p_.month - 1, p_.day); const t0 = new Date(today.getFullYear(), today.getMonth(), today.getDate());
@@ -818,7 +819,7 @@ function subOf(o) {
     case "list": return o.count ? `${o.count} artist${o.count === 1 ? "" : "s"}` : "";
     case "jingle": return o.mb ? `${o.mb.toFixed(1)} MB` : "";
     case "message": return "The DJ says it";
-    case "note": return noteWhen(o.m);
+    case "note": return noteWhen(o.m) + (o.m?.station ? ` · ${o.m.station} only` : "");
     case "person": { const t = new Date(), today0 = new Date(t.getFullYear(), t.getMonth(), t.getDate());
       const nextYear = t.getFullYear() + (new Date(t.getFullYear(), o.b.month - 1, o.b.day) < today0 ? 1 : 0);   // the year of their next birthday
       const age = o.b.year ? nextYear - o.b.year : null;
@@ -1000,7 +1001,7 @@ function nowWords() {
   const n = S.now, src = S.source, pr = S.programme;
   const tuned = S.source ? (S.source.name || S.source.title || S.source.show_title) : null;
   let title = tuned || "Nothing on air", sub = S.speaker && !S.speaker.playing ? "Paused: press the knob" : "";
-  if (n) { title = n.title; sub = [n.artist, n.kind === "track" && !src ? "Sleep Radio" : src ? (src.kind === "radio" ? "Internet radio" : src.kind === "album" ? "Straight through, no DJ" : src.kind === "book" ? "Audiobook" : "Podcast") : ""].filter(Boolean).join(" · "); }
+  if (n) { title = n.title; sub = [n.artist, n.kind === "track" && !src ? (S.station_name || radioName) : src ? (src.kind === "radio" ? "Internet radio" : src.kind === "album" ? "Straight through, no DJ" : src.kind === "book" ? "Audiobook" : "Podcast") : ""].filter(Boolean).join(" · "); }
   if (n && ["dj", "news", "jingle"].includes(n.kind)) sub = { dj: "The DJ", news: "The news", jingle: "A jingle" }[n.kind];
   const prog = pr ? `Programme: ${pr.name} · ${pr.waiting ? "waiting for the next block" : pr.block}${pr.until ? " until " + pr.until : ""}` : "";
   if (S.programme_mode && !pr && !(S.speaker && S.speaker.playing)) {
@@ -1300,7 +1301,7 @@ function winEl(win) {
   }, true);
   box.append(bar);
   if (win.loading) box.append(el("div", { className: "wbody" }, el("div", { className: "loading", textContent: "Asking the radio…" })));
-  else ({ schedule: scheduleView, note: nativePanel, person: nativePanel, voice: nativePanel, list: nativePanel, folder: folderView, trash: folderView, album: albumView, playlist: playlistView, podcast: podcastView, programme: programmeView, panel: panelView }[o.kind])(o, box, win);
+  else ({ schedule: scheduleView, note: nativePanel, person: nativePanel, voice: nativePanel, list: themeView, folder: folderView, trash: folderView, album: albumView, playlist: playlistView, podcast: podcastView, programme: programmeView, panel: panelView }[o.kind])(o, box, win);
   const rs = el("div", { className: "resize" });
   rs.addEventListener("pointerdown", e => resizeThing(e, box, win));
   box.append(rs);
@@ -1309,6 +1310,23 @@ function winEl(win) {
 const T = (txt, fn, cls = "", dis = false) => { const b = el("button", { className: "t " + cls, type: "button", textContent: txt, disabled: dis }); b.onclick = fn; return b; };
 
 function selectedIn(o) { const s = sel && picked.get(sel); return s && s.where === o.id ? O[s.id] : null; }
+// A theme is a station, and a folder of what's its own: what it plays (Artists), its Jingles and its
+// Messages (its Settings come next). The radio-wide ones live on the radio's back.
+async function reloadNotes() {             // the Messages folder and any theme's that's open
+  await loadFolder(NOTES);
+  for (const w of W) { const f = O[w.id]; if (f && f !== NOTES && f.box === "messages") await loadFolder(f); }
+}
+function themeKids(o) {
+  const n = o.name;
+  return [mk({ id: "lsa:" + n, kind: "panel", key: "alist", name: n, title: "Artists", sym: "♫" }),
+          mk({ id: "tj:" + n, kind: "folder", box: "jingles", path: n, title: "Jingles", kids: O["tj:" + n]?.kids || [], sym: "J", alt: true }),
+          mk({ id: "tm:" + n, kind: "folder", box: "messages", station: n, title: "Messages", kids: O["tm:" + n]?.kids || [], sym: "✎" })].map(x => x.id);
+}
+const stationOf = n => /radio$/i.test(n.trim()) ? n.trim() : n.trim() + " Radio";
+function themeView(o, box, win) {
+  o.kids = themeKids(o);
+  folderView(o, box, win);
+}
 function folderView(o, box, win) {
   const tools = el("div", { className: "wtools" });
   const asSetting = { voices: PANEL.voices, jingles: PANEL.library }[o.box];   // (settings on the back that are folders)
@@ -1349,6 +1367,10 @@ function folderView(o, box, win) {
       T("Upload a voice…", () => up.click()), up, el("span", { className: "note", textContent: "Double-click a voice to make it the DJ's (the radio restarts) · drop a voice archive here to install it" })].filter(Boolean));
   }
   else if (o.box === "actions") tools.append(el("span", { className: "note", textContent: "Drag an action onto a button on the radio; the time, the pips, the news and the sleep timer can go into programmes too" }));
+  else if (o.kind === "list") tools.append(T("▶ Play", () => play(o), "primary"),
+    el("span", { className: "note", textContent: `${stationOf(o.name)}: what it plays, its own jingles and messages · double-click one to open it` }));
+  else if (o.box === "messages" && o.station) tools.append(T("New message", () => newMessage(o.station)),
+    el("span", { className: "note", textContent: `Read only on ${stationOf(o.station)}, as well as the radio-wide ones (in Messages on the desktop)` }));
   else if (o.box === "messages") tools.append(T("New message", () => newMessage()), T("When they're read…", () => open(PANEL.messages.id)),
     el("span", { className: "note", textContent: "Double-click a note to change it or when it's said · drag one into a programme, or onto the radio to hear it" }));
   else if (o.box === "jingles") {
@@ -1357,7 +1379,7 @@ function folderView(o, box, win) {
     const picked = selectedIn(o);
     tools.append(T("Upload…", () => up.click(), "", !o.path), T("Download", () => picked && download(picked), "", !picked), up,
       el("span", { className: "note", textContent: o.path ? (o.path === "Power-on" ? "Played at power-on, whatever the radio goes on to play: keep it nameless (an instrumental)"
-        : `${o.title}'s own jingles · empty: none on that station · drag one to another station's folder to move it`)
+        : `${stationOf(o.path)}'s own jingles · empty: none on that station · drag one to another station's folder to move it`)
         : "A folder for each station (made with each theme) and Power-on · open one to upload into it" }));
   }
   else if (o.box === "books") {
@@ -1731,13 +1753,20 @@ const UI = {
     },
   },
   note: {
-    load: () => api("/api/messages"),
+    load: async () => { if (!LISTS.loaded) await loadFolder(LISTS).catch(() => {}); return api("/api/messages"); },
     build: (all, act, win) => {
       const idx = O[win.id]?.idx, m = all.list[idx];
       if (!m) return [help("That message has gone.")];
       const save = patch => act(async () => { const fresh = await api("/api/messages");
         const list = fresh.list.map((x, j) => j === idx ? Object.fromEntries(Object.entries({ ...x, ...patch }).filter(([, v]) => v !== undefined && v !== null && !(Array.isArray(v) && !v.length))) : x);
-        await api("/api/messages", { ...fresh, list }); await loadFolder(NOTES); });
+        await api("/api/messages", { ...fresh, list }); await reloadNotes(); });
+      const themes = LISTS.kids.map(id => O[id]).filter(x => x?.kind === "list").map(x => x.name);
+      const st = el("select", { id: "note-station" });
+      st.append(new Option("Every station", ""));
+      for (const n of themes) st.append(new Option(stationOf(n) + " only", n, false, (m.station || "").toLowerCase() === n.toLowerCase()));
+      if (m.station && !themes.some(n => n.toLowerCase() === m.station.toLowerCase()))
+        st.append(new Option(m.station + " (that theme's gone)", m.station, false, true));
+      st.onchange = () => save({ station: st.value || undefined });
       const ta = el("textarea", { className: "notearea", value: m.text, id: "note-text", style: "min-height:110px" });
       ta.setAttribute("aria-label", "The message");
       ta.onchange = () => ta.value.trim() && save({ text: ta.value.trim() });
@@ -1762,6 +1791,7 @@ const UI = {
             await api("/api/messages", { ...fresh, list: fresh.list.filter((_, j) => j !== idx) }); closeFor(O[win.id]); await loadFolder(NOTES); drawDesk();
             return async () => { await api("/api/messages", fresh); await loadFolder(NOTES); drawDesk(); }; }), "danger"))),
         grp("When it's said",
+          srow("Station", st),
           srow("Said", seg([[false, "With the others"], [true, "At set times"]], timed, v => save({ times: v ? ["09:00"] : undefined }))),
           timed ? srow("At", times) : help(`In turn with the other messages, every ${all.every_min} min between ${hhmm(all.start_min)} and ${hhmm(all.end_min)}.`),
           srow("On days", dayKeys, help(m.days?.length ? "" : "Every day")),
@@ -2892,11 +2922,11 @@ function uploadVoice(f) {
   x.onerror = () => toast("The upload was cut off.");
   x.send(f);
 }
-async function newMessage() {
+async function newMessage(station) {
   try {
     const m = await api("/api/messages");
-    await api("/api/messages", { ...m, list: [...m.list, { text: "A new message" }] });
-    await loadFolder(NOTES); await open(NOTES.id); await open("note:" + m.list.length);
+    await api("/api/messages", { ...m, list: [...m.list, { text: "A new message", ...(station && { station }) }] });
+    await reloadNotes(); await open(station ? "tm:" + station : NOTES.id); await open("note:" + m.list.length);
     toast("A new note: type the words, then choose when it's said.");
   } catch (e) { toast("No message made: " + e.message + "."); }
 }

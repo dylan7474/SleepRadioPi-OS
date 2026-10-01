@@ -430,8 +430,12 @@ The cards:
   power-on chime), Noise, Sleep timer, Voices, Wi-Fi (join, forget, its own
   network), This radio (name, case, password, listening in a browser),
   Buttons (and the day and night sets), Updates, Save & load, Power.
-  **Messages** are objects: the desktop's sticky note opens a folder of notes,
-  each with its own window — the words, and **when it's said**: with the
+  **A theme is a folder of its own things**: opening one shows **Artists**
+  (what it plays), its **Jingles** and its **Messages** (Settings to come).
+  **Messages** are objects: the desktop's sticky note opens a folder of notes
+  (all of them), each with its own window — the words, **which station**
+  (every station, or one theme's only; a theme's Messages folder shows its
+  own, and its New message makes one for it), and **when it's said**: with the
   others in turn (every N minutes in the day's hours), or **at set times**;
   **on chosen days**; **once a year on a date** (e.g. Happy Christmas on 25
   December); **until** a date; paused. Hear it now, delete (or drag it to the
@@ -699,7 +703,8 @@ The cards:
   forty-first birthday to Sarah" when the year is known; 29 February is
   celebrated on the 28th in other years). *Hear it* plays a wish now.
 - **Messages** (Settings → Messages) — short notes the DJ reads between
-  songs through the day, e.g. for someone with a poor memory: "You're at
+  songs through the day (each on every station, or `"station": "<theme>"`:
+  only while that theme plays; `Messages.due(at, clock_ok, station)`), e.g. for someone with a poor memory: "You're at
   Willow Court, and you're safe here. Dylan lives five minutes away and is
   coming to see you on Sunday." One message per slot, taking turns: slots are
   **every 15 minutes, 7 past** (:07, :22, :37, :52 — well clear of the news
