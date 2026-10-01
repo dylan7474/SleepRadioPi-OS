@@ -1320,8 +1320,17 @@ function themeKids(o) {
   const n = o.name;
   return [mk({ id: "lsa:" + n, kind: "panel", key: "alist", name: n, title: "Artists", sym: "♫" }),
           mk({ id: "tj:" + n, kind: "folder", box: "jingles", path: n, title: "Jingles", kids: O["tj:" + n]?.kids || [], sym: "J", alt: true }),
-          mk({ id: "tm:" + n, kind: "folder", box: "messages", station: n, title: "Messages", kids: O["tm:" + n]?.kids || [], sym: "✎" })].map(x => x.id);
+          mk({ id: "tm:" + n, kind: "folder", box: "messages", station: n, title: "Messages", kids: O["tm:" + n]?.kids || [], sym: "✎" }),
+          mk({ id: "tset:" + n, kind: "panel", key: "tset", name: n, title: "Settings", sym: "⚙" })].map(x => x.id);
 }
+// what a theme can set for itself (profiles.THEME_SETTINGS): label and choices
+const THEME_SET = {
+  chattiness: ["Talks", [["maximum", "Every song"], ["chatty", "Chatty"], ["balanced", "Balanced"], ["minimal", "Rarely"]]],
+  time_checks: ["Time checks", [[true, "On"], [false, "Off"]]],
+  news: ["The news", [[true, "On"], [false, "Off"]]],
+  jingle_every: ["Jingles", [[0, "Off"], [2, "Every 2"], [4, "Every 4"], [8, "Every 8"]]],
+  dj_hooks: ["70s hooks", [[true, "On"], [false, "Off"]]],
+};
 const stationOf = n => /radio$/i.test(n.trim()) ? n.trim() : n.trim() + " Radio";
 function themeView(o, box, win) {
   o.kids = themeKids(o);
@@ -1595,6 +1604,24 @@ const UI = {
         help(sp.test ? `Playing: ${sp.test.label}` : "They play on the speakers. A reversed speaker wire makes the phase check sound hollow.")),
     ],
   },
+  tset: {                                          // a theme's own settings: each "As the radio", or its own
+    load: async () => { const [a, dj] = await Promise.all([api("/api/artists"), api("/api/dj")]); return { profiles: a.profiles, dj }; },
+    build: (d, act, win) => {
+      const o = O[win.id], cur = d.profiles.find(p => p.name === o?.name);
+      if (!cur) return [help("That theme has gone.")];
+      const own = cur.settings || {};
+      const radio = { chattiness: d.dj.chattiness, time_checks: d.dj.time_checks, news: d.dj.news_enabled, jingle_every: d.dj.jingle_every, dj_hooks: d.dj.dj_hooks };
+      const setOwn = (k, v) => act(async () => {
+        const profiles = d.profiles.map(p => p === cur ? { ...p, settings: { ...own, [k]: v } } : p);
+        await api("/api/profiles", { profiles }); await loadFolder(LISTS).catch(() => {}); });
+      const row = k => { const [label, opts] = THEME_SET[k], words = v => (opts.find(x => x[0] === v) || [, String(v)])[1];
+        return srow(label, seg([[null, `As the radio (${words(radio[k])})`], ...opts], k in own ? own[k] : null, v => setOwn(k, v))); };
+      return [grp(stationOf(cur.name), row("chattiness"), row("time_checks"), row("news"), row("jingle_every"),
+                  d.dj.hooks_available ? row("dj_hooks") : null,
+                  help("Anything left “As the radio” follows the radio's DJ settings (on its back), and changes with them.")),
+              grp("", line(sbtn("The radio's DJ settings…", () => open(PANEL.dj.id))))];
+    },
+  },
   dj: {
     load: () => api("/api/dj"),
     build: (d, act) => {
@@ -1604,12 +1631,14 @@ const UI = {
         grp("The DJ", srow("DJ", sw(d.dj_on, v => set({ dj_on: v }), "The DJ"), help(d.dj_on ? "Talking between songs" : "Off: music only, no speech at all")),
           srow("Voice", seg(d.voices.map(v => [v, VOICE(v)]), d.voice, v => set({ voice: v })), help(d.can_restart ? "Changing it restarts the radio" : "")),
           srow("Talks", seg(d.chattiness_options.map(c => [c, CHAT[c] || c]).reverse(), d.chattiness, v => set({ chattiness: v }))),
+          srow("Time checks", sw(d.time_checks, v => set({ time_checks: v }), "Time checks"), help("The DJ says the time now and then")),
           d.hooks_available ? srow("70s hooks", sw(d.dj_hooks, v => set({ dj_hooks: v }), "70s hooks")) : null,
           d.jingles_available ? srow("Jingles", seg([[0, "Off"], [2, "Every 2"], [4, "Every 4"], [8, "Every 8"]], d.jingle_every, v => set({ jingle_every: v }))) : null,
           srow("Speaking speed", ...range("dj-speed", 0.5, 1.5, 0.05, d.dj_speed, v => v.toFixed(2) + "×", v => set({ dj_speed: v })))),
         grp("The news", srow("News", sw(d.news_enabled, v => set({ news_enabled: v }), "The news"), help("On the hour, when the radio's online")),
           srow("News speed", ...range("news-speed", 0.5, 1.5, 0.05, d.news_speed, v => v.toFixed(2) + "×", v => set({ news_speed: v })))),
         grp("Waking up", srow("At power-on", seg([[true, "Chime"], [false, "Silent"]], d.startup_sound, v => set({ startup_sound: v })))),
+        S?.profile && Object.keys(d.theme_own || {}).length ? help(`These are the radio's. ${stationOf(S.profile)}, playing now, sets its own ${Object.keys(d.theme_own).map(k => THEME_SET[k]?.[0] || k).join(", ")} (its Settings, in its folder).`) : null,
         grp("", line(sbtn("Messages…", () => open(NOTES.id)), sbtn("Birthdays…", () => open(BDAYS.id)), sbtn("Voices…", () => open(VOICES.id)), sbtn("Jingles…", () => open(JINGLES.id)))),
       ];
     },

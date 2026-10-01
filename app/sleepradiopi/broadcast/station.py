@@ -212,6 +212,7 @@ class Station:
 
         self.chattiness = chattiness.ident
         self.dj_on = bool(cfg.get("broadcast_dj", True))   # off: music only -- no speech at all (links, time, news, messages)
+        self.time_checks = bool(cfg.get("broadcast_time_checks", True))
         self.voices_dir: Path | None = cfg.get("voices_dir")
         self._hook_pool = None                # loaded even when off, so they can be turned on
         if cfg["hooks_file"] and Path(cfg["hooks_file"]).is_file():
@@ -333,6 +334,11 @@ class Station:
         self.gap_plan: list[str] = []
         self.history: deque[dict] = deque(maxlen=12)
         self.shows_started = 0
+        # The DJ's radio-wide settings, kept apart from what's in force: a theme can set its own
+        # (profiles.THEME_SETTINGS), and anything it doesn't set is these (_apply_settings).
+        self.base = {"chattiness": self.chattiness, "time_checks": self.time_checks,
+                     "news": self.config.news_enabled, "jingle_every": self.config.jingle_every,
+                     "dj_hooks": self.config.dj_hooks_enabled}
         if cfg.get("broadcast_profile"):
             self._use_selection(profile=cfg["broadcast_profile"])
         elif cfg.get("broadcast_artist"):
@@ -1450,11 +1456,14 @@ class Station:
         return sorted(d.name for d in Path(self.voices_dir).iterdir() if (d / "model.onnx").is_file())
 
     def dj_settings(self) -> dict:
-        return {"voice": self.dj_voice, "voices": self.voices(), "chattiness": self.chattiness,
+        b = self.base                          # (the radio's own; a theme playing may set some itself)
+        return {"voice": self.dj_voice, "voices": self.voices(), "chattiness": b["chattiness"],
                 "chattiness_options": [c.ident for c in Chattiness],
-                "dj_hooks": self.builder.hooks is not None, "hooks_available": self._hook_pool is not None,
-                "jingle_every": self.config.jingle_every, "jingles_available": self._jingles_available(),
-                "news_enabled": self.config.news_enabled, "dj_on": self.dj_on,
+                "dj_hooks": bool(b["dj_hooks"] and self._hook_pool), "hooks_available": self._hook_pool is not None,
+                "jingle_every": b["jingle_every"], "jingles_available": self._jingles_available(),
+                "news_enabled": b["news"], "time_checks": b["time_checks"], "dj_on": self.dj_on,
+                "theme_own": next((p.get("settings", {}) for p in self.profiles if self.profile
+                                   and p["name"].lower() == self.profile.lower()), {}),
                 "dj_speed": self.config.announcer_speed, "news_speed": self.config.news_speed}
 
     def _jingles_available(self) -> bool:
@@ -1487,8 +1496,9 @@ class Station:
     def set_dj(self, chattiness: str | None = None, dj_hooks: bool | None = None,
                jingle_every: int | None = None, news_enabled: bool | None = None,
                dj_speed: float | None = None, news_speed: float | None = None,
-               dj_on: bool | None = None) -> None:
-        """Change the DJ live (from the next gap on). ValueError if a value is wrong.
+               dj_on: bool | None = None, time_checks: bool | None = None) -> None:
+        """Change the DJ live (from the next gap on): the radio-wide settings (a theme
+        playing may set its own chattiness, time checks, news, jingles and hooks). ValueError if a value is wrong.
         The speeds (1 = the voice's own pace, higher = faster) apply to lines made
         from now on; one or two may already be made at the old speed."""
         for name, speed in (("dj_speed", dj_speed), ("news_speed", news_speed)):
@@ -1499,25 +1509,18 @@ class Station:
             self.config.announcer_speed = round(float(dj_speed), 2)
         if news_speed is not None:
             self.config.news_speed = round(float(news_speed), 2)
-        if chattiness is not None:
-            c = next((c for c in Chattiness if c.ident == chattiness), None)
-            if c is None:
-                raise ValueError(f"chattiness must be one of {[c.ident for c in Chattiness]}")
-            self.chattiness = c.ident
-            self.config.tracks_per_link = c.tracks_per_link
-            self.config.announce_every_track = c == Chattiness.MAXIMUM
-        if dj_hooks is not None:
-            self.builder.hooks = self._hook_pool if dj_hooks else None
-            self.config.dj_hooks_enabled = bool(dj_hooks and self._hook_pool)
+        if chattiness is not None and chattiness not in [c.ident for c in Chattiness]:
+            raise ValueError(f"chattiness must be one of {[c.ident for c in Chattiness]}")
+        if jingle_every is not None and not 0 <= jingle_every <= 50:
+            raise ValueError("jingles: 0 (off) to every 50 tracks")
+        for key, value in (("chattiness", chattiness), ("dj_hooks", None if dj_hooks is None else bool(dj_hooks)),
+                           ("jingle_every", jingle_every), ("news", None if news_enabled is None else bool(news_enabled)),
+                           ("time_checks", None if time_checks is None else bool(time_checks))):
+            if value is not None:
+                self.base[key] = value                # (the radio's; a theme may set its own)
         if jingle_every is not None:
-            if not 0 <= jingle_every <= 50:
-                raise ValueError("jingles: 0 (off) to every 50 tracks")
-            self.config.jingle_every = jingle_every
-            if jingle_every and not self.jingles:     # off at start-up: find them now
-                self._load_jingles(force=True)
             self._tracks_since_jingle = 0
-        if news_enabled is not None:
-            self.config.news_enabled = bool(news_enabled)
+        self._apply_settings()
         if dj_on is not None and bool(dj_on) != self.dj_on:
             self.dj_on = bool(dj_on)
             if not self.is_on_air:
@@ -1528,6 +1531,24 @@ class Station:
                  self.config.jingle_every or "off",
                  self.config.news_enabled, self.config.announcer_speed, self.config.news_speed)
 
+    def _apply_settings(self) -> None:
+        """Put into force the radio-wide DJ settings with the playing theme's own on top."""
+        own = next((p.get("settings", {}) for p in self.profiles if self.profile
+                    and p["name"].lower() == self.profile.lower()), {})
+        eff = {**self.base, **own}
+        c = next(c for c in Chattiness if c.ident == eff["chattiness"])
+        self.chattiness = c.ident
+        self.config.tracks_per_link = c.tracks_per_link
+        self.config.announce_every_track = c == Chattiness.MAXIMUM
+        self.time_checks = bool(eff["time_checks"])
+        self.config.news_enabled = bool(eff["news"])
+        self.builder.hooks = self._hook_pool if eff["dj_hooks"] else None
+        self.config.dj_hooks_enabled = bool(eff["dj_hooks"] and self._hook_pool)
+        was = self.config.jingle_every
+        self.config.jingle_every = int(eff["jingle_every"])
+        if self.config.jingle_every and not was:     # (jingles weren't loaded while off)
+            self._load_jingles(force=True)
+
     def _plan_gap(self, prev: BroadcastTrack, nxt: BroadcastTrack | None) -> list[Step]:
         """onBroadcastTrackStarted: what fills the gap after [prev]. The decisions
         (link or time check, jingle, birthday, message) are made once here and kept, so a
@@ -1537,7 +1558,7 @@ class Station:
             self._gap_decision = None
             return []
         kind = self._show_clock.on_track_started(datetime.now().time())
-        if kind == LinkKind.TIME_CHECK and not clock_trusted():
+        if kind == LinkKind.TIME_CHECK and (not clock_trusted() or not self.time_checks):
             kind = LinkKind.LINK   # offline, the clock may be hours out: say no times
         # Jingles follow the jingles on/off setting, on a theme or artist radio too.
         jingle_due = self._jingle_due()      # (on a theme or artist radio too: the user's choice)
@@ -2147,6 +2168,8 @@ class Station:
         self.artist, self.profile = (None, profile) if profile else (artist, None)
         self.selector = BroadcastSelector(pool)
         self.builder.station = name
+        if hasattr(self, "base"):             # (not while starting up: they come after)
+            self._apply_settings()
         if hasattr(self, "_scan_pool"):       # (not while starting up: _load_jingles comes after)
             self._load_jingles()
         return found
@@ -2180,6 +2203,7 @@ class Station:
         if self.profile:
             still = any(p["name"].lower() == self.profile.lower() for p in self.profiles)
             self._reselect(profile=self.profile if still else None)
+        self._apply_settings()                # (the playing theme's own may have changed)
         if self.on_profiles is not None:      # (main: each new theme gets its jingles folder)
             self.on_profiles()
 

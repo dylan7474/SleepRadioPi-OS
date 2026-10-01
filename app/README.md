@@ -431,7 +431,13 @@ The cards:
   network), This radio (name, case, password, listening in a browser),
   Buttons (and the day and night sets), Updates, Save & load, Power.
   **A theme is a folder of its own things**: opening one shows **Artists**
-  (what it plays), its **Jingles** and its **Messages** (Settings to come).
+  (what it plays), its **Jingles**, its **Messages** and its **Settings**:
+  how much the DJ talks, time checks, the news, how often jingles play and
+  70s hooks, each **"As the radio"** (the default: it follows the radio's DJ
+  settings, on its back) or its own (`profiles.THEME_SETTINGS`, kept in the
+  theme as `"settings"`; `Station._apply_settings` puts the radio's with the
+  playing theme's on top in force, and the DJ window shows and saves the
+  radio's). DJ on/off stays the radio's: buttons and programmes switch it.
   **Messages** are objects: the desktop's sticky note opens a folder of notes
   (all of them), each with its own window — the words, **which station**
   (every station, or one theme's only; a theme's Messages folder shows its

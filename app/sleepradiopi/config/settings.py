@@ -59,6 +59,7 @@ class Settings:
     broadcast_announcer_speed: float = 0.85
     broadcast_dj_hooks: bool = True
     news_enabled: bool = True
+    broadcast_time_checks: bool = True    # the DJ says the time in some links (a theme may set its own)
     news_voice: str = "same"          # "same" = the DJ voice (one voice fits a Pi Zero 2 W's RAM)
     news_speed: float = 0.70
     news_quiet_hours: bool = True

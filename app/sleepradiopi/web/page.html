@@ -1428,7 +1428,7 @@ $("listSave").onclick = async () => {
   const name = $("listName").value.trim(), old = $("listPick").value;
   const byKey = new Map([...allArtists.map(a => [a.name.toLowerCase(), a.name]),
                          ...(allLists.find(p => p.name === old)?.artists || []).map(a => [a.toLowerCase(), a])]);
-  const entry = { name, artists: [...listTicked].map(k => byKey.get(k) || k) };
+  const entry = { ...(allLists.find(p => p.name === old) || {}), name, artists: [...listTicked].map(k => byKey.get(k) || k) };   // (keeps its own settings)
   const lists = old ? allLists.map(p => p.name === old ? entry : p) : [...allLists, entry];
   if (await saveLists(lists, `Saved “${name}”.`)) { await loadArtists(); fillListPick(name); showListEditor(); $("listCount").textContent = `Saved “${name}”.`; }
 };

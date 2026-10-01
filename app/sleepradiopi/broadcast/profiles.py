@@ -42,7 +42,38 @@ def validate(profiles) -> list[dict]:
         if len(artists) > MAX_ARTISTS or not all(isinstance(a, str) and a.strip() and len(a) <= 200
                                                  for a in artists):
             raise ValueError(f"{name}: the artists must be names")
-        out.append({"name": name, "artists": sorted({" ".join(a.split()) for a in artists}, key=str.lower)})
+        entry = {"name": name, "artists": sorted({" ".join(a.split()) for a in artists}, key=str.lower)}
+        own = validate_settings(p.get("settings"), name)
+        if own:
+            entry["settings"] = own
+        out.append(entry)
+    return out
+
+
+# What a theme can set for itself; anything it doesn't set is the radio's (cascading: the
+# radio-wide value, then the theme's own). DJ on/off isn't here: it's a live switch for the
+# whole radio (buttons and programmes flip it).
+CHATTINESS = ("maximum", "chatty", "balanced", "minimal")
+THEME_SETTINGS = ("chattiness", "time_checks", "news", "jingle_every", "dj_hooks")
+
+
+def validate_settings(own, name: str = "") -> dict:
+    """A theme's own settings, cleaned up: {} (or None) is everything as the radio."""
+    if own in (None, {}):
+        return {}
+    if not isinstance(own, dict) or any(k not in THEME_SETTINGS for k in own):
+        raise ValueError(f"{name}: a theme can set {', '.join(THEME_SETTINGS)}")
+    out = {}
+    for k, v in own.items():
+        if v is None:                                    # (None: as the radio)
+            continue
+        if k == "chattiness" and v not in CHATTINESS:
+            raise ValueError(f"{name}: chattiness is one of {', '.join(CHATTINESS)}")
+        if k in ("time_checks", "news", "dj_hooks") and not isinstance(v, bool):
+            raise ValueError(f"{name}: {k} is true or false")
+        if k == "jingle_every" and (isinstance(v, bool) or not isinstance(v, int) or not 0 <= v <= 50):
+            raise ValueError(f"{name}: jingles are 0 (off) to every 50 songs")
+        out[k] = v
     return out
 
 

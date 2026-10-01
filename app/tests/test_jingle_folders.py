@@ -82,3 +82,42 @@ def test_a_theme_name_must_make_a_folder() -> None:
     for bad in ("AC/DC", "back\\slash", ".hidden"):
         with pytest.raises(ValueError):
             profiles.validate([{"name": bad, "artists": ["x"]}])
+
+
+def test_a_theme_sets_its_own_dj_settings_and_the_rest_are_the_radios(tmp_path: Path) -> None:
+    """Cascading: the radio's DJ settings, with the playing theme's own on top."""
+    from sleepradiopi.broadcast.models import LinkKind
+    st = _station(tmp_path, {"Sleep Radio": ["Main.mp3"]})
+    st.set_dj(chattiness="maximum", news_enabled=True, time_checks=True, jingle_every=4)
+    st.set_profiles([{"name": "Carisbrooke", "artists": ["Bread"],
+                      "settings": {"news": False, "chattiness": "minimal", "time_checks": False}}])
+    st.set_profile("Carisbrooke")
+    assert (st.chattiness, st.config.news_enabled, st.time_checks, st.config.jingle_every) == ("minimal", False, False, 4)
+    assert st.dj_settings()["chattiness"] == "maximum" and st.dj_settings()["news_enabled"]   # the DJ window: the radio's
+    st.set_dj(chattiness="balanced", jingle_every=2)        # the radio's: the theme's own still wins
+    assert st.chattiness == "minimal" and st.config.jingle_every == 2
+    st.set_profile(None)                                    # the main show: all the radio's
+    assert (st.chattiness, st.config.news_enabled, st.time_checks) == ("balanced", True, True)
+    st.set_profile("Carisbrooke")
+    st.set_profiles([{"name": "Carisbrooke", "artists": ["Bread"]}])   # its own taken off, while it plays
+    assert (st.chattiness, st.config.news_enabled) == ("balanced", True)
+
+
+def test_time_checks_off_make_them_links(tmp_path: Path, monkeypatch) -> None:
+    from sleepradiopi.broadcast.models import LinkKind
+    st = _station(tmp_path, {})
+    st.set_dj(time_checks=False)
+    monkeypatch.setattr(st._show_clock, "on_track_started", lambda now: LinkKind.TIME_CHECK)
+    track = st._take_next()
+    st._plan_gap(track, st._take_next())
+    assert st._gap_decision[0] == LinkKind.LINK
+
+
+def test_a_themes_settings_are_checked() -> None:
+    from sleepradiopi.broadcast import profiles
+    ok = profiles.validate([{"name": "A", "artists": ["x"], "settings": {"news": False, "jingle_every": 0, "chattiness": None}}])
+    assert ok[0]["settings"] == {"news": False, "jingle_every": 0}
+    assert "settings" not in profiles.validate([{"name": "A", "artists": ["x"], "settings": {}}])[0]
+    for bad in ({"volume": 3}, {"news": "yes"}, {"chattiness": "loud"}, {"jingle_every": 99}):
+        with pytest.raises(ValueError):
+            profiles.validate([{"name": "A", "artists": ["x"], "settings": bad}])

@@ -779,7 +779,7 @@ def make_handler(station: Station, output: Mp3Output, speaker=None,
                 body = self._body()
                 if not isinstance(body, dict):
                     raise ValueError("send a JSON object")
-                for key in ("dj_hooks", "news_enabled", "startup_sound", "dj_on"):
+                for key in ("dj_hooks", "news_enabled", "startup_sound", "dj_on", "time_checks"):
                     if key in body and not isinstance(body[key], bool):
                         raise ValueError(f"{key} must be true or false")
                 every = body.get("jingle_every")
@@ -791,14 +791,16 @@ def make_handler(station: Station, output: Mp3Output, speaker=None,
                 station.set_dj(chattiness=body.get("chattiness"), dj_hooks=body.get("dj_hooks"),
                                jingle_every=every, news_enabled=body.get("news_enabled"),
                                dj_speed=body.get("dj_speed"), news_speed=body.get("news_speed"),
-                               dj_on=body.get("dj_on"))
+                               dj_on=body.get("dj_on"), time_checks=body.get("time_checks"))
             except (ValueError, TypeError, AttributeError) as e:
                 self._error(str(e))
                 return
             restarting = False
             if config_file is not None:
                 if "chattiness" in body:
-                    save_setting(config_file, "broadcast_chattiness", station.chattiness)
+                    save_setting(config_file, "broadcast_chattiness", station.base["chattiness"])   # (the radio's)
+                if "time_checks" in body:
+                    save_setting(config_file, "broadcast_time_checks", body["time_checks"])
                 if "dj_hooks" in body:
                     save_setting(config_file, "broadcast_dj_hooks", body["dj_hooks"])
                 if every is not None:
