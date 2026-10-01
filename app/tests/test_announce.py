@@ -123,3 +123,28 @@ def test_web_knob_button(tmp_path: Path) -> None:
         assert press("long")["done"] and ann.n == 1
     finally:
         httpd.shutdown()
+
+
+def test_a_bounce_is_not_a_second_press() -> None:
+    calls = []
+    t = PressTimer(lambda: calls.append("short"), lambda: calls.append("long"), long_s=0.3, guard_s=0.2)
+    t.down(); t.up()                       # the switch opens for a moment...
+    t.down(); t.up()                       # ...and closes again: one press, not two
+    assert calls == ["short"]
+    time.sleep(0.25)
+    t.down(); t.up()                       # a real second press, after the guard
+    assert calls == ["short", "short"]
+    t.down(); t.up()                       # a bounce...
+    t.down(); time.sleep(0.4); t.up()      # ...then held: still a hold
+    assert calls == ["short", "short", "long"]
+
+
+def test_the_preset_buttons_are_guarded_and_the_knob_is_not() -> None:
+    from sleepradiopi.io.knob import PRESS_GUARD_S, Knob
+    calls = []
+    k = Knob(lambda n: None, lambda: calls.append("knob"), on_long_press=lambda: None,
+             buttons={2: (lambda: calls.append("b1"), lambda: None)})
+    for _ in range(2):
+        k.keys[2][0](); k.keys[2][1]()
+        k.on_press(); k.on_release()
+    assert calls == ["b1", "knob", "knob"] and PRESS_GUARD_S == 0.5

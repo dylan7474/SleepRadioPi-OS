@@ -37,6 +37,7 @@ EVENT = struct.Struct("llHHi")
 EV_KEY, EV_REL = 1, 2
 KEY_UP, KEY_DOWN = 0, 1
 LONG_PRESS_S = 3.0
+PRESS_GUARD_S = 0.5   # a preset button pressed again this soon after a press is a bounce, not a press
 RESCAN_S = 10.0   # look for new input devices (modules can load after we start)
 
 
@@ -60,18 +61,27 @@ def handle(data: bytes, on_turn: Callable[[int], None], on_press: Callable[[], N
 
 
 class PressTimer:
-    """Tells a short press (on release) from a long one (fires while held)."""
+    """Tells a short press (on release) from a long one (fires while held).
+
+    guard_s: a press that starts this soon after the last short press doesn't
+    count as another short one -- a worn or loose switch can open for a few ms
+    mid-press, which made two presses of one (and the second paused the
+    station the first had just tuned). Holding it still counts as a hold."""
 
     def __init__(self, on_short: Callable[[], None], on_long: Callable[[], None],
-                 long_s: float = LONG_PRESS_S, name: str = "knob") -> None:
+                 long_s: float = LONG_PRESS_S, name: str = "knob", guard_s: float = 0.0) -> None:
         self.on_short, self.on_long, self.long_s, self.name = on_short, on_long, long_s, name
+        self.guard_s = guard_s
         self._timer: threading.Timer | str | None = None
         self._lock = threading.Lock()
+        self._last_short = -1e9          # time.monotonic() of the last short press
+        self._guarded = False            # this press came too soon after the last: no short press
 
     def down(self) -> None:
         with self._lock:
             if self._timer is not None:
                 return
+            self._guarded = time.monotonic() - self._last_short < self.guard_s
             self._timer = threading.Timer(self.long_s, self._long)
             self._timer.daemon = True
             self._timer.start()
@@ -87,8 +97,14 @@ class PressTimer:
     def up(self) -> None:
         with self._lock:
             timer, self._timer = self._timer, None
+            guarded = self._guarded
+            if isinstance(timer, threading.Timer) and not guarded:
+                self._last_short = time.monotonic()
         if isinstance(timer, threading.Timer):
             timer.cancel()
+            if guarded:
+                log.info("%s: pressed again within %.1f s: a bounce, ignored", self.name, self.guard_s)
+                return
             self.on_short()
 
     def cancel(self) -> None:
@@ -171,7 +187,7 @@ class Knob:
         for code, spec in (buttons or {}).items():
             short, long_ = spec[0], spec[1]
             t = timers[code] = PressTimer(short, long_, long_s=spec[2] if len(spec) > 2 else LONG_PRESS_S,
-                                          name=f"button {code - 1}")
+                                          name=f"button {code - 1}", guard_s=PRESS_GUARD_S)
             if not chords:
                 self.keys[code] = (t.down, t.up)
             else:

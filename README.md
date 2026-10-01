@@ -111,7 +111,8 @@ software, and the case to print.
   it holds — Sleep Radio, an artist or list, an internet station, an album
   straight through — or does something: say the time, read the news now,
   a 30-minute sleep timer, say the address. Press the one that's playing to
-  pause. **Hold one for 3 seconds** to keep what's playing on it (a beep, then
+  pause (a second press within half a second counts as the first one's
+  bounce, so a worn switch can't pause what it just tuned). **Hold one for 3 seconds** to keep what's playing on it (a beep, then
   "Button two: BBC Radio 4"). The same four are on the web page's front.
   There are **two sets of the four, day and night**: hold **buttons 2 and
   3** together for a second to swap (or use the page's ☀ / ☾ switch), and
