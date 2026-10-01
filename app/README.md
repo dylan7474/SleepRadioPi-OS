@@ -404,18 +404,10 @@ The cards:
   its password, Join (or type a hidden network's name); phones checking for
   internet there are sent to it. It uses no web fonts, so it works with no
   internet.
-- **The classic page** (`web/page.html`, now at `/classic`; the desktop's
-  Stations, Test sounds and Listen-in-a-browser windows still show its
-  parts) follows the desktop's names and ways:
-  on/off settings are switches, a delete that can be taken back (a message, a
-  birthday, a station, a playlist, a theme) happens at once with **Undo**, and
-  only what can't come back asks first, in the page's own box with Cancel as the
-  default (no browser pop-ups). Settings → **Programmes** lists the programmes
-  with an Arm switch, how often, ▶ Play now / ■ Stop, the week coming up, and
-  the programme-mode switch (making or changing them stays on the desktop).
-  Each message's **When…** sets its days, a date each year, set times and a last
-  day. Paused, the dial still names what's tuned and says when programme mode is
-  quiet ("· noise today at 22:00"). Buttons are at least 44 px for a thumb.
+- **The classic page is retired** (2026-10-01): everything it had is on the
+  desktop (the speaker analyser hands its results to the desktop's Speakers
+  window; Stations, Test sounds and Listen in a browser are native windows),
+  and the phone has the remote. `/classic` goes to the desktop.
 - **The desktop** (`http://<radio>/desktop`, `web/desktop.html`) — the
   interface for a computer: opening the radio's address on a wide screen with a
   mouse goes straight to it (this page stays for phones and tablets; the

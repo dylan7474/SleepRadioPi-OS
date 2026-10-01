@@ -473,7 +473,7 @@
   <button class="m" type="button" id="scheduleMenu">Schedule</button>
   <button class="m" type="button" id="tidy">Tidy up</button>
   <button class="m" type="button" id="settingsMenu">Settings</button>
-  <a class="m classic" href="/classic" id="classic" title="The older page with everything on it">Classic page</a>
+  <a class="m classic" href="/?remote" id="classic" title="The phone remote (big keys), here">Phone remote</a>
   <span class="grow"></span>
   <button class="m" type="button" id="nextLine" title="The schedule" style="color:var(--ink);font-weight:600"></button>
   <select class="themebtn" id="theme" title="Light or dark: or dark while the radio uses its Night buttons"><option value="radio">Follow the radio</option><option value="light">Light</option><option value="dark">Dark</option></select>
@@ -1575,16 +1575,9 @@ function rowsOf(ids, where, num, removable, album) {
   });
   return ul;
 }
-function openPage(title, hash) {
-  const id = "page:" + hash;
-  mk({ id, kind: "panel", title, page: hash.replace(/^#set-/, "").replace(/^#/, "#"), rawHash: hash, sym: "•" });
-  open(id);
-}
 function panelView(o, box, win) {
   if (UI[o.key]) return nativePanel(o, box, win);
-  // anything else: the classic page's own, inside the window
-  const hash = o.rawHash || "#set-" + o.page;
-  box.append(el("iframe", { className: "frame", src: "/classic?embedded#" + hash.slice(1), title: o.title }));
+  box.append(el("div", { className: "set" }, help("This setting has moved: look on the radio's back.")));   // (the classic page is retired)
 }
 
 // ============ the media manager ============
@@ -1703,8 +1696,49 @@ const db = v => (v > 0 ? "+" : v < 0 ? "−" : "") + Math.abs(v) + " dB";
 const VOICE = v => ({ personal: "My voice", stock: "Standard" })[v] || v;
 const minsOf = hhmm_ => toMin(hhmm_);
 
+// Test sounds on the radio's speakers (the Speakers and Test sounds windows)
+const testsGrp = (sp, act) => grp("Test sounds",
+  line(...[["bass", "Bass sweep"], ["sweep", "Full sweep"], ["pink", "Pink noise"]].map(([k, t]) => sbtn(t, () => act(() => api("/api/speaker", { test: k }))))),
+  line(...[["left", "Left"], ["right", "Right"], ["sides", "Left, then right"], ["phase", "Phase check"]].map(([k, t]) => sbtn(t, () => act(() => api("/api/speaker", { test: k }))))),
+  line(sbtn("Stop", () => act(() => api("/api/speaker", { test: "stop" })))),
+  help(sp.test ? `Playing: ${sp.test.label}` : "They play on the radio's own speakers at the current volume, with the EQ and low cut off, instead of the show for a moment: turn the volume down first. Phase check: in phase should sound fuller and centred; if out of phase sounds fuller, one speaker's wires are the wrong way round at the amp."));
 // each: load() -> data; build(data, act) -> nodes. act(fn) runs a change, reloads, redraws.
 const UI = {
+  tests: {
+    load: async () => (await api("/api/status")).speaker,
+    build: (sp, act) => [testsGrp(sp, act)],
+  },
+  stream: {
+    load: () => api("/api/status"),
+    build: (s, act) => [grp("Listen in a browser",
+      srow("Listening", seg([[true, "On"], [false, "Off"]], !!s.stream, v => act(() => api("/api/stream", { enabled: v })))),
+      ...(s.stream ? [line(sbtn("Listen here", () => { const a = $("listenHere") || document.body.appendChild(el("audio", { id: "listenHere" })); a.src = "/stream"; a.play().catch(() => toast("The browser wouldn't play it.")); }),
+                           sbtn("Stop listening", () => { const a = $("listenHere"); if (a) { a.pause(); a.removeAttribute("src"); a.load(); } }))] : []),
+      help("With it on, the show plays in a browser too (on a phone or computer: Listen here). Off, the radio saves the work of making the stream."))],
+  },
+  stations: {
+    load: () => api("/api/radio"),
+    build: (d, act) => {
+      const save = list => act(() => api("/api/radio/stations", { stations: list }));
+      const name = el("input", { type: "text", id: "st-add-name", placeholder: "Name", maxLength: 120 });
+      const url = el("input", { type: "url", id: "st-add-url", placeholder: "https://… stream address" });
+      const dir = d.directory || {};
+      return [
+        grp("Your stations", ...(d.stations.length ? d.stations.map((st, i) => srow(st.name, el("span", { className: "shelp", textContent: st.info || "" }),
+            line(sbtn("▶", () => act(() => api("/api/radio/play", { name: st.name, url: st.url }))),
+                 sbtn("Remove", () => save(d.stations.filter((_, k) => k !== i))))))
+          : [help("None yet: find one, or add one by its stream address below.")])),
+        grp("Add one by its address", srow("Name", name), srow("Address", url),
+          line(sbtn("Add", () => { if (!name.value.trim() || !url.value.trim()) return toast("A name and a stream address, please.");
+                                   save([...d.stations, { name: name.value.trim(), url: url.value.trim() }]); }, "primary"),
+               sbtn("Find a station…", () => open(PANEL.findstation.id)))),
+        grp("Station directory", help(dir.stations ? `A copy of the Radio Browser directory: ${dir.stations.toLocaleString()} stations` + (dir.updated ? `, from ${new Date(dir.updated * 1000).toLocaleDateString()}` : "") + "." : "No copy of the Radio Browser directory yet: searches go online."),
+          ...(dir.error ? [help("Last update: " + dir.error)] : []),
+          line(sbtn(dir.refreshing ? "Updating…" : "Update the list now", () => act(() => api("/api/radio/directory", {})))),
+          help("A station plays instead of the theme, through the speakers, knob and sleep timer as usual. It needs the radio online.")),
+      ];
+    },
+  },
   speakers: {
     load: async () => {
       const [st, lamps, btns] = await Promise.all([api("/api/status"), api("/api/lamps").catch(() => ({})), api("/api/buttons").catch(() => ({}))]);
@@ -1737,9 +1771,7 @@ const UI = {
                act(() => api("/api/speaker", { test: "tune" }));
              })),
         help("A boost lowers the overall level a little so it never distorts. With the bass port back panel, set the low cut to 140 Hz.")),
-      grp("Test sounds", line(...[["left", "Left"], ["right", "Right"], ["sides", "Left, then right"], ["phase", "Phase check"], ["sweep", "Bass sweep"], ["pink", "Pink noise"], ["stop", "Stop"]]
-        .map(([k, t]) => sbtn(t, () => act(() => api("/api/speaker", { test: k })), k === "stop" ? "" : ""))),
-        help(sp.test ? `Playing: ${sp.test.label}` : "They play on the speakers. A reversed speaker wire makes the phase check sound hollow.")),
+      testsGrp(sp, act),
       grp("The knob and buttons",
         line(sbtn("Press the knob", () => act(() => api("/api/knob", { press: "short" }))),
              sbtn("Hold the knob", () => act(() => api("/api/knob", { press: "long" }))),
@@ -3212,7 +3244,6 @@ document.querySelectorAll("[data-new]").forEach(b => b.onclick = async () => {
   if (what === "station") return open(PANEL.findstation.id);
   if (what === "podcast") return open(PANEL.findpodcast.id);
 });
-$("classic").onclick = () => { try { localStorage.setItem("srd.stay", "classic"); } catch {} };
 let tt;
 function toast(msg, sticky, undo) {
   const t = $("toast"); t.textContent = msg; t.hidden = false; clearTimeout(tt);

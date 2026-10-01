@@ -5,12 +5,7 @@ import re
 from collections import Counter
 from pathlib import Path
 
-PAGE = Path(__file__).parent.parent / "sleepradiopi" / "web" / "page.html"
-
-
-def test_no_id_is_used_twice() -> None:
-    ids = Counter(re.findall(r'\bid="([^"]+)"', PAGE.read_text()))
-    assert [k for k, n in ids.items() if n > 1] == []
+PAGE = Path(__file__).parent.parent / "sleepradiopi" / "web" / "desktop.html"
 
 
 def test_the_desktop_page_too() -> None:
@@ -28,7 +23,7 @@ def test_the_pages_scripts_parse() -> None:
     if deno is None:
         import pytest
         pytest.skip("no deno here to parse the scripts with")
-    for name in ("page.html", "desktop.html", "remote.html"):
+    for name in ("desktop.html", "remote.html"):
         js = "\n".join(re.findall(r"<script>(.*?)</script>", PAGE.with_name(name).read_text(), re.S))
         r = subprocess.run([deno, "eval", "new Function(await new Response(Deno.stdin.readable).text())"],
                            input=js, capture_output=True, text=True, timeout=60)
@@ -45,7 +40,7 @@ def test_the_remote_too() -> None:
     assert "fonts.googleapis" not in page                       # (it must work on the hotspot, offline)
 
 
-def test_slash_is_the_remote_and_classic_the_old_page(tmp_path) -> None:
+def test_slash_is_the_remote_and_classic_goes_to_the_desktop(tmp_path) -> None:
     import threading
     import urllib.request
     from http.server import ThreadingHTTPServer
@@ -56,8 +51,9 @@ def test_slash_is_the_remote_and_classic_the_old_page(tmp_path) -> None:
     base = f"http://127.0.0.1:{httpd.server_address[1]}"
     try:
         remote = urllib.request.urlopen(base + "/").read().decode()
-        classic = urllib.request.urlopen(base + "/classic").read().decode()
+        classic = urllib.request.urlopen(base + "/classic")
+        landed, page = classic.geturl(), classic.read().decode()
     finally:
         httpd.shutdown()
     assert 'id="remote"' in remote and 'id="setup"' in remote
-    assert 'id="tabs"' in classic
+    assert landed.endswith("/desktop") and "/api/status" in page                 # (the classic page is retired)

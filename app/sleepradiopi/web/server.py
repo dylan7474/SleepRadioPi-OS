@@ -40,7 +40,6 @@ from .stream import Mp3Output
 
 log = logging.getLogger(__name__)
 
-PAGE = (Path(__file__).parent / "page.html").read_bytes()       # the classic page (/classic; the desktop's older windows)
 REMOTE = (Path(__file__).parent / "remote.html").read_bytes()   # the phone remote (/), and the Wi-Fi set-up on the hotspot
 DESKTOP = (Path(__file__).parent / "desktop.html").read_bytes()   # the new desktop page (for computers)
 DESKTOP_TAG = hashlib.sha1(DESKTOP).hexdigest()[:12]   # an open desktop page that sees this change reloads itself
@@ -197,8 +196,11 @@ def make_handler(station: Station, output: Mp3Output, speaker=None,
                 self._send(json.dumps(self._auth_state()).encode(), "application/json")
             elif path in ("/", "/index.html"):
                 self._send(REMOTE, "text/html; charset=utf-8")
-            elif path == "/classic":
-                self._send(PAGE, "text/html; charset=utf-8")
+            elif path == "/classic":          # (the classic page is retired: everything is on the desktop)
+                self.send_response(302)
+                self.send_header("Location", "/desktop")
+                self.send_header("Content-Length", "0")
+                self.end_headers()
             elif path == "/desktop":
                 self._send(DESKTOP, "text/html; charset=utf-8")
             elif path == "/analyser":
