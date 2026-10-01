@@ -1345,7 +1345,8 @@ const THEME_SET = {
   jingle_every: ["Jingles", [[0, "Off"], [2, "Every 2"], [4, "Every 4"], [8, "Every 8"]]],
   dj_hooks: ["70s hooks", [[true, "On"], [false, "Off"]]],
 };
-const stationOf = n => /radio$/i.test(n.trim()) ? n.trim() : n.trim() + " Radio";
+const stationOf = n => n.trim().toLowerCase() === "default" ? radioName : stationOfName(n);
+const stationOfName = n => /radio$/i.test(n.trim()) ? n.trim() : n.trim() + " Radio";
 // A theme's window: its name, Play, and what's its own -- what it plays (artists dragged in from
 // Music: shortcuts, the music stays there), its messages (dragged in from Messages: read only
 // here; back to Messages: every station again), its jingles and its settings.
@@ -1389,7 +1390,7 @@ function themeTools(o, tools) {
   };
   const onAir = S && !S.source && (S.profile || "").toLowerCase() === n.toLowerCase();
   tools.append(name, el("span", { className: "note", style: "margin-left:0", textContent: "= “" + stationOf(n) + "”" + (isDefault ? " · always here" : "") }),
-    T("▶ Play on the radio", () => play(o), "primary"), onAir ? el("span", { className: "onair", textContent: "ON AIR" }) : null);
+    T("▶ Play on the radio", () => play(o), "primary"), ...(onAir ? [el("span", { className: "onair", textContent: "ON AIR" })] : []));
 }
 const kids = f => (f.kids || []).map(id => O[id]).filter(Boolean);
 // Something dropped on a theme (its window or its icon): an artist -- an artist's folder from

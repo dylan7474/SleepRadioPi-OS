@@ -22,6 +22,7 @@ def test_validate_and_names() -> None:
     assert got == [{"name": "Friday List", "artists": ["crowded house", "The Beatles"]}]
     assert station_name("Friday List") == "Friday List Radio"
     assert station_name("Carisbrooke") == "Carisbrooke Radio"
+    assert station_name("Default") == "Sleep Radio"                 # (the radio's own name)
     assert station_name("Rock Radio") == "Rock Radio"
     for bad in ([{"name": "", "artists": ["A"]}], [{"name": "X", "artists": []}],
                 [{"name": "X", "artists": ["A"]}, {"name": "x", "artists": ["B"]}], "nope",
