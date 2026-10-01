@@ -101,6 +101,9 @@ class Said(str):
     future = type("F", (), {"cancel": lambda self: None, "done": lambda self: True})()
 
 
+AFTERNOON = datetime(2026, 10, 1, 14, 10)   # (a fixed time: before 00:07 there's no slot yet that day)
+
+
 def test_the_station_reads_a_message_in_the_gap(tmp_path: Path, monkeypatch) -> None:
     st = _station(tmp_path, messages={"list": [{"text": HOME, "from": "00:00", "to": "23:59"}]})
     monkeypatch.setattr("sleepradiopi.broadcast.station.clock_trusted", lambda: True)
@@ -108,15 +111,15 @@ def test_the_station_reads_a_message_in_the_gap(tmp_path: Path, monkeypatch) -> 
     track = st._take_next()
     st._plan = st._plan_gap(track, st._take_next())
     assert not any(s.speech.text.endswith(HOME) for s in st._plan if s.kind == "say")
-    st._prefetch_gap(st._plan, datetime.now())                # near the end of the track
+    st._prefetch_gap(st._plan, AFTERNOON)                     # near the end of the track
     assert st._plan[0].kind == "say" and st._plan[0].speech.text.endswith(HOME)
     assert len(st._plan) >= 2                                 # the usual link still follows
     st._replan_gap(st._take_next())                           # a request re-words the gap: it's kept
     assert st._plan[0].speech.text.endswith(HOME)
-    st._prefetch_gap(st._plan, datetime.now(), again=True)    # (a skip: not added twice)
+    st._prefetch_gap(st._plan, AFTERNOON, again=True)         # (a skip: not added twice)
     assert sum(s.kind == "say" and s.speech.text.endswith(HOME) for s in st._plan) == 1
     st._plan = st._plan_gap(track, st._take_next())           # the next gap, same slot: none
-    st._prefetch_gap(st._plan, datetime.now())
+    st._prefetch_gap(st._plan, AFTERNOON)
     assert not any(s.kind == "say" and s.speech.text.endswith(HOME) for s in st._plan)
 
 
@@ -174,10 +177,10 @@ def test_a_message_waits_when_the_news_is_due(tmp_path: Path, monkeypatch) -> No
     st._plan = st._plan_gap(track, st._take_next())
     st._news_ready = type("N", (), {"time_line": Said("x"), "due": None})()
     monkeypatch.setattr(st.news_schedule, "due_at", lambda at: object())
-    st._maybe_add_message(datetime.now())
+    st._maybe_add_message(AFTERNOON)
     assert not any(s.kind == "say" and s.speech.text.endswith(HOME) for s in st._plan)
     st._news_ready = None                                     # read: the message goes in the next gap
-    st._maybe_add_message(datetime.now())
+    st._maybe_add_message(AFTERNOON)
     assert st._plan[0].speech.text.endswith(HOME)
 
 
