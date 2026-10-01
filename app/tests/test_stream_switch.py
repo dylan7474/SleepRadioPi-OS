@@ -102,11 +102,11 @@ def test_back_to_the_show_or_power_on_plays_a_short_jingle_rather_than_wait(tmp_
     pending = Future()
     welcome = station_mod.Step("say", station_mod.Speech("Good evening", "stock", pending))
     steps = st._opening_steps([welcome], "back to the show")
-    assert [(s.kind, s.jingle) for s in steps] == [("jingle", short)]     # only a short one, never the long
+    assert [(s.kind, s.jingle) for s in steps] == [("jingle", short)]     # a short one first, of its own
     assert pending.cancelled()                                            # and the welcome isn't made after all
     st.jingles = [long_]
     hi = lambda: [station_mod.Step("say", station_mod.Speech("Hi", "stock", Future()))]
-    assert st._opening_steps(hi(), "back to the show") == []                # fill-ins: only short ones
+    assert st._opening_steps(hi(), "back to the show")[0].jingle == long_   # its own, even a long one (before Default's)
     assert st._opening_steps(hi(), "power-on")[0].jingle == long_           # power-on: the station's own, any
     st.jingles, st.config.jingle_every = [short], 0                       # jingles off: straight to the music
     assert st._opening_steps([station_mod.Step("say", station_mod.Speech("Hi", "stock", Future()))], "power-on") == []

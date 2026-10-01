@@ -91,13 +91,14 @@ def radio(tmp_path: Path, monkeypatch):
 def test_web_sets_and_saves_the_dj(radio) -> None:
     req, st, conf, restarts = radio
     assert req()["voices"] == ["personal", "stock"]
+    st.set_profiles([{"name": "Default", "artists": [], "all": True}])   # (each theme has its own DJ settings)
+    st.set_profile("Default")
     got = req({"chattiness": "chatty", "dj_hooks": True, "jingle_every": 6, "news_enabled": False})
-    assert got["chattiness"] == "chatty" and got["dj_hooks"] and got["jingle_every"] == 6
-    saved = load(conf)
-    assert (saved.broadcast_chattiness, saved.broadcast_dj_hooks, saved.broadcast_jingle_enabled,
-            saved.broadcast_jingle_every, saved.news_enabled) == ("chatty", True, True, 6, False)
+    assert got["chattiness"] == "chatty" and got["dj_hooks"] and got["jingle_every"] == 6 and got["theme"] == "Default"
+    own = load(conf).profiles[0]["settings"]                    # saved as the theme playing's
+    assert (own["chattiness"], own["dj_hooks"], own["jingle_every"], own["news"]) == ("chatty", True, 6, False)
     req({"jingle_every": 0})
-    assert load(conf).broadcast_jingle_enabled is False and load(conf).broadcast_jingle_every == 6
+    assert load(conf).profiles[0]["settings"]["jingle_every"] == 0
     assert json.loads(conf.read_text())["music_folder"] == "/media/music" and not restarts
     got = req({"dj_speed": 1.1, "news_speed": 0.95})
     assert (got["dj_speed"], got["news_speed"]) == (1.1, 0.95)

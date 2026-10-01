@@ -88,23 +88,27 @@ def test_a_theme_name_must_make_a_folder() -> None:
             profiles.validate([{"name": bad, "artists": ["x"]}])
 
 
-def test_a_theme_sets_its_own_dj_settings_and_the_rest_are_the_radios(tmp_path: Path) -> None:
-    """Cascading: the radio's DJ settings, with the playing theme's own on top."""
-    from sleepradiopi.broadcast.models import LinkKind
-    st = _station(tmp_path, {"Sleep Radio": ["Main.mp3"]})
-    st.set_dj(chattiness="maximum", news_enabled=True, time_checks=True, jingle_every=4)
-    st.set_profiles([{"name": "Carisbrooke", "artists": ["Bread"],
+def test_each_theme_has_its_own_dj_settings(tmp_path: Path) -> None:
+    """No master settings: each theme its own full set (a new one gets Default's);
+    the phone's DJ settings change the theme playing's."""
+    st = _station(tmp_path, {})
+    st.set_profiles([{"name": "Default", "artists": [], "all": True,
+                      "settings": {"chattiness": "maximum", "news": True, "time_checks": True, "jingle_every": 4, "dj_hooks": True}},
+                     {"name": "Carisbrooke", "artists": ["Bread"],
                       "settings": {"news": False, "chattiness": "minimal", "time_checks": False}}])
+    cari = next(p for p in st.profiles if p["name"] == "Carisbrooke")
+    assert set(cari["settings"]) == {"chattiness", "news", "time_checks", "jingle_every", "dj_hooks"}   # (made complete)
     st.set_profile("Carisbrooke")
     assert (st.chattiness, st.config.news_enabled, st.time_checks, st.config.jingle_every) == ("minimal", False, False, 4)
-    assert st.dj_settings()["chattiness"] == "maximum" and st.dj_settings()["news_enabled"]   # the DJ window: the radio's
-    st.set_dj(chattiness="balanced", jingle_every=2)        # the radio's: the theme's own still wins
-    assert st.chattiness == "minimal" and st.config.jingle_every == 2
-    st.set_artist("ABBA")                                   # artist radio: all the radio's
-    assert (st.chattiness, st.config.news_enabled, st.time_checks) == ("balanced", True, True)
-    st.set_profile("Carisbrooke")
-    st.set_profiles([{"name": "Carisbrooke", "artists": ["Bread"]}])   # its own taken off, while it plays
-    assert (st.chattiness, st.config.news_enabled) == ("balanced", True)
+    assert st.dj_settings()["chattiness"] == "minimal" and st.dj_settings()["theme"] == "Carisbrooke"
+    st.set_dj(chattiness="balanced")                          # (the phone: the theme playing's)
+    assert cari is not st.profiles[1] or True
+    assert next(p for p in st.profiles if p["name"] == "Carisbrooke")["settings"]["chattiness"] == "balanced"
+    assert next(p for p in st.profiles if p["name"] == "Default")["settings"]["chattiness"] == "maximum"
+    st.set_profiles(st.profiles + [{"name": "Classical", "artists": ["ABBA"]}])
+    assert next(p for p in st.profiles if p["name"] == "Classical")["settings"]["chattiness"] == "maximum"   # Default's
+    st.set_artist("ABBA")                                     # artist radio: Default's
+    assert (st.chattiness, st.config.news_enabled) == ("maximum", True)
 
 
 def test_time_checks_off_make_them_links(tmp_path: Path, monkeypatch) -> None:
@@ -195,4 +199,5 @@ def test_there_is_always_a_default_theme(tmp_path: Path) -> None:
     assert st.profile == "Default"                                           # (Default played last)
     fresh = _station(tmp_path / "new", {})
     fresh.profiles = []
-    assert ensure_default_theme(fresh, None) and fresh.profiles[0] == {"name": "Default", "artists": [], "all": True}
+    assert ensure_default_theme(fresh, None) and {k: v for k, v in fresh.profiles[0].items() if k != "settings"} == {"name": "Default", "artists": [], "all": True}
+    assert set(fresh.profiles[0]["settings"]) == {"chattiness", "news", "time_checks", "jingle_every", "dj_hooks"}

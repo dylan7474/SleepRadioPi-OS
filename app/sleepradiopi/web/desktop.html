@@ -1474,7 +1474,7 @@ function folderView(o, box, win) {
   }
   else if (o.box === "messages" && o.station) tools.append(T("New message", () => newMessage(o.station)),
     el("span", { className: "note", textContent: `Read only on ${stationOf(o.station)}, as well as the radio-wide ones (in Messages on the desktop)` }));
-  else if (o.box === "messages") tools.append(T("New message", () => newMessage()), T("When they're read…", () => open(PANEL.messages.id)),
+  else if (o.box === "messages") tools.append(T("New message", () => newMessage()),
     el("span", { className: "note", textContent: "Double-click a note to change it or when it's said · drag one into a programme, or onto the radio to hear it" }));
   else if (o.box === "jingles") {
     const up = el("input", { type: "file", multiple: true, hidden: true, accept: ".mp3,audio/mpeg" });
@@ -1698,24 +1698,24 @@ const UI = {
         help(sp.test ? `Playing: ${sp.test.label}` : "They play on the speakers. A reversed speaker wire makes the phase check sound hollow.")),
     ],
   },
-  tset: {                                          // a theme's own settings: each "As the radio", or its own
+  tset: {                                          // a theme's own DJ settings (each theme its own full set)
     load: async () => { const [a, dj] = await Promise.all([api("/api/artists"), api("/api/dj")]); return { profiles: a.profiles, dj }; },
     build: (d, act, win) => {
       const o = O[win.id], cur = d.profiles.find(p => p.name === o?.name);
       if (!cur) return [help("That theme has gone.")];
       const own = cur.settings || {};
-      const radio = { chattiness: d.dj.chattiness, time_checks: d.dj.time_checks, news: d.dj.news_enabled, jingle_every: d.dj.jingle_every, dj_hooks: d.dj.dj_hooks };
       const setOwn = (k, v) => act(async () => {
         const profiles = d.profiles.map(p => p === cur ? { ...p, settings: { ...own, [k]: v } } : p);
         await api("/api/profiles", { profiles }); await loadFolder(LISTS).catch(() => {}); });
-      const row = k => { const [label, opts] = THEME_SET[k], words = v => (opts.find(x => x[0] === v) || [, String(v)])[1];
-        return srow(label, seg([[null, `As the radio (${words(radio[k])})`], ...opts], k in own ? own[k] : null, v => setOwn(k, v))); };
+      const row = k => { const [label, opts] = THEME_SET[k]; return srow(label, seg(opts, own[k], v => setOwn(k, v))); };
       return [grp(stationOf(cur.name), row("chattiness"), row("time_checks"), row("news"), row("jingle_every"),
                   d.dj.hooks_available ? row("dj_hooks") : null,
-                  help("Anything left “As the radio” follows the radio's DJ settings (on its back), and changes with them.")),
-              grp("", line(sbtn("The radio's DJ settings…", () => open(PANEL.dj.id))))];
+                  help(cur.name.toLowerCase() === "default" ? "A new theme starts with these; artist radio uses them too."
+                                                             : "This theme's own. (A new theme starts with Default's.)")),
+              grp("", line(sbtn("The whole radio's DJ: voice, speed…", () => open(PANEL.dj.id))))];
     },
   },
+
   dj: {
     load: () => api("/api/dj"),
     build: (d, act) => {
@@ -1724,15 +1724,11 @@ const UI = {
       return [
         grp("The DJ", srow("DJ", sw(d.dj_on, v => set({ dj_on: v }), "The DJ"), help(d.dj_on ? "Talking between songs" : "Off: music only, no speech at all")),
           srow("Voice", seg(d.voices.map(v => [v, VOICE(v)]), d.voice, v => set({ voice: v })), help(d.can_restart ? "Changing it restarts the radio" : "")),
-          srow("Talks", seg(d.chattiness_options.map(c => [c, CHAT[c] || c]).reverse(), d.chattiness, v => set({ chattiness: v }))),
-          srow("Time checks", sw(d.time_checks, v => set({ time_checks: v }), "Time checks"), help("The DJ says the time now and then")),
-          d.hooks_available ? srow("70s hooks", sw(d.dj_hooks, v => set({ dj_hooks: v }), "70s hooks")) : null,
-          d.jingles_available ? srow("Jingles", seg([[0, "Off"], [2, "Every 2"], [4, "Every 4"], [8, "Every 8"]], d.jingle_every, v => set({ jingle_every: v }))) : null,
           srow("Speaking speed", ...range("dj-speed", 0.5, 1.5, 0.05, d.dj_speed, v => v.toFixed(2) + "×", v => set({ dj_speed: v })))),
-        grp("The news", srow("News", sw(d.news_enabled, v => set({ news_enabled: v }), "The news"), help("On the hour, when the radio's online")),
-          srow("News speed", ...range("news-speed", 0.5, 1.5, 0.05, d.news_speed, v => v.toFixed(2) + "×", v => set({ news_speed: v })))),
+        grp("The news", srow("News speed", ...range("news-speed", 0.5, 1.5, 0.05, d.news_speed, v => v.toFixed(2) + "×", v => set({ news_speed: v })))),
         grp("Waking up", srow("At power-on", seg([[true, "Chime"], [false, "Silent"]], d.startup_sound, v => set({ startup_sound: v })))),
-        S?.profile && Object.keys(d.theme_own || {}).length ? help(`These are the radio's. ${stationOf(S.profile)}, playing now, sets its own ${Object.keys(d.theme_own).map(k => THEME_SET[k]?.[0] || k).join(", ")} (its Settings, in its folder).`) : null,
+        grp("Each theme's own", help("How much the DJ talks, time checks, the news, jingles and 70s hooks belong to each theme: in its Settings."),
+          d.theme ? line(sbtn(`${stationOf(d.theme)}'s settings…`, () => { mk({ id: "tset:" + d.theme, kind: "panel", key: "tset", name: d.theme, title: "Settings", sym: "⚙" }); open("tset:" + d.theme); })) : null),
         grp("", line(sbtn("Themes…", () => open(LISTS.id)), sbtn("Birthdays…", () => open(BDAYS.id)), sbtn("Voices…", () => open(VOICES.id))),
           help("Each theme has its own jingles and messages: open it in Themes.")),
       ];
@@ -1908,6 +1904,9 @@ const UI = {
       const setDate = () => save({ date: mon.value && day.value ? `${String(mon.value).padStart(2, "0")}-${String(day.value).padStart(2, "0")}` : undefined });
       mon.onchange = setDate; day.onchange = setDate;
       const until = el("input", { type: "date", value: m.until || "", id: "note-until" });
+      const fromT = el("input", { type: "time", value: m.from || "08:00", id: "note-from" }), toT = el("input", { type: "time", value: m.to || "21:00", id: "note-to" });
+      fromT.onchange = () => fromT.value && save({ from: fromT.value });
+      toT.onchange = () => toT.value && save({ to: toT.value });
       until.onchange = () => save({ until: until.value || undefined });
       return [
         grp("The words", ta, line(sbtn("Hear it now", () => act(() => api("/api/messages/hear", { text: ta.value }))),
@@ -1916,8 +1915,11 @@ const UI = {
             return async () => { await api("/api/messages", fresh); await loadFolder(NOTES); drawDesk(); }; }), "danger"))),
         grp("When it's said",
           srow("Station", st),
-          srow("Said", seg([[false, "With the others"], [true, "At set times"]], timed, v => save({ times: v ? ["09:00"] : undefined }))),
-          timed ? srow("At", times) : help(`In turn with the other messages, every ${all.every_min} min between ${hhmm(all.start_min)} and ${hhmm(all.end_min)}.`),
+          srow("Said", seg([[false, "Every so often"], [true, "At set times"]], timed, v => save({ times: v ? ["09:00"] : undefined }))),
+          timed ? srow("At", times) : srow("How often", seg([[15, "15 min"], [20, "20 min"], [30, "30 min"], [60, "Hourly"], [120, "2 hours"]], m.every || 15, v => save({ every: v })),
+            help("at 7 past, clear of the news")),
+          timed ? null : srow("Between", line(fromT, el("span", { textContent: "and" }), toT)),
+          srow("Date first", sw(m.date_first !== false, v => save({ date_first: v }), "Say the date first"), help(m.date_first !== false ? "“It's Thursday, the first of October.” then the message" : "Just the message")),
           srow("On days", dayKeys, help(m.days?.length ? "" : "Every day")),
           srow("Once a year on", line(day, mon), help(m.date ? "Only that day" : "Any day")),
           srow("Until", until, help(m.until ? "" : "Always")),

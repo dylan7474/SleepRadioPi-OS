@@ -456,11 +456,12 @@ The cards:
   (its own; New message there, or drag a note in from another theme's) and
   **Settings**:
   how much the DJ talks, time checks, the news, how often jingles play and
-  70s hooks, each **"As the radio"** (the default: it follows the radio's DJ
-  settings, on its back) or its own (`profiles.THEME_SETTINGS`, kept in the
-  theme as `"settings"`; `Station._apply_settings` puts the radio's with the
-  playing theme's on top in force, and the DJ window shows and saves the
-  radio's). DJ on/off stays the radio's: buttons and programmes switch it.
+  70s hooks — **each theme its own full set**, no master settings
+  (`profiles.THEME_SETTINGS`, kept in the theme as `"settings"`; a new theme
+  starts with Default's, `Station.complete_settings`; artist radio uses
+  Default's; the phone's DJ page changes the playing theme's). The DJ window
+  on the radio's back keeps the whole radio's: DJ on/off (buttons and
+  programmes switch it), the voice, speaking and news speeds, the chime.
   **Renaming a theme** (`POST /api/profiles/rename {"old", "new"}`) takes its
   things with it: its jingles folder, its messages, buttons and programme
   blocks that play it, and the station if it's playing.
@@ -734,17 +735,19 @@ The cards:
   between songs, at most every 90 minutes and up to 4 times ("happy
   forty-first birthday to Sarah" when the year is known; 29 February is
   celebrated on the 28th in other years). *Hear it* plays a wish now.
-- **Messages** (Settings → Messages) — short notes the DJ reads between
-  songs through the day (each on every station, or `"station": "<theme>"`:
-  only while that theme plays; `Messages.due(at, clock_ok, station)`), e.g. for someone with a poor memory: "You're at
-  Willow Court, and you're safe here. Dylan lives five minutes away and is
-  coming to see you on Sunday." One message per slot, taking turns: slots are
-  **every 15 minutes, 7 past** (:07, :22, :37, :52 — well clear of the news
-  at :00 and :30; every 20, 30 or 60 minutes and the minute are settings),
-  **between 8 am and 9 pm** (also a setting). A message is read first thing in
+- **Messages** — short notes the DJ reads between songs, each a theme's own
+  (`"station": "<theme>"`, read only while it plays; none: Default's;
+  `Messages.due(at, clock_ok, station)`), e.g. for someone with a poor memory:
+  "You're at Willow Court, and you're safe here. Dylan lives five minutes
+  away and is coming to see you on Sunday." **Each message has its own
+  timing**: every 15, 20, 30 or 60 minutes or 2 hours, **7 past** (:07, :22,
+  :37, :52 for 15 — well clear of the news at :00 and :30), between its own
+  hours (08:00–21:00 to start with), or at set times instead; when two are
+  due in one gap, one is read (a timed one first, else the one said longest
+  ago) and the other waits for the next gap. A message is read first thing in
   the first gap between songs from its time on (worded 45 s before the song
   ends, for the gap's real time); if the news is due in that gap, it waits
-  for the next one. With **Day and date first** on, it opens "It's Tuesday,
+  for the next one. With its **Day and date first** on, it opens "It's Tuesday,
   the twenty-ninth of September." Each message can have a **last day**, and
   can be **paused** without deleting it; *Hear it* plays one now. Only on the
   show (not while a station, album, audiobook or podcast plays), only once

@@ -338,6 +338,7 @@ class Station:
         self.base = {"chattiness": self.chattiness, "time_checks": self.time_checks,
                      "news": self.config.news_enabled, "jingle_every": self.config.jingle_every,
                      "dj_hooks": self.config.dj_hooks_enabled}
+        self.profiles = self.complete_settings(self.profiles)   # (each theme its own full set)
         if cfg.get("broadcast_profile"):
             self._use_selection(profile=cfg["broadcast_profile"])
         elif cfg.get("broadcast_artist"):
@@ -462,12 +463,13 @@ class Station:
         return [Step("jingle", jingle=clip)] if clip else []
 
     def _fill_jingle(self) -> JingleClip | None:
-        """A jingle to play while the DJ isn't ready: one of the station's own short
-        ones (when jingles are on), else one of Default's (a short one if it has any).
+        """A jingle to play while the DJ isn't ready: one of the station's own (when
+        jingles are on; a short one if it has any), else one of Default's (likewise).
         None: a gap it is (no jingles to be had)."""
         own = self.jingles if self.config.jingle_every > 0 else []
-        fallback = [j for j in self._default_jingles if 0 < j.duration_s <= FILL_JINGLE_MAX_S] or self._default_jingles
-        pick = [j for j in own if 0 < j.duration_s <= FILL_JINGLE_MAX_S] or fallback
+        short = lambda js: [j for j in js if 0 < j.duration_s <= FILL_JINGLE_MAX_S]
+        # (its own before Default's, even a long one: Dylan's 58 s jingle lost to Default's short ones)
+        pick = short(own) or own or short(self._default_jingles) or self._default_jingles
         return random.choice(pick) if pick else None
 
     def _run_music_show(self, back: bool = False) -> None:
@@ -1459,14 +1461,14 @@ class Station:
         return sorted(d.name for d in Path(self.voices_dir).iterdir() if (d / "model.onnx").is_file())
 
     def dj_settings(self) -> dict:
-        b = self.base                          # (the radio's own; a theme playing may set some itself)
+        b = self.theme_settings()              # (the theme playing's: each theme has its own)
+        t = self.settings_theme()
         return {"voice": self.dj_voice, "voices": self.voices(), "chattiness": b["chattiness"],
+                "theme": t["name"] if t else None,
                 "chattiness_options": [c.ident for c in Chattiness],
                 "dj_hooks": bool(b["dj_hooks"] and self._hook_pool), "hooks_available": self._hook_pool is not None,
                 "jingle_every": b["jingle_every"], "jingles_available": self._jingles_available(),
                 "news_enabled": b["news"], "time_checks": b["time_checks"], "dj_on": self.dj_on,
-                "theme_own": next((p.get("settings", {}) for p in self.profiles if self.profile
-                                   and p["name"].lower() == self.profile.lower()), {}),
                 "dj_speed": self.config.announcer_speed, "news_speed": self.config.news_speed}
 
     def _jingles_available(self) -> bool:
@@ -1533,8 +1535,12 @@ class Station:
         for key, value in (("chattiness", chattiness), ("dj_hooks", None if dj_hooks is None else bool(dj_hooks)),
                            ("jingle_every", jingle_every), ("news", None if news_enabled is None else bool(news_enabled)),
                            ("time_checks", None if time_checks is None else bool(time_checks))):
-            if value is not None:
-                self.base[key] = value                # (the radio's; a theme may set its own)
+            if value is not None:                     # (the theme playing's, or Default's on artist radio)
+                t = self.settings_theme()
+                if t is not None:
+                    t["settings"] = {**self.theme_settings(), **(t.get("settings") or {}), key: value}
+                else:
+                    self.base[key] = value
         if jingle_every is not None:
             self._tracks_since_jingle = 0
         self._apply_settings()
@@ -1548,11 +1554,30 @@ class Station:
                  self.config.jingle_every or "off",
                  self.config.news_enabled, self.config.announcer_speed, self.config.news_speed)
 
+    def settings_theme(self) -> dict | None:
+        """The theme whose DJ settings are in force: the one playing, else (artist radio)
+        Default."""
+        want = (self.profile or profiles_mod.DEFAULT).lower()
+        return next((p for p in self.profiles if p["name"].lower() == want), None)
+
+    def theme_settings(self) -> dict:
+        """The DJ settings in force: each theme has its own full set (no master
+        settings); base (the old radio-wide values) only fills a gap."""
+        t = self.settings_theme()
+        return {**self.base, **((t or {}).get("settings") or {})}
+
+    def complete_settings(self, lists: list[dict]) -> list[dict]:
+        """Each theme has its own full set of DJ settings: one missing some (a new theme)
+        gets Default's (or, for Default, the old radio-wide values)."""
+        default = next((p for p in lists if p["name"].lower() == profiles_mod.DEFAULT.lower()), None)
+        base = {**self.base, **((default or {}).get("settings") or {})} if hasattr(self, "base") else None
+        if base is None:
+            return lists
+        return [{**p, "settings": {**base, **(p.get("settings") or {})}} for p in lists]
+
     def _apply_settings(self) -> None:
-        """Put into force the radio-wide DJ settings with the playing theme's own on top."""
-        own = next((p.get("settings", {}) for p in self.profiles if self.profile
-                    and p["name"].lower() == self.profile.lower()), {})
-        eff = {**self.base, **own}
+        """Put into force the DJ settings of the theme playing (theme_settings)."""
+        eff = self.theme_settings()
         c = next(c for c in Chattiness if c.ident == eff["chattiness"])
         self.chattiness = c.ident
         self.config.tracks_per_link = c.tracks_per_link
@@ -2287,7 +2312,7 @@ class Station:
     def set_profiles(self, profiles: list[dict]) -> None:
         """Replace the profiles (validated; ValueError if wrong). If the one
         playing was changed it's re-applied; if it was removed, everything plays."""
-        self.profiles = profiles_mod.validate(profiles)
+        self.profiles = self.complete_settings(profiles_mod.validate(profiles))
         if self.profile:
             still = any(p["name"].lower() == self.profile.lower() for p in self.profiles)
             self._reselect(profile=self.profile if still else None)

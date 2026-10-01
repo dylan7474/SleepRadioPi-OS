@@ -763,6 +763,7 @@
       <button type="button" data-v="false" title="Just the music: no speech at all (no links, time checks, news or messages)">Off: music only</button>
     </div>
     <div class="row"><label for="djVoice">Voice</label><select id="djVoice"></select></div>
+    <p class="muted" id="djTheme" style="margin:.4rem 0 0"></p>
     <div class="row seg" id="djChat" role="group" aria-label="How chatty">
       <label>Talks</label>
       <button type="button" data-v="minimal" title="A link every 5 songs">Rarely</button>
@@ -860,15 +861,16 @@
       <label>Messages</label>
       <button type="button" data-v="true">On</button><button type="button" data-v="false">Off</button>
     </div>
-    <div class="row"><label for="msgEvery">How often</label><select id="msgEvery">
+    <!-- (the shared timing: each message has its own now, in its When…; kept hidden for the code below) -->
+    <div class="row" hidden><label for="msgEvery">How often</label><select id="msgEvery">
       <option value="15">Every 15 minutes</option><option value="20">Every 20 minutes</option>
       <option value="30">Every 30 minutes</option><option value="60">Every hour</option></select></div>
-    <div class="row"><label for="msgOffset">Minutes past</label><select id="msgOffset"></select>
+    <div class="row" hidden><label for="msgOffset">Minutes past</label><select id="msgOffset"></select>
       <span id="msgAt" class="muted" style="font-size:.85rem"></span></div>
-    <div class="row" id="msgTimes"><label for="msgFrom">Between</label>
+    <div class="row" id="msgTimes" hidden><label for="msgFrom">Between</label>
       <input id="msgFrom" type="time" step="900" aria-label="From"> and
       <input id="msgTo" type="time" step="900" aria-label="To"></div>
-    <div class="row seg" id="msgDate" role="group" aria-label="Say the day and date first">
+    <div class="row seg" id="msgDate" role="group" aria-label="Say the day and date first" hidden>
       <label>Day and date first</label>
       <button type="button" data-v="true">Yes</button><button type="button" data-v="false">No</button>
     </div>
@@ -1749,6 +1751,7 @@ function showDj(d) {
   v.disabled = d.voices.length < 2;
   pressSeg("djOn", d.dj_on);
   pressSeg("djChat", d.chattiness);
+  $("djTheme").textContent = d.theme ? `How chatty, jingles, hooks and news below are ${d.theme === "Default" ? RADIO : d.theme}'s (the theme playing): each theme has its own.` : "";
   pressSeg("djHooks", d.dj_hooks);
   $("djHooks").hidden = !d.hooks_available;
   if (![0, 2, 4, 8].includes(d.jingle_every) && !$("djJingleRow").querySelector(`[data-v="${d.jingle_every}"]`)) {   // (an odd one from before)
@@ -2061,12 +2064,23 @@ function msgWhen(m, i, state) {
   const addT = Object.assign(document.createElement("input"), { type: "time" }); addT.setAttribute("aria-label", "Add a time");
   addT.onchange = () => addT.value && put({ times: [...new Set([...(m.times || []), addT.value])].sort() }, `Said at ${addT.value} too.`);
   times.append(addT);
+  const every = document.createElement("select"); every.setAttribute("aria-label", "How often");
+  [[15, "Every 15 minutes"], [20, "Every 20 minutes"], [30, "Every 30 minutes"], [60, "Every hour"], [120, "Every 2 hours"]]
+    .forEach(([v, t]) => every.append(new Option(t, v, false, (m.every || 15) === v)));
+  every.onchange = () => put({ every: +every.value }, "Saved.");
+  const from = Object.assign(document.createElement("input"), { type: "time", value: m.from || "08:00" }), to = Object.assign(document.createElement("input"), { type: "time", value: m.to || "21:00" });
+  from.setAttribute("aria-label", "From"); to.setAttribute("aria-label", "To");
+  from.onchange = () => from.value && put({ from: from.value }, "Saved."); to.onchange = () => to.value && put({ to: to.value }, "Saved.");
+  const dateFirst = document.createElement("select"); dateFirst.setAttribute("aria-label", "Say the day and date first");
+  [["true", "Yes"], ["false", "No"]].forEach(([v, t]) => dateFirst.append(new Option(t, v, false, String(m.date_first !== false) === v)));
+  dateFirst.onchange = () => put({ date_first: dateFirst.value === "true" }, "Saved.");
   const until = Object.assign(document.createElement("input"), { type: "date", value: m.until || "" }); until.setAttribute("aria-label", "Last day");
   until.onchange = () => put({ until: until.value || null }, until.value ? "Saved." : "No last day.");
   const row = (label, ...kids) => { const r = Object.assign(document.createElement("div"), { className: "row" });
     r.append(Object.assign(document.createElement("label"), { textContent: label }), ...kids); return r; };
-  box.append(row("Days", days), row("Every year on", date), row("At set times", times),
-    Object.assign(document.createElement("p"), { className: "muted", textContent: "With set times it's read then (within 20 minutes), apart from the others; without, in turn with them." }),
+  box.append(row("How often", every), row("Between", from, document.createTextNode(" and "), to), row("Date first", dateFirst),
+    row("Days", days), row("Every year on", date), row("At set times", times),
+    Object.assign(document.createElement("p"), { className: "muted", textContent: "With set times it's read then (within 20 minutes) instead of every so often." }),
     row("Until", until));
   return box;
 }
@@ -3562,7 +3576,7 @@ function settingRows() {
       ["list", "Themes", allLists.length ? allLists.map(p => p.name).join(", ") : "None yet: make one", "lists"],
       ["cake", "Birthdays", bdList.length ? `${bdList.length} ${bdList.length === 1 ? "person" : "people"}` : "None yet", "birthdays"],
       ["note", "Messages", !msgState ? "…" : !msgState.list.length ? "None yet: the DJ can read notes through the day"
-        : `${msgState.list.length} · ${msgState.on ? `every ${msgState.every_min} min, ${minHM(msgState.start_min)}–${minHM(msgState.end_min)}` : "off"}`, "messages"]]],
+        : `${msgState.list.length} · ${msgState.on ? "each with its own timing" : "off"}`, "messages"]]],
     ["Media", [
       ["music", "Media library", s ? `${s.library.tracks.toLocaleString()} songs, ${s.library.jingles} jingles, ` +
         `${s.library.books ?? 0} audiobooks · add or delete` : "…", "library"],

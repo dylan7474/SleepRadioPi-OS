@@ -532,13 +532,16 @@ def make_handler(station: Station, output: Mp3Output, speaker=None,
             dj_keys = {"broadcast_chattiness", "broadcast_dj_hooks", "broadcast_jingle_enabled",
                        "broadcast_jingle_every", "news_enabled", "broadcast_announcer_speed", "news_speed"}
             if changed & dj_keys:
-                every = settings.get("broadcast_jingle_every", station.config.jingle_every or 4)
-                station.set_dj(chattiness=settings.get("broadcast_chattiness"),
-                               dj_hooks=settings.get("broadcast_dj_hooks"),
-                               jingle_every=every if settings.get("broadcast_jingle_enabled", True) else 0,
-                               news_enabled=settings.get("news_enabled"),
-                               dj_speed=settings.get("broadcast_announcer_speed"),
-                               news_speed=settings.get("news_speed"))
+                # (a file from before themes had their own settings: its DJ values are Default's,
+                # and any theme's in it that has none)
+                every = settings.get("broadcast_jingle_every", station.base["jingle_every"] or 4)
+                for key, value in (("chattiness", settings.get("broadcast_chattiness")),
+                                   ("dj_hooks", settings.get("broadcast_dj_hooks")),
+                                   ("jingle_every", every if settings.get("broadcast_jingle_enabled", True) else 0),
+                                   ("news", settings.get("news_enabled")), ("time_checks", settings.get("broadcast_time_checks"))):
+                    if value is not None:
+                        station.base[key] = value
+                station.set_dj(dj_speed=settings.get("broadcast_announcer_speed"), news_speed=settings.get("news_speed"))
             if "profiles" in changed:
                 station.set_profiles(settings["profiles"])
             if changed & {"broadcast_artist", "broadcast_profile", "profiles"}:
@@ -799,18 +802,8 @@ def make_handler(station: Station, output: Mp3Output, speaker=None,
                 return
             restarting = False
             if config_file is not None:
-                if "chattiness" in body:
-                    save_setting(config_file, "broadcast_chattiness", station.base["chattiness"])   # (the radio's)
-                if "time_checks" in body:
-                    save_setting(config_file, "broadcast_time_checks", body["time_checks"])
-                if "dj_hooks" in body:
-                    save_setting(config_file, "broadcast_dj_hooks", body["dj_hooks"])
-                if every is not None:
-                    save_setting(config_file, "broadcast_jingle_enabled", every > 0)
-                    if every > 0:
-                        save_setting(config_file, "broadcast_jingle_every", every)
-                if "news_enabled" in body:
-                    save_setting(config_file, "news_enabled", body["news_enabled"])
+                if any(k in body for k in ("chattiness", "time_checks", "news_enabled", "jingle_every", "dj_hooks")):
+                    save_setting(config_file, "profiles", station.profiles)   # (the theme playing's settings)
                 if "dj_on" in body:
                     save_setting(config_file, "broadcast_dj", body["dj_on"])
                 if "startup_sound" in body:
