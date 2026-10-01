@@ -196,7 +196,9 @@
           background: #0000000f; box-shadow: inset 0 1px 3px #0002; color: #2b2a26; }
   .mvol span { font: 700 clamp(11px, 1.6vh, 14px) var(--display); letter-spacing: .2em; text-transform: uppercase; color: #8a8474; }
   .mvol b { font: 700 clamp(28px, 5vh, 52px)/1 var(--display); font-variant-numeric: tabular-nums; }
-  .mseek { flex: none; }
+  .mseek { flex: none; transition: opacity .3s; }
+  .mseek.off { opacity: .35; }
+  .mseek.off #pos { cursor: default; }
   .mtimes { display: flex; justify-content: space-between; padding: 0 4px; font: 700 clamp(15px, 2.2vh, 20px) var(--display); color: #6b6558; font-variant-numeric: tabular-nums; }
   #pos { -webkit-appearance: none; appearance: none; width: 100%; height: clamp(40px, 5.4vh, 54px); background: transparent; margin: 0; }
   #pos::-webkit-slider-runnable-track { height: 12px; border-radius: 6px; background: #d8d2c4; box-shadow: inset 0 1px 2px #0003; }
@@ -244,7 +246,7 @@
 
   <section class="mcase mctl">
     <div class="mbody">
-      <div class="mseek" id="seekRow" hidden>
+      <div class="mseek" id="seekRow">
         <input type="range" id="pos" min="0" max="1000" value="0" aria-label="Position">
         <div class="mtimes"><span id="posNow">0:00</span><span id="posLen">0:00</span></div>
       </div>
@@ -366,8 +368,10 @@ function render() {
   if (Date.now() > volBusy) { VOL = Math.round(sp.volume ?? 0); $("volNum").textContent = VOL; }
   const p = s.position, can = !!(p && p.total_ms);
   CAN_SEEK = can;
-  $("seekRow").hidden = !can;
-  if (can && !seeking) {
+  // always there (the layout never shifts): greyed out when there's nothing to move through
+  $("seekRow").classList.toggle("off", !can); $("pos").disabled = !can;
+  if (!can) { $("pos").value = 0; $("posNow").textContent = "–:––"; $("posLen").textContent = "–:––"; }
+  else if (!seeking) {
     $("pos").max = p.total_ms; $("pos").value = Math.min(p.pos_ms, p.total_ms);
     $("posNow").textContent = mmss(p.pos_ms); $("posLen").textContent = mmss(p.total_ms);
   }

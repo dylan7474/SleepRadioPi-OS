@@ -393,8 +393,8 @@ The cards:
   station) -- and its needle following the song. The rest is the cream case
   with the radio's silver keys (Play/Pause is the blue knob; Sleep and Noise
   get the amber ring when on), CD-player style: a thick
-  **position bar** (drag it) when a song, audiobook or podcast can be moved
-  through; **⏮ Play/Pause ⏭** -- a tap on ⏭ is the next song, held it fast-
+  **position bar** (drag it), always there so nothing moves, greyed out when
+  there's nothing to move through (a station, the DJ, a jingle); **⏮ Play/Pause ⏭** -- a tap on ⏭ is the next song, held it fast-
   forwards (faster the longer it's held), and ⏮ the same backwards (a tap:
   the start, or the one before; in a book or podcast a tap is half a minute);
   volume − / the number / +; **Sleep 30 min** (tap again: off; it shows the
