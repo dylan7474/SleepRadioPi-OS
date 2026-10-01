@@ -47,8 +47,8 @@ def test_each_station_plays_only_its_own_jingles(tmp_path: Path) -> None:
     assert st.profile == "Classical"
 
 
-def test_the_start_up_jingle_is_the_stations_own_else_power_on(tmp_path: Path) -> None:
-    st = _station(tmp_path, {"Power-on": ["Start.mp3"]})                     # (on Carisbrooke: no jingles of its own)
+def test_the_start_up_jingle_is_the_stations_own_else_defaults(tmp_path: Path) -> None:
+    st = _station(tmp_path, {"Default": ["Start.mp3"]})                      # (on Carisbrooke: no jingles of its own)
     pending = Future()
     welcome = station_mod.Step("say", station_mod.Speech("Good evening", "stock", pending))
     steps = st._opening_steps([welcome], "power-on")
@@ -65,7 +65,7 @@ def test_the_start_up_jingle_is_the_stations_own_else_power_on(tmp_path: Path) -
     assert steps[0].jingle.path.name == "Cari.mp3"                            # the station's own first
 
 
-def test_the_folders_are_made_and_loose_jingles_go_into_power_on(tmp_path: Path) -> None:
+def test_the_folders_are_made_and_loose_jingles_go_into_defaults(tmp_path: Path) -> None:
     from sleepradiopi.main import jingle_folders
     st = _station(tmp_path, {"": ["Old 1.mp3", "Old 2.mp3"]})
     rescans = []
@@ -73,8 +73,8 @@ def test_the_folders_are_made_and_loose_jingles_go_into_power_on(tmp_path: Path)
                          lease=tmp_path / "run" / "media-rw")
     jingle_folders(media, st)
     root = tmp_path / "jingles"
-    assert {p.name for p in root.iterdir()} == {"Power-on", "Carisbrooke"}
-    assert sorted(p.name for p in (root / "Power-on").iterdir()) == ["Old 1.mp3", "Old 2.mp3"]
+    assert {p.name for p in root.iterdir()} == {"Default", "Carisbrooke"}
+    assert sorted(p.name for p in (root / "Default").iterdir()) == ["Old 1.mp3", "Old 2.mp3"]
     assert rescans == [{"jingles"}] and not (tmp_path / "run" / "media-rw").exists()
     st.on_profiles = lambda: jingle_folders(media, st)                  # (main wires it so)
     st.set_profiles([{"name": "Carisbrooke", "artists": ["Bread"]}, {"name": "Classical", "artists": ["ABBA"]}])
@@ -166,23 +166,33 @@ def test_renaming_a_theme_takes_its_things_with_it(tmp_path: Path) -> None:
         st.rename_profile("Nobody", "X")
 
 
-def test_no_default_station_only_themes(tmp_path: Path) -> None:
-    """A radio with no themes gets one (Sleep Radio, all my music); one with themes
-    gets nothing; "back to the show" is the theme last played; a theme can play all."""
+def test_there_is_always_a_default_theme(tmp_path: Path) -> None:
+    """Made if it's missing -- the Sleep Radio theme of all my music made before it
+    becomes it, jingles folder and buttons too -- messages with no theme are its, and
+    it can't be renamed or deleted."""
     import json
-    from sleepradiopi.main import ensure_a_theme
-    st = _station(tmp_path, {})
+    from sleepradiopi.io.presets import Presets
+    from sleepradiopi.main import ensure_default_theme
+    st = _station(tmp_path, {"Sleep Radio": ["Main.mp3"]})
+    st.set_profiles([{"name": "Sleep Radio", "artists": [], "all": True}, {"name": "Carisbrooke", "artists": ["Bread"]}])
+    st.set_profile("Sleep Radio")
+    st.messages.set({"list": [{"text": "For Dad"}, {"text": "Cari", "station": "Carisbrooke"}], "date_first": False})
     config = tmp_path / "config.json"
     config.write_text("{}")
-    assert not ensure_a_theme(st, config)                                    # it has one
-    st.set_profiles([{"name": "Carisbrooke", "artists": ["Bread"]}])
-    st.profiles = []
-    assert ensure_a_theme(st, config)
-    assert st.profiles == [{"name": "Sleep Radio", "artists": [], "all": True}] and st.profile == "Sleep Radio"
-    assert len(st.selector.pool) == len(st.tracks)
-    assert json.loads(config.read_text())["broadcast_profile"] == "Sleep Radio"
-    st.set_profiles([{"name": "Sleep Radio", "artists": [], "all": True}, {"name": "Carisbrooke", "artists": ["Bread"]}])
-    st.set_profile("Carisbrooke")
+    presets = Presets(st, None, config, [{"kind": "show", "profile": "Sleep Radio"}, None])
+    media = MediaLibrary({"jingles": tmp_path / "jingles"}, on_changed=st.reload_library, lease=tmp_path / "run" / "media-rw")
+    assert ensure_default_theme(st, config, media, presets) and not ensure_default_theme(st, config, media, presets)
+    assert [p["name"] for p in st.profiles] == ["Default", "Carisbrooke"] and st.profile == "Default"
+    assert (tmp_path / "jingles" / "Default" / "Main.mp3").exists() and presets.banks["day"][0]["profile"] == "Default"
+    assert [m.get("station") for m in st.messages.cfg["list"]] == ["Default", "Carisbrooke"]
+    saved = json.loads(config.read_text())
+    assert saved["broadcast_profile"] == "Default" and saved["messages"]["list"][0]["station"] == "Default"
+    for old, new in (("Default", "Home"), ("Carisbrooke", "default")):
+        with pytest.raises(ValueError, match="always there"):
+            st.rename_profile(old, new)
     st.set_artist("ABBA")
     st.set_artist(None)
-    assert st.profile == "Carisbrooke"                                       # the theme last played
+    assert st.profile == "Default"                                           # (Default played last)
+    fresh = _station(tmp_path / "new", {})
+    fresh.profiles = []
+    assert ensure_default_theme(fresh, None) and fresh.profiles[0] == {"name": "Default", "artists": [], "all": True}

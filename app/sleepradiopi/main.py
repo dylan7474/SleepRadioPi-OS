@@ -42,41 +42,79 @@ MEDIA = Path.home() / "media"
 BUNDLED_HOOKS = Path(__file__).resolve().parent / "data" / "dj_hooks_70s.txt"
 
 
-def ensure_a_theme(station: Station, config_file: Path | None) -> bool:
-    """There's no default station, only themes: with none at all (a new radio), one
-    is made -- "Sleep Radio", all my music -- and played. True if made (saved)."""
+def ensure_default_theme(station: Station, config_file: Path | None, media=None, presets=None) -> bool:
+    """There's always a theme called Default (all my music unless given artists; its
+    jingles are the start-up and fill-in ones when the theme playing has none). The
+    "Sleep Radio" theme of all my music made before it becomes Default, taking its
+    jingles folder, buttons and programmes along; otherwise Default is made, first.
+    Messages with no theme become Default's. True if anything changed (saved)."""
+    from sleepradiopi.broadcast.profiles import DEFAULT
     from sleepradiopi.config import brand
-    if station.profiles:
-        return False
-    station.set_profiles([{"name": brand.name, "artists": [], "all": True}])
-    if not station.artist:
-        station.set_profile(brand.name)
-    if config_file is not None:
+    from sleepradiopi.media import MediaError
+    changed = False
+    if not any(p["name"].lower() == DEFAULT.lower() for p in station.profiles):
+        old = next((p for p in station.profiles if p.get("all") and p["name"].lower() == brand.name.lower()), None)
+        if old is not None:
+            name = old["name"]
+            station._rename(old, DEFAULT)
+            root = Path(station.jingles_dir)
+            if media is not None and (root / name).is_dir() and not (root / DEFAULT).exists():
+                try:
+                    media.rename("jingles", name, DEFAULT)
+                except MediaError as e:
+                    logging.warning("Default's jingles folder: %s", e)
+                finally:
+                    media.done()
+            if presets is not None:
+                presets.rename_theme(name, DEFAULT)
+            sched = getattr(station, "scheduler", None)
+            if sched is not None and sched.rename_theme(name, DEFAULT) and config_file is not None:
+                save_setting(config_file, "programmes", sched.programmes)
+            logging.info("themes: %s is Default now", name)
+        else:
+            station.set_profiles([{"name": DEFAULT, "artists": [], "all": True}] + station.profiles)
+            logging.info("themes: Default made")
+        changed = True
+    if any(not m.get("station") for m in station.messages.cfg["list"]):
+        cfg = station.messages.cfg
+        station.messages.set({**cfg, "list": [m if m.get("station") else {**m, "station": DEFAULT} for m in cfg["list"]]})
+        if config_file is not None:
+            save_setting(config_file, "messages", station.messages.cfg)
+        changed = True
+    if not station.artist and not station.profile:
+        station.set_profile(DEFAULT)
+        changed = True
+    if changed and config_file is not None:
         save_setting(config_file, "profiles", station.profiles)
         save_setting(config_file, "broadcast_profile", station.profile)
-    logging.info("themes: none, so %s (all my music) was made", brand.name)
-    return True
+    return changed
 
 
 def jingle_folders(media, station: Station) -> None:
-    """Each theme's jingles folder, Jingles/<theme>, and Jingles/Power-on (the start-up
-    jingle when the station has none of its own), made if they're missing; loose
-    jingles at the top of the jingles folder go into Power-on."""
+    """Each theme's jingles folder, Jingles/<theme>, made if it's missing; the old
+    Power-on folder's jingles, and loose ones at the top, go into Default's (its
+    jingles are the start-up ones)."""
     from sleepradiopi.broadcast.library import AUDIO_EXTENSIONS
-    from sleepradiopi.broadcast.station import POWER_ON_FOLDER
+    from sleepradiopi.broadcast.profiles import DEFAULT
     from sleepradiopi.media import MediaError
     root = Path(station.jingles_dir)
-    missing = [n for n in [POWER_ON_FOLDER] + [p["name"] for p in station.profiles] if not (root / n).is_dir()]
-    loose = sorted(p.name for p in root.iterdir() if p.is_file() and p.suffix.lower() in AUDIO_EXTENSIONS) \
-        if root.is_dir() else []
-    if not missing and not loose:
+    missing = [p["name"] for p in station.profiles if not (root / p["name"]).is_dir()]
+    audio = lambda d: sorted(f.name for f in d.iterdir() if f.is_file() and f.suffix.lower() in AUDIO_EXTENSIONS) if d.is_dir() else []
+    loose, old = audio(root), root / "Power-on"
+    if not missing and not loose and not old.is_dir():
         return
     try:
         for name in missing:
             media.mkdir("jingles", "", name)
+        if (loose or old.is_dir()) and not (root / DEFAULT).is_dir():
+            media.mkdir("jingles", "", DEFAULT)
         for name in loose:
-            media.move("jingles", name, "jingles", POWER_ON_FOLDER)
-        logging.info("jingles: folders made for %s; %d loose jingles moved to %s", missing or "none", len(loose), POWER_ON_FOLDER)
+            media.move("jingles", name, "jingles", DEFAULT)
+        for name in audio(old):
+            media.move("jingles", "Power-on/" + name, "jingles", DEFAULT)
+        if old.is_dir():
+            media.delete("jingles", "Power-on")
+        logging.info("jingles: folders made for %s; %d moved into %s", missing or "none", len(loose), DEFAULT)
     except MediaError as e:
         logging.warning("jingles folders: %s", e)
     finally:
@@ -613,11 +651,8 @@ def main() -> None:
             time.sleep(delay)
             jingle_folders(media, station)
         threading.Thread(target=run, name="jingle-folders", daemon=True).start()
-    ensure_a_theme(station, args.config)  # (a new radio: one theme to play)
-    if station.profiles:                  # (buttons set to the old main show: a real theme)
-        from sleepradiopi.config import brand
-        names = [p["name"] for p in station.profiles]
-        presets.pin_shows(next((n for n in names if n.lower() == brand.name.lower()), names[0]))
+    ensure_default_theme(station, args.config, media, presets)   # (always there: Default)
+    presets.pin_shows("Default")          # (buttons set to the old main show: Default)
     station.on_profiles = folders
     folders(60.0)
     serve(station, stream, args.port or settings.http_port, control, args.config, announcer, jobs, updates,

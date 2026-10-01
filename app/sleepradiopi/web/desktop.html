@@ -539,7 +539,7 @@ const PANELS = [
   ["dj", "The DJ", "DJ", 40, "dj"], ["speakers", "Speakers", "♫", 28, "speakers"], ["buttons", "Buttons", "4", 200, null],
   ["noise", "Noise", "≈", 250, "noise"], ["sleep", "Sleep timer", "☾", 265, null], ["voices", "Voices", "“", 300, "voices"],
   ["wifi", "Wi-Fi", "⌔", 190, "wifi"], ["identity", "This radio", "R", 40, "identity"], ["updates", "Updates", "↑", 130, "updates"],
-  ["backup", "Save & load", "⇅", 170, "backup"], ["power", "Power", "⏻", 5, "power"], ["library", "Jingles", "J", 30, null],
+  ["backup", "Save & load", "⇅", 170, "backup"], ["power", "Power", "⏻", 5, "power"], ["library", "Themes", "◎", 30, null],
 ];
 const PANEL = {};
 for (const [key, title, sym, h, page] of PANELS) PANEL[key] = mk({ id: "set:" + key, kind: "panel", key, title, sym, h, page });
@@ -591,6 +591,11 @@ async function loadFolder(f) {
     await loadPlaylists();
   } else if (f.box === "programmes") {
     await loadProgrammes();
+  } else if (f.box === "artists") {                 // a theme's artists (shortcuts), or all my music
+    const d = await api("/api/artists"), cur = d.profiles.find(p => p.name.toLowerCase() === f.theme.toLowerCase());
+    f.all = !!cur?.all; f.count = cur?.artists.length || 0;
+    f.kids = f.all ? [mk({ id: "tall:" + f.theme, kind: "folder", root: "music", path: "", title: "All my music", kids: MUSIC.kids, sym: "♫" }).id]
+      : (cur?.artists || []).map(a => mk({ id: `ta:${f.theme}:${a}`, kind: "artistref", title: a, theme: f.theme, h: hue(a) }).id);
   } else if (f.box === "messages") {                // every message, or (a theme's folder) that station's own
     const d = await api("/api/messages");
     const all = d.list.map((m, i) => mk({ id: "note:" + i, kind: "note", key: "note", idx: i, text: m.text, m,
@@ -619,7 +624,7 @@ async function loadFolder(f) {
   } else if (f.box === "lists") {
     const d = await api("/api/artists");
     const themes = d.profiles.map(p => mk({ id: "ls:" + p.name, kind: "list", name: p.name, title: p.name, count: p.artists.length, all: !!p.all }).id);
-    f.kids = themes;                                 // (no default station: only themes)
+    f.kids = [...themes].sort((a, b) => (O[b].name.toLowerCase() === "default") - (O[a].name.toLowerCase() === "default"));   // (Default first)
   }
   f.loaded = true;
 }
@@ -762,6 +767,7 @@ const FOLDER_PIC = {
   playlists: '<path d="M4 6h10M4 11h10M4 16h6"/><path d="M17 17.5V8l4-1"/><circle cx="15.3" cy="17.5" r="1.8"/>',
   programmes: '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3.5 2"/>',
   lists: '<circle cx="9" cy="8" r="3"/><path d="M3.5 19a5.5 5.5 0 0 1 11 0"/><circle cx="16.5" cy="9" r="2.4"/><path d="M15.5 14.2a4.6 4.6 0 0 1 5.5 4.8"/>',
+  artists: '<circle cx="9" cy="8" r="3"/><path d="M3.5 19a5.5 5.5 0 0 1 11 0"/><circle cx="16.5" cy="9" r="2.4"/><path d="M15.5 14.2a4.6 4.6 0 0 1 5.5 4.8"/>',
   actions: '<path d="M13 2.5 5 13.5h6l-1 8 8-11h-6z"/>',
   jingles: '<path d="M6 16.5V11a6 6 0 0 1 12 0v5.5l1.5 1.5h-15z"/><path d="M10 20.5a2 2 0 0 0 4 0"/>',
   voices: '<path d="M4 5.5h16v10H10l-4.5 4v-4H4z"/><path d="M8 9.5h8M8 12h5"/>',
@@ -825,10 +831,10 @@ function subOf(o) {
       return (live ? "● playing · " : o.auto ? (o.once ? "⏰ " : "↻ ") : "") + times;
     }
     case "folder": return o.root && o.path ? `${o.count || 0} tracks` : "";
-    case "list": return o.all ? "all my music" : o.count ? `${o.count} artist${o.count === 1 ? "" : "s"}` : "";
+    case "list": return (o.name?.toLowerCase() === "default" ? "always here · " : "") + (o.all ? "all my music" : o.count ? `${o.count} artist${o.count === 1 ? "" : "s"}` : "");
     case "jingle": return o.mb ? `${o.mb.toFixed(1)} MB` : "";
     case "message": return "The DJ says it";
-    case "note": return noteWhen(o.m) + (o.m?.station ? ` · ${o.m.station} only` : "");
+    case "note": return noteWhen(o.m);
     case "panel": return o.sum || "";
     case "person": { const t = new Date(), today0 = new Date(t.getFullYear(), t.getMonth(), t.getDate());
       const nextYear = t.getFullYear() + (new Date(t.getFullYear(), o.b.month - 1, o.b.day) < today0 ? 1 : 0);   // the year of their next birthday
@@ -968,14 +974,13 @@ function loadDesk() {
   if (s && Array.isArray(s.icons)) {
     for (const p of s.icons) { if (!O[p.id] && p.snap) mk({ ...p.snap, kids: [], items: [], eps: [], blocks: [] }); if (O[p.id]) desk.push({ id: p.id, x: p.x, y: p.y, alias: !!p.alias }); }
     radioPos = s.radio || null;
-    desk = desk.filter(p => p.id !== SHOW.id && p.id !== POWER_ON.id);   // (no default station; Power-on lives in Jingles)
-    for (const f of [ACTIONS_BOX, JINGLES, LISTS])      // (new since the layout was saved: in the first free spot)
+    desk = desk.filter(p => ![SHOW.id, POWER_ON.id, NOTES.id, JINGLES.id].includes(p.id));   // (jingles and messages live in each theme)
+    for (const f of [ACTIONS_BOX, LISTS])      // (new since the layout was saved: in the first free spot)
       if (!desk.some(p => p.id === f.id)) desk.push({ id: f.id, ...freeSpot() });
   }
   if (!desk.length) {
     [MUSIC, ONDEMAND, BOOKS, PODCASTS, STATIONS, PLAYLISTS, PROGRAMMES, LISTS, ACTIONS_BOX].forEach((f, i) => desk.push({ id: f.id, x: 18 + Math.floor(i / 8) * 122, y: 14 + (i % 8) * 92 }));
-    [DJ, NOTES, BDAYS].forEach((o, i) => desk.push({ id: o.id, x: 140, y: 14 + i * 100, alias: false }));
-    desk.push({ id: JINGLES.id, ...freeSpot() });
+    [DJ, BDAYS].forEach((o, i) => desk.push({ id: o.id, x: 140, y: 14 + i * 100, alias: false }));
   }
 }
 function freeSpot() {                  // the first place on the icon grid that nothing is near, column by column
@@ -1243,7 +1248,7 @@ async function open(id) {
   if (["track", "station", "episode", "show", "book"].includes(o.kind)) return play(o);
   if (o.kind === "dj") return open(PANEL.dj.id);
   if (o.kind === "action" || o.kind === "jingle") return play(o);                 // (do it now; drag it to keep it on a button)
-  if (o.kind === "panel" && o.key === "library") return open(JINGLES.id);
+  if (o.kind === "panel" && o.key === "library") return open(LISTS.id);   // (each theme has its jingles and messages)
   if (o.kind === "panel" && o.key === "voices") return open(VOICES.id);
   if (o.kind === "panel" && o.key === "birthdays") return open(BDAYS.id);
   if (o.kind === "panel" && o.key === "lists") return open(LISTS.id);
@@ -1348,83 +1353,43 @@ function refreshTheme(name) {
   for (const w of W) if (O[w.id]?.kind === "list" && O[w.id].name.toLowerCase() === (name || "").toLowerCase()) w.tdata = undefined;
   drawDesk();
 }
+function themeKids(o) {
+  const n = o.name;
+  return [mk({ id: "tart:" + n, kind: "folder", box: "artists", theme: n, title: "Artists", kids: O["tart:" + n]?.kids || [], sym: "♫" }),
+          mk({ id: "tj:" + n, kind: "folder", box: "jingles", path: n, title: "Jingles", kids: O["tj:" + n]?.kids || [], sym: "J", alt: true }),
+          mk({ id: "tm:" + n, kind: "folder", box: "messages", station: n, title: "Messages", kids: O["tm:" + n]?.kids || [], sym: "✎" }),
+          mk({ id: "tset:" + n, kind: "panel", key: "tset", name: n, title: "Settings", sym: "⚙" })].map(x => x.id);
+}
+function refreshTheme(name) {
+  const f = O["tart:" + name];
+  if (f) loadFolder(f).then(drawDesk).catch(() => {});
+  else drawDesk();
+}
+// A theme opens like any folder: its Artists (what it plays: shortcuts, the music stays in Music),
+// its Jingles, its Messages and its Settings. Drop artists or notes on it (or in those folders).
 function themeView(o, box, win) {
-  const n = o.name, jf = mk({ id: "tj:" + n, kind: "folder", box: "jingles", path: n, title: "Jingles", kids: O["tj:" + n]?.kids || [], sym: "J", alt: true }),
-        mf = mk({ id: "tm:" + n, kind: "folder", box: "messages", station: n, title: "Messages", kids: O["tm:" + n]?.kids || [], sym: "✎" }),
-        sf = mk({ id: "tset:" + n, kind: "panel", key: "tset", name: n, title: "Settings", sym: "⚙" });
-  if (win.tdata === undefined && !win.tloading) {
-    win.tloading = true;
-    (async () => {
-      try { const [a] = await Promise.all([api("/api/artists"), loadFolder(jf), loadFolder(mf)]); win.tdata = a; }
-      catch (e) { win.tdata = null; win.terr = e.message; }
-      win.tloading = false; drawDesk();
-    })();
-  }
-  const name = el("input", { type: "text", value: n, id: "tname-" + n.length, maxLength: 40, style: "background:var(--win);border:1px solid var(--line);border-radius:6px;padding:3px 7px;font-weight:600;width:13em" });
+  o.kids = themeKids(o);
+  folderView(o, box, win);
+}
+function themeTools(o, tools) {
+  const n = o.name, isDefault = n.toLowerCase() === "default";
+  const name = el("input", { type: "text", value: n, id: "tname-" + n.length, maxLength: 40, disabled: isDefault,
+    style: "background:var(--win);border:1px solid var(--line);border-radius:6px;padding:3px 7px;font-weight:600;width:12em" });
   name.setAttribute("aria-label", "The theme's name");
+  name.title = isDefault ? "Default is always there, with this name" : "Rename it: its jingles, messages and buttons come too";
   name.onkeydown = e => { if (e.key === "Enter") name.blur(); };
   name.onchange = async () => {
     const v = name.value.trim();
     if (!v || v === n) return;
     try { const d = await api("/api/profiles/rename", { old: n, new: v });
-          for (const id of ["tj:" + n, "tm:" + n, "tset:" + n, "lsa:" + n]) closeFor(O[id] || { id });
+          for (const id of ["tart:" + n, "tj:" + n, "tm:" + n, "tset:" + n]) closeFor(O[id] || { id });
           closeFor(o); await loadFolder(LISTS); await reloadNotes(); open("ls:" + d.name);
           toast(`Renamed: it's “${stationOf(d.name)}” now. Its jingles, messages and buttons came with it.`); }
     catch (e) { toast("Not renamed: " + e.message + "."); name.value = n; }
   };
   const onAir = S && !S.source && (S.profile || "").toLowerCase() === n.toLowerCase();
-  box.append(el("div", { className: "wtools" }, name, el("span", { className: "note", style: "margin-left:0", textContent: "= “" + stationOf(n) + "”" }),
-    T("▶ Play on the radio", () => play(o), "primary"), onAir ? el("span", { className: "onair", textContent: "ON AIR" }) : null));
-  const body = el("div", { className: "wbody tbody" });
-  body.dataset.drop = "theme"; body.dataset.target = o.id;
-  if (!win.tdata) body.append(el("div", { className: "loading", textContent: win.tdata === null ? `Couldn't ask the radio: ${win.terr}` : "Asking the radio…" }));
-  else {
-    const cur = win.tdata.profiles.find(p => p.name.toLowerCase() === n.toLowerCase());
-    const sect = (title, hint, objs, ctx, empty) => {
-      const g = el("div", { className: "grid" });
-      objs.forEach(x => g.append(iconEl(x, ctx)));
-      if (!objs.length && empty) g.append(el("div", { className: "empty", style: "padding:10px 4px;text-align:left", textContent: empty }));
-      return el("div", { className: "tsect" }, el("h3", {}, title, el("em", { textContent: hint })), g);
-    };
-    const arts = (cur?.artists || []).map(a => mk({ id: `ta:${n}:${a}`, kind: "artistref", title: a, theme: n, h: hue(a) }));
-    const own = Object.keys(cur?.settings || {});
-    sf.sum = own.length ? "Its own: " + own.map(k => THEME_SET[k]?.[0] || k).join(", ") : "All as the radio";
-    const up = el("input", { type: "file", multiple: true, hidden: true, accept: ".mp3,audio/mpeg" });
-    up.onchange = () => { upload(jf, [...up.files].map(f => [f, f.name])); up.value = ""; };
-    const jsect = sect("Jingles", "its own · empty: none on this station", kids(jf), { where: o.id, parent: jf.id }, "None yet: drop jingle files here, or Upload.");
-    jsect.append(el("div", { className: "line", style: "padding:0 0 6px" }, T("Upload…", () => up.click()), up));
-    const setAll = on => async () => { try {
-        const a = await api("/api/artists");
-        await api("/api/profiles", { profiles: a.profiles.map(p => p.name.toLowerCase() === n.toLowerCase() ? { ...p, all: on } : p) });
-        await loadFolder(LISTS); refreshTheme(n); toast(on ? `${stationOf(n)} plays all your music now.` : `${stationOf(n)} plays only its artists now.`);
-      } catch (e) { toast("Not changed: " + e.message + "."); } };
-    if (cur?.all) {
-      const allObj = mk({ id: "tall:" + n, kind: "folder", root: "music", path: "", title: "All my music", kids: MUSIC.kids, sym: "♫" });
-      const plays = sect("Plays", "every artist in Music", [allObj], { where: o.id, parent: o.id });
-      plays.append(el("div", { className: "line", style: "padding:0 0 6px" },
-        T("Choose artists instead", setAll(false), "", !arts.length), el("span", { className: "note", style: "margin-left:0",
-          textContent: arts.length ? `back to its ${arts.length}` : "(make another theme for chosen artists)" })));
-      body.append(plays);
-    }
-    const SHOW_N = 10, many = arts.length > SHOW_N + 2;   // a long list: two rows, so the rest of it is in view
-    const plays = sect("Plays", `${arts.length} artist${arts.length === 1 ? "" : "s"} · drag artists in from Music`,
-                       many && !win.allArtists ? arts.slice(0, SHOW_N) : arts, { where: o.id, parent: o.id }, "Nothing yet: drag an artist's folder in from Music.");
-    plays.append(el("div", { className: "line", style: "padding:0 0 6px" },
-      many ? T(win.allArtists ? "Show fewer" : `Show all ${arts.length}`, () => { win.allArtists = !win.allArtists; drawDesk(); }) : null,
-      T("Play all my music instead", setAll(true))));
-    body.append(...[
-      cur?.all ? null : plays,
-      sect("Messages", "its own · drag notes here · plus the radio's for every station", kids(mf).filter(x => x.kind === "note"), { where: o.id, parent: mf.id },
-           "None of its own: drag a note in from Messages."),
-      jsect,
-      sect("Settings", "each “As the radio” or its own", [sf], { where: o.id, parent: o.id })].filter(Boolean));
-    body.addEventListener("dragover", e => { if ([...e.dataTransfer.types].includes("Files")) { e.preventDefault(); body.classList.add("over"); } });
-    body.addEventListener("dragleave", () => body.classList.remove("over"));
-    body.addEventListener("drop", async e => { if (![...e.dataTransfer.types].includes("Files")) return;
-      e.preventDefault(); body.classList.remove("over"); upload(jf, await dropped(e.dataTransfer)); });
-  }
-  body.addEventListener("pointerdown", e => { if (e.target === body) lasso(e, body); });
-  box.append(body, el("div", { className: "wfoot" }, onAir ? "On air now" : "Drag it onto the radio's dial to play it, or onto a button to keep it there"));
+  tools.append(name, el("span", { className: "note", style: "margin-left:0", textContent: "= “" + stationOf(n) + "”" + (isDefault ? " · always here" : "") }),
+    T("▶ Play on the radio", () => play(o), "primary"), onAir ? el("span", { className: "onair", textContent: "ON AIR" }) : null);
 }
 const kids = f => (f.kids || []).map(id => O[id]).filter(Boolean);
 // Something dropped on a theme (its window or its icon): an artist -- an artist's folder from
@@ -1495,8 +1460,17 @@ function folderView(o, box, win) {
       T("Upload a voice…", () => up.click()), up, el("span", { className: "note", textContent: "Double-click a voice to make it the DJ's (the radio restarts) · drop a voice archive here to install it" })].filter(Boolean));
   }
   else if (o.box === "actions") tools.append(el("span", { className: "note", textContent: "Drag an action onto a button on the radio; the time, the pips, the news and the sleep timer can go into programmes too" }));
-  else if (o.kind === "list") tools.append(T("▶ Play", () => play(o), "primary"),
-    el("span", { className: "note", textContent: `${stationOf(o.name)}: what it plays, its own jingles and messages · double-click one to open it` }));
+  else if (o.kind === "list") themeTools(o, tools);
+  else if (o.box === "artists") {
+    const cur = O["ls:" + o.theme], all = !!o.all;
+    const setAll = on => async () => { try {
+        const a = await api("/api/artists");
+        await api("/api/profiles", { profiles: a.profiles.map(p => p.name.toLowerCase() === o.theme.toLowerCase() ? { ...p, all: on } : p) });
+        await loadFolder(LISTS); refreshTheme(o.theme); toast(on ? `${stationOf(o.theme)} plays all your music now.` : `${stationOf(o.theme)} plays only its artists now.`);
+      } catch (e) { toast("Not changed: " + e.message + "."); } };
+    tools.append(all ? T("Choose artists instead", setAll(false), "", !o.count) : T("Play all my music instead", setAll(true)),
+      el("span", { className: "note", textContent: all ? "Every artist in Music" + (o.count ? "" : " · to choose artists, make another theme") : "Drag artists in from Music (shortcuts: the music stays there) · to the Trash: off the theme" }));
+  }
   else if (o.box === "messages" && o.station) tools.append(T("New message", () => newMessage(o.station)),
     el("span", { className: "note", textContent: `Read only on ${stationOf(o.station)}, as well as the radio-wide ones (in Messages on the desktop)` }));
   else if (o.box === "messages") tools.append(T("New message", () => newMessage()), T("When they're read…", () => open(PANEL.messages.id)),
@@ -1758,7 +1732,8 @@ const UI = {
           srow("News speed", ...range("news-speed", 0.5, 1.5, 0.05, d.news_speed, v => v.toFixed(2) + "×", v => set({ news_speed: v })))),
         grp("Waking up", srow("At power-on", seg([[true, "Chime"], [false, "Silent"]], d.startup_sound, v => set({ startup_sound: v })))),
         S?.profile && Object.keys(d.theme_own || {}).length ? help(`These are the radio's. ${stationOf(S.profile)}, playing now, sets its own ${Object.keys(d.theme_own).map(k => THEME_SET[k]?.[0] || k).join(", ")} (its Settings, in its folder).`) : null,
-        grp("", line(sbtn("Messages…", () => open(NOTES.id)), sbtn("Birthdays…", () => open(BDAYS.id)), sbtn("Voices…", () => open(VOICES.id)), sbtn("Jingles…", () => open(JINGLES.id)))),
+        grp("", line(sbtn("Themes…", () => open(LISTS.id)), sbtn("Birthdays…", () => open(BDAYS.id)), sbtn("Voices…", () => open(VOICES.id))),
+          help("Each theme has its own jingles and messages: open it in Themes.")),
       ];
     },
   },
@@ -1897,7 +1872,7 @@ const UI = {
           srow("Say the date first", sw(m.date_first, v => save({ date_first: v }), "Date first")),
           help(m.next ? `Next: ${m.next}${m.next_day ? " tomorrow" : ""}` : "")),
         grp("The notes", help(`${m.list.length} in the Messages folder. Each can be said with the others in turn (every ${m.every_min} min, in these hours), or at its own times, days and dates.`),
-          line(sbtn("Open the Messages folder", () => open(NOTES.id)), sbtn("New message", () => newMessage())))];
+          line(sbtn("Themes…", () => open(LISTS.id))), help("Messages belong to a theme: write them in its Messages folder."))];
     },
   },
   note: {
@@ -1910,11 +1885,11 @@ const UI = {
         await api("/api/messages", { ...fresh, list }); await reloadNotes(); });
       const themes = LISTS.kids.map(id => O[id]).filter(x => x?.kind === "list").map(x => x.name);
       const st = el("select", { id: "note-station" });
-      st.append(new Option("Every station", ""));
-      for (const n of themes) st.append(new Option(stationOf(n) + " only", n, false, (m.station || "").toLowerCase() === n.toLowerCase()));
+      const mine = (m.station || "Default").toLowerCase();
+      for (const n of themes) st.append(new Option(stationOf(n), n, false, mine === n.toLowerCase()));
       if (m.station && !themes.some(n => n.toLowerCase() === m.station.toLowerCase()))
         st.append(new Option(m.station + " (that theme's gone)", m.station, false, true));
-      st.onchange = () => save({ station: st.value || undefined });
+      st.onchange = () => save({ station: st.value });
       const ta = el("textarea", { className: "notearea", value: m.text, id: "note-text", style: "min-height:110px" });
       ta.setAttribute("aria-label", "The message");
       ta.onchange = () => ta.value.trim() && save({ text: ta.value.trim() });
@@ -2735,6 +2710,8 @@ async function drop(src, target, ev) {
   const dest = O[target.dataset.target];
   if (!dest) return;
   if (dest.kind === "list" && kind !== "preset") return dropOnTheme(dest, o);
+  if (dest.box === "artists" && O["ls:" + dest.theme]) return dropOnTheme(O["ls:" + dest.theme], o);
+  if (dest.box === "messages" && dest.station && o.kind === "note") return setNoteStation(o, dest.station);
   if (dest === NOTES && o.kind === "note") return o.m?.station ? setNoteStation(o, null) : toast("It's read on every station already.");
   if (dest.kind === "trash") return trash(src);
   if (dest.kind === "playlist") return addToPlaylist(dest, o);
@@ -2896,6 +2873,7 @@ function trash(src) {
   if (o.kind === "person") return gone(`${o.title} is off the birthdays.`, async () => {
     const d = await api("/api/birthdays"); await api("/api/birthdays", { birthdays: d.birthdays.filter((_, j) => j !== o.idx) }); closeFor(o); await loadFolder(BDAYS); drawDesk();
     return async () => { await api("/api/birthdays", { birthdays: d.birthdays }); await loadFolder(BDAYS); drawDesk(); }; });
+  if (o.kind === "list" && o.name.toLowerCase() === "default") return toast("Default is always there: it plays when nothing else is chosen, and its jingles are the start-up ones.");
   if (o.kind === "list" && from === LISTS) return gone(`Deleted the theme “${o.title}”. The music stays.`, async () => {
     const d = await api("/api/artists"); await api("/api/profiles", { profiles: d.profiles.filter(p => p.name !== o.name) }); closeFor(o); await loadFolder(LISTS); drawDesk();
     return async () => { await api("/api/profiles", { profiles: d.profiles }); await loadFolder(LISTS); drawDesk(); }; });

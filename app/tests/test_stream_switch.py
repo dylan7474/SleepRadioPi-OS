@@ -158,7 +158,7 @@ def test_a_gap_never_waits_for_the_dj(tmp_path, monkeypatch) -> None:
 
 def test_a_gap_fills_with_a_jingle_then_says_what_got_ready(tmp_path, monkeypatch) -> None:
     """A line not made by the song's end: a jingle (the theme's short one, else
-    Power-on's) while it's made; then it's said if it's ready, skipped if not."""
+    Default's) while it's made; then it's said if it's ready, skipped if not."""
     from concurrent.futures import Future
     import numpy as np
     from sleepradiopi.broadcast import station as station_mod
@@ -174,8 +174,8 @@ def test_a_gap_fills_with_a_jingle_then_says_what_got_ready(tmp_path, monkeypatc
         later.set_result(np.zeros((10, 2), dtype=np.int16))      # made while the jingle played
     monkeypatch.setattr(st, "_play_file", play)
     monkeypatch.setattr(st, "_speak", lambda speech, kind="dj": said.append(speech.text) or True)
-    st.config.jingle_every = 0                                    # (jingles off: Power-on's fill in)
-    st._power_on = [JingleClip(tmp_path / "Start.mp3", 20.0)]
+    st.config.jingle_every = 0                                    # (jingles off: Default's fill in)
+    st._default_jingles = [JingleClip(tmp_path / "Start.mp3", 20.0)]
     st._run_steps([station_mod.Step("say", station_mod.Speech("Here's one", "stock", later))], gap=True)
     assert played == ["Start"] and said == ["Here's one"]
 
@@ -194,7 +194,7 @@ def test_the_news_never_waits_in_silence_for_its_time_line(tmp_path, monkeypatch
     monkeypatch.setattr(st, "_play_file", lambda path, on_air: played.append(path.stem))
     monkeypatch.setattr(st, "_speak", lambda speech, kind="dj": said.append(speech.text) or True)
     monkeypatch.setattr(st.news_repo, "mark_read", lambda headlines: None)
-    st._power_on = [JingleClip(tmp_path / "Start.mp3", 20.0)]
+    st._default_jingles = [JingleClip(tmp_path / "Start.mp3", 20.0)]
     body = Future()
     body.set_result(np.zeros((10, 2), dtype=np.int16))
     news = SimpleNamespace(time_line=station_mod.Speech("It's two o'clock", "stock", Future()),

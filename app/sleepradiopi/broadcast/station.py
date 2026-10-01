@@ -68,7 +68,6 @@ SPEECH_WAIT_S = 45.0      # give up on a line that still isn't synthesised after
 FILL_JINGLE_MAX_S = 40.0  # the DJ isn't ready (power-on, back to the show, a gap): one of the
                           # jingles this short instead of a wait, then the music, as a real station
                           # would (the user's shortest are ~31-38 s; the rest 55 s+)
-POWER_ON_FOLDER = "Power-on"  # Jingles/Power-on: the start-up jingle when the station has none of its own
 GAP_GRACE_S = 2.0         # in a gap, a line not made by the song's end gets this long, then it's skipped
 
 
@@ -259,7 +258,7 @@ class Station:
         # main show (and artist radio); loaded for the station that's playing (_load_jingles).
         self.jingles: list[JingleClip] = []
         self._jingles_from: Path | None = None
-        self._power_on: list[JingleClip] = []
+        self._default_jingles: list[JingleClip] = []    # Default's: start-up and fill-ins when the station has none
         self._jingle_paths: set[Path] = set()
         self._jingle_bag: deque[JingleClip] = deque()
         self.on_profiles: Callable[[], None] | None = None
@@ -344,7 +343,7 @@ class Station:
         elif cfg.get("broadcast_artist"):
             self._use_selection(artist=cfg["broadcast_artist"])
         elif self.profiles:
-            self._use_selection()             # (no default station: the first theme)
+            self._use_selection()             # (no theme chosen: Default)
         self._load_jingles()
         self._prepare_opening()
 
@@ -464,10 +463,11 @@ class Station:
 
     def _fill_jingle(self) -> JingleClip | None:
         """A jingle to play while the DJ isn't ready: one of the station's own short
-        ones (when jingles are on), else one from Jingles/Power-on. None: a gap it is
-        (no jingles to be had)."""
+        ones (when jingles are on), else one of Default's (a short one if it has any).
+        None: a gap it is (no jingles to be had)."""
         own = self.jingles if self.config.jingle_every > 0 else []
-        pick = [j for j in own if 0 < j.duration_s <= FILL_JINGLE_MAX_S] or self._power_on
+        fallback = [j for j in self._default_jingles if 0 < j.duration_s <= FILL_JINGLE_MAX_S] or self._default_jingles
+        pick = [j for j in own if 0 < j.duration_s <= FILL_JINGLE_MAX_S] or fallback
         return random.choice(pick) if pick else None
 
     def _run_music_show(self, back: bool = False) -> None:
@@ -1489,12 +1489,11 @@ class Station:
 
     def _start_up_jingle(self) -> JingleClip | None:
         """At power-on: one of the playing theme's jingles (a short one if it has
-        any), else one from Jingles/Power-on (the user's start-up jingle, for any
-        station)."""
+        any), else one of Default's (the theme that's always there)."""
         folder = self.jingles_folder()
         own = (self.jingles or (scan_jingles(folder) if folder else [])) if self.config.jingle_every > 0 else []
         short = [j for j in own if 0 < j.duration_s <= FILL_JINGLE_MAX_S]
-        pick = short or own or self._power_on
+        pick = short or own or self._default_jingles
         return random.choice(pick) if pick else None
 
     def _load_jingles(self, force: bool = False) -> None:
@@ -1505,10 +1504,10 @@ class Station:
             return
         self._jingles_from = folder
         self.jingles = scan_jingles(folder) if self.config.jingle_every and folder else []
-        self._power_on = scan_jingles(Path(self.jingles_dir) / POWER_ON_FOLDER)
-        self._jingle_paths = {j.path for j in self.jingles + self._power_on}
+        self._default_jingles = scan_jingles(Path(self.jingles_dir) / profiles_mod.DEFAULT)
+        self._jingle_paths = {j.path for j in self.jingles + self._default_jingles}
         self._jingle_bag.clear()
-        for j in self.jingles + self._power_on:     # (a handful of short files: loudness up front)
+        for j in self.jingles + self._default_jingles:     # (a handful of short files: loudness up front)
             self._scan(j.path)
 
     def set_dj(self, chattiness: str | None = None, dj_hooks: bool | None = None,
@@ -2223,13 +2222,13 @@ class Station:
         return found
 
     def _fallback_theme(self) -> str | None:
-        """There's no default station, only themes: going "back to the show" (after a
-        station, or artist radio) is the theme last played, else the first."""
+        """Going "back to the show" (after a station, or artist radio) is the theme last
+        played, else Default (always there)."""
         names = [p["name"] for p in self.profiles]
         last = getattr(self, "_last_theme", None)
         if last and last.lower() in (n.lower() for n in names):
             return last
-        return names[0] if names else None
+        return next((n for n in names if n.lower() == profiles_mod.DEFAULT.lower()), names[0] if names else None)
 
     def set_artist(self, artist: str | None) -> bool:
         """Play only this artist (None = everything: the all-my-music theme, if there
@@ -2264,6 +2263,13 @@ class Station:
         cur = next((p for p in self.profiles if p["name"].lower() == old.lower()), None)
         if cur is None:
             raise ValueError(f"there's no theme called {old}")
+        if profiles_mod.DEFAULT.lower() in (cur["name"].lower(), " ".join(str(new).split()).lower()):
+            raise ValueError(f"{profiles_mod.DEFAULT} is always there, as it is: give another theme a different name")
+        return self._rename(cur, new)
+
+    def _rename(self, cur: dict, new: str) -> str:
+        """(rename_profile, and Default's making) the renaming itself."""
+        old = cur["name"]
         new = " ".join(str(new).split())
         lists = profiles_mod.validate([{**p, "name": new} if p is cur else p for p in self.profiles])
         cfg = self.messages.cfg

@@ -90,20 +90,20 @@ def test_web_api(tmp_path: Path) -> None:
         with urllib.request.urlopen(r) as resp:
             return json.load(resp)
     try:
-        assert req("/api/profiles", {"profiles": [FRIDAY]})["profiles"][0]["name"] == "Friday List"
+        DEF = {"name": "Default", "artists": [], "all": True}
+        assert req("/api/profiles", {"profiles": [DEF, FRIDAY]})["profiles"][1]["name"] == "Friday List"
         assert req("/api/artists")["profiles"] == st.profiles
         got = req("/api/station", {"profile": "Friday List"})
         assert got["found"] and got["station_name"] == "Friday List Radio"
         saved = load(conf)
-        assert saved.broadcast_profile == "Friday List" and saved.profiles[0]["artists"]
-        other = {"name": "Other", "artists": FRIDAY["artists"]}
-        assert req("/api/profiles", {"profiles": [other]})["profile"] == "Other"   # deleted while playing: another theme
-        assert load(conf).broadcast_profile == "Other"
-        with pytest.raises(urllib.error.HTTPError) as err:                # there's always at least one theme
-            req("/api/profiles", {"profiles": []})
-        assert err.value.code == 400 and "at least one theme" in json.load(err.value)["error"]
+        assert saved.broadcast_profile == "Friday List" and saved.profiles[1]["artists"]
+        assert req("/api/profiles", {"profiles": [DEF]})["profile"] == "Default"   # deleted while playing: Default
+        assert load(conf).broadcast_profile == "Default"
+        with pytest.raises(urllib.error.HTTPError) as err:                # Default is always there
+            req("/api/profiles", {"profiles": [FRIDAY]})
+        assert err.value.code == 400 and "always there" in json.load(err.value)["error"]
         with pytest.raises(urllib.error.HTTPError) as err:
-            req("/api/profiles", {"profiles": [{"name": "X", "artists": []}]})
+            req("/api/profiles", {"profiles": [DEF, {"name": "X", "artists": []}]})
         assert err.value.code == 400 and "at least one artist" in json.load(err.value)["error"]
     finally:
         httpd.shutdown()

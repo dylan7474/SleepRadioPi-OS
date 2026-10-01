@@ -438,20 +438,23 @@ The cards:
   power-on chime), Noise, Sleep timer, Voices, Wi-Fi (join, forget, its own
   network), This radio (name, case, password, listening in a browser),
   Buttons (and the day and night sets), Updates, Save & load, Power.
-  **There's no default station, only themes**: a radio with none gets one,
-  "Sleep Radio", playing **all my music** (`"all": true`; `main.ensure_a_theme`),
-  and it's an ordinary theme (rename it, delete it once there's another).
-  Going "back" (after a station, an album, artist radio, a programme ending)
-  is the theme last played (`Station._fallback_theme`); buttons once set to
-  the main show were pinned to a theme. There's always at least one theme,
-  and any theme can play all my music instead of chosen artists.
-  **A theme is a folder of its own things** (the desktop's **Themes** folder
-  holds them): its window has its name (renaming it takes everything of its
-  own along), ▶ Play, and sections — **Plays** (artists: drag an artist's
-  folder, an album or a song in from Music, a shortcut: the music stays
-  there; to the Trash: off the theme), **Messages** (drag a note in: read
-  only on it; drag it back to Messages: every station again), **Jingles**
-  (upload or drop files in) and **Settings**:
+  **There's always a theme called Default** (`profiles.DEFAULT`; it can't be
+  renamed or deleted): all my music (`"all": true`) unless given artists,
+  first in Themes. Its jingles are the start-up ones, and fill gaps, when the
+  theme playing has none of its own. Going "back" (after a station, an album,
+  artist radio, a programme ending) is the theme last played, else Default
+  (`Station._fallback_theme`). `main.ensure_default_theme` makes it (the
+  "Sleep Radio" theme of all my music made earlier became it, jingles folder,
+  buttons and programmes too) and gives it any message with no theme.
+  **Messages belong to a theme**, only read while it plays.
+  **A theme is a folder of its own things** (the desktop's **Themes**
+  folder holds them; the radio's back has Themes too): it opens like any
+  folder — its name (renaming it takes everything of its own along), ▶ Play,
+  and **Artists** (shortcuts: drag an artist's folder, an album or a song in
+  from Music, onto the theme or its Artists; to the Trash: off the theme; or
+  all my music), **Jingles** (its own; upload or drop files in), **Messages**
+  (its own; New message there, or drag a note in from another theme's) and
+  **Settings**:
   how much the DJ talks, time checks, the news, how often jingles play and
   70s hooks, each **"As the radio"** (the default: it follows the radio's DJ
   settings, on its back) or its own (`profiles.THEME_SETTINGS`, kept in the

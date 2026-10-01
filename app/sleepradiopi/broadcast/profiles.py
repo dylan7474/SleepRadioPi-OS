@@ -53,6 +53,10 @@ def validate(profiles) -> list[dict]:
     return out
 
 
+DEFAULT = "Default"   # the theme that's always there: all my music unless given artists; its jingles
+                      # play at start-up (and fill gaps) when the theme playing has none of its own
+
+
 # What a theme can set for itself; anything it doesn't set is the radio's (cascading: the
 # radio-wide value, then the theme's own). DJ on/off isn't here: it's a live switch for the
 # whole radio (buttons and programmes flip it).

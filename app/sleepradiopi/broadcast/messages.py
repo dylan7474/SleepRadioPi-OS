@@ -28,6 +28,7 @@ from __future__ import annotations
 from datetime import date, datetime, timedelta
 
 from .birthdays import ordinal_words
+from .profiles import DEFAULT
 
 MAX_MESSAGES = 30
 TEXT_MAX = 400
@@ -140,12 +141,13 @@ class Messages:
         self.cfg = validate(cfg)
 
     def active(self, today: date, station: str | None = None) -> list[dict]:
-        """The messages for today (whatever their times) on this station: the radio-wide
-        ones, and those of the theme playing (station: its name; None: the main show)."""
-        here = (station or "").lower()
+        """The messages for today (whatever their times) of this station: every message
+        belongs to a theme (one with none is Default's; station None -- artist radio,
+        or no theme -- reads Default's)."""
+        here = (station or DEFAULT).lower()
         return [m for m in self.cfg["list"]
                 if not m.get("off") and (not m.get("until") or date.fromisoformat(m["until"]) >= today)
-                and (not m.get("station") or m["station"].lower() == here)
+                and (m.get("station") or DEFAULT).lower() == here
                 and (not m.get("days") or today.weekday() in m["days"])
                 and (not m.get("date") or m["date"] == f"{today.month:02d}-{today.day:02d}")]
 
