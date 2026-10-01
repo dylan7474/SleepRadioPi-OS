@@ -399,8 +399,9 @@ The cards:
   the start, or the one before; in a book or podcast a tap is half a minute);
   volume − / the number / +; **Sleep 30 min** (tap again: off; it shows the
   minutes left) and **Noise** on/off. *Desktop* in the menu bar has the rest.
-  (The four buttons are on the radio itself.) It goes dark while the radio
-  uses its Night buttons, like the desktop. A computer opening `/` goes to
+  (The four buttons are on the radio itself.) It goes dark at night by the
+  clock (the buttons' *Night from* / *Day from* times, 21:00-07:00 unless
+  changed) and while the radio uses its Night buttons. A computer opening `/` goes to
   the desktop. On the radio's own network (first set-up, or after a Wi-Fi
   reset) `/` is a **Wi-Fi set-up** screen instead: networks nearby, tap one,
   its password, Join (or type a hidden network's name); phones checking for

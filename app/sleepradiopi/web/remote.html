@@ -322,10 +322,14 @@ const mmss = ms => { const s = Math.max(0, Math.round(ms / 1000)), h = Math.floo
   return (h ? h + ":" + String(m).padStart(2, "0") : m) + ":" + String(s % 60).padStart(2, "0"); };
 function clock() { const d = new Date(); $("clock").textContent = d.toLocaleDateString(undefined, { weekday: "short" }) + " " + String(d.getHours()).padStart(2, "0") + ":" + String(d.getMinutes()).padStart(2, "0"); }
 
-// light, dark, or (as the desktop) following the radio: dark while it uses its Night buttons
+// light, dark, or following the radio: dark while it uses its Night buttons, and through the
+// night by the clock (the buttons' "Night from" / "Day from" times, 21:00-07:00 unless changed)
 function look() {
   let saved = null; try { saved = localStorage.getItem("srd.look"); } catch {}
-  document.documentElement.dataset.theme = ["light", "dark"].includes(saved) ? saved : (B?.bank === "night" ? "dark" : "light");
+  const d = new Date(), now = d.getHours() * 60 + d.getMinutes();
+  const from = B?.auto?.night_min ?? 1260, to = B?.auto?.day_min ?? 420;
+  const night = from > to ? (now >= from || now < to) : (now >= from && now < to);
+  document.documentElement.dataset.theme = ["light", "dark"].includes(saved) ? saved : (B?.bank === "night" || night ? "dark" : "light");
 }
 
 // --- the remote ------------------------------------------------------------------------------
@@ -492,7 +496,7 @@ function startRemote() {
   loadButtons(); poll();
 }
 async function boot() {
-  clock(); setInterval(clock, 10000); look();
+  clock(); setInterval(() => { clock(); look(); }, 10000); look();
   // A computer (a wide screen and a mouse) gets the desktop, unless it came from there on purpose.
   let stay = ""; try { stay = localStorage.getItem("srd.stay") || ""; } catch {}
   const computer = matchMedia("(min-width: 1000px) and (pointer: fine)").matches;
