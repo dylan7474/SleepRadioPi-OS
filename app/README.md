@@ -381,7 +381,14 @@ The cards:
   order (the icons follow the same sort, and the window's footer says when
   one is on); view and sort are kept per folder
   in the browser, and a music or On demand folder you haven't chosen for
-  looks like the one it's in); **the radio on the desktop** showing
+  looks like the one it's in); **pick several things** as on a Mac
+  (Ctrl/Cmd-click one more or one less, Shift-click a run, drag a box over
+  empty space, Ctrl+A all in the front window) and drag them together: into
+  a folder (moved), onto a playlist (added), to the Trash (files: one
+  question for them all; Delete does it too), or onto the radio's dial, which
+  makes them an **"On the fly" playlist** (songs, albums and folders, in the
+  order picked; made again each time, kept in Playlists) and plays it;
+  **the radio on the desktop** showing
   what's on air (polled every 2.5 s), with **Back** (like a CD player) and **Skip** keys under the dial (pause is the knob): drop anything on its dial to play it,
   on one of its buttons to keep it there (including a **message**, a **jingle** or a **birthday** — said or played over what's on — and an **action** from the Actions folder: the sleep timer, the time, the pips, the news, the address, noise on/off, DJ on/off; or pick from each button's *Change…* list in the Buttons window), a **☀ Day / ☾ Night** switch above them shows either set, and dropping on a button programmes the set shown without swapping the radio's (*Use it now* swaps), scroll the knob for the volume,
   click it to pause. Programmes are built in their window: drop things on the

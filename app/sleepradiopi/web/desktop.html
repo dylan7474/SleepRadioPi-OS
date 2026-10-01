@@ -398,6 +398,9 @@
               font: 16px/1.35 "Marker Felt", "Comic Sans MS", var(--body); box-shadow: inset 0 0 0 1px #e6d35f; }
   .menubar .wifi { background: none; border: 0; color: var(--ink); display: inline-flex; gap: 6px; align-items: center; padding: 2px 4px; border-radius: 4px; }
   .menubar .wifi:hover { background: var(--hover); }
+  .lasso { position: fixed; z-index: 1500; pointer-events: none; border: 1px solid var(--blue); background: #6f97e01f; border-radius: 2px; }
+  .ghost .count { position: absolute; top: -4px; right: 8px; min-width: 22px; height: 22px; padding: 0 6px; border-radius: 11px; z-index: 3;
+                  background: #d9453b; color: #fff; font: 700 12px/22px var(--body); text-align: center; box-shadow: 0 2px 6px var(--shadow); }
   .ghost { position: fixed; z-index: 2000; pointer-events: none; opacity: .9; transform: translate(-50%, -55%) scale(1.05); }
   .toast { position: fixed; left: 50%; bottom: calc(env(safe-area-inset-bottom, 0px) + 18px); transform: translateX(-50%); z-index: 3000;
            background: var(--toast); color: var(--toast-ink); border: 1px solid var(--line); border-radius: 10px; padding: 8px 14px; max-width: min(560px, calc(100% - 32px));
@@ -823,12 +826,30 @@ function subOf(o) {
   }
   return "";
 }
+// What's picked: any number of things, all in one folder (or on the desktop) at a time, as on a
+// Mac -- Ctrl/Cmd-click adds or takes one, Shift-click a run, a box dragged over empty space,
+// Ctrl+A all. sel is the latest pick (Shift's anchor, and what Download and Enter mean).
 let sel = null;
+const picked = new Map();                       // keyOf(src) -> src
+const keyOf = s => `${s.id}@${s.where}${s.index != null ? "#" + s.index : ""}`;
+function showPicked() {
+  document.querySelectorAll(".icon.sel, .row.sel").forEach(n => n.classList.remove("sel"));
+  document.querySelectorAll(".icon, .row").forEach(n => { if (n._src && picked.has(keyOf(n._src))) n.classList.add("sel"); });
+}
+function pickOnly(src) { picked.clear(); if (src) picked.set(keyOf(src), src); sel = src ? keyOf(src) : null; showPicked(); }
+function pickToggle(src) {
+  const k = keyOf(src), first = picked.values().next().value;
+  if (first && first.where !== src.where) picked.clear();      // (one folder at a time)
+  if (picked.has(k)) picked.delete(k); else picked.set(k, src);
+  sel = picked.has(k) ? k : (picked.size ? [...picked.keys()].pop() : null);
+  showPicked();
+}
+const pickedSrcs = () => [...picked.values()];
 function iconEl(o, ctx) {
   const d = el("div", { className: "icon", tabIndex: 0 });
   d.dataset.id = o.id;
   if (ctx.alias) d.classList.add("alias");
-  if (sel === o.id + "@" + ctx.where) d.classList.add("sel");
+  if (picked.has(keyOf({ id: o.id, ...ctx }))) d.classList.add("sel");
   if (["folder", "playlist", "programme", "trash"].includes(o.kind)) { d.dataset.drop = "icon"; d.dataset.target = o.id; }
   const sub = subOf(o);
   d.append(glyph(o), el("div", { className: "lbl", textContent: o.title }));
@@ -840,7 +861,7 @@ function iconEl(o, ctx) {
   return d;
 }
 function listEl(o, ctx) {           // a folder's list view: one row, which drags, drops and opens as its icon does
-  const d = el("li", { className: "row lrow" + (sel === o.id + "@" + ctx.where ? " sel" : ""), tabIndex: 0 });
+  const d = el("li", { className: "row lrow" + (picked.has(keyOf({ id: o.id, ...ctx })) ? " sel" : ""), tabIndex: 0 });
   d.dataset.id = o.id;
   if (["folder", "playlist", "programme", "trash"].includes(o.kind)) { d.dataset.drop = "icon"; d.dataset.target = o.id; }
   const sub = subOf(o);
@@ -1284,7 +1305,7 @@ function winEl(win) {
 }
 const T = (txt, fn, cls = "", dis = false) => { const b = el("button", { className: "t " + cls, type: "button", textContent: txt, disabled: dis }); b.onclick = fn; return b; };
 
-function selectedIn(o) { return sel && sel.endsWith("@" + o.id) ? O[sel.slice(0, sel.lastIndexOf("@"))] : null; }
+function selectedIn(o) { const s = sel && picked.get(sel); return s && s.where === o.id ? O[s.id] : null; }
 function folderView(o, box, win) {
   const tools = el("div", { className: "wtools" });
   const asSetting = { voices: PANEL.voices, jingles: PANEL.library }[o.box];   // (settings on the back that are folders)
@@ -1346,6 +1367,7 @@ function folderView(o, box, win) {
   sorted(o, o.kids).forEach(id => O[id] && grid.append((asList ? listEl : iconEl)(O[id], { where: o.id, parent: o.id })));
   if (!o.kids.length) grid.append(el("div", { className: "empty", textContent: o.kind === "trash" ? "The Trash is empty." : o.root === "ondemand" && !o.path ? "Nothing here yet: add files under Settings › Media library › On demand." : "Nothing here yet." }));
   const body = el("div", { className: "wbody" }, asList ? listHead(o) : null, grid);
+  body.addEventListener("pointerdown", e => { if (e.target === body || e.target === grid) lasso(e, grid); });
   if (o.box === "voices") {
     body.addEventListener("dragover", e => { if ([...e.dataTransfer.types].includes("Files")) { e.preventDefault(); box.classList.add("over"); } });
     body.addEventListener("dragleave", () => box.classList.remove("over"));
@@ -1385,7 +1407,7 @@ function rowsOf(ids, where, num, removable, album) {
   ids.forEach((id, i) => {
     const o = O[id];
     if (!o) return;
-    const li = el("li", { className: "row" + (sel === id + "@" + where ? " sel" : ""), tabIndex: 0 });
+    const li = el("li", { className: "row" + (picked.has(keyOf({ id, where, index: i })) ? " sel" : ""), tabIndex: 0 });
     const p = el("button", { className: "play", type: "button", textContent: "▶", title: "Play just this one now" });
     p.onclick = () => play(o); p.onpointerdown = e => e.stopPropagation();
     const extra = album && o.artist && o.artist !== album.artist ? o.artist : removable ? o.artist : "";
@@ -2455,12 +2477,19 @@ let lastTap = { key: "", t: 0 };
 function press(e, node, src) {
   if (e.button > 0) return;
   e.stopPropagation();
-  const key = src.id + "@" + src.where, x0 = e.clientX, y0 = e.clientY;
-  let ghost = null, over = null;
+  const key = keyOf(src), x0 = e.clientX, y0 = e.clientY, mod = e.ctrlKey || e.metaKey, shift = e.shiftKey;
+  let ghost = null, over = null, group = [src];
   node.setPointerCapture?.(e.pointerId);
   const move = ev => {
     if (!ghost && Math.hypot(ev.clientX - x0, ev.clientY - y0) < 5) return;
-    if (!ghost) { dragging = true; ghost = src.row ? iconEl(O[src.id], { where: "ghost" }) : node.cloneNode(true); ghost.classList.add("ghost"); ghost.classList.remove("sel"); document.body.append(ghost); }
+    if (!ghost) {
+      dragging = true;
+      if (!picked.has(key)) pickOnly(src);       // dragging one that isn't picked: just that one
+      group = picked.size > 1 ? [src, ...pickedSrcs().filter(s => keyOf(s) !== key)] : [src];
+      ghost = src.row ? iconEl(O[src.id], { where: "ghost" }) : node.cloneNode(true); ghost.classList.add("ghost"); ghost.classList.remove("sel");
+      if (group.length > 1) ghost.append(el("span", { className: "count", textContent: group.length }));
+      document.body.append(ghost);
+    }
     ghost.style.left = ev.clientX + "px"; ghost.style.top = ev.clientY + "px";
     const hit = document.elementsFromPoint(ev.clientX, ev.clientY).find(n => n.dataset?.drop && n !== node && !n.classList.contains("ghost") && n.dataset.target !== src.id);
     if (hit !== over) { over?.classList.remove("over"); over = hit; over?.classList.add("over"); }
@@ -2470,16 +2499,26 @@ function press(e, node, src) {
     ghost?.remove(); over?.classList.remove("over"); dragging = false;
     if (!ghost && src.where === "back") { open(src.id); return; }
     if (!ghost) {
+      // (no redraws here: one reset the window's scroll, so the second click of a double-click
+      // landed on another icon in long folders like Music -- only the highlights change)
+      if (mod) { lastTap = { key: "", t: 0 }; return pickToggle(src); }
+      const anchor = sel && picked.get(sel);
+      if (shift && anchor && anchor.where === src.where) {          // a run, from the last pick to this one
+        const sibs = [...node.parentElement.children].filter(n => n._src);
+        const a = sibs.findIndex(n => keyOf(n._src) === sel), b = sibs.indexOf(node);
+        if (a >= 0 && b >= 0) {
+          picked.clear();
+          for (const n of sibs.slice(Math.min(a, b), Math.max(a, b) + 1)) picked.set(keyOf(n._src), n._src);
+          lastTap = { key: "", t: 0 }; return showPicked();
+        }
+      }
       const t = Date.now();
       if (lastTap.key === key && t - lastTap.t < 450) { lastTap = { key: "", t: 0 }; open(src.id); return; }
-      lastTap = { key, t }; sel = key;
-      // just move the highlight: a redraw here reset the window's scroll, so the second click of
-      // a double-click landed on another icon (long folders like Music)
-      document.querySelectorAll(".icon.sel, .row.sel").forEach(n => n.classList.remove("sel"));
-      node.classList.add("sel");
+      lastTap = { key, t };
+      pickOnly(src);
       return;
     }
-    drop(src, over, ev);
+    if (group.length > 1) dropMany(group, over, ev); else drop(src, over, ev);
   };
   node.addEventListener("pointermove", move); node.addEventListener("pointerup", up); node.addEventListener("pointercancel", up);
 }
@@ -2541,9 +2580,93 @@ async function drop(src, target, ev) {
   if (dest.kind === "folder" && dest.root) return moveInto(src, dest);
   if (![src.parent, src.where, src.id].includes(dest.id)) toast(`“${o.title}” can't go in ${dest.title}.`);   // (every drop answers)
 }
+// several things dropped at once (the first is the one that was dragged)
+async function dropMany(srcs, target, ev) {
+  if (!target) return;
+  const kind = target.dataset.drop, objs = srcs.map(s => O[s.id]).filter(Boolean);
+  if (kind === "desk") {
+    const d = $("desk").getBoundingClientRect(), x = ev.clientX - d.left - 48, y = ev.clientY - d.top - 30;
+    if (srcs[0].where === "desk") {                  // they move together, keeping their places
+      const lead = desk.find(p => p.id === srcs[0].id), dx = lead ? x - lead.x : 0, dy = lead ? y - lead.y : 0;
+      for (const s of srcs) { const p = desk.find(p => p.id === s.id); if (p) { p.x += dx; p.y += dy; } }
+    } else {
+      let n = 0;
+      for (const o of objs) if (!desk.some(p => p.id === o.id)) { desk.push({ id: o.id, x: x + n * 18, y: y + n * 18, alias: true }); n++; }
+      toast(n ? `${n} shortcut${n === 1 ? " is" : "s are"} on the desktop.` : "They're on the desktop already.");
+    }
+    saveDesk(); return drawDesk();
+  }
+  if (kind === "play") return playOnTheFly(objs);
+  if (kind === "preset") return toast("A button keeps one thing: drag just one onto it.");
+  const dest = O[target.dataset.target];
+  if (!dest) return;
+  if (dest.kind === "trash") return trashMany(srcs);
+  if (dest.kind === "playlist") return addManyToPlaylist(dest, objs);
+  for (const s of srcs) await drop(s, target, ev);   // a folder (moves), a programme (blocks): one by one, in order
+  pickOnly(null);
+}
+const songRef = o => o.kind === "track" ? { root: o.root, path: o.path } : o.kind === "album" ? { root: o.root, folder: o.path }
+  : o.kind === "folder" && o.root && o.path ? { root: o.root, folder: o.path, deep: true } : null;
+// Several things onto the radio: a playlist of them, "On the fly", made again each time and played
+// now (kept in Playlists, so one worth keeping can be renamed)
+const ON_THE_FLY = "On the fly";
+async function playOnTheFly(objs) {
+  const refs = objs.map(songRef).filter(Boolean), left = objs.length - refs.length;
+  if (!refs.length) return toast("To play several things at once, pick songs, albums or folders.");
+  try {
+    if (!PLAYLISTS.loaded) await loadPlaylists();
+    const others = PLAYLISTS.kids.map(id => O[id]).filter(p => p.name.toLowerCase() !== ON_THE_FLY.toLowerCase())
+      .map(p => ({ name: p.name, tracks: p.items.map(id => [O[id].root, O[id].path]) }));
+    await api("/api/playlists", { playlists: others });               // (last time's, gone)
+    let d = null;
+    for (const r of refs) d = await api("/api/playlists/add", { name: ON_THE_FLY, ...r });
+    await api("/api/playlists/play", { name: ON_THE_FLY, shuffle: false });
+    await loadPlaylists(); drawDesk(); setTimeout(poll, 700);
+    toast(`Playing ${d.tracks} song${d.tracks === 1 ? "" : "s"} as “${ON_THE_FLY}”` +
+          (left ? ` (${left} left out: only songs, albums and folders go in a playlist).` : "."));
+  } catch (e) { toast("Not played: " + e.message + "."); }
+}
+async function addManyToPlaylist(pl, objs) {
+  const refs = objs.map(songRef).filter(Boolean);
+  if (!refs.length) return toast("A playlist holds songs: pick songs, albums or folders.");
+  try {
+    let d = null, added = 0;
+    for (const r of refs) { d = await api("/api/playlists/add", { name: pl.name, ...r }); added += d.added; }
+    await loadPlaylists(d); drawDesk();
+    toast(`Added ${added} song${added === 1 ? "" : "s"} to ${d.name}.`);
+  } catch (e) { toast("Not all added: " + e.message + "."); }
+}
+async function trashMany(srcs) {
+  const objs = srcs.map(s => O[s.id]);
+  if (srcs.every(s => s.where === "desk")) {          // off the desktop (the real ones stay)
+    const off = srcs.filter(s => { const p = desk.find(p => p.id === s.id), o = O[s.id]; return p && (p.alias || !["folder", "trash"].includes(o.kind)); });
+    desk = desk.filter(p => !off.some(s => s.id === p.id)); saveDesk(); pickOnly(null); drawDesk();
+    return toast(off.length ? `Took ${off.length} off the desktop. The real ones are still on the radio.` : "Those stay on the desktop.");
+  }
+  const from = O[srcs[0].parent];
+  if (from?.kind === "playlist") {                    // out of a playlist, all at once
+    const drop_ = new Set(srcs.map(s => s.index));
+    const all = PLAYLISTS.kids.map(id => O[id]).map(p => ({ name: p.name, tracks: (p === from ? p.items.filter((_, i) => !drop_.has(i)) : p.items).map(id => [O[id].root, O[id].path]) }));
+    return api("/api/playlists", { playlists: all }).then(d => { loadPlaylists(d); pickOnly(null); drawDesk(); toast(`Took ${srcs.length} songs out of ${from.title}.`); }).catch(e => toast(e.message));
+  }
+  if (objs.every(o => (o.root && o.path) || o.kind === "book")) {    // files: one question for them all
+    if (objs.some(o => o.kind === "jingle") && from !== JINGLES) return toast("Delete jingles from the Jingles window.");
+    return ask(`Delete these ${objs.length} from the radio for good? Folders and albums go with everything in them, and it can't be undone.`, "Delete for good", async () => {
+      let done = 0;
+      for (const o of objs) {
+        try { await api("/api/media/delete", { kind: o.kind === "book" ? "audiobooks" : o.root, path: o.kind === "book" ? o.key : o.path }); closeFor(o); done++; }
+        catch (e) { toast(`“${o.title}” not deleted: ${e.message}.`); }
+      }
+      pickOnly(null);
+      await afterChange([from, objs.some(o => o.kind === "book") ? BOOKS : null, objs.some(o => o.kind === "jingle") ? JINGLES : null].filter(Boolean));
+      toast(`Deleted ${done} for good.`);
+    });
+  }
+  for (const s of srcs) await trash(s);              // the rest one by one (each with its own Undo)
+  pickOnly(null);
+}
 async function addToPlaylist(pl, o) {
-  const what = o.kind === "track" ? { root: o.root, path: o.path } : o.kind === "album" ? { root: o.root, folder: o.path }
-    : o.kind === "folder" && o.root && o.path ? { root: o.root, folder: o.path, deep: true } : null;
+  const what = songRef(o);
   if (!what) return toast(`A playlist holds songs; “${o.title}” can go in a programme instead.`);
   try { const d = await api("/api/playlists/add", { name: pl.name, ...what }); await loadPlaylists(d); drawDesk(); toast(`Added ${d.added === 1 ? "“" + o.title + "”" : d.added + " songs"} to ${d.name}.`); }
   catch (e) { toast("Not added: " + e.message + "."); }
@@ -2701,7 +2824,34 @@ function applyTheme() {
   const pick = $("theme").value;
   document.documentElement.dataset.theme = pick === "radio" ? ((S?.buttons_bank ?? bStatus?.bank) === "night" ? "dark" : "light") : pick;
 }
-$("desk").addEventListener("pointerdown", e => { if (e.target === $("desk") && sel) { sel = null; drawDesk(); } });
+$("desk").addEventListener("pointerdown", e => { if (e.target === $("desk")) lasso(e, $("desk")); });
+// A box dragged over empty space picks what it touches (with Ctrl/Cmd: adds to what's picked); a
+// plain click there picks nothing
+function lasso(e, container) {
+  if (e.button > 0) return;
+  const x0 = e.clientX, y0 = e.clientY, keep = e.ctrlKey || e.metaKey, before = new Map(picked);
+  const items = () => [...container.children].filter(n => n._src && (n.classList.contains("icon") || n.classList.contains("row")) && n._src.id !== TRASH.id);
+  let box = null;
+  const move = ev => {
+    if (!box && Math.hypot(ev.clientX - x0, ev.clientY - y0) < 5) return;
+    if (!box) { box = el("div", { className: "lasso" }); document.body.append(box); }
+    const l = Math.min(x0, ev.clientX), t = Math.min(y0, ev.clientY), r = Math.max(x0, ev.clientX), b = Math.max(y0, ev.clientY);
+    Object.assign(box.style, { left: l + "px", top: t + "px", width: r - l + "px", height: b - t + "px" });
+    picked.clear();
+    if (keep) for (const [k, v] of before) picked.set(k, v);
+    for (const n of items()) {
+      const q = n.getBoundingClientRect();
+      if (q.left < r && q.right > l && q.top < b && q.bottom > t) picked.set(keyOf(n._src), n._src);
+    }
+    sel = picked.size ? [...picked.keys()].pop() : null;
+    showPicked();
+  };
+  const up = () => {
+    window.removeEventListener("pointermove", move); window.removeEventListener("pointerup", up);
+    if (box) box.remove(); else if (!keep) pickOnly(null);
+  };
+  window.addEventListener("pointermove", move); window.addEventListener("pointerup", up);
+}
 document.querySelectorAll("[data-open]").forEach(b => b.onclick = () => open(b.dataset.open));
 $("tidy").onclick = () => { const before = JSON.stringify(desk.map(p => [p.x, p.y]));
   desk.forEach((p, i) => { p.x = 18 + Math.floor(i / 7) * 128; p.y = 14 + (i % 7) * 96; }); saveDesk(); drawDesk();
@@ -2749,9 +2899,17 @@ document.addEventListener("keydown", e => {
     if (top) { e.preventDefault(); closeWin(top); }
     return;
   }
-  const cur = document.querySelector(".icon.sel, .row.sel");
+  if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "a") {      // everything in the front window (or on the desktop)
+    const front = document.querySelector(".win.front .grid, .win.front .rows");
+    const items = front ? [...front.children].filter(n => n._src) : [...$("desk").children].filter(n => n._src && n.classList.contains("icon") && n._src.id !== TRASH.id);
+    if (!items.length) return;
+    e.preventDefault(); picked.clear();
+    for (const n of items) picked.set(keyOf(n._src), n._src);
+    sel = keyOf(items[0]._src); return showPicked();
+  }
+  const cur = (sel && [...document.querySelectorAll(".icon.sel, .row.sel")].find(n => n._src && keyOf(n._src) === sel)) || document.querySelector(".icon.sel, .row.sel");
   if (!cur?._src) return;
-  if (e.key === "Delete" || e.key === "Backspace") { e.preventDefault(); trash(cur._src); return; }
+  if (e.key === "Delete" || e.key === "Backspace") { e.preventDefault(); picked.size > 1 ? trashMany(pickedSrcs()) : trash(cur._src); return; }
   if (!e.key.startsWith("Arrow")) return;
   const sibs = [...cur.parentElement.children].filter(n => n._src && (n.classList.contains("icon") || n.classList.contains("row")));
   const r0 = cur.getBoundingClientRect(), i = sibs.indexOf(cur);
@@ -2766,8 +2924,7 @@ document.addEventListener("keydown", e => {
   }
   if (!nx) return;
   e.preventDefault();
-  cur.classList.remove("sel"); nx.classList.add("sel");
-  sel = nx._src.id + "@" + nx._src.where; lastTap = { key: "", t: 0 };
+  pickOnly(nx._src); lastTap = { key: "", t: 0 };
   nx.scrollIntoView({ block: "nearest" }); nx.focus?.({ preventScroll: true });
 });
 document.querySelectorAll("[data-new]").forEach(b => b.onclick = async () => {
