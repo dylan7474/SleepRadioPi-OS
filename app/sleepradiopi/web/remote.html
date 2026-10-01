@@ -144,58 +144,52 @@
   label.tick { display: flex; align-items: center; gap: 8px; font-size: 13px; }
   .toast { position: fixed; left: 50%; bottom: calc(18px + env(safe-area-inset-bottom, 0px)); transform: translateX(-50%); z-index: 9;
            max-width: min(92vw, 420px); background: var(--toast); color: var(--toast-ink); padding: 10px 14px; border-radius: 10px; font-size: 14px; }
-  /* the remote: big, plain buttons for eyes that aren't what they were; one screen, no scrolling */
-  body.remote-on { overflow: hidden; }
-  body.remote-on .menubar { display: none; }
-  .chunky { max-width: 520px; height: 100vh; height: 100dvh; padding: calc(10px + env(safe-area-inset-top, 0px)) 12px calc(10px + env(safe-area-inset-bottom, 0px));
-            display: grid; grid-template-rows: auto auto minmax(0, 1.25fr) minmax(0, 1fr) minmax(0, 2.2fr) auto; gap: 1.4vh; }
-  .cdial { border-radius: 16px; padding: 1.2vh 14px 1.4vh; color: #231703; min-width: 0;
-           background: linear-gradient(180deg, #f7c86d, #e9a23a 55%, #c98522); box-shadow: inset 0 1px 0 #ffe3a6, inset 0 -2px 6px #0003, 0 6px 18px var(--shadow); }
-  .ctop { display: flex; justify-content: space-between; gap: 8px; font-size: clamp(13px, 1.9vh, 17px); font-weight: 700; letter-spacing: .06em; text-transform: uppercase; }
-  .ctop span:first-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .ctop #onair { flex: none; color: #8a1c0c; }
-  .cdial b { display: block; font: 700 clamp(22px, 3.9vh, 34px)/1.15 var(--display); margin-top: .4vh;
+  /* the remote: the radio and the two things wanted at the bedside (sleep timer, noise), in the
+     desktop's look but bigger, for eyes that aren't what they were; one screen, no scrolling */
+  body.remote-on { overflow: hidden; display: flex; flex-direction: column; height: 100vh; height: 100dvh; }
+  .mremote { flex: 1; min-height: 0; width: 100%; max-width: 480px; padding: 18px 12px calc(10px + env(safe-area-inset-bottom, 0px));
+             display: grid; grid-template-rows: minmax(0, 1fr) auto auto auto; gap: 1.3vh; }
+  .mradio { position: relative; min-height: 0; background: var(--case); color: var(--case-ink); border-radius: 20px; padding: 1.6vh 14px;
+            display: flex; flex-direction: column; justify-content: space-between; gap: 1vh;
+            box-shadow: 0 22px 50px var(--shadow), 0 0 0 1px #0000001a, inset 0 -4px 0 #0000001a, inset 0 2px 0 #fff; }
+  .mradio .handle { position: absolute; left: 50%; top: -13px; width: 130px; height: 17px; transform: translateX(-50%);
+                    border: 5px solid #cfc7b4; border-bottom: 0; border-radius: 14px 14px 0 0; }
+  .mdial { border-radius: 10px; padding: 1vh 12px 1.2vh; color: var(--amber-ink); min-width: 0;
+           background: linear-gradient(180deg, #f7c86d, #e9a23a 55%, #c98522); box-shadow: inset 0 1px 0 #ffe3a6, inset 0 -2px 6px #0003; }
+  .mdial small { display: block; font-size: clamp(11px, 1.7vh, 15px); font-weight: 700; letter-spacing: .14em; text-transform: uppercase; opacity: .8;
+                 white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .mdial b { display: block; font: 700 clamp(20px, 3.4vh, 30px)/1.15 var(--display); margin-top: .3vh;
              overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
-  .cdial em { display: block; font-style: normal; font-size: clamp(16px, 2.5vh, 22px); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .crow { display: grid; grid-template-columns: 1fr 1.35fr 1fr; gap: 10px; min-height: 0; }
-  .cbtn { border: 2px solid #8f8774; border-radius: 18px; background: linear-gradient(180deg, #ffffff, #e9e5dc); color: #1d1b17;
-          display: flex; align-items: center; justify-content: center; gap: 6px; min-height: 56px; min-width: 0;
-          font: 700 clamp(22px, 4vh, 40px) var(--body); text-decoration: none; box-shadow: 0 3px 0 #0003; padding: 0 6px; }
-  .cbtn:active:not(:disabled) { transform: translateY(2px); box-shadow: 0 1px 0 #0003; }
-  .cbtn:disabled { opacity: .35; }
-  .cbtn svg { width: clamp(30px, 5vh, 46px); height: clamp(30px, 5vh, 46px); }
-  .cbtn.small { font-size: clamp(16px, 2.4vh, 22px); min-height: 52px; }
-  .cplay { background: radial-gradient(circle at 35% 30%, #5b86d6, #2f5cb4 55%, #1d3d7c); border-color: #1d3d7c; color: #fff; border-radius: 22px; }
-  .cplay svg { width: clamp(40px, 7vh, 64px); height: clamp(40px, 7vh, 64px); }
-  .cvolnum { display: flex; flex-direction: column; align-items: center; justify-content: center; border-radius: 18px; background: var(--win); border: 2px solid var(--line); }
-  .cvolnum small { font-size: clamp(13px, 1.8vh, 16px); color: var(--dim); font-weight: 600; }
-  .cvolnum b { font: 700 clamp(28px, 5vh, 46px)/1 var(--display); font-variant-numeric: tabular-nums; }
-  .cseek { min-width: 0; }
-  .cbarrow { display: grid; grid-template-columns: auto 1fr auto; gap: 10px; align-items: center; }
-  .cbarrow .cbtn { padding: 0 12px; }
-  .ctimes { display: flex; justify-content: space-between; padding: 2px 84px 0; font: 700 clamp(15px, 2.2vh, 19px) var(--body); font-variant-numeric: tabular-nums; }
+  .mdial em { display: block; font-style: normal; font-size: clamp(15px, 2.2vh, 20px); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .mbar { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 8px; align-items: center; }
+  .key.wide10 { min-width: 60px; height: clamp(40px, 5.6vh, 52px); border-radius: 26px; font-size: clamp(14px, 2vh, 17px); }
+  .mtimes { display: flex; justify-content: space-between; padding: 0 72px; font: 700 clamp(13px, 1.9vh, 16px) var(--body); color: #4d493f; font-variant-numeric: tabular-nums; }
   #pos { -webkit-appearance: none; appearance: none; width: 100%; height: 44px; background: transparent; margin: 0; }
-  #pos::-webkit-slider-runnable-track { height: 14px; border-radius: 7px; background: #c9c2b1; }
-  #pos::-moz-range-track { height: 14px; border-radius: 7px; background: #c9c2b1; }
-  #pos::-moz-range-progress { height: 14px; border-radius: 7px; background: #c98522; }
-  #pos::-webkit-slider-thumb { -webkit-appearance: none; width: 36px; height: 36px; margin-top: -11px; border-radius: 50%; background: #e9a23a; border: 3px solid #231703; }
-  #pos::-moz-range-thumb { width: 32px; height: 32px; border-radius: 50%; background: #e9a23a; border: 3px solid #231703; }
-  .cpresets { display: grid; grid-template-columns: 1fr 1fr; grid-template-rows: 1fr 1fr; gap: 10px; min-height: 0; }
-  .cpresets .cbtn { flex-direction: column; gap: 2px; padding: 4px 8px; font-size: clamp(17px, 2.7vh, 24px); line-height: 1.15; text-align: center; }
-  .cpresets .cbtn i { font: 700 clamp(14px, 2vh, 18px) var(--display); font-style: normal; color: #5d574b; }
-  .cpresets .cbtn span { overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow-wrap: anywhere; }
-  .cpresets .cbtn.on { background: linear-gradient(180deg, #f7c86d, #e9a23a); border-color: #231703; border-width: 3px; }
-  .cpresets .cbtn.on i { color: #231703; }
-  .cfoot { grid-template-columns: 1fr 1fr 1fr; }
-  .cfoot .cbtn[aria-pressed="true"] { background: #2b2a26; color: #fff; border-color: #2b2a26; }
-  :root[data-theme="dark"] .cbtn { background: linear-gradient(180deg, #2c3350, #232941); color: #ece6d6; border-color: #59617f; }
-  :root[data-theme="dark"] .cpresets .cbtn i { color: #b9b3a5; }
-  :root[data-theme="dark"] .cpresets .cbtn.on { background: linear-gradient(180deg, #f7c86d, #e9a23a); color: #231703; border-color: #f7c86d; }
-  :root[data-theme="dark"] .cfoot .cbtn[aria-pressed="true"] { background: #ece6d6; color: #141827; }
-  :root[data-theme="dark"] .cplay { background: radial-gradient(circle at 35% 30%, #5b86d6, #2f5cb4 55%, #1d3d7c); color: #fff; }
-  /* each part in its own row, so a hidden position bar doesn't shift the rest */
-  .cdial { grid-row: 1; } .cseek { grid-row: 2; } .ctransport { grid-row: 3; } .cvol { grid-row: 4; } .cpresets { grid-row: 5; } .cfoot { grid-row: 6; }
-  @media (max-height: 620px) { .cseek .ctimes { display: none; } }
+  #pos::-webkit-slider-runnable-track { height: 12px; border-radius: 6px; background: #cbc4b3; box-shadow: inset 0 1px 2px #0003; }
+  #pos::-moz-range-track { height: 12px; border-radius: 6px; background: #cbc4b3; }
+  #pos::-moz-range-progress { height: 12px; border-radius: 6px; background: #c98522; }
+  #pos::-webkit-slider-thumb { -webkit-appearance: none; width: 34px; height: 34px; margin-top: -11px; border-radius: 50%;
+                               background: radial-gradient(circle at 40% 35%, #f7c86d, #e9a23a 60%, #c98522); border: 2px solid #231703; box-shadow: 0 2px 4px #0005; }
+  #pos::-moz-range-thumb { width: 30px; height: 30px; border-radius: 50%; background: #e9a23a; border: 2px solid #231703; }
+  .mface { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); align-items: center; gap: 12px; }
+  .mface .grille { height: clamp(60px, 11vh, 100px); }
+  .mface .knob { width: clamp(84px, 13vh, 124px); height: clamp(84px, 13vh, 124px); }
+  .mface .knob svg { width: 40%; height: 40%; }
+  .mkeys { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .mpair { position: relative; display: flex; align-items: center; justify-content: center; gap: 10px; padding-bottom: 14px; }
+  .mpair .tlabel { position: absolute; bottom: 0; left: 0; right: 0; text-align: center; }
+  .key.round { width: clamp(52px, 7.4vh, 66px); height: clamp(52px, 7.4vh, 66px); border-radius: 50%; padding: 0; font-size: clamp(24px, 3.6vh, 32px); }
+  .key.round svg { width: 42%; height: 42%; }
+  .mvol { min-width: 52px; text-align: center; }
+  .mvol b { font: 700 clamp(24px, 3.8vh, 34px)/1 var(--display); font-variant-numeric: tabular-nums; }
+  .mvol .tlabel { display: none; }
+  .mwin .mseg { display: flex; margin: 10px; padding: 4px; gap: 4px; }
+  .mwin .mseg button { flex: 1; min-height: clamp(44px, 6vh, 54px); font-size: clamp(15px, 2.2vh, 18px); border-radius: 9px; }
+  .mmore { min-height: clamp(46px, 6vh, 54px); font-size: clamp(16px, 2.3vh, 19px); }
+  :root[data-theme="dark"] .mradio { --case: #2a2f45; --case-ink: #ece6d6; box-shadow: 0 22px 50px #000a, 0 0 0 1px #0006; }
+  :root[data-theme="dark"] .mtimes { color: #c9c3b4; }
+  :root[data-theme="dark"] .tlabel { color: #9b968a; }
+  @media (max-height: 640px) { .mtimes { display: none; } .mradio .handle { display: none; } .mremote { padding-top: 10px; } }
 </style>
 </head>
 <body>
@@ -203,6 +197,7 @@
   <div class="logo">SLEEP <span>RADIO</span></div>
   <div class="grow"></div>
   <span class="bars" id="bars" aria-label="Wi-Fi"><i style="height:4px"></i><i style="height:7px"></i><i style="height:10px"></i><i style="height:12px"></i></span>
+  <span class="onair" id="onair"></span>
   <span class="clock" id="clock"></span>
 </header>
 
@@ -218,36 +213,50 @@
   </section>
 </main>
 
-<main id="remote" class="chunky" hidden>
-  <section class="cdial" aria-live="polite">
-    <div class="ctop"><span id="dialTop">Now playing</span><span id="onair"></span></div>
-    <b id="dialTitle">…</b>
-    <em id="dialSub"></em>
-  </section>
-  <section class="cseek" id="seekRow" hidden>
-    <div class="cbarrow">
-      <button class="cbtn small" type="button" id="back10" aria-label="Back ten seconds">−10 s</button>
-      <input type="range" id="pos" min="0" max="1000" value="0" aria-label="Position">
-      <button class="cbtn small" type="button" id="fwd10" aria-label="On ten seconds">+10 s</button>
+<main id="remote" class="mremote" hidden>
+  <section class="mradio" aria-label="The radio">
+    <div class="handle"></div>
+    <div class="mdial" aria-live="polite">
+      <small id="dialTop">Now playing</small>
+      <b id="dialTitle">…</b>
+      <em id="dialSub"></em>
     </div>
-    <div class="ctimes"><span id="posNow">0:00</span><span id="posLen">0:00</span></div>
+    <div class="mseek" id="seekRow" hidden>
+      <div class="mbar">
+        <button class="key wide10" type="button" id="back10" aria-label="Back ten seconds">−10 s</button>
+        <input type="range" id="pos" min="0" max="1000" value="0" aria-label="Position">
+        <button class="key wide10" type="button" id="fwd10" aria-label="On ten seconds">+10 s</button>
+      </div>
+      <div class="mtimes"><span id="posNow">0:00</span><span id="posLen">0:00</span></div>
+    </div>
+    <div class="mface">
+      <div class="grille"></div>
+      <button class="knob" type="button" id="knob" aria-label="Pause"></button>
+      <div class="grille"></div>
+    </div>
+    <div class="mkeys">
+      <div class="mpair">
+        <button class="key round" type="button" id="prev" aria-label="Back"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M6 5v14"/><path d="M19 5 9 12l10 7z"/></svg></button>
+        <button class="key round" type="button" id="skip" aria-label="Skip"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M18 5v14"/><path d="M5 5l10 7-10 7z"/></svg></button>
+        <span class="tlabel">BACK · SKIP</span>
+      </div>
+      <div class="mpair">
+        <button class="key round" type="button" id="volDown" aria-label="Quieter">−</button>
+        <div class="mvol"><b id="volNum">–</b><span class="tlabel">VOLUME</span></div>
+        <button class="key round" type="button" id="volUp" aria-label="Louder">+</button>
+      </div>
+    </div>
   </section>
-  <section class="crow ctransport">
-    <button class="cbtn" type="button" id="prev" aria-label="Back"><svg viewBox="0 0 24 24" fill="currentColor"><rect x="4" y="5" width="3" height="14" rx="1"/><path d="M20 5v14L8.5 12z"/></svg></button>
-    <button class="cbtn cplay" type="button" id="knob" aria-label="Pause"></button>
-    <button class="cbtn" type="button" id="skip" aria-label="Skip"><svg viewBox="0 0 24 24" fill="currentColor"><rect x="17" y="5" width="3" height="14" rx="1"/><path d="M4 5v14l11.5-7z"/></svg></button>
+
+  <section class="win mwin">
+    <div class="tbar"><i></i><b><span id="sleepTitle">Sleep timer</span></b><u></u></div>
+    <div class="mseg seg" id="sleepSeg"></div>
   </section>
-  <section class="crow cvol">
-    <button class="cbtn" type="button" id="volDown" aria-label="Quieter">−</button>
-    <div class="cvolnum"><small>Volume</small><b id="volNum">–</b></div>
-    <button class="cbtn" type="button" id="volUp" aria-label="Louder">+</button>
+  <section class="win mwin">
+    <div class="tbar"><i></i><b><span>Noise to sleep to</span></b><u></u></div>
+    <div class="mseg seg" id="noiseSeg"></div>
   </section>
-  <section class="cpresets" id="presets"></section>
-  <section class="crow cfoot">
-    <button class="cbtn small" type="button" id="bankDay" aria-pressed="true">☀ Day</button>
-    <button class="cbtn small" type="button" id="bankNight" aria-pressed="false">☾ Night</button>
-    <a class="cbtn small" href="/desktop" id="deskLink">More…</a>
-  </section>
+  <a class="wide primary mmore" href="/desktop" id="deskLink">More… (the desktop)</a>
 </main>
 
 <main id="setup" hidden>
@@ -325,7 +334,8 @@ function dialWords(s) {
 }
 function render() {
   const s = S, sp = s.speaker || {};
-  $("onair").textContent = sp.playing === false ? "Paused" : s.on_air ? "● On air" : "Off air";
+  $("onair").textContent = sp.playing === false ? "PAUSED" : s.on_air ? "● ON AIR" : "OFF AIR";
+  $("onair").classList.toggle("off", sp.playing === false || !s.on_air);
   const [top, title, sub] = dialWords(s);
   $("dialTop").textContent = top; $("dialTitle").textContent = title || "…"; $("dialSub").textContent = sub || "";
   $("knob").innerHTML = sp.playing === false ? PLAY : PAUSE;
@@ -339,20 +349,16 @@ function render() {
     $("posNow").textContent = mmss(p.pos_ms); $("posLen").textContent = mmss(p.total_ms);
   }
   $("prev").disabled = !s.can_previous; $("skip").disabled = !s.can_skip;
+  // the sleep timer and noise
+  const seg = (box, opts, now, fn) => box.replaceChildren(...opts.map(([v, t]) => {
+    const b = el("button", { type: "button", textContent: t }); b.setAttribute("aria-pressed", String(v === now)); b.onclick = () => fn(v); return b; }));
+  const sleepNow = sp.sleep_min ? [15, 30, 60].reduce((a, m) => Math.abs(m - sp.sleep_min) < Math.abs(a - sp.sleep_min) ? m : a, 30) : 0;
+  seg($("sleepSeg"), [[0, "Off"], [15, "15 min"], [30, "30 min"], [60, "60 min"]], sleepNow,
+      m => act("/api/speaker", { sleep: m }, () => toast(m ? `Sleep in ${m} minutes.` : "Sleep timer off.")));
+  $("sleepTitle").textContent = sp.sleep_left_s ? `Sleep timer · ${Math.ceil(sp.sleep_left_s / 60)} min left` : "Sleep timer";
+  seg($("noiseSeg"), [[false, "Off"], [true, "On"]], !!sp.noise?.on, v => act("/api/speaker", { noise: v }));
 }
-function renderButtons() {
-  if (!B) return;
-  $("bankDay").setAttribute("aria-pressed", String(B.bank !== "night"));
-  $("bankNight").setAttribute("aria-pressed", String(B.bank === "night"));
-  $("presets").replaceChildren(...B.buttons.map((b, i) => {
-    const key = el("button", { type: "button", className: "cbtn" + (b.playing ? " on" : "") },
-      el("i", { textContent: String(i + 1) }), el("span", { textContent: b.label }));
-    key.setAttribute("aria-label", `Button ${i + 1}: ${b.label}` + (b.playing ? " (playing: press to pause)" : ""));
-    key.onclick = () => act("/api/buttons/press", { button: i + 1 }, () => setTimeout(loadButtons, 600));
-    return key;
-  }));
-  look();
-}
+function renderButtons() { look(); }      // (the buttons are on the radio: here only Night's dark look)
 async function loadButtons() { try { B = await api("/api/buttons"); renderButtons(); } catch {} }
 async function poll() {
   if (mode !== "remote") return;
@@ -369,8 +375,6 @@ $("pos").oninput = e => { seeking = true; $("posNow").textContent = mmss(+e.targ
 $("pos").onchange = async e => { await act("/api/seek", { to_ms: +e.target.value }); seeking = false; };
 $("back10").onclick = () => act("/api/seek", { delta_ms: -10000 });
 $("fwd10").onclick = () => act("/api/seek", { delta_ms: 10000 });
-$("bankDay").onclick = () => act("/api/buttons/bank", { bank: "day" }, () => setTimeout(loadButtons, 300));
-$("bankNight").onclick = () => act("/api/buttons/bank", { bank: "night" }, () => setTimeout(loadButtons, 300));
 
 // --- Wi-Fi set-up (the radio's own network) --------------------------------------------------
 let joining = null;

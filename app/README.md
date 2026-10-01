@@ -387,18 +387,19 @@ The cards:
   can hold one, in order or shuffled. A song whose file has gone is skipped. Kept in the settings (`playlists`), so *Save settings* has them
   (`broadcast/playlists.py`, `Station.play_playlist`).
 - **The phone remote** (`web/remote.html`, served at `/`) is the radio in your
-  hand: big, plain buttons for eyes that aren't what they were, all on one
-  screen with no scrolling (sized from the screen's height). From the top:
-  what's on (station, song or programme, *On air* / *Paused*); a thick
-  **position bar** with **−10 s / +10 s** when a song, audiobook or podcast
-  can be moved through; Back, a big Play/Pause and Skip; volume − and + with
-  the number; the four buttons (the lit one pauses, as on the box); Day /
-  Night and *More…* (the desktop, for everything else). A computer opening
-  `/` goes to the desktop. On the radio's own network (first set-up, or after
-  a Wi-Fi reset) `/` is a **Wi-Fi set-up** screen instead: networks nearby,
-  tap one, its password, Join (or type a hidden network's name); phones
-  checking for internet there are sent to it. It uses no web fonts, so it
-  works with no internet.
+  hand, in the desktop's look but bigger, all on one screen with no scrolling
+  (sized from the screen's height). The radio: what's on (station, song or
+  programme), a **position bar** with **−10 s / +10 s** when a song, audiobook
+  or podcast can be moved through (drag it), the blue knob to pause and play,
+  Back and Skip, volume − and + with the number; then the **sleep timer**
+  (Off, 15, 30, 60 min, with the time left) and **noise** (Off, On); and
+  *More…* for the desktop. (The four buttons are on the radio itself, so not
+  here.) It goes dark while the radio uses its Night buttons, like the
+  desktop. A computer opening `/` goes to the desktop. On the radio's own
+  network (first set-up, or after a Wi-Fi reset) `/` is a **Wi-Fi set-up**
+  screen instead: networks nearby, tap one, its password, Join (or type a
+  hidden network's name); phones checking for internet there are sent to
+  it. It uses no web fonts, so it works with no internet.
 - **The classic page** (`web/page.html`, now at `/classic`; the desktop's
   Stations, Test sounds and Listen-in-a-browser windows still show its
   parts) follows the desktop's names and ways:
