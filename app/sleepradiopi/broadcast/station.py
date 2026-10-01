@@ -65,6 +65,8 @@ STARTUP_JINGLE_MAX_S = 20.0   # the opening ident: longer ones (most jingles) wa
                               # so the first song isn't held back after a slow start-up
 SPEECH_PAD_S = 0.25       # breath of silence either side of the DJ
 SPEECH_WAIT_S = 45.0      # give up on a line that still isn't synthesised after this
+SEEK_BOOK_MS = 30_000     # the knob's press-and-turn: a click in a book or podcast
+SEEK_SONG_MS = 10_000     # ...and in a song (an album's, a playlist's)
 SOURCE_SCAN_WAIT_S = 1.5  # an album or playlist starts at once: its first song needn't wait to be measured
 FILL_JINGLE_MAX_S = 40.0  # the DJ isn't ready (power-on, back to the show, a gap): one of the
                           # jingles this short instead of a wait, then the music, as a real station
@@ -293,6 +295,8 @@ class Station:
         self._played: deque[BroadcastTrack] = deque(maxlen=30)   # the show's songs, for Previous
         self._jump: BroadcastTrack | None = None   # Previous / a playlist now: play this at once, no gap
         self._album_jump: int | None = None        # Previous in an album: this track next
+        self._file_seek: float | None = None       # the knob's press-and-turn: this far into the song (ms)
+        self._file_pos: tuple = (None, 0)          # the song playing, and how far into its file (ms)
         self._gap_is_album = False           # this gap is between two tracks of an album
         self.current_track: BroadcastTrack | None = None
         self._took_request = False
@@ -321,6 +325,7 @@ class Station:
         self._book_seek: int | None = None
         self.book_now: dict | None = None    # the book playing: place, chapter, length
         self.paused_by_sleep: Callable[[], bool] = lambda: False   # (wired to the speaker)
+        self.speaker_paused: Callable[[], bool] = lambda: False    # (likewise: the radio is paused)
         self.on_book_end: Callable[[], None] | None = None          # pause the radio at the end (a book, the
                                                                     # last podcast, something played from the desktop)
         # Podcasts: the shows (settings), their episode lists (cached), each episode's place.
@@ -554,6 +559,8 @@ class Station:
                 out["title"] = album["tracks"][out["track"]].title
             if source.get("then") == "pause":
                 out["then"] = "pause"
+            if isinstance(source.get("offset_ms"), int) and source["offset_ms"] > 0:
+                out["offset_ms"] = source["offset_ms"]
             return out
         if source["kind"] == "playlist":
             refs = source.get("refs")
@@ -569,6 +576,8 @@ class Station:
                    "shuffle": source.get("shuffle") is True, "track": max(0, min(track, len(refs) - 1))}
             if source.get("then") == "pause":
                 out["then"] = "pause"
+            if isinstance(source.get("offset_ms"), int) and source["offset_ms"] > 0:
+                out["offset_ms"] = source["offset_ms"]
             return out
         if source["kind"] == "episode":
             show = self.podcasts.show(source.get("show")) if isinstance(source.get("show"), str) else None
@@ -756,7 +765,14 @@ class Station:
             self.current_track = t
             self.history.appendleft({"kind": "track", "text": f"{t.title} — {t.artist}", "at": time.time()})
             log.info("%s %s, track %d: %s by %s", source["kind"], album["title"], i + 1, t.title, t.artist)
-            self._play_file(t.path, OnAir("track", t.title, t.artist, t.album), scan_wait_s=SOURCE_SCAN_WAIT_S)
+            self._play_file(t.path, OnAir("track", t.title, t.artist, t.album), scan_wait_s=SOURCE_SCAN_WAIT_S,
+                            start_ms=int(source.pop("offset_ms", 0) or 0), keep_place=True)
+            if self._halted():                   # (paused long enough that the show ended: keep the place)
+                with self._lock:
+                    if self._source is source and self._file_pos[0] == t.path:
+                        source["offset_ms"] = int(self._file_pos[1])
+                self._notify_source()
+                return
             jump, self._album_jump = self._album_jump, None
             if jump is None and source.get("one"):
                 break
@@ -1427,12 +1443,17 @@ class Station:
         in_albums = {t for run in self._albums for t in run["tracks"]}
         return [{"title": t.title, "artist": t.artist, "album": t in in_albums} for t in queued]
 
-    def _play_file(self, path: Path, on_air: OnAir, near_end=None, scan_wait_s: float = 60) -> None:
+    def _play_file(self, path: Path, on_air: OnAir, near_end=None, scan_wait_s: float = 60,
+                   start_ms: int = 0, keep_place: bool = False) -> None:
         """Play a file to its end (or until skipped). near_end(end_at, again) is called
         once PREFETCH_S before the end -- and again, with again=True, if a skip then
         makes that projected end wrong. scan_wait_s: how long to wait for its loudness
         scan (a whole decode: tens of seconds for a long track on a Zero); not ready
-        by then, it plays as it is (the scan carries on, cached for next time)."""
+        by then, it plays as it is (the scan carries on, cached for next time).
+        start_ms: from there in the file. keep_place (an album's or playlist's song):
+        paused, it stops and waits where it was (as a book does) rather than play on
+        into nothing, and the knob's press-and-turn can move it (_file_seek).
+        self._file_pos is where it's got to, in the file (ms)."""
         fut = self._scan(path)
         scan = self._await(fut, scan_wait_s) or pcm.NO_SCAN
         if scan is pcm.NO_SCAN and not fut.done():
@@ -1443,22 +1464,41 @@ class Station:
         if not playable_s and path not in self._jingle_paths:   # (not measured: its length from its tags)
             playable_s = self.track_seconds(BroadcastTrack(path, "", "")) or 0
         on_air.duration_s = playable_s
-        on_air.started = time.time()
         self.on_air = on_air
-        played = 0
+        pos = max(start_ms, scan.start_ms)       # (ms in the file)
+        self._file_seek = None
         fired = near_end is None
-        for block in pcm.decode(path, scan.start_ms, scan.end_ms):
-            if self._halted():
-                return
-            if self._skipped(on_air):
-                if fired and near_end is not None:
-                    near_end(datetime.now(), True)
+        while True:
+            on_air.started = time.time() - (pos - scan.start_ms) / 1000
+            self._file_pos = (path, pos)
+            moved = False
+            for block in pcm.decode(path, pos, scan.end_ms):
+                if self._halted():
+                    return
+                if self._skipped(on_air):
+                    if fired and near_end is not None:
+                        near_end(datetime.now(), True)
+                    break                        # (moved stays False: done)
+                paused = keep_place and self._listeners == 0 and self.speaker_paused()
+                if keep_place and (self._file_seek is not None or paused):
+                    if paused:                   # wait here (the knob may move it meanwhile)
+                        while self._listeners == 0 and not self._halted():
+                            time.sleep(0.2)
+                        if self._halted():
+                            return
+                    if self._file_seek is not None:
+                        pos, self._file_seek = self._file_seek, None
+                    moved = True
+                    break
+                self._write(pcm.apply_gain(block, scan.gain))
+                pos += len(block) * 1000 / pcm.SAMPLE_RATE
+                self._file_pos = (path, pos)
+                left = playable_s - (pos - scan.start_ms) / 1000
+                if not fired and playable_s and left <= PREFETCH_S:
+                    fired = True
+                    near_end(datetime.now() + timedelta(seconds=left), False)
+            if not moved:
                 break
-            self._write(pcm.apply_gain(block, scan.gain))
-            played += len(block)
-            if not fired and playable_s and playable_s - played / pcm.SAMPLE_RATE <= PREFETCH_S:
-                fired = True
-                near_end(datetime.now() + timedelta(seconds=playable_s - played / pcm.SAMPLE_RATE), False)
         if not fired:
             near_end(datetime.now(), False)
 
@@ -1951,6 +1991,68 @@ class Station:
             self.book_positions.set(book.key, target)
         log.info("audiobook: to %d:%02d of %s", target // 60000, target // 1000 % 60, book.title)
         return self._book_state(book, target)
+
+    def knob_seek(self, clicks: int) -> dict | None:
+        """The knob turned while held: back (clicks < 0) or on through what's playing --
+        a book or podcast SEEK_BOOK_MS a click, a song from an album or playlist
+        SEEK_SONG_MS (within it). Playing, it jumps at once; paused, the place moves
+        and the radio carries on from there. None if there's nothing to move (the
+        show, a station). Else {"path", "ms"} (where it is now in that file, for a
+        snatch of it while paused; path None for a podcast: it's streamed)."""
+        src = self._source
+        if not clicks or src is None:
+            return None
+        if src["kind"] in ("book", "episode"):
+            st = self.book_seek(delta_ms=clicks * SEEK_BOOK_MS)
+            if src["kind"] == "episode":
+                return {"path": None, "ms": st["pos_ms"]}
+            book = self.books.get(src["key"])
+            i, into = book.at(st["pos_ms"])
+            ch = book.chapters[i]
+            return {"path": ch.path, "ms": ch.start_ms + into}
+        if src["kind"] not in ("album", "playlist"):
+            return None
+        album = self._source_album(src)
+        if album is None:
+            return None
+        t = album["tracks"][min(src.get("track", 0), len(album["tracks"]) - 1)]
+        length = (self.track_seconds(t) or 0) * 1000
+        playing = self._file_pos[0] == t.path and self.on_air is not None and self.on_air.kind == "track" \
+            and self.is_on_air and not self.speaker_paused()
+        now = self._file_pos[1] if self._file_pos[0] == t.path else src.get("offset_ms", 0)
+        if self._file_seek is not None:
+            now = self._file_seek
+        target = int(max(0, now + clicks * SEEK_SONG_MS))
+        if length:
+            target = min(target, int(length) - 1000)
+        if playing:
+            self._file_seek = target
+        else:
+            with self._lock:
+                src["offset_ms"] = target
+            if self._file_pos[0] == t.path:      # (waiting, paused, inside it: it picks this up on play)
+                self._file_seek = target
+                self._file_pos = (t.path, target)
+            self._notify_source()
+        log.info("knob seek: %s at %d:%02d", t.title, target // 60000, target // 1000 % 60)
+        return {"path": t.path, "ms": target}
+
+    def snatch(self, path: Path, ms: int, length_ms: int = 300) -> np.ndarray | None:
+        """A moment of a file from ms (levelled as it would play, faded in and out):
+        where the knob's press-and-turn has got to, heard while paused."""
+        scan = self.scans.get(path) or pcm.NO_SCAN
+        blocks = []
+        for block in pcm.decode(path, int(ms), int(ms + length_ms)):
+            blocks.append(pcm.apply_gain(block, scan.gain))
+        if not blocks:
+            return None
+        audio = np.concatenate(blocks).astype(np.float32)
+        n = min(len(audio) // 2, int(pcm.SAMPLE_RATE * 0.03))
+        if n:
+            ramp = np.linspace(0, 1, n, dtype=np.float32)[:, None]
+            audio[:n] *= ramp
+            audio[-n:] *= ramp[::-1]
+        return audio.astype(np.int16)
 
     def _run_book(self, source: dict) -> None:
         """Read a book from where it was left, chapter by chapter, with no DJ.

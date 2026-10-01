@@ -62,6 +62,15 @@ and with no network, and is set up from its web page. See
   remembered). Press (and let go) to pause or play. **Hold it for 3 seconds**
   and the radio beeps and reads out its network address — handy away from
   home, where there's no screen to show where the web page is.
+  **Press and turn** to go back or on through what's playing: a book or
+  podcast half a minute a click, a song from an album or playlist ten
+  seconds a click (a quick spin goes two or four times as far). Playing, it
+  jumps; paused, it moves the place and plays a snatch of it (0.3 s) every
+  half second while it moves, like a CD player's scan, and the radio stays
+  paused until you press. On Theme Radio or a station it does nothing; let
+  go and the press does nothing either (`io/seek.py`,
+  `Station.knob_seek`; `POST /api/knob {"press": "turn", "clicks": n}`
+  tries it from the page). Paused inside such a song, it keeps its place.
 - **Everything else is on its web page** (below): EQ, sleep timer, artist
   radio and your own lists of artists, birthdays, test sounds, settings
   backup, restart and shut down.

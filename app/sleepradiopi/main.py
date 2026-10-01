@@ -515,6 +515,7 @@ def main() -> None:
         presets.keep_auto()
         # An audiobook steps back a minute after the sleep timer, and pauses the radio at its end.
         station.paused_by_sleep = lambda: control.slept
+        station.speaker_paused = lambda: control.paused
         station.on_book_end = control.pause
         menu = presets.menu = _service_menu(station, control, presets, args.config, ready=on_air)
         menu.selector = cathedral
@@ -540,9 +541,13 @@ def main() -> None:
                            on_fire=presets.toggle_bank, on_tick=lambda: presets._clip(tick, "Button"))]
         # (SLEEPRADIOPI_INPUT_DIR: somewhere else to look for the knob and buttons -- e.g. an empty
         # folder for a test run on a desktop, whose keyboard would otherwise count as buttons 1-4)
+        from sleepradiopi.io.announce import Clip as _Clip
+        from sleepradiopi.io.seek import KnobSeek
+        station.seeker = KnobSeek(station, control, _Clip)   # (the page's knob uses it too)
         knob = Knob(control.knob, control.toggle,
                     devices=Path(os.environ.get("SLEEPRADIOPI_INPUT_DIR", "/dev/input")),
-                    on_long_press=announcer.speak, buttons=buttons, chord=chord, raw_keys=raw_keys)
+                    on_long_press=announcer.speak, buttons=buttons, chord=chord, raw_keys=raw_keys,
+                    on_held_turn=station.seeker.turn)
         presets.keys = knob.keys         # the page's buttons go down and up through the same timers
         if cathedral:                    # the VU needle and the grille's glow (hardware PWM)
             from sleepradiopi.io.lamps import Lamps

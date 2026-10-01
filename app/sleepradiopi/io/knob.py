@@ -175,11 +175,13 @@ class Knob:
     def __init__(self, on_turn: Callable[[int], None], on_press: Callable[[], None],
                  devices: Path = Path("/dev/input"),
                  on_long_press: Callable[[], None] | None = None,
-                 buttons: dict | None = None, chord=None, raw_keys: dict | None = None) -> None:
+                 buttons: dict | None = None, chord=None, raw_keys: dict | None = None,
+                 on_held_turn: Callable[[int], None] | None = None) -> None:
         """buttons: keycode -> (on_short, on_long[, long_s]) for the preset
         buttons; chord: a Chord (or a list of them): some of them held together;
         raw_keys: keycode -> (on_down, on_up), passed straight through (a rotary
-        selector's positions)."""
+        selector's positions); on_held_turn: the knob turned while pressed (then
+        the press itself does nothing when it's let go)."""
         chords = [] if chord is None else (list(chord) if isinstance(chord, (list, tuple)) else [chord])
         self.on_turn = on_turn
         self.keys = {}
@@ -194,11 +196,31 @@ class Knob:
                 self.keys[code] = (lambda t=t, c=code: (t.down(), [ch.key(c, True, timers) for ch in chords]),
                                    lambda t=t, c=code: ([ch.key(c, False, timers) for ch in chords], t.up()))
         self.keys.update(raw_keys or {})
+        self._press_timer = None
         if on_long_press is None:            # act as soon as it's pressed
             self.on_press, self.on_release = on_press, None
         else:
-            timer = PressTimer(on_press, on_long_press)
+            timer = self._press_timer = PressTimer(on_press, on_long_press)
             self.on_press, self.on_release = timer.down, timer.up
+        self.held = False                    # the knob's switch is down
+        if on_held_turn is not None and self._press_timer is not None:
+            down, up, turn = self.on_press, self.on_release, on_turn
+
+            def pressed() -> None:
+                self.held = True
+                down()
+
+            def released() -> None:
+                self.held = False
+                up()
+
+            def turned(clicks: int) -> None:
+                if self.held:
+                    self._press_timer.cancel()   # (let go, it neither pauses nor says the address)
+                    on_held_turn(clicks)
+                else:
+                    turn(clicks)
+            self.on_press, self.on_release, self.on_turn = pressed, released, turned
         self.devices = devices
         self._fds: dict[str, int] = {}
 

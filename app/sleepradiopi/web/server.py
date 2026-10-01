@@ -1355,15 +1355,19 @@ def make_handler(station: Station, output: Mp3Output, speaker=None,
             self._send(json.dumps({"name": new, "profiles": station.profiles}).encode(), "application/json")
 
         def _knob(self) -> None:
-            """/api/knob {"press": "short" | "long" | "service"}: the knob's switch, from
+            """/api/knob {"press": "short" | "long" | "service"} or {"press": "turn", "clicks": n}
+            (pressed and turned: back or on through a book, podcast or song): the knob's switch, from
             the page (to try it without the hardware). Short = pause/play, long =
             say the radio's address; "service" = as holding buttons 1 and 4 for 5 s
             (the service menu; then the page's buttons 1-4 answer it)."""
             try:
                 body = json.loads(self.rfile.read(int(self.headers.get("Content-Length", 0))) or b"{}")
                 press = body.get("press")
-                if press not in ("short", "long", "service", "back", "back_long"):
-                    raise ValueError("press must be short, long, service, back or back_long")
+                if press not in ("short", "long", "service", "back", "back_long", "turn"):
+                    raise ValueError("press must be short, long, service, back, back_long or turn")
+                clicks = body.get("clicks", 0)
+                if press == "turn" and (isinstance(clicks, bool) or not isinstance(clicks, int) or not -50 <= clicks <= 50):
+                    raise ValueError("clicks is -50 to 50")
             except (ValueError, TypeError, AttributeError):
                 self.send_error(400)
                 return
@@ -1378,6 +1382,11 @@ def make_handler(station: Station, output: Mp3Output, speaker=None,
             elif press == "short":
                 speaker.toggle()
                 done = True
+            elif press == "turn":                # pressed and turned: back or on through what's playing
+                seeker = getattr(station, "seeker", None)
+                if seeker is not None:
+                    seeker.turn(clicks, speed_up=False)   # (one step a click)
+                done = seeker is not None
             else:
                 done = announcer.speak() if announcer is not None else False
             self._send(json.dumps({"press": press, "done": done, **speaker.status()}).encode(),
