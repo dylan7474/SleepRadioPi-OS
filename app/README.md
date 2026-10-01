@@ -25,10 +25,11 @@ and with no network, and is set up from its web page. See
 ## How it behaves
 
 - **Back to Sleep Radio** from a station, album, audiobook or podcast: if the
-  DJ's welcome isn't made yet (a Zero can take a while, more so when the
-  voice is reloading), the same chime plays at once, then "Sleep Radio is
-  warming up…" if it's still not ready, then a soft tick every 3 s until it is (`Station._warm_up`; off with *At
-  power-on: Silent*).
+  DJ's welcome is ready it's said as usual; if not (a Zero takes ~20 s to
+  reload the voice, then 30–60 s to say it, and waiting sounded broken), one
+  of the **short jingles** (40 s or less) plays at once and then the music,
+  and the DJ joins at the next gap (`Station._back_steps`; no short jingle:
+  straight to the music). Uses the jingles folder when jingles are on.
 - **A stuck sound card restarts the radio.** If aplay keeps failing (once, the
   card refused to open after a boot until a restart), the speaker retries ever
   more slowly (0.1 s up to 5 s, logged at the 1st, 2nd, 4th... failure), and

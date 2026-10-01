@@ -66,7 +66,9 @@ STARTUP_JINGLE_MAX_S = 20.0   # the opening ident: longer ones (most jingles) wa
                               # so the first song isn't held back after a slow start-up
 SPEECH_PAD_S = 0.25       # breath of silence either side of the DJ
 SPEECH_WAIT_S = 45.0      # give up on a line that still isn't synthesised after this
-WARM_TICK_S = 3.0         # back to the show, still warming up: a soft tick this often
+WARM_TICK_S = 3.0         # power-on, still warming up: a soft tick this often
+RETURN_JINGLE_MAX_S = 40.0    # back to the show before its welcome is made: one of the jingles this
+                              # short, then the music (the user's shortest are ~31-38 s; the rest 55 s+)
 
 
 def _tick() -> np.ndarray:
@@ -420,29 +422,21 @@ class Station:
         finally:
             self._in_music = False
 
-    def _warm_up(self, steps: list[Step]) -> None:
-        """Back to the show and its welcome isn't made yet (slow on a Zero): the
-        start-up chime, then (if it's still not ready) "Sleep Radio is warming
-        up", as at power-on -- rather than a silence that sounds broken."""
-        def ready():
-            return all(s.speech.future.done() for s in steps if s.kind == "say")
-        home = Path.home()
-        if ready() or not startup_sound.settings(home)[0]:    # (the page's "At power-on: Chime / Silent")
-            return
-        from sleepradiopi.config import brand
-        self.on_air = OnAir("wait", f"{brand.name} is warming up")
-        parts = [np.frombuffer(startup_sound.cached_chime(home, 1.0), dtype=np.int16).reshape(-1, pcm.CHANNELS)]
-        words = startup_sound.speech_file(home, self.dj_voice)
-        log.info("back to the show: warming up")
-        for i, part in enumerate(parts):
-            for block in pcm.blocks(part):
-                if self._halted():
-                    return
-                self._write(block)
-            if i == 0 and not ready() and words.is_file():
-                speech = np.frombuffer(words.read_bytes(), dtype=np.int16).reshape(-1, pcm.CHANNELS)
-                parts.append(np.concatenate([pcm.silence(0.2), speech]))
-        self._tick_until_ready(steps)
+    def _back_steps(self, steps: list[Step]) -> list[Step]:
+        """Back to the show (from a station, an album...): the welcome is often not
+        made yet -- on a Zero the DJ's voice has to load again (~20 s), then speak
+        it (30-60 s), and waiting sounded broken. So if it isn't ready: one of the
+        short jingles (if there are any) and straight into the music; the DJ joins
+        at the next gap. A welcome that is ready is said as usual."""
+        if all(s.speech.future.done() for s in steps if s.kind == "say"):
+            return steps
+        for step in steps:
+            if step.kind == "say":
+                step.speech.future.cancel()   # (if it hasn't started: the Zero's CPU is the music's now)
+        short = [j for j in self.jingles if 0 < j.duration_s <= RETURN_JINGLE_MAX_S] if self.main_mix else []
+        log.info("back to the show: the welcome isn't ready; %s",
+                 "a short jingle, then the music" if short else "straight to the music")
+        return [Step("jingle", jingle=random.choice(short))] if short else []
 
     def _tick_until_ready(self, steps: list[Step]) -> None:
         """Still not ready: a soft tick every few seconds, like a clock, so the
@@ -475,7 +469,7 @@ class Station:
             steps, first = self._take_opening()
             opening = self._last_opening
             if back:
-                self._warm_up(steps)
+                steps = self._back_steps(steps)
             elif self._first_open:            # power-on: the start-up sound chimed; tick on from it
                 self._tick_until_ready(steps)
             self._first_open = False

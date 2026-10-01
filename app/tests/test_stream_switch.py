@@ -90,40 +90,50 @@ def test_without_a_speaker_it_cant_be_switched_off(tmp_path: Path) -> None:
         httpd.shutdown()
 
 
-def test_back_to_the_show_warms_up_while_the_welcome_is_made(tmp_path, monkeypatch) -> None:
+def test_back_to_the_show_plays_a_short_jingle_rather_than_wait_for_the_welcome(tmp_path, monkeypatch) -> None:
+    from concurrent.futures import Future
+    from sleepradiopi.broadcast import station as station_mod
+    from sleepradiopi.broadcast.library import JingleClip
+    from test_offline import _station
+    st = _station(tmp_path)
+    monkeypatch.setattr(type(st), "main_mix", property(lambda self: True))
+    short, long_ = JingleClip(tmp_path / "Short.mp3", 31.0), JingleClip(tmp_path / "Long.mp3", 65.0)
+    st.jingles = [short, long_]
+    pending = Future()
+    welcome = station_mod.Step("say", station_mod.Speech("Good evening", "stock", pending))
+    steps = st._back_steps([welcome])
+    assert [(s.kind, s.jingle) for s in steps] == [("jingle", short)]     # only a short one, never the long
+    assert pending.cancelled()                                            # and the welcome isn't made after all
+    st.jingles = [long_]
+    assert st._back_steps([station_mod.Step("say", station_mod.Speech("Hi", "stock", Future()))]) == []
+    done = Future()
+    done.set_result(None)
+    ready = [station_mod.Step("say", station_mod.Speech("Good evening", "stock", done))]
+    assert st._back_steps(ready) is ready                                 # made in time: said as usual
+
+
+def test_power_on_ticks_until_the_welcome_is_ready(tmp_path, monkeypatch) -> None:
     from concurrent.futures import Future
     from sleepradiopi.broadcast import station as station_mod
     from sleepradiopi import startup_sound
     from test_offline import _station
     st = _station(tmp_path)
-    written = []
-    monkeypatch.setattr(st, "_write", lambda block: written.append(len(block)))
     monkeypatch.setattr(startup_sound, "settings", lambda home: (True, "stock", 50))
-    monkeypatch.setattr(startup_sound, "cached_chime", lambda home, level: bytes(4 * 1000))
-    words = tmp_path / "words.raw"
-    words.write_bytes(bytes(4 * 500))
-    monkeypatch.setattr(startup_sound, "speech_file", lambda home, voice: words)
+    monkeypatch.setattr(station_mod, "SPEECH_WAIT_S", 30.0)
     pending = Future()
     speech = station_mod.Speech("Good evening", "stock", pending)
-    monkeypatch.setattr(station_mod, "SPEECH_WAIT_S", 0.0)        # (no ticks: they're below)
-    st._warm_up([station_mod.Step("say", speech)])
-    assert sum(written) == 1000 + 500 + int(0.2 * 44100)        # the chime, then the words
-    # still not ready after that: soft ticks, every WARM_TICK_S, until it is
-    monkeypatch.setattr(station_mod, "SPEECH_WAIT_S", 30.0)
-    written.clear()
+    written = []
 
     def write(block):
         written.append(len(block))
         if sum(written) > 3 * 44100 * (station_mod.WARM_TICK_S + 0.04):
             pending.set_result(None) if not pending.done() else None
     monkeypatch.setattr(st, "_write", write)
-    st._warm_up([station_mod.Step("say", speech)])
+    st._tick_until_ready([station_mod.Step("say", speech)])
     assert pending.done() and sum(written) > 3 * 44100 * station_mod.WARM_TICK_S
     tick = station_mod._tick()
     assert len(tick) == int(0.04 * 44100) and 0 < abs(tick).max() < 0.15 * 32767
-    pending = Future()
-    speech = station_mod.Speech("Good evening", "stock", pending)
     written.clear()
-    pending.set_result(None)
-    st._warm_up([station_mod.Step("say", speech)])
+    st._tick_until_ready([station_mod.Step("say", speech)])
     assert written == []                                          # ready: straight on
+
