@@ -33,6 +33,10 @@
 
 part = "assembly";
 
+// A script font for the lettering, in fonts/ (SIL Open Font Licence, fonts/OFL-Lobster.txt):
+// logo_font = "Lobster", with logo_fit = "together" (the Roberts Radio front)
+use <fonts/Lobster-Regular.ttf>
+
 // Draft: thin, fast fit-test panels (1.2 mm plate, open grille holes, no
 // countersinks). Only for the front/rear/draft_plate parts -- never the tube.
 draft = false;
@@ -46,6 +50,8 @@ logo_font     = "Liberation Sans:style=Bold";
 logo_w        = 36;      // every line is stretched to this width
 logo_gap      = 4;       // between lines
 logo_depth    = 0.8;     // 4 layers at 0.2 mm
+logo_fit      = "stretch"; // "stretch": every line to logo_w (block capitals); "together": the lines
+                         // scaled as one so the widest is logo_w, keeping the letters' shape (a script)
 
 /* ---------- Speakers (CHECK WITH CALIPERS) ---------- */
 spk_d        = 40;      // rim diameter (measured: 40 mm)
@@ -399,8 +405,20 @@ module front(logo = front_logo, grille = grille_style) {
     }
 }
 
-// The lettering, centred between the speakers, each line the same width
+
+// The lettering, centred between the speakers: each line the same width, or (logo_fit
+// "together") all scaled as one, keeping the font's shape
 module logo2d() {
+    if (logo_fit == "together") logo_together2d(); else logo_stretched2d();
+}
+module logo_together2d() {
+    n = len(logo_lines);
+    translate([0, spk_z]) resize([logo_w, 0], auto = true)
+        for (i = [0 : n - 1])
+            translate([0, ((n - 1) / 2 - i) * 13])
+                text(logo_lines[i], size = 10, font = logo_font, halign = "center", valign = "center");
+}
+module logo_stretched2d() {
     n = len(logo_lines);
     line_h = logo_line_h();
     total = n * line_h + (n - 1) * logo_gap;

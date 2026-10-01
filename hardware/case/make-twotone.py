@@ -39,10 +39,11 @@ from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 FRONT = HERE / "stl" / "front_logo_sunburst.stl"
+ROBERTS = HERE / "stl" / "front_roberts_sunburst.stl"   # "Roberts Radio" in Lobster (a radio for the user's dad)
 TEST = HERE / "stl" / "twotone_test.stl"            # twotone_test.scad: a few minutes' print
 OUT = HERE / "twotone"
 PRESETS = {"printer": "Original Prusa i3 MK2.5", "print": "0.20mm NORMAL @MK2.5", "filament": "Sunlu PLA"}
-BLUE, WHITE = "#2F6FD6", "#F4F4F2"
+BLUE, WHITE, BLACK = "#2F6FD6", "#F4F4F2", "#1C1C1C"
 FACE_MM = 0.8                        # the letters' depth (sleepradiopi_box.scad: logo_depth)
 LAYER_MM = 0.2                       # 0.20mm NORMAL: first layer and every layer
 LETTER_LAYERS = 4                    # blue layers behind white-face letters: 1 looked washed out
@@ -50,10 +51,13 @@ LETTER_LAYERS = 4                    # blue layers behind white-face letters: 1 
 # The colour changes: [(print_z of the first layer in the new colour, colour)]
 BLUE_FACE = (BLUE, [(FACE_MM + LAYER_MM, WHITE)], "blue face, white letters")
 WHITE_FACE = (WHITE, [(FACE_MM + LAYER_MM, BLUE), (FACE_MM + (LETTER_LAYERS + 1) * LAYER_MM, WHITE)], "white face, blue letters")
+BLACK_LETTERS = (WHITE, [(FACE_MM + LAYER_MM, BLACK), (FACE_MM + (LETTER_LAYERS + 1) * LAYER_MM, WHITE)], "white face, black letters")
 # name: (model, (first colour, changes, title)) -- a test tile of each, to try first
 VARIANTS = {
     "front_blue_face_white_letters": (FRONT, BLUE_FACE),
     "front_white_face_blue_letters": (FRONT, WHITE_FACE),
+    "roberts_white_face_blue_letters": (ROBERTS, WHITE_FACE),
+    "roberts_white_face_black_letters": (ROBERTS, BLACK_LETTERS),
     "test_blue_face_white_letters": (TEST, BLUE_FACE),
     "test_white_face_blue_letters": (TEST, WHITE_FACE),
 }
