@@ -626,7 +626,9 @@ The cards:
   levelled gently towards the show's loudness. It needs the radio online: if
   a station stays silent for 45 seconds (no Wi-Fi, or the station's gone)
   the show comes back on and the page says why; a dropped stream reconnects
-  by itself. The radio remembers the station over a restart. Plays plain
+  by itself. An HLS segment whose download drops is fetched again (the BBC's
+  https servers drop about one connection in ten), and one that still won't
+  come is skipped, so a blip never becomes a reconnect. The radio remembers the station over a restart. Plays plain
   Icecast/Shoutcast streams (MP3, AAC, Ogg), .pls/.m3u playlists and HLS
   (.m3u8, e.g. the BBC); Python fetches them (http or https) and pipes them
   to ffmpeg, which decodes them (`sleepradiopi/playback/radio.py`).

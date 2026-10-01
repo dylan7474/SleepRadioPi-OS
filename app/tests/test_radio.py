@@ -134,13 +134,18 @@ def _encode(tmp_path: Path, name: str, args: list[str]) -> Path:
     return out
 
 
-def _serve(routes: dict):
-    """routes: path -> (headers, body bytes)."""
+def _serve(routes: dict, drop_once: set | None = None):
+    """routes: path -> (headers, body bytes). The first request for a path in
+    drop_once gets its connection closed with no answer (as the BBC's https edge does)."""
 
     class H(BaseHTTPRequestHandler):
         def log_message(self, *a): ...
 
         def do_GET(self):
+            if drop_once and self.path in drop_once:
+                drop_once.discard(self.path)
+                self.close_connection = True
+                return
             if self.path not in routes:
                 self.send_error(404)
                 return
@@ -207,6 +212,47 @@ def test_hls_stream(tmp_path: Path) -> None:
         heard = _drain(s)
         # Joined near the live edge: the last few segments, not the lot.
         assert 1.0 < heard < 4.0 and n_segments > radio.HLS_LIVE_EDGE
+        s.close()
+    finally:
+        httpd.shutdown()
+
+
+def test_hls_rides_out_dropped_connections(tmp_path: Path) -> None:
+    hls = tmp_path / "hls"
+    hls.mkdir()
+    _encode(hls, "list.m3u8", ["-c:a", "aac", "-b:a", "64k", "-f", "hls", "-hls_time", "1",
+                               "-hls_list_size", "0", "-hls_segment_filename", str(hls / "s%d.ts")])
+    routes = {f"/hls/{p.name}": ({"Content-Type": "application/vnd.apple.mpegurl" if p.suffix == ".m3u8"
+                                  else "video/mp2t"}, p.read_bytes()) for p in hls.iterdir()}
+    drop = {k for k in routes if k.endswith(".ts")}      # every segment fails once
+    httpd, base = _serve(routes, drop)
+    try:
+        s = radio.RadioStream(base + "/hls/list.m3u8")
+        s.start()
+        heard = _drain(s)
+        assert 1.0 < heard < 4.0                         # the same as with no drops: nothing lost
+        assert s.ended == "the station stopped sending"
+        s.close()
+    finally:
+        httpd.shutdown()
+
+
+def test_hls_skips_a_lost_segment(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setattr(radio, "HLS_LIVE_EDGE", 4)
+    hls = tmp_path / "hls"
+    hls.mkdir()
+    _encode(hls, "list.m3u8", ["-c:a", "aac", "-b:a", "64k", "-f", "hls", "-hls_time", "1",
+                               "-hls_list_size", "0", "-hls_segment_filename", str(hls / "s%d.ts")])
+    routes = {f"/hls/{p.name}": ({"Content-Type": "application/vnd.apple.mpegurl" if p.suffix == ".m3u8"
+                                  else "video/mp2t"}, p.read_bytes()) for p in hls.iterdir()}
+    httpd, base = _serve(routes)
+    del routes["/hls/s1.ts"]                             # gone for good (404): skipped, not fatal
+    try:
+        s = radio.RadioStream(base + "/hls/list.m3u8")
+        s.start()
+        heard = _drain(s)
+        assert 2.0 < heard < 3.5                         # 3 of the 4 one-second segments
+        assert s.ended == "the station stopped sending"
         s.close()
     finally:
         httpd.shutdown()

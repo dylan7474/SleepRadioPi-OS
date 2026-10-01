@@ -62,6 +62,9 @@ PLAYLIST_BYTES = 256_000     # a playlist bigger than this isn't one
 MAX_HOPS = 5                 # playlists pointing at playlists
 HLS_LIVE_EDGE = 3            # start this many segments back from the newest
 HLS_MAX_BANDWIDTH = 200_000  # prefer the best variant up to this (a Zero's Wi-Fi is weak)
+HLS_TRIES = 3                # fetches of a segment / playlist before giving up on it (the BBC's
+HLS_RETRY_S = 0.5            #  https edge drops ~1 connection in 10); waits 0.5 s, then 1 s
+HLS_MAX_MISSES = 3           # segments / playlist refreshes lost in a row before the stream is dead
 DECODER = ["ffmpeg", "-hide_banner", "-loglevel", "error",
            "-probesize", "16384", "-analyzeduration", "1000000", "-i", "pipe:0",
            "-vn", "-ac", str(pcm.CHANNELS), "-ar", str(pcm.SAMPLE_RATE), "-f", "s16le", "pipe:1"]
@@ -609,6 +612,7 @@ class RadioStream:
             url, text = variant, self._text(variant)
         seen = None
         sent_map = None
+        misses = 0                                       # fetches lost in a row
         while not self._closed.is_set():
             pl = hls_media(text, url)
             if pl["encrypted"]:
@@ -623,14 +627,38 @@ class RadioStream:
                 n = pl["seq"] + i
                 if n <= seen:
                     continue
-                self._write(self._bytes(seg))
+                try:
+                    data = self._retried(self._bytes, seg)
+                except (StreamError, OSError, http.client.HTTPException) as e:
+                    misses += 1                          # a blip beats a reconnect: skip it
+                    if misses >= HLS_MAX_MISSES:
+                        raise
+                    log.info("radio: skipped a segment (%s)", e)
+                else:
+                    misses = 0
+                    self._write(data)
                 seen = n
                 new += 1
             if pl["ended"]:
                 return
             if self._closed.wait(pl["target"] / 2 if new else pl["target"] / 3):
                 return
-            text = self._text(url)
+            try:
+                text = self._retried(self._text, url)
+            except (StreamError, OSError, http.client.HTTPException):
+                misses += 1                              # try again next time round
+                if misses >= HLS_MAX_MISSES:
+                    raise
+
+    def _retried(self, fetch: Callable, url: str):
+        """fetch(url), trying again when the connection drops (not on an HTTP
+        error: a 404'd segment won't come back)."""
+        for attempt in range(HLS_TRIES):
+            try:
+                return fetch(url)
+            except (OSError, http.client.HTTPException):
+                if attempt == HLS_TRIES - 1 or self._closed.wait(HLS_RETRY_S * (attempt + 1)):
+                    raise
 
     def _bytes(self, url: str) -> bytes:
         resp = self._resp = self._open(url)
