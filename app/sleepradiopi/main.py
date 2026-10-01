@@ -42,6 +42,33 @@ MEDIA = Path.home() / "media"
 BUNDLED_HOOKS = Path(__file__).resolve().parent / "data" / "dj_hooks_70s.txt"
 
 
+def jingle_folders(media, station: Station) -> None:
+    """Each station's jingles folder -- Jingles/<the radio's name> (the main show),
+    Jingles/<theme> for each theme -- and Jingles/Power-on, made if they're missing;
+    loose jingles from before stations had folders go into the main show's."""
+    from sleepradiopi.broadcast.library import AUDIO_EXTENSIONS
+    from sleepradiopi.broadcast.station import POWER_ON_FOLDER
+    from sleepradiopi.config import brand
+    from sleepradiopi.media import MediaError
+    root = Path(station.jingles_dir)
+    names = [brand.name, POWER_ON_FOLDER] + [p["name"] for p in station.profiles]
+    missing = [n for n in names if not (root / n).is_dir()]
+    loose = sorted(p.name for p in root.iterdir() if p.is_file() and p.suffix.lower() in AUDIO_EXTENSIONS) \
+        if root.is_dir() else []
+    if not missing and not loose:
+        return
+    try:
+        for name in missing:
+            media.mkdir("jingles", "", name)
+        for name in loose:
+            media.move("jingles", name, "jingles", brand.name)
+        logging.info("jingles: folders made for %s; %d loose jingles moved to %s", missing or "none", len(loose), brand.name)
+    except MediaError as e:
+        logging.warning("jingles folders: %s", e)
+    finally:
+        media.done()                      # (read-only again; a move rescans the jingles)
+
+
 def _make_warming_up(station: Station, ready) -> None:
     """Make the start-up sound's spoken line in the DJ's voice, once (per voice),
     after the show is under way. startup_sound.py plays it at the next start."""
@@ -565,6 +592,15 @@ def main() -> None:
     media = MediaLibrary({"music": cfg["music_folder"], "jingles": cfg["jingles_folder"],
                           "audiobooks": cfg["audiobooks_folder"], "ondemand": cfg["ondemand_folder"]},
                          on_changed=station.reload_library)
+    # Every station has its jingles folder: made a minute after start-up (not to slow it), and
+    # whenever the themes change
+    def folders(delay=0.0):
+        def run():
+            time.sleep(delay)
+            jingle_folders(media, station)
+        threading.Thread(target=run, name="jingle-folders", daemon=True).start()
+    station.on_profiles = folders
+    folders(60.0)
     serve(station, stream, args.port or settings.http_port, control, args.config, announcer, jobs, updates,
           presets, directory, media, lamps)
 

@@ -31,6 +31,8 @@ def validate(profiles) -> list[dict]:
         if not isinstance(name, str) or not name.strip() or len(name.strip()) > NAME_MAX:
             raise ValueError(f"a list's name must be 1-{NAME_MAX} characters")
         name = " ".join(name.split())
+        if "/" in name or "\\" in name or name.startswith("."):    # (it names the theme's jingles folder)
+            raise ValueError(f"a list's name can't have / or \\ in it, or start with a dot: {name}")
         if name.lower() in seen:
             raise ValueError(f"there are two lists called {name}")
         seen.add(name.lower())

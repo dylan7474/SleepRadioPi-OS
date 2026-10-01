@@ -184,7 +184,7 @@ def test_a_jingle_upload_rescans_only_the_jingles(tmp_path: Path, monkeypatch) -
     monkeypatch.setattr(station_mod, "scan_jingles", lambda *a: calls.append("jingles") or [])
     st.config.jingle_every = 4
     st.reload_library({"jingles"})
-    assert calls == ["jingles"]
+    assert set(calls) == {"jingles"}                             # (the station's and Power-on)
     calls.clear()
     st.reload_library()
     assert "music" in calls and "jingles" in calls                # (no kinds: everything)

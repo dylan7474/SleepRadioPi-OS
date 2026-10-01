@@ -93,8 +93,14 @@ SleepRadio:
 - **A proper shuffle.** No repeat within the last ~20 tracks, and the same
   artist is spaced out.
 - **Jingles** from a shuffled bag (never the same one twice in a row); a
-  short one opens the show. On a theme or artist radio too, whenever
-  jingles are on.
+  short one opens the show. **Each station has its own folder** in the
+  jingles folder (`Station.jingles_folder`): `Sleep Radio/` (the radio's name)
+  for the main show and artist radio, `<theme>/` for each theme -- made by
+  themselves a minute after start-up and whenever the themes change
+  (`main.jingle_folders`), which also moves loose jingles from before into
+  the main show's. No shared jingles: an empty folder means none on that
+  station. `Power-on/` plays at start-up, then the welcome (if made) or the
+  music, whatever was playing before.
 - **News** — BBC News bulletins at :00 (top stories) and :30 (softer
   stories), read with a time line for when they're read, and none in the
   night-time quiet hours. A bulletin still being made when its gap comes

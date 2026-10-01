@@ -23,8 +23,8 @@ def _dj_station(tmp_path: Path):
     hooks = tmp_path / "hooks.txt"
     hooks.write_text("Keep it groovy.\nStay cool, cats.\n")
     jingles = tmp_path / "jingles"
-    jingles.mkdir()
-    (jingles / "sleep_radio.mp3").write_bytes(b"x")
+    (jingles / "Sleep Radio").mkdir(parents=True)          # (the main show's folder)
+    (jingles / "Sleep Radio" / "sleep_radio.mp3").write_bytes(b"x")
     st = _station(tmp_path, voices_dir=voices, hooks_file=str(hooks), broadcast_dj_hooks=False,
                   broadcast_jingle_enabled=False)
     st.jingles_dir = jingles

@@ -81,7 +81,10 @@ software, and the case to print.
   want in the show (storms, old radio shows, long classical pieces): any
   layout, played straight through with no DJ, now or after the song playing.
 - **Jingles** from your own collection, shuffled, and a short one to open
-  the show, on a theme too, whenever jingles are on.
+  the show. **Each station has its own:** Jingles › Sleep Radio for the main
+  show, and a folder for each theme, made when the theme is (an empty one:
+  no jingles on that station). **Jingles › Power-on** plays at start-up,
+  whatever the radio goes on to play, so keep it nameless (an instrumental).
 
 ### How it sounds
 

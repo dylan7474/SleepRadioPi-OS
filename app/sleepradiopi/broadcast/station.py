@@ -68,6 +68,7 @@ SPEECH_WAIT_S = 45.0      # give up on a line that still isn't synthesised after
 FILL_JINGLE_MAX_S = 40.0  # the DJ isn't ready (power-on, back to the show, a gap): one of the
                           # jingles this short instead of a wait, then the music, as a real station
                           # would (the user's shortest are ~31-38 s; the rest 55 s+)
+POWER_ON_FOLDER = "Power-on"  # Jingles/Power-on: a nameless start-up jingle (any station may be about to play)
 GAP_GRACE_S = 2.0         # in a gap, a line not made by the song's end gets this long, then it's skipped
 
 
@@ -253,16 +254,19 @@ class Station:
         except ValueError as e:              # a hand-edited config: don't stop the station
             log.warning("profiles ignored: %s", e)
             self.profiles = []
-        self.jingles = scan_jingles(self.jingles_dir) if self.config.jingle_every else []
-        self._jingle_paths = {j.path for j in self.jingles}
+        # Each station has its own jingles: Jingles/<theme>, or Jingles/<the radio's name> for the
+        # main show (and artist radio); loaded for the station that's playing (_load_jingles).
+        self.jingles: list[JingleClip] = []
+        self._jingles_from: Path | None = None
+        self._power_on: list[JingleClip] = []
+        self._jingle_paths: set[Path] = set()
         self._jingle_bag: deque[JingleClip] = deque()
+        self.on_profiles: Callable[[], None] | None = None
         self._last_jingle: JingleClip | None = None
 
         self._tts_pool = ThreadPoolExecutor(1, thread_name_prefix="speech")
         self._scan_pool = ThreadPoolExecutor(1, thread_name_prefix="scan")
         self._scan_futures: dict[Path, Future] = {}
-        for j in self.jingles:  # a handful of short files: scan them all once, up front
-            self._scan(j.path)
 
         self._lock = threading.Lock()
         self._listeners = 0
@@ -333,6 +337,7 @@ class Station:
             self._use_selection(profile=cfg["broadcast_profile"])
         elif cfg.get("broadcast_artist"):
             self._use_selection(artist=cfg["broadcast_artist"])
+        self._load_jingles()
         self._prepare_opening()
 
     # --- listeners / show lifecycle ---------------------------------------------------
@@ -431,7 +436,16 @@ class Station:
         station would; the DJ joins at the next gap. A welcome that is ready is said
         as usual. The jingle follows the jingles on/off setting only -- on a theme or
         artist radio too (the user's choice)."""
-        if all(s.speech.future.done() for s in steps if s.kind == "say"):
+        ready = all(s.speech.future.done() for s in steps if s.kind == "say")
+        power_on = random.choice(self._power_on) if why == "power-on" and self._power_on else None
+        if power_on is not None:              # (the user's nameless start-up jingle, whatever plays next)
+            log.info("power-on: the start-up jingle%s", ", then the welcome" if ready else "; the welcome isn't ready")
+            if not ready:
+                for step in steps:
+                    if step.kind == "say":
+                        step.speech.future.cancel()
+            return [Step("jingle", jingle=power_on)] + (steps if ready else [])
+        if ready:
             return steps
         for step in steps:
             if step.kind == "say":
@@ -1446,8 +1460,29 @@ class Station:
     def _jingles_available(self) -> bool:
         if self.jingles:
             return True
-        folder = Path(self.jingles_dir)
-        return folder.is_dir() and any(folder.iterdir())
+        from .library import _audio_files
+        return bool(_audio_files(Path(self.jingles_dir)))     # (in any station's folder)
+
+    def jingles_folder(self, profile: str | None = None) -> Path:
+        """A station's jingles: Jingles/<theme>, or Jingles/<the radio's name> for the
+        main show and artist radio (no shared jingles: the user's choice)."""
+        from sleepradiopi.config import brand
+        name = profile if profile is not None else self.profile
+        return Path(self.jingles_dir) / (name or brand.name)
+
+    def _load_jingles(self, force: bool = False) -> None:
+        """The playing station's jingles (when jingles are on), and the power-on ones;
+        again only when the station's folder changes (or force: they were changed)."""
+        folder = self.jingles_folder()
+        if folder == self._jingles_from and not force:
+            return
+        self._jingles_from = folder
+        self.jingles = scan_jingles(folder) if self.config.jingle_every else []
+        self._power_on = scan_jingles(Path(self.jingles_dir) / POWER_ON_FOLDER)
+        self._jingle_paths = {j.path for j in self.jingles + self._power_on}
+        self._jingle_bag.clear()
+        for j in self.jingles + self._power_on:     # (a handful of short files: loudness up front)
+            self._scan(j.path)
 
     def set_dj(self, chattiness: str | None = None, dj_hooks: bool | None = None,
                jingle_every: int | None = None, news_enabled: bool | None = None,
@@ -1477,12 +1512,9 @@ class Station:
         if jingle_every is not None:
             if not 0 <= jingle_every <= 50:
                 raise ValueError("jingles: 0 (off) to every 50 tracks")
-            if jingle_every and not self.jingles:     # off at start-up: find them now
-                self.jingles = scan_jingles(self.jingles_dir)
-                self._jingle_paths = {j.path for j in self.jingles}
-                for j in self.jingles:
-                    self._scan(j.path)
             self.config.jingle_every = jingle_every
+            if jingle_every and not self.jingles:     # off at start-up: find them now
+                self._load_jingles(force=True)
             self._tracks_since_jingle = 0
         if news_enabled is not None:
             self.config.news_enabled = bool(news_enabled)
@@ -2043,10 +2075,6 @@ class Station:
         ondemand = self._scan_ondemand() if "ondemand" in kinds else self.ondemand_tracks
         if "audiobooks" in kinds:
             self._scan_books()
-        if "jingles" in kinds:
-            jingles = scan_jingles(self.jingles_dir) if self.config.jingle_every or self.jingles else []
-        else:
-            jingles = self.jingles
         with self._lock:
             self.tracks = tracks
             self.ondemand_tracks = ondemand
@@ -2054,17 +2082,15 @@ class Station:
                 self._album_index = None
                 self._path_index = None
             self._use_selection(self.artist, self.profile)
+            if "jingles" in kinds:
+                self._load_jingles(force=True)
+            jingles = self.jingles
             requested = list(self._queue)[:self._n_requested]
             self._n_requested = sum(1 for t in requested if t.path.exists())
             self._queue = deque(t for t in self._queue if t.path.exists())
             self._pending = deque(t for t in self._pending if t.path.exists())
             if self._opening is not None and not self._opening[2].path.exists():
                 self._opening = None
-            self.jingles = jingles
-            self._jingle_paths = {j.path for j in jingles}
-            self._jingle_bag.clear()
-        for j in jingles:
-            self._scan(j.path)
         if self._opening is None and not self.is_on_air:
             self._prepare_opening()
         log.info("library reloaded (%s): %d tracks, %d jingles, %d audiobooks", ", ".join(sorted(kinds)),
@@ -2082,7 +2108,7 @@ class Station:
             return cached[1]
         from .library import _audio_files
         try:
-            n = len(_audio_files(Path(self.jingles_dir)))
+            n = len(_audio_files(self.jingles_folder()))       # (this station's)
         except OSError:
             n = 0
         self._jingle_n = (time.monotonic(), n)
@@ -2121,6 +2147,8 @@ class Station:
         self.artist, self.profile = (None, profile) if profile else (artist, None)
         self.selector = BroadcastSelector(pool)
         self.builder.station = name
+        if hasattr(self, "_scan_pool"):       # (not while starting up: _load_jingles comes after)
+            self._load_jingles()
         return found
 
     def set_artist(self, artist: str | None) -> bool:
@@ -2152,6 +2180,8 @@ class Station:
         if self.profile:
             still = any(p["name"].lower() == self.profile.lower() for p in self.profiles)
             self._reselect(profile=self.profile if still else None)
+        if self.on_profiles is not None:      # (main: each new theme gets its jingles folder)
+            self.on_profiles()
 
     def _reselect(self, artist: str | None = None, profile: str | None = None) -> bool:
         with self._lock:

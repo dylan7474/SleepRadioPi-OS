@@ -602,9 +602,12 @@ async function loadFolder(f) {
     f.data = d;
   } else if (f.box === "actions") {
     f.kids = Object.values(ACTION).filter(a => !FLIP[a.action]).map(a => a.id);
-  } else if (f.box === "jingles") {
-    const d = await api("/api/media?kind=jingles&path=");
-    f.kids = d.files.filter(x => x.audio).map(x => mk({ id: "j:" + x.name, kind: "jingle", title: cleanName(x.name), root: "jingles", path: x.name, mb: x.size / 1e6, bytes: x.size }).id);
+  } else if (f.box === "jingles") {                 // a folder per station (and Power-on), each with its jingles
+    const at = f.path || "", d = await api(`/api/media?kind=jingles&path=${encodeURIComponent(at)}`), pre = at ? at + "/" : "";
+    f.kids = [...(d.folders || []).map(x => mk({ id: "jf:" + pre + x.name, kind: "folder", title: x.name, box: "jingles", path: pre + x.name,
+                                                  kids: O["jf:" + pre + x.name]?.kids || [], sym: "J", alt: true }).id),
+              ...d.files.filter(x => x.audio).map(x => mk({ id: "j:" + pre + x.name, kind: "jingle", title: cleanName(x.name), root: "jingles",
+                                                            path: pre + x.name, mb: x.size / 1e6, bytes: x.size }).id)];
   } else if (f.box === "lists") {
     const d = await api("/api/artists");
     f.kids = [SHOW.id, ...d.profiles.map(p => mk({ id: "ls:" + p.name, kind: "list", name: p.name, title: p.name, count: p.artists.length }).id)];
@@ -1352,8 +1355,10 @@ function folderView(o, box, win) {
     const up = el("input", { type: "file", multiple: true, hidden: true, accept: ".mp3,audio/mpeg" });
     up.onchange = () => { upload(o, [...up.files].map(f => [f, f.name])); up.value = ""; };
     const picked = selectedIn(o);
-    tools.append(T("Upload…", () => up.click()), T("Download", () => picked && download(picked), "", !picked), up,
-      el("span", { className: "note", textContent: "Short mp3s the DJ plays between songs (on the main mix) · drag one to the Trash to delete it" }));
+    tools.append(T("Upload…", () => up.click(), "", !o.path), T("Download", () => picked && download(picked), "", !picked), up,
+      el("span", { className: "note", textContent: o.path ? (o.path === "Power-on" ? "Played at power-on, whatever the radio goes on to play: keep it nameless (an instrumental)"
+        : `${o.title}'s own jingles · empty: none on that station · drag one to another station's folder to move it`)
+        : "A folder for each station (made with each theme) and Power-on · open one to upload into it" }));
   }
   else if (o.box === "books") {
     const up = el("input", { type: "file", multiple: true, hidden: true, accept: ".mp3,.m4b,audio/*" });
@@ -1376,7 +1381,9 @@ function folderView(o, box, win) {
   if (o.root || o.box === "books" || o.box === "jingles") {   // files and folders from the computer
     body.addEventListener("dragover", e => { if ([...e.dataTransfer.types].includes("Files")) { e.preventDefault(); box.classList.add("over"); } });
     body.addEventListener("dragleave", () => box.classList.remove("over"));
-    body.addEventListener("drop", async e => { e.preventDefault(); box.classList.remove("over"); upload(o, await dropped(e.dataTransfer)); });
+    body.addEventListener("drop", async e => { e.preventDefault(); box.classList.remove("over");
+      if (o.box === "jingles" && !o.path) return toast("Open a station's folder and drop the jingles there.");
+      upload(o, await dropped(e.dataTransfer)); });
   }
   box.append(body);
   const media = o.root || o.box === "books" || o.box === "jingles";
@@ -1499,6 +1506,13 @@ function download(o) {
   const a = el("a", { href: `/api/media/download?kind=${kind}&path=${encodeURIComponent(path)}`, download: "" });
   document.body.append(a); a.click(); a.remove();
   toast(o.kind === "track" || o.kind === "book" ? `Downloading ${o.title}.` : `Downloading ${o.title} as a zip.`);
+}
+async function moveJingle(o, dest) {
+  const from = parentOf(o.id);
+  if (from === dest) return;
+  try { await api("/api/media/move", { kind: "jingles", path: o.path, to_kind: "jingles", to: dest.path || "" });
+        await afterChange([from, dest].filter(Boolean)); toast(`Moved “${o.title}” to ${dest.title}.`); }
+  catch (e) { toast("Not moved: " + e.message + "."); }
 }
 async function moveInto(src, dest) {
   const o = O[src.id];
@@ -2578,6 +2592,7 @@ async function drop(src, target, ev) {
   if (dest.box === "playlists") return toast("Drop it onto one of the playlists.");
   if (dest.box === "programmes") return toast("Drop it onto one programme, or into its timeline.");
   if (dest.kind === "folder" && dest.root) return moveInto(src, dest);
+  if (dest.box === "jingles" && o.kind === "jingle") return moveJingle(o, dest);   // from one station's jingles to another's
   if (![src.parent, src.where, src.id].includes(dest.id)) toast(`“${o.title}” can't go in ${dest.title}.`);   // (every drop answers)
 }
 // several things dropped at once (the first is the one that was dragged)
@@ -2650,7 +2665,7 @@ async function trashMany(srcs) {
     return api("/api/playlists", { playlists: all }).then(d => { loadPlaylists(d); pickOnly(null); drawDesk(); toast(`Took ${srcs.length} songs out of ${from.title}.`); }).catch(e => toast(e.message));
   }
   if (objs.every(o => (o.root && o.path) || o.kind === "book")) {    // files: one question for them all
-    if (objs.some(o => o.kind === "jingle") && from !== JINGLES) return toast("Delete jingles from the Jingles window.");
+    if (objs.some(o => o.kind === "jingle") && from?.box !== "jingles") return toast("Delete jingles from the Jingles window.");
     return ask(`Delete these ${objs.length} from the radio for good? Folders and albums go with everything in them, and it can't be undone.`, "Delete for good", async () => {
       let done = 0;
       for (const o of objs) {
@@ -2724,7 +2739,7 @@ function trash(src) {
     return async () => { O[o.id] = o; PROGRAMMES.kids.splice(Math.max(0, at), 0, o.id); await saveProgrammes(); }; });
   if ((o.root && o.path) || o.kind === "book") {
     const what = o.kind === "folder" ? "the folder and everything in it" : o.kind === "album" ? "the album (its folder)" : "it";
-    if (o.kind === "jingle" && from !== JINGLES) return toast("Delete jingles from the Jingles window.");
+    if (o.kind === "jingle" && from?.box !== "jingles") return toast("Delete jingles from the Jingles window.");
     return ask(`Delete “${o.title}” from the radio for good? This deletes ${what}, and can't be undone.`, "Delete for good", async () => {
       try { await api("/api/media/delete", { kind: o.kind === "book" ? "audiobooks" : o.root, path: o.kind === "book" ? o.key : o.path });
             closeFor(o); await afterChange([from, o.kind === "book" ? BOOKS : null, o.kind === "jingle" ? JINGLES : null].filter(Boolean)); toast(`Deleted “${o.title}” for good.`); }
