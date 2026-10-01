@@ -97,8 +97,8 @@ def test_web_api(tmp_path: Path) -> None:
         saved = load(conf)
         assert saved.broadcast_profile == "Friday List" and saved.profiles[0]["artists"]
         other = {"name": "Other", "artists": FRIDAY["artists"]}
-        assert req("/api/profiles", {"profiles": [other]})["profile"] is None   # deleted while playing
-        assert load(conf).broadcast_profile is None
+        assert req("/api/profiles", {"profiles": [other]})["profile"] == "Other"   # deleted while playing: another theme
+        assert load(conf).broadcast_profile == "Other"
         with pytest.raises(urllib.error.HTTPError) as err:                # there's always at least one theme
             req("/api/profiles", {"profiles": []})
         assert err.value.code == 400 and "at least one theme" in json.load(err.value)["error"]

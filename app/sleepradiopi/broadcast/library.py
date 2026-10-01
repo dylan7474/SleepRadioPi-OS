@@ -95,9 +95,12 @@ def scan_music(folder: Path, cache_path: Path | None = None) -> list[BroadcastTr
     return tracks
 
 
-def scan_jingles(folder: Path) -> list[JingleClip]:
+def scan_jingles(folder: Path, nested: bool = True) -> list[JingleClip]:
+    """The jingles in a folder (nested: and in the folders inside it)."""
     clips = []
-    for p in _audio_files(folder):
+    files = _audio_files(folder) if nested else sorted(
+        p for p in folder.iterdir() if p.is_file() and p.suffix.lower() in AUDIO_EXTENSIONS) if folder.is_dir() else []
+    for p in files:
         tags = _tags(p)
         length = getattr(getattr(tags, "info", None), "length", 0) or 0
         clips.append(JingleClip(p, float(length)))

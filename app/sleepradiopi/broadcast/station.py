@@ -68,7 +68,7 @@ SPEECH_WAIT_S = 45.0      # give up on a line that still isn't synthesised after
 FILL_JINGLE_MAX_S = 40.0  # the DJ isn't ready (power-on, back to the show, a gap): one of the
                           # jingles this short instead of a wait, then the music, as a real station
                           # would (the user's shortest are ~31-38 s; the rest 55 s+)
-POWER_ON_FOLDER = "Power-on"  # Jingles/Power-on: a nameless start-up jingle (any station may be about to play)
+POWER_ON_FOLDER = "Power-on"  # Jingles/Power-on: the start-up jingle when the station has none of its own
 GAP_GRACE_S = 2.0         # in a gap, a line not made by the song's end gets this long, then it's skipped
 
 
@@ -343,6 +343,8 @@ class Station:
             self._use_selection(profile=cfg["broadcast_profile"])
         elif cfg.get("broadcast_artist"):
             self._use_selection(artist=cfg["broadcast_artist"])
+        elif self.profiles:
+            self._use_selection()             # (no default station: the first theme)
         self._load_jingles()
         self._prepare_opening()
 
@@ -443,9 +445,9 @@ class Station:
         as usual. The jingle follows the jingles on/off setting only -- on a theme or
         artist radio too (the user's choice)."""
         ready = all(s.speech.future.done() for s in steps if s.kind == "say")
-        power_on = random.choice(self._power_on) if why == "power-on" and self._power_on else None
-        if power_on is not None:              # (the user's nameless start-up jingle, whatever plays next)
-            log.info("power-on: the start-up jingle%s", ", then the welcome" if ready else "; the welcome isn't ready")
+        power_on = self._start_up_jingle() if why == "power-on" else None
+        if power_on is not None:              # (the station's own, else a loose one in the jingles folder)
+            log.info("power-on: %s%s", power_on.path.name, ", then the welcome" if ready else "; the welcome isn't ready")
             if not ready:
                 for step in steps:
                     if step.kind == "say":
@@ -461,11 +463,12 @@ class Station:
         return [Step("jingle", jingle=clip)] if clip else []
 
     def _fill_jingle(self) -> JingleClip | None:
-        """A short jingle to play while the DJ isn't ready (None: jingles off, or none short)."""
-        if self.config.jingle_every <= 0:
-            return None
-        short = [j for j in self.jingles if 0 < j.duration_s <= FILL_JINGLE_MAX_S]
-        return random.choice(short) if short else None
+        """A jingle to play while the DJ isn't ready: one of the station's own short
+        ones (when jingles are on), else one from Jingles/Power-on. None: a gap it is
+        (no jingles to be had)."""
+        own = self.jingles if self.config.jingle_every > 0 else []
+        pick = [j for j in own if 0 < j.duration_s <= FILL_JINGLE_MAX_S] or self._power_on
+        return random.choice(pick) if pick else None
 
     def _run_music_show(self, back: bool = False) -> None:
         self._show_clock.reset()
@@ -1472,12 +1475,27 @@ class Station:
         from .library import _audio_files
         return bool(_audio_files(Path(self.jingles_dir)))     # (in any station's folder)
 
-    def jingles_folder(self, profile: str | None = None) -> Path:
-        """A station's jingles: Jingles/<theme>, or Jingles/<the radio's name> for the
-        main show and artist radio (no shared jingles: the user's choice)."""
-        from sleepradiopi.config import brand
+    def jingles_folder(self, profile: str | None = None) -> Path | None:
+        """A theme's jingles: Jingles/<theme> (no shared jingles: the user's choice).
+        None for artist radio, which has none. (No themes at all, which a radio
+        never has for long: Jingles/<the radio's name>.)"""
         name = profile if profile is not None else self.profile
-        return Path(self.jingles_dir) / (name or brand.name)
+        if name:
+            return Path(self.jingles_dir) / name
+        if self.artist or self.profiles:
+            return None
+        from sleepradiopi.config import brand
+        return Path(self.jingles_dir) / brand.name
+
+    def _start_up_jingle(self) -> JingleClip | None:
+        """At power-on: one of the playing theme's jingles (a short one if it has
+        any), else one from Jingles/Power-on (the user's start-up jingle, for any
+        station)."""
+        folder = self.jingles_folder()
+        own = (self.jingles or (scan_jingles(folder) if folder else [])) if self.config.jingle_every > 0 else []
+        short = [j for j in own if 0 < j.duration_s <= FILL_JINGLE_MAX_S]
+        pick = short or own or self._power_on
+        return random.choice(pick) if pick else None
 
     def _load_jingles(self, force: bool = False) -> None:
         """The playing station's jingles (when jingles are on), and the power-on ones;
@@ -1486,7 +1504,7 @@ class Station:
         if folder == self._jingles_from and not force:
             return
         self._jingles_from = folder
-        self.jingles = scan_jingles(folder) if self.config.jingle_every else []
+        self.jingles = scan_jingles(folder) if self.config.jingle_every and folder else []
         self._power_on = scan_jingles(Path(self.jingles_dir) / POWER_ON_FOLDER)
         self._jingle_paths = {j.path for j in self.jingles + self._power_on}
         self._jingle_bag.clear()
@@ -1726,6 +1744,16 @@ class Station:
         skipped -- a message comes round again at the next gap -- and a short jingle
         fills in, once, if the gap had none, then the next song."""
         filled = any(s.kind == "jingle" for s in steps)
+
+        def fill() -> bool:
+            """(a gap) Something isn't ready: a jingle while it's made, once a gap."""
+            nonlocal filled
+            clip = None if filled else self._fill_jingle()
+            filled = filled or clip is not None
+            if clip is not None:
+                self._run_steps([Step("jingle", jingle=clip)])
+            return clip is not None
+
         for step in steps:
             if self._halted() or self._jump is not None:
                 return
@@ -1735,16 +1763,15 @@ class Station:
                 step.clock.speech = self._say(self.builder.time_line())
             speech = step.speech if step.kind == "say" else step.clock.speech if step.kind == "clock" else None
             if gap and speech is not None and self._await(speech.future, GAP_GRACE_S) is None and not self._halted():
-                speech.future.cancel()        # (a no-op if it's being made: it's just not used)
-                if step.message is not None:
-                    self.messages.unplayed(step.message)
-                clip = None if filled else self._fill_jingle()
-                filled = filled or clip is not None
-                log.info("gap: the DJ isn't ready (%s)%s", speech.text[:60],
-                         "; a short jingle instead" if clip else "; on to the music")
-                if clip is not None:
-                    self._run_steps([Step("jingle", jingle=clip)])
-                continue
+                jingled = fill()
+                if not speech.future.done():  # (still not made after the jingle, or no jingle)
+                    speech.future.cancel()    # (a no-op if it's being made: it's just not used)
+                    if step.message is not None:
+                        self.messages.unplayed(step.message)
+                    log.info("gap: the DJ isn't ready (%s)%s", speech.text[:60],
+                             "; a jingle instead" if jingled else "; on to the music")
+                    continue
+                log.info("gap: a jingle while the DJ got ready (%s)", speech.text[:60])
             if step.kind == "say":
                 self._speak(step.speech)
             elif step.kind == "clock":
@@ -1756,7 +1783,7 @@ class Station:
                     self.history.appendleft({"kind": "jingle", "text": name, "at": time.time()})
                     self._play_file(clip.path, OnAir("jingle", name))
             elif step.kind == "news":
-                self._read_news(step.news)
+                self._read_news(step.news, fill if gap else None)
 
     # --- news --------------------------------------------------------------------------
 
@@ -1784,11 +1811,21 @@ class Station:
 
         threading.Thread(target=prepare, name="news-prep", daemon=True).start()
 
-    def _read_news(self, news: NewsItem) -> None:
+    def _read_news(self, news: NewsItem, fill: Callable[[], bool] | None = None) -> None:
+        """The bulletin: its time line, then the stories. fill (in a gap): the time line
+        isn't made yet -- a jingle while it's made (once); still not made: straight
+        to the stories, never a wait in silence."""
         if news.time_line is None:
             news.time_line = self._say(bulletin_time_line(news.due.mark, datetime.now()),
                                        self.news_voice, self.config.news_speed)
-        if self._speak(news.time_line, "news"):  # a skip in the time line skips the whole bulletin
+        line = news.time_line
+        if fill is not None and self._await(line.future, GAP_GRACE_S) is None and not self._halted():
+            fill()
+            if not line.future.done():
+                line.future.cancel()
+                log.info("news: the time line isn't ready; straight to the stories")
+                line = None
+        if line is None or self._speak(line, "news"):  # a skip in the time line skips the whole bulletin
             self._speak(news.body, "news")
         self.news_repo.mark_read(news.headlines)
 
@@ -2129,7 +2166,8 @@ class Station:
             return cached[1]
         from .library import _audio_files
         try:
-            n = len(_audio_files(self.jingles_folder()))       # (this station's)
+            folder = self.jingles_folder()
+            n = len(_audio_files(folder)) if folder else 0       # (this station's)
         except OSError:
             n = 0
         self._jingle_n = (time.monotonic(), n)
@@ -2153,7 +2191,7 @@ class Station:
         has nothing to play for it (or there's no such profile)."""
         found, pool, name = True, self.tracks, artist_station_name(None)
         if not artist and not profile:
-            profile = self.default_theme()   # (everything: the all-my-music theme, when there is one)
+            profile = self._fallback_theme()  # (no default station: the theme last played, else the first)
         if profile:
             match = next((p for p in self.profiles if p["name"].lower() == profile.lower()), None)
             keys = {artist_key(a) for a in match["artists"]} if match else set()
@@ -2165,9 +2203,17 @@ class Station:
             pool = [t for t in self.tracks if artist_key(t.artist) == key]
             name = artist_station_name(artist)
         if (artist or profile) and not pool:
+            fb = self._fallback_theme()
+            if fb and fb.lower() != (profile or "").lower() and any(
+                    p["name"] == fb and (p.get("all") or p["artists"]) for p in self.profiles):
+                log.warning("nothing to play for %r; playing %s", profile or artist, fb)
+                self._use_selection(profile=fb)
+                return False
             log.warning("nothing to play for %r; playing everything", profile or artist)
             found, artist, profile, pool, name = False, None, None, self.tracks, artist_station_name(None)
         self.artist, self.profile = (None, profile) if profile else (artist, None)
+        if profile:
+            self._last_theme = profile
         self.selector = BroadcastSelector(pool)
         self.builder.station = name
         if hasattr(self, "base"):             # (not while starting up: they come after)
@@ -2176,16 +2222,20 @@ class Station:
             self._load_jingles()
         return found
 
-    def default_theme(self) -> str | None:
-        """The theme that plays all my music (Sleep Radio, the main show, is one): what
-        "everything" means once there is one."""
-        return next((p["name"] for p in self.profiles if p.get("all")), None)
+    def _fallback_theme(self) -> str | None:
+        """There's no default station, only themes: going "back to the show" (after a
+        station, or artist radio) is the theme last played, else the first."""
+        names = [p["name"] for p in self.profiles]
+        last = getattr(self, "_last_theme", None)
+        if last and last.lower() in (n.lower() for n in names):
+            return last
+        return names[0] if names else None
 
     def set_artist(self, artist: str | None) -> bool:
         """Play only this artist (None = everything: the all-my-music theme, if there
         is one). On air, the track lined up next is kept only if it's being announced
         or fits. False if the library has nothing by that artist."""
-        if not artist and self.default_theme():
+        if not artist and self._fallback_theme():
             return self.set_profile(None)
         if self._already(artist, None):
             return True
@@ -2194,7 +2244,7 @@ class Station:
     def set_profile(self, profile: str | None) -> bool:
         """Play only the artists on this profile (None = everything: the all-my-music
         theme, if there is one)."""
-        profile = profile or self.default_theme()
+        profile = profile or self._fallback_theme()
         if self._already(None, profile):
             return True
         return self._reselect(profile=profile)

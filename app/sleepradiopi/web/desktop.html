@@ -619,7 +619,7 @@ async function loadFolder(f) {
   } else if (f.box === "lists") {
     const d = await api("/api/artists");
     const themes = d.profiles.map(p => mk({ id: "ls:" + p.name, kind: "list", name: p.name, title: p.name, count: p.artists.length, all: !!p.all }).id);
-    f.kids = d.profiles.some(p => p.all) ? themes : [SHOW.id, ...themes];   // (Sleep Radio is a theme of its own now)
+    f.kids = themes;                                 // (no default station: only themes)
   }
   f.loaded = true;
 }
@@ -968,14 +968,14 @@ function loadDesk() {
   if (s && Array.isArray(s.icons)) {
     for (const p of s.icons) { if (!O[p.id] && p.snap) mk({ ...p.snap, kids: [], items: [], eps: [], blocks: [] }); if (O[p.id]) desk.push({ id: p.id, x: p.x, y: p.y, alias: !!p.alias }); }
     radioPos = s.radio || null;
-    for (const f of [ACTIONS_BOX, JINGLES, POWER_ON])      // (new since the layout was saved: in the first free spot)
+    desk = desk.filter(p => p.id !== SHOW.id && p.id !== POWER_ON.id);   // (no default station; Power-on lives in Jingles)
+    for (const f of [ACTIONS_BOX, JINGLES, LISTS])      // (new since the layout was saved: in the first free spot)
       if (!desk.some(p => p.id === f.id)) desk.push({ id: f.id, ...freeSpot() });
   }
   if (!desk.length) {
     [MUSIC, ONDEMAND, BOOKS, PODCASTS, STATIONS, PLAYLISTS, PROGRAMMES, LISTS, ACTIONS_BOX].forEach((f, i) => desk.push({ id: f.id, x: 18 + Math.floor(i / 8) * 122, y: 14 + (i % 8) * 92 }));
-    [SHOW, DJ, NOTES, BDAYS].forEach((o, i) => desk.push({ id: o.id, x: 140, y: 14 + i * 100, alias: false }));
+    [DJ, NOTES, BDAYS].forEach((o, i) => desk.push({ id: o.id, x: 140, y: 14 + i * 100, alias: false }));
     desk.push({ id: JINGLES.id, ...freeSpot() });
-    desk.push({ id: POWER_ON.id, ...freeSpot() });
   }
 }
 function freeSpot() {                  // the first place on the icon grid that nothing is near, column by column
@@ -1221,7 +1221,7 @@ function presetOf(o) {
 function buttonChoices() {
   const kids = f => f.kids.map(id => O[id]).filter(Boolean);
   return [["Actions", Object.values(ACTION).filter(a => !FLIP[a.action])],
-          ["Sleep Radio and themes", [SHOW, ...kids(LISTS).filter(o => o.kind === "list")]],
+          ["Themes", kids(LISTS).filter(o => o.kind === "list")],
           ["Stations", kids(STATIONS)], ["Playlists", kids(PLAYLISTS)], ["Programmes", kids(PROGRAMMES)],
           ["Podcasts", kids(PODCASTS)], ["Audiobooks", kids(BOOKS)],
           ["Messages", kids(NOTES).filter(o => o.kind === "note")], ["Jingles", kids(JINGLES)], ["Birthdays", kids(BDAYS).filter(o => o.kind === "person")]];
@@ -2369,14 +2369,14 @@ function programmeView(o, box, win) {
   startIn.onchange = () => { o.start = startIn.value; saveProgrammes(); };
   const then = el("select", { id: "then-" + o.id });
   then.setAttribute("aria-label", "When it's over");
-  for (const [v, s] of [["show", "then back to Sleep Radio"], ["stop", "then stop (silence)"], ["sleep", "then fade out and pause"], ["repeat", "then start again"], ["keep", "then leave what's playing"]])
+  for (const [v, s] of [["show", "then back to the theme"], ["stop", "then stop (silence)"], ["sleep", "then fade out and pause"], ["repeat", "then start again"], ["keep", "then leave what's playing"]])
     then.append(new Option(s, v, false, o.then === v));
   for (const q of PROGRAMMES.kids.map(id => O[id]).filter(q => q && q !== o)) then.append(new Option("then play " + q.title, "chain:" + q.title, false, o.then === "chain" && (o.chain || "").toLowerCase() === q.title.toLowerCase()));
   then.onchange = () => { if (then.value.startsWith("chain:")) { o.then = "chain"; o.chain = then.value.slice(6); } else { o.then = then.value; delete o.chain; } saveProgrammes(); };
   const gapSel = el("select", { id: "gap-" + o.id });
   gapSel.setAttribute("aria-label", "In the gaps");
   const gapObj = o.gap && typeof o.gap === "object" ? O[o.gap.id] : null;
-  for (const [v, t] of [["show", "gaps: Sleep Radio"], ["silence", "gaps: silence"], ["pick", gapObj ? "gaps: " + gapObj.title : "gaps: something else…"]]) gapSel.append(new Option(t, v, false, (gapObj ? "pick" : o.gap || "show") === v));
+  for (const [v, t] of [["show", "gaps: the theme playing"], ["silence", "gaps: silence"], ["pick", gapObj ? "gaps: " + gapObj.title : "gaps: something else…"]]) gapSel.append(new Option(t, v, false, (gapObj ? "pick" : o.gap || "show") === v));
   gapSel.onchange = () => { if (gapSel.value === "pick") { win.gapPick = true; drawDesk(); toast("Drop a station, album, playlist… onto the box that appeared, to play in the gaps."); } else { o.gap = gapSel.value; win.gapPick = false; saveProgrammes(); } };
   // Arm: it starts by itself at its time -- once, unless the repeat says otherwise
   const armBtn = T(o.auto ? `Armed ✓ · ${o.start} · Disarm` : "Arm", () => {
@@ -2536,7 +2536,7 @@ function programmeView(o, box, win) {
   const b = o.blocks[win.blk], w = win.sw != null ? o.switches?.[win.sw] : null;
   if (w) wrap.append(switchInspector(o, w, win, s0));
   else if (b) wrap.append(inspector(o, b, win));
-  else wrap.append(el("p", { className: "muted", textContent: "Drop anything from the desktop or a window onto the timeline to add a block: an album, a folder, songs, a station, a playlist, a book, a podcast, Sleep Radio or a theme. Drop onto a block to add to it. Lengths of music are estimates." }));
+  else wrap.append(el("p", { className: "muted", textContent: "Drop anything from the desktop or a window onto the timeline to add a block: an album, a folder, songs, a station, a playlist, a book, a podcast or a theme. Drop onto a block to add to it. Lengths of music are estimates." }));
   body.append(wrap);
   box.append(body);
 }

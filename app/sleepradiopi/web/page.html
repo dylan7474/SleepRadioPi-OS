@@ -1345,7 +1345,7 @@ async function loadArtists() {
     const data = await (await fetch("/api/artists", { cache: "no-store" })).json();
     allArtists = data.artists; allLists = data.profiles;
     const sel = $("artistRadio");
-    sel.replaceChildren(new Option(`All artists (${RADIO})`, ""));
+    sel.replaceChildren(...(allLists.length ? [] : [new Option(`All artists (${RADIO})`, "")]));   // (themes: no default station)
     if (allLists.length) {
       const g = Object.assign(document.createElement("optgroup"), { label: "Your themes" });
       allLists.forEach(p => g.append(new Option(`${p.name} (${p.artists.length} artists)`, "p:" + p.name)));
@@ -1378,7 +1378,7 @@ $("artistRadio").onchange = async e => {
                                                    body: JSON.stringify(body) })).json();
     showSelection(r.artist, r.profile, r.station_name);
     $("artistNote").textContent = !r.found ? "Nothing to play for that here; playing everything."
-      : v ? `${r.station_name}: after the song that's lined up next.` : "Back to everything.";
+      : v ? `${r.station_name}: after the song that's lined up next.` : `Back to ${r.station_name}.`;
   } catch { $("artistNote").textContent = "Couldn't reach the radio."; }
 };
 
@@ -2760,7 +2760,7 @@ function showRadio(src, err) {
     loadButtons();
     drawHome();
   }
-  if (err && !src) rNote("rNote", "Stopped " + err + ". Back on " + RADIO + ".", true);
+  if (err && !src) rNote("rNote", "Stopped " + err + ". Back on " + (lastStatus?.station_name || RADIO) + ".", true);
   else if (src || !$("rNote").classList.contains("bad")) rNote("rNote", "");
   for (const b of document.querySelectorAll("#rStations button[data-url]")) markPlay(b);
 }
@@ -2849,7 +2849,7 @@ async function stopRadio() {
     const d = await radioPost("/api/radio/stop");
     rNote("rNote", "");
     showRadio(d.source, null);
-    toast("Back to " + RADIO);
+    toast("Back to " + (lastStatus?.station_name || RADIO));
     setTimeout(poll, 800);
   } catch (e) { rNote("rNote", "Couldn't: " + e.message + ".", true); }
 }
@@ -2886,8 +2886,7 @@ async function loadButtons() {
   } catch {}
 }
 function buttonChoices() {
-  const groups = [[RADIO, [[`${RADIO} (all artists)`, { kind: "show", artist: null, profile: null }],
-                                   ...bLists.map(l => [l.name, { kind: "show", profile: l.name }])]],
+  const groups = [["Themes", bLists.map(l => [l.name, { kind: "show", profile: l.name }])],
                   ["My stations", rStations.map(st => [st.name, { kind: "radio", ...st }])],
                   ["Playlists", playlists.flatMap(p => [[p.name, { kind: "playlist", name: p.name, shuffle: false }],
                                                         [p.name + " (shuffled)", { kind: "playlist", name: p.name, shuffle: true }]])],

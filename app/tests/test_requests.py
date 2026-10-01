@@ -109,13 +109,14 @@ def test_jingles_on_a_theme_or_artist_radio_too(tmp_path: Path, monkeypatch) -> 
     assert not any(s.kind == "jingle" for s in st._plan_gap(track, st._take_next()))
 
 
-def test_an_opening_jingle_on_a_theme_too(tmp_path: Path) -> None:
+def test_an_opening_jingle_but_none_on_artist_radio(tmp_path: Path) -> None:
+    """A station's jingles are its own folder's; artist radio (a quick play) has none."""
     st = _station(tmp_path)
     st.jingles = [JingleClip(Path("sleep-radio.mp3"), 4.0)]
     st._reselect(artist=None)                    # rebuilds the opening
     assert any(s.kind == "jingle" for s in st._opening[1])
     st.set_artist("The Beatles")
-    assert any(s.kind == "jingle" for s in st._opening[1])
+    assert st.jingles == [] and not any(s.kind == "jingle" for s in st._opening[1])
 
 
 def test_web_api(tmp_path: Path) -> None:

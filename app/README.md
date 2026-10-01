@@ -30,9 +30,13 @@ and with no network, and is set up from its web page. See
   then 30–60 s to say it, and waiting sounded broken), one of the **short
   jingles** (40 s or less) plays at once and then the music, and the DJ joins
   at the next gap (`Station._opening_steps`). Between songs, a line not made
-  by the end of the song (2 s grace) is skipped and a short jingle fills in,
-  once, if the gap had none (`Station._run_steps(gap=True)`); a **message**
-  that wasn't ready comes round again at the next gap (`Messages.unplayed`).
+  by the end of the song (2 s grace) gets a jingle while it's made, once a
+  gap (the station's own short ones, else Power-on's), and is said if it's
+  ready by then, else skipped (`Station._run_steps(gap=True)`) — the news
+  too: its time line gets the jingle, and if it's still not made the
+  bulletin goes straight to the stories. A **message** that wasn't ready
+  comes round again at the next gap (`Messages.unplayed`). No jingles to be
+  had: a short gap.
   The fill-in jingle follows the DJ's jingles on/off setting; jingles off:
   straight to the music.
 - **A stuck sound card restarts the radio.** If aplay keeps failing (once, the
@@ -99,8 +103,10 @@ SleepRadio:
   themselves a minute after start-up and whenever the themes change
   (`main.jingle_folders`), which also moves loose jingles from before into
   the main show's. No shared jingles: an empty folder means none on that
-  station. `Power-on/` plays at start-up, then the welcome (if made) or the
-  music, whatever was playing before.
+  station. **At start-up** the station playing gets one of its own jingles
+  (a short one if it has any, when jingles are on), else one from
+  `Power-on/` (loose jingles at the top of the folder move there), then the
+  welcome (if made) or the music (`Station._start_up_jingle`).
 - **News** — BBC News bulletins at :00 (top stories) and :30 (softer
   stories), read with a time line for when they're read, and none in the
   night-time quiet hours. A bulletin still being made when its gap comes
@@ -430,11 +436,13 @@ The cards:
   power-on chime), Noise, Sleep timer, Voices, Wi-Fi (join, forget, its own
   network), This radio (name, case, password, listening in a browser),
   Buttons (and the day and night sets), Updates, Save & load, Power.
-  **Sleep Radio, the main show, is a theme like any other**: one that plays
-  **all my music** (`"all": true`), made once at start-up if there isn't one
-  (`main.default_theme`); "everything" (the show's icon, the phone's All
-  artists, a button or programme set to the show) means it. There's always at
-  least one theme. Any theme can play all my music instead of chosen artists.
+  **There's no default station, only themes**: a radio with none gets one,
+  "Sleep Radio", playing **all my music** (`"all": true`; `main.ensure_a_theme`),
+  and it's an ordinary theme (rename it, delete it once there's another).
+  Going "back" (after a station, an album, artist radio, a programme ending)
+  is the theme last played (`Station._fallback_theme`); buttons once set to
+  the main show were pinned to a theme. There's always at least one theme,
+  and any theme can play all my music instead of chosen artists.
   **A theme is a folder of its own things** (the desktop's **Themes** folder
   holds them): its window has its name (renaming it takes everything of its
   own along), ▶ Play, and sections — **Plays** (artists: drag an artist's

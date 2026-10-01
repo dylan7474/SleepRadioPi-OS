@@ -35,19 +35,20 @@ def _station(tmp_path: Path, jingles: dict[str, list[str]]) -> station_mod.Stati
 def test_each_station_plays_only_its_own_jingles(tmp_path: Path) -> None:
     st = _station(tmp_path, {"Sleep Radio": ["Main.mp3"], "Carisbrooke": ["Cari 1.mp3", "Cari 2.mp3"],
                              "Power-on": ["Start.mp3"]})
-    assert [j.path.name for j in st.jingles] == ["Main.mp3"]                  # the main show's
-    st.set_profile("Carisbrooke")
+    assert st.profile == "Carisbrooke"                                         # no default station: the first theme
     assert sorted(j.path.name for j in st.jingles) == ["Cari 1.mp3", "Cari 2.mp3"]
     assert st.builder.station == "Carisbrooke Radio"
     st.set_profiles([{"name": "Carisbrooke", "artists": ["Bread"]}, {"name": "Classical", "artists": ["ABBA"]}])
     st.set_profile("Classical")
     assert st.jingles == []                                                    # no folder / empty: none
-    st.set_profile(None)
-    assert [j.path.name for j in st.jingles] == ["Main.mp3"]
+    st.set_artist("ABBA")
+    assert st.jingles == []                                                    # artist radio: none of its own
+    st.set_artist(None)                                                        # back: the theme last played
+    assert st.profile == "Classical"
 
 
-def test_power_on_plays_the_start_up_jingle_whatever_comes_next(tmp_path: Path) -> None:
-    st = _station(tmp_path, {"Sleep Radio": ["Main.mp3"], "Power-on": ["Start.mp3"]})
+def test_the_start_up_jingle_is_the_stations_own_else_power_on(tmp_path: Path) -> None:
+    st = _station(tmp_path, {"Power-on": ["Start.mp3"]})                     # (on Carisbrooke: no jingles of its own)
     pending = Future()
     welcome = station_mod.Step("say", station_mod.Speech("Good evening", "stock", pending))
     steps = st._opening_steps([welcome], "power-on")
@@ -57,11 +58,14 @@ def test_power_on_plays_the_start_up_jingle_whatever_comes_next(tmp_path: Path) 
     ready = station_mod.Step("say", station_mod.Speech("Good evening", "stock", done))
     steps = st._opening_steps([ready], "power-on")
     assert steps[0].jingle.path.name == "Start.mp3" and steps[1] is ready   # then the welcome
-    back = st._opening_steps([station_mod.Step("say", station_mod.Speech("Hi", "stock", Future()))], "back to the show")
-    assert all(s.jingle is None or s.jingle.path.name != "Start.mp3" for s in back)   # only at power-on
+    (tmp_path / "jingles" / "Carisbrooke").mkdir()
+    (tmp_path / "jingles" / "Carisbrooke" / "Cari.mp3").write_bytes(b"x")
+    st._load_jingles(force=True)
+    steps = st._opening_steps([station_mod.Step("say", station_mod.Speech("Hi", "stock", Future()))], "power-on")
+    assert steps[0].jingle.path.name == "Cari.mp3"                            # the station's own first
 
 
-def test_the_folders_are_made_and_loose_jingles_move_to_the_main_show(tmp_path: Path) -> None:
+def test_the_folders_are_made_and_loose_jingles_go_into_power_on(tmp_path: Path) -> None:
     from sleepradiopi.main import jingle_folders
     st = _station(tmp_path, {"": ["Old 1.mp3", "Old 2.mp3"]})
     rescans = []
@@ -69,8 +73,8 @@ def test_the_folders_are_made_and_loose_jingles_move_to_the_main_show(tmp_path: 
                          lease=tmp_path / "run" / "media-rw")
     jingle_folders(media, st)
     root = tmp_path / "jingles"
-    assert {p.name for p in root.iterdir()} == {"Sleep Radio", "Power-on", "Carisbrooke"}
-    assert sorted(p.name for p in (root / "Sleep Radio").iterdir()) == ["Old 1.mp3", "Old 2.mp3"]
+    assert {p.name for p in root.iterdir()} == {"Power-on", "Carisbrooke"}
+    assert sorted(p.name for p in (root / "Power-on").iterdir()) == ["Old 1.mp3", "Old 2.mp3"]
     assert rescans == [{"jingles"}] and not (tmp_path / "run" / "media-rw").exists()
     st.on_profiles = lambda: jingle_folders(media, st)                  # (main wires it so)
     st.set_profiles([{"name": "Carisbrooke", "artists": ["Bread"]}, {"name": "Classical", "artists": ["ABBA"]}])
@@ -96,7 +100,7 @@ def test_a_theme_sets_its_own_dj_settings_and_the_rest_are_the_radios(tmp_path: 
     assert st.dj_settings()["chattiness"] == "maximum" and st.dj_settings()["news_enabled"]   # the DJ window: the radio's
     st.set_dj(chattiness="balanced", jingle_every=2)        # the radio's: the theme's own still wins
     assert st.chattiness == "minimal" and st.config.jingle_every == 2
-    st.set_profile(None)                                    # the main show: all the radio's
+    st.set_artist("ABBA")                                   # artist radio: all the radio's
     assert (st.chattiness, st.config.news_enabled, st.time_checks) == ("balanced", True, True)
     st.set_profile("Carisbrooke")
     st.set_profiles([{"name": "Carisbrooke", "artists": ["Bread"]}])   # its own taken off, while it plays
@@ -162,26 +166,23 @@ def test_renaming_a_theme_takes_its_things_with_it(tmp_path: Path) -> None:
         st.rename_profile("Nobody", "X")
 
 
-def test_sleep_radio_becomes_a_theme_of_all_my_music(tmp_path: Path) -> None:
-    """The main show is a theme like any other: everything means it."""
+def test_no_default_station_only_themes(tmp_path: Path) -> None:
+    """A radio with no themes gets one (Sleep Radio, all my music); one with themes
+    gets nothing; "back to the show" is the theme last played; a theme can play all."""
     import json
-    from sleepradiopi.main import default_theme
-    st = _station(tmp_path, {"Sleep Radio": ["Main.mp3"]})
+    from sleepradiopi.main import ensure_a_theme
+    st = _station(tmp_path, {})
     config = tmp_path / "config.json"
     config.write_text("{}")
-    assert default_theme(st, config) and not default_theme(st, config)          # once
-    assert [p["name"] for p in st.profiles] == ["Sleep Radio", "Carisbrooke"] and st.profiles[0]["all"]
-    assert st.profile == "Sleep Radio" and st.builder.station == "Sleep Radio"
-    assert len(st.selector.pool) == len(st.tracks) and [j.path.name for j in st.jingles] == ["Main.mp3"]
-    saved = json.loads(config.read_text())
-    assert saved["broadcast_profile"] == "Sleep Radio" and saved["profiles"][0] == {"name": "Sleep Radio", "artists": [], "all": True}
+    assert not ensure_a_theme(st, config)                                    # it has one
+    st.set_profiles([{"name": "Carisbrooke", "artists": ["Bread"]}])
+    st.profiles = []
+    assert ensure_a_theme(st, config)
+    assert st.profiles == [{"name": "Sleep Radio", "artists": [], "all": True}] and st.profile == "Sleep Radio"
+    assert len(st.selector.pool) == len(st.tracks)
+    assert json.loads(config.read_text())["broadcast_profile"] == "Sleep Radio"
+    st.set_profiles([{"name": "Sleep Radio", "artists": [], "all": True}, {"name": "Carisbrooke", "artists": ["Bread"]}])
     st.set_profile("Carisbrooke")
-    st.set_artist(None)                                                          # "everything": the theme
-    assert st.profile == "Sleep Radio" and st.artist is None
-    st.set_artist("ABBA")                                                        # artist radio still works
-    assert st.artist == "ABBA" and st.builder.station == "ABBA Radio"
-    st.set_profile(None)
-    assert st.profile == "Sleep Radio"
-    st.messages.set({"list": [{"text": "Main show only", "station": "Sleep Radio"}], "date_first": False})
-    from datetime import datetime
-    assert st.messages.due(datetime(2026, 10, 1, 10, 8), True, st.profile) == "Main show only"
+    st.set_artist("ABBA")
+    st.set_artist(None)
+    assert st.profile == "Carisbrooke"                                       # the theme last played

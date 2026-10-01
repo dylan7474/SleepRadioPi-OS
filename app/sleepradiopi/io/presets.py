@@ -254,6 +254,19 @@ class Presets:
     def presets(self, value: list) -> None:
         self.banks[self.bank] = value
 
+    def pin_shows(self, theme: str) -> bool:
+        """There's no default station: buttons set to "the show" (no theme) play this
+        theme instead."""
+        changed = False
+        for bank in self.banks.values():
+            for p in bank:
+                if p and p["kind"] == "show" and not p.get("profile") and not p.get("artist"):
+                    p["profile"] = theme
+                    changed = True
+        if changed:
+            self._save()
+        return changed
+
     def rename_theme(self, old: str, new: str) -> bool:
         """A theme was renamed: buttons that play it follow it."""
         changed = False

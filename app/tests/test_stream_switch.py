@@ -105,7 +105,9 @@ def test_back_to_the_show_or_power_on_plays_a_short_jingle_rather_than_wait(tmp_
     assert [(s.kind, s.jingle) for s in steps] == [("jingle", short)]     # only a short one, never the long
     assert pending.cancelled()                                            # and the welcome isn't made after all
     st.jingles = [long_]
-    assert st._opening_steps([station_mod.Step("say", station_mod.Speech("Hi", "stock", Future()))], "power-on") == []
+    hi = lambda: [station_mod.Step("say", station_mod.Speech("Hi", "stock", Future()))]
+    assert st._opening_steps(hi(), "back to the show") == []                # fill-ins: only short ones
+    assert st._opening_steps(hi(), "power-on")[0].jingle == long_           # power-on: the station's own, any
     st.jingles, st.config.jingle_every = [short], 0                       # jingles off: straight to the music
     assert st._opening_steps([station_mod.Step("say", station_mod.Speech("Hi", "stock", Future()))], "power-on") == []
     done = Future()
@@ -152,3 +154,50 @@ def test_a_gap_never_waits_for_the_dj(tmp_path, monkeypatch) -> None:
     st._run_steps([station_mod.Step("say", station_mod.Speech("Not yet", "stock", Future()))], gap=True)
     assert played == []                                                    # jingles off: on to the music
 
+
+
+def test_a_gap_fills_with_a_jingle_then_says_what_got_ready(tmp_path, monkeypatch) -> None:
+    """A line not made by the song's end: a jingle (the theme's short one, else
+    Power-on's) while it's made; then it's said if it's ready, skipped if not."""
+    from concurrent.futures import Future
+    import numpy as np
+    from sleepradiopi.broadcast import station as station_mod
+    from sleepradiopi.broadcast.library import JingleClip
+    from test_offline import _station
+    st = _station(tmp_path)
+    monkeypatch.setattr(station_mod, "GAP_GRACE_S", 0.05)
+    monkeypatch.setattr(st, "_write", lambda block: None)
+    later = Future()
+    played, said = [], []
+    def play(path, on_air):
+        played.append(path.stem)
+        later.set_result(np.zeros((10, 2), dtype=np.int16))      # made while the jingle played
+    monkeypatch.setattr(st, "_play_file", play)
+    monkeypatch.setattr(st, "_speak", lambda speech, kind="dj": said.append(speech.text) or True)
+    st.config.jingle_every = 0                                    # (jingles off: Power-on's fill in)
+    st._power_on = [JingleClip(tmp_path / "Start.mp3", 20.0)]
+    st._run_steps([station_mod.Step("say", station_mod.Speech("Here's one", "stock", later))], gap=True)
+    assert played == ["Start"] and said == ["Here's one"]
+
+
+def test_the_news_never_waits_in_silence_for_its_time_line(tmp_path, monkeypatch) -> None:
+    from concurrent.futures import Future
+    from types import SimpleNamespace
+    import numpy as np
+    from sleepradiopi.broadcast import station as station_mod
+    from sleepradiopi.broadcast.library import JingleClip
+    from test_offline import _station
+    st = _station(tmp_path)
+    monkeypatch.setattr(station_mod, "GAP_GRACE_S", 0.05)
+    monkeypatch.setattr(st, "_write", lambda block: None)
+    played, said = [], []
+    monkeypatch.setattr(st, "_play_file", lambda path, on_air: played.append(path.stem))
+    monkeypatch.setattr(st, "_speak", lambda speech, kind="dj": said.append(speech.text) or True)
+    monkeypatch.setattr(st.news_repo, "mark_read", lambda headlines: None)
+    st._power_on = [JingleClip(tmp_path / "Start.mp3", 20.0)]
+    body = Future()
+    body.set_result(np.zeros((10, 2), dtype=np.int16))
+    news = SimpleNamespace(time_line=station_mod.Speech("It's two o'clock", "stock", Future()),
+                           body=station_mod.Speech("The stories", "stock", body), headlines=[], due=None)
+    st._run_steps([station_mod.Step("news", news=news)], gap=True)
+    assert played == ["Start"] and said == ["The stories"]        # a jingle, then straight to the stories

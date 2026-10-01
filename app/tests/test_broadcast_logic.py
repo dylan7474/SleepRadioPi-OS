@@ -146,7 +146,7 @@ def test_jingles_counted_even_when_off(tmp_path) -> None:
     """The phone's Settings said "0 jingles" with 35 in the folder: jingles only load while on."""
     from sleepradiopi.broadcast.station import Station
     st = Station.__new__(Station)
-    st.jingles, st.jingles_dir, st.profile = [], str(tmp_path), None
+    st.jingles, st.jingles_dir, st.profile, st.artist, st.profiles = [], str(tmp_path), None, None, []
     (tmp_path / "Sleep Radio").mkdir()                       # (the main show's folder)
     for n in ("a.mp3", "b.MP3", "notes.txt"):
         (tmp_path / "Sleep Radio" / n).write_bytes(b"x")
