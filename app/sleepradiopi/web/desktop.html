@@ -1256,6 +1256,11 @@ async function open(id) {
   const big = o.kind === "programme" || o.kind === "schedule", page = (o.kind === "panel" && (o.page || UI[o.key])) || ["note", "person", "voice", "list"].includes(o.kind), wide = ["album", "playlist", "podcast"].includes(o.kind);
   const w = Math.min(d.clientWidth - 40, big ? 780 : page ? 560 : wide ? 480 : 560), h = Math.min(d.clientHeight - 40, big ? 460 : page ? 620 : 420);
   const win = { id, x: Math.max(8, Math.min(250 + n * 28, d.clientWidth - w - 10)), y: Math.max(8, Math.min(24 + n * 26, d.clientHeight - h - 10)), w, h, z: ++zTop, blk: 0, loading: false };
+  const mine = geom[id] || geom["kind:" + o.kind];   // the size (and place) you gave it, or its kind, last time
+  if (mine) {
+    win.w = Math.min(mine.w, d.clientWidth - 16); win.h = Math.min(mine.h, d.clientHeight - 16); win.fitted = true;
+    if (mine.x != null) { win.x = Math.max(0, Math.min(mine.x, d.clientWidth - 80)); win.y = Math.max(0, Math.min(mine.y, d.clientHeight - 40)); }
+  }
   W.push(win);
   if (o.kind === "programme") fetchLengths(o.blocks.flatMap(b => b.items.map(id => O[id]))).then(got => got && drawDesk());
   const needs = (o.kind === "folder" && !o.loaded) || (o.kind === "album" && !o.loaded) || (o.kind === "podcast" && !o.loaded);
@@ -1304,7 +1309,7 @@ function winEl(win) {
   close.onclick = e => { e.stopPropagation(); closeWin(win); };
   close.onpointerdown = e => e.stopPropagation();
   const bar = el("div", { className: "tbar" }, close, el("div", { className: "ttl" }, el("span", { textContent: o.title })), el("span", { className: "kindtag" }));
-  bar.addEventListener("pointerdown", e => { win.z = ++zTop; box.style.zIndex = win.z; moveThing(e, box, (x, y) => { win.x = x; win.y = y; }, true); });
+  bar.addEventListener("pointerdown", e => { win.z = ++zTop; box.style.zIndex = win.z; moveThing(e, box, (x, y) => { win.x = x; win.y = y; rememberGeom(win); }, true); });
   box.addEventListener("pointerdown", () => {
     if (win.z === zTop) return;
     win.z = ++zTop; box.style.zIndex = win.z;
@@ -2990,6 +2995,16 @@ function stretch(e, prog, i, px) {
     b.min = snap(start + (ev.clientX - x0) / px); if (b.rule !== "at") b.rule = "for"; saveProgrammes(`“${b.name}”: ${dur(b.min)}.`); };
   e.target.addEventListener("pointermove", move); e.target.addEventListener("pointerup", up);
 }
+// Windows remember what you made of them, in this browser: each one its size and place, and each
+// kind of window its size (for one of that kind you haven't opened yet). Only your own moves and
+// resizes count, not a window fitting itself to what's in it.
+let geom = {}; try { geom = JSON.parse(localStorage.getItem("srd.geom")) || {}; } catch {}
+function rememberGeom(win) {
+  const o = O[win.id];
+  geom[win.id] = { x: win.x, y: win.y, w: win.w, h: win.h };
+  if (o) geom["kind:" + o.kind] = { w: win.w, h: win.h };
+  try { localStorage.setItem("srd.geom", JSON.stringify(geom)); } catch {}
+}
 function moveThing(e, node, save, isWin) {
   e.preventDefault();
   const r = node.getBoundingClientRect(), d = $("desk").getBoundingClientRect(), dx = e.clientX - r.left, dy = e.clientY - r.top;
@@ -3003,7 +3018,7 @@ function resizeThing(e, node, win) {
   const x0 = e.clientX, y0 = e.clientY, w0 = win.w, h0 = win.h, t = e.target;
   t.setPointerCapture?.(e.pointerId);
   const move = ev => { node.style.width = Math.max(280, w0 + ev.clientX - x0) + "px"; node.style.height = Math.max(180, h0 + ev.clientY - y0) + "px"; };
-  const up = () => { t.removeEventListener("pointermove", move); t.removeEventListener("pointerup", up); win.w = parseFloat(node.style.width); win.h = parseFloat(node.style.height); drawDesk(); };
+  const up = () => { t.removeEventListener("pointermove", move); t.removeEventListener("pointerup", up); win.w = parseFloat(node.style.width); win.h = parseFloat(node.style.height); rememberGeom(win); drawDesk(); };
   t.addEventListener("pointermove", move); t.addEventListener("pointerup", up);
 }
 
