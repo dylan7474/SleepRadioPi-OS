@@ -2,7 +2,7 @@
 // separately (e.g. in a different colour from the box).
 //
 // Same knob as part="knob" in sleepradiopi_box.scad -- keep the two in step if
-// either changes. Fits an EC11 encoder's 6 mm D-shaft.
+// either changes. Fits an EC11 encoder's 6 mm D-shaft, 20 mm long from the bushing's base.
 //
 // Printed top face down (the pointer groove is on the bed side), no supports:
 //   openscad --backend=manifold -o stl/knob.stl knob.scad
@@ -13,10 +13,13 @@
 // Millimetres.
 
 knob_d      = 30;        // overall diameter across the grip ribs
-knob_h      = 16;
+knob_h      = 20;
 shaft_d     = 6.15;      // D-shaft bore (6 mm shaft + clearance)
 shaft_flat  = 4.65;      // bore width across the flat
-shaft_len   = 12;        // bore depth
+shaft_len   = 16.5;      // bore depth: a 20 mm EC11 shaft stands ~18 mm above the
+                         // case (2 mm wall at the pocket), so the knob clears it by ~1.5 mm
+nut_recess_d = 12;       // under the knob, round the encoder's M7 nut + washer
+nut_recess_h = 3;
 skirt_h     = 4;         // hollow underneath so the knob clears the encoder nut
 
 knob_style  = "plain";   // "plain" (pointer groove) or "sunburst"
@@ -39,11 +42,12 @@ module knob() {
             for (a = [0 : 360 / 36 : 359]) rotate([0, 0, a])
                 translate([knob_d / 2 - 1.1, 0, 0]) cylinder(d = 1.8, h = knob_h, $fn = 12);
         }
-        // D-shaft bore
+        // Shaft bore, D at the top, and the nut recess
         translate([0, 0, -0.01]) intersection() {
             cylinder(d = shaft_d, h = shaft_len);
             translate([-shaft_d / 2, -shaft_d / 2, 0]) cube([shaft_flat, shaft_d, shaft_len]);
         }
+        translate([0, 0, -0.01]) cylinder(d = nut_recess_d, h = nut_recess_h);
         // Hollow skirt around the shaft so the knob clears the nut
         translate([0, 0, -0.01]) difference() {
             cylinder(d = knob_d - 6, h = skirt_h);

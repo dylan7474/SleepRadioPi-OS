@@ -150,7 +150,7 @@ enc_teardrop = false;    // true = pointed top, for printers that sag on round h
 enc_pocket_d = 15;       // thin the top wall around it so the nut gets thread
 enc_pocket  = 1;
 knob_d      = 30;
-knob_h      = 16;
+knob_h      = 20;
 knob_style  = "plain";   // "plain" (pointer groove) or "sunburst" (the grille's fan
                          // engraved in the top; it rises towards where the groove points)
 knob_sun_d  = 26;
@@ -159,7 +159,10 @@ knob_sun_rib_w = 1.4;
 knob_engrave = 0.8;
 shaft_d     = 6.15;
 shaft_flat  = 4.65;
-shaft_len   = 12;
+shaft_len   = 16.5;      // bore depth: a 20 mm EC11 shaft stands ~18 mm above the
+                         // case (2 mm wall at the pocket), so the knob clears it by ~1.5 mm
+nut_recess_d = 12;       // under the knob, round the encoder's M7 nut + washer
+nut_recess_h = 3;
 
 /* ---------- Preset buttons ---------- */
 // Four chunky momentary panel buttons (16 mm stainless, screw terminals) in a
@@ -572,6 +575,7 @@ module knob(style = knob_style) {
             cylinder(d = shaft_d, h = shaft_len);
             translate([-shaft_d / 2, -shaft_d / 2, 0]) cube([shaft_flat, shaft_d, shaft_len]);
         }
+        translate([0, 0, -0.01]) cylinder(d = nut_recess_d, h = nut_recess_h);
         // Hollow skirt around the shaft so the knob clears the nut
         translate([0, 0, -0.01]) difference() {
             cylinder(d = knob_d - 6, h = 4);
