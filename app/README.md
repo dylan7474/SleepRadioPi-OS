@@ -394,7 +394,9 @@ The cards:
   order (the icons follow the same sort, and the window's footer says when
   one is on); view and sort are kept per folder
   in the browser, and a music or On demand folder you haven't chosen for
-  looks like the one it's in); **pick several things** as on a Mac
+  looks like the one it's in); **windows remember** the size and place you
+  give them, in this browser (each window its own, and each kind its size
+  for ones not opened yet; `srd.geom`); **pick several things** as on a Mac
   (Ctrl/Cmd-click one more or one less, Shift-click a run, drag a box over
   empty space, Ctrl+A all in the front window) and drag them together: into
   a folder (moved), onto a playlist (added), to the Trash (files: one
