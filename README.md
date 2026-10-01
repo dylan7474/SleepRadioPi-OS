@@ -41,8 +41,9 @@ software, and the case to print.
   You're at Willow Court, and you're safe here."* A message can have a last
   day (for "coming to see you on Sunday").
 - **Artist radio and your own lists** — play only one artist (the DJ then
-  says *"welcome to Beatles Radio"*) or a named list of artists (*"Friday
-  List on Sleep Radio"*).
+  says *"welcome to Beatles Radio"*) or a theme: a named list of artists,
+  which is a station of its own (a theme called "Carisbrooke" is
+  *"Carisbrooke Radio"*).
 - **Play next** — search the library from your phone and queue songs; the
   DJ introduces them.
 - **Internet radio** — when it's online, play a station instead of the show

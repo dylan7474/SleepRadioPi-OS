@@ -1799,7 +1799,7 @@ const UI = {
         grp("", line(sbtn("▶ Play it", () => play(o)), sbtn("Delete this theme", () => gone(`Deleted the theme “${cur.name}”. The music stays.`, async () => {
           await api("/api/profiles", { profiles: d.profiles.filter(p => p !== cur) }); closeFor(o); await loadFolder(LISTS); drawDesk();
           return async () => { await api("/api/profiles", { profiles: d.profiles }); await loadFolder(LISTS); drawDesk(); }; }), "danger")),
-          help("The show, playing only these artists (\"welcome to " + cur.name + " on Sleep Radio\"). A button can hold it: drag it onto one."))];
+          help("A station of its own, playing only these artists (\"welcome to " + (/radio$/i.test(cur.name.trim()) ? cur.name.trim() : cur.name.trim() + " Radio") + "\"). A button can hold it: drag it onto one."))];
     },
   },
   newlist: {
@@ -1863,7 +1863,7 @@ const UI = {
         win.pickList = newName.value.trim(); save([...d.profiles, { name: newName.value.trim(), artists: [n] }]); };
       return [dl,
         grp("Your themes", d.profiles.length ? seg(d.profiles.map(p => [p.name, `${p.name} (${p.artists.length})`]), pick, v => { win.pickList = v; drawDesk(); }) : help("None yet: make one below."),
-          help("The show, playing only these artists (\"welcome to Friday List on Sleep Radio\"). Play one from the Theme radio folder, or put it on a button.")),
+          help("A station of its own, playing only these artists (\"welcome to Friday List Radio\"). Play one from the Theme radio folder, or put it on a button.")),
         cur ? grp(cur.name, el("div", { className: "line" }, ...cur.artists.map(a => el("span", { className: "chipx" }, a, Object.assign(el("button", { type: "button", textContent: "✕", title: "Take " + a + " off" }),
             { onclick: () => cur.artists.length > 1 ? save(d.profiles.map(p => p === cur ? { ...p, artists: p.artists.filter(x => x !== a) } : p)) : toast("A theme needs at least one artist: delete the theme instead.") })))),
           line(add, sbtn("Add", addTo, "primary")),

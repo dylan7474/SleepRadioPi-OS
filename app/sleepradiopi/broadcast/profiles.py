@@ -1,8 +1,8 @@
 """Profiles: named lists of artists, e.g. a "Friday List", to play only them.
 
 Like artist radio, but for several artists: the station plays only tracks by
-the artists on the list, and the DJ says the list's name ("welcome to Friday
-List on Sleep Radio"; a name ending in "Radio" is used as it is). Kept in
+the artists on the list, and the DJ names it as a station ("welcome to Friday
+List Radio"; a name already ending in "Radio" is used as it is). Kept in
 the config as "profiles" -- [{"name": "Friday List", "artists": [...]}] --
 with the one playing as "broadcast_profile".
 """
@@ -45,8 +45,6 @@ def validate(profiles) -> list[dict]:
 
 
 def station_name(profile_name: str) -> str:
-    """"Friday List" -> "Friday List on Sleep Radio" (the radio's name); "Rock Radio" stays."""
-    from sleepradiopi.config import brand
-    if profile_name.lower().endswith("radio"):
-        return profile_name
-    return f"{profile_name} on {brand.name}"
+    """A theme is a station: "Carisbrooke" -> "Carisbrooke Radio"; "Rock Radio" stays."""
+    name = profile_name.strip()
+    return name if name.lower().endswith("radio") else f"{name} Radio"

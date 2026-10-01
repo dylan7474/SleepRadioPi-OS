@@ -41,7 +41,8 @@ and with no network, and is set up from its web page. See
   after 2 minutes the radio restarts itself -- at most once an hour
   (`SpeakerOutput._failed`, `main._speaker_stuck`).
 - **Power on and it plays.** About 10 seconds after power-up it chimes, and
-  the DJ says "Sleep Radio is warming up…", so you know it's alive; then a
+  the DJ says "Just warming up." (no name: it may be about to play any
+  station), so you know it's alive; then a
   soft tick every 3 s (like a clock) until the station opens the speaker,
   and the show starts: with the DJ's welcome if it's made ("Good evening, and
   welcome to Sleep Radio..."), otherwise a short jingle and the music (above).
@@ -657,7 +658,7 @@ The cards:
   after them ("welcome to Beatles Radio"; a leading "The" is dropped), and
   so do the page heading and tab. **Themes…** makes your own named lists of
   artists (e.g. a "Friday List"; find and tick artists), which appear in the
-  same dropdown ("welcome to Friday List on Sleep Radio"). On air, the song
+  same dropdown ("welcome to Friday List Radio": a theme is a station). On air, the song
   already lined up next still plays first. If the library has nothing for
   the choice, it plays everything. Jingles play here too when they're on,
   as on the main mix.

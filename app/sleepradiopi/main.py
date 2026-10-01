@@ -45,14 +45,13 @@ BUNDLED_HOOKS = Path(__file__).resolve().parent / "data" / "dj_hooks_70s.txt"
 def _make_warming_up(station: Station, ready) -> None:
     """Make the start-up sound's spoken line in the DJ's voice, once (per voice),
     after the show is under way. startup_sound.py plays it at the next start."""
-    from sleepradiopi.config import brand
-    path = startup_sound.speech_file(Path.home(), station.dj_voice, brand.name)
+    path = startup_sound.speech_file(Path.home(), station.dj_voice)
     if path.is_file():
         return
     while not ready():
         time.sleep(5)
     try:
-        audio = station.render_speech(startup_sound.warming_up(brand.name))
+        audio = station.render_speech(startup_sound.warming_up())
         path.parent.mkdir(parents=True, exist_ok=True)
         tmp = path.with_name(path.name + ".tmp")
         with open(tmp, "wb") as f:

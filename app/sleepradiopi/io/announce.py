@@ -81,10 +81,10 @@ def announcement(addrs: list[tuple[str, str]], host: str, hotspot: dict | None =
         return (f"{_name()} here. I couldn't find a Wi-Fi network I know, so I've made my own. "
                 f"On your phone, join {hotspot['ssid']}. The password is {pw}, spelled {', '.join(pw)}. "
                 f"Then open: {spoken_ip(hotspot['ip'])}, and add your Wi-Fi.")
-    if not addrs:
-        return f"{_name()} here. I'm not connected to a network."
+    if not addrs:                       # (no name: the radio may be playing any station)
+        return "I'm not connected to a network."
     ip = spoken_ip(addrs[0][1])
-    return (f"{_name()} here. My address is: {ip}. Once more: {ip}. "
+    return (f"My address is: {ip}. Once more: {ip}. "
             f"Or type: {spoken_host(host)}.")
 
 

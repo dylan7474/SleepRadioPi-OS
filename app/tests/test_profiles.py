@@ -20,7 +20,8 @@ FRIDAY = {"name": "Friday List", "artists": ["The Beatles", "Crowded House"]}
 def test_validate_and_names() -> None:
     got = validate([{"name": "  Friday   List ", "artists": ["crowded house", "The Beatles", "The Beatles"]}])
     assert got == [{"name": "Friday List", "artists": ["crowded house", "The Beatles"]}]
-    assert station_name("Friday List") == "Friday List on Sleep Radio"
+    assert station_name("Friday List") == "Friday List Radio"
+    assert station_name("Carisbrooke") == "Carisbrooke Radio"
     assert station_name("Rock Radio") == "Rock Radio"
     for bad in ([{"name": "", "artists": ["A"]}], [{"name": "X", "artists": []}],
                 [{"name": "X", "artists": ["A"]}, {"name": "x", "artists": ["B"]}], "nope",
@@ -33,9 +34,9 @@ def test_a_profile_plays_only_its_artists(tmp_path: Path) -> None:
     st = _station(tmp_path, profiles=[FRIDAY])
     assert st.set_profile("friday list")                       # any case
     assert st.profile == "Friday List" and st.artist is None
-    assert st.builder.station == "Friday List on Sleep Radio"
+    assert st.builder.station == "Friday List Radio"
     assert {st._take_next().artist for _ in range(20)} == {"The Beatles", "Crowded House"}
-    assert "welcome to Friday List on Sleep Radio" in st._opening[0]
+    assert "welcome to Friday List Radio" in st._opening[0]
     st.set_artist("Nick Drake")                                # choosing an artist replaces it
     assert st.profile is None and st.artist == "Nick Drake"
 
@@ -92,7 +93,7 @@ def test_web_api(tmp_path: Path) -> None:
         assert req("/api/profiles", {"profiles": [FRIDAY]})["profiles"][0]["name"] == "Friday List"
         assert req("/api/artists")["profiles"] == st.profiles
         got = req("/api/station", {"profile": "Friday List"})
-        assert got["found"] and got["station_name"] == "Friday List on Sleep Radio"
+        assert got["found"] and got["station_name"] == "Friday List Radio"
         saved = load(conf)
         assert saved.broadcast_profile == "Friday List" and saved.profiles[0]["artists"]
         assert req("/api/profiles", {"profiles": []})["profile"] is None   # deleted while playing

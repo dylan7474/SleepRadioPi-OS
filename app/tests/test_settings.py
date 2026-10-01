@@ -35,10 +35,11 @@ def test_the_radios_name() -> None:
         brand.set_name("Phonosphere")
         from sleepradiopi.broadcast import profiles
         from sleepradiopi.broadcast.script_builder import DjScriptBuilder, artist_station_name
-        assert profiles.station_name("Dad") == "Dad on Phonosphere"
+        assert profiles.station_name("Dad") == "Dad Radio"           # a theme is a station of its own
         assert artist_station_name(None) == "Phonosphere" and DjScriptBuilder().station == "Phonosphere"
         from sleepradiopi.io.announce import announcement
-        assert announcement([], "x").startswith("Phonosphere here.")
+        assert announcement([], "x") == "I'm not connected to a network."  # no name: it may play any station
+        assert announcement([], "x", {"ssid": "Phonosphere-Setup", "password": "ab", "ip": "192.168.4.1"}).startswith("Phonosphere here.")
     finally:
         brand.set_name(old)
 
