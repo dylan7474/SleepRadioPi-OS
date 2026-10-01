@@ -152,45 +152,61 @@
   .mitem:hover { background: #0000000c; }
   .mremote { flex: 1; min-height: 0; width: 100%; max-width: 560px; padding: 1.4vh 10px calc(1.4vh + env(safe-area-inset-bottom, 0px));
              display: grid; grid-template-rows: auto minmax(0, 1fr); gap: 1.4vh; }
-  .mnow .marquee { height: clamp(42px, 8.4vh, 110px); overflow: hidden; position: relative; display: flex; align-items: center;
-                   background: var(--win); white-space: nowrap; }
-  .mnow .marquee #marqueeText { display: inline-flex; padding-left: 14px; font: 700 clamp(28px, 6vh, 64px)/1 var(--display); color: var(--ink); }
+  /* the desktop's radio: a cream case, the amber tuning dial, silver steel keys, the blue knob */
+  .mcase { position: relative; background: #efe9dc; color: #2b2a26; border-radius: 18px; padding: 12px 14px;
+           box-shadow: 0 22px 50px var(--shadow), 0 0 0 1px #0000001a, inset 0 -4px 0 #0000001a, inset 0 2px 0 #fff; }
+  .mcase .handle { position: absolute; left: 50%; top: -12px; width: 120px; height: 16px; transform: translateX(-50%);
+                   border: 5px solid #cfc7b4; border-bottom: 0; border-radius: 12px 12px 0 0; }
+  .mnow { margin-top: 8px; padding: 6px 8px; }
+  .mremote > * { min-width: 0; }
+  .mdial2 { position: relative; border-radius: 9px; padding: 4px 12px 12px; min-width: 0; overflow: hidden; color: #231703;
+            background: linear-gradient(180deg, #f7c86d, #e9a23a 55%, #c98522); box-shadow: inset 0 1px 0 #ffe3a6, inset 0 -2px 6px #0003; }
+  .mdial2 small { display: block; font-size: clamp(11px, 1.6vh, 14px); letter-spacing: .16em; text-transform: uppercase; opacity: .75;
+                  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .mdial2 .scale { position: absolute; left: 10px; right: 10px; bottom: 6px; height: 6px; border-bottom: 1px solid #23170355;
+                   background: repeating-linear-gradient(90deg, #23170355 0 1px, transparent 1px 8px) bottom / 100% 4px no-repeat; }
+  .mdial2 .needle { position: absolute; bottom: 3px; height: 14px; width: 2px; background: #d2553f; left: 20%; transition: left .8s cubic-bezier(.3,1.4,.5,1); }
+  .mnow .marquee { height: clamp(32px, 5.8vh, 88px); overflow: hidden; position: relative; display: flex; align-items: center; white-space: nowrap; }
+  .mnow .marquee #marqueeText { display: inline-flex; font: 700 clamp(28px, 6vh, 64px)/1 var(--display); color: #231703; }
   .mnow .marquee #marqueeText i { font-style: normal; padding-right: 2.2em; }
-  /* too long for the strip: it scrolls, starting where it can be read, two copies so it loops seamlessly */
+  /* too long for the dial: it scrolls, starting where it can be read, two copies so it loops seamlessly */
   .mnow .marquee.run #marqueeText { animation: scroll var(--dur, 12s) linear infinite; animation-delay: 1.5s; }
   @keyframes scroll { from { transform: translateX(0); } to { transform: translateX(-50%); } }
   @media (prefers-reduced-motion: reduce) { .mnow .marquee.run #marqueeText { animation: none; } }
-  .mctl { display: flex; flex-direction: column; min-height: 0; }
-  .mbody { flex: 1; min-height: 0; padding: 1.2vh 10px; display: flex; flex-direction: column; gap: 1.2vh; background: var(--win-2); }
-  .mrow3, .mrow2 { flex: 1 1 0; min-height: 0; display: grid; gap: 10px; }
+  .mctl { display: flex; flex-direction: column; min-height: 0; padding: 0; }
+  .mbody { flex: 1; min-height: 0; padding: 1.4vh 12px; display: flex; flex-direction: column; gap: 1.3vh; }
+  .mrow3, .mrow2 { flex: 1 1 0; min-height: 0; display: grid; gap: 12px; }
   .mrow3 { grid-template-columns: 1fr 1.25fr 1fr; }
   .mrow2 { grid-template-columns: 1fr 1fr; flex-grow: .8; }
-  .pkey { min-height: 0; border: 1px solid var(--key-line); border-radius: 12px; background: var(--key); color: var(--key-ink);
-          display: flex; align-items: center; justify-content: center; gap: 8px; padding: 0 6px;
-          box-shadow: 0 2px 0 #0002, inset 0 1px 0 #ffffffa0; font: 600 clamp(17px, 2.6vh, 24px) var(--body);
+  /* the radio's silver keys (the desktop's preset buttons and Back/Skip), as large keys */
+  .pkey { min-height: 0; border: 0; border-radius: 22px; color: #3d3a33; display: flex; align-items: center; justify-content: center; gap: 8px; padding: 0 6px;
+          background: radial-gradient(ellipse at 40% 30%, #fff, #c8ccd2 70%, #9aa0a8); box-shadow: 0 3px 6px #0005, inset 0 -2px 3px #0002;
+          font: 700 clamp(17px, 2.6vh, 24px) var(--display);
           touch-action: none; -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
-  .pkey:active:not(:disabled), .pkey.held { transform: translateY(1px); box-shadow: inset 0 2px 4px #0003; }
+  .pkey:active:not(:disabled), .pkey.held { transform: translateY(1px); box-shadow: 0 1px 3px #0005, inset 0 -1px 2px #0002; }
   .pkey:disabled { opacity: .4; }
   .pkey svg { width: clamp(30px, 5vh, 54px); height: clamp(30px, 5vh, 54px); flex: none; }
-  .pkey.play { background: linear-gradient(180deg, #f7c86d, var(--amber)); border-color: var(--amber-deep); color: var(--amber-ink); }
+  /* Play/Pause: the blue knob */
+  .pkey.play { color: #fff; background: radial-gradient(ellipse at 35% 30%, #5b86d6, #2f5cb4 55%, #1d3d7c); box-shadow: 0 4px 10px #0006, inset 0 0 0 4px #ffffff1a; }
   .pkey.play svg { width: clamp(36px, 6.4vh, 70px); height: clamp(36px, 6.4vh, 70px); }
-  .pkey.tog[aria-pressed="true"] { background: linear-gradient(180deg, #f7c86d, var(--amber)); border-color: var(--amber-deep); color: var(--amber-ink); font-weight: 700; }
+  /* on (sleep timer, noise): the amber ring of the desktop radio's playing button */
+  .pkey.tog[aria-pressed="true"] { box-shadow: 0 0 0 4px #e9a23a, 0 3px 6px #0005; color: #231703; }
   .pkey.tog svg { width: clamp(24px, 3.6vh, 36px); height: clamp(24px, 3.6vh, 36px); }
-  .mvol { display: flex; flex-direction: column; align-items: center; justify-content: center; border-radius: 12px;
-          background: var(--field); border: 1px solid var(--line); box-shadow: inset 0 1px 3px #0002; color: var(--ink); min-height: 0; }
-  .mvol span { font: 700 clamp(11px, 1.6vh, 15px) var(--display); letter-spacing: .16em; text-transform: uppercase; color: var(--dim); }
+  .mvol { display: flex; flex-direction: column; align-items: center; justify-content: center; border-radius: 14px; min-height: 0;
+          background: #0000000f; box-shadow: inset 0 1px 3px #0002; color: #2b2a26; }
+  .mvol span { font: 700 clamp(11px, 1.6vh, 14px) var(--display); letter-spacing: .2em; text-transform: uppercase; color: #8a8474; }
   .mvol b { font: 700 clamp(28px, 5vh, 52px)/1 var(--display); font-variant-numeric: tabular-nums; }
   .mseek { flex: none; }
-  .mtimes { display: flex; justify-content: space-between; padding: 0 4px; font: 700 clamp(15px, 2.2vh, 20px) var(--body); color: var(--ink); font-variant-numeric: tabular-nums; }
+  .mtimes { display: flex; justify-content: space-between; padding: 0 4px; font: 700 clamp(15px, 2.2vh, 20px) var(--display); color: #6b6558; font-variant-numeric: tabular-nums; }
   #pos { -webkit-appearance: none; appearance: none; width: 100%; height: clamp(40px, 5.4vh, 54px); background: transparent; margin: 0; }
-  #pos::-webkit-slider-runnable-track { height: 14px; border-radius: 7px; background: var(--line); box-shadow: inset 0 1px 2px #0003; }
-  #pos::-moz-range-track { height: 14px; border-radius: 7px; background: var(--line); }
-  #pos::-moz-range-progress { height: 14px; border-radius: 7px; background: var(--amber-deep); }
-  #pos::-webkit-slider-thumb { -webkit-appearance: none; width: 36px; height: 36px; margin-top: -11px; border-radius: 50%;
-                               background: linear-gradient(180deg, #f7c86d, #e9a23a); border: 2px solid #231703; box-shadow: 0 2px 4px #0005; }
-  #pos::-moz-range-thumb { width: 32px; height: 32px; border-radius: 50%; background: #e9a23a; border: 2px solid #231703; }
+  #pos::-webkit-slider-runnable-track { height: 12px; border-radius: 6px; background: #d8d2c4; box-shadow: inset 0 1px 2px #0003; }
+  #pos::-moz-range-track { height: 12px; border-radius: 6px; background: #d8d2c4; }
+  #pos::-moz-range-progress { height: 12px; border-radius: 6px; background: #c98522; }
+  #pos::-webkit-slider-thumb { -webkit-appearance: none; width: 36px; height: 36px; margin-top: -12px; border-radius: 50%;
+                               background: radial-gradient(circle at 40% 35%, #fff, #c8ccd2 70%, #9aa0a8); box-shadow: 0 3px 6px #0005; border: 0; }
+  #pos::-moz-range-thumb { width: 32px; height: 32px; border-radius: 50%; border: 0; background: radial-gradient(circle at 40% 35%, #fff, #c8ccd2 70%, #9aa0a8); box-shadow: 0 3px 6px #0005; }
   @media (max-height: 600px) { .mtimes { display: none; } }
-  @media (max-height: 660px) { .mnow .tbar { height: 22px; } .mnow .tbar b { font-size: 12px; } .mremote { padding-top: 1vh; } }
+  @media (max-height: 660px) { .mnow .handle { display: none; } .mnow { margin-top: 0; } .mremote { padding-top: 1vh; } }
   @media (max-width: 380px) { .menubar .bars { display: none; } .menubar { gap: 8px; } }
 </style>
 </head>
@@ -217,13 +233,16 @@
 </main>
 
 <main id="remote" class="mremote" hidden>
-  <section class="win mnow" aria-live="polite">
-    <div class="tbar"><i></i><b><span id="dialTop">Now playing</span></b><u></u></div>
-    <div class="marquee" id="marquee"><span id="marqueeText">…</span></div>
+  <section class="mcase mnow" aria-live="polite">
+    <div class="handle"></div>
+    <div class="mdial2">
+      <small id="dialTop">Now playing</small>
+      <div class="marquee" id="marquee"><span id="marqueeText">…</span></div>
+      <div class="scale"></div><div class="needle" id="needle"></div>
+    </div>
   </section>
 
-  <section class="win mctl">
-    <div class="tbar"><i></i><b><span>The radio</span></b><u></u></div>
+  <section class="mcase mctl">
     <div class="mbody">
       <div class="mseek" id="seekRow" hidden>
         <input type="range" id="pos" min="0" max="1000" value="0" aria-label="Position">
@@ -352,6 +371,7 @@ function render() {
     $("pos").max = p.total_ms; $("pos").value = Math.min(p.pos_ms, p.total_ms);
     $("posNow").textContent = mmss(p.pos_ms); $("posLen").textContent = mmss(p.total_ms);
   }
+  $("needle").style.left = (can ? 4 + 92 * Math.min(1, p.pos_ms / p.total_ms) : 20) + "%";
   $("prev").disabled = !s.can_previous && !can; $("skip").disabled = !s.can_skip && !can;
   const left = sp.sleep_left_s ? Math.ceil(sp.sleep_left_s / 60) : 0;
   SLEEP_ON = !!sp.sleep_min;

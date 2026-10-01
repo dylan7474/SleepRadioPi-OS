@@ -386,11 +386,13 @@ The cards:
   renames it, and buttons and programmes that play it follow. A preset button
   can hold one, in order or shuffled. A song whose file has gone is skipped. Kept in the settings (`playlists`), so *Save settings* has them
   (`broadcast/playlists.py`, `Station.play_playlist`).
-- **The phone remote** (`web/remote.html`, served at `/`), in the desktop's
-  look but big, for eyes that aren't what they were, all on one screen with no
-  scrolling. The top fifth at most is a window with **one line of large
-  scrolling text** -- what's on (song and artist, or station) -- titled with
-  the station. The rest is a window of platinum keys, CD-player style: a thick
+- **The phone remote** (`web/remote.html`, served at `/`), styled as the
+  desktop's radio but big, for eyes that aren't what they were, all on one
+  screen with no scrolling. The top fifth at most is the radio's amber dial
+  with **one line of large scrolling text** -- what's on (song and artist, or
+  station) -- and its needle following the song. The rest is the cream case
+  with the radio's silver keys (Play/Pause is the blue knob; Sleep and Noise
+  get the amber ring when on), CD-player style: a thick
   **position bar** (drag it) when a song, audiobook or podcast can be moved
   through; **⏮ Play/Pause ⏭** -- a tap on ⏭ is the next song, held it fast-
   forwards (faster the longer it's held), and ⏮ the same backwards (a tap:
