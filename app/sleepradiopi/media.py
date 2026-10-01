@@ -64,13 +64,13 @@ def _clean_rel(rel: str | None) -> list[str]:
 
 
 class MediaLibrary:
-    def __init__(self, roots: dict[str, Path], on_changed: Callable[[], None] | None = None,
+    def __init__(self, roots: dict[str, Path], on_changed: Callable[[set[str]], None] | None = None,
                  lease: Path = LEASE) -> None:
         self.roots = {k: Path(v) for k, v in roots.items()}
         self.on_changed = on_changed
         self.lease = lease
         self._lock = threading.Lock()
-        self._dirty = False
+        self._dirty: set[str] = set()   # the libraries changed (music, jingles...): only they're rescanned
         self._last_change = 0.0
         self._settle: threading.Timer | None = None
 
@@ -152,9 +152,9 @@ class MediaLibrary:
         except OSError as e:
             raise MediaError(f"couldn't make the folder ({e.strerror})") from None
 
-    def _changed(self) -> None:
+    def _changed(self, *kinds: str) -> None:
         with self._lock:
-            self._dirty = True
+            self._dirty.update(kinds)
             self._last_change = time.monotonic()
             if self._settle is not None:
                 self._settle.cancel()
@@ -163,23 +163,24 @@ class MediaLibrary:
             self._settle.start()
 
     def done(self) -> bool:
-        """Changes are finished: let /media go read-only and rescan the library.
+        """Changes are finished: let /media go read-only and rescan the libraries that
+        changed (a jingle upload rescanned all 2,000+ songs too, and the music stuttered).
         True if anything had changed."""
         with self._lock:
             if self._settle is not None:
                 self._settle.cancel()
                 self._settle = None
-            dirty, self._dirty = self._dirty, False
+            dirty, self._dirty = self._dirty, set()
         try:
             self.lease.unlink()
         except OSError:
             pass
         if dirty and self.on_changed is not None:
             try:
-                self.on_changed()
+                self.on_changed(dirty)
             except Exception:
                 log.exception("library rescan failed")
-        return dirty
+        return bool(dirty)
 
     # --- changing ---------------------------------------------------------------------------
 
@@ -210,7 +211,7 @@ class MediaLibrary:
         except OSError as e:
             raise MediaError(f"couldn't delete it ({e.strerror})") from None
         log.info("media: deleted %s/%s", kind, rel)
-        self._changed()
+        self._changed(kind)
 
     def move(self, kind: str, rel: str, to_kind: str, to_folder: str) -> str:
         """Move a file or folder into another folder, in the same library or
@@ -238,7 +239,7 @@ class MediaLibrary:
         except OSError as e:
             raise MediaError(f"couldn't move it ({e.strerror})") from None
         log.info("media: moved %s/%s to %s/%s", kind, rel, to_kind, dest.relative_to(dst_root))
-        self._changed()
+        self._changed(kind, to_kind)
         return str(dest.relative_to(dst_root))
 
     def receive(self, kind: str, folder: str, name: str, length: int, read: Callable[[int], bytes]) -> dict:
@@ -294,7 +295,7 @@ class MediaLibrary:
             except OSError:
                 pass
         log.info("media: added %s/%s (%d bytes)", kind, dest.relative_to(root), length)
-        self._changed()
+        self._changed(kind)
         return {"path": str(dest.relative_to(root)), "status": "added"}
 
 

@@ -341,11 +341,6 @@ def main(argv=None) -> int:
 
 # --- the station's side --------------------------------------------------------------
 
-def _name() -> str:
-    from sleepradiopi.config import brand
-    return brand.name
-
-
 class Updates:
     """Check / install from the page; confirm and announce after the reboot.
     say(text) speaks on the radio (in the background)."""
@@ -399,7 +394,7 @@ class Updates:
         self.status_file.unlink(missing_ok=True)
         _write_json(self.request, {"version": m["version"], "rootfs": m["rootfs"], "current": self.version,
                                    "kernel_sha256": m["kernel_sha256"], "config_txt": m.get("config_txt")})
-        self.say(f"Downloading an update for {_name()}: version {m['version']}. "
+        self.say(f"Downloading an update: version {m['version']}. "
                  "The music carries on while it downloads.")
         threading.Thread(target=self._follow, name="update", daemon=True).start()
         return self.status()
@@ -415,7 +410,7 @@ class Updates:
             if st.get("state") == "ready":
                 with self._lock:
                     self._job = {"state": "ready"}
-                self.say(f"The update is ready. {_name()} is restarting now, and will be back in about a minute.")
+                self.say(f"The update is ready. The radio is restarting now, and will be back in about a minute.")
                 time.sleep(self.restart_delay_s)
                 self.go.touch()
                 return
@@ -447,11 +442,11 @@ class Updates:
             return
         result.unlink(missing_ok=True)
         if r.get("rolled_back"):
-            self.say(f"{_name()} has gone back to its previous version, {self.version}.")
+            self.say(f"The radio has gone back to its previous version, {self.version}.")
         elif r.get("ok"):
-            self.say(f"{_name()} has been updated to version {r.get('version', self.version)}.")
+            self.say(f"The radio has been updated to version {r.get('version', self.version)}.")
         else:
-            self.say(f"The last update didn't work, so {_name()} went back to the version it had before.")
+            self.say(f"The last update didn't work, so the radio went back to the version it had before.")
 
 
 if __name__ == "__main__":

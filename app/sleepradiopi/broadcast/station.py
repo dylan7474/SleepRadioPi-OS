@@ -2032,19 +2032,27 @@ class Station:
 
     # --- the library changed (the web page's music manager) ---------------------------
 
-    def reload_library(self) -> dict:
-        """Rescan the music (only new or changed files' tags are read) and the
-        jingles, keeping the artist or list playing; songs lined up whose files
+    def reload_library(self, kinds: set[str] | None = None) -> dict:
+        """Rescan the libraries that changed -- kinds: "music", "ondemand",
+        "audiobooks", "jingles"; None: all (only new or changed files' tags are
+        read) -- keeping the artist or list playing; songs lined up whose files
         have gone are dropped. The song on air carries on."""
-        tracks = scan_music(self.music_dir, self._tag_cache)
-        ondemand = self._scan_ondemand()
-        self._scan_books()
-        jingles = scan_jingles(self.jingles_dir) if self.config.jingle_every or self.jingles else []
+        kinds = set(kinds) if kinds else {"music", "ondemand", "audiobooks", "jingles"}
+        songs = bool(kinds & {"music", "ondemand"})
+        tracks = scan_music(self.music_dir, self._tag_cache) if "music" in kinds else self.tracks
+        ondemand = self._scan_ondemand() if "ondemand" in kinds else self.ondemand_tracks
+        if "audiobooks" in kinds:
+            self._scan_books()
+        if "jingles" in kinds:
+            jingles = scan_jingles(self.jingles_dir) if self.config.jingle_every or self.jingles else []
+        else:
+            jingles = self.jingles
         with self._lock:
             self.tracks = tracks
             self.ondemand_tracks = ondemand
-            self._album_index = None
-            self._path_index = None
+            if songs:
+                self._album_index = None
+                self._path_index = None
             self._use_selection(self.artist, self.profile)
             requested = list(self._queue)[:self._n_requested]
             self._n_requested = sum(1 for t in requested if t.path.exists())
@@ -2059,8 +2067,8 @@ class Station:
             self._scan(j.path)
         if self._opening is None and not self.is_on_air:
             self._prepare_opening()
-        log.info("library reloaded: %d tracks, %d jingles, %d audiobooks", len(tracks), len(jingles),
-                 len(self.books.all()))
+        log.info("library reloaded (%s): %d tracks, %d jingles, %d audiobooks", ", ".join(sorted(kinds)),
+                 len(tracks), len(jingles), len(self.books.all()))
         return {"tracks": len(tracks), "jingles": self._jingle_count(), "books": len(self.books.all()),
                 "ondemand": len(ondemand)}
 
@@ -2147,15 +2155,28 @@ class Station:
 
     def _reselect(self, artist: str | None = None, profile: str | None = None) -> bool:
         with self._lock:
-            # Mid-show, the song already lined up still plays first (the DJ may have
-            # announced it). Otherwise -- off air, or a station / album / book on
-            # instead -- nothing from the old choice is kept: not the lined-up song,
-            # not the prepared opening (only requests).
+            # A theme is a station: what it plays next is its own. Mid-show, the song
+            # lined up next is kept only if the DJ is already announcing it (the gap
+            # has started) or it's on the new station anyway; otherwise another is
+            # picked and the gap's talk re-worded for it. (It was always kept: White
+            # Stripes on "Carisbrooke Radio", lined up in a moment on everything.)
+            # Off air, or a station / album / book on instead, nothing from the old
+            # choice is kept: not the lined-up song, not the prepared opening.
+            # Requests always stay.
             in_show = self._in_music
+            was_next = self._queue[0] if self._queue else None
             found = self._use_selection(artist, profile)
-            keep = max(1, self._n_requested) if in_show else self._n_requested
+            keep = self._n_requested
+            if in_show and len(self._queue) > keep:
+                lined = self._queue[keep]
+                if self._in_gap or any(t.path == lined.path for t in self.selector.pool):
+                    keep += 1
             while len(self._queue) > keep:
                 self._queue.pop()
+            if in_show and not self._in_gap:
+                self._refill()
+                if self._queue and self._queue[0] is not was_next and self._gap_decision is not None:
+                    self._replan_gap(self._queue[0])
             if not in_show:
                 if self._opening is not None:     # its words needn't be made now
                     for step in self._opening[1]:

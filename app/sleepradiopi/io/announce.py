@@ -68,17 +68,12 @@ def spoken_host(host: str) -> str:
     return f"{name} dot local"
 
 
-def _name() -> str:
-    from sleepradiopi.config import brand
-    return brand.name
-
-
 def announcement(addrs: list[tuple[str, str]], host: str, hotspot: dict | None = None) -> str:
     """What the radio says. hotspot: {"ssid", "password", "ip"} when it has
     made its own network (no saved one in range)."""
     if hotspot:
         pw = hotspot["password"]
-        return (f"{_name()} here. I couldn't find a Wi-Fi network I know, so I've made my own. "
+        return (f"I couldn't find a Wi-Fi network I know, so I've made my own. "
                 f"On your phone, join {hotspot['ssid']}. The password is {pw}, spelled {', '.join(pw)}. "
                 f"Then open: {spoken_ip(hotspot['ip'])}, and add your Wi-Fi.")
     if not addrs:                       # (no name: the radio may be playing any station)

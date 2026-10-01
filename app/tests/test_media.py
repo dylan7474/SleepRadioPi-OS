@@ -105,11 +105,14 @@ def test_folders_and_deleting(tmp_path: Path) -> None:
 
 def test_the_lease_and_the_rescan(tmp_path: Path) -> None:
     rescans = []
-    lib = _lib(tmp_path, lambda: rescans.append(1))
+    lib = _lib(tmp_path, lambda kinds: rescans.append(kinds))
     assert not lib.done() and rescans == []                  # nothing changed: no rescan
     _up(lib, "music", "", "a.mp3", b"x")
     assert (tmp_path / "run" / "media-rw").read_text().isdigit()   # asked for /media to be writable
-    assert lib.done() and rescans == [1]
+    assert lib.done() and rescans == [{"music"}]
+    _up(lib, "jingles", "", "j1.mp3", b"x")
+    _up(lib, "jingles", "", "j2.mp3", b"x")
+    assert lib.done() and rescans[-1] == {"jingles"}         # a jingle: only the jingles rescanned
     assert not (tmp_path / "run" / "media-rw").exists()      # ...and let it go
 
 
@@ -171,3 +174,17 @@ def test_web_api(tmp_path: Path) -> None:
         assert code == 200 and d["changed"] and "tracks" in d["library"]
     finally:
         httpd.shutdown()
+
+
+def test_a_jingle_upload_rescans_only_the_jingles(tmp_path: Path, monkeypatch) -> None:
+    from sleepradiopi.broadcast import station as station_mod
+    st = _station(tmp_path)
+    calls = []
+    monkeypatch.setattr(station_mod, "scan_music", lambda *a: calls.append("music") or st.tracks)
+    monkeypatch.setattr(station_mod, "scan_jingles", lambda *a: calls.append("jingles") or [])
+    st.config.jingle_every = 4
+    st.reload_library({"jingles"})
+    assert calls == ["jingles"]
+    calls.clear()
+    st.reload_library()
+    assert "music" in calls and "jingles" in calls                # (no kinds: everything)

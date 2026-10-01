@@ -39,7 +39,8 @@ def test_the_radios_name() -> None:
         assert artist_station_name(None) == "Phonosphere" and DjScriptBuilder().station == "Phonosphere"
         from sleepradiopi.io.announce import announcement
         assert announcement([], "x") == "I'm not connected to a network."  # no name: it may play any station
-        assert announcement([], "x", {"ssid": "Phonosphere-Setup", "password": "ab", "ip": "192.168.4.1"}).startswith("Phonosphere here.")
+        hotspot = announcement([], "x", {"ssid": "Phonosphere-Setup", "password": "ab", "ip": "192.168.4.1"})
+        assert hotspot.startswith("I couldn't find") and "join Phonosphere-Setup" in hotspot   # (the network keeps it)
     finally:
         brand.set_name(old)
 

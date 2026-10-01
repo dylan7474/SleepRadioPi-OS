@@ -65,16 +65,27 @@ def test_artist_radio_plays_only_that_artist(tmp_path: Path) -> None:
     assert len({t.artist for t in (st._take_next() for _ in range(30))}) == 3
 
 
-def test_on_air_the_announced_next_track_still_plays(tmp_path: Path, monkeypatch) -> None:
+def test_on_air_the_next_song_is_the_new_stations_unless_its_being_announced(tmp_path: Path, monkeypatch) -> None:
+    from collections import deque
     st = _station(tmp_path)
     monkeypatch.setattr(st, "_thread", type("T", (), {"is_alive": lambda self: True})())
     st._in_music = True                      # the music show is what's on
-    st._refill()
-    announced = st._queue[0]
-    st.set_artist("beatles")                            # any spelling
-    assert st._take_next() == announced
+    other = next(t for t in st.tracks if t.artist != "The Beatles")
+    st._queue = deque([other])               # lined up next: not the Beatles
+    st.set_artist("beatles")                            # mid-song: not announced yet
     assert {st._take_next().artist for _ in range(8)} == {"The Beatles"}
-
+    st.set_artist(None)
+    st._queue = deque([other])
+    st._in_gap = True                                   # the DJ is introducing it now
+    st.set_artist("beatles")
+    st._in_gap = False
+    assert st._take_next() == other                     # so it still plays, then the station's own
+    assert {st._take_next().artist for _ in range(8)} == {"The Beatles"}
+    beatle = next(t for t in st.tracks if t.artist == "The Beatles")
+    st.set_artist(None)
+    st._queue = deque([beatle])
+    st.set_artist("beatles")                            # it's on the new station anyway: kept
+    assert st._take_next() == beatle
 
 def test_unknown_artist_falls_back_to_everything(tmp_path: Path) -> None:
     st = _station(tmp_path)
