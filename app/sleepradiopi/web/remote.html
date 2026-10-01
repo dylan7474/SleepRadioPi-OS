@@ -144,6 +144,58 @@
   label.tick { display: flex; align-items: center; gap: 8px; font-size: 13px; }
   .toast { position: fixed; left: 50%; bottom: calc(18px + env(safe-area-inset-bottom, 0px)); transform: translateX(-50%); z-index: 9;
            max-width: min(92vw, 420px); background: var(--toast); color: var(--toast-ink); padding: 10px 14px; border-radius: 10px; font-size: 14px; }
+  /* the remote: big, plain buttons for eyes that aren't what they were; one screen, no scrolling */
+  body.remote-on { overflow: hidden; }
+  body.remote-on .menubar { display: none; }
+  .chunky { max-width: 520px; height: 100vh; height: 100dvh; padding: calc(10px + env(safe-area-inset-top, 0px)) 12px calc(10px + env(safe-area-inset-bottom, 0px));
+            display: grid; grid-template-rows: auto auto minmax(0, 1.25fr) minmax(0, 1fr) minmax(0, 2.2fr) auto; gap: 1.4vh; }
+  .cdial { border-radius: 16px; padding: 1.2vh 14px 1.4vh; color: #231703; min-width: 0;
+           background: linear-gradient(180deg, #f7c86d, #e9a23a 55%, #c98522); box-shadow: inset 0 1px 0 #ffe3a6, inset 0 -2px 6px #0003, 0 6px 18px var(--shadow); }
+  .ctop { display: flex; justify-content: space-between; gap: 8px; font-size: clamp(13px, 1.9vh, 17px); font-weight: 700; letter-spacing: .06em; text-transform: uppercase; }
+  .ctop span:first-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .ctop #onair { flex: none; color: #8a1c0c; }
+  .cdial b { display: block; font: 700 clamp(22px, 3.9vh, 34px)/1.15 var(--display); margin-top: .4vh;
+             overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+  .cdial em { display: block; font-style: normal; font-size: clamp(16px, 2.5vh, 22px); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .crow { display: grid; grid-template-columns: 1fr 1.35fr 1fr; gap: 10px; min-height: 0; }
+  .cbtn { border: 2px solid #8f8774; border-radius: 18px; background: linear-gradient(180deg, #ffffff, #e9e5dc); color: #1d1b17;
+          display: flex; align-items: center; justify-content: center; gap: 6px; min-height: 56px; min-width: 0;
+          font: 700 clamp(22px, 4vh, 40px) var(--body); text-decoration: none; box-shadow: 0 3px 0 #0003; padding: 0 6px; }
+  .cbtn:active:not(:disabled) { transform: translateY(2px); box-shadow: 0 1px 0 #0003; }
+  .cbtn:disabled { opacity: .35; }
+  .cbtn svg { width: clamp(30px, 5vh, 46px); height: clamp(30px, 5vh, 46px); }
+  .cbtn.small { font-size: clamp(16px, 2.4vh, 22px); min-height: 52px; }
+  .cplay { background: radial-gradient(circle at 35% 30%, #5b86d6, #2f5cb4 55%, #1d3d7c); border-color: #1d3d7c; color: #fff; border-radius: 22px; }
+  .cplay svg { width: clamp(40px, 7vh, 64px); height: clamp(40px, 7vh, 64px); }
+  .cvolnum { display: flex; flex-direction: column; align-items: center; justify-content: center; border-radius: 18px; background: var(--win); border: 2px solid var(--line); }
+  .cvolnum small { font-size: clamp(13px, 1.8vh, 16px); color: var(--dim); font-weight: 600; }
+  .cvolnum b { font: 700 clamp(28px, 5vh, 46px)/1 var(--display); font-variant-numeric: tabular-nums; }
+  .cseek { min-width: 0; }
+  .cbarrow { display: grid; grid-template-columns: auto 1fr auto; gap: 10px; align-items: center; }
+  .cbarrow .cbtn { padding: 0 12px; }
+  .ctimes { display: flex; justify-content: space-between; padding: 2px 84px 0; font: 700 clamp(15px, 2.2vh, 19px) var(--body); font-variant-numeric: tabular-nums; }
+  #pos { -webkit-appearance: none; appearance: none; width: 100%; height: 44px; background: transparent; margin: 0; }
+  #pos::-webkit-slider-runnable-track { height: 14px; border-radius: 7px; background: #c9c2b1; }
+  #pos::-moz-range-track { height: 14px; border-radius: 7px; background: #c9c2b1; }
+  #pos::-moz-range-progress { height: 14px; border-radius: 7px; background: #c98522; }
+  #pos::-webkit-slider-thumb { -webkit-appearance: none; width: 36px; height: 36px; margin-top: -11px; border-radius: 50%; background: #e9a23a; border: 3px solid #231703; }
+  #pos::-moz-range-thumb { width: 32px; height: 32px; border-radius: 50%; background: #e9a23a; border: 3px solid #231703; }
+  .cpresets { display: grid; grid-template-columns: 1fr 1fr; grid-template-rows: 1fr 1fr; gap: 10px; min-height: 0; }
+  .cpresets .cbtn { flex-direction: column; gap: 2px; padding: 4px 8px; font-size: clamp(17px, 2.7vh, 24px); line-height: 1.15; text-align: center; }
+  .cpresets .cbtn i { font: 700 clamp(14px, 2vh, 18px) var(--display); font-style: normal; color: #5d574b; }
+  .cpresets .cbtn span { overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow-wrap: anywhere; }
+  .cpresets .cbtn.on { background: linear-gradient(180deg, #f7c86d, #e9a23a); border-color: #231703; border-width: 3px; }
+  .cpresets .cbtn.on i { color: #231703; }
+  .cfoot { grid-template-columns: 1fr 1fr 1fr; }
+  .cfoot .cbtn[aria-pressed="true"] { background: #2b2a26; color: #fff; border-color: #2b2a26; }
+  :root[data-theme="dark"] .cbtn { background: linear-gradient(180deg, #2c3350, #232941); color: #ece6d6; border-color: #59617f; }
+  :root[data-theme="dark"] .cpresets .cbtn i { color: #b9b3a5; }
+  :root[data-theme="dark"] .cpresets .cbtn.on { background: linear-gradient(180deg, #f7c86d, #e9a23a); color: #231703; border-color: #f7c86d; }
+  :root[data-theme="dark"] .cfoot .cbtn[aria-pressed="true"] { background: #ece6d6; color: #141827; }
+  :root[data-theme="dark"] .cplay { background: radial-gradient(circle at 35% 30%, #5b86d6, #2f5cb4 55%, #1d3d7c); color: #fff; }
+  /* each part in its own row, so a hidden position bar doesn't shift the rest */
+  .cdial { grid-row: 1; } .cseek { grid-row: 2; } .ctransport { grid-row: 3; } .cvol { grid-row: 4; } .cpresets { grid-row: 5; } .cfoot { grid-row: 6; }
+  @media (max-height: 620px) { .cseek .ctimes { display: none; } }
 </style>
 </head>
 <body>
@@ -151,7 +203,6 @@
   <div class="logo">SLEEP <span>RADIO</span></div>
   <div class="grow"></div>
   <span class="bars" id="bars" aria-label="Wi-Fi"><i style="height:4px"></i><i style="height:7px"></i><i style="height:10px"></i><i style="height:12px"></i></span>
-  <span class="onair" id="onair"></span>
   <span class="clock" id="clock"></span>
 </header>
 
@@ -167,64 +218,36 @@
   </section>
 </main>
 
-<main id="remote" hidden>
-  <section class="radio" aria-label="The radio">
-    <div class="handle"></div>
-    <div class="dial">
-      <small id="dialTop">Now playing</small>
-      <b id="dialTitle">…</b>
-      <em id="dialSub"></em>
-      <div class="scale"></div><div class="needle" id="needle"></div>
-    </div>
-    <div class="seek" id="seekRow" hidden>
-      <button class="key" type="button" id="back10" aria-label="Back ten seconds">−10 s</button>
-      <output id="posNow">0:00</output>
-      <label style="flex:1;display:flex;min-width:0"><span hidden>Position</span><input type="range" id="pos" min="0" max="1000" value="0" aria-label="Position"></label>
-      <output id="posLen">0:00</output>
-      <button class="key" type="button" id="fwd10" aria-label="On ten seconds">+10 s</button>
-    </div>
-    <div class="face">
-      <div class="grille"></div>
-      <div>
-        <button class="knob" type="button" id="knob" aria-label="Pause"></button>
-        <div class="under" id="under"></div>
-      </div>
-      <div class="grille"></div>
-    </div>
-    <div class="vol">
-      <button class="key big" type="button" id="volDown" aria-label="Quieter">−</button>
-      <input type="range" id="vol" min="0" max="100" value="50" aria-label="Volume">
-      <button class="key big" type="button" id="volUp" aria-label="Louder">+</button>
-    </div>
-    <div class="transport">
-      <button class="key big" type="button" id="prev" aria-label="Back"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M6 5v14"/><path d="M19 5 9 12l10 7z"/></svg></button>
-      <span class="tlabel">BACK · SKIP</span>
-      <button class="key big" type="button" id="skip" aria-label="Skip"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M18 5v14"/><path d="M5 5l10 7-10 7z"/></svg></button>
-    </div>
-    <div class="bankrow">
-      <div class="banks"><button type="button" id="bankDay" aria-pressed="true">☀ Day</button><button type="button" id="bankNight" aria-pressed="false">☾ Night</button></div>
-      <span class="bnote" id="bankNote"></span>
-    </div>
-    <div class="presets" id="presets"></div>
+<main id="remote" class="chunky" hidden>
+  <section class="cdial" aria-live="polite">
+    <div class="ctop"><span id="dialTop">Now playing</span><span id="onair"></span></div>
+    <b id="dialTitle">…</b>
+    <em id="dialSub"></em>
   </section>
-
-  <section class="win" id="themesWin">
-    <div class="tbar"><i></i><b><span id="themesTitle">Themes</span></b><u></u></div>
-    <div class="rows" id="themes"></div>
-  </section>
-
-  <section class="win">
-    <div class="quick">
-      <div class="qrow"><span>Sleep</span><div class="seg" id="sleepSeg"></div></div>
-      <div class="qrow"><span>Noise</span><div class="seg" id="noiseSeg"></div></div>
+  <section class="cseek" id="seekRow" hidden>
+    <div class="cbarrow">
+      <button class="cbtn small" type="button" id="back10" aria-label="Back ten seconds">−10 s</button>
+      <input type="range" id="pos" min="0" max="1000" value="0" aria-label="Position">
+      <button class="cbtn small" type="button" id="fwd10" aria-label="On ten seconds">+10 s</button>
     </div>
+    <div class="ctimes"><span id="posNow">0:00</span><span id="posLen">0:00</span></div>
   </section>
-
-  <div class="two" id="stopRow" hidden>
-    <button class="wide" type="button" id="stopList">Stop the playlist</button>
-    <a class="wide primary" href="/desktop">Open the full desktop</a>
-  </div>
-  <a class="wide primary" href="/desktop" id="deskLink">Open the full desktop</a>
+  <section class="crow ctransport">
+    <button class="cbtn" type="button" id="prev" aria-label="Back"><svg viewBox="0 0 24 24" fill="currentColor"><rect x="4" y="5" width="3" height="14" rx="1"/><path d="M20 5v14L8.5 12z"/></svg></button>
+    <button class="cbtn cplay" type="button" id="knob" aria-label="Pause"></button>
+    <button class="cbtn" type="button" id="skip" aria-label="Skip"><svg viewBox="0 0 24 24" fill="currentColor"><rect x="17" y="5" width="3" height="14" rx="1"/><path d="M4 5v14l11.5-7z"/></svg></button>
+  </section>
+  <section class="crow cvol">
+    <button class="cbtn" type="button" id="volDown" aria-label="Quieter">−</button>
+    <div class="cvolnum"><small>Volume</small><b id="volNum">–</b></div>
+    <button class="cbtn" type="button" id="volUp" aria-label="Louder">+</button>
+  </section>
+  <section class="cpresets" id="presets"></section>
+  <section class="crow cfoot">
+    <button class="cbtn small" type="button" id="bankDay" aria-pressed="true">☀ Day</button>
+    <button class="cbtn small" type="button" id="bankNight" aria-pressed="false">☾ Night</button>
+    <a class="cbtn small" href="/desktop" id="deskLink">More…</a>
+  </section>
 </main>
 
 <main id="setup" hidden>
@@ -257,8 +280,7 @@ const $ = id => document.getElementById(id);
 const el = (tag, props, ...kids) => { const e = Object.assign(document.createElement(tag), props || {}); e.append(...kids.filter(k => k != null)); return e; };
 const PLAY = '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>';
 const PAUSE = '<svg viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="5" width="4" height="14" rx="1"/><rect x="14" y="5" width="4" height="14" rx="1"/></svg>';
-const TINTS = ["#2f5cb4", "#9a5b2e", "#3f9b68", "#8a4fa3", "#b8432f", "#4b7f8f"];
-let S = null, B = null, THEMES = [], seeking = false, volBusy = 0, toastT = 0, mode = null;
+let S = null, B = null, seeking = false, volBusy = 0, toastT = 0, mode = null;
 
 function toast(msg) {
   const t = $("toast"); t.textContent = msg; t.hidden = false;
@@ -276,6 +298,7 @@ const act = async (path, body, after) => { try { const d = await api(path, body)
 function show(which) {
   mode = which;
   for (const id of ["login", "remote", "setup"]) $(id).hidden = id !== which;
+  document.body.classList.toggle("remote-on", which === "remote");
 }
 const mmss = ms => { const s = Math.max(0, Math.round(ms / 1000)), h = Math.floor(s / 3600), m = Math.floor(s / 60) % 60;
   return (h ? h + ":" + String(m).padStart(2, "0") : m) + ":" + String(s % 60).padStart(2, "0"); };
@@ -290,28 +313,24 @@ function look() {
 // --- the remote ------------------------------------------------------------------------------
 function dialWords(s) {
   const src = s.source, n = s.now;
-  if (src?.kind === "playlist") return [`Playlist ${src.name} · song ${src.track + 1} of ${src.tracks} · no DJ`, n?.title, n?.artist];
-  if (src?.kind === "album") return [`Album · track ${src.track + 1} of ${src.tracks}`, n?.title || src.title, n?.artist || src.artist];
+  if (src?.kind === "playlist") return [`Playlist · ${src.name}`, n?.title, n?.artist];
+  if (src?.kind === "album") return [`Album · ${src.title}`, n?.title || src.title, n?.artist || src.artist];
   if (src?.kind === "radio") return ["Internet radio", src.name, src.title || src.info || ""];
   if (src?.kind === "book") return ["Audiobook", src.title, src.chapter_title || src.author || ""];
   if (src?.kind === "episode") return ["Podcast · " + (src.show_title || ""), src.title, ""];
   const station = s.station_name || "Sleep Radio";
   if (!n) return [station, s.on_air ? "…" : "Off air", ""];
   const kinds = { dj: "The DJ", jingle: "Jingle", news: "The news", wait: "" };
-  return [station, n.title, n.kind === "track" ? [n.artist, s.next ? "next: " + s.next.title : ""].filter(Boolean).join(" · ") : (kinds[n.kind] ?? "")];
+  return [station, n.title, n.kind === "track" ? n.artist : (kinds[n.kind] ?? "")];
 }
 function render() {
   const s = S, sp = s.speaker || {};
-  const playing = sp.playing !== false && s.on_air;
-  $("onair").textContent = sp.playing === false ? "PAUSED" : s.on_air ? "● ON AIR" : "OFF AIR";
-  $("onair").classList.toggle("off", !playing);
+  $("onair").textContent = sp.playing === false ? "Paused" : s.on_air ? "● On air" : "Off air";
   const [top, title, sub] = dialWords(s);
   $("dialTop").textContent = top; $("dialTitle").textContent = title || "…"; $("dialSub").textContent = sub || "";
   $("knob").innerHTML = sp.playing === false ? PLAY : PAUSE;
   $("knob").setAttribute("aria-label", sp.playing === false ? "Play" : "Pause");
-  const sleepLeft = sp.sleep_left_s ? ` · sleep in ${Math.ceil(sp.sleep_left_s / 60)} min` : "";
-  $("under").textContent = (sp.playing === false ? "Paused" : "Volume " + Math.round(sp.volume ?? 0)) + sleepLeft;
-  if (Date.now() > volBusy) $("vol").value = sp.volume ?? 0;
+  if (Date.now() > volBusy) { VOL = Math.round(sp.volume ?? 0); $("volNum").textContent = VOL; }
   // the bar: a song, book or podcast that can be moved through
   const p = s.position, can = !!(p && p.total_ms);
   $("seekRow").hidden = !can;
@@ -319,63 +338,31 @@ function render() {
     $("pos").max = p.total_ms; $("pos").value = Math.min(p.pos_ms, p.total_ms);
     $("posNow").textContent = mmss(p.pos_ms); $("posLen").textContent = mmss(p.total_ms);
   }
-  $("needle").style.left = (can ? 4 + 92 * Math.min(1, p.pos_ms / p.total_ms) : 20) + "%";
   $("prev").disabled = !s.can_previous; $("skip").disabled = !s.can_skip;
-  // themes
-  const onTheme = !s.source && s.on_air ? (s.profile || "").toLowerCase() : null;
-  $("themesTitle").textContent = s.source ? "Themes · tap one for Theme Radio" : "Themes";
-  $("themes").replaceChildren(...THEMES.map((name, i) => {
-    const on = onTheme === name.toLowerCase();
-    const row = el("button", { type: "button", className: "row" + (on ? " on" : "") },
-      el("span", { className: "tint", textContent: name[0].toUpperCase() }), el("span", { className: "t", textContent: name }),
-      el("span", { className: "mark", textContent: on ? "● ON AIR" : "" }));
-    row.querySelector(".tint").style.background = name.toLowerCase() === "default" ? "#8a8474" : TINTS[i % TINTS.length];
-    row.onclick = () => playTheme(name);
-    return row;
-  }));
-  // quick
-  const seg = (box, opts, now, fn) => box.replaceChildren(...opts.map(([v, t]) => {
-    const b = el("button", { type: "button", textContent: t }); b.setAttribute("aria-pressed", String(v === now)); b.onclick = () => fn(v); return b; }));
-  const sleepNow = sp.sleep_min ? [15, 30, 60].reduce((a, m) => Math.abs(m - sp.sleep_min) < Math.abs(a - sp.sleep_min) ? m : a, 30) : 0;
-  seg($("sleepSeg"), [[0, "Off"], [15, "15 min"], [30, "30 min"], [60, "60 min"]], sleepNow, m => act("/api/speaker", { sleep: m }, () => toast(m ? `Sleep in ${m} minutes.` : "Sleep timer off.")));
-  seg($("noiseSeg"), [[false, "Off"], [true, "On"]], !!sp.noise?.on, v => act("/api/speaker", { noise: v }));
-  const list = s.source?.kind === "playlist";
-  $("stopRow").hidden = !list; $("deskLink").hidden = list;
 }
 function renderButtons() {
   if (!B) return;
   $("bankDay").setAttribute("aria-pressed", String(B.bank !== "night"));
   $("bankNight").setAttribute("aria-pressed", String(B.bank === "night"));
-  $("bankNote").textContent = B.bank === "night" ? "The night buttons, in use" : "The day buttons, in use";
   $("presets").replaceChildren(...B.buttons.map((b, i) => {
-    const key = el("button", { type: "button", textContent: String(i + 1) });
+    const key = el("button", { type: "button", className: "cbtn" + (b.playing ? " on" : "") },
+      el("i", { textContent: String(i + 1) }), el("span", { textContent: b.label }));
     key.setAttribute("aria-label", `Button ${i + 1}: ${b.label}` + (b.playing ? " (playing: press to pause)" : ""));
     key.onclick = () => act("/api/buttons/press", { button: i + 1 }, () => setTimeout(loadButtons, 600));
-    return el("div", { className: "pbtn" + (b.playing ? " on" : "") }, key, el("span", { textContent: b.label }));
+    return key;
   }));
   look();
 }
 async function loadButtons() { try { B = await api("/api/buttons"); renderButtons(); } catch {} }
-async function loadThemes() { try { THEMES = (await api("/api/artists")).profiles.map(p => p.name); if (S) render(); } catch {} }
 async function poll() {
   if (mode !== "remote") return;
   try { S = await api("/api/status"); render(); } catch {}
 }
-async function playTheme(name) {
-  try {
-    await api("/api/station", { artist: null, profile: name });
-    if (S?.source) await api("/api/radio/stop", {});
-    await api("/api/speaker", { pause: false });
-    toast(`${name === "Default" ? "Default" : name + " Radio"}.`);
-  } catch (e) { toast(e.message); }
-  poll(); setTimeout(loadButtons, 800);
-}
+let VOL = 0;
 $("knob").onclick = () => act("/api/speaker", { pause: "toggle" });
-const setVol = v => { volBusy = Date.now() + 1500; $("vol").value = v; act("/api/speaker", { volume: Math.max(0, Math.min(100, v)) }); };
-$("vol").onchange = e => setVol(+e.target.value);
-$("vol").oninput = () => { volBusy = Date.now() + 1500; };
-$("volDown").onclick = () => setVol(+$("vol").value - 2);
-$("volUp").onclick = () => setVol(+$("vol").value + 2);
+const setVol = v => { VOL = Math.max(0, Math.min(100, v)); volBusy = Date.now() + 1500; $("volNum").textContent = VOL; act("/api/speaker", { volume: VOL }); };
+$("volDown").onclick = () => setVol(VOL - 2);
+$("volUp").onclick = () => setVol(VOL + 2);
 $("prev").onclick = () => act("/api/previous", {});
 $("skip").onclick = () => act("/api/skip", {});
 $("pos").oninput = e => { seeking = true; $("posNow").textContent = mmss(+e.target.value); };
@@ -384,7 +371,6 @@ $("back10").onclick = () => act("/api/seek", { delta_ms: -10000 });
 $("fwd10").onclick = () => act("/api/seek", { delta_ms: 10000 });
 $("bankDay").onclick = () => act("/api/buttons/bank", { bank: "day" }, () => setTimeout(loadButtons, 300));
 $("bankNight").onclick = () => act("/api/buttons/bank", { bank: "night" }, () => setTimeout(loadButtons, 300));
-$("stopList").onclick = () => act("/api/playlists/stop", {}, () => toast("The playlist stops after this song."));
 
 // --- Wi-Fi set-up (the radio's own network) --------------------------------------------------
 let joining = null;
@@ -442,7 +428,7 @@ $("loginForm").onsubmit = async e => {
 };
 function startRemote() {
   show("remote");
-  loadThemes(); loadButtons(); poll();
+  loadButtons(); poll();
 }
 async function boot() {
   clock(); setInterval(clock, 10000); look();
@@ -463,7 +449,6 @@ async function boot() {
 }
 setInterval(poll, 2500);
 setInterval(() => { if (mode === "remote") loadButtons(); }, 15000);
-setInterval(() => { if (mode === "remote") loadThemes(); }, 60000);
 document.addEventListener("visibilitychange", () => { if (!document.hidden) { poll(); loadButtons(); } });
 boot();
 </script>
