@@ -143,6 +143,14 @@ class OnAir:
 
 PREVIOUS_RESTART_S = 5          # Previous later than this into a track restarts it
 
+def _size(path: Path) -> int:
+    """A file's size in bytes (0 if it has gone)."""
+    try:
+        return path.stat().st_size
+    except OSError:
+        return 0
+
+
 def _natural(name: str) -> list:
     """'10 - x' after '9 - x': digits compare as numbers."""
     return [int(p) if p.isdigit() else p.lower() for p in re.split(r"(\d+)", name)]
@@ -1229,8 +1237,9 @@ class Station:
                 here = a
             elif a["folder"].startswith(prefix):
                 name = a["folder"][len(prefix):].split("/")[0]
-                sub = subs.setdefault(name, {"name": name, "tracks": 0, "own": False, "inner": set()})
+                sub = subs.setdefault(name, {"name": name, "tracks": 0, "bytes": 0, "own": False, "inner": set()})
                 sub["tracks"] += len(a["tracks"])
+                sub["bytes"] += self._album_bytes(a)
                 if a["folder"] == prefix + name:
                     sub["own"] = True           # it has tracks of its own
                 else:                           # the folders inside it (holding audio somewhere)
@@ -1241,9 +1250,17 @@ class Station:
         album = None
         if here is not None:
             album = {**self._album_info(here),
-                     "list": [{"n": i, "title": t.title, "artist": t.artist, "path": self._ref(t)[1]}
+                     "list": [{"n": i, "title": t.title, "artist": t.artist, "path": self._ref(t)[1], "bytes": _size(t.path)}
                               for i, t in enumerate(here["tracks"])]}
         return {"root": root, "path": path, "folders": folders, "album": album}
+
+    @staticmethod
+    def _album_bytes(a: dict) -> int:
+        """The size of an album's files, worked out once (the album index is
+        rebuilt when the library changes, which starts it again)."""
+        if "bytes" not in a:
+            a["bytes"] = sum(_size(t.path) for t in a["tracks"])
+        return a["bytes"]
 
     @staticmethod
     def _album_info(a: dict) -> dict:

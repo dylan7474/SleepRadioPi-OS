@@ -171,7 +171,9 @@
   .wtools .note + .vseg { margin-left: 10px; }
   .vseg button { padding: 3px 7px; display: inline-grid; place-items: center; }
   .vseg svg { width: 15px; height: 15px; display: block; }
-  .lhead, .row.lrow { grid-template-columns: 24px minmax(0, 1fr) minmax(0, .8fr) 92px; }
+  .lhead, .row.lrow { grid-template-columns: 24px minmax(0, 1fr) minmax(0, .8fr) 64px 92px; }
+  .lrow .size { color: var(--dim); font-size: 12px; text-align: right; font-variant-numeric: tabular-nums; }
+  .lhead .lh.sz { justify-self: end; }
   .lhead { display: grid; gap: 10px; padding: 6px 14px 4px; font-size: 11px; color: var(--dim); border-bottom: 1px solid var(--line);
            position: sticky; top: 0; background: var(--win); z-index: 1; }
   .lh { all: unset; cursor: pointer; justify-self: start; display: inline-flex; align-items: center; gap: 5px; padding: 1px 4px; margin: -1px -4px; border-radius: 4px; }
@@ -543,7 +545,7 @@ const parentOf = id => Object.values(O).find(o => o.kids && o.kids.includes(id))
 
 // ---- loading from the radio ----
 function trackObj(root, t, albumTitle) {
-  return mk({ id: "t:" + root + ":" + t.path, kind: "track", title: t.title || cleanName(t.path), artist: t.artist || "", root, path: t.path,
+  return mk({ id: "t:" + root + ":" + t.path, kind: "track", title: t.title || cleanName(t.path), artist: t.artist || "", root, path: t.path, ...(t.bytes != null && { bytes: t.bytes }),
               n: t.n != null ? t.n + 1 : undefined, h: hue(albumTitle || lastPart(t.path.split("/").slice(0, -1).join("/"))) });
 }
 async function loadFolder(f) {
@@ -552,7 +554,7 @@ async function loadFolder(f) {
     const kids = d.folders.map(x => {
       const path = f.path ? f.path + "/" + x.name : x.name, leaf = x.own && !x.folders;
       const o = mk({ id: (leaf ? "a:" : "f:") + f.root + ":" + path, kind: leaf ? "album" : "folder", title: O[(leaf ? "a:" : "f:") + f.root + ":" + path]?.title || x.name,
-                     root: f.root, path, kids: O[(leaf ? "a:" : "f:") + f.root + ":" + path]?.kids || [], count: x.tracks, folders: x.folders, alt: f.root === "ondemand" });
+                     root: f.root, path, kids: O[(leaf ? "a:" : "f:") + f.root + ":" + path]?.kids || [], count: x.tracks, folders: x.folders, bytes: x.bytes, alt: f.root === "ondemand" });
       return o.id;
     });
     if (d.album) for (const t of d.album.list) kids.push(trackObj(f.root, t, d.album.title).id);
@@ -561,7 +563,7 @@ async function loadFolder(f) {
       for (const x of m.folders) {
         const path = f.path ? f.path + "/" + x.name : x.name;
         if (!kids.includes("f:" + f.root + ":" + path) && !kids.includes("a:" + f.root + ":" + path))
-          kids.push(mk({ id: "f:" + f.root + ":" + path, kind: "folder", title: x.name, root: f.root, path, kids: [], count: 0, alt: f.root === "ondemand" }).id);
+          kids.push(mk({ id: "f:" + f.root + ":" + path, kind: "folder", title: x.name, root: f.root, path, kids: [], count: 0, bytes: 0, alt: f.root === "ondemand" }).id);
       }
     } catch {}
     f.kids = kids;
@@ -599,7 +601,7 @@ async function loadFolder(f) {
     f.kids = Object.values(ACTION).filter(a => !FLIP[a.action]).map(a => a.id);
   } else if (f.box === "jingles") {
     const d = await api("/api/media?kind=jingles&path=");
-    f.kids = d.files.filter(x => x.audio).map(x => mk({ id: "j:" + x.name, kind: "jingle", title: cleanName(x.name), root: "jingles", path: x.name, mb: x.size / 1e6 }).id);
+    f.kids = d.files.filter(x => x.audio).map(x => mk({ id: "j:" + x.name, kind: "jingle", title: cleanName(x.name), root: "jingles", path: x.name, mb: x.size / 1e6, bytes: x.size }).id);
   } else if (f.box === "lists") {
     const d = await api("/api/artists");
     f.kids = [SHOW.id, ...d.profiles.map(p => mk({ id: "ls:" + p.name, kind: "list", name: p.name, title: p.name, count: p.artists.length }).id)];
@@ -843,7 +845,8 @@ function listEl(o, ctx) {           // a folder's list view: one row, which drag
   if (["folder", "playlist", "programme", "trash"].includes(o.kind)) { d.dataset.drop = "icon"; d.dataset.target = o.id; }
   const sub = subOf(o);
   d.append(el("span", { className: "gi" }, glyph(o)), el("b", { textContent: o.title }),
-           el("span", { className: "det", textContent: sub }), el("span", { className: "knd", textContent: KIND[o.kind] || "" }));
+           el("span", { className: "det", textContent: sub }), el("span", { className: "size", textContent: bytesText(o.bytes) }),
+           el("span", { className: "knd", textContent: KIND[o.kind] || "" }));
   d.title = `${KIND[o.kind]}: ${o.title}${sub ? " · " + sub : ""}`;
   d._src = { id: o.id, ...ctx, row: true };
   d.addEventListener("pointerdown", e => press(e, d, d._src));
@@ -866,7 +869,12 @@ function setView(id, v) { views[id] = v; try { localStorage.setItem("srd.views",
 // A folder's sort, set from the list's column headings (icons follow it too): A-Z, Z-A, then
 // back to the folder's own order (which means something in Birthdays, Programmes...); kept like the view
 let sorts = {}; try { sorts = JSON.parse(localStorage.getItem("srd.sorts")) || {}; } catch {}
-const SORT_COLS = [["name", "Name"], ["det", "Details"], ["kind", "Kind"]];
+const SORT_COLS = [["name", "Name"], ["det", "Details"], ["size", "Size"], ["kind", "Kind"]];
+function bytesText(n) {                 // "820 KB", "4.2 MB", "312 MB", "1.3 GB"; blank for things that aren't files
+  if (n == null) return "";
+  const [v, u] = n >= 1e9 ? [n / 1e9, "GB"] : n >= 1e6 ? [n / 1e6, "MB"] : [Math.max(n ? 1 : 0, n / 1e3), "KB"];
+  return `${v < 10 && u !== "KB" ? v.toFixed(1) : Math.round(v)} ${u}`;
+}
 const sortOf = o => inherited(sorts, o, "own");
 function nextSort(o, by) {
   const [cur, dir] = sortOf(o).split(":");
@@ -877,19 +885,26 @@ function nextSort(o, by) {
 function sorted(o, ids) {
   const [by, dir] = sortOf(o).split(":");
   if (by === "own") return ids;
+  const byTitle = (a, b) => a.title.localeCompare(b.title, undefined, { numeric: true, sensitivity: "base" });
+  if (by === "size") {                   // biggest or smallest first; things with no size stay at the end
+    const have = ids.filter(id => O[id] && O[id].bytes != null).sort((a, b) => (O[a].bytes - O[b].bytes) || byTitle(O[a], O[b]));
+    return [...(dir === "down" ? have.reverse() : have), ...ids.filter(id => O[id] && O[id].bytes == null).sort((a, b) => byTitle(O[a], O[b]))];
+  }
   const key = x => by === "name" ? x.title : by === "det" ? subOf(x) : KIND[x.kind] || "";
-  const cmp = (a, b) => key(a).localeCompare(key(b), undefined, { numeric: true, sensitivity: "base" }) || a.title.localeCompare(b.title, undefined, { numeric: true });
+  const cmp = (a, b) => key(a).localeCompare(key(b), undefined, { numeric: true, sensitivity: "base" }) || byTitle(a, b);
   const out = ids.filter(id => O[id]).sort((a, b) => cmp(O[a], O[b]));
   return dir === "down" ? out.reverse() : out;
 }
 function sortWords(o) {                // for the footer: icons have no headings to show it
   const [by, dir] = sortOf(o).split(":");
-  return by === "own" ? "" : `sorted by ${SORT_COLS.find(c => c[0] === by)[1].toLowerCase()}, ${dir === "up" ? "A–Z" : "Z–A"}`;
+  if (by === "own") return "";
+  if (by === "size") return dir === "up" ? "smallest first" : "largest first";
+  return `sorted by ${SORT_COLS.find(c => c[0] === by)[1].toLowerCase()}, ${dir === "up" ? "A–Z" : "Z–A"}`;
 }
 function listHead(o) {
   const [by, dir] = sortOf(o).split(":");
   return el("div", { className: "lhead" }, el("span"), ...SORT_COLS.map(([k, label]) => {
-    const on = by === k, b = el("button", { type: "button", className: "lh" + (on ? " on " + dir : ""), textContent: label,
+    const on = by === k, b = el("button", { type: "button", className: "lh" + (k === "size" ? " sz" : "") + (on ? " on " + dir : ""), textContent: label,
       title: !on ? `Sort by ${label.toLowerCase()}` : dir === "up" ? "Reverse the order" : "Back to the folder's own order" });
     b.setAttribute("aria-sort", on ? (dir === "up" ? "ascending" : "descending") : "none");
     b.onclick = () => nextSort(o, k);

@@ -368,8 +368,9 @@ The cards:
   icons for Music, On demand, Audiobooks, Podcasts, Stations, Playlists,
   Programmes and Theme radio (folders load from `/api/browse` as you open
   them); windows you move and resize; every folder window shows its things as
-  **icons or a list** (the switch in its toolbar; the list has Name, Details
-  and Kind columns, and rows drag, drop and open like icons; click a column
+  **icons or a list** (the switch in its toolbar; the list has Name, Details,
+  Size and Kind columns (`/api/browse` gives each folder's and track's
+  `bytes`), and rows drag, drop and open like icons; click a column
   heading to sort by it, again to reverse, a third time for the folder's own
   order (the icons follow the same sort, and the window's footer says when
   one is on); view and sort are kept per folder

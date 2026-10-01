@@ -171,6 +171,15 @@ def test_web_api(tmp_path: Path) -> None:
         httpd.shutdown()
 
 
+def test_browse_gives_sizes(tmp_path: Path) -> None:
+    st = _od_station(tmp_path)
+    (tmp_path / "ondemand/Old radio shows/Hancock/Series 2/01 - The Bequest.mp3").write_bytes(b"x" * 1000)
+    top = {f["name"]: f["bytes"] for f in st.browse("ondemand")["folders"]}
+    assert top == {"Classical": 4, "Old radio shows": 1002, "Thunderstorms": 1}     # every file under it
+    s2 = st.browse("ondemand", "Old radio shows/Hancock/Series 2")["album"]
+    assert [t["bytes"] for t in s2["list"]] == [1000]
+
+
 def test_browse_lists_an_albums_tracks(tmp_path: Path) -> None:
     st = _od_station(tmp_path)
     s1 = st.browse("ondemand", "Old radio shows/Hancock/Series 1")["album"]
