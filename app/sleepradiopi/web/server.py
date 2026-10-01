@@ -40,7 +40,8 @@ from .stream import Mp3Output
 
 log = logging.getLogger(__name__)
 
-PAGE = (Path(__file__).parent / "page.html").read_bytes()
+PAGE = (Path(__file__).parent / "page.html").read_bytes()       # the classic page (/classic; the desktop's older windows)
+REMOTE = (Path(__file__).parent / "remote.html").read_bytes()   # the phone remote (/), and the Wi-Fi set-up on the hotspot
 DESKTOP = (Path(__file__).parent / "desktop.html").read_bytes()   # the new desktop page (for computers)
 DESKTOP_TAG = hashlib.sha1(DESKTOP).hexdigest()[:12]   # an open desktop page that sees this change reloads itself
 # The speaker analyser (also on GitHub Pages): served here too, for tuning with no internet.
@@ -77,7 +78,7 @@ def make_handler(station: Station, output: Mp3Output, speaker=None,
                  config_file: Path | None = None, announcer=None, voice_jobs=None, updates=None,
                  presets=None, directory=None, media=None, lamps=None):
     auth = Auth(config_file)
-    open_paths = {"/", "/index.html", "/desktop", "/api/auth", "/api/login", "/analyser", "/analyser/", "/analyser/index.html"}
+    open_paths = {"/", "/index.html", "/desktop", "/classic", "/api/auth", "/api/login", "/analyser", "/analyser/", "/analyser/index.html"}
 
     _held: dict = {}                  # the page's buttons held down: keycode -> auto let-go timer
     _held_lock = threading.Lock()
@@ -180,7 +181,7 @@ def make_handler(station: Station, output: Mp3Output, speaker=None,
 
         def do_GET(self) -> None:
             path = urlparse(self.path).path
-            if (not path.startswith("/api/") and path not in ("/", "/index.html", "/desktop", "/stream")
+            if (not path.startswith("/api/") and path not in ("/", "/index.html", "/desktop", "/classic", "/stream")
                     and not path.startswith("/analyser")
                     and wifi_mod.status().get("mode") == "hotspot"):
                 # The radio's own network: a phone checking for internet
@@ -195,6 +196,8 @@ def make_handler(station: Station, output: Mp3Output, speaker=None,
             if path == "/api/auth":
                 self._send(json.dumps(self._auth_state()).encode(), "application/json")
             elif path in ("/", "/index.html"):
+                self._send(REMOTE, "text/html; charset=utf-8")
+            elif path == "/classic":
                 self._send(PAGE, "text/html; charset=utf-8")
             elif path == "/desktop":
                 self._send(DESKTOP, "text/html; charset=utf-8")

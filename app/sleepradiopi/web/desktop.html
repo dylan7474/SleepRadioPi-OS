@@ -473,7 +473,7 @@
   <button class="m" type="button" id="scheduleMenu">Schedule</button>
   <button class="m" type="button" id="tidy">Tidy up</button>
   <button class="m" type="button" id="settingsMenu">Settings</button>
-  <a class="m classic" href="/" id="classic" title="The page you know, also for phones">Classic page</a>
+  <a class="m classic" href="/classic" id="classic" title="The older page with everything on it">Classic page</a>
   <span class="grow"></span>
   <button class="m" type="button" id="nextLine" title="The schedule" style="color:var(--ink);font-weight:600"></button>
   <select class="themebtn" id="theme" title="Light or dark: or dark while the radio uses its Night buttons"><option value="radio">Follow the radio</option><option value="light">Light</option><option value="dark">Dark</option></select>
@@ -1584,7 +1584,7 @@ function panelView(o, box, win) {
   if (UI[o.key]) return nativePanel(o, box, win);
   // anything else: the classic page's own, inside the window
   const hash = o.rawHash || "#set-" + o.page;
-  box.append(el("iframe", { className: "frame", src: "/?embedded#" + hash.slice(1), title: o.title }));
+  box.append(el("iframe", { className: "frame", src: "/classic?embedded#" + hash.slice(1), title: o.title }));
 }
 
 // ============ the media manager ============
@@ -1728,7 +1728,14 @@ const UI = {
         ...["bass", "mid", "treble"].map(b => srow(b[0].toUpperCase() + b.slice(1), ...range("eq-" + b, -12, 12, 1, sp.eq?.[b] ?? 0, db, v => act(() => api("/api/speaker", { eq: { [b]: v } }))))),
         srow("Low cut", seg([[0, "Off"], [100, "100"], [120, "120"], [140, "140"], [160, "160 Hz"]], sp.highpass_hz ?? 0, v => act(() => api("/api/speaker", { highpass: v })))),
         line(sbtn("Flat EQ", () => act(() => api("/api/speaker", { eq: { bass: 0, mid: 0, treble: 0 } }))),
-             sbtn("Tune speakers…", () => window.open("/analyser/", "_blank"))),
+             sbtn("Tune speakers…", () => {
+               // The analyser (needs the mic: https, or the radio's own copy where Chrome's "Insecure
+               // origins treated as secure" flag makes this page secure) listens to the "tune" hiss and
+               // sends its suggestion back here as /desktop#tune=... (takeTune). Opened inside the click.
+               const url = window.isSecureContext ? "/analyser/" : "https://dylan7474.github.io/SleepRadioPi-OS/";
+               window.open(`${url}#auto&radio=${encodeURIComponent(location.host)}`, "_blank");
+               act(() => api("/api/speaker", { test: "tune" }));
+             })),
         help("A boost lowers the overall level a little so it never distorts. With the bass port back panel, set the low cut to 140 Hz.")),
       grp("Test sounds", line(...[["left", "Left"], ["right", "Right"], ["sides", "Left, then right"], ["phase", "Phase check"], ["sweep", "Bass sweep"], ["pink", "Pink noise"], ["stop", "Stop"]]
         .map(([k, t]) => sbtn(t, () => act(() => api("/api/speaker", { test: k })), k === "stop" ? "" : ""))),

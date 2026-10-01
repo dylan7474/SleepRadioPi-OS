@@ -28,8 +28,36 @@ def test_the_pages_scripts_parse() -> None:
     if deno is None:
         import pytest
         pytest.skip("no deno here to parse the scripts with")
-    for name in ("page.html", "desktop.html"):
+    for name in ("page.html", "desktop.html", "remote.html"):
         js = "\n".join(re.findall(r"<script>(.*?)</script>", PAGE.with_name(name).read_text(), re.S))
         r = subprocess.run([deno, "eval", "new Function(await new Response(Deno.stdin.readable).text())"],
                            input=js, capture_output=True, text=True, timeout=60)
         assert r.returncode == 0, f"{name}: {r.stderr[-400:]}"
+
+
+def test_the_remote_too() -> None:
+    page = PAGE.with_name("remote.html").read_text()
+    ids = Counter(re.findall(r'\bid="([^"]+)"', page))
+    assert [k for k, n in ids.items() if n > 1] == []
+    # every $("id") it uses is on the page
+    used = set(re.findall(r'\$\("([A-Za-z0-9]+)"\)', page))
+    assert used <= set(ids), used - set(ids)
+    assert "fonts.googleapis" not in page                       # (it must work on the hotspot, offline)
+
+
+def test_slash_is_the_remote_and_classic_the_old_page(tmp_path) -> None:
+    import threading
+    import urllib.request
+    from http.server import ThreadingHTTPServer
+    from sleepradiopi.web.server import make_handler
+    from test_ondemand import _od_station
+    httpd = ThreadingHTTPServer(("127.0.0.1", 0), make_handler(_od_station(tmp_path), None, None, None))
+    threading.Thread(target=httpd.serve_forever, daemon=True).start()
+    base = f"http://127.0.0.1:{httpd.server_address[1]}"
+    try:
+        remote = urllib.request.urlopen(base + "/").read().decode()
+        classic = urllib.request.urlopen(base + "/classic").read().decode()
+    finally:
+        httpd.shutdown()
+    assert 'id="remote"' in remote and 'id="setup"' in remote
+    assert 'id="tabs"' in classic

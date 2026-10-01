@@ -386,7 +386,21 @@ The cards:
   renames it, and buttons and programmes that play it follow. A preset button
   can hold one, in order or shuffled. A song whose file has gone is skipped. Kept in the settings (`playlists`), so *Save settings* has them
   (`broadcast/playlists.py`, `Station.play_playlist`).
-- **The phone page** (`web/page.html`) follows the desktop's names and ways:
+- **The phone remote** (`web/remote.html`, served at `/`) is the radio in your
+  hand, in the desktop's look: what's on (station, song, playlist, book or
+  podcast), the blue knob to pause and play, volume, Back and Skip, a
+  **position bar** with **−10 s / +10 s** for a song, audiobook or podcast
+  (drag it to move through), the Day/Night switch and the four buttons (the
+  lit one pauses, as on the box), a Themes list (tap one for Theme Radio),
+  the sleep timer and noise, and *Open the full desktop* for everything else.
+  A computer opening `/` goes to the desktop. On the radio's own network
+  (first set-up, or after a Wi-Fi reset) `/` is a **Wi-Fi set-up** screen
+  instead: networks nearby, tap one, its password, Join (or type a hidden
+  network's name); phones checking for internet there are sent to it. It
+  uses no web fonts, so it works with no internet.
+- **The classic page** (`web/page.html`, now at `/classic`; the desktop's
+  Stations, Test sounds and Listen-in-a-browser windows still show its
+  parts) follows the desktop's names and ways:
   on/off settings are switches, a delete that can be taken back (a message, a
   birthday, a station, a playlist, a theme) happens at once with **Undo**, and
   only what can't come back asks first, in the page's own box with Cancel as the
@@ -867,8 +881,8 @@ The [spectrum analyser](https://dylan7474.github.io/SleepRadioPi-OS/) (source in
 [`sleepradiopi/web/analyser/`](sleepradiopi/web/analyser/)) is a web page for a laptop or a
 phone. It listens through the device's microphone and suggests the speaker EQ and low cut.
 
-**The easy way:** on the radio's page, Settings → Speakers → **Tune
-speakers…**, from the phone:
+**The easy way:** on the radio's desktop (a phone can open it too), the
+Speakers window → **Tune speakers…**:
 
 **With no internet** (e.g. on the radio's own hotspot) the radio serves its
 own copy of the analyser at `/analyser/`. Chrome only lets a page use the
@@ -885,8 +899,8 @@ radio's copy explains the flag, with its own address, if the mic is blocked.
 2. Hold the phone about 50 cm in front of the radio and tap **Start**.
 3. The analyser listens for a quiet stretch followed by the hiss starting,
    measures both, and shows its suggestion.
-4. **Apply on the radio** opens the radio's page with it, ready to
-   **Apply** or **Undo** (the hiss stops).
+4. **Apply on the radio** opens the radio's desktop with it in the Speakers
+   window, ready to **Apply** or **Undo** (the hiss stops).
 
 Because it detects the hiss by ear, it doesn't matter when you tap Start.
 If it starts listening in the middle of a burst, it waits for the next.
@@ -945,11 +959,12 @@ everything but the page itself and the login needs the session cookie
 | `GET /api/status` | What's on air, next, history, the library, the voice, the speaker (volume, playing, mono, EQ, low cut, sleep timer, test sound), artist/list playing |
 | `POST /api/speaker` | Any of `{"volume": 0-100}`, `{"step": n}`, `{"knob_mode": "auto" \| "fine" \| "normal" \| "coarse"}`, `{"pause": true \| false \| "toggle"}`, `{"sleep": minutes}` (0 = off), `{"mono": bool}`, `{"noise": true \| false \| "toggle", "noise_kind": "pink", "noise_mix": 0-100}`, `{"eq": {"bass": dB, ...}}`, `{"highpass": Hz}`, `{"test": "bass" \| "sweep" \| "pink" \| "left" \| "right" \| "sides" \| "phase" \| "tune" \| "stop"}` |
 | `POST /api/stream` | `{"enabled": bool}` — listening in a browser on/off (saved as `web_stream`) |
-| `POST /api/knob` | `{"press": "short" \| "long" \| "service"}` — the knob's switch; `service` opens the service menu (then `/api/buttons/press` answers it; `GET /api/buttons` has its `service` state) |
+| `POST /api/knob` | `{"press": "short" \| "long" \| "service"}` — the knob's switch; `service` opens the service menu (then `/api/buttons/press` answers it; `GET /api/buttons` has its `service` state); `{"press": "turn", "clicks": n}`: pressed and turned |
 | `GET` / `POST /api/identity` | `{"hardware", "station_name"}` — which radio this is and its name; a POST saves and restarts the station |
 | `GET` / `POST /api/lamps` | The cathedral's `{"glow_day", "glow_night", "meter_trim_db", "needle", "glow"}` (the last two: is the PWM there) / any of the first three, saved |
 | `POST /api/lamps/sweep` | The needle up to full scale and back over 4 s, to set the meter's trimmer |
 | `POST /api/skip` | Skip what's on air (track, link, jingle or bulletin) |
+| `POST /api/seek` | `{"to_ms": n}` or `{"delta_ms": n}`: move through the song (Theme Radio's, an album's or playlist's, paused too), audiobook or podcast playing → `{"moved", "position"}`. The status's `position` (`pos_ms`, `total_ms`) is where it is, or null when there's nothing to move (a station, a jingle, the DJ) |
 | `GET` / `POST /api/programmes` | `{"programmes": [...], "playing"}` / `{"programmes": [{"name", "start", "auto", "days": [0-6], "then": "show" \| "sleep" \| "repeat", "blocks": [{"name", "items": [{"kind": "album", "root", "folder"} \| {"kind": "track", "root", "path"} \| {"kind": "station", "name", "url"} \| {"kind": "playlist", "name"} \| {"kind": "book", "key"} \| {"kind": "podcast", "show"} \| {"kind": "episode", "show", "guid"} \| {"kind": "show", "artist"?} \| {"kind": "list", "name"}], "rule": "for" \| "until" \| "end" \| "at", "min", "at", "until", "order"}]}]}` — the whole list, saved. The status's `programme` has the one playing (`name`, `block`, `until`, `next`, `waiting`) |
 | `POST /api/programmes/play` / `/stop` | `{"name"}` — start it now (and the speaker) / stop it (what's on carries on) |
 | `POST /api/programmes/mode` | `{"on": bool}` — programme mode (quiet unless a programme is on); the status has `programme_mode` |
