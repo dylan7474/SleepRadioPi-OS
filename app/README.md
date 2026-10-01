@@ -438,6 +438,9 @@ The cards:
   theme as `"settings"`; `Station._apply_settings` puts the radio's with the
   playing theme's on top in force, and the DJ window shows and saves the
   radio's). DJ on/off stays the radio's: buttons and programmes switch it.
+  **Renaming a theme** (`POST /api/profiles/rename {"old", "new"}`) takes its
+  things with it: its jingles folder, its messages, buttons and programme
+  blocks that play it, and the station if it's playing.
   **Messages** are objects: the desktop's sticky note opens a folder of notes
   (all of them), each with its own window — the words, **which station**
   (every station, or one theme's only; a theme's Messages folder shows its

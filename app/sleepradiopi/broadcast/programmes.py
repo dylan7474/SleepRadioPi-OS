@@ -281,6 +281,17 @@ class Scheduler:
             if self.run and not find(self.programmes, self.run["name"]):
                 self.stop("it was deleted")
 
+    def rename_theme(self, old: str, new: str) -> bool:
+        """A theme was renamed: blocks that play it follow it."""
+        changed = False
+        for p in self.programmes:
+            items = [it for b in p["blocks"] for it in b["items"]] + ([p["gap"]] if isinstance(p.get("gap"), dict) else [])
+            for it in items:
+                if it.get("kind") == "list" and (it.get("name") or "").lower() == old.lower():
+                    it["name"] = new
+                    changed = True
+        return changed
+
     def rename_refs(self, old_root: str, old: str, new_root: str, new: str) -> bool:
         """A file or folder was moved: blocks that pointed into it follow it."""
         changed = False

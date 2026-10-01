@@ -121,3 +121,42 @@ def test_a_themes_settings_are_checked() -> None:
     for bad in ({"volume": 3}, {"news": "yes"}, {"chattiness": "loud"}, {"jingle_every": 99}):
         with pytest.raises(ValueError):
             profiles.validate([{"name": "A", "artists": ["x"], "settings": bad}])
+
+
+def test_renaming_a_theme_takes_its_things_with_it(tmp_path: Path) -> None:
+    """Its jingles folder, its messages, buttons and programmes that play it, the
+    station playing, and everything saved."""
+    import json
+    import threading
+    import urllib.request
+    from http.server import ThreadingHTTPServer
+    from sleepradiopi.io.presets import Presets
+    from sleepradiopi.web.server import make_handler
+    st = _station(tmp_path, {"Carisbrooke": ["Cari.mp3"], "Sleep Radio": ["Main.mp3"]})
+    st.messages.set({"list": [{"text": "Lunch soon", "station": "Carisbrooke"}, {"text": "Hello"}]})
+    st.set_profile("Carisbrooke")
+    config = tmp_path / "config.json"
+    config.write_text("{}")
+    presets = Presets(st, None, config, [{"kind": "show", "profile": "Carisbrooke"}, None])
+    media = MediaLibrary({"jingles": tmp_path / "jingles"}, on_changed=st.reload_library, lease=tmp_path / "run" / "media-rw")
+    httpd = ThreadingHTTPServer(("127.0.0.1", 0), make_handler(st, None, None, config, presets=presets, media=media))
+    threading.Thread(target=httpd.serve_forever, daemon=True).start()
+    try:
+        r = urllib.request.Request(f"http://127.0.0.1:{httpd.server_address[1]}/api/profiles/rename",
+                                   data=json.dumps({"old": "Carisbrooke", "new": "  Carisbrooke  Lodge "}).encode(),
+                                   method="POST", headers={"Content-Type": "application/json"})
+        got = json.loads(urllib.request.urlopen(r).read())
+    finally:
+        httpd.shutdown()
+    assert got["name"] == "Carisbrooke Lodge"
+    assert [p["name"] for p in st.profiles] == ["Carisbrooke Lodge"]
+    assert st.profile == "Carisbrooke Lodge" and st.builder.station == "Carisbrooke Lodge Radio"
+    assert (tmp_path / "jingles" / "Carisbrooke Lodge" / "Cari.mp3").exists() and not (tmp_path / "jingles" / "Carisbrooke").exists()
+    assert [j.path.name for j in st.jingles] == ["Cari.mp3"]                 # still its jingles
+    assert st.messages.cfg["list"][0]["station"] == "Carisbrooke Lodge" and "station" not in st.messages.cfg["list"][1]
+    assert presets.banks["day"][0]["profile"] == "Carisbrooke Lodge"
+    saved = json.loads(config.read_text())
+    assert saved["broadcast_profile"] == "Carisbrooke Lodge" and saved["profiles"][0]["name"] == "Carisbrooke Lodge"
+    assert saved["messages"]["list"][0]["station"] == "Carisbrooke Lodge"
+    with pytest.raises(ValueError):
+        st.rename_profile("Nobody", "X")

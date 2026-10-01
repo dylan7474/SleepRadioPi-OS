@@ -213,6 +213,29 @@ class MediaLibrary:
         log.info("media: deleted %s/%s", kind, rel)
         self._changed(kind)
 
+    def rename(self, kind: str, rel: str, new_name: str) -> str:
+        """Rename a file or folder where it is (a theme's jingles folder, with the theme).
+        Returns its new path."""
+        root = self._root(kind)
+        src = self.resolve(kind, rel)
+        if src == root:
+            raise MediaError("a whole library can't be renamed")
+        if not src.exists():
+            raise MediaError("that isn't there any more")
+        dest = src.with_name(_clean_part(new_name))
+        if dest == src:
+            return str(dest.relative_to(root))
+        if dest.exists() and dest.name.lower() != src.name.lower():
+            raise MediaError(f"there's already a {dest.name} there")
+        self._open(root)
+        try:
+            os.rename(src, dest)
+        except OSError as e:
+            raise MediaError(f"couldn't rename it ({e.strerror})") from None
+        log.info("media: renamed %s/%s to %s", kind, rel, dest.name)
+        self._changed(kind)
+        return str(dest.relative_to(root))
+
     def move(self, kind: str, rel: str, to_kind: str, to_folder: str) -> str:
         """Move a file or folder into another folder, in the same library or
         another (music <-> ondemand): /media is one filesystem, so it's a rename.

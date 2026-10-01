@@ -2196,6 +2196,27 @@ class Station:
             and (profile or "").lower() == (self.profile or "").lower() \
             and (self._in_music or self._opening is not None)
 
+    def rename_profile(self, old: str, new: str) -> str:
+        """Rename a theme: its messages, and the theme playing, follow it (its jingles
+        folder, buttons and programmes: the caller's). Returns the new name.
+        ValueError if there's no such theme or the name can't be used."""
+        cur = next((p for p in self.profiles if p["name"].lower() == old.lower()), None)
+        if cur is None:
+            raise ValueError(f"there's no theme called {old}")
+        new = " ".join(str(new).split())
+        lists = profiles_mod.validate([{**p, "name": new} if p is cur else p for p in self.profiles])
+        cfg = self.messages.cfg
+        self.messages.set({**cfg, "list": [{**m, "station": new} if (m.get("station") or "").lower() == old.lower() else m
+                                           for m in cfg["list"]]})
+        playing = (self.profile or "").lower() == cur["name"].lower()
+        self.profiles = lists
+        if playing:
+            with self._lock:
+                self.profile = new
+                self.builder.station = profiles_mod.station_name(new)
+        log.info("theme renamed: %s -> %s", cur["name"], new)
+        return new
+
     def set_profiles(self, profiles: list[dict]) -> None:
         """Replace the profiles (validated; ValueError if wrong). If the one
         playing was changed it's re-applied; if it was removed, everything plays."""

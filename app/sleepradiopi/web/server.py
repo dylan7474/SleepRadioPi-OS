@@ -402,6 +402,8 @@ def make_handler(station: Station, output: Mp3Output, speaker=None,
                 self._hear_message()
             elif path == "/api/profiles":
                 self._set_profiles()
+            elif path == "/api/profiles/rename":
+                self._rename_profile()
             elif path == "/api/request":
                 self._request()
             elif path == "/api/album":
@@ -1293,6 +1295,38 @@ def make_handler(station: Station, output: Mp3Output, speaker=None,
             self._save_selection()
             self._send(json.dumps({**self._selection(), "profiles": station.profiles}).encode(),
                        "application/json")
+
+        def _rename_profile(self) -> None:
+            """POST /api/profiles/rename {"old", "new"}: rename a theme. Everything of its
+            own follows it: its jingles folder, its messages, buttons and programmes that
+            play it, and (playing) the station. Saved."""
+            try:
+                body = self._body()
+                old, new = body["old"], body["new"]
+                if not isinstance(old, str) or not isinstance(new, str):
+                    raise ValueError("send {\"old\", \"new\"}")
+                new = station.rename_profile(old, new)
+            except (ValueError, TypeError, KeyError, AttributeError) as e:
+                self._error(str(e) if isinstance(e, ValueError) else "send {\"old\", \"new\"}")
+                return
+            if media is not None and (Path(station.jingles_dir) / old).is_dir() and old != new:
+                try:
+                    media.rename("jingles", old, new)
+                except media_mod.MediaError as e:
+                    log.warning("theme rename: jingles folder: %s", e)
+                finally:
+                    media.done()
+            if presets is not None:
+                presets.rename_theme(old, new)
+            sched = getattr(station, "scheduler", None)
+            renamed = bool(sched and sched.rename_theme(old, new))
+            if config_file is not None:
+                save_setting(config_file, "profiles", station.profiles)
+                save_setting(config_file, "messages", station.messages.cfg)
+                if renamed:
+                    save_setting(config_file, "programmes", sched.programmes)
+            self._save_selection()
+            self._send(json.dumps({"name": new, "profiles": station.profiles}).encode(), "application/json")
 
         def _knob(self) -> None:
             """/api/knob {"press": "short" | "long" | "service"}: the knob's switch, from

@@ -254,6 +254,18 @@ class Presets:
     def presets(self, value: list) -> None:
         self.banks[self.bank] = value
 
+    def rename_theme(self, old: str, new: str) -> bool:
+        """A theme was renamed: buttons that play it follow it."""
+        changed = False
+        for bank in self.banks.values():
+            for p in bank:
+                if p and p["kind"] == "show" and (p.get("profile") or "").lower() == old.lower():
+                    p["profile"] = new
+                    changed = True
+        if changed:
+            self._save()
+        return changed
+
     def rename_refs(self, old_root: str, old: str, new_root: str, new: str) -> bool:
         """A folder was moved: album buttons that held it (or something in it) follow it."""
         changed = False

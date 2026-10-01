@@ -1425,7 +1425,15 @@ async function saveLists(lists, done) {
 $("listPick").onchange = showListEditor;
 $("listFilter").oninput = drawListArtists;
 $("listSave").onclick = async () => {
-  const name = $("listName").value.trim(), old = $("listPick").value;
+  const name = $("listName").value.trim();
+  let old = $("listPick").value;
+  if (old && name && name !== old) {               // a rename: its jingles, messages, buttons and programmes follow it
+    const r = await fetch("/api/profiles/rename", { method: "POST", headers: { "Content-Type": "application/json" },
+                                                    body: JSON.stringify({ old, new: name }) });
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok) { $("listCount").textContent = d.error || "Not renamed."; return; }
+    allLists = d.profiles; old = d.name;
+  }
   const byKey = new Map([...allArtists.map(a => [a.name.toLowerCase(), a.name]),
                          ...(allLists.find(p => p.name === old)?.artists || []).map(a => [a.toLowerCase(), a])]);
   const entry = { ...(allLists.find(p => p.name === old) || {}), name, artists: [...listTicked].map(k => byKey.get(k) || k) };   // (keeps its own settings)
