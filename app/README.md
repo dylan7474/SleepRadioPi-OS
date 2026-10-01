@@ -430,8 +430,13 @@ The cards:
   power-on chime), Noise, Sleep timer, Voices, Wi-Fi (join, forget, its own
   network), This radio (name, case, password, listening in a browser),
   Buttons (and the day and night sets), Updates, Save & load, Power.
-  **A theme is a folder of its own things**: opening one shows **Artists**
-  (what it plays), its **Jingles**, its **Messages** and its **Settings**:
+  **A theme is a folder of its own things** (the desktop's **Themes** folder
+  holds them): its window has its name (renaming it takes everything of its
+  own along), ▶ Play, and sections — **Plays** (artists: drag an artist's
+  folder, an album or a song in from Music, a shortcut: the music stays
+  there; to the Trash: off the theme), **Messages** (drag a note in: read
+  only on it; drag it back to Messages: every station again), **Jingles**
+  (upload or drop files in) and **Settings**:
   how much the DJ talks, time checks, the news, how often jingles play and
   70s hooks, each **"As the radio"** (the default: it follows the radio's DJ
   settings, on its back) or its own (`profiles.THEME_SETTINGS`, kept in the
