@@ -321,7 +321,8 @@ class Station:
         self._book_seek: int | None = None
         self.book_now: dict | None = None    # the book playing: place, chapter, length
         self.paused_by_sleep: Callable[[], bool] = lambda: False   # (wired to the speaker)
-        self.on_book_end: Callable[[], None] | None = None          # pause the radio at the end
+        self.on_book_end: Callable[[], None] | None = None          # pause the radio at the end (a book, the
+                                                                    # last podcast, something played from the desktop)
         # Podcasts: the shows (settings), their episode lists (cached), each episode's place.
         self.podcasts = pod_mod.Podcasts(cfg.get("podcasts") or [], cfg.get("podcast_cache"), self.book_positions)
         if cfg.get("stream_source"):
@@ -551,6 +552,8 @@ class Station:
             if source.get("one") is True:     # just that one track
                 out["one"] = True
                 out["title"] = album["tracks"][out["track"]].title
+            if source.get("then") == "pause":
+                out["then"] = "pause"
             return out
         if source["kind"] == "playlist":
             refs = source.get("refs")
@@ -562,8 +565,11 @@ class Station:
             name = source.get("name") if isinstance(source.get("name"), str) else "Playlist"
             track = source.get("track", 0)
             track = track if isinstance(track, int) and not isinstance(track, bool) else 0
-            return {"kind": "playlist", "name": name, "title": name, "artist": "", "refs": refs,
-                    "shuffle": source.get("shuffle") is True, "track": max(0, min(track, len(refs) - 1))}
+            out = {"kind": "playlist", "name": name, "title": name, "artist": "", "refs": refs,
+                   "shuffle": source.get("shuffle") is True, "track": max(0, min(track, len(refs) - 1))}
+            if source.get("then") == "pause":
+                out["then"] = "pause"
+            return out
         if source["kind"] == "episode":
             show = self.podcasts.show(source.get("show")) if isinstance(source.get("show"), str) else None
             eps = self.podcasts.episodes(show["id"]) if show else []
@@ -609,21 +615,34 @@ class Station:
         return self._check_source({"kind": "album", "root": root, "folder": folder, "deep": deep is True,
                                     "track": track, "one": one is True})
 
-    def play_album(self, album_id=None, root="music", folder=None, deep=False, track=0) -> dict:
+    def play_album(self, album_id=None, root="music", folder=None, deep=False, track=0,
+                   shuffle: bool = False, then: str | None = None) -> dict:
         """Play an album or folder straight through instead of the show (from
-        `track` on): no DJ, jingles or news. Back to the show when it ends."""
+        `track` on): no DJ, jingles or news. Back to the show when it ends --
+        or, then="pause", the radio pauses. shuffle (an artist's folder, say):
+        its songs in a random order, once each."""
+        src = self.album_source(album_id, root, folder, deep, track)
+        if shuffle:
+            album = self._source_album(src)
+            tracks = list(album["tracks"])
+            random.shuffle(tracks)
+            self.play_tracks_as(src["title"], tracks, True, then)
+            return self._source
         self._next_source = None
-        self.tune(self.album_source(album_id, root, folder, deep, track))
+        self.tune({**src, **({"then": "pause"} if then == "pause" else {})})
         return self._source
 
-    def play_track(self, root: str, path: str) -> dict:
+    def play_track(self, root: str, path: str, then: str | None = None) -> dict:
         """One track now. From the music: in the show at once (whatever's on),
         then the show carries on, the DJ as set. From On demand: that track on
-        its own, no DJ, then the show."""
+        its own, no DJ, then the show. then="pause" (dropped on the desktop's
+        radio): that track on its own, no DJ, then the radio pauses."""
         t = self._by_ref(root, path) if isinstance(path, str) else None
         if t is None:
             raise ValueError("that track isn't in the library")
-        if root == "ondemand":
+        if then == "pause":                     # (from the desktop: that song on its own, then quiet)
+            self.play_tracks_as(t.title, [t], False, "pause")
+        elif root == "ondemand":
             folder = path.rsplit("/", 1)[0] if "/" in path else ""
             album = self._album_by_folder(folder, "ondemand")
             self._next_source = None
@@ -746,11 +765,19 @@ class Station:
                 break
         if self._halted():
             return
-        log.info("%s finished: %s", source["kind"], album["title"])
+        log.info("%s finished: %s%s", source["kind"], album["title"],
+                 "; pausing" if source.get("then") == "pause" else "")
         with self._lock:
             if self._source is source:
                 self._source = None
         self.next_track = None
+        if source.get("then") == "pause":     # (played from the desktop: done, quiet -- the knob plays the theme)
+            with self._lock:
+                self._next_source = None
+            self._notify_source()
+            if self.on_book_end is not None:
+                self.on_book_end()
+            return
         if not self._take_next_source():
             self._notify_source()
 
@@ -1094,7 +1121,7 @@ class Station:
         self.set_playlists(lists)
         return playlists_mod.find(self.playlists, name)
 
-    def play_playlist(self, name: str, shuffle: bool = False) -> dict:
+    def play_playlist(self, name: str, shuffle: bool = False, then: str | None = None) -> dict:
         """Play a playlist now, in order or shuffled, straight through like an
         album: at once, no DJ, jingles or news (those are Theme Radio's); then
         back to the show. Replaces a playlist already playing."""
@@ -1106,7 +1133,7 @@ class Station:
             raise ValueError(f"{p['name']} has nothing on the radio to play")
         if shuffle:
             random.shuffle(tracks)
-        self.play_tracks_as(p["name"], tracks, shuffle)
+        self.play_tracks_as(p["name"], tracks, shuffle, then)
         log.info("playlist: %s (%d tracks%s)", p["name"], len(tracks), ", shuffled" if shuffle else "")
         return {"name": p["name"], "tracks": len(tracks), "shuffle": shuffle}
 
@@ -1187,12 +1214,14 @@ class Station:
             self.set_playlists(lists)
         return changed
 
-    def play_tracks_as(self, name: str, tracks: list[BroadcastTrack], shuffle: bool = False) -> None:
+    def play_tracks_as(self, name: str, tracks: list[BroadcastTrack], shuffle: bool = False,
+                       then: str | None = None) -> None:
         """Tracks now, as a playlist of this name (a playlist, or a programme's
         block): straight through, no DJ or jingles; playlist_status() has it."""
         refs = [r for t in tracks if (r := self._ref(t)) is not None]
         self._next_source = None
-        self.tune({"kind": "playlist", "name": name, "refs": refs, "shuffle": shuffle})
+        self.tune({"kind": "playlist", "name": name, "refs": refs, "shuffle": shuffle,
+                   **({"then": "pause"} if then == "pause" else {})})
 
     def stop_playlist(self) -> bool:
         """The rest of the playlist is dropped; the song playing finishes."""
@@ -1411,6 +1440,8 @@ class Station:
         if path not in self._jingle_paths:  # jingles recur; tracks' futures can go
             self._scan_futures.pop(path, None)
         playable_s = scan.playable_ms / 1000
+        if not playable_s and path not in self._jingle_paths:   # (not measured: its length from its tags)
+            playable_s = self.track_seconds(BroadcastTrack(path, "", "")) or 0
         on_air.duration_s = playable_s
         on_air.started = time.time()
         self.on_air = on_air

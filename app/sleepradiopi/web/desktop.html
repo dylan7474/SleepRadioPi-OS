@@ -1181,14 +1181,17 @@ async function pressButton(i) {
 // ---- playing things on the real radio ----
 async function play(o) {
   try {
-    if (o.kind === "album") await api("/api/album/play", { root: o.root, folder: o.path });
-    else if (o.kind === "folder" && o.root) await api("/api/album/play", { root: o.root, folder: o.path, deep: true });
-    else if (o.kind === "track") await api("/api/track/play", { root: o.root, path: o.path });
+    // Music played from the desktop is on its own -- no DJ or jingles (they're Theme
+    // Radio's) -- and when it's done the radio pauses. An artist's folder: shuffled.
+    const artist = o.kind === "folder" && o.root === "music" && o.path && !o.path.includes("/");
+    if (o.kind === "album") await api("/api/album/play", { root: o.root, folder: o.path, then: "pause" });
+    else if (o.kind === "folder" && o.root) await api("/api/album/play", { root: o.root, folder: o.path, deep: true, shuffle: artist, then: "pause" });
+    else if (o.kind === "track") await api("/api/track/play", { root: o.root, path: o.path, then: "pause" });
     else if (o.kind === "station") await api("/api/radio/play", { name: o.name, url: o.url });
     else if (o.kind === "book") await api("/api/books/play", { key: o.key });
     else if (o.kind === "podcast") await api("/api/podcasts/play", { id: o.pid });
     else if (o.kind === "episode") await api("/api/podcasts/play", { id: o.pid, guid: o.guid });
-    else if (o.kind === "playlist") await api("/api/playlists/play", { name: o.name, shuffle: false });
+    else if (o.kind === "playlist") await api("/api/playlists/play", { name: o.name, shuffle: false, then: "pause" });
     else if (o.kind === "programme") await api("/api/programmes/play", { name: o.title });
     else if (["action", "jingle"].includes(o.kind)) {       // over what's on, now
       await api("/api/instant", { preset: presetOf(o) });
@@ -1549,7 +1552,7 @@ function playlistView(o, box) {
   const name = playlistName(o);
   if (o.fresh) { delete o.fresh; setTimeout(() => { name.focus(); name.select(); }, 50); }   // (just made: type its name)
   box.append(el("div", { className: "wtools" }, name, T("▶ Play", () => play(o), "primary"),
-    T("Shuffle", async () => { try { await api("/api/playlists/play", { name: o.name, shuffle: true }); toast(`“${o.title}”, shuffled.`); setTimeout(poll, 700); } catch (e) { toast(e.message); } }),
+    T("Shuffle", async () => { try { await api("/api/playlists/play", { name: o.name, shuffle: true, then: "pause" }); toast(`“${o.title}”, shuffled.`); setTimeout(poll, 700); } catch (e) { toast(e.message); } }),
     el("span", { className: "note", textContent: `${o.items.length} songs · drop songs, albums or folders here · drag one to the Trash to take it out` })));
   box.append(el("div", { className: "wbody" }, o.items.length ? rowsOf(o.items, o.id, (t, i) => i + 1, true)
     : el("div", { className: "empty", textContent: "Empty. Drag songs, albums or folders onto this window." })));
@@ -2818,7 +2821,7 @@ async function playOnTheFly(objs) {
     await api("/api/playlists", { playlists: others });               // (last time's, gone)
     let d = null;
     for (const r of refs) d = await api("/api/playlists/add", { name: ON_THE_FLY, ...r });
-    await api("/api/playlists/play", { name: ON_THE_FLY, shuffle: false });
+    await api("/api/playlists/play", { name: ON_THE_FLY, shuffle: false, then: "pause" });
     await loadPlaylists(); drawDesk(); setTimeout(poll, 700);
     toast(`Playing ${d.tracks} song${d.tracks === 1 ? "" : "s"} as “${ON_THE_FLY}”` +
           (left ? ` (${left} left out: only songs, albums and folders go in a playlist).` : "."));

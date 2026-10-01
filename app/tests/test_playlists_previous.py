@@ -329,3 +329,63 @@ def test_a_playlist_song_not_measured_yet_plays_at_once(tmp_path: Path, monkeypa
     t0 = time.monotonic()
     st._run_album(st.source)
     assert decoded == ["02 - Michelle.mp3"] and time.monotonic() - t0 < 2
+
+
+def _run_source(st, monkeypatch):
+    played, paused = [], []
+    monkeypatch.setattr(st, "_play_file", lambda path, on_air, near_end=None, **kw: played.append(on_air.title))
+    st.on_book_end = lambda: paused.append(True)
+    st._switch.clear()
+    st._run_album(st.source)
+    return played, paused
+
+
+def test_a_song_dropped_on_the_radio_plays_alone_then_it_pauses(tmp_path: Path, monkeypatch) -> None:
+    st = _od_station(tmp_path)
+    _on_air(st, monkeypatch)
+    st.play_track("music", MICHELLE[1], then="pause")
+    assert st.source["kind"] == "playlist" and st.source["refs"] == [MICHELLE]
+    played, paused = _run_source(st, monkeypatch)
+    assert played == ["Michelle"] and paused == [True] and st.source is None
+
+
+def test_an_artist_dropped_plays_their_songs_shuffled_once_then_pauses(tmp_path: Path, monkeypatch) -> None:
+    st = _od_station(tmp_path)
+    _on_air(st, monkeypatch)
+    st.play_album(root="music", folder="The Beatles", deep=True, shuffle=True, then="pause")
+    assert st.source["kind"] == "playlist" and st.source["shuffle"] is True
+    played, paused = _run_source(st, monkeypatch)
+    assert sorted(played) == ["Girl", "Michelle", "Nowhere Man", "The Word"] and paused == [True]
+
+
+def test_an_album_from_a_button_still_goes_back_to_the_show(tmp_path: Path, monkeypatch) -> None:
+    st = _od_station(tmp_path)
+    _on_air(st, monkeypatch)
+    st.play_album(root="music", folder="The Beatles/Rubber Soul")
+    assert "then" not in st.source
+    played, paused = _run_source(st, monkeypatch)
+    assert len(played) == 4 and paused == [] and st.source is None
+
+
+def test_web_play_passes_then_pause(tmp_path: Path, monkeypatch) -> None:
+    st = _od_station(tmp_path)
+    httpd = ThreadingHTTPServer(("127.0.0.1", 0), make_handler(st, None, None, None))
+    threading.Thread(target=httpd.serve_forever, daemon=True).start()
+
+    def req(path, body):
+        r = urllib.request.Request(f"http://127.0.0.1:{httpd.server_address[1]}{path}", data=json.dumps(body).encode(),
+                                   method="POST", headers={"Content-Type": "application/json"})
+        with urllib.request.urlopen(r) as resp:
+            return json.load(resp)
+    try:
+        req("/api/album/play", {"root": "music", "folder": "The Beatles", "deep": True, "shuffle": True, "then": "pause"})
+        assert st.source["kind"] == "playlist" and st.source["then"] == "pause"
+        req("/api/track/play", {"root": "music", "path": MICHELLE[1], "then": "pause"})
+        assert st.source["refs"] == [MICHELLE] and st.source["then"] == "pause"
+        st.add_to_playlist("Mix", [MICHELLE])
+        req("/api/playlists/play", {"name": "Mix", "then": "pause"})
+        assert st.source["name"] == "Mix" and st.source["then"] == "pause"
+        req("/api/album/play", {"root": "music", "folder": "The Beatles/Rubber Soul"})
+        assert st.source["kind"] == "album" and "then" not in st.source
+    finally:
+        httpd.shutdown()

@@ -343,7 +343,8 @@ def make_handler(station: Station, output: Mp3Output, speaker=None,
             elif path == "/api/track/play":
                 try:
                     body = self._body()
-                    reply = station.play_track(body.get("root") or "music", body.get("path"))
+                    reply = station.play_track(body.get("root") or "music", body.get("path"),
+                                               then="pause" if body.get("then") == "pause" else None)
                 except (ValueError, TypeError, KeyError, AttributeError) as e:
                     self._error(str(e) if isinstance(e, ValueError) else "send {\"root\", \"path\"}")
                     return
@@ -910,7 +911,8 @@ def make_handler(station: Station, output: Mp3Output, speaker=None,
             """POST /api/playlists/play {"name", "shuffle": bool}: now, then the show."""
             try:
                 body = self._body()
-                reply = station.play_playlist(body["name"], body.get("shuffle") is True)
+                reply = station.play_playlist(body["name"], body.get("shuffle") is True,
+                                              then="pause" if body.get("then") == "pause" else None)
             except (ValueError, TypeError, KeyError, AttributeError) as e:
                 self._error(str(e) if isinstance(e, ValueError) else "send {\"name\"}")
                 return
@@ -918,10 +920,10 @@ def make_handler(station: Station, output: Mp3Output, speaker=None,
                 speaker.play()
             self._send(json.dumps({**reply, **self._playlists()}).encode(), "application/json")
 
-        def _album_args(self) -> dict:
+        def _album_args(self, body: dict | None = None) -> dict:
             """{"id": n} (from /api/search or /api/albums) or {"root", "folder", "deep"}
             (from /api/browse)."""
-            body = self._body()
+            body = self._body() if body is None else body
             if "id" in body:
                 return {"album_id": body["id"]}
             if not isinstance(body.get("folder"), str):
@@ -1202,10 +1204,13 @@ def make_handler(station: Station, output: Mp3Output, speaker=None,
             self._send(json.dumps(reply).encode(), "application/json")
 
         def _play_album(self) -> None:
-            """POST /api/album/play {"id": n} or {"root", "folder", "deep"}: play it
-            straight through instead of the show -- no DJ -- then back to the show."""
+            """POST /api/album/play {"id": n} or {"root", "folder", "deep"} (+ "shuffle",
+            "then": "pause"): play it straight through instead of the show -- no DJ --
+            then back to the show (or pause)."""
             try:
-                station.play_album(**self._album_args())
+                body = self._body()
+                station.play_album(**self._album_args(body), shuffle=body.get("shuffle") is True,
+                                   then="pause" if body.get("then") == "pause" else None)
             except (ValueError, TypeError, KeyError, AttributeError) as e:
                 self._error(str(e) if isinstance(e, ValueError) else "send {\"id\": n}")
                 return
