@@ -31,7 +31,7 @@ import numpy as np
 
 from sleepradiopi.config.clock import clock_trusted
 from sleepradiopi.config.settings import save_setting
-from sleepradiopi.io.announce import Clip, beep, pips
+from sleepradiopi.io.announce import Clip, beep, pip, pips
 from sleepradiopi.playback import radio as radio_mod
 
 log = logging.getLogger(__name__)
@@ -611,7 +611,7 @@ class Presets:
         elif action == "sleep" and self.control is not None:
             on = not self.control.status().get("sleep_min")
             self.control.set_sleep(SLEEP_MIN if on else 0)
-            self._say(f"Sleep timer, {SLEEP_MIN} minutes." if on else "Sleep timer off.")
+            self._sleep_set(on)
         elif action == "pips":
             self._clip(pips(), "The pips")
         elif action == "address" and self.announcer is not None:
@@ -662,7 +662,7 @@ class Presets:
         if action == "sleep" and self.control is not None:
             if not self.control.status().get("sleep_min"):       # (already counting down: leave it be)
                 self.control.set_sleep(SLEEP_MIN)
-                self._say(f"Sleep timer, {SLEEP_MIN} minutes.")
+                self._sleep_set(True)
         elif action in ("noise_on", "noise_off") and self.control is not None:
             self.control.set_noise(on=action == "noise_on")
         elif action in ("dj_on", "dj_off"):
@@ -686,6 +686,11 @@ class Presets:
     def _clip(self, audio: np.ndarray, label_: str) -> None:
         if self.control is not None:
             self.control.play_clip(Clip(audio, "button", label_))
+
+    def _sleep_set(self, on: bool) -> None:
+        """The sleep timer never talks (it's for nodding off): just one of the pips, on or off."""
+        log.info("button: sleep timer %s", f"{SLEEP_MIN} minutes" if on else "off")
+        self._clip(pip(), "Button")
 
     def _say(self, text: str, beep_first: bool = True, always: bool = False) -> None:
         """A beep at once, then the line in the DJ's voice (made in the background:

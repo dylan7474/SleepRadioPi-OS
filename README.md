@@ -118,7 +118,7 @@ software, and the case to print.
 - **Four preset buttons** (optional), like a car radio's: each plays what
   it holds — Sleep Radio, an artist or list, an internet station, an album
   straight through — or does something: say the time, read the news now,
-  a 30-minute sleep timer, say the address. Press the one that's playing to
+  a 30-minute sleep timer (on or off with a single pip, never words), say the address. Press the one that's playing to
   pause (a second press within half a second counts as the first one's
   bounce, so a worn switch can't pause what it just tuned). **Hold one for 3 seconds** to keep what's playing on it (a beep, then
   "Button two: BBC Radio 4"). The same four are on the web page's front.

@@ -94,15 +94,18 @@ def beep(freqs=(880.0, 1320.0), each_s: float = 0.12) -> np.ndarray:
     return np.repeat(x[:, None], pcm.CHANNELS, axis=1)
 
 
+def pip(sec: float = 0.1) -> np.ndarray:
+    """One of the pips: a 1 kHz tone, int16 stereo."""
+    t = np.arange(int(pcm.SAMPLE_RATE * sec)) / pcm.SAMPLE_RATE
+    return np.repeat((np.sin(2 * np.pi * 1000 * t) * 9000).astype(np.int16)[:, None], pcm.CHANNELS, axis=1)
+
+
 def pips() -> np.ndarray:
     """The pips: five short 1 kHz tones a second apart, then a long one (6 s), int16 stereo."""
-    def tone(sec):
-        t = np.arange(int(pcm.SAMPLE_RATE * sec)) / pcm.SAMPLE_RATE
-        return np.repeat((np.sin(2 * np.pi * 1000 * t) * 9000).astype(np.int16)[:, None], pcm.CHANNELS, axis=1)
     parts = []
     for _ in range(5):
-        parts += [tone(0.1), pcm.silence(0.9)]
-    return np.concatenate(parts + [tone(0.5)])
+        parts += [pip(), pcm.silence(0.9)]
+    return np.concatenate(parts + [pip(0.5)])
 
 
 class Clip:

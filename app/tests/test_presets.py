@@ -236,10 +236,14 @@ def test_empty_buttons_and_actions(tmp_path: Path) -> None:
                                            {"kind": "action", "action": "time"}])
     p.press(0)
     assert ctl.calls == [] and ctl.clips == ["Button"]
+    said = []
+    p._say = lambda text, **kw: said.append(text)    # (the sleep timer never talks: just a pip)
     p.press(1)
     assert ctl.sleep == presets_mod.SLEEP_MIN
     p.press(1)
     assert ctl.sleep == 0
+    assert ctl.clips == ["Button"] * 3 and said == []
+    del p._say
     p.press(2)                                       # (no voice here: the beep)
     assert ctl.calls == []
 
