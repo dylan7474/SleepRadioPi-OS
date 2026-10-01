@@ -48,7 +48,7 @@
   .menubar { position: sticky; top: 0; z-index: 5; display: flex; align-items: center; gap: 10px;
              min-height: calc(34px + env(safe-area-inset-top, 0px)); padding: env(safe-area-inset-top, 0px) 12px 0;
              background: var(--menubar); border-bottom: 1px solid var(--menubar-line); font-size: 13px; backdrop-filter: blur(8px); }
-  .logo { font: 700 13px var(--display); letter-spacing: .18em; }
+  .logo { font: 700 13px var(--display); letter-spacing: .18em; white-space: nowrap; }
   .logo span { color: var(--amber); }
   .grow { flex: 1; }
   .bars { display: inline-flex; align-items: flex-end; gap: 2px; height: 12px; }
@@ -144,56 +144,60 @@
   label.tick { display: flex; align-items: center; gap: 8px; font-size: 13px; }
   .toast { position: fixed; left: 50%; bottom: calc(18px + env(safe-area-inset-bottom, 0px)); transform: translateX(-50%); z-index: 9;
            max-width: min(92vw, 420px); background: var(--toast); color: var(--toast-ink); padding: 10px 14px; border-radius: 10px; font-size: 14px; }
-  /* the remote: the radio and the two things wanted at the bedside (sleep timer, noise), in the
-     desktop's look but bigger, for eyes that aren't what they were; one screen, no scrolling */
+  /* the remote, in the desktop's look but big, for eyes that aren't what they were; one screen, no
+     scrolling: a strip of large scrolling text for what's on (a fifth of the screen at most),
+     the rest a window of platinum keys, CD-player style */
   body.remote-on { overflow: hidden; display: flex; flex-direction: column; height: 100vh; height: 100dvh; }
-  .mremote { flex: 1; min-height: 0; width: 100%; max-width: 480px; padding: 18px 12px calc(10px + env(safe-area-inset-bottom, 0px));
-             display: grid; grid-template-rows: minmax(0, 1fr) auto auto auto; gap: 1.3vh; }
-  .mradio { position: relative; min-height: min-content; background: var(--case); color: var(--case-ink); border-radius: 20px; padding: 1.6vh 14px;
-            display: flex; flex-direction: column; gap: 1.3vh;
-            box-shadow: 0 22px 50px var(--shadow), 0 0 0 1px #0000001a, inset 0 -4px 0 #0000001a, inset 0 2px 0 #fff; }
-  .mradio .handle { position: absolute; left: 50%; top: -13px; width: 130px; height: 17px; transform: translateX(-50%);
-                    border: 5px solid #cfc7b4; border-bottom: 0; border-radius: 14px 14px 0 0; }
-  .mdial { border-radius: 10px; padding: 1vh 12px 1.2vh; color: var(--amber-ink); min-width: 0;
-           background: linear-gradient(180deg, #f7c86d, #e9a23a 55%, #c98522); box-shadow: inset 0 1px 0 #ffe3a6, inset 0 -2px 6px #0003; }
-  .mdial small { display: block; font-size: clamp(13px, 1.9vh, 17px); font-weight: 700; letter-spacing: .14em; text-transform: uppercase; opacity: .8;
-                 white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .mdial { flex: 1 1 auto; display: flex; flex-direction: column; justify-content: center; }
-  .mdial b { display: block; font: 700 clamp(24px, 4.4vh, 40px)/1.12 var(--display); margin-top: .4vh;
-             overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
-  .mdial em { display: block; font-style: normal; font-size: clamp(18px, 2.9vh, 26px); margin-top: .3vh; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .mbar { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 8px; align-items: center; }
-  .key.wide10 { min-width: 72px; height: clamp(42px, 6.2vh, 60px); border-radius: 14px; font-size: clamp(16px, 2.3vh, 20px); }
-  .mtimes { display: flex; justify-content: space-between; padding: 0 84px; font: 700 clamp(15px, 2.2vh, 19px) var(--body); color: #4d493f; font-variant-numeric: tabular-nums; }
-  #pos { -webkit-appearance: none; appearance: none; width: 100%; height: 44px; background: transparent; margin: 0; }
-  #pos::-webkit-slider-runnable-track { height: 12px; border-radius: 6px; background: #cbc4b3; box-shadow: inset 0 1px 2px #0003; }
-  #pos::-moz-range-track { height: 12px; border-radius: 6px; background: #cbc4b3; }
-  #pos::-moz-range-progress { height: 12px; border-radius: 6px; background: #c98522; }
-  #pos::-webkit-slider-thumb { -webkit-appearance: none; width: 34px; height: 34px; margin-top: -11px; border-radius: 50%;
-                               background: radial-gradient(circle at 40% 35%, #f7c86d, #e9a23a 60%, #c98522); border: 2px solid #231703; box-shadow: 0 2px 4px #0005; }
-  #pos::-moz-range-thumb { width: 30px; height: 30px; border-radius: 50%; background: #e9a23a; border: 2px solid #231703; }
-  .mrow { display: grid; grid-template-columns: 1fr 1.4fr 1fr; gap: 10px; }
-  .key.mkey { width: auto; height: clamp(46px, 8.2vh, 84px); border-radius: 16px; padding: 0; }
-  .key.mkey svg { width: clamp(28px, 4.4vh, 40px); height: clamp(28px, 4.4vh, 40px); }
-  .mplay { height: clamp(46px, 8.2vh, 84px); border: 0; border-radius: 16px; color: #fff; display: grid; place-items: center;
-           background: radial-gradient(ellipse at 35% 25%, #6a93de, #2f5cb4 60%, #1d3d7c); box-shadow: 0 4px 10px #0006, inset 0 0 0 3px #ffffff1a; }
-  .mplay:active { transform: translateY(1px); }
-  .mplay svg { width: clamp(34px, 5.4vh, 50px); height: clamp(34px, 5.4vh, 50px); }
-  .mvol { display: flex; flex-direction: column; align-items: center; justify-content: center; border-radius: 14px;
-          background: var(--field); box-shadow: inset 0 1px 3px #0003; color: var(--ink); }
-  .mvol span { font: 700 clamp(11px, 1.6vh, 14px) var(--display); letter-spacing: .16em; text-transform: uppercase; color: var(--dim); }
-  .mvol b { font: 700 clamp(28px, 4.6vh, 44px)/1 var(--display); font-variant-numeric: tabular-nums; }
-  .mwin .mseg { display: flex; margin: 1.2vh 10px; padding: 4px; gap: 4px; }
-  .mwin .mseg button { flex: 1; min-height: clamp(42px, 6vh, 54px); font-size: clamp(15px, 2.2vh, 18px); border-radius: 9px; }
-  .mmore { min-height: clamp(46px, 6vh, 54px); font-size: clamp(16px, 2.3vh, 19px); }
-  :root[data-theme="dark"] .mradio { --case: #2a2f45; --case-ink: #ece6d6; box-shadow: 0 22px 50px #000a, 0 0 0 1px #0006; }
-  :root[data-theme="dark"] .mtimes { color: #c9c3b4; }
-  @media (max-height: 640px) { .mtimes { display: none; } .mradio .handle { display: none; } .mremote { padding-top: 10px; } }
+  .mitem { color: var(--ink); text-decoration: none; padding: 4px 8px; border-radius: 4px; font-size: 14px; }
+  .mitem:hover { background: #0000000c; }
+  .mremote { flex: 1; min-height: 0; width: 100%; max-width: 560px; padding: 1.4vh 10px calc(1.4vh + env(safe-area-inset-bottom, 0px));
+             display: grid; grid-template-rows: auto minmax(0, 1fr); gap: 1.4vh; }
+  .mnow .marquee { height: clamp(42px, 8.4vh, 110px); overflow: hidden; position: relative; display: flex; align-items: center;
+                   background: var(--win); white-space: nowrap; }
+  .mnow .marquee #marqueeText { display: inline-flex; padding-left: 14px; font: 700 clamp(28px, 6vh, 64px)/1 var(--display); color: var(--ink); }
+  .mnow .marquee #marqueeText i { font-style: normal; padding-right: 2.2em; }
+  /* too long for the strip: it scrolls, starting where it can be read, two copies so it loops seamlessly */
+  .mnow .marquee.run #marqueeText { animation: scroll var(--dur, 12s) linear infinite; animation-delay: 1.5s; }
+  @keyframes scroll { from { transform: translateX(0); } to { transform: translateX(-50%); } }
+  @media (prefers-reduced-motion: reduce) { .mnow .marquee.run #marqueeText { animation: none; } }
+  .mctl { display: flex; flex-direction: column; min-height: 0; }
+  .mbody { flex: 1; min-height: 0; padding: 1.2vh 10px; display: flex; flex-direction: column; gap: 1.2vh; background: var(--win-2); }
+  .mrow3, .mrow2 { flex: 1 1 0; min-height: 0; display: grid; gap: 10px; }
+  .mrow3 { grid-template-columns: 1fr 1.25fr 1fr; }
+  .mrow2 { grid-template-columns: 1fr 1fr; flex-grow: .8; }
+  .pkey { min-height: 0; border: 1px solid var(--key-line); border-radius: 12px; background: var(--key); color: var(--key-ink);
+          display: flex; align-items: center; justify-content: center; gap: 8px; padding: 0 6px;
+          box-shadow: 0 2px 0 #0002, inset 0 1px 0 #ffffffa0; font: 600 clamp(17px, 2.6vh, 24px) var(--body);
+          touch-action: none; -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
+  .pkey:active:not(:disabled), .pkey.held { transform: translateY(1px); box-shadow: inset 0 2px 4px #0003; }
+  .pkey:disabled { opacity: .4; }
+  .pkey svg { width: clamp(30px, 5vh, 54px); height: clamp(30px, 5vh, 54px); flex: none; }
+  .pkey.play { background: linear-gradient(180deg, #f7c86d, var(--amber)); border-color: var(--amber-deep); color: var(--amber-ink); }
+  .pkey.play svg { width: clamp(36px, 6.4vh, 70px); height: clamp(36px, 6.4vh, 70px); }
+  .pkey.tog[aria-pressed="true"] { background: linear-gradient(180deg, #f7c86d, var(--amber)); border-color: var(--amber-deep); color: var(--amber-ink); font-weight: 700; }
+  .pkey.tog svg { width: clamp(24px, 3.6vh, 36px); height: clamp(24px, 3.6vh, 36px); }
+  .mvol { display: flex; flex-direction: column; align-items: center; justify-content: center; border-radius: 12px;
+          background: var(--field); border: 1px solid var(--line); box-shadow: inset 0 1px 3px #0002; color: var(--ink); min-height: 0; }
+  .mvol span { font: 700 clamp(11px, 1.6vh, 15px) var(--display); letter-spacing: .16em; text-transform: uppercase; color: var(--dim); }
+  .mvol b { font: 700 clamp(28px, 5vh, 52px)/1 var(--display); font-variant-numeric: tabular-nums; }
+  .mseek { flex: none; }
+  .mtimes { display: flex; justify-content: space-between; padding: 0 4px; font: 700 clamp(15px, 2.2vh, 20px) var(--body); color: var(--ink); font-variant-numeric: tabular-nums; }
+  #pos { -webkit-appearance: none; appearance: none; width: 100%; height: clamp(40px, 5.4vh, 54px); background: transparent; margin: 0; }
+  #pos::-webkit-slider-runnable-track { height: 14px; border-radius: 7px; background: var(--line); box-shadow: inset 0 1px 2px #0003; }
+  #pos::-moz-range-track { height: 14px; border-radius: 7px; background: var(--line); }
+  #pos::-moz-range-progress { height: 14px; border-radius: 7px; background: var(--amber-deep); }
+  #pos::-webkit-slider-thumb { -webkit-appearance: none; width: 36px; height: 36px; margin-top: -11px; border-radius: 50%;
+                               background: linear-gradient(180deg, #f7c86d, #e9a23a); border: 2px solid #231703; box-shadow: 0 2px 4px #0005; }
+  #pos::-moz-range-thumb { width: 32px; height: 32px; border-radius: 50%; background: #e9a23a; border: 2px solid #231703; }
+  @media (max-height: 600px) { .mtimes { display: none; } }
+  @media (max-height: 660px) { .mnow .tbar { height: 22px; } .mnow .tbar b { font-size: 12px; } .mremote { padding-top: 1vh; } }
+  @media (max-width: 380px) { .menubar .bars { display: none; } .menubar { gap: 8px; } }
 </style>
 </head>
 <body>
 <header class="menubar">
   <div class="logo">SLEEP <span>RADIO</span></div>
+  <a class="mitem" href="/desktop" id="deskLink">Desktop</a>
   <div class="grow"></div>
   <span class="bars" id="bars" aria-label="Wi-Fi"><i style="height:4px"></i><i style="height:7px"></i><i style="height:10px"></i><i style="height:12px"></i></span>
   <span class="onair" id="onair"></span>
@@ -213,42 +217,34 @@
 </main>
 
 <main id="remote" class="mremote" hidden>
-  <section class="mradio" aria-label="The radio">
-    <div class="handle"></div>
-    <div class="mdial" aria-live="polite">
-      <small id="dialTop">Now playing</small>
-      <b id="dialTitle">…</b>
-      <em id="dialSub"></em>
-    </div>
-    <div class="mseek" id="seekRow" hidden>
-      <div class="mbar">
-        <button class="key wide10" type="button" id="back10" aria-label="Back ten seconds">−10 s</button>
-        <input type="range" id="pos" min="0" max="1000" value="0" aria-label="Position">
-        <button class="key wide10" type="button" id="fwd10" aria-label="On ten seconds">+10 s</button>
-      </div>
-      <div class="mtimes"><span id="posNow">0:00</span><span id="posLen">0:00</span></div>
-    </div>
-    <div class="mrow">
-      <button class="key mkey" type="button" id="prev" aria-label="Back"><svg viewBox="0 0 24 24" fill="currentColor"><rect x="4" y="5" width="3" height="14" rx="1"/><path d="M20 5v14L8.5 12z"/></svg></button>
-      <button class="mplay" type="button" id="knob" aria-label="Pause"></button>
-      <button class="key mkey" type="button" id="skip" aria-label="Skip"><svg viewBox="0 0 24 24" fill="currentColor"><rect x="17" y="5" width="3" height="14" rx="1"/><path d="M4 5v14l11.5-7z"/></svg></button>
-    </div>
-    <div class="mrow">
-      <button class="key mkey" type="button" id="volDown" aria-label="Quieter"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"><path d="M5 12h14"/></svg></button>
-      <div class="mvol"><span>Volume</span><b id="volNum">–</b></div>
-      <button class="key mkey" type="button" id="volUp" aria-label="Louder"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"><path d="M5 12h14M12 5v14"/></svg></button>
-    </div>
+  <section class="win mnow" aria-live="polite">
+    <div class="tbar"><i></i><b><span id="dialTop">Now playing</span></b><u></u></div>
+    <div class="marquee" id="marquee"><span id="marqueeText">…</span></div>
   </section>
 
-  <section class="win mwin">
-    <div class="tbar"><i></i><b><span id="sleepTitle">Sleep timer</span></b><u></u></div>
-    <div class="mseg seg" id="sleepSeg"></div>
+  <section class="win mctl">
+    <div class="tbar"><i></i><b><span>The radio</span></b><u></u></div>
+    <div class="mbody">
+      <div class="mseek" id="seekRow" hidden>
+        <input type="range" id="pos" min="0" max="1000" value="0" aria-label="Position">
+        <div class="mtimes"><span id="posNow">0:00</span><span id="posLen">0:00</span></div>
+      </div>
+      <div class="mrow3">
+        <button class="pkey" type="button" id="prev" aria-label="Back: tap for the start or the one before, hold to rewind"><svg viewBox="0 0 24 24" fill="currentColor"><rect x="3" y="5" width="2.6" height="14" rx="1"/><path d="M13 5v14L6 12z"/><path d="M21 5v14l-7-7z"/></svg></button>
+        <button class="pkey play" type="button" id="knob" aria-label="Pause"></button>
+        <button class="pkey" type="button" id="skip" aria-label="On: tap for the next, hold to fast-forward"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M3 5v14l7-7z"/><path d="M11 5v14l7-7z"/><rect x="18.4" y="5" width="2.6" height="14" rx="1"/></svg></button>
+      </div>
+      <div class="mrow3">
+        <button class="pkey" type="button" id="volDown" aria-label="Quieter"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"><path d="M5 12h14"/></svg></button>
+        <div class="mvol"><span>Volume</span><b id="volNum">–</b></div>
+        <button class="pkey" type="button" id="volUp" aria-label="Louder"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"><path d="M5 12h14M12 5v14"/></svg></button>
+      </div>
+      <div class="mrow2">
+        <button class="pkey tog" type="button" id="sleepBtn" aria-pressed="false"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 14.5A8 8 0 0 1 9.5 4 8 8 0 1 0 20 14.5z"/></svg><span id="sleepLabel">Sleep 30 min</span></button>
+        <button class="pkey tog" type="button" id="noiseBtn" aria-pressed="false"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M3 12c2-3 4-3 6 0s4 3 6 0 4-3 6 0"/></svg><span id="noiseLabel">Noise</span></button>
+      </div>
+    </div>
   </section>
-  <section class="win mwin">
-    <div class="tbar"><i></i><b><span>Noise to sleep to</span></b><u></u></div>
-    <div class="mseg seg" id="noiseSeg"></div>
-  </section>
-  <a class="wide primary mmore" href="/desktop" id="deskLink">More… (the desktop)</a>
 </main>
 
 <main id="setup" hidden>
@@ -324,31 +320,46 @@ function dialWords(s) {
   const kinds = { dj: "The DJ", jingle: "Jingle", news: "The news", wait: "" };
   return [station, n.title, n.kind === "track" ? n.artist : (kinds[n.kind] ?? "")];
 }
+let lastLine = null;
+function marquee(text) {
+  if (text === lastLine) return;
+  lastLine = text;
+  const box = $("marquee"), span = $("marqueeText");
+  box.classList.remove("run"); span.replaceChildren(el("i", { textContent: text }));
+  requestAnimationFrame(() => {
+    const w = span.scrollWidth;
+    if (w > box.clientWidth) {                    // too long for the strip: it scrolls, at a reading pace
+      span.append(el("i", { textContent: text }));
+      box.style.setProperty("--dur", Math.max(8, w / 70) + "s");
+      box.classList.add("run");
+    }
+  });
+}
 function render() {
   const s = S, sp = s.speaker || {};
   $("onair").textContent = sp.playing === false ? "PAUSED" : s.on_air ? "● ON AIR" : "OFF AIR";
   $("onair").classList.toggle("off", sp.playing === false || !s.on_air);
   const [top, title, sub] = dialWords(s);
-  $("dialTop").textContent = top; $("dialTitle").textContent = title || "…"; $("dialSub").textContent = sub || "";
+  $("dialTop").textContent = top;
+  marquee([title || "…", sub].filter(Boolean).join("  —  "));
   $("knob").innerHTML = sp.playing === false ? PLAY : PAUSE;
   $("knob").setAttribute("aria-label", sp.playing === false ? "Play" : "Pause");
   if (Date.now() > volBusy) { VOL = Math.round(sp.volume ?? 0); $("volNum").textContent = VOL; }
-  // the bar: a song, book or podcast that can be moved through
   const p = s.position, can = !!(p && p.total_ms);
+  CAN_SEEK = can;
   $("seekRow").hidden = !can;
   if (can && !seeking) {
     $("pos").max = p.total_ms; $("pos").value = Math.min(p.pos_ms, p.total_ms);
     $("posNow").textContent = mmss(p.pos_ms); $("posLen").textContent = mmss(p.total_ms);
   }
-  $("prev").disabled = !s.can_previous; $("skip").disabled = !s.can_skip;
-  // the sleep timer and noise
-  const seg = (box, opts, now, fn) => box.replaceChildren(...opts.map(([v, t]) => {
-    const b = el("button", { type: "button", textContent: t }); b.setAttribute("aria-pressed", String(v === now)); b.onclick = () => fn(v); return b; }));
-  const sleepNow = sp.sleep_min ? [15, 30, 60].reduce((a, m) => Math.abs(m - sp.sleep_min) < Math.abs(a - sp.sleep_min) ? m : a, 30) : 0;
-  seg($("sleepSeg"), [[0, "Off"], [15, "15 min"], [30, "30 min"], [60, "60 min"]], sleepNow,
-      m => act("/api/speaker", { sleep: m }, () => toast(m ? `Sleep in ${m} minutes.` : "Sleep timer off.")));
-  $("sleepTitle").textContent = sp.sleep_left_s ? `Sleep timer · ${Math.ceil(sp.sleep_left_s / 60)} min left` : "Sleep timer";
-  seg($("noiseSeg"), [[false, "Off"], [true, "On"]], !!sp.noise?.on, v => act("/api/speaker", { noise: v }));
+  $("prev").disabled = !s.can_previous && !can; $("skip").disabled = !s.can_skip && !can;
+  const left = sp.sleep_left_s ? Math.ceil(sp.sleep_left_s / 60) : 0;
+  SLEEP_ON = !!sp.sleep_min;
+  $("sleepBtn").setAttribute("aria-pressed", String(SLEEP_ON));
+  $("sleepLabel").textContent = SLEEP_ON ? `Sleep: ${left} min` : "Sleep 30 min";
+  NOISE_ON = !!sp.noise?.on;
+  $("noiseBtn").setAttribute("aria-pressed", String(NOISE_ON));
+  $("noiseLabel").textContent = NOISE_ON ? "Noise on" : "Noise";
 }
 function renderButtons() { look(); }      // (the buttons are on the radio: here only Night's dark look)
 async function loadButtons() { try { B = await api("/api/buttons"); renderButtons(); } catch {} }
@@ -356,17 +367,47 @@ async function poll() {
   if (mode !== "remote") return;
   try { S = await api("/api/status"); render(); } catch {}
 }
-let VOL = 0;
+let VOL = 0, CAN_SEEK = false, SLEEP_ON = false, NOISE_ON = false;
 $("knob").onclick = () => act("/api/speaker", { pause: "toggle" });
 const setVol = v => { VOL = Math.max(0, Math.min(100, v)); volBusy = Date.now() + 1500; $("volNum").textContent = VOL; act("/api/speaker", { volume: VOL }); };
 $("volDown").onclick = () => setVol(VOL - 2);
 $("volUp").onclick = () => setVol(VOL + 2);
-$("prev").onclick = () => act("/api/previous", {});
-$("skip").onclick = () => act("/api/skip", {});
+$("sleepBtn").onclick = () => act("/api/speaker", { sleep: SLEEP_ON ? 0 : 30 }, () => toast(SLEEP_ON ? "Sleep timer off." : "Sleep in 30 minutes."));
+$("noiseBtn").onclick = () => act("/api/speaker", { noise: !NOISE_ON });
 $("pos").oninput = e => { seeking = true; $("posNow").textContent = mmss(+e.target.value); };
 $("pos").onchange = async e => { await act("/api/seek", { to_ms: +e.target.value }); seeking = false; };
-$("back10").onclick = () => act("/api/seek", { delta_ms: -10000 });
-$("fwd10").onclick = () => act("/api/seek", { delta_ms: 10000 });
+// CD-player keys: a tap goes to the next (or back: the start, or the one before); held, it winds
+// through the song, book or podcast -- faster the longer it's held -- until let go.
+const HOLD_MS = 450;
+function cdKey(btn, dir, tap) {
+  let timer = null, winding = false, stop = false, steps = 0;
+  const wind = async () => {
+    while (!stop) {
+      const step = (steps < 6 ? 5000 : steps < 14 ? 15000 : 30000) * dir;
+      steps++;
+      try { const d = await api("/api/seek", { delta_ms: step }); if (d.position) { $("pos").value = d.position.pos_ms; $("posNow").textContent = mmss(d.position.pos_ms); } } catch { break; }
+      await new Promise(r => setTimeout(r, 250));
+    }
+  };
+  btn.addEventListener("pointerdown", e => {
+    if (btn.disabled) return;
+    e.preventDefault(); btn.setPointerCapture?.(e.pointerId);
+    stop = false; winding = false; steps = 0; btn.classList.add("held");
+    timer = setTimeout(() => { if (CAN_SEEK) { winding = true; seeking = true; wind(); } }, HOLD_MS);
+  });
+  const up = () => {
+    if (!btn.classList.contains("held")) return;
+    btn.classList.remove("held"); clearTimeout(timer); stop = true;
+    if (winding) { seeking = false; setTimeout(poll, 300); } else tap();
+  };
+  btn.addEventListener("pointerup", up);
+  btn.addEventListener("pointercancel", () => { btn.classList.remove("held"); clearTimeout(timer); stop = true; seeking = false; });
+  btn.addEventListener("contextmenu", e => e.preventDefault());
+  btn.addEventListener("keydown", e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); tap(); } });
+}
+const spoken = () => ["book", "episode"].includes(S?.source?.kind);   // (a book or podcast: a tap jumps half a minute)
+cdKey($("prev"), -1, () => spoken() ? act("/api/seek", { delta_ms: -30000 }) : act("/api/previous", {}));
+cdKey($("skip"), 1, () => spoken() ? act("/api/seek", { delta_ms: 30000 }) : act("/api/skip", {}));
 
 // --- Wi-Fi set-up (the radio's own network) --------------------------------------------------
 let joining = null;

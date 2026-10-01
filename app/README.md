@@ -386,21 +386,24 @@ The cards:
   renames it, and buttons and programmes that play it follow. A preset button
   can hold one, in order or shuffled. A song whose file has gone is skipped. Kept in the settings (`playlists`), so *Save settings* has them
   (`broadcast/playlists.py`, `Station.play_playlist`).
-- **The phone remote** (`web/remote.html`, served at `/`) is the radio in your
-  hand, in the desktop's look but bigger, all on one screen with no scrolling
-  (sized from the screen's height). The radio: what's on (station, song or
-  programme, in large type), a **position bar** with **−10 s / +10 s** when a
-  song, audiobook or podcast can be moved through (drag it), a row of wide
-  keys -- Back, Play/Pause (blue), Skip -- and one for the volume (−, the
-  number, +); then the **sleep timer**
-  (Off, 15, 30, 60 min, with the time left) and **noise** (Off, On); and
-  *More…* for the desktop. (The four buttons are on the radio itself, so not
-  here.) It goes dark while the radio uses its Night buttons, like the
-  desktop. A computer opening `/` goes to the desktop. On the radio's own
-  network (first set-up, or after a Wi-Fi reset) `/` is a **Wi-Fi set-up**
-  screen instead: networks nearby, tap one, its password, Join (or type a
-  hidden network's name); phones checking for internet there are sent to
-  it. It uses no web fonts, so it works with no internet.
+- **The phone remote** (`web/remote.html`, served at `/`), in the desktop's
+  look but big, for eyes that aren't what they were, all on one screen with no
+  scrolling. The top fifth at most is a window with **one line of large
+  scrolling text** -- what's on (song and artist, or station) -- titled with
+  the station. The rest is a window of platinum keys, CD-player style: a thick
+  **position bar** (drag it) when a song, audiobook or podcast can be moved
+  through; **⏮ Play/Pause ⏭** -- a tap on ⏭ is the next song, held it fast-
+  forwards (faster the longer it's held), and ⏮ the same backwards (a tap:
+  the start, or the one before; in a book or podcast a tap is half a minute);
+  volume − / the number / +; **Sleep 30 min** (tap again: off; it shows the
+  minutes left) and **Noise** on/off. *Desktop* in the menu bar has the rest.
+  (The four buttons are on the radio itself.) It goes dark while the radio
+  uses its Night buttons, like the desktop. A computer opening `/` goes to
+  the desktop. On the radio's own network (first set-up, or after a Wi-Fi
+  reset) `/` is a **Wi-Fi set-up** screen instead: networks nearby, tap one,
+  its password, Join (or type a hidden network's name); phones checking for
+  internet there are sent to it. It uses no web fonts, so it works with no
+  internet.
 - **The classic page** (`web/page.html`, now at `/classic`; the desktop's
   Stations, Test sounds and Listen-in-a-browser windows still show its
   parts) follows the desktop's names and ways:
