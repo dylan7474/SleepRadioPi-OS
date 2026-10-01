@@ -96,7 +96,8 @@ def test_back_to_the_show_plays_a_short_jingle_rather_than_wait_for_the_welcome(
     from sleepradiopi.broadcast.library import JingleClip
     from test_offline import _station
     st = _station(tmp_path)
-    monkeypatch.setattr(type(st), "main_mix", property(lambda self: True))
+    monkeypatch.setattr(type(st), "main_mix", property(lambda self: False))   # a theme: still a jingle
+    st.config.jingle_every = 4
     short, long_ = JingleClip(tmp_path / "Short.mp3", 31.0), JingleClip(tmp_path / "Long.mp3", 65.0)
     st.jingles = [short, long_]
     pending = Future()
@@ -105,6 +106,8 @@ def test_back_to_the_show_plays_a_short_jingle_rather_than_wait_for_the_welcome(
     assert [(s.kind, s.jingle) for s in steps] == [("jingle", short)]     # only a short one, never the long
     assert pending.cancelled()                                            # and the welcome isn't made after all
     st.jingles = [long_]
+    assert st._back_steps([station_mod.Step("say", station_mod.Speech("Hi", "stock", Future()))]) == []
+    st.jingles, st.config.jingle_every = [short], 0                       # jingles off: straight to the music
     assert st._back_steps([station_mod.Step("say", station_mod.Speech("Hi", "stock", Future()))]) == []
     done = Future()
     done.set_result(None)

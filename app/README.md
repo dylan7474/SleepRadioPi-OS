@@ -29,7 +29,8 @@ and with no network, and is set up from its web page. See
   reload the voice, then 30–60 s to say it, and waiting sounded broken), one
   of the **short jingles** (40 s or less) plays at once and then the music,
   and the DJ joins at the next gap (`Station._back_steps`; no short jingle:
-  straight to the music). Uses the jingles folder when jingles are on.
+  straight to the music). It follows the DJ's jingles on/off setting, on a
+  theme or artist radio too (whose gaps still have no jingles).
 - **A stuck sound card restarts the radio.** If aplay keeps failing (once, the
   card refused to open after a boot until a restart), the speaker retries ever
   more slowly (0.1 s up to 5 s, logged at the 1st, 2nd, 4th... failure), and

@@ -427,13 +427,16 @@ class Station:
         made yet -- on a Zero the DJ's voice has to load again (~20 s), then speak
         it (30-60 s), and waiting sounded broken. So if it isn't ready: one of the
         short jingles (if there are any) and straight into the music; the DJ joins
-        at the next gap. A welcome that is ready is said as usual."""
+        at the next gap. A welcome that is ready is said as usual. The jingle follows
+        the DJ's jingles on/off setting only -- on a theme or artist radio too (the
+        user's choice; their gaps still have none)."""
         if all(s.speech.future.done() for s in steps if s.kind == "say"):
             return steps
         for step in steps:
             if step.kind == "say":
                 step.speech.future.cancel()   # (if it hasn't started: the Zero's CPU is the music's now)
-        short = [j for j in self.jingles if 0 < j.duration_s <= RETURN_JINGLE_MAX_S] if self.main_mix else []
+        on = self.config.jingle_every > 0
+        short = [j for j in self.jingles if 0 < j.duration_s <= RETURN_JINGLE_MAX_S] if on else []
         log.info("back to the show: the welcome isn't ready; %s",
                  "a short jingle, then the music" if short else "straight to the music")
         return [Step("jingle", jingle=random.choice(short))] if short else []
