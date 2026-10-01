@@ -718,10 +718,13 @@ The cards:
   after them ("welcome to Beatles Radio"; a leading "The" is dropped), and
   so do the page heading and tab. **Themes…** makes your own named lists of
   artists (e.g. a "Friday List"; find and tick artists), which appear in the
-  same dropdown ("welcome to Friday List Radio": a theme is a station). On air, the song
-  already lined up next still plays first. If the library has nothing for
-  the choice, it plays everything. Jingles play here too when they're on,
-  as on the main mix.
+  same dropdown ("welcome to Friday List Radio": a theme is a station). On air, it
+  takes over at once, like turning the dial (the song playing stops; its
+  welcome, or a short jingle, then its music). If the library has nothing for
+  the choice, it plays everything. Artist radio has the DJ like a theme; it
+  has no jingles folder of its own (Default's fill in). From the desktop, an
+  artist's folder dropped on the radio is different: their songs shuffled,
+  once each, no DJ, then the radio pauses.
 - **The DJ** — **on or off** (off: the show is music only, with no speech at
   all — no welcome, links, track intros, time checks, news, Messages or
   birthday wishes, including lines already made before it was switched off;
