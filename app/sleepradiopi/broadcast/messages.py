@@ -218,10 +218,21 @@ class Messages:
     def words(self, text: str, today: date) -> str:
         return f"{date_line(today)} {text}" if self.cfg["date_first"] else text
 
-    def played(self, at: datetime) -> None:
+    def played(self, at: datetime) -> tuple:
+        """Record that what due() chose is said; returns what unplayed() needs."""
         pending, self._pending = self._pending, None
         if pending is not None and pending[0] == "timed":
             self._done_timed.add(pending[1])
-            return
+            return ("timed", pending[1])
+        before = ("slot", self._done_slot, self._turn)
         self._done_slot = self.slot(at)
         self._turn += 1
+        return before
+
+    def unplayed(self, record: tuple) -> None:
+        """It couldn't be said after all (the DJ wasn't ready in time): due again,
+        at the next gap."""
+        if record[0] == "timed":
+            self._done_timed.discard(record[1])
+        else:
+            _, self._done_slot, self._turn = record

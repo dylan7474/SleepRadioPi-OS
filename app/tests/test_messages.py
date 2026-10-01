@@ -196,3 +196,17 @@ def test_message_schedules_are_checked() -> None:
     for bad in ({"text": "x", "days": [7]}, {"text": "x", "date": "13-01"}, {"text": "x", "times": ["25:00"]}):
         with pytest.raises(ValueError):
             validate({"list": [bad]})
+
+
+def test_a_message_not_said_comes_round_again() -> None:
+    m = Messages({"list": [{"text": HOME}, {"text": SUNDAY}], "date_first": False})
+    t = datetime(2026, 9, 29, 10, 8)
+    assert m.due(t, True) == HOME
+    m.unplayed(m.played(t))                                            # the DJ wasn't ready
+    assert m.due(datetime(2026, 9, 29, 10, 12), True) == HOME          # the next gap: the same one
+    m.played(datetime(2026, 9, 29, 10, 12))
+    assert m.due(datetime(2026, 9, 29, 10, 15), True) is None
+    timed = Messages({"list": [{"text": SUNDAY, "times": ["10:00"]}], "date_first": False})
+    assert timed.due(datetime(2026, 9, 29, 10, 1), True) == SUNDAY
+    timed.unplayed(timed.played(datetime(2026, 9, 29, 10, 1)))
+    assert timed.due(datetime(2026, 9, 29, 10, 5), True) == SUNDAY

@@ -39,7 +39,6 @@ from typing import Protocol
 import numpy as np
 
 from sleepradiopi.audio import pcm
-from sleepradiopi import startup_sound
 from sleepradiopi.config.clock import clock_trusted
 from sleepradiopi.playback import radio as radio_mod
 from sleepradiopi.playback.audiobooks import BookLibrary, Positions
@@ -66,9 +65,10 @@ STARTUP_JINGLE_MAX_S = 20.0   # the opening ident: longer ones (most jingles) wa
                               # so the first song isn't held back after a slow start-up
 SPEECH_PAD_S = 0.25       # breath of silence either side of the DJ
 SPEECH_WAIT_S = 45.0      # give up on a line that still isn't synthesised after this
-WARM_TICK_S = 3.0         # power-on, still warming up: a soft tick this often
-RETURN_JINGLE_MAX_S = 40.0    # back to the show before its welcome is made: one of the jingles this
-                              # short, then the music (the user's shortest are ~31-38 s; the rest 55 s+)
+FILL_JINGLE_MAX_S = 40.0  # the DJ isn't ready (power-on, back to the show, a gap): one of the
+                          # jingles this short instead of a wait, then the music, as a real station
+                          # would (the user's shortest are ~31-38 s; the rest 55 s+)
+GAP_GRACE_S = 2.0         # in a gap, a line not made by the song's end gets this long, then it's skipped
 
 
 def _tick() -> np.ndarray:
@@ -126,6 +126,7 @@ class Step:
     clock: ClockStep | None = None
     jingle: JingleClip | None = None
     news: NewsItem | None = None
+    message: tuple | None = None   # a message's Messages.played() record: due again if it isn't said
 
     def describe(self) -> str:
         if self.kind == "say":
@@ -422,42 +423,29 @@ class Station:
         finally:
             self._in_music = False
 
-    def _back_steps(self, steps: list[Step]) -> list[Step]:
-        """Back to the show (from a station, an album...): the welcome is often not
-        made yet -- on a Zero the DJ's voice has to load again (~20 s), then speak
-        it (30-60 s), and waiting sounded broken. So if it isn't ready: one of the
-        short jingles (if there are any) and straight into the music; the DJ joins
-        at the next gap. A welcome that is ready is said as usual. The jingle follows
-        the DJ's jingles on/off setting only -- on a theme or artist radio too (the
-        user's choice; their gaps still have none)."""
+    def _opening_steps(self, steps: list[Step], why: str) -> list[Step]:
+        """The welcome, at power-on or back to the show (from a station, an album...),
+        is often not made yet: on a Zero the DJ's voice has to load (~20 s), then
+        speak it (30-60 s), and waiting sounded broken. So if it isn't ready: one of
+        the short jingles (if jingles are on) and straight into the music, as a real
+        station would; the DJ joins at the next gap. A welcome that is ready is said
+        as usual. The jingle follows the jingles on/off setting only -- on a theme or
+        artist radio too (the user's choice)."""
         if all(s.speech.future.done() for s in steps if s.kind == "say"):
             return steps
         for step in steps:
             if step.kind == "say":
                 step.speech.future.cancel()   # (if it hasn't started: the Zero's CPU is the music's now)
-        on = self.config.jingle_every > 0
-        short = [j for j in self.jingles if 0 < j.duration_s <= RETURN_JINGLE_MAX_S] if on else []
-        log.info("back to the show: the welcome isn't ready; %s",
-                 "a short jingle, then the music" if short else "straight to the music")
-        return [Step("jingle", jingle=random.choice(short))] if short else []
+        clip = self._fill_jingle()
+        log.info("%s: the welcome isn't ready; %s", why, "a short jingle, then the music" if clip else "straight to the music")
+        return [Step("jingle", jingle=clip)] if clip else []
 
-    def _tick_until_ready(self, steps: list[Step]) -> None:
-        """Still not ready: a soft tick every few seconds, like a clock, so the
-        wait sounds like a radio getting ready rather than a broken one. (At
-        power-on too, carrying on from the start-up sound's ticking.)"""
-        def ready():
-            return all(s.speech.future.done() for s in steps if s.kind == "say")
-        if ready() or not startup_sound.settings(Path.home())[0]:
-            return
-        from sleepradiopi.config import brand
-        self.on_air = OnAir("wait", f"{brand.name} is warming up")
-        tick = np.concatenate([_tick(), pcm.silence(WARM_TICK_S)])
-        end = time.monotonic() + SPEECH_WAIT_S
-        while not ready() and time.monotonic() < end:
-            for block in pcm.blocks(tick):
-                if self._halted() or ready():
-                    return
-                self._write(block)
+    def _fill_jingle(self) -> JingleClip | None:
+        """A short jingle to play while the DJ isn't ready (None: jingles off, or none short)."""
+        if self.config.jingle_every <= 0:
+            return None
+        short = [j for j in self.jingles if 0 < j.duration_s <= FILL_JINGLE_MAX_S]
+        return random.choice(short) if short else None
 
     def _run_music_show(self, back: bool = False) -> None:
         self._show_clock.reset()
@@ -471,10 +459,8 @@ class Station:
         try:
             steps, first = self._take_opening()
             opening = self._last_opening
-            if back:
-                steps = self._back_steps(steps)
-            elif self._first_open:            # power-on: the start-up sound chimed; tick on from it
-                self._tick_until_ready(steps)
+            if back or self._first_open:      # (power-on: the start-up sound has chimed)
+                steps = self._opening_steps(steps, "back to the show" if back else "power-on")
             self._first_open = False
             self._run_steps(steps)
             track = first
@@ -1657,9 +1643,9 @@ class Station:
         message = self.messages.due(end_at, clock_trusted())
         if not message:
             return
-        self.messages.played(end_at)
+        record = self.messages.played(end_at)
         self._gap_decision = decision[:4] + (message,)
-        step = Step("say", self._say(message))
+        step = Step("say", self._say(message), message=record)
         plan = self._plan
         plan.insert(1 if decision[2] and plan and plan[0].kind == "say" else 0, step)
         self.gap_plan = [s.describe() for s in plan]
@@ -1684,19 +1670,36 @@ class Station:
                 if self._has_voice and self.dj_on:
                     plan.append(Step("say", self._say(self.builder.intro_line(self.next_track))))
                 log.info("gap (news): %s", [s.describe() for s in plan])
-        self._run_steps(plan)
+        self._run_steps(plan, gap=True)
 
-    def _run_steps(self, steps: list[Step]) -> None:
+    def _run_steps(self, steps: list[Step], gap: bool = False) -> None:
+        """gap: between songs, where a line that isn't made in time isn't waited
+        for (it was "Getting the next bit ready", then the line much later): it's
+        skipped -- a message comes round again at the next gap -- and a short jingle
+        fills in, once, if the gap had none, then the next song."""
+        filled = any(s.kind == "jingle" for s in steps)
         for step in steps:
             if self._halted() or self._jump is not None:
                 return
             if not self.dj_on and step.kind in ("say", "clock", "news"):
                 continue                      # the DJ went off after this was planned: music only
+            if step.kind == "clock" and step.clock.speech is None:   # no prefetch (unknown track length)
+                step.clock.speech = self._say(self.builder.time_line())
+            speech = step.speech if step.kind == "say" else step.clock.speech if step.kind == "clock" else None
+            if gap and speech is not None and self._await(speech.future, GAP_GRACE_S) is None and not self._halted():
+                speech.future.cancel()        # (a no-op if it's being made: it's just not used)
+                if step.message is not None:
+                    self.messages.unplayed(step.message)
+                clip = None if filled else self._fill_jingle()
+                filled = filled or clip is not None
+                log.info("gap: the DJ isn't ready (%s)%s", speech.text[:60],
+                         "; a short jingle instead" if clip else "; on to the music")
+                if clip is not None:
+                    self._run_steps([Step("jingle", jingle=clip)])
+                continue
             if step.kind == "say":
                 self._speak(step.speech)
             elif step.kind == "clock":
-                if step.clock.speech is None:  # no prefetch (unknown track length): word it now
-                    step.clock.speech = self._say(self.builder.time_line())
                 self._speak(step.clock.speech)
             elif step.kind == "jingle":
                 clip = step.jingle or self._next_jingle()

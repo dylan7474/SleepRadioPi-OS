@@ -120,7 +120,7 @@ def test_news_waits_until_the_album_is_over(tmp_path: Path, monkeypatch) -> None
     st._plan_gap(first, st._queue[0])
     assert st._gap_is_album
     ran = []
-    monkeypatch.setattr(st, "_run_steps", lambda steps: ran.append(steps))
+    monkeypatch.setattr(st, "_run_steps", lambda steps, gap=False: ran.append(steps))
     st._news_ready = object()                          # a bulletin that would be due
     monkeypatch.setattr(st.news_schedule, "due_at", lambda now: (_ for _ in ()).throw(AssertionError("checked news")))
     st._run_gap()

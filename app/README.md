@@ -24,13 +24,18 @@ and with no network, and is set up from its web page. See
 
 ## How it behaves
 
-- **Back to Sleep Radio** from a station, album, audiobook or podcast: if the
-  DJ's welcome is ready it's said as usual; if not (a Zero takes ~20 s to
-  reload the voice, then 30–60 s to say it, and waiting sounded broken), one
-  of the **short jingles** (40 s or less) plays at once and then the music,
-  and the DJ joins at the next gap (`Station._back_steps`; no short jingle:
-  straight to the music). It follows the DJ's jingles on/off setting, on a
-  theme or artist radio too (whose gaps still have no jingles).
+- **The DJ is never waited for, like a real station.** At power-on and back
+  to Sleep Radio from a station, album, audiobook or podcast, a welcome that's
+  ready is said as usual; if not (a Zero takes ~20 s to reload the voice,
+  then 30–60 s to say it, and waiting sounded broken), one of the **short
+  jingles** (40 s or less) plays at once and then the music, and the DJ joins
+  at the next gap (`Station._opening_steps`). Between songs, a line not made
+  by the end of the song (2 s grace) is skipped and a short jingle fills in,
+  once, if the gap had none (`Station._run_steps(gap=True)`); a **message**
+  that wasn't ready comes round again at the next gap (`Messages.unplayed`).
+  The fill-in jingle follows the DJ's jingles on/off setting, on a theme or
+  artist radio too (whose gaps otherwise have no jingles); jingles off:
+  straight to the music.
 - **A stuck sound card restarts the radio.** If aplay keeps failing (once, the
   card refused to open after a boot until a restart), the speaker retries ever
   more slowly (0.1 s up to 5 s, logged at the 1st, 2nd, 4th... failure), and
@@ -38,11 +43,10 @@ and with no network, and is set up from its web page. See
   (`SpeakerOutput._failed`, `main._speaker_stuck`).
 - **Power on and it plays.** About 10 seconds after power-up it chimes, and
   the DJ says "Sleep Radio is warming up…", so you know it's alive; then a
-  soft tick every 3 s (like a clock) until the DJ starts -- the start-up
-  program ticks until the station first opens the speaker, then the station
-  ticks on until its welcome is ready; the show
-  itself starts once the voice has loaded ("Good evening, and welcome to
-  Sleep Radio..."). No app, no phone, no button press. The chime is a small
+  soft tick every 3 s (like a clock) until the station opens the speaker,
+  and the show starts: with the DJ's welcome if it's made ("Good evening, and
+  welcome to Sleep Radio..."), otherwise a short jingle and the music (above).
+  No app, no phone, no button press. The chime is a small
   separate program (`startup_sound.py`, standard library only) run before
   the station; the spoken line is made once in the DJ's voice after the show
   is under way and kept in the cache, so it plays from the next start-up.
@@ -369,7 +373,7 @@ The cards:
   desktop's *Classic page* link keeps you here, and this page's *Desktop* link
   goes back). A menu bar;
   icons for Music, On demand, Audiobooks, Podcasts, Stations, Playlists,
-  Programmes and Theme radio (folders load from `/api/browse` as you open
+  Programmes, Theme radio, Actions and Jingles (folders load from `/api/browse` as you open
   them); windows you move and resize; every folder window shows its things as
   **icons or a list** (the switch in its toolbar; the list has Name, Details,
   Size and Kind columns (`/api/browse` gives each folder's and track's

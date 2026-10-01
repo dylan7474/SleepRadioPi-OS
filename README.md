@@ -99,10 +99,12 @@ software, and the case to print.
 
 - **Power on and it plays.** About 10 seconds after you plug it in it chimes
   and the DJ says it's warming up, so you know it's alive, then ticks softly
-  every few seconds, like a clock, until the show starts once the voice has
-  loaded (about 50 seconds from power-on on a Zero 2 W). Coming back to
-  Sleep Radio from a station, album, audiobook or podcast does the same if
-  the DJ's welcome isn't ready yet. (An LED flickers while it boots and
+  every few seconds, like a clock, until the show starts. Like a real
+  station, it never waits in silence for the DJ: if the welcome isn't ready
+  yet (the voice takes a while to load on a Zero 2 W), a short jingle plays
+  and then the music, and the DJ joins between songs; the same coming back
+  to Sleep Radio from a station, album, audiobook or podcast, and between
+  songs. (An LED flickers while it boots and
   pulses when it's on air.)
 - **One knob.** Turn for volume; press to pause or play; **hold it for 3
   seconds** and the radio reads out its network address (handy away from

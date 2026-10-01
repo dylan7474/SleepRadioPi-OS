@@ -90,7 +90,7 @@ def test_without_a_speaker_it_cant_be_switched_off(tmp_path: Path) -> None:
         httpd.shutdown()
 
 
-def test_back_to_the_show_plays_a_short_jingle_rather_than_wait_for_the_welcome(tmp_path, monkeypatch) -> None:
+def test_back_to_the_show_or_power_on_plays_a_short_jingle_rather_than_wait(tmp_path, monkeypatch) -> None:
     from concurrent.futures import Future
     from sleepradiopi.broadcast import station as station_mod
     from sleepradiopi.broadcast.library import JingleClip
@@ -102,41 +102,54 @@ def test_back_to_the_show_plays_a_short_jingle_rather_than_wait_for_the_welcome(
     st.jingles = [short, long_]
     pending = Future()
     welcome = station_mod.Step("say", station_mod.Speech("Good evening", "stock", pending))
-    steps = st._back_steps([welcome])
+    steps = st._opening_steps([welcome], "back to the show")
     assert [(s.kind, s.jingle) for s in steps] == [("jingle", short)]     # only a short one, never the long
     assert pending.cancelled()                                            # and the welcome isn't made after all
     st.jingles = [long_]
-    assert st._back_steps([station_mod.Step("say", station_mod.Speech("Hi", "stock", Future()))]) == []
+    assert st._opening_steps([station_mod.Step("say", station_mod.Speech("Hi", "stock", Future()))], "power-on") == []
     st.jingles, st.config.jingle_every = [short], 0                       # jingles off: straight to the music
-    assert st._back_steps([station_mod.Step("say", station_mod.Speech("Hi", "stock", Future()))]) == []
+    assert st._opening_steps([station_mod.Step("say", station_mod.Speech("Hi", "stock", Future()))], "power-on") == []
     done = Future()
     done.set_result(None)
     ready = [station_mod.Step("say", station_mod.Speech("Good evening", "stock", done))]
-    assert st._back_steps(ready) is ready                                 # made in time: said as usual
+    assert st._opening_steps(ready, "power-on") is ready                  # made in time: said as usual
 
 
-def test_power_on_ticks_until_the_welcome_is_ready(tmp_path, monkeypatch) -> None:
+def test_a_gap_never_waits_for_the_dj(tmp_path, monkeypatch) -> None:
+    """Like a real station: a line not made by the song's end is skipped, a short
+    jingle fills in (once), and a message comes round again at the next gap."""
     from concurrent.futures import Future
+    from datetime import datetime
+    import numpy as np
     from sleepradiopi.broadcast import station as station_mod
-    from sleepradiopi import startup_sound
+    from sleepradiopi.broadcast.library import JingleClip
     from test_offline import _station
     st = _station(tmp_path)
-    monkeypatch.setattr(startup_sound, "settings", lambda home: (True, "stock", 50))
-    monkeypatch.setattr(station_mod, "SPEECH_WAIT_S", 30.0)
-    pending = Future()
-    speech = station_mod.Speech("Good evening", "stock", pending)
-    written = []
-
-    def write(block):
-        written.append(len(block))
-        if sum(written) > 3 * 44100 * (station_mod.WARM_TICK_S + 0.04):
-            pending.set_result(None) if not pending.done() else None
-    monkeypatch.setattr(st, "_write", write)
-    st._tick_until_ready([station_mod.Step("say", speech)])
-    assert pending.done() and sum(written) > 3 * 44100 * station_mod.WARM_TICK_S
-    tick = station_mod._tick()
-    assert len(tick) == int(0.04 * 44100) and 0 < abs(tick).max() < 0.15 * 32767
-    written.clear()
-    st._tick_until_ready([station_mod.Step("say", speech)])
-    assert written == []                                          # ready: straight on
+    monkeypatch.setattr(station_mod, "GAP_GRACE_S", 0.05)
+    monkeypatch.setattr(st, "_write", lambda block: None)
+    played, said = [], []
+    monkeypatch.setattr(st, "_play_file", lambda path, on_air: played.append(path.stem))
+    monkeypatch.setattr(st, "_speak", lambda speech, kind="dj": said.append(speech.text) or True)
+    st.config.jingle_every = 4
+    st.jingles = [JingleClip(tmp_path / "Short.mp3", 31.0), JingleClip(tmp_path / "Long.mp3", 65.0)]
+    st.messages.set({"list": [{"text": "Love from home"}], "date_first": False})
+    at = datetime(2026, 10, 1, 11, 27)
+    assert st.messages.due(at, True) == "Love from home"
+    record = st.messages.played(at)
+    ready = Future()
+    ready.set_result(np.zeros((10, 2), dtype=np.int16))
+    steps = [station_mod.Step("say", station_mod.Speech("Love from home", "stock", Future()), message=record),
+             station_mod.Step("say", station_mod.Speech("That was a song", "stock", Future())),
+             station_mod.Step("say", station_mod.Speech("Here's the next", "stock", ready))]
+    st._run_steps(steps, gap=True)
+    assert played == ["Short"] and said == ["Here's the next"]           # one jingle, then what was ready
+    assert st.messages.due(at, True) == "Love from home"                  # the message: at the next gap
+    played.clear()
+    st._run_steps([station_mod.Step("jingle", jingle=st.jingles[1]),
+                   station_mod.Step("say", station_mod.Speech("Not yet", "stock", Future()))], gap=True)
+    assert played == ["Long"]                                              # the gap had its jingle: no second
+    played.clear()
+    st.config.jingle_every = 0
+    st._run_steps([station_mod.Step("say", station_mod.Speech("Not yet", "stock", Future()))], gap=True)
+    assert played == []                                                    # jingles off: on to the music
 

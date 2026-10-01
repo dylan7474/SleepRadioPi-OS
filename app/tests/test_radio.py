@@ -501,9 +501,10 @@ def test_backups_keep_the_stations_but_not_whats_on(tmp_path: Path) -> None:
         backup.parse(saved)
 
 
-def test_an_opening_cut_short_is_kept_for_coming_back(tmp_path: Path, monkeypatch) -> None:
-    """Tuning in while the welcome is still being made (slow on a Zero) keeps
-    it, half made, for when the show comes back, instead of starting again."""
+def test_a_welcome_not_ready_at_power_on_is_dropped_and_a_new_one_made_for_coming_back(tmp_path: Path, monkeypatch) -> None:
+    """Power-on doesn't wait for a welcome that isn't made (slow on a Zero): it's
+    cancelled and the music starts; tuning to a station then prepares a fresh
+    one for coming back."""
     from concurrent.futures import Future
     from sleepradiopi.broadcast.station import Speech, Step
     monkeypatch.setattr(radio, "RadioStream", lambda url: FakeStream(url, blocks=10_000))
@@ -522,7 +523,7 @@ def test_an_opening_cut_short_is_kept_for_coming_back(tmp_path: Path, monkeypatc
     out.write = write
     st.output = out
     st._run_show()
-    assert st._opening[1][0].speech is welcome and st._opening[2] is first
+    assert welcome.future.cancelled() and st._opening is not None and st._opening[1][0].speech is not welcome
 
 
 # --- the directory copy -----------------------------------------------------------------------

@@ -97,7 +97,7 @@ def test_news_not_ready_waits_for_the_next_gap(tmp_path: Path, monkeypatch) -> N
     read = []
     monkeypatch.setattr(st.news_schedule, "mark_read", lambda d: read.append(d))
     ran = []
-    monkeypatch.setattr(st, "_run_steps", lambda steps: ran.append([s.kind for s in steps]))
+    monkeypatch.setattr(st, "_run_steps", lambda steps, gap=False: ran.append([s.kind for s in steps]))
     st._plan = [Step("say", Speech("Coming up, X.", "voice", _done(None)))]
     st._run_gap()
     assert ran == [["say"]] and read == [] and st._news_ready is not None    # music on; news kept

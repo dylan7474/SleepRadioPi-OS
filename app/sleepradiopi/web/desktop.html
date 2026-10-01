@@ -933,12 +933,21 @@ function loadDesk() {
   if (s && Array.isArray(s.icons)) {
     for (const p of s.icons) { if (!O[p.id] && p.snap) mk({ ...p.snap, kids: [], items: [], eps: [], blocks: [] }); if (O[p.id]) desk.push({ id: p.id, x: p.x, y: p.y, alias: !!p.alias }); }
     radioPos = s.radio || null;
-    if (!desk.some(p => p.id === ACTIONS_BOX.id)) desk.push({ id: ACTIONS_BOX.id, x: 262, y: 14 });   // (new since the layout was saved)
+    for (const f of [ACTIONS_BOX, JINGLES])      // (new since the layout was saved: in the first free spot)
+      if (!desk.some(p => p.id === f.id)) desk.push({ id: f.id, ...freeSpot() });
   }
   if (!desk.length) {
     [MUSIC, ONDEMAND, BOOKS, PODCASTS, STATIONS, PLAYLISTS, PROGRAMMES, LISTS, ACTIONS_BOX].forEach((f, i) => desk.push({ id: f.id, x: 18 + Math.floor(i / 8) * 122, y: 14 + (i % 8) * 92 }));
     [SHOW, DJ, NOTES, BDAYS].forEach((o, i) => desk.push({ id: o.id, x: 140, y: 14 + i * 100, alias: false }));
+    desk.push({ id: JINGLES.id, ...freeSpot() });
   }
+}
+function freeSpot() {                  // the first place on the icon grid that nothing is near, column by column
+  const h = Math.max(400, (document.getElementById("desk")?.clientHeight || 700) - 110);
+  for (let x = 18; x < 1200; x += 122)
+    for (let y = 14; y < h; y += 92)
+      if (!desk.some(p => Math.abs(p.x - x) < 90 && Math.abs(p.y - y) < 80)) return { x, y };
+  return { x: 262, y: 14 };
 }
 const W = [];
 let zTop = 10;
