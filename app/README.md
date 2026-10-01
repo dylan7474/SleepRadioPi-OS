@@ -389,9 +389,10 @@ The cards:
 - **The phone remote** (`web/remote.html`, served at `/`) is the radio in your
   hand, in the desktop's look but bigger, all on one screen with no scrolling
   (sized from the screen's height). The radio: what's on (station, song or
-  programme), a **position bar** with **−10 s / +10 s** when a song, audiobook
-  or podcast can be moved through (drag it), the blue knob to pause and play,
-  Back and Skip, volume − and + with the number; then the **sleep timer**
+  programme, in large type), a **position bar** with **−10 s / +10 s** when a
+  song, audiobook or podcast can be moved through (drag it), a row of wide
+  keys -- Back, Play/Pause (blue), Skip -- and one for the volume (−, the
+  number, +); then the **sleep timer**
   (Off, 15, 30, 60 min, with the time left) and **noise** (Off, On); and
   *More…* for the desktop. (The four buttons are on the radio itself, so not
   here.) It goes dark while the radio uses its Night buttons, like the

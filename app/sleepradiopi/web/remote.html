@@ -149,21 +149,22 @@
   body.remote-on { overflow: hidden; display: flex; flex-direction: column; height: 100vh; height: 100dvh; }
   .mremote { flex: 1; min-height: 0; width: 100%; max-width: 480px; padding: 18px 12px calc(10px + env(safe-area-inset-bottom, 0px));
              display: grid; grid-template-rows: minmax(0, 1fr) auto auto auto; gap: 1.3vh; }
-  .mradio { position: relative; min-height: 0; background: var(--case); color: var(--case-ink); border-radius: 20px; padding: 1.6vh 14px;
-            display: flex; flex-direction: column; justify-content: space-between; gap: 1vh;
+  .mradio { position: relative; min-height: min-content; background: var(--case); color: var(--case-ink); border-radius: 20px; padding: 1.6vh 14px;
+            display: flex; flex-direction: column; gap: 1.3vh;
             box-shadow: 0 22px 50px var(--shadow), 0 0 0 1px #0000001a, inset 0 -4px 0 #0000001a, inset 0 2px 0 #fff; }
   .mradio .handle { position: absolute; left: 50%; top: -13px; width: 130px; height: 17px; transform: translateX(-50%);
                     border: 5px solid #cfc7b4; border-bottom: 0; border-radius: 14px 14px 0 0; }
   .mdial { border-radius: 10px; padding: 1vh 12px 1.2vh; color: var(--amber-ink); min-width: 0;
            background: linear-gradient(180deg, #f7c86d, #e9a23a 55%, #c98522); box-shadow: inset 0 1px 0 #ffe3a6, inset 0 -2px 6px #0003; }
-  .mdial small { display: block; font-size: clamp(11px, 1.7vh, 15px); font-weight: 700; letter-spacing: .14em; text-transform: uppercase; opacity: .8;
+  .mdial small { display: block; font-size: clamp(13px, 1.9vh, 17px); font-weight: 700; letter-spacing: .14em; text-transform: uppercase; opacity: .8;
                  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .mdial b { display: block; font: 700 clamp(20px, 3.4vh, 30px)/1.15 var(--display); margin-top: .3vh;
+  .mdial { flex: 1 1 auto; display: flex; flex-direction: column; justify-content: center; }
+  .mdial b { display: block; font: 700 clamp(24px, 4.4vh, 40px)/1.12 var(--display); margin-top: .4vh;
              overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
-  .mdial em { display: block; font-style: normal; font-size: clamp(15px, 2.2vh, 20px); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .mdial em { display: block; font-style: normal; font-size: clamp(18px, 2.9vh, 26px); margin-top: .3vh; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .mbar { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 8px; align-items: center; }
-  .key.wide10 { min-width: 60px; height: clamp(40px, 5.6vh, 52px); border-radius: 26px; font-size: clamp(14px, 2vh, 17px); }
-  .mtimes { display: flex; justify-content: space-between; padding: 0 72px; font: 700 clamp(13px, 1.9vh, 16px) var(--body); color: #4d493f; font-variant-numeric: tabular-nums; }
+  .key.wide10 { min-width: 72px; height: clamp(42px, 6.2vh, 60px); border-radius: 14px; font-size: clamp(16px, 2.3vh, 20px); }
+  .mtimes { display: flex; justify-content: space-between; padding: 0 84px; font: 700 clamp(15px, 2.2vh, 19px) var(--body); color: #4d493f; font-variant-numeric: tabular-nums; }
   #pos { -webkit-appearance: none; appearance: none; width: 100%; height: 44px; background: transparent; margin: 0; }
   #pos::-webkit-slider-runnable-track { height: 12px; border-radius: 6px; background: #cbc4b3; box-shadow: inset 0 1px 2px #0003; }
   #pos::-moz-range-track { height: 12px; border-radius: 6px; background: #cbc4b3; }
@@ -171,24 +172,22 @@
   #pos::-webkit-slider-thumb { -webkit-appearance: none; width: 34px; height: 34px; margin-top: -11px; border-radius: 50%;
                                background: radial-gradient(circle at 40% 35%, #f7c86d, #e9a23a 60%, #c98522); border: 2px solid #231703; box-shadow: 0 2px 4px #0005; }
   #pos::-moz-range-thumb { width: 30px; height: 30px; border-radius: 50%; background: #e9a23a; border: 2px solid #231703; }
-  .mface { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); align-items: center; gap: 12px; }
-  .mface .grille { height: clamp(60px, 11vh, 100px); }
-  .mface .knob { width: clamp(84px, 13vh, 124px); height: clamp(84px, 13vh, 124px); }
-  .mface .knob svg { width: 40%; height: 40%; }
-  .mkeys { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
-  .mpair { position: relative; display: flex; align-items: center; justify-content: center; gap: 10px; padding-bottom: 14px; }
-  .mpair .tlabel { position: absolute; bottom: 0; left: 0; right: 0; text-align: center; }
-  .key.round { width: clamp(52px, 7.4vh, 66px); height: clamp(52px, 7.4vh, 66px); border-radius: 50%; padding: 0; font-size: clamp(24px, 3.6vh, 32px); }
-  .key.round svg { width: 42%; height: 42%; }
-  .mvol { min-width: 52px; text-align: center; }
-  .mvol b { font: 700 clamp(24px, 3.8vh, 34px)/1 var(--display); font-variant-numeric: tabular-nums; }
-  .mvol .tlabel { display: none; }
-  .mwin .mseg { display: flex; margin: 10px; padding: 4px; gap: 4px; }
-  .mwin .mseg button { flex: 1; min-height: clamp(44px, 6vh, 54px); font-size: clamp(15px, 2.2vh, 18px); border-radius: 9px; }
+  .mrow { display: grid; grid-template-columns: 1fr 1.4fr 1fr; gap: 10px; }
+  .key.mkey { width: auto; height: clamp(46px, 8.2vh, 84px); border-radius: 16px; padding: 0; }
+  .key.mkey svg { width: clamp(28px, 4.4vh, 40px); height: clamp(28px, 4.4vh, 40px); }
+  .mplay { height: clamp(46px, 8.2vh, 84px); border: 0; border-radius: 16px; color: #fff; display: grid; place-items: center;
+           background: radial-gradient(ellipse at 35% 25%, #6a93de, #2f5cb4 60%, #1d3d7c); box-shadow: 0 4px 10px #0006, inset 0 0 0 3px #ffffff1a; }
+  .mplay:active { transform: translateY(1px); }
+  .mplay svg { width: clamp(34px, 5.4vh, 50px); height: clamp(34px, 5.4vh, 50px); }
+  .mvol { display: flex; flex-direction: column; align-items: center; justify-content: center; border-radius: 14px;
+          background: var(--field); box-shadow: inset 0 1px 3px #0003; color: var(--ink); }
+  .mvol span { font: 700 clamp(11px, 1.6vh, 14px) var(--display); letter-spacing: .16em; text-transform: uppercase; color: var(--dim); }
+  .mvol b { font: 700 clamp(28px, 4.6vh, 44px)/1 var(--display); font-variant-numeric: tabular-nums; }
+  .mwin .mseg { display: flex; margin: 1.2vh 10px; padding: 4px; gap: 4px; }
+  .mwin .mseg button { flex: 1; min-height: clamp(42px, 6vh, 54px); font-size: clamp(15px, 2.2vh, 18px); border-radius: 9px; }
   .mmore { min-height: clamp(46px, 6vh, 54px); font-size: clamp(16px, 2.3vh, 19px); }
   :root[data-theme="dark"] .mradio { --case: #2a2f45; --case-ink: #ece6d6; box-shadow: 0 22px 50px #000a, 0 0 0 1px #0006; }
   :root[data-theme="dark"] .mtimes { color: #c9c3b4; }
-  :root[data-theme="dark"] .tlabel { color: #9b968a; }
   @media (max-height: 640px) { .mtimes { display: none; } .mradio .handle { display: none; } .mremote { padding-top: 10px; } }
 </style>
 </head>
@@ -229,22 +228,15 @@
       </div>
       <div class="mtimes"><span id="posNow">0:00</span><span id="posLen">0:00</span></div>
     </div>
-    <div class="mface">
-      <div class="grille"></div>
-      <button class="knob" type="button" id="knob" aria-label="Pause"></button>
-      <div class="grille"></div>
+    <div class="mrow">
+      <button class="key mkey" type="button" id="prev" aria-label="Back"><svg viewBox="0 0 24 24" fill="currentColor"><rect x="4" y="5" width="3" height="14" rx="1"/><path d="M20 5v14L8.5 12z"/></svg></button>
+      <button class="mplay" type="button" id="knob" aria-label="Pause"></button>
+      <button class="key mkey" type="button" id="skip" aria-label="Skip"><svg viewBox="0 0 24 24" fill="currentColor"><rect x="17" y="5" width="3" height="14" rx="1"/><path d="M4 5v14l11.5-7z"/></svg></button>
     </div>
-    <div class="mkeys">
-      <div class="mpair">
-        <button class="key round" type="button" id="prev" aria-label="Back"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M6 5v14"/><path d="M19 5 9 12l10 7z"/></svg></button>
-        <button class="key round" type="button" id="skip" aria-label="Skip"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M18 5v14"/><path d="M5 5l10 7-10 7z"/></svg></button>
-        <span class="tlabel">BACK · SKIP</span>
-      </div>
-      <div class="mpair">
-        <button class="key round" type="button" id="volDown" aria-label="Quieter">−</button>
-        <div class="mvol"><b id="volNum">–</b><span class="tlabel">VOLUME</span></div>
-        <button class="key round" type="button" id="volUp" aria-label="Louder">+</button>
-      </div>
+    <div class="mrow">
+      <button class="key mkey" type="button" id="volDown" aria-label="Quieter"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"><path d="M5 12h14"/></svg></button>
+      <div class="mvol"><span>Volume</span><b id="volNum">–</b></div>
+      <button class="key mkey" type="button" id="volUp" aria-label="Louder"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"><path d="M5 12h14M12 5v14"/></svg></button>
     </div>
   </section>
 
