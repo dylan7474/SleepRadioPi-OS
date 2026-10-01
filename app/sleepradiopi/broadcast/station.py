@@ -1496,11 +1496,6 @@ class Station:
                  self.config.jingle_every or "off",
                  self.config.news_enabled, self.config.announcer_speed, self.config.news_speed)
 
-    @property
-    def main_mix(self) -> bool:
-        """Everything, as opposed to artist radio or a list."""
-        return not (self.artist or self.profile)
-
     def _plan_gap(self, prev: BroadcastTrack, nxt: BroadcastTrack | None) -> list[Step]:
         """onBroadcastTrackStarted: what fills the gap after [prev]. The decisions
         (link or time check, jingle, birthday, message) are made once here and kept, so a
@@ -1512,8 +1507,8 @@ class Station:
         kind = self._show_clock.on_track_started(datetime.now().time())
         if kind == LinkKind.TIME_CHECK and not clock_trusted():
             kind = LinkKind.LINK   # offline, the clock may be hours out: say no times
-        # The jingles say "Sleep Radio": none on artist radio or a list.
-        jingle_due = self._jingle_due() and self.main_mix
+        # Jingles follow the jingles on/off setting, on a theme or artist radio too.
+        jingle_due = self._jingle_due()      # (on a theme or artist radio too: the user's choice)
         people = []
         if self._has_voice and self.dj_on:
             now = datetime.now()
@@ -2181,7 +2176,7 @@ class Station:
         self._opening_requested = self._took_request
         greeting = self.builder.welcome_greeting(time_known=clock_trusted())
         steps: list[Step] = []
-        startup = [j for j in self.jingles if 0 < j.duration_s < STARTUP_JINGLE_MAX_S] if self.main_mix else []
+        startup = [j for j in self.jingles if 0 < j.duration_s < STARTUP_JINGLE_MAX_S]
         album = self._album_start(None, first)
         opener = self.builder.album_intro(album, first) if album else self.builder.welcome_first_track(first)
         if self._has_voice and self.dj_on:

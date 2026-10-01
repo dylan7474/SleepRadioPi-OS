@@ -91,27 +91,31 @@ def test_requests_survive_a_change_of_artist(tmp_path: Path, monkeypatch) -> Non
     assert st._take_next().artist == "Crowded House"
 
 
-def test_jingles_only_on_the_main_mix(tmp_path: Path, monkeypatch) -> None:
+def test_jingles_on_a_theme_or_artist_radio_too(tmp_path: Path, monkeypatch) -> None:
+    """The user's radio for their dad plays a theme all day: jingles follow the
+    jingles on/off setting everywhere, not only the main mix."""
     st = _station(tmp_path)
     monkeypatch.setattr(st, "_jingle_due", lambda: True)
     monkeypatch.setattr(st, "_say", _speech)
     track = st._take_next()
     assert any(s.kind == "jingle" for s in st._plan_gap(track, st._take_next()))
     st.set_artist("The Beatles")
-    assert not any(s.kind == "jingle" for s in st._plan_gap(track, st._take_next()))
+    assert any(s.kind == "jingle" for s in st._plan_gap(track, st._take_next()))
     st.set_artist(None)
     st.set_profiles([{"name": "Friday List", "artists": ["Nick Drake"]}])
     st.set_profile("Friday List")
+    assert any(s.kind == "jingle" for s in st._plan_gap(track, st._take_next()))
+    monkeypatch.setattr(st, "_jingle_due", lambda: False)        # (jingles off: _jingle_due never is)
     assert not any(s.kind == "jingle" for s in st._plan_gap(track, st._take_next()))
 
 
-def test_no_opening_jingle_off_the_main_mix(tmp_path: Path) -> None:
+def test_an_opening_jingle_on_a_theme_too(tmp_path: Path) -> None:
     st = _station(tmp_path)
     st.jingles = [JingleClip(Path("sleep-radio.mp3"), 4.0)]
     st._reselect(artist=None)                    # rebuilds the opening
     assert any(s.kind == "jingle" for s in st._opening[1])
     st.set_artist("The Beatles")
-    assert not any(s.kind == "jingle" for s in st._opening[1])
+    assert any(s.kind == "jingle" for s in st._opening[1])
 
 
 def test_web_api(tmp_path: Path) -> None:

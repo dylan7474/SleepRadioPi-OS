@@ -33,8 +33,7 @@ and with no network, and is set up from its web page. See
   by the end of the song (2 s grace) is skipped and a short jingle fills in,
   once, if the gap had none (`Station._run_steps(gap=True)`); a **message**
   that wasn't ready comes round again at the next gap (`Messages.unplayed`).
-  The fill-in jingle follows the DJ's jingles on/off setting, on a theme or
-  artist radio too (whose gaps otherwise have no jingles); jingles off:
+  The fill-in jingle follows the DJ's jingles on/off setting; jingles off:
   straight to the music.
 - **A stuck sound card restarts the radio.** If aplay keeps failing (once, the
   card refused to open after a boot until a restart), the speaker retries ever
@@ -93,8 +92,8 @@ SleepRadio:
 - **A proper shuffle.** No repeat within the last ~20 tracks, and the same
   artist is spaced out.
 - **Jingles** from a shuffled bag (never the same one twice in a row); a
-  short one opens the show. Only on the main mix, since they say "Sleep
-  Radio".
+  short one opens the show. On a theme or artist radio too, whenever
+  jingles are on.
 - **News** — BBC News bulletins at :00 (top stories) and :30 (softer
   stories), read with a time line for when they're read, and none in the
   night-time quiet hours. A bulletin still being made when its gap comes
@@ -653,8 +652,8 @@ The cards:
   artists (e.g. a "Friday List"; find and tick artists), which appear in the
   same dropdown ("welcome to Friday List on Sleep Radio"). On air, the song
   already lined up next still plays first. If the library has nothing for
-  the choice, it plays everything. The jingles say "Sleep Radio", so they
-  only play on the main mix (all artists).
+  the choice, it plays everything. Jingles play here too when they're on,
+  as on the main mix.
 - **The DJ** — **on or off** (off: the show is music only, with no speech at
   all — no welcome, links, track intros, time checks, news, Messages or
   birthday wishes, including lines already made before it was switched off;

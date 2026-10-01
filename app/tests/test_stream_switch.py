@@ -96,7 +96,6 @@ def test_back_to_the_show_or_power_on_plays_a_short_jingle_rather_than_wait(tmp_
     from sleepradiopi.broadcast.library import JingleClip
     from test_offline import _station
     st = _station(tmp_path)
-    monkeypatch.setattr(type(st), "main_mix", property(lambda self: False))   # a theme: still a jingle
     st.config.jingle_every = 4
     short, long_ = JingleClip(tmp_path / "Short.mp3", 31.0), JingleClip(tmp_path / "Long.mp3", 65.0)
     st.jingles = [short, long_]

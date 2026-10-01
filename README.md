@@ -80,7 +80,7 @@ software, and the case to print.
   want in the show (storms, old radio shows, long classical pieces): any
   layout, played straight through with no DJ, now or after the song playing.
 - **Jingles** from your own collection, shuffled, and a short one to open
-  the show (on the main mix only, since they say "Sleep Radio").
+  the show, on a theme too, whenever jingles are on.
 
 ### How it sounds
 
@@ -441,7 +441,7 @@ Other targets are passed through to Buildroot: `make menuconfig`,
   volume, stereo/mono, a 3-band EQ and low cut, a sleep timer that fades the
   speakers, the DJ (voice, how often it talks, hooks, jingles, news, speaking speeds), **play next** (search the library and queue songs; the DJ
   introduces them), artist radio ("Beatles Radio") and your own lists of
-  artists ("Friday List"; the "Sleep Radio" jingles only play on the main mix), birthdays the DJ wishes on the day, test sounds (sweeps,
+  artists ("Friday List"), birthdays the DJ wishes on the day, test sounds (sweeps,
   pink noise, left/right (spoken) and phase checks), a virtual knob, skip, save/load
   settings and restart or shut down (see *What it does*, above). Everything on it is a
   small JSON API too, e.g. `wget -qO- http://127.0.0.1/api/status` over
