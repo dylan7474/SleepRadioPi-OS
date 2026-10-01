@@ -279,6 +279,18 @@ class Presets:
             self._save()
         return changed
 
+    def rename_playlist(self, old: str, new: str) -> bool:
+        """A playlist was renamed: buttons that play it follow it."""
+        changed = False
+        for bank in self.banks.values():
+            for p in bank:
+                if p and p["kind"] == "playlist" and p["name"].lower() == old.lower():
+                    p["name"] = new
+                    changed = True
+        if changed:
+            self._save()
+        return changed
+
     def rename_refs(self, old_root: str, old: str, new_root: str, new: str) -> bool:
         """A folder was moved: album buttons that held it (or something in it) follow it."""
         changed = False
@@ -308,6 +320,8 @@ class Presets:
                              "start": guid_id(src["guid"]), "start_title": src.get("title", "")[:MAX_TEXT]})
         if src is not None and src["kind"] == "book":
             return validate({"kind": "book", "key": src["key"], "title": src.get("title", "")})
+        if src is not None and src["kind"] == "playlist":
+            return validate({"kind": "playlist", "name": src["name"], "shuffle": src.get("shuffle", False)})
         if src is not None and src["kind"] == "album":
             return validate({"kind": "album", "folder": src["folder"], "title": src["title"],
                              "artist": src["artist"], "root": src.get("root", "music"),

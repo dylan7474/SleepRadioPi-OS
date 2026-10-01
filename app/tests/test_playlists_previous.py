@@ -56,36 +56,36 @@ def test_adding_tracks_folders_and_the_song_playing(tmp_path: Path) -> None:
         st.refs_for(root="music", path="Nobody/Nothing.mp3")
 
 
-def test_play_on_air_starts_at_once_then_the_rest_follow_in_order(tmp_path: Path, monkeypatch) -> None:
+def test_play_on_air_starts_at_once_straight_through(tmp_path: Path, monkeypatch) -> None:
+    """A playlist is music only (the DJ and jingles are Theme Radio's): it takes
+    over at once, like an album, and Stop lets the song playing finish."""
     st = _od_station(tmp_path)
     _on_air(st, monkeypatch)
     st.add_to_playlist("Mix", [MICHELLE, STORM, ["music", "Nick Drake/Pink Moon/01 - Pink Moon.mp3"]])
     _playing(st, st._take_next(), 30)
     st.play_playlist("Mix")
-    assert st._jump.title == "Michelle"                          # cuts in straight away
-    assert st._skip_for is st.on_air
-    assert [r["title"] for r in st.requests()][:2] == ["Rain on a tin roof - 1 hour", "Pink Moon"]
+    assert st.source["kind"] == "playlist" and st._switch.is_set()      # cuts in straight away
+    assert st.source["refs"][0] == MICHELLE
+    assert st.requests() == []                                         # not through the show's queue
     assert st.playlist_status() == {"name": "Mix", "left": 2, "shuffle": False}
     assert st.stop_playlist() is True
-    assert st.requests() == [] and st.playlist_status() is None
+    assert st.playlist_status()["left"] == 0 and st.stop_playlist() is False
 
 
-def test_play_off_air_opens_the_show_with_it(tmp_path: Path) -> None:
+def test_play_off_air_is_ready_for_the_power_on(tmp_path: Path) -> None:
     st = _od_station(tmp_path)
     st.add_to_playlist("Mix", [MICHELLE, STORM])
     st.play_playlist("Mix")
-    assert st._opening[2].title == "Michelle"
-    assert [r["title"] for r in st.requests()][:2] == ["Michelle", "Rain on a tin roof - 1 hour"]
+    assert st.source["kind"] == "playlist" and st.source["name"] == "Mix"
 
 
-def test_play_while_streaming_goes_back_to_the_show(tmp_path: Path, monkeypatch) -> None:
+def test_play_while_streaming_replaces_it(tmp_path: Path, monkeypatch) -> None:
     st = _od_station(tmp_path)
     _on_air(st, monkeypatch)
     st.play_album(root="ondemand", folder="Thunderstorms")
     st.add_to_playlist("Mix", [MICHELLE])
     st.play_playlist("Mix")
-    assert st.source is None and st._opening is None
-    assert st._queue[0].title == "Michelle"
+    assert st.source["kind"] == "playlist" and st.source["refs"] == [MICHELLE]
 
 
 def test_shuffle_and_missing_files(tmp_path: Path) -> None:
@@ -96,9 +96,56 @@ def test_shuffle_and_missing_files(tmp_path: Path) -> None:
     assert st.playlist_view(st.playlists[0])["tracks"][-1]["missing"] is True
     reply = st.play_playlist("Beatles", shuffle=True)
     assert reply["tracks"] == 4                                  # the missing one is skipped
-    assert sorted(r["title"] for r in st.requests()[:4]) == ["Girl", "Michelle", "Nowhere Man", "The Word"]
+    assert sorted(r for r in map(tuple, st.source["refs"])) == sorted(map(tuple, songs))
+    assert st.playlist_status()["shuffle"] is True
     with pytest.raises(ValueError):
         st.play_playlist("Nothing like it")
+
+
+def test_a_playlist_plays_with_no_dj_or_jingles_then_back_to_the_show(tmp_path: Path, monkeypatch) -> None:
+    """The real show loop: only the playlist's songs, nothing in between, then the show."""
+    st = _od_station(tmp_path)
+    _on_air(st, monkeypatch)
+    st.add_to_playlist("Mix", [MICHELLE, STORM])
+    played = []
+    monkeypatch.setattr(st, "_play_file", lambda path, on_air, near_end=None: played.append(on_air.kind + ":" + on_air.title))
+    monkeypatch.setattr(st.output, "start", lambda: None)
+    monkeypatch.setattr(st.output, "stop", lambda: None)
+
+    def back_to_the_show(back=False):
+        played.append("show" + (" (back)" if back else ""))
+        st._stop.set()
+    monkeypatch.setattr(st, "_run_music", back_to_the_show)
+    st.play_playlist("Mix")
+    st._run_show()
+    assert played == ["track:Michelle", "track:Rain on a tin roof - 1 hour", "show (back)"]
+    assert st.source is None and st.playlist_status() is None
+
+
+def test_a_stopped_playlist_ends_after_the_song_playing(tmp_path: Path, monkeypatch) -> None:
+    st = _od_station(tmp_path)
+    _on_air(st, monkeypatch)
+    st.add_to_playlist("Mix", [MICHELLE, STORM])
+    played = []
+
+    def play_file(path, on_air, near_end=None):
+        played.append(on_air.title)
+        st.stop_playlist()
+    monkeypatch.setattr(st, "_play_file", play_file)
+    st.play_playlist("Mix")
+    st._switch.clear()
+    st._run_album(st.source)
+    assert played == ["Michelle"] and st.source is None
+
+
+def test_previous_in_a_playlist_steps_back(tmp_path: Path, monkeypatch) -> None:
+    st = _od_station(tmp_path)
+    _on_air(st, monkeypatch)
+    st.add_to_playlist("Mix", [MICHELLE, STORM])
+    st.play_playlist("Mix")
+    st.source["track"] = 1
+    st.on_air = OnAir("track", "Rain", started=time.time() - 1)
+    assert st.previous() is True and st._album_jump == 0
 
 
 def test_previous_restarts_after_five_seconds(tmp_path: Path, monkeypatch) -> None:
@@ -231,3 +278,35 @@ def test_the_show_loop_goes_back_with_no_gap_then_carries_on(tmp_path: Path, mon
     songs = [e for e in events if e != "gap"]
     assert songs[2] == songs[0] and songs[3] == songs[1]
     assert events[:5] == [songs[0], "gap", songs[1], songs[0], "gap"]   # no gap before the replay
+
+
+def test_renaming_a_playlist_takes_its_buttons_and_the_one_playing_with_it(tmp_path: Path) -> None:
+    from sleepradiopi.io.presets import Presets
+    st = _od_station(tmp_path)
+    st.add_to_playlist("New playlist", [MICHELLE])
+    st.add_to_playlist("Sunday", [STORM])
+    config = tmp_path / "config.json"
+    config.write_text("{}")
+    presets = Presets(st, None, config, [{"kind": "playlist", "name": "New playlist"}, None])
+    st.play_playlist("New playlist")
+    httpd = ThreadingHTTPServer(("127.0.0.1", 0), make_handler(st, None, None, config, presets=presets))
+    threading.Thread(target=httpd.serve_forever, daemon=True).start()
+
+    def rename(old, new):
+        r = urllib.request.Request(f"http://127.0.0.1:{httpd.server_address[1]}/api/playlists/rename",
+                                   data=json.dumps({"old": old, "new": new}).encode(), method="POST",
+                                   headers={"Content-Type": "application/json"})
+        return json.loads(urllib.request.urlopen(r).read())
+    try:
+        got = rename("new playlist", "  Dad's  favourites ")
+        assert got["name"] == "Dad's favourites"
+        assert [p["name"] for p in got["playlists"]] == ["Dad's favourites", "Sunday"]
+        with pytest.raises(urllib.error.HTTPError):
+            rename("Dad's favourites", "sunday")                     # taken
+        with pytest.raises(urllib.error.HTTPError):
+            rename("Nobody", "X")
+    finally:
+        httpd.shutdown()
+    assert st.playlist_status()["name"] == "Dad's favourites"           # the one playing too
+    assert presets.banks["day"][0]["name"] == "Dad's favourites"
+    assert json.loads(config.read_text())["playlists"][0]["name"] == "Dad's favourites"

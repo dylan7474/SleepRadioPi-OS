@@ -133,6 +133,7 @@ def test_a_gap_never_waits_for_the_dj(tmp_path, monkeypatch) -> None:
     monkeypatch.setattr(st, "_speak", lambda speech, kind="dj": said.append(speech.text) or True)
     st.config.jingle_every = 4
     st.jingles = [JingleClip(tmp_path / "Short.mp3", 31.0), JingleClip(tmp_path / "Long.mp3", 65.0)]
+    st._tracks_since_jingle = 2
     st.messages.set({"list": [{"text": "Love from home"}], "date_first": False})
     at = datetime(2026, 10, 1, 11, 27)
     assert st.messages.due(at, True) == "Love from home"
@@ -174,10 +175,54 @@ def test_a_gap_fills_with_a_jingle_then_says_what_got_ready(tmp_path, monkeypatc
         later.set_result(np.zeros((10, 2), dtype=np.int16))      # made while the jingle played
     monkeypatch.setattr(st, "_play_file", play)
     monkeypatch.setattr(st, "_speak", lambda speech, kind="dj": said.append(speech.text) or True)
-    st.config.jingle_every = 0                                    # (jingles off: Default's fill in)
+    st.config.jingle_every, st.jingles = 4, []                    # (jingles on, none of its own: Default's fill in)
+    st._tracks_since_jingle = 2
     st._default_jingles = [JingleClip(tmp_path / "Start.mp3", 20.0)]
     st._run_steps([station_mod.Step("say", station_mod.Speech("Here's one", "stock", later))], gap=True)
     assert played == ["Start"] and said == ["Here's one"]
+    assert st._tracks_since_jingle == 0                           # (it was the jingle: "every 4" counts from it)
+
+
+def _gap_station(tmp_path, monkeypatch):
+    from sleepradiopi.broadcast import station as station_mod
+    from sleepradiopi.broadcast.library import JingleClip
+    from test_offline import _station
+    st = _station(tmp_path)
+    monkeypatch.setattr(station_mod, "GAP_GRACE_S", 0.05)
+    monkeypatch.setattr(st, "_write", lambda block: None)
+    played, said = [], []
+    monkeypatch.setattr(st, "_play_file", lambda path, on_air: played.append(path.stem))
+    monkeypatch.setattr(st, "_speak", lambda speech, kind="dj": said.append(speech.text) or True)
+    st.config.jingle_every, st.jingles = 4, [JingleClip(tmp_path / "Own.mp3", 20.0)]
+    st._tracks_since_jingle = 2
+    return st, played, said
+
+
+def test_a_line_that_failed_is_dropped_with_no_jingle(tmp_path, monkeypatch) -> None:
+    """The voice failed (it was killed for memory): nothing to wait for, so no
+    jingle for it -- straight on (it was a jingle in every gap)."""
+    from concurrent.futures import Future
+    from sleepradiopi.broadcast import station as station_mod
+    st, played, said = _gap_station(tmp_path, monkeypatch)
+    failed = Future()
+    failed.set_exception(BrokenPipeError(32, "Broken pipe"))
+    st._run_steps([station_mod.Step("say", station_mod.Speech("Here's one", "stock", failed))], gap=True)
+    assert played == [] and said == []
+
+
+def test_no_fill_jingle_two_gaps_running_or_with_jingles_off(tmp_path, monkeypatch) -> None:
+    from concurrent.futures import Future
+    from sleepradiopi.broadcast import station as station_mod
+    st, played, said = _gap_station(tmp_path, monkeypatch)
+    slow = lambda: [station_mod.Step("say", station_mod.Speech("Here's one", "stock", Future()))]
+    st._run_steps(slow(), gap=True)
+    assert played == ["Own"]
+    st._tracks_since_jingle = 1                                   # (the next song started: the next gap)
+    st._run_steps(slow(), gap=True)
+    assert played == ["Own"]                                      # not again: straight on
+    st._tracks_since_jingle, st.config.jingle_every = 3, 0        # jingles off: none, not even Default's
+    st._run_steps(slow(), gap=True)
+    assert played == ["Own"] and said == []
 
 
 def test_the_news_never_waits_in_silence_for_its_time_line(tmp_path, monkeypatch) -> None:
@@ -195,6 +240,7 @@ def test_the_news_never_waits_in_silence_for_its_time_line(tmp_path, monkeypatch
     monkeypatch.setattr(st, "_speak", lambda speech, kind="dj": said.append(speech.text) or True)
     monkeypatch.setattr(st.news_repo, "mark_read", lambda headlines: None)
     st._default_jingles = [JingleClip(tmp_path / "Start.mp3", 20.0)]
+    st.config.jingle_every, st.jingles, st._tracks_since_jingle = 4, [], 2
     body = Future()
     body.set_result(np.zeros((10, 2), dtype=np.int16))
     news = SimpleNamespace(time_line=station_mod.Speech("It's two o'clock", "stock", Future()),

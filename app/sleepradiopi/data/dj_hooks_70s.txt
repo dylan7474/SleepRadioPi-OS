@@ -34,7 +34,7 @@ Another dip into the record box. It's a deep one.
 Take your time. There's plenty of wax left in the crates.
 Quietly does it. We'll keep the needle steady.
 From the studio, a soft hello, and then back to the music.
-Sleep Radio, keeping the turntable turning.
+{station}, keeping the turntable turning.
 The stylus is settling in, and so, I hope, are you.
 I'll keep the studio lights low and the records coming.
 Another sleeve slid gently from the shelf.
@@ -83,6 +83,6 @@ Just a friendly voice between records.
 Nothing fancy from me. I'll simply lower the needle.
 The needle drops, the studio hushes, and the music takes over.
 Fetching another sleeve from the shelf, quietly, so as not to wake the microphone.
-Sleep Radio, turntable turning, tea brewing.
+{station}, turntable turning, tea brewing.
 Let the studio do the worrying. You just listen.
 A little breathing space between records, and then we carry on.

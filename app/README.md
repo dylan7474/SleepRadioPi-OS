@@ -37,8 +37,11 @@ and with no network, and is set up from its web page. See
   bulletin goes straight to the stories. A **message** that wasn't ready
   comes round again at the next gap (`Messages.unplayed`). No jingles to be
   had: a short gap.
-  The fill-in jingle follows the DJ's jingles on/off setting; jingles off:
-  straight to the music.
+  The fill-in jingle follows the station's jingles on/off setting (jingles
+  off: none at all, not even Default's: straight to the music); it counts as
+  the station's jingle (so "every 4 songs" stays every 4), never comes two
+  gaps running, and a line that *failed* (rather than being slow) gets no
+  jingle: there's nothing to wait for.
 - **A stuck sound card restarts the radio.** If aplay keeps failing (once, the
   card refused to open after a boot until a restart), the speaker retries ever
   more slowly (0.1 s up to 5 s, logged at the 1st, 2nd, 4th... failure), and
@@ -363,11 +366,13 @@ The cards:
   or On demand: make one, press *Add songs*, then **＋** on songs in Find, on
   albums and folders (search or Browse), or beside Skip for the song on air;
   in the playlist, move songs up or down, take them out, rename or delete it.
-  **Play** or **Shuffle** starts it at once, through the show's queue, so **the
-  DJ talks between songs if the DJ is on, and not at all if it's off** — then
-  the show carries on. It shows under *Coming up* with **Stop playlist**. A
-  preset button can hold one, in order or shuffled. A song whose file has gone
-  is skipped. Kept in the settings (`playlists`), so *Save settings* has them
+  **Play** or **Shuffle** starts it at once, **straight through like an album:
+  no DJ, jingles or news** (those are Theme Radio's), then back to the show.
+  Skip and Back step through it; **Stop playlist** lets the song playing
+  finish. A programme's music block plays the same way. A new playlist on the
+  desktop opens with its name ready to type; the name box in its window
+  renames it, and buttons and programmes that play it follow. A preset button
+  can hold one, in order or shuffled. A song whose file has gone is skipped. Kept in the settings (`playlists`), so *Save settings* has them
   (`broadcast/playlists.py`, `Station.play_playlist`).
 - **The phone page** (`web/page.html`) follows the desktop's names and ways:
   on/off settings are switches, a delete that can be taken back (a message, a
@@ -936,7 +941,8 @@ everything but the page itself and the login needs the session cookie
 | `POST /api/previous` | Back, like a CD player (see *Now playing*); `{"previous": false}` if there's nothing to go back to. The status's `can_previous` says when it works |
 | `GET` / `POST /api/playlists` | `{"playlists": [{"name", "tracks": [{"root", "path", "title", "artist", "missing"}]}], "playing"}` / `{"playlists": [{"name", "tracks": [[root, path], ...]}]}` — the whole list, saved |
 | `POST /api/playlists/add` | `{"name"` + `"root", "path"` (a song; search results have `path`) or `"root", "folder", "deep"` (a folder) or `"now": true` (the song on air)`}` — added at the end; a new name makes the playlist |
-| `POST /api/playlists/play` / `/stop` | `{"name", "shuffle": bool}` — now, then the show / drop the rest of it |
+| `POST /api/playlists/play` / `/stop` | `{"name", "shuffle": bool}` — now, straight through (no DJ), then the show / end it after the song playing |
+| `POST /api/playlists/rename` | `{"old", "new"}` → `{"name", "playlists", "playing"}`; buttons and programmes that play it follow |
 | `GET` / `POST /api/dj` | The DJ settings (and the voices there are) / any of `{"voice", "chattiness", "dj_hooks", "jingle_every", "news_enabled", "startup_sound", "dj_speed", "news_speed"}` |
 | `GET /api/wifi` | Wi-Fi: mode (station / hotspot / connecting), network and address, saved networks, nearby ones |
 | `POST /api/wifi/add` / `remove` / `scan` / `hotspot` / `try` | `{"ssid", "password"}` / `{"ssid"}` / – / `{"ssid", "password"}` / – |
@@ -1032,7 +1038,10 @@ reservation) only fits **one** voice alongside the stream. So the DJ and the
 newsreader share a voice (`news_voice: "same"`), text is synthesised a
 clause at a time (at most 12 words), and the TTS worker process is recycled
 when it passes 250 MB after a line, or 280 MB partway through one (a fresh
-worker says the rest) -- its buffers grow and never shrink. The appliance
+worker says the rest) -- its buffers grow and never shrink. One long clause
+can still take it past ~300 MB, and if the kernel's out-of-memory killer
+ends it, the next line loads a fresh one (it used to stay dead until a
+restart: no DJ, no spoken time). The appliance
 image adds 256 MB of compressed swap in RAM (zram, lz4: `S01zram`), without
 which the personal voice's ~300 MB peaks left the Zero thrashing. The CPU
 is shared the same way: on the radio the station runs at nice -5 (the

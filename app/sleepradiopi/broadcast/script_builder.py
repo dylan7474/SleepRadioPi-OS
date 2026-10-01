@@ -126,6 +126,8 @@ class DjScriptBuilder:
         if terse:
             return self.outro_line(previous)
         hook = self.hooks.next() if self.hooks else None
+        if hook:                              # (a hook may name the station: the theme playing)
+            hook = hook.replace("{station}", self.station)
         return f"{hook or self.outro_line(previous)} {self.intro_line(next_)}"
 
     def outro_line(self, previous: BroadcastTrack | None) -> str:

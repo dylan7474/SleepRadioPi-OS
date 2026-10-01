@@ -2410,6 +2410,7 @@ async function poll() {
     if (s.now) {
       $("kind").textContent = hasSpeaker && !s.speaker.playing ? "Paused · tap the knob to play"
         : s.source && s.source.kind === "album" ? `Album · track ${s.source.track + 1} of ${s.source.tracks}`
+        : s.source && s.source.kind === "playlist" ? `Playlist ${s.source.name} · song ${s.source.track + 1} of ${s.source.tracks}`
         : KIND[s.now.kind] || s.now.kind;
       $("title").textContent = s.now.title;
       $("artist").textContent = s.now.artist || "";
@@ -2768,7 +2769,7 @@ function showRadio(src, err) {
   $("radioOff").hidden = !src;
   $("qRadio").hidden = !src;
   upNextShown();
-  const key = JSON.stringify(src ? [src.kind, src.folder || src.url] : [selNow]);
+  const key = JSON.stringify(src ? [src.kind, src.folder || src.url || src.name] : [selNow]);
   if (key !== lastSrcKey) {                       // what's playing changed: which button is lit
     lastSrcKey = key;
     loadButtons();

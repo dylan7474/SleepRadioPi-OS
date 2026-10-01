@@ -20,6 +20,7 @@ from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
 from sleepradiopi.broadcast import birthdays, messages, profiles
+from sleepradiopi.broadcast import playlists as playlists_mod
 from sleepradiopi.broadcast.station import Station
 from sleepradiopi.config.auth import COOKIE, SESSION_S, Auth
 from sleepradiopi.config.clock import clock_trusted
@@ -374,6 +375,8 @@ def make_handler(station: Station, output: Mp3Output, speaker=None,
                     self._error(str(e) if isinstance(e, ValueError) else "send {\"items\": [...]}")
                     return
                 self._send(json.dumps(reply).encode(), "application/json")
+            elif path == "/api/playlists/rename":
+                self._rename_playlist()
             elif path == "/api/playlists/add":
                 self._playlist_add()
             elif path == "/api/playlists/play":
@@ -864,6 +867,29 @@ def make_handler(station: Station, output: Mp3Output, speaker=None,
                 return
             self._save_playlists()
             self._send(json.dumps(self._playlists()).encode(), "application/json")
+
+        def _rename_playlist(self) -> None:
+            """POST /api/playlists/rename {"old", "new"}: buttons and programmes that
+            play it follow it. Saved."""
+            try:
+                body = self._body()
+                old, new = body["old"], body["new"]
+                if not isinstance(old, str) or not isinstance(new, str):
+                    raise ValueError("send {\"old\", \"new\"}")
+                was = playlists_mod.find(station.playlists, old)
+                new = station.rename_playlist(old, new)
+            except (ValueError, TypeError, KeyError, AttributeError) as e:
+                self._error(str(e) if isinstance(e, ValueError) else "send {\"old\", \"new\"}")
+                return
+            old = was["name"]
+            if presets is not None:
+                presets.rename_playlist(old, new)
+            sched = getattr(station, "scheduler", None)
+            renamed = bool(sched and sched.rename_playlist(old, new))
+            self._save_playlists()
+            if renamed and config_file is not None:
+                save_setting(config_file, "programmes", sched.programmes)
+            self._send(json.dumps({"name": new, **self._playlists()}).encode(), "application/json")
 
         def _playlist_add(self) -> None:
             """POST /api/playlists/add {"name", and "root" + "path" (a track), "root" +

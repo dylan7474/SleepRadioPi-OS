@@ -169,7 +169,14 @@ class TtsWorker:
         proc = self._ctx.Process(target=_serve, args=(child, str(self.voices_dir / self.voice), self.voice),
                                  name="tts-worker", daemon=True)
         proc.start()
-        status, load_s, rss = conn.recv()
+        try:
+            status, load_s, rss = conn.recv()
+        except (EOFError, OSError):              # (died while loading: killed for memory?)
+            proc.join(timeout=5)
+            log.error("TTS worker died while loading (exit code %s); trying again with the next line",
+                      proc.exitcode)
+            self._asleep = True
+            return
         if status != "ready":
             log.error("voice pack %r is missing or incomplete in %s", self.voice, self.voices_dir)
             return
@@ -225,6 +232,21 @@ class TtsWorker:
                 self._asleep = False
                 self.restarts += 1
                 self._start()
+                if self._asleep:                 # (it died loading)
+                    raise RuntimeError("TTS worker failed to load")
+
+    def _died(self, err: Exception) -> None:
+        """(Under _lock.) The worker went away mid-line (the kernel kills it when
+        memory runs out): forget it, so the next try loads a fresh one."""
+        proc = self._proc
+        self._conn = self._proc = None
+        self._ready.clear()
+        self._asleep = True
+        if proc is not None:
+            proc.join(timeout=5)
+        self._old_proc = None
+        log.warning("TTS worker died (%s, exit code %s): loading a fresh one",
+                    err, proc.exitcode if proc is not None else None)
 
     @property
     def ready(self) -> bool:
@@ -237,6 +259,7 @@ class TtsWorker:
         if self._idle is not None:
             self._idle.cancel()
         pieces, rate = [], 22050
+        deaths = 0
         for _ in range(20):                      # (a very long text: a few fresh workers at most)
             self._wake()
             if not self._ready.wait(timeout=120):
@@ -244,8 +267,15 @@ class TtsWorker:
             with self._lock:
                 if not self._ready.is_set():     # (being replaced since we waited: wait for the new one)
                     continue
-                self._conn.send((text, speed, self.hard_mb))
-                status, payload, rate, rss, rest = self._conn.recv()
+                try:
+                    self._conn.send((text, speed, self.hard_mb))
+                    status, payload, rate, rss, rest = self._conn.recv()
+                except (EOFError, OSError) as e:
+                    self._died(e)
+                    deaths += 1
+                    if deaths > 1:               # (twice in a row: give up on this line)
+                        raise RuntimeError(f"TTS worker died: {e}") from e
+                    continue
                 self.last_rss_mb = rss
                 if rest:                         # mid-line: a fresh worker says the rest, now
                     self._ready.clear()

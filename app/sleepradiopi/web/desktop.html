@@ -1017,7 +1017,7 @@ function nowWords() {
   const n = S.now, src = S.source, pr = S.programme;
   const tuned = S.source ? (S.source.name || S.source.title || S.source.show_title) : null;
   let title = tuned || "Nothing on air", sub = S.speaker && !S.speaker.playing ? "Paused: press the knob" : "";
-  if (n) { title = n.title; sub = [n.artist, n.kind === "track" && !src ? (S.station_name || radioName) : src ? (src.kind === "radio" ? "Internet radio" : src.kind === "album" ? "Straight through, no DJ" : src.kind === "book" ? "Audiobook" : "Podcast") : ""].filter(Boolean).join(" · "); }
+  if (n) { title = n.title; sub = [n.artist, n.kind === "track" && !src ? (S.station_name || radioName) : src ? (src.kind === "radio" ? "Internet radio" : src.kind === "album" ? "Straight through, no DJ" : src.kind === "playlist" ? "Playlist " + src.name + ", no DJ" : src.kind === "book" ? "Audiobook" : "Podcast") : ""].filter(Boolean).join(" · "); }
   if (n && ["dj", "news", "jingle"].includes(n.kind)) sub = { dj: "The DJ", news: "The news", jingle: "A jingle" }[n.kind];
   const prog = pr ? `Programme: ${pr.name} · ${pr.waiting ? "waiting for the next block" : pr.block}${pr.until ? " until " + pr.until : ""}` : "";
   if (S.programme_mode && !pr && !(S.speaker && S.speaker.playing)) {
@@ -1527,8 +1527,28 @@ function podcastView(o, box) {
   box.append(el("div", { className: "wtools" }, T("▶ Latest", () => play(o), "primary"), el("span", { className: "note", textContent: `${o.artist || ""} · double-click an episode to play it` })));
   box.append(el("div", { className: "wbody" }, rowsOf(o.eps || [], o.id, t => t.done ? "✓" : "")));
 }
+function playlistName(o) {
+  const n = o.name, name = el("input", { type: "text", value: n, id: "plname-" + o.id.length, maxLength: 60,
+    style: "background:var(--win);border:1px solid var(--line);border-radius:6px;padding:3px 7px;font-weight:600;width:12em" });
+  name.setAttribute("aria-label", "The playlist's name");
+  name.title = "Rename it: its buttons and programmes come too";
+  name.onkeydown = e => { if (e.key === "Enter") name.blur(); else if (e.key === "Escape") { name.value = n; name.blur(); } };
+  name.onchange = async () => {
+    const v = name.value.trim();
+    if (!v || v === n) { name.value = n; return; }
+    try { const d = await api("/api/playlists/rename", { old: n, new: v });
+          closeFor(o); await loadPlaylists(d);
+          if (PROGRAMMES.loaded) await loadProgrammes();
+          drawDesk(); open("pl:" + d.name.toLowerCase());
+          toast(`Renamed: “${d.name}”. Its buttons and programmes came with it.`); }
+    catch (e) { toast("Not renamed: " + e.message + "."); name.value = n; }
+  };
+  return name;
+}
 function playlistView(o, box) {
-  box.append(el("div", { className: "wtools" }, T("▶ Play", () => play(o), "primary"),
+  const name = playlistName(o);
+  if (o.fresh) { delete o.fresh; setTimeout(() => { name.focus(); name.select(); }, 50); }   // (just made: type its name)
+  box.append(el("div", { className: "wtools" }, name, T("▶ Play", () => play(o), "primary"),
     T("Shuffle", async () => { try { await api("/api/playlists/play", { name: o.name, shuffle: true }); toast(`“${o.title}”, shuffled.`); setTimeout(poll, 700); } catch (e) { toast(e.message); } }),
     el("span", { className: "note", textContent: `${o.items.length} songs · drop songs, albums or folders here · drag one to the Trash to take it out` })));
   box.append(el("div", { className: "wbody" }, o.items.length ? rowsOf(o.items, o.id, (t, i) => i + 1, true)
@@ -2214,7 +2234,10 @@ async function newPlaylist() {
   try {
     const cur = PLAYLISTS.kids.map(id => O[id]).map(p => ({ name: p.name, tracks: p.items.map(id => [O[id].root, O[id].path]) }));
     await loadPlaylists(await api("/api/playlists", { playlists: [...cur, { name, tracks: [] }] }));
-    drawDesk(); toast(`${name}: drop songs, albums or folders onto it.`);
+    drawDesk();
+    const made = O["pl:" + name.toLowerCase()];
+    if (made) { made.fresh = true; open(made.id); }
+    toast(`Type a name for it, then drop songs, albums or folders onto it.`);
   } catch (e) { toast("Not made: " + e.message + "."); }
 }
 // when a programme starts next, in words ("starts today at 15:11, in 2 min"), kept fresh by the poll
@@ -3149,6 +3172,7 @@ function playingIds() {
   const src = S.source;
   if (src?.kind === "radio") ids.add("st:" + src.url);
   else if (src?.kind === "album") { ids.add("a:" + (src.root || "music") + ":" + src.folder); ids.add("f:" + (src.root || "music") + ":" + src.folder); }
+  else if (src?.kind === "playlist") ids.add("pl:" + src.name.toLowerCase());
   else if (src?.kind === "book") ids.add("b:" + src.key);
   else if (src?.kind === "episode") { ids.add(`ep:${src.show}:${src.guid}`); ids.add("pod:" + src.show); }
   else if (!src) {

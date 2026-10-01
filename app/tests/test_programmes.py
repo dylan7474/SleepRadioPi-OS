@@ -59,7 +59,7 @@ def test_blocks_follow_on_by_their_rules(tmp_path, monkeypatch) -> None:
         {"name": "Radio 4", "items": [R4], "rule": "until", "until": "13:15"},
         {"name": "Rain", "items": [STORM], "rule": "end"}]}])
     sched.play("lunch")
-    assert st.playlist_status()["name"] == "Beatles" and st.source is None      # music: through the show (DJ as set)
+    assert st.playlist_status()["name"] == "Beatles" and st.source["kind"] == "playlist"   # music: straight through, no DJ
     assert sched.status()["until"] == "12:30" and sched.status()["next"] == "Radio 4"
     clock.go(minutes=29); sched.tick()
     assert sched.status()["index"] == 0

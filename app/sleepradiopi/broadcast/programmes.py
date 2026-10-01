@@ -292,6 +292,19 @@ class Scheduler:
                     changed = True
         return changed
 
+    def rename_playlist(self, old: str, new: str) -> bool:
+        """A playlist was renamed: blocks that play it follow it."""
+        changed = False
+        for p in self.programmes:
+            items = [it for b in p["blocks"] for it in b["items"]] + ([p["gap"]] if isinstance(p.get("gap"), dict) else [])
+            for it in items:
+                if it.get("kind") == "playlist" and (it.get("name") or "").lower() == old.lower():
+                    it["name"] = new
+                    changed = True
+        if self.run is not None and self.run.get("expect") == ("run", old):
+            self.run["expect"] = ("run", new)     # (a block playing it: still its own)
+        return changed
+
     def rename_refs(self, old_root: str, old: str, new_root: str, new: str) -> bool:
         """A file or folder was moved: blocks that pointed into it follow it."""
         changed = False
@@ -711,7 +724,7 @@ class Scheduler:
             return st.source is not None and st.source is not what
         if kind == "run":
             pl = st.playlist_status()
-            return st.source is not None or (pl is not None and pl["name"] != what)
+            return (st.source is not None and st.source["kind"] != "playlist") or (pl is not None and pl["name"] != what)
         return st.source is not None
 
     def _finish(self) -> None:
