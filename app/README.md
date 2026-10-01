@@ -111,7 +111,7 @@ SleepRadio:
 - **Jingles** from a shuffled bag (never the same one twice in a row); a
   short one opens the show. **Each station has its own folder** in the
   jingles folder (`Station.jingles_folder`): `Sleep Radio/` (the radio's name)
-  for the main show and artist radio, `<theme>/` for each theme -- made by
+  for a radio with no themes yet, `<theme>/` for each theme -- made by
   themselves a minute after start-up and whenever the themes change
   (`main.jingle_folders`), which also moves loose jingles from before into
   the main show's. No shared jingles: an empty folder means none on that
@@ -288,7 +288,7 @@ Most of these are set from the web page; the rest are in the config file.
 | `buttons` | `[]` | The four preset buttons (the day set): `[preset or null, ...]`, each `{"kind": "show", "artist", "profile"}`, `{"kind": "radio", "name", "url"}`, `{"kind": "album", "folder", "title", "artist"}` or `{"kind": "action", "action": "time" \| "news" \| "sleep" \| "address"}`. |
 | `radio_stations` | the starter set | Internet radio: your saved stations, `[{"name", "url", "info"?}]`. |
 | `stream_source` | `null` | What's playing instead of the show — a station, or an album and the track it's on — kept over a restart; `null` = the show. Not in the settings backup. |
-| `broadcast_artist` / `broadcast_profile` | `null` | Artist radio, or one of your `profiles` (lists of artists); `null` = everything. |
+| `broadcast_profile` | `null` | The theme playing (one of your `profiles`); `null` = the theme last played, else Default. (`broadcast_artist`, artist radio, is retired: one saved from before becomes a one-artist theme at start-up.) |
 | `profiles` | `[]` | `[{"name": "Friday List", "artists": [...]}]` |
 | `birthdays` | `[]` | `[{"name", "day", "month", "year"?}]` |
 | `messages` | `{}` | `{"on", "every_min", "offset_min", "start_min", "end_min", "date_first", "list": [{"text", "until"?, "off"?}]}` (defaults: on, 15, 7, 480, 1260, true) |
@@ -312,7 +312,7 @@ for a phone, with three tabs along the bottom (and plain links: `#find`,
   and "Paused" when paused), **the radio** itself (the knob and the four
   preset buttons, drawn like the real one), the sleep timer and what's been
   on air.
-- **Find** — one search over **artists and your lists** (*Artist radio*),
+- **Find** — one search over **artists and your themes** (*Play* a theme),
   **albums** (*Play* start to finish, or *With the DJ*), **songs** (*Play
   next*) and **internet stations** (your saved ones and the whole directory:
   *Play*, *Save*), narrowed with Everything / Artists / Albums / Songs /
@@ -361,7 +361,7 @@ The cards:
   DJ introduces it (the gap's talk is re-worded; a time check already worded
   is kept). Several requests play in order; one made during a gap plays
   after the song the DJ has just introduced; off air the next show opens
-  with it. Requests play even on artist radio or a list. The search finds
+  with it. Requests play on any theme. The search finds
   **albums and folders** too (one per folder, in file order, matched on the
   tags and the folder's name), each with the same two buttons as everywhere:
   **Play now** plays it start to finish instead of the show, with no DJ, and
@@ -489,8 +489,7 @@ The cards:
   how much the DJ talks, time checks, the news, how often jingles play and
   70s hooks — **each theme its own full set**, no master settings
   (`profiles.THEME_SETTINGS`, kept in the theme as `"settings"`; a new theme
-  starts with Default's, `Station.complete_settings`; artist radio uses
-  Default's; the phone's DJ page changes the playing theme's). The DJ window
+  starts with Default's, `Station.complete_settings`; the phone's DJ page changes the playing theme's). The DJ window
   on the radio's back keeps the whole radio's: DJ on/off (buttons and
   programmes switch it), the voice, speaking and news speeds, the chime.
   **Renaming a theme** (`POST /api/profiles/rename {"old", "new"}`) takes its
@@ -783,7 +782,7 @@ The cards:
   the twenty-ninth of September." Each message can have a **last day**, and
   can be **paused** without deleting it; *Hear it* plays one now. Only on the
   show (not while a station, album, audiobook or podcast plays), only once
-  the clock is known, and on artist radio and lists too. Kept in the settings
+  the clock is known, and on every theme. Kept in the settings
   as `messages` (`broadcast/messages.py`).
 - **Volume** — the same 0–100 scale as the knob, and it follows the knob.
   **Speakers: Stereo / Mono** switches at once. **Sleep timer** (15 min to
