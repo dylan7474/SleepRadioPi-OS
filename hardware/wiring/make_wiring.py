@@ -4,7 +4,7 @@
 
 The pins match board/sleepradiopi/config.txt: the MiniAmp's I2S (hifiberry-dac),
 the rotary encoder on GPIO17/27 with its switch on GPIO22, the DS3231 on
-I2C (GPIO2/3), and the four preset buttons on GPIO5/6/16/26. Keep the two in step.
+I2C (GPIO2/3), and the four preset buttons on GPIO5/6/16/8. Keep the two in step.
 """
 
 from pathlib import Path
@@ -151,7 +151,7 @@ for term, pin, colour, dip in ((amp_t["LRCLK (GPIO19)"], 35, YELLOW, 18), (amp_t
     wire([(tx - 5, ty), (lane_r, ty), (lane_r, low), (lane_l, low), (lane_l, py), (px, py)], colour)
 
 # Preset buttons: gold rings on their pins (wired as in the box below the header)
-BUTTONS = {29: "B1", 31: "B2", 36: "B3", 37: "B4"}
+BUTTONS = {29: "B1", 31: "B2", 36: "B3", 24: "B4"}
 GOLD = "#c99a06"
 for n, tag in BUTTONS.items():
     x, y = pin_xy(n)
@@ -198,8 +198,8 @@ box(BX, BY, 290, 190, "Preset buttons (optional)", [
     "B1 → pin 29 (GPIO5)",
     "B2 → pin 31 (GPIO6)",
     "B3 → pin 36 (GPIO16)",
-    "B4 → pin 37 (GPIO26)",
-    "GND: pins 30, 34 or 39 (one wire can",
+    "B4 → pin 24 (GPIO8)",
+    "GND: pin 30, 34, 39 or 25 (one wire can",
     "loop from button to button)."], "#fffbea")
 for i in range(4):                         # the four buttons, beside the list
     cx, cy = BX + 250, BY + 83 + i * 17

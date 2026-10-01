@@ -54,7 +54,7 @@ left.
 2. **Library tools** — the web page's *Media library* (Settings) adds and
    deletes music and jingles (2026-09-29). Still to do: syncing a whole
    desktop library in one go (e.g. an rsync-style script from the PC).
-3. **Fit the preset buttons** — the code, wiring (GPIO5/6/16/26) and case
+3. **Fit the preset buttons** — the code, wiring (GPIO5/6/16/8; button 4 moved off GPIO26, the MiniAmp's shutdown line, 2026-10-01) and case
    holes are done (2026-09-29): 16 mm buttons ordered; try them in
    `top_test`, print `tube_buttons` (knob moved back), wire them, and try
    press / hold on the real thing, and the service menu (1 and 4 held for

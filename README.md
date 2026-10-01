@@ -185,7 +185,7 @@ module and four 16 mm momentary push buttons (the presets) are optional. The cas
 | Encoder GND | pin 25 (any GND pin) |
 | Encoder + (KY-040 only) | pin 17 (3.3 V — **never 5 V**) |
 | RTC VCC / SDA / SCL / GND (optional) | pins 1 / 3 / 5 / 9 (3.3 V only) |
-| Preset buttons 1 / 2 / 3 / 4 (optional) | pins 29 / 31 / 36 / 37 (GPIO5 / 6 / 16 / 26); each button's other leg to GND (pin 30, 34 or 39) |
+| Preset buttons 1 / 2 / 3 / 4 (optional) | pins 29 / 31 / 36 / 24 (GPIO5 / 6 / 16 / 8); each button's other leg to GND (pin 30, 34, 39, or 25 next to button 4's). Not GPIO26 (pin 37): that's the MiniAmp's shutdown line |
 | Speakers | the MiniAmp's terminal: left + and −, right + and − |
 
 The knob and RTC pins are under the MiniAmp. Either solder their wires to
@@ -509,7 +509,7 @@ parts list) or a stacking header between the Pi and the amp.
 | MiniAmp I2S | 18, 19, 21 | 12, 35, 40 (+ 5 V on 2/4, GND 6) |
 | Encoder A / B / switch | 17 / 27 / 22 | 11 / 13 / 15 (GND: any, e.g. 25) |
 | RTC SDA / SCL | 2 / 3 | 3 / 5 (3.3 V on 1, GND 9) |
-| Preset buttons 1–4 | 5 / 6 / 16 / 26 | 29 / 31 / 36 / 37 (GND: 30, 34 or 39) |
+| Preset buttons 1–4 | 5 / 6 / 16 / 8 | 29 / 31 / 36 / 24 (GND: 30, 34, 39 or 25) |
 
 - The encoder pins have the Pi's internal pull-ups on, so a bare encoder
   works. A module with its own pull-ups (KY-040) has a `+` pin: put it on

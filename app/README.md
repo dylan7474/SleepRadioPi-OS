@@ -132,7 +132,7 @@ a stacking header between the Pi and the amp.
 | RTC VCC | 3.3 V | 1 |
 | RTC SDA / SCL | GPIO2 / GPIO3 | 3 / 5 |
 | RTC ground | GND | 9 |
-| Preset buttons 1 / 2 / 3 / 4 (each to GND) | GPIO5 / 6 / 16 / 26 | 29 / 31 / 36 / 37 |
+| Preset buttons 1 / 2 / 3 / 4 (each to GND) | GPIO5 / 6 / 16 / 8 | 29 / 31 / 36 / 24 |
 | *Cathedral:* selector positions 1–4 | as the preset buttons | |
 | *Cathedral:* selector positions 5 / 6 | GPIO23 / 24 | 16 / 18 |
 | *Cathedral:* selector common, back button's other side | GND | 30, 34 or 39 |
@@ -160,7 +160,7 @@ gpio=17,27=ip,pu                        # encoder pull-ups
 dtoverlay=rotary-encoder,pin_a=17,pin_b=27,relative_axis=1
 dtoverlay=gpio-key,gpio=22,active_low=1,gpio_pull=up,keycode=164,label="PLAYPAUSE"
 # dtoverlay=i2c-rtc,ds3231              # once the RTC is fitted
-dtoverlay=gpio-key,gpio=5,active_low=1,gpio_pull=up,keycode=2,label="PRESET1"   # ... 6/3, 16/4, 26/5
+dtoverlay=gpio-key,gpio=5,active_low=1,gpio_pull=up,keycode=2,label="PRESET1"   # ... 6/3, 16/4, 8/5
 dtoverlay=gpio-key,gpio=23,active_low=1,gpio_pull=up,keycode=6,label="PRESET5"  # cathedral: 24/7
 dtoverlay=gpio-key,gpio=25,active_low=1,gpio_pull=up,keycode=139,label="BACK"   # cathedral
 dtoverlay=pwm-2chan,pin=12,func=4,pin2=13,func2=4                                # cathedral: needle, light
