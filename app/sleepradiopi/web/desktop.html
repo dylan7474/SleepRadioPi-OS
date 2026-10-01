@@ -174,6 +174,12 @@
   .lhead, .row.lrow { grid-template-columns: 24px minmax(0, 1fr) minmax(0, .8fr) 92px; }
   .lhead { display: grid; gap: 10px; padding: 6px 14px 4px; font-size: 11px; color: var(--dim); border-bottom: 1px solid var(--line);
            position: sticky; top: 0; background: var(--win); z-index: 1; }
+  .lh { all: unset; cursor: pointer; justify-self: start; display: inline-flex; align-items: center; gap: 5px; padding: 1px 4px; margin: -1px -4px; border-radius: 4px; }
+  .lh:hover { color: var(--ink); background: var(--hover); }
+  .lh:focus-visible { outline: 2px solid var(--amber); }
+  .lh.on { color: var(--ink); font-weight: 600; }
+  .lh.on::after { content: ""; border: 4px solid transparent; border-top-color: currentColor; margin-top: 4px; }   /* down: Z-A */
+  .lh.on.up::after { border-top-color: transparent; border-bottom-color: currentColor; margin-top: -4px; }        /* up: A-Z */
   .lrow { position: relative; }
   .lrow .gi { width: 24px; height: 24px; position: relative; }
   .lrow .gi .glyph { position: absolute; left: 0; top: 0; transform: scale(.4); transform-origin: 0 0; pointer-events: none; }
@@ -847,15 +853,45 @@ function listEl(o, ctx) {           // a folder's list view: one row, which drag
 // Icons or a list, chosen per folder window and kept in this browser; a music or On demand
 // folder nobody has chosen for looks like the folder it's in (as on a Mac)
 let views = {}; try { views = JSON.parse(localStorage.getItem("srd.views")) || {}; } catch {}
-function viewOf(o) {
+function inherited(map, o, none) {      // map[o.id], else the folder it's in's, and so on up
   for (let id = o.id; id;) {
-    if (views[id]) return views[id];
+    if (map[id]) return map[id];
     const m = /^f:(\w+):(.*)$/.exec(id);
     id = m ? (m[2].includes("/") ? `f:${m[1]}:${m[2].slice(0, m[2].lastIndexOf("/"))}` : `root:${m[1]}`) : null;
   }
-  return "icons";
+  return none;
 }
+const viewOf = o => inherited(views, o, "icons");
 function setView(id, v) { views[id] = v; try { localStorage.setItem("srd.views", JSON.stringify(views)); } catch {} drawDesk(); }
+// The list's sort, from its column headings: A-Z, Z-A, then back to the folder's own order
+// (which means something in Birthdays, Programmes...); kept like the view
+let sorts = {}; try { sorts = JSON.parse(localStorage.getItem("srd.sorts")) || {}; } catch {}
+const SORT_COLS = [["name", "Name"], ["det", "Details"], ["kind", "Kind"]];
+const sortOf = o => inherited(sorts, o, "own");
+function nextSort(o, by) {
+  const [cur, dir] = sortOf(o).split(":");
+  sorts[o.id] = cur !== by ? by + ":up" : dir === "up" ? by + ":down" : "own";
+  try { localStorage.setItem("srd.sorts", JSON.stringify(sorts)); } catch {}
+  drawDesk();
+}
+function sorted(o, ids) {
+  const [by, dir] = sortOf(o).split(":");
+  if (by === "own") return ids;
+  const key = x => by === "name" ? x.title : by === "det" ? subOf(x) : KIND[x.kind] || "";
+  const cmp = (a, b) => key(a).localeCompare(key(b), undefined, { numeric: true, sensitivity: "base" }) || a.title.localeCompare(b.title, undefined, { numeric: true });
+  const out = ids.filter(id => O[id]).sort((a, b) => cmp(O[a], O[b]));
+  return dir === "down" ? out.reverse() : out;
+}
+function listHead(o) {
+  const [by, dir] = sortOf(o).split(":");
+  return el("div", { className: "lhead" }, el("span"), ...SORT_COLS.map(([k, label]) => {
+    const on = by === k, b = el("button", { type: "button", className: "lh" + (on ? " on " + dir : ""), textContent: label,
+      title: !on ? `Sort by ${label.toLowerCase()}` : dir === "up" ? "Reverse the order" : "Back to the folder's own order" });
+    b.setAttribute("aria-sort", on ? (dir === "up" ? "ascending" : "descending") : "none");
+    b.onclick = () => nextSort(o, k);
+    return b;
+  }));
+}
 const VIEW_SVG = {
   icons: svgPic('<rect x="4" y="4" width="6.5" height="6.5" rx="1.2"/><rect x="13.5" y="4" width="6.5" height="6.5" rx="1.2"/><rect x="4" y="13.5" width="6.5" height="6.5" rx="1.2"/><rect x="13.5" y="13.5" width="6.5" height="6.5" rx="1.2"/>'),
   list: svgPic('<path d="M9 6h11M9 12h11M9 18h11"/><circle cx="4.8" cy="6" r=".9"/><circle cx="4.8" cy="12" r=".9"/><circle cx="4.8" cy="18" r=".9"/>'),
@@ -1279,10 +1315,9 @@ function folderView(o, box, win) {
   if (tools.children.length) box.append(tools);
   const asList = viewOf(o) === "list" && o.kids.length;
   const grid = asList ? el("ul", { className: "rows" }) : el("div", { className: "grid" });
-  o.kids.forEach(id => O[id] && grid.append((asList ? listEl : iconEl)(O[id], { where: o.id, parent: o.id })));
+  (asList ? sorted(o, o.kids) : o.kids).forEach(id => O[id] && grid.append((asList ? listEl : iconEl)(O[id], { where: o.id, parent: o.id })));
   if (!o.kids.length) grid.append(el("div", { className: "empty", textContent: o.kind === "trash" ? "The Trash is empty." : o.root === "ondemand" && !o.path ? "Nothing here yet: add files under Settings › Media library › On demand." : "Nothing here yet." }));
-  const body = el("div", { className: "wbody" }, asList ? el("div", { className: "lhead" }, el("span"), el("span", { textContent: "Name" }),
-    el("span", { textContent: "Details" }), el("span", { textContent: "Kind" })) : null, grid);
+  const body = el("div", { className: "wbody" }, asList ? listHead(o) : null, grid);
   if (o.box === "voices") {
     body.addEventListener("dragover", e => { if ([...e.dataTransfer.types].includes("Files")) { e.preventDefault(); box.classList.add("over"); } });
     body.addEventListener("dragleave", () => box.classList.remove("over"));

@@ -369,7 +369,9 @@ The cards:
   Programmes and Theme radio (folders load from `/api/browse` as you open
   them); windows you move and resize; every folder window shows its things as
   **icons or a list** (the switch in its toolbar; the list has Name, Details
-  and Kind columns, and rows drag, drop and open like icons; kept per folder
+  and Kind columns, and rows drag, drop and open like icons; click a column
+  heading to sort by it, again to reverse, a third time for the folder's own
+  order; view and sort are kept per folder
   in the browser, and a music or On demand folder you haven't chosen for
   looks like the one it's in); **the radio on the desktop** showing
   what's on air (polled every 2.5 s), with **Back** (like a CD player) and **Skip** keys under the dial (pause is the knob): drop anything on its dial to play it,
