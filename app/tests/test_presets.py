@@ -129,7 +129,11 @@ def test_validation_and_labels() -> None:
     assert presets_mod.label(RP) == "Radio Paradise"
     assert presets_mod.label({"kind": "album", "folder": "a", "title": "Rubber Soul", "artist": "The Beatles"}) \
         == "Rubber Soul — The Beatles"
-    assert presets_mod.label({"kind": "action", "action": "sleep"}) == "Sleep timer (30 min)"
+    old = presets_mod.validate({"kind": "action", "action": "sleep"})      # (saved before the sleep times: 30 minutes)
+    assert old == {"kind": "action", "action": "sleep_30"} and presets_mod.label(old) == "Sleep in 30 minutes"
+    assert presets_mod.label(presets_mod.validate({"kind": "action", "action": "sleep_5"})) == "Sleep in 5 minutes"
+    with pytest.raises(ValueError):
+        presets_mod.validate({"kind": "action", "action": "sleep_7"})
     assert presets_mod.label(None) == "Empty"
 
 
@@ -189,9 +193,13 @@ def test_a_programme_sets_things_on_or_off_where_a_button_switches(tmp_path: Pat
     assert st.dj_on
     p.scheduled("dj_off"); p.scheduled("dj_off")
     assert not st.dj_on and json.loads(conf.read_text())["broadcast_dj"] is False
-    p.scheduled("sleep"); ctl.sleep = 12; p.scheduled("sleep")             # (already counting down: not switched off)
+    p.scheduled("sleep_15")
+    assert ctl.sleep == 15
+    ctl.sleep = 12; p.scheduled("sleep_60"); p.scheduled("sleep")          # (already counting down: left be)
     assert ctl.sleep == 12
-    for a in ("address", "noise_on", "noise_off", "dj_on", "dj_off"):
+    old = programmes.validate([{"name": "P", "blocks": [{"name": "B", "items": [{"kind": "action", "action": "sleep"}]}]}])
+    assert old[0]["blocks"][0]["items"] == [{"kind": "action", "action": "sleep_30"}]      # (saved before the sleep times)
+    for a in ("address", "noise_on", "noise_off", "dj_on", "dj_off", "sleep_5", "sleep_90"):
         assert programmes.validate([{"name": "P", "blocks": [{"name": "B", "items": [{"kind": "action", "action": a}]}]}])
 
 
@@ -316,6 +324,23 @@ def test_actions_in_the_steps(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setattr(presets_mod, "STEP_RESET_S", 0.0)
     p.press(0); _settle(p)                           # later: the one after what's playing
     assert ctl.sleep == 0
+
+
+def test_sleep_times_on_buttons(tmp_path: Path) -> None:
+    """Each sleep time is its own thing: pressed again it's off, another time's button switches to that time."""
+    st, ctl, conf, p = _presets(tmp_path, [{"kind": "action", "action": "sleep_15"}, {"kind": "action", "action": "sleep_60"}])
+    said = []
+    p._say = lambda text, **kw: said.append(text)    # (never words: just a pip)
+    p.press(0)
+    assert ctl.sleep == 15
+    p.press(1)                                       # a different time: over to it, not off
+    assert ctl.sleep == 60
+    p.press(1)
+    assert ctl.sleep == 0
+    ctl.sleep = 30                                   # (set from the page: a 15 button still starts its 15)
+    p.press(0)
+    assert ctl.sleep == 15 and ctl.clips == ["Button"] * 4 and said == []
+    assert p.instant({"kind": "action", "action": "sleep_15"}) and ctl.sleep == 0      # the desktop's double-click: the same
 
 
 def test_show_and_album_presets(tmp_path: Path) -> None:
@@ -465,7 +490,7 @@ def test_day_and_night_sets(tmp_path) -> None:
                    [{"kind": "action", "action": "sleep"}], "day")
     assert p.presets[0]["action"] == "time" and p.status()["bank"] == "day"
     p.toggle_bank()
-    assert p.bank == "night" and p.presets[0]["action"] == "sleep"
+    assert p.bank == "night" and p.presets[0]["action"] == "sleep_30"
     p.set(1, {"kind": "action", "action": "news"})               # changes the night set only
     saved = json.loads(conf.read_text())
     assert saved["buttons_bank"] == "night" and saved["buttons_night"][1]["action"] == "news"
@@ -603,9 +628,9 @@ def test_the_back_button_swaps_day_and_night_or_confirms_the_menu() -> None:
 
 def test_programming_the_other_set_without_swapping(tmp_path) -> None:
     st, ctl, conf, p = _presets(tmp_path, [None] * 4)
-    p.set(0, {"kind": "action", "action": "sleep"}, bank="night")
-    assert p.bank == "day" and p.banks["night"][0] == {"kind": "action", "action": "sleep"} and p.banks["day"][0] is None
-    assert p.status()["sets"]["night"][0]["label"] == "Sleep timer (30 min)"
+    p.set(0, {"kind": "action", "action": "sleep_15"}, bank="night")
+    assert p.bank == "day" and p.banks["night"][0] == {"kind": "action", "action": "sleep_15"} and p.banks["day"][0] is None
+    assert p.status()["sets"]["night"][0]["label"] == "Sleep in 15 minutes"
 
 
 def test_instant_does_it_now_without_a_button(tmp_path: Path) -> None:
@@ -643,10 +668,10 @@ def test_the_knob_held_and_what_plays_at_switch_on(tmp_path: Path) -> None:
     p.announcer = Announcer()
     assert p.knob_long() and said == ["address"]                 # nothing on it: the address, as it came
     assert not p.power_on() and st.source is None
-    p.set_slot("knob_long", {"kind": "action", "action": "sleep"})
+    p.set_slot("knob_long", {"kind": "action", "action": "sleep_45"})
     p.set_slot("power_on", RP)
-    assert load(conf).knob_long == {"kind": "action", "action": "sleep"} and load(conf).power_on == RP
-    assert p.knob_long() and ctl.sleep == presets_mod.SLEEP_MIN and said == ["address"]
+    assert load(conf).knob_long == {"kind": "action", "action": "sleep_45"} and load(conf).power_on == RP
+    assert p.knob_long() and ctl.sleep == 45 and said == ["address"]
     p.hotspot = lambda: {"ssid": "SleepRadio"}                   # its own network: the address, so it can be found
     assert p.knob_long() and said == ["address"] * 2
     assert p.power_on() and st.source["url"] == "http://rp/"

@@ -127,7 +127,7 @@ Radio folder and one of the buttons open:
 - **Four preset buttons** (optional), like a car radio's: each plays what
   it holds — Sleep Radio, an artist or list, an internet station, an album
   straight through — or does something: say the time, read the news now,
-  a 30-minute sleep timer (on or off with a single pip, never words), say the address. Buttons only ever
+  a sleep timer of 5 to 90 minutes (on or off with a single pip, never words), say the address. Buttons only ever
   play: pausing is the knob's job. **A button can hold several things** (up
   to six: your stations on one, podcasts on the next, audiobooks on a
   third): press it again to step on to the next, round and round. The radio

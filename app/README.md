@@ -437,7 +437,7 @@ The cards:
   order picked; made again each time, kept in Playlists) and plays it;
   **the radio on the desktop** showing
   what's on air (polled every 2.5 s), with **Back** (like a CD player) and **Skip** keys under the dial (pause is the knob): drop anything on its dial to play it (a theme, or a button for one, takes over at once, like turning the dial: the song playing stops and the new station opens with its welcome if it's made, else one of its short jingles, else its music -- it used to wait for the song to end; music played from the desktop -- a song, an album, a folder, a playlist, an "On the fly" one -- plays **on its own, with no DJ or jingles, and then the radio pauses**; an artist's folder plays their songs shuffled, once each; the knob then plays the theme again. Buttons keep going back to the theme),
-  on one of its buttons to keep it there (including a **message**, a **jingle** or a **birthday** — said or played over what's on — and an **action** from the Actions folder: the sleep timer, the time, the pips, the news, the address, noise on/off, DJ on/off; or pick from each button's *Change…* list in the Buttons window), a **☀ Day / ☾ Night** switch above them shows either set, and dropping on a button programmes the set shown without swapping the radio's (*Use it now* swaps), scroll the knob for the volume,
+  on one of its buttons to keep it there (including a **message**, a **jingle** or a **birthday** — said or played over what's on — an **action** from the Actions folder: the time, the pips, the news, the address, noise on/off, DJ on/off; and a **sleep time** from the Sleep times folder (in Radio): 5, 10, 15, 30, 45, 60 or 90 minutes, each a thing -- double-click one, or drop it on the radio, to start it now (again: off), or drop it on a button, the knob's folder or a programme; or pick from each button's *Change…* list in the Buttons window), a **☀ Day / ☾ Night** switch above them shows either set, and dropping on a button programmes the set shown without swapping the radio's (*Use it now* swaps), scroll the knob for the volume,
   click it to pause. Programmes are built in their window: drop things on the
   timeline for new blocks or on a block to add to it, drag a block to move it
   or its right edge to change its length, and set its rule, order, start time,
@@ -448,7 +448,7 @@ The cards:
   *Show* zooms to the programme, 1, 3, 12 or 24 hours (or Ctrl+scroll), the
   wheel scrolls along the day, a block dragged to an edge scrolls on, and a
   second click on a chosen block opens a box to type its start time; *＋ Moment* and the block's *Say it / Time check / The
-  news / Sleep timer* add moments; drag a sticky note or a jingle in too.
+  news / Sleep in 30 minutes* add moments (any sleep time can be dragged in from its folder); drag a sticky note or a jingle in too.
   They're saved on the radio. It works like a Mac's desktop throughout: **Escape**
   closes the front window, **Delete** puts the chosen thing in the Trash, the
   **arrow keys** move around a folder and Enter opens; a delete that can be taken
@@ -467,7 +467,7 @@ The cards:
   round (**Settings on the back**): each has its own window reading and
   writing the radio — Speakers (knob, stereo/mono, EQ, low cut, test sounds),
   the DJ (on/off, voice, how often, hooks, jingles, speeds, the news, the
-  power-on chime), Noise, Sleep timer, Voices, Wi-Fi (join, forget, its own
+  power-on chime), Noise, Voices, Wi-Fi (join, forget, its own
   network), This radio (name, case, password, listening in a browser),
   Buttons (and the day and night sets), Updates, Save & load, Power.
   **There's always a theme called Default** (`profiles.DEFAULT`; it can't be
@@ -583,7 +583,7 @@ The cards:
   **at** a clock time sharp (the block before plays on until then and one still
   playing is cut off: the news at 13:00; too early, the show fills in). In
   order or shuffled. Blocks can also be **moments**: a message the DJ says, a
-  jingle, or an action (a time check, the news now, the sleep timer), done at
+  jingle, or an action (a time check, the news now, a sleep time), done at
   their time over what's playing, then on. **In the gaps** (before an "at"
   block, or an empty block): the show, silence, or something you choose.
   After the last block: back to the show, stop, fade out and pause, start
@@ -639,7 +639,8 @@ The cards:
   what the button holds: the show (all artists, an artist or a list), an
   internet station or an album straight through. Or an action: *Say the
   time*, *The news now* (the latest top stories, made on the spot — about a
-  minute on a Zero), *Sleep timer* (30 minutes; again to cancel) or *Say the
+  minute on a Zero), a *sleep time* (5 to 90 minutes, each its own thing: again to cancel, and
+  another time's button switches to that time) or *Say the
   address*. A button only ever plays: **pausing is the knob's job**, and a
   long press is just a press (buttons are set from the page, so one held too
   long can't wipe what's on it). Wired as GPIO keys (KEY_1–KEY_4,
@@ -858,8 +859,8 @@ The cards:
   the clock is known, and on every theme. Kept in the settings
   as `messages` (`broadcast/messages.py`).
 - **Volume** — the same 0–100 scale as the knob, and it follows the knob.
-  **Speakers: Stereo / Mono** switches at once. **Sleep timer** (15 min to
-  1½ h) runs on the radio: it fades the speakers (and the page's own stream)
+  **Speakers: Stereo / Mono** switches at once. **Sleep timer** (5 min to
+  1½ h; on the desktop, the Sleep times folder) runs on the radio: it fades the speakers (and the page's own stream)
   over the last minute, then pauses; every open page shows the same
   countdown, and a pause cancels it.
 - **Speaker EQ** — bass / mid / treble (±12 dB; shelves at 200 Hz and 6 kHz,

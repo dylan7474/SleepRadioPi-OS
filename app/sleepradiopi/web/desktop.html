@@ -562,13 +562,16 @@ const WIFI_BOX = mk({ id: "box:wifi", kind: "folder", title: "Wi-Fi networks", b
 // saved settings the radio keeps: each a thing (drag one onto the radio to load it)
 const BACKUPS = mk({ id: "box:backups", kind: "folder", title: "Backups", box: "backups", kids: [], sym: "⇅" });
 const NOISE_BOX = mk({ id: "box:noise", kind: "folder", title: "Noise", box: "noise", kids: [], sym: "≈" });
+// the sleep times: each a thing (an action), to start now or to keep on a button
+const SLEEP_TIMES = [5, 10, 15, 30, 45, 60, 90];
+const SLEEP_BOX = mk({ id: "box:sleep", kind: "folder", title: "Sleep times", box: "sleep", kids: SLEEP_TIMES.map(m => "act:sleep_" + m), sym: "☾", loaded: true });
 // ...kept in a Buttons folder on the desktop: the day set's, then the night set's
 const BUTTONS_BOX = mk({ id: "box:buttons", kind: "folder", title: "Buttons", box: "buttons", sym: "4", loaded: true,
   kids: ["day", "night"].flatMap(b => BTNS[b].slice(0, 4).map(o => o.id)) });
 // settings: each one an object; for now each opens the classic page's version in a window
 const PANELS = [
   ["dj", "The DJ", "DJ", 40, "dj"], ["speakers", "Speakers", "♫", 28, "speakers"], ["buttons", "Buttons", "4", 200, null],
-  ["noise", "Noise", "≈", 250, "noise"], ["sleep", "Sleep timer", "☾", 265, null], ["voices", "Voices", "“", 300, "voices"],
+  ["noise", "Noise", "≈", 250, "noise"], ["voices", "Voices", "“", 300, "voices"],
   ["wifi", "Wi-Fi", "⌔", 190, "wifi"], ["identity", "This radio", "R", 40, "identity"], ["updates", "Updates", "↑", 130, "updates"],
   ["backup", "Save & load", "⇅", 170, "backup"], ["power", "Power", "⏻", 5, "power"], ["library", "Themes", "◎", 30, null],
   ["onair", "On air", "♪", 20, null],
@@ -584,7 +587,7 @@ const NOTES = mk({ id: "notes", kind: "folder", box: "messages", title: "Message
 const BDAYS = mk({ id: "bdays", kind: "folder", box: "birthdays", title: "Birthdays", kids: [] });   // a folder of people
 const VOICES = mk({ id: "box:voices", kind: "folder", box: "voices", title: "Voices", kids: [], sym: "“", alt: true });
 // the radio's own things, as folders, kept together in one on the desktop
-const RADIO_KIDS = ["box:buttons", "box:noise", "slot:knob_long", "slot:power_on", "box:sounds", "box:voices", "box:wifi", "box:backups"];
+const RADIO_KIDS = ["box:buttons", "box:noise", "box:sleep", "slot:knob_long", "slot:power_on", "box:sounds", "box:voices", "box:wifi", "box:backups"];
 const RADIO_BOX = mk({ id: "box:radio", kind: "folder", title: "Radio", box: "radio", kids: RADIO_KIDS, sym: "R", loaded: true });
 const parentOf = id => Object.values(O).find(o => o.kids && o.kids.includes(id));
 
@@ -664,7 +667,7 @@ async function loadFolder(f) {
     f.kids = d.voices.map(v => mk({ id: "vc:" + v, kind: "voice", key: "voice", name: v, title: VOICE(v), current: v === d.current }).id);
     f.data = d;
   } else if (f.box === "actions") {
-    f.kids = Object.values(ACTION).filter(a => !FLIP[a.action]).map(a => a.id);
+    f.kids = Object.values(ACTION).filter(a => !FLIP[a.action] && !a.sleep).map(a => a.id);
   } else if (f.box === "jingles") {                 // a folder per station (and Power-on), each with its jingles
     const at = f.path || "", d = await api(`/api/media?kind=jingles&path=${encodeURIComponent(at)}`), pre = at ? at + "/" : "";
     f.kids = [...(d.folders || []).map(x => mk({ id: "jf:" + pre + x.name, kind: "folder", title: x.name, box: "jingles", path: pre + x.name,
@@ -717,7 +720,7 @@ function refObj(r) {
     case "list": return O["ls:" + r.name] || mk({ id: "ls:" + r.name, kind: "list", name: r.name, title: r.name });
     case "message": return messageObj(r.text);
     case "jingle": return O["j:" + r.path] || mk({ id: "j:" + r.path, kind: "jingle", title: cleanName(r.path), root: "jingles", path: r.path });
-    case "action": return ACTION[r.action];
+    case "action": return ACTION[r.action === "sleep" ? "sleep_30" : r.action];
   }
   return null;
 }
@@ -737,14 +740,15 @@ const FLIP = { noise_on: "noise_off", noise_off: "noise_on", dj_on: "dj_off", dj
 // ...and noise or the DJ dropped on a programme is a SWITCH: a bar beside the blocks, on for its length
 const SWITCH_OF = { noise: "noise", noise_on: "noise", noise_off: "noise", dj: "dj", dj_on: "dj", dj_off: "dj", bank: "night" };
 const SWITCH_NAME = { noise: "Noise", dj: "The DJ", night: "Night buttons" }, SWITCH_WORD = { noise: "noise", dj: "the DJ", night: "the night buttons" }, SWITCH_HUE = { noise: 175, dj: 320, night: 228 };
-const QUICK = ["time", "pips", "news", "sleep"];              // the ＋ pills under a block
-const ACTION_SUB = { time: "Says the time", pips: "Six pips", news: "The latest news", sleep: "Fades, then pauses", address: "Says its address",
+const QUICK = ["time", "pips", "news", "sleep_30"];             // the ＋ pills under a block
+const ACTION_SUB = { time: "Says the time", pips: "Six pips", news: "The latest news", address: "Says its address",
                      noise: "Noise on or off", dj: "The DJ on or off", bank: "Swaps the day and night buttons", noise_on: "Switches the noise on", noise_off: "Switches the noise off", dj_on: "Switches the DJ on", dj_off: "Switches the DJ off" };
 const messageObj = text => mk({ id: "msg:" + hue(text) + ":" + text.length, kind: "message", title: text.length > 38 ? text.slice(0, 36) + "…" : text, text });
-const ACTION = Object.fromEntries([["time", "The time, spoken", "◷"], ["pips", "The pips", "♪"], ["news", "The news", "N"], ["sleep", "Sleep timer", "☾"],
+const ACTION = Object.fromEntries([["time", "The time, spoken", "◷"], ["pips", "The pips", "♪"], ["news", "The news", "N"],
                                     ["address", "Say the address", "@"], ["noise", "Noise on/off", "≈"], ["dj", "DJ on/off", "DJ"], ["bank", "Day / night buttons", "☾"],
                                     ["noise_on", "Noise on", "≈"], ["noise_off", "Noise off", "≈"], ["dj_on", "DJ on", "DJ"], ["dj_off", "DJ off", "DJ"]]
   .map(([a, title, sym]) => [a, mk({ id: "act:" + a, kind: "action", action: a, title, sym, h: 200 })]));
+for (const m of SLEEP_TIMES) ACTION["sleep_" + m] = mk({ id: "act:sleep_" + m, kind: "action", action: "sleep_" + m, sleep: m, title: `Sleep in ${m} minutes`, sym: String(m), h: 265 });
 function objRef(o) {
   if (!o) return null;
   if (o.kind === "album") return { kind: "album", root: o.root, folder: o.path };
@@ -823,6 +827,7 @@ const FOLDER_PIC = {
   wifi: '<path d="M3 9a13 13 0 0 1 18 0M6.2 12.5a8.5 8.5 0 0 1 11.6 0M9.3 16a4.2 4.2 0 0 1 5.4 0"/><circle cx="12" cy="19" r="1"/>',
   backups: '<path d="M7 4v13M3.5 13.5 7 17l3.5-3.500M17 20V7M13.500 10.500 17 7l3.500 3.500"/>',
   noise: '<path d="M3 12c1.5-5 3-5 4.5 0s3 5 4.5 0 3-5 4.5 0 3 5 4.5 0"/>',
+  sleep: '<path d="M19.5 14.5A8 8 0 0 1 9.500 4.500a8 8 0 1 0 10 10z"/>',
   slot_knob_long: '<circle cx="12" cy="12" r="8"/><path d="M12 12V6.5"/>',
   slot_power_on: '<path d="M12 3.5v8"/><path d="M7 6.5a7.5 7.5 0 1 0 10 0"/>',
   radio: '<rect x="3.5" y="8" width="17" height="11.5" rx="2"/><path d="M7 8l9-4.500"/><circle cx="8.500" cy="13.800" r="2.600"/><path d="M14 12h4M14 15.500h4"/>',
@@ -865,7 +870,7 @@ function glyph(o) {
     case "artistref": g.className += " g-artist"; g.textContent = initials(o.title); break;
     case "jingle": g.className += " g-sound"; g.innerHTML = wave(o.title); break;
     case "message": g.className += " g-note"; g.textContent = o.text; break;
-    case "action": g.className += " g-panel"; g.textContent = o.sym; break;
+    case "action": g.className += " g-panel"; g.textContent = o.sym; if (sleepOn(o)) g.style.boxShadow = "0 0 0 3px var(--amber), 0 4px 10px var(--shadow)"; break;
     case "show": g.className += " g-show"; g.textContent = "SLEEP\nRADIO"; g.style.whiteSpace = "pre"; break;
     case "trash": g.className += " g-trash" + (o.kids.length ? " full" : ""); break;
     case "panel": g.className += " g-panel"; g.textContent = o.sym; break;
@@ -900,7 +905,7 @@ function subOf(o) {
       const live = S?.programme && S.programme.name.toLowerCase() === o.title.toLowerCase();
       return (live ? "● playing · " : o.auto ? (o.once ? "⏰ " : "↻ ") : "") + times;
     }
-    case "folder": return o.root && o.path ? `${o.count || 0} tracks` : "";
+    case "folder": return o.box === "sleep" ? (sleepLeft() ? `Fading out in ${sleepLeft()} min` : "") : o.root && o.path ? `${o.count || 0} tracks` : "";
     case "list": return (o.name?.toLowerCase() === "default" ? "always here · " : "") + (o.all ? "all my music" : o.count ? `${o.count} artist${o.count === 1 ? "" : "s"}` : "");
     case "jingle": return o.mb ? `${o.mb.toFixed(1)} MB` : "";
     case "message": return "The DJ says it";
@@ -911,7 +916,7 @@ function subOf(o) {
       const age = o.b.year ? nextYear - o.b.year : null;
       return (o.soon === 0 ? "Today!" : o.soon === 1 ? "Tomorrow" : `${o.b.day} ${MONN[o.b.month - 1]}`) + (age ? ` · ${age}` : ""); }
     case "voice": return o.current ? "The DJ's voice now" : "Installed";
-    case "action": return ACTION_SUB[o.action] || "";
+    case "action": return o.sleep ? (sleepOn(o) ? `On · ${sleepLeft()} min left` : "") : ACTION_SUB[o.action] || "";
     case "show": return S && S.dj_on === false ? "music only, no DJ" : "with the DJ";
   }
   return "";
@@ -1314,6 +1319,8 @@ async function uploadBackup(file) {
 // a button as a container (BTNS): what the radio says is on it, and its steps as things on the desktop
 const btnOf = o => o.slot ? bStatus?.slots?.[o.slot] : (bStatus?.sets?.[o.bank] || (o.bank === bStatus?.bank ? buttons : []))[o.n];
 const noiseOn = o => !!S?.speaker?.noise?.on && S.speaker.noise.kind === o.colour;
+const sleepOn = o => !!o.sleep && S?.speaker?.sleep_min === o.sleep;       // this sleep time is the one counting down
+const sleepLeft = () => S?.speaker?.sleep_left_s != null ? Math.ceil(S.speaker.sleep_left_s / 60) : 0;
 const INSTANT_KINDS = ["action", "message", "jingle", "birthday", "noise"];      // (done over what's on: nothing to tune to)
 // save what's in a button's folder -- or in the knob's, or the switch-on one's (one thing each)
 const saveBox = (o, steps, said) => !o.slot ? saveSteps(o.n, steps, said, o.bank)
@@ -1337,7 +1344,7 @@ function presetObj(p) {
     case "programme": return O["pg:" + p.name.toLowerCase()] || mk({ id: "pg:" + p.name.toLowerCase(), kind: "programme", title: p.name, start: "07:00", blocks: [] });
     case "podcast": { const show = refObj({ kind: "podcast", show: p.show }); if (show.title === "Podcast" && p.title) show.title = p.title;
       return p.start ? mk({ id: `bstep:ep:${p.show}:${p.start}`, kind: "episode", pid: p.show, gid: p.start, title: p.start_title || "An episode", h: show.h }) : show; }
-    case "action": return ACTION[p.action];
+    case "action": return ACTION[p.action === "sleep" ? "sleep_30" : p.action];
     case "noise": return O["nz:" + p.colour] || noiseObj(p.colour);
     case "message": return messageObj(p.text);
     case "jingle": return refObj({ kind: "jingle", path: p.path });
@@ -1416,6 +1423,12 @@ async function play(o) {
       await poll(); drawDesk();
       return toast(off ? "Noise off." : `${o.title}, on top of what's playing. Double-click it again to switch it off.`);
     }
+    else if (o.sleep) {                                      // this sleep time on (or, if it's the one counting, off)
+      const off = sleepOn(o);
+      await api("/api/instant", { preset: presetOf(o) });
+      await poll(); drawDesk();
+      return toast(off ? "Sleep timer off." : `The radio fades out and pauses in ${o.sleep} minutes. Double-click it again to switch that off.`);
+    }
     else if (["action", "jingle"].includes(o.kind)) {       // over what's on, now
       await api("/api/instant", { preset: presetOf(o) });
       return toast(o.kind === "jingle" ? `Playing the jingle “${o.title}”.` : `${o.title}: now.` + (o.action === "noise" || o.action === "dj" ? " (Switched.)" : ""));
@@ -1452,7 +1465,7 @@ function presetOf(o) {
 // what a button can hold, from what the desktop has loaded (the Buttons window's list)
 function buttonChoices() {
   const kids = f => f.kids.map(id => O[id]).filter(Boolean);
-  return [["Actions", Object.values(ACTION).filter(a => !FLIP[a.action])],
+  return [["Actions", Object.values(ACTION).filter(a => !FLIP[a.action] && !a.sleep)], ["Sleep times", kids(SLEEP_BOX)],
           ["Themes", kids(LISTS).filter(o => o.kind === "list")],
           ["Stations", kids(STATIONS)], ["Playlists", kids(PLAYLISTS)], ["Programmes", kids(PROGRAMMES)],
           ["Podcasts", kids(PODCASTS)], ["Audiobooks", kids(BOOKS)],
@@ -1732,7 +1745,9 @@ function folderView(o, box, win) {
   }
   else if (o.box === "noise") tools.append(T("Balance…", () => open(PANEL.noise.id)),
     el("span", { className: "note", textContent: "Double-click a colour to switch it on over what's playing (again: off) · drag one onto a button, or onto the knob" }));
-  else if (o.box === "actions") tools.append(el("span", { className: "note", textContent: "Drag an action onto a button on the radio; the time, the pips, the news and the sleep timer can go into programmes too" }));
+  else if (o.box === "sleep") tools.append(...[sleepLeft() ? T("Switch it off", async () => { try { await api("/api/speaker", { sleep: 0 }); await poll(); drawDesk(); toast("Sleep timer off."); } catch (e) { toast(e.message); } }) : null,
+    el("span", { className: "note", textContent: "Double-click a time to start it now: the radio fades out over its last minute, then pauses (again: off) · drag one onto a button, onto the knob, or into a programme" })].filter(Boolean));
+  else if (o.box === "actions") tools.append(el("span", { className: "note", textContent: "Drag an action onto a button on the radio; the time, the pips and the news can go into programmes too · the sleep times have their own folder, in Radio" }));
   else if (o.kind === "list") themeTools(o, tools);
   else if (o.box === "artists") {
     const cur = O["ls:" + o.theme], all = !!o.all;
@@ -2115,12 +2130,6 @@ const UI = {
       srow("Balance", ...range("noise-mix", 0, 100, 5, n.mix, v => v === 50 ? "both full" : v < 50 ? "more programme" : "more noise", v => act(() => api("/api/speaker", { noise_mix: v })))),
       help("It plays on top of whatever's on. The sleep timer fades the programme, not the noise."))],
   },
-  sleep: {
-    load: async () => (await api("/api/status")).speaker,
-    build: (sp, act) => [grp("Sleep timer",
-      srow("Fade out in", seg([[0, "Off"], [15, "15"], [30, "30"], [45, "45"], [60, "60"], [90, "90 min"]], sp.sleep_min || 0, v => act(() => api("/api/speaker", { sleep: v })))),
-      help(sp.sleep_left_s != null ? `Fading out in ${Math.ceil(sp.sleep_left_s / 60)} min, then it pauses. A press of the knob wakes it.` : "The radio fades out over the last minute, then pauses. A press of the knob wakes it."))],
-  },
   voices: {
     load: () => api("/api/voices"),
     build: (v, act) => {
@@ -2449,7 +2458,6 @@ const SUMS = {
   dj: d => d.dj_on ? [VOICE(d.voice), ({ maximum: "talks every song", chatty: "chatty", balanced: "balanced", minimal: "talks rarely" })[d.chattiness], d.news_enabled ? "the news on the hour" : "no news",
                       d.jingle_every ? `a jingle every ${d.jingle_every}` : "no jingles"].join(" · ") : "Off: music only, no speech",
   noise: n => n.on ? `${n.kinds[n.kind]?.label || n.kind} noise · balance ${n.mix}` : "Off",
-  sleep: sp => sp.sleep_left_s != null ? `Fading out in ${Math.ceil(sp.sleep_left_s / 60)} min` : "Off",
   voices: v => `${VOICE(v.current)} · ${v.voices.length} installed`,
   wifi: w => w.mode === "hotspot" ? `Its own network: ${w.hotspot.ssid}` : w.ssid ? `${w.ssid} · ${w.ip}` : "Not connected",
   identity: ({ id, auth, status }) => [id.name, id.hardware === "cathedral" ? "cathedral case" : "box case", auth.protected ? "password on" : "no password", status.stream ? "browser listening on" : ""].filter(Boolean).join(" · "),

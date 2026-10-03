@@ -3,7 +3,7 @@
 A short press plays what the button holds -- the show (all artists, one
 artist or one of your lists), an internet radio station, or an album
 straight through -- or does an action: say the time, read the news now,
-the sleep timer, or say the radio's address. A button only ever plays:
+a sleep time (5 to 90 minutes), or say the radio's address. A button only ever plays:
 pausing is the knob's job. The desktop page sets them (drag things onto a
 button, or the Buttons window); there's no hold-to-store on the case.
 
@@ -44,6 +44,7 @@ from pathlib import Path
 
 import numpy as np
 
+from sleepradiopi.broadcast.programmes import SLEEP_TIMES     # the sleep times (minutes): each an action, "sleep_15"
 from sleepradiopi.config.clock import clock_trusted
 from sleepradiopi.config.settings import save_setting
 from sleepradiopi.io.announce import Clip, beep, pip, pips
@@ -61,14 +62,14 @@ SETTLE_S = 0.6            # the selector: a position counts once it's been there
 BACK_HOLD_S = 5.0         # the back button held this long: the service menu
 INSTANT = ("action", "message", "jingle", "birthday", "noise")     # done at once over what's on: nothing to pause
 SLOTS = {"knob_long": "Hold the knob", "power_on": "When switched on"}     # one preset each, besides the buttons
-ACTIONS = {"time": "Say the time", "news": "The news now", "sleep": "Sleep timer (30 min)",
+SLEEP_MIN = 30                               # what the old one "sleep" action meant
+ACTIONS = {"time": "Say the time", "news": "The news now",
            "address": "Say the address", "noise": "Noise on/off", "dj": "DJ on/off", "pips": "The pips",
-           "bank": "Day / night buttons"}
+           "bank": "Day / night buttons", **{f"sleep_{m}": f"Sleep in {m} minutes" for m in SLEEP_TIMES}}
 BANKS = ("day", "night")
 BANK_KEYS = (3, 4)          # buttons 2 and 3...
 BANK_HOLD_S = 1.0           # ...held together this long swap day and night
 AUTO_DEFAULT = {"on": False, "night_min": 21 * 60, "day_min": 7 * 60}
-SLEEP_MIN = 30
 MAX_TEXT = 200
 MAX_STEPS = 6               # what one button can hold, stepped through by pressing it again
 STEP_SETTLE_S = 0.8         # a button with steps plays this long after its last press
@@ -120,9 +121,10 @@ def validate(preset) -> dict | None:
         return {"kind": "book", "key": _text(preset.get("key"), "book", True),
                 "title": _text(preset.get("title"), "book title") or ""}
     if kind == "action":
-        if preset.get("action") not in ACTIONS:
+        action = f"sleep_{SLEEP_MIN}" if preset.get("action") == "sleep" else preset.get("action")   # (saved before the sleep times)
+        if action not in ACTIONS:
             raise ValueError(f"a button's action is one of {', '.join(ACTIONS)}")
-        return {"kind": "action", "action": preset["action"]}
+        return {"kind": "action", "action": action}
     if kind == "noise":                                       # one colour of noise, on or off
         from sleepradiopi.audio.noise import KINDS
         if preset.get("colour") not in KINDS:
@@ -143,6 +145,14 @@ def validate(preset) -> dict | None:
         return {"kind": "birthday", **birthdays.validate([{k: preset.get(k) for k in ("name", "day", "month", "year") if preset.get(k) is not None}])[0]}
     raise ValueError("a button holds the show, a radio station, an album, a playlist, a programme, an audiobook, a podcast, "
                      "an action, a noise, a message, a jingle or a birthday")
+
+
+def sleep_minutes(action: str) -> int | None:
+    """The minutes of a sleep time's action ("sleep_15" -> 15; the old "sleep": SLEEP_MIN), else None."""
+    if action == "sleep":
+        return SLEEP_MIN
+    head, _, m = action.partition("_")
+    return int(m) if head == "sleep" and m.isdigit() and int(m) in SLEEP_TIMES else None
 
 
 def validate_slot(name: str, preset) -> dict | None:
@@ -848,10 +858,11 @@ class Presets:
         elif action == "news":
             self._clip(beep(), "Button")
             threading.Thread(target=self._news, name="news-now", daemon=True).start()
-        elif action == "sleep" and self.control is not None:
-            on = not self.control.status().get("sleep_min")
-            self.control.set_sleep(SLEEP_MIN if on else 0)
-            self._sleep_set(on)
+        elif sleep_minutes(action) is not None and self.control is not None:
+            minutes = sleep_minutes(action)       # this time on; pressed again while it's the one counting, off
+            on = self.control.status().get("sleep_min") != minutes
+            self.control.set_sleep(minutes if on else 0)
+            self._sleep_set(minutes if on else 0)
         elif action == "pips":
             self._clip(pips(), "The pips")
         elif action == "address" and self.announcer is not None:
@@ -906,10 +917,10 @@ class Presets:
     def scheduled(self, action: str) -> None:
         """An action at a programme's moment: set things on or off (a button's
         switch could go either way), else as the button does it."""
-        if action == "sleep" and self.control is not None:
+        if sleep_minutes(action) is not None and self.control is not None:
             if not self.control.status().get("sleep_min"):       # (already counting down: leave it be)
-                self.control.set_sleep(SLEEP_MIN)
-                self._sleep_set(True)
+                self.control.set_sleep(sleep_minutes(action))
+                self._sleep_set(sleep_minutes(action))
         elif action in ("noise_on", "noise_off") and self.control is not None:
             self.control.set_noise(on=action == "noise_on")
         elif action in ("night_on", "night_off"):          # a programme's Night buttons bar (quietly)
@@ -936,9 +947,9 @@ class Presets:
         if self.control is not None:
             self.control.play_clip(Clip(audio, "button", label_))
 
-    def _sleep_set(self, on: bool) -> None:
+    def _sleep_set(self, minutes: int) -> None:
         """The sleep timer never talks (it's for nodding off): just one of the pips, on or off."""
-        log.info("button: sleep timer %s", f"{SLEEP_MIN} minutes" if on else "off")
+        log.info("button: sleep timer %s", f"{minutes} minutes" if minutes else "off")
         self._clip(pip(), "Button")
 
     def _say(self, text: str, beep_first: bool = True, always: bool = False) -> None:

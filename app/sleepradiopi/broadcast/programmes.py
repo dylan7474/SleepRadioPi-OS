@@ -58,8 +58,10 @@ GAPS = ("show", "silence")
 ITEM_KINDS = ("album", "track", "station", "playlist", "book", "podcast", "episode", "show", "list",
               "message", "jingle", "action")
 INSTANT = ("message", "jingle", "action")     # happen at once: said, played or done, then on
-ACTIONS = ("time", "news", "sleep", "pips", "address",   # (what a button can do, but on or off, not a switch:
-           "noise_on", "noise_off", "dj_on", "dj_off")     #  at a set time, a switch could go either way)
+SLEEP_TIMES = (5, 10, 15, 30, 45, 60, 90)    # the sleep times (minutes), as on the buttons: "sleep_15"
+ACTIONS = ("time", "news", "pips", "address",            # (what a button can do, but on or off, not a switch:
+           "noise_on", "noise_off", "dj_on", "dj_off",     #  at a set time, a switch could go either way)
+           *(f"sleep_{m}" for m in SLEEP_TIMES))
 SWITCHES = ("noise", "dj", "night")          # on for a stretch, then off (not in the running order);
                                              # night: the buttons' night set for the stretch, then the day set
 MAX_SWITCHES = 10
@@ -120,9 +122,10 @@ def _item(it) -> dict:
             raise ValueError("a jingle needs its file")
         return {"kind": k, "path": path.strip("/")}
     if k == "action":
-        if it.get("action") not in ACTIONS:
+        action = "sleep_30" if it.get("action") == "sleep" else it.get("action")   # (saved before the sleep times)
+        if action not in ACTIONS:
             raise ValueError(f"an action is one of: {', '.join(ACTIONS)}")
-        return {"kind": k, "action": it["action"]}
+        return {"kind": k, "action": action}
     return {"kind": "show", "artist": _text(it.get("artist"), "an artist", need=False)}
 
 
@@ -253,7 +256,7 @@ class Scheduler:
         self.pause = pause            # pause at once
         self.say = say                # the DJ says a message
         self.jingle = jingle          # a jingle's file (in the jingles folder) played
-        self.action = action          # "time", "news", "sleep": as the radio's buttons do them
+        self.action = action          # "time", "news", "sleep_30": as the radio's buttons do them
         self.on_change: Callable[[list], None] | None = None   # the list changed by itself (a one-off start): save it
         self.quiet = False            # programme mode: silent unless a programme is on
         self.paused: Callable[[], bool] = lambda: False   # is the radio paused (by a person)?
