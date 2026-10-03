@@ -131,7 +131,13 @@ software, and the case to print.
   up at the step it was on. On the desktop page there's a **Buttons folder
   with a folder for each button** (four for the day, four for the night):
   drag things onto one, open it to drag them into another order, or to the
-  Trash to take them off. (The phone page is a remote control only.) There's no
+  Trash to take them off; drag one button onto another to swap them. Three
+  more folders work the same way: **Noise** (each colour is a thing: drag
+  one onto a button, or double-click it to switch it on), **Hold the knob**
+  (drop one thing in and a 3-second hold of the knob does that instead of
+  saying the address) and **When switched on** (drop a station, theme,
+  album or programme in and the radio starts with it; empty, it carries on
+  with what was on last). (The phone page is a remote control only.) There's no
   hold-to-store on the case, so a long press can't wipe one. The same four are on the web page's front.
   There are **two sets of the four, day and night**: hold **buttons 2 and
   3** together for a second to swap (or use the page's ☀ / ☾ switch), and

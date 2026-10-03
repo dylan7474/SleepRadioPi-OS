@@ -539,7 +539,9 @@ def main() -> None:
         cathedral = settings.hardware == "cathedral"
         presets = presets_mod.Presets(station, control, args.config, settings.buttons, announcer,
                                       settings.buttons_night, settings.buttons_bank, settings.buttons_auto,
-                                      count=presets_mod.MAX_N if cathedral else presets_mod.N, selector=cathedral)
+                                      count=presets_mod.MAX_N if cathedral else presets_mod.N, selector=cathedral,
+                                      slots={"knob_long": settings.knob_long, "power_on": settings.power_on})
+        presets.hotspot = _hotspot
         presets.keep_auto()
         if station._has_voice and not cathedral:
             # A button with steps says the one it landed on: the names are made ahead, in the
@@ -582,7 +584,7 @@ def main() -> None:
         station.seeker = KnobSeek(station, control, _Clip)   # (the page's knob uses it too)
         knob = Knob(control.knob, control.toggle,
                     devices=Path(os.environ.get("SLEEPRADIOPI_INPUT_DIR", "/dev/input")),
-                    on_long_press=announcer.speak, buttons=buttons, chord=chord, raw_keys=raw_keys,
+                    on_long_press=presets.knob_long, buttons=buttons, chord=chord, raw_keys=raw_keys,
                     on_held_turn=station.seeker.turn)
         presets.keys = knob.keys         # the page's buttons go down and up through the same timers
         if cathedral:                    # the VU needle and the grille's glow (hardware PWM)
@@ -591,8 +593,6 @@ def main() -> None:
                           glow_night=settings.glow_night, meter_trim_db=settings.meter_trim_db)
             lamps.start()
         knob.start()
-        if not settings.programme_mode:
-            control.play()   # a bedside radio plays as soon as it's powered (in programme mode: quiet until one's on)
     else:
         station = Station(cfg, tts, stream)
         control = None
@@ -671,6 +671,11 @@ def main() -> None:
     station.podcasts.keep_fresh()
     # A station or album playing instead of the show is kept over a restart.
     station.on_source = lambda source: save_setting(args.config, "stream_source", source)
+    if control is not None and not settings.programme_mode:
+        # a bedside radio plays as soon as it's powered (in programme mode: quiet until one's on):
+        # what's been chosen for switch-on, if anything, else what was on last
+        presets.power_on()
+        control.play()
     updates = Updates(settings.update_source, say=lambda text: _say_now(station, control, text))
     threading.Thread(target=_after_first_song, args=(station, updates), name="update-confirm",
                      daemon=True).start()

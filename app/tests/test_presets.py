@@ -141,8 +141,10 @@ class Control:
     def play(self): self.calls.append("play")
     def play_clip(self, clip): self.clips.append(clip.label)
     def set_sleep(self, m): self.sleep = m
-    def status(self): return {"sleep_min": self.sleep or None}
-    def set_noise(self, on=None): self.calls.append(f"noise {'on' if on else 'off'}")
+    def set_noise(self, on=None, kind=None):
+        self.calls.append(f"noise {'on' if on else 'off'}" + (f" {kind}" if kind else ""))
+        self.noise = {"on": bool(on), "kind": kind or "pink"}
+    def status(self): return {"sleep_min": self.sleep or None, "noise": getattr(self, "noise", {"on": False, "kind": "pink"})}
 
 
 def _presets(tmp_path, buttons=None):
@@ -618,3 +620,46 @@ def test_instant_does_it_now_without_a_button(tmp_path: Path) -> None:
     for bad in (None, {"kind": "show"}, {"kind": "jingle", "path": "../x.mp3"}):
         with pytest.raises(ValueError):
             p.instant(bad)
+
+
+def test_a_colour_of_noise_on_a_button(tmp_path: Path) -> None:
+    brown = {"kind": "noise", "colour": "brown"}
+    assert presets_mod.validate(brown | {"x": 1}) == brown and presets_mod.label(brown) == "Brown noise"
+    with pytest.raises(ValueError):
+        presets_mod.validate({"kind": "noise", "colour": "beige"})
+    st, ctl, conf, p = _presets(tmp_path, [brown, {"kind": "noise", "colour": "pink"}])
+    p.press(0)
+    p.press(1)                                       # another colour: that one, still on
+    p.press(1)                                       # the one that's on: off
+    assert ctl.calls == ["noise on brown", "noise on pink", "noise off pink"]
+
+
+def test_the_knob_held_and_what_plays_at_switch_on(tmp_path: Path) -> None:
+    st, ctl, conf, p = _presets(tmp_path)
+    said = []
+
+    class Announcer:
+        def speak(self): said.append("address"); return True
+    p.announcer = Announcer()
+    assert p.knob_long() and said == ["address"]                 # nothing on it: the address, as it came
+    assert not p.power_on() and st.source is None
+    p.set_slot("knob_long", {"kind": "action", "action": "sleep"})
+    p.set_slot("power_on", RP)
+    assert load(conf).knob_long == {"kind": "action", "action": "sleep"} and load(conf).power_on == RP
+    assert p.knob_long() and ctl.sleep == presets_mod.SLEEP_MIN and said == ["address"]
+    p.hotspot = lambda: {"ssid": "SleepRadio"}                   # its own network: the address, so it can be found
+    assert p.knob_long() and said == ["address"] * 2
+    assert p.power_on() and st.source["url"] == "http://rp/"
+    assert p.status()["slots"]["power_on"]["label"] == "Radio Paradise"
+    with pytest.raises(ValueError, match="plays something"):
+        p.set_slot("power_on", {"kind": "action", "action": "time"})
+    with pytest.raises(ValueError):
+        p.set_slot("doorbell", RP)
+    p.set_slot("power_on", None)
+    assert not p.power_on() and load(conf).power_on is None
+    saved = backup.export(conf, None)
+    saved["settings"]["power_on"] = {"kind": "action", "action": "time"}
+    with pytest.raises(backup.BadSettings, match="power_on"):
+        backup.parse(saved)
+    p2 = Presets(st, ctl, conf, slots={"knob_long": {"kind": "tape"}, "power_on": RP})   # (a hand-edited config)
+    assert p2.slots == {"knob_long": None, "power_on": RP}

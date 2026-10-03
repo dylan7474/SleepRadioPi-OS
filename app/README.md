@@ -672,7 +672,19 @@ The cards:
   radio; *What the buttons play…* opens the Buttons folder) to see what's on it: drag a row up or down to change the order, to
   the Trash to take it off (with Undo), or onto another button to put it
   there too; *▶ Press it*, a ▶ on each row to play that step now, and *＋
-  What's playing*. A button's folder dragged to the Trash empties it. (The Buttons window
+  What's playing*. Dragged below the last row, a step goes to the end; **a button's folder
+  dragged onto another button swaps what they hold**. A button's folder dragged to the Trash empties it.
+  **Noise** is a folder too: each colour is a thing (`{"kind": "noise",
+  "colour"}`, an instant like the actions) — double-click it to switch that
+  colour on over what's playing (again: off), or drag it onto a button; on a
+  button, a press switches that colour on, and off if it's the one that's on.
+  Two more folders hold one thing each (`SLOTS` in `io/presets.py`, saved
+  as the settings `knob_long` and `power_on`): **Hold the knob** — what a
+  3-second hold of the knob does (empty: it says the radio's address, which
+  it always does while the radio is its own hotspot, so it can still be
+  found) — and **When switched on** — what the radio plays when it's
+  powered (something that plays, not an action; empty: what was on last;
+  not used in programme mode). (The Buttons window
   on the radio's back keeps only the day and night sets and their
   timetable. The phone remote has none of this: it's a remote control.) The key on the radio's front shows a small
   counter (3, or 2/3 while step two plays). With one thing on a button
@@ -1040,6 +1052,7 @@ everything but the page itself and the login needs the session cookie
 | `POST /api/buttons/key` | `{"button": 1-4, "down": bool}` — the page's button going down / up, through the real buttons' timers (tap, 1+4 for 5 s); one held over 30 s is let go |
 | `GET /api/buttons` | The four preset buttons (`steps`: each `preset`, `label`, `playing`; `step`: the one playing; and, for the step playing or else the first, `preset`, `label`, `playing`), `max_steps`, what's playing now as a preset, and the actions |
 | `POST /api/buttons` | `{"button": 1-4, "preset": {...} \| null, "bank"?: "day" \| "night"}` (bank: programme that set without swapping; `GET` has both in `sets`), `{"button", "steps": [{...}, ...]}` (up to six, stepped through by pressing it again), `{"button", "preset", "add": true}` (one more step on the end) or `{"button", "now": true, "add"?}` (what's playing, on it); a podcast preset is `{"kind": "podcast", "show", "title", "start": gid, "start_title"}` |
+| `POST /api/buttons/slot` | `{"slot": "knob_long" \| "power_on", "preset": {...} \| null}` — what holding the knob does / what plays at switch-on (null: as it came); `GET /api/buttons` has them in `slots` |
 | `POST /api/buttons/press` | `{"button": 1-4, "step"?: 1-6}` — as if pressed on the case (a button with steps moves on one, and plays after 0.8 s); `step`: that one, at once |
 | `POST /api/radio/stations` | `{"stations": [...]}` — replace the saved list |
 | `GET /api/artists` | Every artist with a track count, your lists, and what's playing |

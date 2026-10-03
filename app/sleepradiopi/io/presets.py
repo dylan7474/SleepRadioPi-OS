@@ -17,6 +17,12 @@ for step one, two for step two... Coming back to a button from something
 else, it picks up at the step it was last on. (The cathedral's selector has
 no second press: it plays a position's first step.)
 
+Two more places hold a preset the same way (SLOTS): **knob_long**, what
+holding the knob for 3 s does (empty: say the radio's address -- which it
+always does while the radio is its own hotspot, so it can be found), and
+**power_on**, what plays when the radio's switched on (empty: what was on
+last).
+
 There are two sets of the four, **day** and **night**, each with its own
 presets; everything (the real buttons, the page's) uses the one in use.
 Holding buttons 2 and 3 together for BANK_HOLD_S swaps them (it ticks while
@@ -53,7 +59,8 @@ WORDS = ("one", "two", "three", "four", "five", "six")
 SETTLE_S = 0.6            # the selector: a position counts once it's been there this long (turning
                           # from 1 to 4 passes 2 and 3 without playing them)
 BACK_HOLD_S = 5.0         # the back button held this long: the service menu
-INSTANT = ("action", "message", "jingle", "birthday")     # done at once over what's on: nothing to pause
+INSTANT = ("action", "message", "jingle", "birthday", "noise")     # done at once over what's on: nothing to pause
+SLOTS = {"knob_long": "Hold the knob", "power_on": "When switched on"}     # one preset each, besides the buttons
 ACTIONS = {"time": "Say the time", "news": "The news now", "sleep": "Sleep timer (30 min)",
            "address": "Say the address", "noise": "Noise on/off", "dj": "DJ on/off", "pips": "The pips"}
 BANKS = ("day", "night")
@@ -115,6 +122,11 @@ def validate(preset) -> dict | None:
         if preset.get("action") not in ACTIONS:
             raise ValueError(f"a button's action is one of {', '.join(ACTIONS)}")
         return {"kind": "action", "action": preset["action"]}
+    if kind == "noise":                                       # one colour of noise, on or off
+        from sleepradiopi.audio.noise import KINDS
+        if preset.get("colour") not in KINDS:
+            raise ValueError(f"a noise is one of {', '.join(KINDS)}")
+        return {"kind": "noise", "colour": preset["colour"]}
     if kind == "message":                                     # (instants: said or played over what's on)
         text = preset.get("text")
         if not isinstance(text, str) or not text.strip() or len(text) > 1000:
@@ -129,7 +141,17 @@ def validate(preset) -> dict | None:
         from sleepradiopi.broadcast import birthdays
         return {"kind": "birthday", **birthdays.validate([{k: preset.get(k) for k in ("name", "day", "month", "year") if preset.get(k) is not None}])[0]}
     raise ValueError("a button holds the show, a radio station, an album, a playlist, a programme, an audiobook, a podcast, "
-                     "an action, a message, a jingle or a birthday")
+                     "an action, a noise, a message, a jingle or a birthday")
+
+
+def validate_slot(name: str, preset) -> dict | None:
+    """What a slot (SLOTS) holds -> a clean copy; None empties it."""
+    if name not in SLOTS:
+        raise ValueError(f"the slots are {', '.join(SLOTS)}")
+    preset = validate(preset)
+    if name == "power_on" and preset is not None and preset["kind"] in INSTANT:
+        raise ValueError("when it's switched on the radio plays something: a station, a theme, an album, a playlist...")
+    return preset
 
 
 def steps(button) -> list:
@@ -214,6 +236,9 @@ def label(preset: dict | None, station_name: Callable[[dict], str] | None = None
         return preset["title"] or "Podcast"
     if kind == "action":
         return ACTIONS[preset["action"]]
+    if kind == "noise":
+        from sleepradiopi.audio.noise import KINDS
+        return f"{KINDS[preset['colour']][0]} noise"
     if kind == "message":
         return "“" + (preset["text"] if len(preset["text"]) <= 30 else preset["text"][:28] + "…") + "”"
     if kind == "jingle":
@@ -261,7 +286,8 @@ class Presets:
 
     def __init__(self, station, control=None, config_file: Path | None = None,
                  presets: list | None = None, announcer=None, night: list | None = None,
-                 bank: str = "day", auto: dict | None = None, count: int = N, selector: bool = False) -> None:
+                 bank: str = "day", auto: dict | None = None, count: int = N, selector: bool = False,
+                 slots: dict | None = None) -> None:
         """count: how many presets (4 buttons on the box, 6 on the cathedral's
         selector); selector: they're positions of a rotary switch, not buttons --
         landing on one plays it (after SETTLE_S), and there's no hold-to-save."""
@@ -275,6 +301,14 @@ class Presets:
         self.config_file = config_file
         self.announcer = announcer       # says the address
         self.names = None                # the steps' spoken names, made ahead (io/button_names.py; main sets it)
+        self.hotspot: Callable[[], object] | None = None      # is the radio its own network now? (main sets it)
+        self.slots = {}
+        for name in SLOTS:
+            try:
+                self.slots[name] = validate_slot(name, (slots or {}).get(name))
+            except ValueError as e:      # a hand-edited config: don't stop the station
+                log.warning("%s ignored: %s", name, e)
+                self.slots[name] = None
         self.banks = {"day": self._safe(presets, count), "night": self._safe(night, count)}
         self.bank = bank if bank in BANKS else "day"
         try:
@@ -419,6 +453,7 @@ class Presets:
                 "bank": self.bank, "auto": self.auto,
                 "sets": {b: [self._button(x, now if b == self.bank else None) for x in self.banks[b][:self.count]]
                          for b in BANKS},
+                "slots": {name: self._button(p, None) for name, p in self.slots.items()},
                 "service": self.menu.state if self.menu is not None else None}
 
     def _button(self, button, now: dict | None) -> dict:
@@ -463,6 +498,49 @@ class Presets:
         if bank is not None and bank not in BANKS:
             raise ValueError("the set is day or night")
         return self.set(index, steps(self.banks[bank or self.bank][index]) + [validate(preset)], bank)
+
+    def set_slot(self, name: str, preset) -> dict | None:
+        """What holding the knob does, or what plays at switch-on (None: as it came). Saved."""
+        preset = validate_slot(name, preset)
+        self.slots[name] = preset
+        if self.config_file is not None:
+            save_setting(self.config_file, name, preset)
+        log.info("%s: %s", SLOTS[name].lower(), self.label(preset))
+        return preset
+
+    def load_slots(self, slots: dict) -> None:
+        """From a loaded settings file."""
+        for name in SLOTS:
+            if name in slots:
+                self.slots[name] = validate_slot(name, slots[name])
+
+    def knob_long(self) -> bool:
+        """The knob held for 3 s: what's been put on it, else the radio's address
+        (always the address while the radio is its own hotspot: that's how it's found)."""
+        preset = self.slots.get("knob_long")
+        alone = False
+        try:
+            alone = bool(self.hotspot()) if self.hotspot is not None else False
+        except Exception:
+            log.exception("knob: hotspot check")
+        if preset is None or alone:
+            return bool(self.announcer.speak()) if self.announcer is not None else False
+        log.info("knob held: %s", self.label(preset))
+        self._play(preset, "the knob")
+        return True
+
+    def power_on(self) -> bool:
+        """Just switched on: tune to what's been chosen for that (if anything)."""
+        preset = self.slots.get("power_on")
+        if preset is None:
+            return False
+        try:
+            self.apply(preset)
+        except ValueError as e:
+            log.warning("when switched on: can't play %s: %s", self.label(preset), e)
+            return False
+        log.info("switched on: %s", self.label(preset))
+        return True
 
     def set_all(self, presets: list) -> None:
         presets = validate_all(presets, self.count)
@@ -801,6 +879,11 @@ class Presets:
         kind = preset["kind"]
         if kind == "action":
             self._action(preset["action"])
+        elif kind == "noise":                 # this colour on; pressed again while it's on, off
+            if self.control is not None:
+                now = self.control.status().get("noise") or {}
+                on = not (now.get("on") and now.get("kind") == preset["colour"])
+                self.control.set_noise(on=on, kind=preset["colour"])
         elif kind == "message":
             from datetime import date
             messages = getattr(self.station, "messages", None)

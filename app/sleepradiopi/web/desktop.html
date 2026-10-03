@@ -550,6 +550,12 @@ const SHOW = mk({ id: "show", kind: "show", title: "Sleep Radio" });
 // the radio's buttons are containers too: one each, in the day set and the night set (what's in them: bStatus)
 const BTNS = Object.fromEntries(["day", "night"].map(b => [b, [0, 1, 2, 3, 4, 5].map(i =>
   mk({ id: `btn:${b}:${i}`, kind: "button", bank: b, n: i, title: `${b === "night" ? "Night" : "Day"} button ${i + 1}`, sym: String(i + 1) }))]));
+// ...and two more hold one thing each the same way: what holding the knob does, and what plays at switch-on
+const SLOT = { knob_long: mk({ id: "slot:knob_long", kind: "button", slot: "knob_long", title: "Hold the knob", sym: "◉" }),
+               power_on: mk({ id: "slot:power_on", kind: "button", slot: "power_on", title: "When switched on", sym: "⏻" }) };
+const NOISE_HUE = { white: 200, pink: 330, brown: 25, deep: 12, blue: 215, violet: 275, ambient: 160 };
+const noiseObj = (k, v) => mk({ id: "nz:" + k, kind: "noise", colour: k, title: (v?.label || k[0].toUpperCase() + k.slice(1)) + " noise", about: v?.about || "", h: NOISE_HUE[k] ?? 200, sym: "≈" });
+const NOISE_BOX = mk({ id: "box:noise", kind: "folder", title: "Noise", box: "noise", kids: [], sym: "≈" });
 // ...kept in a Buttons folder on the desktop: the day set's, then the night set's
 const BUTTONS_BOX = mk({ id: "box:buttons", kind: "folder", title: "Buttons", box: "buttons", sym: "4", loaded: true,
   kids: ["day", "night"].flatMap(b => BTNS[b].slice(0, 4).map(o => o.id)) });
@@ -609,6 +615,9 @@ async function loadFolder(f) {
     f.kids = d.stations.map(s => stationObj(s).id);
   } else if (f.box === "buttons") {
     await loadButtons();
+  } else if (f.box === "noise") {
+    const d = await api("/api/status");
+    f.kids = Object.entries(d.speaker?.noise?.kinds || {}).map(([k, v]) => noiseObj(k, v).id);
   } else if (f.box === "playlists") {
     await loadPlaylists();
   } else if (f.box === "programmes") {
@@ -772,7 +781,7 @@ function timeline(p) {
 const $ = id => document.getElementById(id);
 const el = (tag, props = {}, ...kids) => { const e = Object.assign(document.createElement(tag), props); e.append(...kids.filter(k => k != null)); return e; };
 const KIND = { folder: "Folder", album: "Album", track: "Track", station: "Station", podcast: "Podcast", episode: "Episode", book: "Audiobook",
-               playlist: "Playlist", programme: "Programme", button: "Button", list: "Theme", jingle: "Jingle", message: "Message", action: "Action", person: "Birthday", voice: "Voice", show: "The show", trash: "Trash", panel: "Setting", dj: "The DJ", note: "Messages", calendar: "Birthdays", artistref: "Artist" };
+               playlist: "Playlist", programme: "Programme", button: "Button", noise: "Noise", list: "Theme", jingle: "Jingle", message: "Message", action: "Action", person: "Birthday", voice: "Voice", show: "The show", trash: "Trash", panel: "Setting", dj: "The DJ", note: "Messages", calendar: "Birthdays", artistref: "Artist" };
 const TINT = { album: 30, track: 45, station: 8, podcast: 275, episode: 265, book: 150, playlist: 215, programme: 40, list: 195, show: 40, folder: 40 };
 function wave(seed) {
   let x = hue(seed), bars = "";
@@ -791,6 +800,9 @@ const FOLDER_PIC = {
   lists: '<circle cx="9" cy="8" r="3"/><path d="M3.5 19a5.5 5.5 0 0 1 11 0"/><circle cx="16.5" cy="9" r="2.4"/><path d="M15.5 14.2a4.6 4.6 0 0 1 5.5 4.8"/>',
   artists: '<circle cx="9" cy="8" r="3"/><path d="M3.5 19a5.5 5.5 0 0 1 11 0"/><circle cx="16.5" cy="9" r="2.4"/><path d="M15.5 14.2a4.6 4.6 0 0 1 5.5 4.8"/>',
   actions: '<path d="M13 2.5 5 13.5h6l-1 8 8-11h-6z"/>',
+  noise: '<path d="M3 12c1.5-5 3-5 4.5 0s3 5 4.5 0 3-5 4.5 0 3 5 4.5 0"/>',
+  slot_knob_long: '<circle cx="12" cy="12" r="8"/><path d="M12 12V6.5"/>',
+  slot_power_on: '<path d="M12 3.5v8"/><path d="M7 6.5a7.5 7.5 0 1 0 10 0"/>',
   buttons: '<circle cx="7" cy="8" r="2.6"/><circle cx="17" cy="8" r="2.6"/><circle cx="7" cy="16.5" r="2.6"/><circle cx="17" cy="16.5" r="2.6"/>',
   jingles: '<path d="M6 16.5V11a6 6 0 0 1 12 0v5.5l1.5 1.5h-15z"/><path d="M10 20.5a2 2 0 0 0 4 0"/>',
   voices: '<path d="M4 5.5h16v10H10l-4.5 4v-4H4z"/><path d="M8 9.5h8M8 12h5"/>',
@@ -811,7 +823,9 @@ function glyph(o) {
     case "episode": g.className += " g-episode"; g.textContent = "EP"; break;
     case "book": g.className += " g-book"; g.textContent = initials(o.title); break;
     case "playlist": g.className += " g-playlist"; g.append(el("i"), el("i"), el("i")); break;
-    case "button": g.className += " g-folder g-bfolder" + (o.bank === "night" ? " night" : "") + (btnOf(o)?.playing ? " on" : ""); g.textContent = o.n + 1; break;
+    case "button": if (o.slot) { g.className += " g-folder"; g.innerHTML = svgPic(FOLDER_PIC["slot_" + o.slot]); break; }
+      g.className += " g-folder g-bfolder" + (o.bank === "night" ? " night" : "") + (btnOf(o)?.playing ? " on" : ""); g.textContent = o.n + 1; break;
+    case "noise": g.className += " g-panel"; g.textContent = "≈"; if (noiseOn(o)) g.style.boxShadow = "0 0 0 3px var(--amber), 0 4px 10px var(--shadow)"; break;
     case "programme": {
       g.className += " g-programme";
       const tl = timeline(o), stops = [];
@@ -846,7 +860,9 @@ function subOf(o) {
     case "podcast": return o.fresh ? `${o.fresh} new` : o.count ? `${o.count} episodes` : "";
     case "episode": return dur(o.min);
     case "playlist": return `${o.items.length} song${o.items.length === 1 ? "" : "s"}`;
-    case "button": { const b = btnOf(o), n = stepsOf(b).length; return !n ? "Empty" : n === 1 ? b.label : `${n} steps`; }
+    case "button": { const b = btnOf(o), n = stepsOf(b).length;
+      return !n ? (o.slot === "knob_long" ? "Says the address" : o.slot === "power_on" ? "What was on last" : "Empty") : n === 1 ? b.label : `${n} steps`; }
+    case "noise": return noiseOn(o) ? "On now" : o.about;
     case "programme": {
       const tl = timeline(o), s0 = toMin(o.start);
       const times = !o.blocks.length && o.switches?.length ? o.switches.map(w => `${SWITCH_WORD[w.what]} ${hhmm(s0 + w.from)}–${hhmm(s0 + w.from + w.min)}`).join(", ")
@@ -1000,11 +1016,11 @@ function loadDesk() {
     for (const p of s.icons) { if (!O[p.id] && p.snap) mk({ ...p.snap, kids: [], items: [], eps: [], blocks: [] }); if (O[p.id]) desk.push({ id: p.id, x: p.x, y: p.y, alias: !!p.alias }); }
     radioPos = s.radio || null;
     desk = desk.filter(p => ![SHOW.id, POWER_ON.id, NOTES.id, JINGLES.id].includes(p.id));   // (jingles and messages live in each theme)
-    for (const f of [ACTIONS_BOX, LISTS, BUTTONS_BOX])      // (new since the layout was saved: in the first free spot)
+    for (const f of [ACTIONS_BOX, LISTS, BUTTONS_BOX, NOISE_BOX, SLOT.knob_long, SLOT.power_on])      // (new since the layout was saved: in the first free spot)
       if (!desk.some(p => p.id === f.id)) desk.push({ id: f.id, ...freeSpot() });
   }
   if (!desk.length) {
-    [MUSIC, ONDEMAND, BOOKS, PODCASTS, STATIONS, PLAYLISTS, PROGRAMMES, LISTS, ACTIONS_BOX, BUTTONS_BOX].forEach((f, i) => desk.push({ id: f.id, x: 18 + Math.floor(i / 8) * 122, y: 14 + (i % 8) * 92 }));
+    [MUSIC, ONDEMAND, BOOKS, PODCASTS, STATIONS, PLAYLISTS, PROGRAMMES, LISTS, ACTIONS_BOX, BUTTONS_BOX, NOISE_BOX, SLOT.knob_long, SLOT.power_on].forEach((f, i) => desk.push({ id: f.id, x: 18 + Math.floor(i / 8) * 122, y: 14 + (i % 8) * 92 }));
     [DJ, BDAYS].forEach((o, i) => desk.push({ id: o.id, x: 140, y: 14 + i * 100, alias: false }));
   }
 }
@@ -1209,7 +1225,7 @@ const stepsOf = b => (b?.steps || []).map(s => s.preset);
 const stepCount = b => { const n = stepsOf(b).length; return n > 1 ? (b.step != null ? `${b.step + 1}/${n}` : String(n)) : ""; };
 const buttonTitle = (b, i) => { const n = stepsOf(b).length;
   return `Button ${i + 1}: ` + (n > 1 ? b.steps.map(s => s.label).join(" → ") + " · press again to step on" : b.label); };
-const stepKey = p => [p.kind, p.url ?? p.folder ?? p.key ?? p.show ?? p.action ?? p.text ?? p.path ?? p.profile ?? p.name ?? "", p.root || "", p.start || ""].join("|").toLowerCase();
+const stepKey = p => [p.kind, p.colour ?? p.url ?? p.folder ?? p.key ?? p.show ?? p.action ?? p.text ?? p.path ?? p.profile ?? p.name ?? "", p.root || "", p.start || ""].join("|").toLowerCase();
 function gotButtons(st) {            // the radio's answer: the front, and the Buttons window if it's open
   bStatus = st; buttons = st.buttons; buttonKids();
   const w = W.find(w => w.id === PANEL.buttons.id); if (w?.data) w.data = st;
@@ -1221,7 +1237,21 @@ async function saveSteps(i, steps, said, bank = shownBank()) {
   catch (e) { toast("Not changed: " + e.message + "."); }
 }
 // a button as a container (BTNS): what the radio says is on it, and its steps as things on the desktop
-const btnOf = o => (bStatus?.sets?.[o.bank] || (o.bank === bStatus?.bank ? buttons : []))[o.n];
+const btnOf = o => o.slot ? bStatus?.slots?.[o.slot] : (bStatus?.sets?.[o.bank] || (o.bank === bStatus?.bank ? buttons : []))[o.n];
+const noiseOn = o => !!S?.speaker?.noise?.on && S.speaker.noise.kind === o.colour;
+const INSTANT_KINDS = ["action", "message", "jingle", "birthday", "noise"];      // (done over what's on: nothing to tune to)
+// save what's in a button's folder -- or in the knob's, or the switch-on one's (one thing each)
+const saveBox = (o, steps, said) => !o.slot ? saveSteps(o.n, steps, said, o.bank)
+  : api("/api/buttons/slot", { slot: o.slot, preset: steps[0] ?? null }).then(st => { gotButtons(st); if (said) toast(said); }).catch(e => toast("Not changed: " + e.message + "."));
+function putIn(box, objs, at = null) {
+  if (!box.slot) return setPreset(box.n, objs, { bank: box.bank, at });
+  objs = [].concat(objs);
+  if (objs.length > 1) return toast(`“${box.title}” holds one thing: drag just one onto it.`);
+  const o = objs[0], preset = presetOf(o);
+  if (!preset) return toast(`“${box.title}” can't hold a single ${KIND[o.kind].toLowerCase()}: try its album, show or a playlist.`);
+  if (box.slot === "power_on" && INSTANT_KINDS.includes(preset.kind)) return toast("When it's switched on the radio plays something: a station, a theme, an album, a playlist…");
+  return saveBox(box, [preset], box.slot === "knob_long" ? `Holding the knob for 3 seconds now does “${o.title}”.` : `When it's switched on, the radio plays “${o.title}”.`);
+}
 function presetObj(p) {
   switch (p.kind) {
     case "radio": return O["st:" + p.url] || stationObj(p);
@@ -1233,6 +1263,7 @@ function presetObj(p) {
     case "podcast": { const show = refObj({ kind: "podcast", show: p.show }); if (show.title === "Podcast" && p.title) show.title = p.title;
       return p.start ? mk({ id: `bstep:ep:${p.show}:${p.start}`, kind: "episode", pid: p.show, gid: p.start, title: p.start_title || "An episode", h: show.h }) : show; }
     case "action": return ACTION[p.action];
+    case "noise": return O["nz:" + p.colour] || noiseObj(p.colour);
     case "message": return messageObj(p.text);
     case "jingle": return refObj({ kind: "jingle", path: p.path });
     case "birthday": return mk({ id: "bstep:bd:" + p.name.toLowerCase(), kind: "person", key: "person", title: p.name, b: p });
@@ -1240,15 +1271,22 @@ function presetObj(p) {
   return null;
 }
 function buttonView(o, box) {
-  const b = btnOf(o), have = stepsOf(b), n = have.length, max = bStatus?.max_steps || 6, live = o.bank === bStatus?.bank;
+  const b = btnOf(o), have = stepsOf(b), n = have.length, max = o.slot ? 1 : bStatus?.max_steps || 6, live = o.slot || o.bank === bStatus?.bank;
   const notLive = () => toast(`This is a ${o.bank} button; the radio's using its ${bStatus?.bank} set.`);
+  const tryIt = k => !live ? notLive() : o.slot === "knob_long" ? api("/api/knob", { press: "long" }).then(() => setTimeout(poll, 700)).catch(e => toast(e.message))
+    : o.slot ? play(presetObj(have[0])) : pressButton(o.n, k);
   const nowAdd = T("＋ What's playing", async () => {
-    try { gotButtons(await api("/api/buttons", { button: o.n + 1, now: true, add: true, ...(live ? {} : { bank: o.bank }) })); toast(`${o.title}: “${bStatus.now?.label}” added.`); }
-    catch (e) { toast("Not added: " + e.message + "."); } }, "", n >= max);
-  nowAdd.title = `Add what's on now: ${bStatus?.now?.label || ""}`;
+    try { if (o.slot) await saveBox(o, [bStatus.now.preset]);
+          else gotButtons(await api("/api/buttons", { button: o.n + 1, now: true, add: true, ...(live ? {} : { bank: o.bank }) }));
+          toast(`${o.title}: “${bStatus.now?.label}”${o.slot ? "" : " added"}.`); }
+    catch (e) { toast("Not added: " + e.message + "."); } }, "", !o.slot && n >= max);
+  nowAdd.title = `${o.slot ? "Put here" : "Add"} what's on now: ${bStatus?.now?.label || ""}`;
+  const note = o.slot === "knob_long" ? "What holding the knob for 3 seconds does · drop one thing here (it takes the place of what's there) · empty: the radio says its address"
+    : o.slot === "power_on" ? "What plays when the radio's switched on · drop one thing here (it takes the place of what's there) · empty: it carries on with what was on last"
+    : (n > 1 ? `${n} steps: each press moves on one · ` : n ? "Drop something else in and it becomes step 2 · " : "") + "drop things here · drag one to the Trash to take it off";
   box.append(el("div", { className: "wtools" },
-    T("▶ Press it", () => live ? pressButton(o.n) : notLive(), "primary", !n), nowAdd,
-    el("span", { className: "note", textContent: (n > 1 ? `${n} steps: each press moves on one · ` : n ? "Drop something else in and it becomes step 2 · " : "") + "drop things here · drag one to the Trash to take it off" })));
+    T(o.slot ? "▶ Try it" : "▶ Press it", () => tryIt(null), "primary", !n && o.slot !== "knob_long"), o.slot === "knob_long" ? null : nowAdd,
+    el("span", { className: "note", textContent: note })));
   const ul = el("ul", { className: "rows" });
   (b?.steps || []).forEach((st, k) => {
     const it = presetObj(st.preset);
@@ -1256,16 +1294,19 @@ function buttonView(o, box) {
     const src = { id: it.id, where: o.id, parent: o.id, index: k, row: true };
     const li = el("li", { className: "row" + (picked.has(keyOf(src)) ? " sel" : ""), tabIndex: 0 });
     li.dataset.drop = "bstep"; li.dataset.target = o.id; li.dataset.k = k;
-    const p = el("button", { className: "play", type: "button", textContent: "▶", title: "Play this one now" });
-    p.onclick = () => live ? pressButton(o.n, k) : notLive(); p.onpointerdown = e => e.stopPropagation();
-    li.append(el("span", { className: "n", textContent: k + 1 }),
+    const p = el("button", { className: "play", type: "button", textContent: "▶", title: o.slot ? "Try it now" : "Play this one now" });
+    p.onclick = () => tryIt(k); p.onpointerdown = e => e.stopPropagation();
+    li.append(el("span", { className: "n", textContent: o.slot ? "" : k + 1 }),
               el("b", { className: st.playing ? "playing" : "" }, st.label, el("small", { textContent: KIND[it.kind] + (st.playing ? (S?.speaker?.playing === false ? " · tuned, paused" : " · playing") : "") })),
               el("span", { className: "len", textContent: st.named === false ? "pips, until its name is made" : "", title: st.named === false ? "The radio is making its spoken name; until then it gives pips" : "" }), p);
     li._src = src;
     li.addEventListener("pointerdown", e => press(e, li, src));
     ul.append(li);
   });
-  box.append(el("div", { className: "wbody" }, n ? ul : el("div", { className: "empty", textContent: "Empty. Drag something onto this window: a station, a theme, an album, a podcast, a book, a playlist, an action…" })));
+  const empty = o.slot === "knob_long" ? "Nothing here, so holding the knob says the radio's address. Drag an action, a noise, a station… onto this window to change that."
+    : o.slot === "power_on" ? "Nothing here, so the radio carries on with what was on last. Drag a station, a theme, an album, a playlist or a programme onto this window."
+    : "Empty. Drag something onto this window: a station, a theme, an album, a podcast, a book, a playlist, an action…";
+  box.append(el("div", { className: "wbody" }, n ? ul : el("div", { className: "empty", textContent: empty })));
 }
 function moveStep(o, from, to) {
   const t = stepsOf(btnOf(o)).slice(); t.splice(to, 0, t.splice(from, 1)[0]);
@@ -1294,6 +1335,12 @@ async function play(o) {
     else if (o.kind === "episode") await api("/api/podcasts/play", { id: o.pid, guid: o.guid });
     else if (o.kind === "playlist") await api("/api/playlists/play", { name: o.name, shuffle: false, then: "pause" });
     else if (o.kind === "programme") await api("/api/programmes/play", { name: o.title });
+    else if (o.kind === "noise") {                           // this colour on (or, if it's the one on, off)
+      const off = noiseOn(o);
+      await api("/api/instant", { preset: presetOf(o) });
+      await poll(); drawDesk();
+      return toast(off ? "Noise off." : `${o.title}, on top of what's playing. Double-click it again to switch it off.`);
+    }
     else if (["action", "jingle"].includes(o.kind)) {       // over what's on, now
       await api("/api/instant", { preset: presetOf(o) });
       return toast(o.kind === "jingle" ? `Playing the jingle “${o.title}”.` : `${o.title}: now.` + (o.action === "noise" || o.action === "dj" ? " (Switched.)" : ""));
@@ -1320,6 +1367,7 @@ function presetOf(o) {
     case "playlist": return { kind: "playlist", name: o.name, shuffle: false };
     case "programme": return { kind: "programme", name: o.title };
     case "action": return { kind: "action", action: FLIP[o.action] ? o.action.split("_")[0] : o.action };   // (a button switches)
+    case "noise": return { kind: "noise", colour: o.colour };
     case "note": case "message": return { kind: "message", text: o.text };
     case "jingle": return { kind: "jingle", path: o.path };
     case "person": return { kind: "birthday", name: o.b.name, day: o.b.day, month: o.b.month, ...(o.b.year ? { year: o.b.year } : {}) };
@@ -1361,7 +1409,7 @@ async function open(id) {
   if (!o) return;
   if (["track", "station", "episode", "show", "book"].includes(o.kind)) return play(o);
   if (o.kind === "dj") return open(PANEL.dj.id);
-  if (o.kind === "action" || o.kind === "jingle") return play(o);                 // (do it now; drag it to keep it on a button)
+  if (o.kind === "action" || o.kind === "jingle" || o.kind === "noise") return play(o);   // (do it now; drag it to keep it on a button)
   if (o.kind === "panel" && o.key === "library") return open(LISTS.id);   // (each theme has its jingles and messages)
   if (o.kind === "panel" && o.key === "voices") return open(VOICES.id);
   if (o.kind === "panel" && o.key === "birthdays") return open(BDAYS.id);
@@ -1575,7 +1623,9 @@ function folderView(o, box, win) {
       T("Upload a voice…", () => up.click()), up, el("span", { className: "note", textContent: "Double-click a voice to make it the DJ's (the radio restarts) · drop a voice archive here to install it" })].filter(Boolean));
   }
   else if (o.box === "buttons") tools.append(T("Day and night…", () => open(PANEL.buttons.id)),
-    el("span", { className: "note", textContent: `The radio's buttons: its day set and its night set (in use now: ${bStatus?.bank || "day"}) · drop things onto one · open one to put them in order or take them off` }));
+    el("span", { className: "note", textContent: `The radio's buttons: its day set and its night set (in use now: ${bStatus?.bank || "day"}) · drop things onto one · open one to put them in order or take them off · drag one button onto another to swap them` }));
+  else if (o.box === "noise") tools.append(T("Balance…", () => open(PANEL.noise.id)),
+    el("span", { className: "note", textContent: "Double-click a colour to switch it on over what's playing (again: off) · drag one onto a button, or onto the knob" }));
   else if (o.box === "actions") tools.append(el("span", { className: "note", textContent: "Drag an action onto a button on the radio; the time, the pips, the news and the sleep timer can go into programmes too" }));
   else if (o.kind === "list") themeTools(o, tools);
   else if (o.box === "artists") {
@@ -2929,9 +2979,17 @@ async function drop(src, target, ev) {
   if (!dest) return;
   if (dest.kind === "button") {                      // into a button: its next step, or where it was dropped among them
     const at = kind === "bstep" ? +target.dataset.k : null;
-    if (src.parent === dest.id) return at == null || at === src.index ? null : moveStep(dest, src.index, at);
-    if (o.kind === "button") return toast("A button can't go on a button: drag what's in it.");
-    return setPreset(dest.n, o, { bank: dest.bank, at });
+    if (src.parent === dest.id) {                    // within the button: to that place (dropped below the last one: to the end)
+      const to = at == null ? stepsOf(btnOf(dest)).length - 1 : at;
+      return dest.slot || to === src.index ? null : moveStep(dest, src.index, to);
+    }
+    if (o.kind === "button") {                       // a button onto a button: they swap what they hold
+      if (o.slot || dest.slot) return toast("That can't go in there: drag what's in it.");
+      const mine = stepsOf(btnOf(o)), theirs = stepsOf(btnOf(dest));
+      await saveSteps(o.n, theirs, null, o.bank);
+      return saveSteps(dest.n, mine, `Swapped: ${o.title} and ${dest.title} have each other's things.`, dest.bank);
+    }
+    return putIn(dest, o, at);
   }
   if (dest.kind === "list" && kind !== "preset") return dropOnTheme(dest, o);
   if (dest.box === "artists" && O["ls:" + dest.theme]) return dropOnTheme(O["ls:" + dest.theme], o);
@@ -2997,7 +3055,7 @@ async function dropMany(srcs, target, ev) {
   if (kind === "preset") return setPreset(+target.dataset.n, objs);
   const dest = O[target.dataset.target];
   if (!dest) return;
-  if (dest.kind === "button") return srcs[0].parent === dest.id ? null : setPreset(dest.n, objs, { bank: dest.bank, at: kind === "bstep" ? +target.dataset.k : null });
+  if (dest.kind === "button") return srcs[0].parent === dest.id ? null : putIn(dest, objs, kind === "bstep" ? +target.dataset.k : null);
   if (dest.kind === "trash") return trashMany(srcs);
   if (dest.kind === "playlist") return addManyToPlaylist(dest, objs);
   for (const s of srcs) await drop(s, target, ev);   // a folder (moves), a programme (blocks): one by one, in order
@@ -3045,8 +3103,8 @@ async function trashMany(srcs) {
   if (from?.kind === "button") {                      // off a button, all at once
     const was = stepsOf(btnOf(from)), drop_ = new Set(srcs.map(s => s.index));
     pickOnly(null);
-    return gone(`Took ${srcs.length} things off ${from.title}.`, async () => { await saveSteps(from.n, was.filter((_, i) => !drop_.has(i)), null, from.bank);
-      return () => saveSteps(from.n, was, null, from.bank); });
+    return gone(`Took ${srcs.length} things off ${from.title}.`, async () => { await saveBox(from, was.filter((_, i) => !drop_.has(i)));
+      return () => saveBox(from, was); });
   }
   if (from?.kind === "playlist") {                    // out of a playlist, all at once
     const drop_ = new Set(srcs.map(s => s.index));
@@ -3092,19 +3150,19 @@ function trash(src) {
   const o = O[src.id];
   if (src.where === "desk") {
     const p = desk.find(p => p.id === src.id);
-    if (p && (p.alias || !["folder", "trash"].includes(o.kind))) { desk.splice(desk.indexOf(p), 1); saveDesk(); drawDesk(); return toast(`Took “${o.title}” off the desktop. The real one is still on the radio.`); }
+    if (p && (p.alias || !(["folder", "trash"].includes(o.kind) || o.slot))) { desk.splice(desk.indexOf(p), 1); saveDesk(); drawDesk(); return toast(`Took “${o.title}” off the desktop. The real one is still on the radio.`); }
     return toast(`“${o.title}” stays on the desktop.`);
   }
   const from = O[src.parent];
   if (from?.kind === "button") {                      // off the button (the thing itself stays on the radio)
     const was = stepsOf(btnOf(from));
-    return gone(`Took “${o.title}” off ${from.title}.`, async () => { await saveSteps(from.n, was.filter((_, i) => i !== src.index), null, from.bank);
-      return () => saveSteps(from.n, was, null, from.bank); });
+    return gone(`Took “${o.title}” off ${from.title}.`, async () => { await saveBox(from, was.filter((_, i) => i !== src.index));
+      return () => saveBox(from, was); });
   }
   if (o.kind === "button") {                          // a button itself: emptied (it can't be thrown away)
     const was = stepsOf(btnOf(o));
     if (!was.length) return toast(`${o.title} is empty already.`);
-    return gone(`Emptied ${o.title}.`, async () => { await saveSteps(o.n, [], null, o.bank); return () => saveSteps(o.n, was, null, o.bank); });
+    return gone(`Emptied “${o.title}”.`, async () => { await saveBox(o, []); return () => saveBox(o, was); });
   }
   if (from?.kind === "playlist") {
     const items = from.items.filter((_, i) => i !== src.index);

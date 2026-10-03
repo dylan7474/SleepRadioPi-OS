@@ -437,6 +437,14 @@ def make_handler(station: Station, output: Mp3Output, speaker=None,
                 self._media(path.rsplit("/", 1)[1])
             elif path in ("/api/buttons", "/api/buttons/press") and presets is not None:
                 self._buttons(path.endswith("press"))
+            elif path == "/api/buttons/slot" and presets is not None:
+                try:                             # {"slot": "knob_long" | "power_on", "preset": {...} | null}
+                    body = self._body()
+                    presets.set_slot(body["slot"], body["preset"])
+                except (ValueError, TypeError, KeyError, AttributeError) as e:
+                    self._error(str(e) if isinstance(e, ValueError) else "send {\"slot\", \"preset\"}")
+                    return
+                self._send(json.dumps(presets.status()).encode(), "application/json")
             elif path == "/api/buttons/key" and presets is not None and presets.keys:
                 self._button_key()
             elif path == "/api/instant" and presets is not None:
@@ -589,6 +597,8 @@ def make_handler(station: Station, output: Mp3Output, speaker=None,
                 speaker.set_knob_mode(settings["knob_mode"])
             if "messages" in changed:
                 station.set_messages(settings["messages"])
+            if changed & set(presets_mod.SLOTS) and presets is not None:
+                presets.load_slots({k: settings.get(k) for k in presets_mod.SLOTS if k in changed})
             if changed & {"buttons", "buttons_night", "buttons_bank", "buttons_auto"} and presets is not None:
                 presets.load_all(settings.get("buttons"), settings.get("buttons_night"),
                                  settings.get("buttons_bank"), settings.get("buttons_auto"))
@@ -1423,6 +1433,8 @@ def make_handler(station: Station, output: Mp3Output, speaker=None,
                 if seeker is not None:
                     seeker.turn(clicks, speed_up=False)   # (one step a click)
                 done = seeker is not None
+            elif presets is not None:            # held: what's on the knob, else the address
+                done = presets.knob_long()
             else:
                 done = announcer.speak() if announcer is not None else False
             self._send(json.dumps({"press": press, "done": done, **speaker.status()}).encode(),

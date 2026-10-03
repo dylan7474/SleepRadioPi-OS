@@ -44,7 +44,8 @@ LIVE = {"speaker_mono", "speaker_eq", "speaker_highpass_hz", "broadcast_artist",
         "broadcast_jingle_enabled", "broadcast_jingle_every", "news_enabled", "startup_sound", "web_stream",
         "broadcast_announcer_speed", "news_speed", "radio_stations", "buttons", "noise_on", "noise_kind", "noise_mix",
         "podcasts", "messages", "buttons_night", "buttons_bank", "buttons_auto", "broadcast_dj",
-        "glow_day", "glow_night", "meter_trim_db", "playlists", "knob_mode", "programmes", "programme_mode"}
+        "glow_day", "glow_night", "meter_trim_db", "playlists", "knob_mode", "programmes", "programme_mode",
+        "knob_long", "power_on"}
 
 CHOICES = {
     "buttons_bank": {"day", "night"},
@@ -135,6 +136,11 @@ def _check(name: str, value):
     if name in ("buttons", "buttons_night"):
         try:
             return presets.validate_all(value)
+        except ValueError as e:
+            raise BadSettings(f"{name}: {e}") from None
+    if name in presets.SLOTS:
+        try:
+            return presets.validate_slot(name, value)
         except ValueError as e:
             raise BadSettings(f"{name}: {e}") from None
     if name == "buttons_auto":
