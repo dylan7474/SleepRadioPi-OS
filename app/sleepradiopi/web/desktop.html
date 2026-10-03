@@ -301,7 +301,8 @@
   .knob { width: 66px; height: 66px; border-radius: 50%; border: 0; background: radial-gradient(circle at 35% 30%, #5b86d6, var(--knob) 55%, #1d3d7c);
           box-shadow: 0 4px 10px #0006, inset 0 0 0 4px #ffffff1a; position: relative; }
   .knob::after { content: ""; position: absolute; left: 32px; top: 8px; width: 3px; height: 18px; border-radius: 2px; background: #fff; transform-origin: 1.5px 25px; transform: rotate(var(--rot, 0deg)); }
-  .rvol { white-space: pre-line; text-align: center; font-size: 11px; color: #6b6558; margin-top: 3px; font-variant-numeric: tabular-nums; }
+  .rsleep { margin-top: 1px; opacity: .45; white-space: nowrap; } .rsleep.on { opacity: 1; color: var(--amber-deep); font-weight: 600; }
+  .rvol { text-align: center; font-size: 11px; color: #6b6558; margin-top: 3px; font-variant-numeric: tabular-nums; }
   .presets { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-top: 10px; }
   .pbtn { display: flex; flex-direction: column; align-items: center; gap: 4px; position: relative; }
   /* a button with steps: a small counter on its key (always there, faded out with one thing on it) */
@@ -1216,7 +1217,7 @@ function radioEl() {
     el("span", { className: "tlabel", textContent: "BACK · SKIP" }),
     tk("rNext", "skip", "Skip to what's next", async () => { try { await api("/api/skip", {}); setTimeout(poll, 600); } catch (e) { toast(e.message); } }));
   const gr = () => { const g = el("div", { className: "grille", title: "Speakers: stereo, EQ, low cut, the knob · drop a saved sound here" }); g.onclick = () => open(PANEL.speakers.id); g.dataset.drop = "grille"; return g; };
-  const face = el("div", { className: "rface" }, gr(), el("div", {}, knob, el("div", { className: "rvol", id: "rVol", textContent: volText(vol) })), gr());
+  const face = el("div", { className: "rface" }, gr(), el("div", {}, knob, el("div", { className: "rvol", id: "rVol", textContent: volText(vol) }), el("div", { className: "rvol rsleep" + (sleepLeft() ? " on" : ""), id: "rSleep", textContent: sleepText() })), gr());
   const pre = el("div", { className: "presets", id: "rPresets" });
   shownButtons().forEach((b, i) => {
     const pb = el("div", { className: "pbtn" + (b.playing ? " on" : "") });
@@ -1290,6 +1291,7 @@ function updateRadio() {            // the live bits, without redrawing the desk
   const vol = S?.speaker?.volume ?? 0;
   $("rKnob").style.setProperty("--rot", (vol / 100 * 270 - 135) + "deg");
   $("rVol").textContent = volText(vol);
+  $("rSleep").textContent = sleepText(); $("rSleep").classList.toggle("on", !!sleepLeft());
   if ($("rPrev")) { $("rPrev").disabled = !S?.can_previous; $("rNext").disabled = !S?.can_skip; }
   const msw = document.querySelector("#radio .sw"); if (msw) msw.setAttribute("aria-checked", String(!!S?.programme_mode));
   const pbs = $("rPresets")?.children || [];
@@ -1405,8 +1407,10 @@ const btnOf = o => o.slot ? bStatus?.slots?.[o.slot] : (bStatus?.sets?.[o.bank] 
 const noiseOn = o => !!S?.speaker?.noise?.on && S.speaker.noise.kind === o.colour;
 const sleepOn = o => !!o.sleep && S?.speaker?.sleep_min === o.sleep;       // this sleep time is the one counting down
 const sleepLeft = () => S?.speaker?.sleep_left_s != null ? Math.ceil(S.speaker.sleep_left_s / 60) : 0;
-// under the radio's knob: the volume, and the sleep timer's minutes while it counts down
-const volText = vol => !S?.speaker ? "" : (S.speaker.playing ? "Volume " + vol : "Paused") + (sleepLeft() ? `\n☾ sleep ${sleepLeft()} min` : "");
+// under the radio's knob: the volume, and a line for the sleep timer that's always there (faint
+// when it's off, lit with its minutes while it counts down: the radio never changes size)
+const volText = vol => !S?.speaker ? "" : S.speaker.playing ? "Volume " + vol : "Paused";
+const sleepText = () => sleepLeft() ? `☾ sleep ${sleepLeft()} min` : "☾ sleep off";
 const INSTANT_KINDS = ["action", "message", "jingle", "birthday", "noise"];      // (done over what's on: nothing to tune to)
 // save what's in a button's folder -- or in the knob's, or the switch-on one's (one thing each)
 const saveBox = (o, steps, said) => !o.slot ? saveSteps(o.n, steps, said, o.bank)
