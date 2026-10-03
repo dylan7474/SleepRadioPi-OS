@@ -10,7 +10,9 @@ button, or the Buttons window); there's no hold-to-store on the case.
 A button can hold several **steps** (up to MAX_STEPS): stations on one,
 podcasts on the next, audiobooks on a third. Pressing it again moves on a
 step, round and round. It waits STEP_SETTLE_S after the last press before
-playing (so stepping past a book doesn't move its place), then gives one pip
+playing (so stepping past a book doesn't move its place), then says the
+step's name -- made ahead of time (io/button_names.py), so there's nothing
+to wait for -- or, until that's ready (or with the DJ off), gives one pip
 for step one, two for step two... Coming back to a button from something
 else, it picks up at the step it was last on. (The cathedral's selector has
 no second press: it plays a position's first step.)
@@ -224,6 +226,13 @@ def label(preset: dict | None, station_name: Callable[[dict], str] | None = None
     return preset["profile"] or (f"{preset['artist']} Radio" if preset["artist"] else brand.name)
 
 
+def spoken(preset: dict, name: str) -> str:
+    """A step's name as it's said when a button lands on it (name: its label)."""
+    if preset["kind"] == "playlist":
+        return preset["name"]
+    return name.replace(" — ", ", ")
+
+
 def same(a: dict | None, b: dict | None) -> bool:
     """Do two presets play the same thing?"""
     if a is None or b is None or a["kind"] != b["kind"]:
@@ -265,6 +274,7 @@ class Presets:
         self.keys = None                 # the knob's key handlers {keycode: (down, up)}: the page's buttons use them too
         self.config_file = config_file
         self.announcer = announcer       # says the address
+        self.names = None                # the steps' spoken names, made ahead (io/button_names.py; main sets it)
         self.banks = {"day": self._safe(presets, count), "night": self._safe(night, count)}
         self.bank = bank if bank in BANKS else "day"
         try:
@@ -415,6 +425,10 @@ class Presets:
         """A button for the page: its steps, and (as "preset" and "label") the one
         that's playing -- or, with none playing, its first."""
         rows = [{"preset": p, "label": self.label(p), "playing": same(p, now)} for p in steps(button)]
+        if self.names is not None and len(rows) > 1:
+            for r in rows:                   # (said when the button lands on it: is its name made yet?)
+                if r["preset"]["kind"] not in INSTANT:
+                    r["named"] = self.names.has(spoken(r["preset"], r["label"]))
         on = next((k for k, r in enumerate(rows) if r["playing"]), None)
         shown = rows[on or 0] if rows else {"preset": None, "label": self.label(None)}
         return {"preset": shown["preset"], "label": shown["label"], "playing": on is not None,
@@ -475,6 +489,18 @@ class Presets:
             save_setting(self.config_file, "buttons", self.banks["day"])
             save_setting(self.config_file, "buttons_night", self.banks["night"])
             save_setting(self.config_file, "buttons_bank", self.bank)
+        self.bake()
+
+    def bake(self) -> None:
+        """Have the spoken names made for the steps that'll want one (the buttons
+        with more than one thing on them; actions make their own sound)."""
+        if self.names is None:
+            return
+        try:
+            self.names.want([spoken(p, self.label(p)) for bank in self.banks.values() for button in bank
+                             if isinstance(button, list) for p in button if p["kind"] not in INSTANT])
+        except Exception:
+            log.exception("button names")
 
     # --- day and night ------------------------------------------------------------------
 
@@ -656,8 +682,20 @@ class Presets:
         self._at[(self.bank, index)] = k
         self._last = (self.bank, index, k, _time.monotonic())
         if not quiet and preset["kind"] not in INSTANT:      # (an action is heard anyway: its own beep or words)
-            self._clip(step_pips(k + 1), "Button")
+            self._clip(self._step_sound(preset, k), "Button")
         self._play(preset, f"button {index + 1}")
+
+    def _step_sound(self, preset: dict, k: int) -> np.ndarray:
+        """Where the button landed: the step's name, if it's been made (and the DJ's on), else its pips."""
+        if self.names is not None and getattr(self.station, "_has_voice", False) and getattr(self.station, "dj_on", True):
+            try:
+                name = self.names.clip(spoken(preset, self.label(preset)))
+            except Exception:
+                log.exception("button names")
+                name = None
+            if name is not None and len(name):
+                return name
+        return step_pips(k + 1)
 
     def _play(self, preset: dict, what: str) -> None:
         """Play a preset (tuning to it unless it's what's on already), or do it if it's an action."""

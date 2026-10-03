@@ -648,18 +648,31 @@ The cards:
   through by pressing it again, round and round — stations on one button,
   podcasts on the next, audiobooks on a third. A button with steps waits
   `STEP_SETTLE_S` (0.8 s) after its last press before playing, so stepping
-  past a book or a podcast doesn't tune it or move its place; then it gives
-  one pip for step one, two for step two... (pips only: no speech to make).
+  past a book or a podcast doesn't tune it or move its place; then it says
+  the step's name, or gives one pip for step one, two for step two...
+  **The names are made ahead of time** (`io/button_names.py`): when the
+  buttons change, the names of steps on buttons with more than one are made
+  in the background, one at a time once the show is on air, and kept as
+  small raw files in `~/.cache/sleepradiopi/buttons` (named by a hash of
+  the voice, its speed and volume, and the words) — so a press only plays a
+  file, with no speech to make and no wait. A name not made yet (or made
+  for another voice: they're made again) gives the pips that once; with the
+  DJ off it's always pips. Files for names no longer on a button are
+  deleted. `GET /api/buttons` has `named` on each such step.
   The next press means the step after the one that's playing; coming back
   to a button from something else, the step it was last on (remembered until
   a restart). An action in the steps is done and stepped past: within 30 s
   (`STEP_RESET_S`) the next press goes on to the one after it. A second
   press within 0.15 s is a switch bounce and ignored (`PRESS_GUARD_S`).
-  On the desktop, **dropping something on a button adds it as the next
-  step** (on the radio's front, or on the button's plate in the Buttons
-  window); the window shows each button's steps with keys to play one now,
-  move it earlier or later, or take it off, plus *Add a step…*, *＋ What's
-  playing* and *Empty it*. The key on the radio's front shows a small
+  On the desktop **each button is a container, like a folder** (one per
+  button in each of the day and night sets): dropping something on a button
+  — on the radio's front, on its icon in the Buttons window, or into its
+  open window — adds it as the next step (dropped on a row: at that place).
+  Open one (double-click its icon, or click the name under its key on the
+  radio) to see what's on it: drag a row up or down to change the order, to
+  the Trash to take it off (with Undo), or onto another button to put it
+  there too; *▶ Press it*, a ▶ on each row to play that step now, and *＋
+  What's playing*. A button's icon dragged to the Trash empties it. The key on the radio's front shows a small
   counter (3, or 2/3 while step two plays). With one thing on a button
   nothing changes: no wait, no pips, saved as before. The cathedral's
   selector can't be pressed again, so it plays a position's first step.

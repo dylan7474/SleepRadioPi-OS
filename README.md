@@ -124,10 +124,13 @@ software, and the case to print.
   play: pausing is the knob's job. **A button can hold several things** (up
   to six: your stations on one, podcasts on the next, audiobooks on a
   third): press it again to step on to the next, round and round. The radio
-  waits a moment after your last press, then gives **one pip for step one,
-  two for step two**... and plays; come back to a button later and it picks
-  up at the step it was on. Buttons are set from the desktop page (drag
-  things onto a button, or *What the buttons play…*): there's no
+  waits a moment after your last press, **says the step's name** ("BBC
+  Radio 2": the names are made ahead of time, so there's no wait; until one
+  is ready, or with the DJ off, it gives one pip for step one, two for step
+  two...) and plays; come back to a button later and it picks
+  up at the step it was on. On the desktop page **each button is a
+  container, like a folder**: drag things onto it, open it to drag them
+  into another order, or to the Trash to take them off. There's no
   hold-to-store on the case, so a long press can't wipe one. The same four are on the web page's front.
   There are **two sets of the four, day and night**: hold **buttons 2 and
   3** together for a second to swap (or use the page's ☀ / ☾ switch), and

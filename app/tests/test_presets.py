@@ -262,6 +262,47 @@ def test_steps_are_checked_saved_and_follow_renames(tmp_path: Path) -> None:
         p.set(0, [RP] * 7)
 
 
+def test_a_step_says_its_name_once_its_been_made(tmp_path: Path, monkeypatch) -> None:
+    """Names are made in the background when the buttons change; a press only plays a file."""
+    from sleepradiopi.io.button_names import Names
+    monkeypatch.setattr(presets_mod, "STEP_SETTLE_S", 0.05)
+    st, ctl, conf, p = _presets(tmp_path, [[RP, RP2], RP3])
+    made, voice, ready = [], ["amy"], [False]
+
+    def render(text):
+        made.append(text)
+        return np.full((500, 2), 7, np.int16)
+    st.tts, st.dj_voice = object(), "amy"                  # (a voice: the DJ's on)
+    played = []
+    ctl.play_clip = lambda clip: played.append(len(clip.audio))
+    names = p.names = Names(render, tmp_path / "names", key=lambda: voice[0], ready=lambda: ready[0], between_s=0)
+    monkeypatch.setattr("sleepradiopi.io.button_names.WAIT_READY_S", 0.02)
+    p.bake()
+    p.press(0); _settle(p)                           # not made yet (the show isn't under way): pips
+    assert made == [] and played == [len(presets_mod.step_pips(1))]
+    assert p.status()["buttons"][0]["steps"][0]["named"] is False and "named" not in p.status()["buttons"][1]["steps"][0]
+    ready[0] = True
+    names._queue.join()
+    assert sorted(made) == ["Radio Paradise", "Radio Two"]        # (not Radio Three: one thing on its button)
+    assert p.status()["buttons"][0]["steps"][1]["named"] is True
+    p.press(0); _settle(p)                           # step two: its name, from the file
+    assert played[-1] == 500 and len(made) == 2
+    st.set_dj(dj_on=False)
+    p.press(0); _settle(p)                           # the DJ off: pips
+    assert played[-1] == len(presets_mod.step_pips(1))
+    st.set_dj(dj_on=True)
+    p.set(0, [RP, RP3])                              # Radio Two off the button: its file goes, Radio Three's is made
+    names._queue.join()
+    assert made[-1] == "Radio Three" and len(list((tmp_path / "names").glob("*.raw"))) == 2
+    voice[0] = "joe"                                 # another voice: pips this once, and the name's made again
+    p.press(0, 1)
+    assert played[-1] == len(presets_mod.step_pips(2))
+    names._queue.join()
+    assert made[-1] == "Radio Three" and len(made) == 4
+    assert presets_mod.spoken({"kind": "playlist", "name": "Sunday", "shuffle": True}, "Sunday (shuffled)") == "Sunday"
+    assert presets_mod.spoken({"kind": "album"}, "Rubber Soul — The Beatles") == "Rubber Soul, The Beatles"
+
+
 def test_actions_in_the_steps(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setattr(presets_mod, "STEP_SETTLE_S", 0.05)
     st, ctl, conf, p = _presets(tmp_path, [[RP, {"kind": "action", "action": "sleep"}]])

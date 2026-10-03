@@ -541,6 +541,14 @@ def main() -> None:
                                       settings.buttons_night, settings.buttons_bank, settings.buttons_auto,
                                       count=presets_mod.MAX_N if cathedral else presets_mod.N, selector=cathedral)
         presets.keep_auto()
+        if station._has_voice and not cathedral:
+            # A button with steps says the one it landed on: the names are made ahead, in the
+            # background (again if the voice, its speed or its volume changes); pips until then.
+            from sleepradiopi.io.button_names import Names
+            presets.names = Names(station.render_speech, Path.home() / ".cache" / "sleepradiopi" / "buttons",
+                                  key=lambda: f"{station.dj_voice}|{station.config.announcer_speed}|{station.announcer_volume}",
+                                  ready=on_air)
+            presets.bake()
         # An audiobook steps back a minute after the sleep timer, and pauses the radio at its end.
         station.paused_by_sleep = lambda: control.slept
         station.speaker_paused = lambda: control.paused
