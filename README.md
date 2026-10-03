@@ -128,9 +128,10 @@ software, and the case to print.
   Radio 2": the names are made ahead of time, so there's no wait; until one
   is ready, or with the DJ off, it gives one pip for step one, two for step
   two...) and plays; come back to a button later and it picks
-  up at the step it was on. On the desktop page **each button is a
-  container, like a folder**: drag things onto it, open it to drag them
-  into another order, or to the Trash to take them off. There's no
+  up at the step it was on. On the desktop page there's a **Buttons folder
+  with a folder for each button** (four for the day, four for the night):
+  drag things onto one, open it to drag them into another order, or to the
+  Trash to take them off. (The phone page is a remote control only.) There's no
   hold-to-store on the case, so a long press can't wipe one. The same four are on the web page's front.
   There are **two sets of the four, day and night**: hold **buttons 2 and
   3** together for a second to swap (or use the page's ☀ / ☾ switch), and

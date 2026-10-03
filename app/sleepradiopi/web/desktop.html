@@ -398,10 +398,10 @@
   .sbtn.danger { color: var(--red); }
   .sbtn:disabled { opacity: .35; cursor: default; }
   /* a button is a container: its icon is the radio's steel key, its window lists what's on it */
-  .g-btn { border-radius: 50%; background: radial-gradient(circle at 40% 35%, #fff, #c8ccd2 70%, #9aa0a8); box-shadow: 0 3px 6px #0005, inset 0 -2px 3px #0002;
-           display: grid; place-items: center; color: #444; font: 700 var(--gs, 24px)/1 var(--display); width: 54px; height: 54px; margin: 3px; }
-  .g-btn.on { box-shadow: 0 0 0 3px var(--amber), 0 3px 6px #0005; }
-  .set .grid.btnshelf { min-height: 0; padding: 2px 0; justify-content: space-around; }
+  .g-bfolder { display: grid; place-items: center; color: #8d5a12; font: 700 var(--gs, 24px)/1 var(--display); text-shadow: 0 1px 0 #ffe9b8b0; }
+  .g-bfolder.night { background: linear-gradient(180deg, #a9b6d3, #6f82ad); color: #24365c; text-shadow: 0 1px 0 #dfe6f6b0; }
+  .g-bfolder.night::before { background: #8d9dc2; }
+  .g-bfolder.on { outline: 3px solid var(--amber); outline-offset: 2px; }
   .row.over { box-shadow: 0 -2px 0 var(--blue); }
   .row b.playing { color: var(--amber-deep); font-weight: 700; }
   .pill { border-radius: 99px; padding: 3px 11px; }
@@ -549,7 +549,10 @@ const JINGLES = mk({ id: "box:jingles", kind: "folder", title: "Jingles", box: "
 const SHOW = mk({ id: "show", kind: "show", title: "Sleep Radio" });
 // the radio's buttons are containers too: one each, in the day set and the night set (what's in them: bStatus)
 const BTNS = Object.fromEntries(["day", "night"].map(b => [b, [0, 1, 2, 3, 4, 5].map(i =>
-  mk({ id: `btn:${b}:${i}`, kind: "button", bank: b, n: i, title: `Button ${i + 1}` + (b === "night" ? " (night)" : ""), sym: String(i + 1) }))]));
+  mk({ id: `btn:${b}:${i}`, kind: "button", bank: b, n: i, title: `${b === "night" ? "Night" : "Day"} button ${i + 1}`, sym: String(i + 1) }))]));
+// ...kept in a Buttons folder on the desktop: the day set's, then the night set's
+const BUTTONS_BOX = mk({ id: "box:buttons", kind: "folder", title: "Buttons", box: "buttons", sym: "4", loaded: true,
+  kids: ["day", "night"].flatMap(b => BTNS[b].slice(0, 4).map(o => o.id)) });
 // settings: each one an object; for now each opens the classic page's version in a window
 const PANELS = [
   ["dj", "The DJ", "DJ", 40, "dj"], ["speakers", "Speakers", "♫", 28, "speakers"], ["buttons", "Buttons", "4", 200, null],
@@ -604,6 +607,8 @@ async function loadFolder(f) {
   } else if (f.box === "stations") {
     const d = await api("/api/radio");
     f.kids = d.stations.map(s => stationObj(s).id);
+  } else if (f.box === "buttons") {
+    await loadButtons();
   } else if (f.box === "playlists") {
     await loadPlaylists();
   } else if (f.box === "programmes") {
@@ -786,6 +791,7 @@ const FOLDER_PIC = {
   lists: '<circle cx="9" cy="8" r="3"/><path d="M3.5 19a5.5 5.5 0 0 1 11 0"/><circle cx="16.5" cy="9" r="2.4"/><path d="M15.5 14.2a4.6 4.6 0 0 1 5.5 4.8"/>',
   artists: '<circle cx="9" cy="8" r="3"/><path d="M3.5 19a5.5 5.5 0 0 1 11 0"/><circle cx="16.5" cy="9" r="2.4"/><path d="M15.5 14.2a4.6 4.6 0 0 1 5.5 4.8"/>',
   actions: '<path d="M13 2.5 5 13.5h6l-1 8 8-11h-6z"/>',
+  buttons: '<circle cx="7" cy="8" r="2.6"/><circle cx="17" cy="8" r="2.6"/><circle cx="7" cy="16.5" r="2.6"/><circle cx="17" cy="16.5" r="2.6"/>',
   jingles: '<path d="M6 16.5V11a6 6 0 0 1 12 0v5.5l1.5 1.5h-15z"/><path d="M10 20.5a2 2 0 0 0 4 0"/>',
   voices: '<path d="M4 5.5h16v10H10l-4.5 4v-4H4z"/><path d="M8 9.5h8M8 12h5"/>',
 };
@@ -805,7 +811,7 @@ function glyph(o) {
     case "episode": g.className += " g-episode"; g.textContent = "EP"; break;
     case "book": g.className += " g-book"; g.textContent = initials(o.title); break;
     case "playlist": g.className += " g-playlist"; g.append(el("i"), el("i"), el("i")); break;
-    case "button": g.className += " g-btn" + (btnOf(o)?.playing ? " on" : ""); g.textContent = o.n + 1; break;
+    case "button": g.className += " g-folder g-bfolder" + (o.bank === "night" ? " night" : "") + (btnOf(o)?.playing ? " on" : ""); g.textContent = o.n + 1; break;
     case "programme": {
       g.className += " g-programme";
       const tl = timeline(o), stops = [];
@@ -994,11 +1000,11 @@ function loadDesk() {
     for (const p of s.icons) { if (!O[p.id] && p.snap) mk({ ...p.snap, kids: [], items: [], eps: [], blocks: [] }); if (O[p.id]) desk.push({ id: p.id, x: p.x, y: p.y, alias: !!p.alias }); }
     radioPos = s.radio || null;
     desk = desk.filter(p => ![SHOW.id, POWER_ON.id, NOTES.id, JINGLES.id].includes(p.id));   // (jingles and messages live in each theme)
-    for (const f of [ACTIONS_BOX, LISTS])      // (new since the layout was saved: in the first free spot)
+    for (const f of [ACTIONS_BOX, LISTS, BUTTONS_BOX])      // (new since the layout was saved: in the first free spot)
       if (!desk.some(p => p.id === f.id)) desk.push({ id: f.id, ...freeSpot() });
   }
   if (!desk.length) {
-    [MUSIC, ONDEMAND, BOOKS, PODCASTS, STATIONS, PLAYLISTS, PROGRAMMES, LISTS, ACTIONS_BOX].forEach((f, i) => desk.push({ id: f.id, x: 18 + Math.floor(i / 8) * 122, y: 14 + (i % 8) * 92 }));
+    [MUSIC, ONDEMAND, BOOKS, PODCASTS, STATIONS, PLAYLISTS, PROGRAMMES, LISTS, ACTIONS_BOX, BUTTONS_BOX].forEach((f, i) => desk.push({ id: f.id, x: 18 + Math.floor(i / 8) * 122, y: 14 + (i % 8) * 92 }));
     [DJ, BDAYS].forEach((o, i) => desk.push({ id: o.id, x: 140, y: 14 + i * 100, alias: false }));
   }
 }
@@ -1089,8 +1095,8 @@ function radioEl() {
     pb.append(btn, lbl, el("i", { textContent: stepCount(b) }));
     pre.append(pb);
   });
-  const plink = el("button", { className: "plink", type: "button", textContent: "What the buttons play…", title: "The buttons, as containers: open one, drop things in, drag them out" });
-  plink.onclick = () => open(PANEL.buttons.id);
+  const plink = el("button", { className: "plink", type: "button", textContent: "What the buttons play…", title: "The Buttons folder: open a button, drop things in, drag them out" });
+  plink.onclick = () => open(BUTTONS_BOX.id);
   const turn = el("button", { className: "turn", type: "button", textContent: "↻ Settings on the back" });
   turn.onclick = turnRadio;
   const badge = el("div", { className: "badge", textContent: radioName.toUpperCase(), title: "This radio" });
@@ -1190,7 +1196,9 @@ async function poll() {
 let bStatus = null, viewBank = null;
 async function loadButtons() {
   try { bStatus = await api("/api/buttons"); buttons = bStatus.buttons; } catch { buttons = []; bStatus = null; }
+  buttonKids();
 }
+function buttonKids() { BUTTONS_BOX.kids = ["day", "night"].flatMap(b => BTNS[b].slice(0, bStatus?.count || 4).map(o => o.id)); }
 const shownBank = () => viewBank || bStatus?.bank || "day";
 function shownButtons() {
   if (!bStatus || !bStatus.sets || shownBank() === bStatus.bank) return buttons;
@@ -1203,7 +1211,7 @@ const buttonTitle = (b, i) => { const n = stepsOf(b).length;
   return `Button ${i + 1}: ` + (n > 1 ? b.steps.map(s => s.label).join(" → ") + " · press again to step on" : b.label); };
 const stepKey = p => [p.kind, p.url ?? p.folder ?? p.key ?? p.show ?? p.action ?? p.text ?? p.path ?? p.profile ?? p.name ?? "", p.root || "", p.start || ""].join("|").toLowerCase();
 function gotButtons(st) {            // the radio's answer: the front, and the Buttons window if it's open
-  bStatus = st; buttons = st.buttons;
+  bStatus = st; buttons = st.buttons; buttonKids();
   const w = W.find(w => w.id === PANEL.buttons.id); if (w?.data) w.data = st;
   drawDesk();
 }
@@ -1566,6 +1574,8 @@ function folderView(o, box, win) {
     tools.append(...[o.data && !o.data.has_standard ? T("Download the standard voice", async () => { try { await api("/api/voices/standard", {}); toast("Downloading the standard voice onto the radio…"); } catch (e) { toast(e.message); } }) : null,
       T("Upload a voice…", () => up.click()), up, el("span", { className: "note", textContent: "Double-click a voice to make it the DJ's (the radio restarts) · drop a voice archive here to install it" })].filter(Boolean));
   }
+  else if (o.box === "buttons") tools.append(T("Day and night…", () => open(PANEL.buttons.id)),
+    el("span", { className: "note", textContent: `The radio's buttons: its day set and its night set (in use now: ${bStatus?.bank || "day"}) · drop things onto one · open one to put them in order or take them off` }));
   else if (o.box === "actions") tools.append(el("span", { className: "note", textContent: "Drag an action onto a button on the radio; the time, the pips, the news and the sleep timer can go into programmes too" }));
   else if (o.kind === "list") themeTools(o, tools);
   else if (o.box === "artists") {
@@ -2019,17 +2029,14 @@ const UI = {
     load: async () => { await Promise.all([LISTS, STATIONS, PLAYLISTS, PROGRAMMES, PODCASTS, BOOKS, NOTES, JINGLES, BDAYS].filter(f => !f.loaded).map(f => loadFolder(f).catch(() => {}))); return api("/api/buttons"); },
     build: (b, act) => {
       buttons = b.buttons; updateRadio();
-      const bank = shownBank(), live = bank === b.bank;
       const auto = b.auto || {};
       const night = el("input", { type: "time", value: hhmm(auto.night_min ?? 1260), id: "b-night" }), day = el("input", { type: "time", value: hhmm(auto.day_min ?? 420), id: "b-day" });
       const saveAuto = on => act(() => api("/api/buttons/auto", { on, night_min: minsOf(night.value), day_min: minsOf(day.value) }));
       night.onchange = () => saveAuto(!!auto.on); day.onchange = () => saveAuto(!!auto.on);
       return [
-        grp(`The ${bank} buttons` + (live ? "" : ` · the radio's using its ${b.bank} set`),
-          (() => { const g = el("div", { className: "grid btnshelf" }); for (let i = 0; i < (b.count || 4); i++) g.append(iconEl(BTNS[bank][i], { where: PANEL.buttons.id })); return g; })(),
-          help("Each button is a container, like a folder. Drag things onto it: an album, a folder, a station, a theme, a podcast or one of its episodes, a book, a playlist, a programme, a message, a jingle, a birthday, or an action. Double-click a button to open it: drag what's in it up or down to change the order, or to the Trash to take it off."),
-          help("One thing on a button and it plays it. Several, and each press moves on a step, round and round: the radio waits a moment after your last press, says the step's name (pips until the name has been made, or with the DJ off), then plays. Coming back to a button, it picks up where it was. Buttons only play: the knob pauses."),
-          line(sbtn("Actions folder", () => open(ACTIONS_BOX.id)))),
+        grp("What the buttons play",
+          help("That's in the Buttons folder on the desktop: a folder for each button, four for the day and four for the night. Drop things onto one; open it to put them in order, or drag one to the Trash."),
+          line(sbtn("Open the Buttons folder", () => open(BUTTONS_BOX.id), "primary"))),
         b.bank ? grp("Day and night sets", srow("Set in use", seg([["day", "Day"], ["night", "Night"]], b.bank, v => act(() => api("/api/buttons/bank", { bank: v })))),
           srow("Swap by the clock", sw(auto.on, v => saveAuto(v), "Swap by the clock")), srow("Night from", night), srow("Day from", day),
           help("Or hold buttons 2 and 3 together for a second. Each set has its own four.")) : null,
@@ -2964,6 +2971,7 @@ async function drop(src, target, ev) {
     return;
   }
   if (dest.box === "playlists") return toast("Drop it onto one of the playlists.");
+  if (dest.box === "buttons") return toast("Drop it onto one of the buttons.");
   if (dest.box === "programmes") return toast("Drop it onto one programme, or into its timeline.");
   if (dest.kind === "folder" && dest.root) return moveInto(src, dest);
   if (dest.box === "jingles" && o.kind === "jingle") return moveJingle(o, dest);   // from one station's jingles to another's

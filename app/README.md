@@ -664,15 +664,17 @@ The cards:
   a restart). An action in the steps is done and stepped past: within 30 s
   (`STEP_RESET_S`) the next press goes on to the one after it. A second
   press within 0.15 s is a switch bounce and ignored (`PRESS_GUARD_S`).
-  On the desktop **each button is a container, like a folder** (one per
-  button in each of the day and night sets): dropping something on a button
-  — on the radio's front, on its icon in the Buttons window, or into its
+  On the desktop there's a **Buttons folder** with **a folder for each
+  button**, four for the day set and four for the night set (blue): dropping
+  something on a button — on the radio's front, on its folder, or into its
   open window — adds it as the next step (dropped on a row: at that place).
-  Open one (double-click its icon, or click the name under its key on the
-  radio) to see what's on it: drag a row up or down to change the order, to
+  Open one (double-click its folder, or click the name under its key on the
+  radio; *What the buttons play…* opens the Buttons folder) to see what's on it: drag a row up or down to change the order, to
   the Trash to take it off (with Undo), or onto another button to put it
   there too; *▶ Press it*, a ▶ on each row to play that step now, and *＋
-  What's playing*. A button's icon dragged to the Trash empties it. The key on the radio's front shows a small
+  What's playing*. A button's folder dragged to the Trash empties it. (The Buttons window
+  on the radio's back keeps only the day and night sets and their
+  timetable. The phone remote has none of this: it's a remote control.) The key on the radio's front shows a small
   counter (3, or 2/3 while step two plays). With one thing on a button
   nothing changes: no wait, no pips, saved as before. The cathedral's
   selector can't be pressed again, so it plays a position's first step.
