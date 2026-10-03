@@ -417,7 +417,7 @@ def test_web_api_and_backups(tmp_path: Path) -> None:
     try:
         code, d = call("/api/buttons")
         assert code == 200 and [b["label"] for b in d["buttons"]] == ["Empty"] * 4
-        assert d["now"]["label"] == "Sleep Radio" and "time" in d["actions"]
+        assert d["now"]["label"] == "Default" and "time" in d["actions"]
         code, d = call("/api/buttons", {"button": 2, "preset": RP})
         assert d["buttons"][1]["label"] == "Radio Paradise"
         code, d = call("/api/buttons/press", {"button": 2})

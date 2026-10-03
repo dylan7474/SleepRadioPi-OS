@@ -452,6 +452,8 @@ class Presets:
     def _show_name(self, preset: dict) -> str:
         from sleepradiopi.broadcast import profiles as profiles_mod
         from sleepradiopi.broadcast.script_builder import artist_station_name
+        if not preset["artist"] and (preset["profile"] or profiles_mod.DEFAULT).lower() == profiles_mod.DEFAULT.lower():
+            return profiles_mod.DEFAULT           # the Default theme, by its name as a theme (not the radio's own name)
         if preset["profile"]:
             return profiles_mod.station_name(preset["profile"])
         return artist_station_name(preset["artist"])
