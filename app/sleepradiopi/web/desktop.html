@@ -1158,7 +1158,7 @@ function loadDesk() {
   }
   if (!desk.length) {
     [MUSIC, ONDEMAND, BOOKS, PODCASTS, STATIONS, PLAYLISTS, PROGRAMMES, LISTS, ACTIONS_BOX, RADIO_BOX].forEach((f, i) => desk.push({ id: f.id, x: 18 + Math.floor(i / 8) * 122, y: 14 + (i % 8) * 92 }));
-    [DJ, BDAYS].forEach((o, i) => desk.push({ id: o.id, x: 140, y: 14 + i * 100, alias: false }));
+    [DJ, BDAYS].forEach((o, i) => desk.push({ id: o.id, x: 140, y: 14 + (i + 2) * 92, alias: false }));   // (under Actions and Radio, which head that column)
   }
 }
 function freeSpot() {                  // the first place on the icon grid that nothing is near, column by column

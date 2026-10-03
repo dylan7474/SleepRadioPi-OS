@@ -21,9 +21,9 @@ software, and the case to print.
 The web page for a computer is a small desktop: your music, stations,
 podcasts and programmes are folders, the radio itself sits on it, and
 setting it up is dragging things onto it. Here its night look, with the
-Radio folder and one of the buttons open:
+Actions, Sleep timer and Radio folders open:
 
-![The desktop page at night: folders down the left, the Radio folder open showing Buttons, Noise, Hold the knob, When switched on, Speaker sounds, Voices, Wi-Fi networks and Backups, a button's folder listing six stations, and the radio on the right](docs/desktop.jpg)
+![The desktop page at night: folders down the left; the Actions folder open showing the time, the pips, the news, say the address, DJ on/off, day/night buttons and the Sleep timer and Noise folders; the Sleep timer folder showing sleep times from 5 to 90 minutes; the Radio folder showing Buttons, Hold the knob, When switched on, Speaker sounds, Voices, Wi-Fi networks and Backups; and the radio on the right with its knob and four buttons](docs/desktop.jpg)
 
 ## What it does
 
