@@ -1951,7 +1951,9 @@ function renameTools(o, picked) {
 function keepKey(o, picked) {
   const it = picked && picked.root === "ondemand" && picked.path ? picked : !picked && o.path ? o : null, on = !!keptOf(it);
   const what = !it ? "" : it === o ? "this folder" : `“${it.title.length > 24 ? it.title.slice(0, 22) + "…" : it.title}”`;
-  const k = T(!it ? "Remember its place" : on ? `🔖 ${what} remembers its place` : `Remember its place: ${what}`, () => setKept(it, !on), on ? "primary" : "", !it);
+  // (amber only for the folder this window shows; the one clicked has its bookmark on its own icon or row)
+  const k = T(!it ? "Remember its place" : !on ? `Remember its place: ${what}` : it === o ? "🔖 This folder remembers its place" : `Stop remembering: ${what}`,
+              () => setKept(it, !on), on && it === o ? "primary" : "", !it);
   k.title = !it ? "Click a track or a folder first" : on ? `“${it.title}” carries on where you left it, like an audiobook. Click to have it start from the beginning each time`
     : `Have “${it.title}” carry on where you left it, like an audiobook` + (it.kind === "track" ? "" : " (the whole folder, as one book)");
   return k;
