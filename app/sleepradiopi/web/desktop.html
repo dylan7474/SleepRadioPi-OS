@@ -583,6 +583,9 @@ const DJ = mk({ id: "dj", kind: "dj", title: "The DJ" });
 const NOTES = mk({ id: "notes", kind: "folder", box: "messages", title: "Messages", kids: [], sym: "✎" });   // a folder of sticky notes
 const BDAYS = mk({ id: "bdays", kind: "folder", box: "birthdays", title: "Birthdays", kids: [] });   // a folder of people
 const VOICES = mk({ id: "box:voices", kind: "folder", box: "voices", title: "Voices", kids: [], sym: "“", alt: true });
+// the radio's own things, as folders, kept together in one on the desktop
+const RADIO_KIDS = ["box:buttons", "box:noise", "slot:knob_long", "slot:power_on", "box:sounds", "box:voices", "box:wifi", "box:backups"];
+const RADIO_BOX = mk({ id: "box:radio", kind: "folder", title: "Radio", box: "radio", kids: RADIO_KIDS, sym: "R", loaded: true });
 const parentOf = id => Object.values(O).find(o => o.kids && o.kids.includes(id));
 
 // ---- loading from the radio ----
@@ -619,7 +622,7 @@ async function loadFolder(f) {
   } else if (f.box === "stations") {
     const d = await api("/api/radio");
     f.kids = d.stations.map(s => stationObj(s).id);
-  } else if (f.box === "buttons") {
+  } else if (f.box === "buttons" || f.box === "radio") {
     await loadButtons();
   } else if (f.box === "sounds") {
     const d = await api("/api/speaker/sounds");
@@ -822,6 +825,7 @@ const FOLDER_PIC = {
   noise: '<path d="M3 12c1.5-5 3-5 4.5 0s3 5 4.5 0 3-5 4.5 0 3 5 4.5 0"/>',
   slot_knob_long: '<circle cx="12" cy="12" r="8"/><path d="M12 12V6.5"/>',
   slot_power_on: '<path d="M12 3.5v8"/><path d="M7 6.5a7.5 7.5 0 1 0 10 0"/>',
+  radio: '<rect x="3.5" y="8" width="17" height="11.5" rx="2"/><path d="M7 8l9-4.500"/><circle cx="8.500" cy="13.800" r="2.600"/><path d="M14 12h4M14 15.500h4"/>',
   buttons: '<circle cx="7" cy="8" r="2.6"/><circle cx="17" cy="8" r="2.6"/><circle cx="7" cy="16.5" r="2.6"/><circle cx="17" cy="16.5" r="2.6"/>',
   jingles: '<path d="M6 16.5V11a6 6 0 0 1 12 0v5.5l1.5 1.5h-15z"/><path d="M10 20.5a2 2 0 0 0 4 0"/>',
   voices: '<path d="M4 5.5h16v10H10l-4.5 4v-4H4z"/><path d="M8 9.5h8M8 12h5"/>',
@@ -1041,11 +1045,12 @@ function loadDesk() {
     for (const p of s.icons) { if (!O[p.id] && p.snap) mk({ ...p.snap, kids: [], items: [], eps: [], blocks: [] }); if (O[p.id]) desk.push({ id: p.id, x: p.x, y: p.y, alias: !!p.alias }); }
     radioPos = s.radio || null;
     desk = desk.filter(p => ![SHOW.id, POWER_ON.id, NOTES.id, JINGLES.id].includes(p.id));   // (jingles and messages live in each theme)
-    for (const f of [ACTIONS_BOX, LISTS, BUTTONS_BOX, NOISE_BOX, SLOT.knob_long, SLOT.power_on, BACKUPS, VOICES, SOUNDS, WIFI_BOX])      // (new since the layout was saved: in the first free spot)
+    desk = desk.filter(p => p.alias || !RADIO_KIDS.includes(p.id));   // (the radio's own folders live in Radio; a shortcut you made stays)
+    for (const f of [ACTIONS_BOX, LISTS, RADIO_BOX])      // (new since the layout was saved: in the first free spot)
       if (!desk.some(p => p.id === f.id)) desk.push({ id: f.id, ...freeSpot() });
   }
   if (!desk.length) {
-    [MUSIC, ONDEMAND, BOOKS, PODCASTS, STATIONS, PLAYLISTS, PROGRAMMES, LISTS, ACTIONS_BOX, BUTTONS_BOX, NOISE_BOX, SLOT.knob_long, SLOT.power_on, BACKUPS, VOICES, SOUNDS, WIFI_BOX].forEach((f, i) => desk.push({ id: f.id, x: 18 + Math.floor(i / 8) * 122, y: 14 + (i % 8) * 92 }));
+    [MUSIC, ONDEMAND, BOOKS, PODCASTS, STATIONS, PLAYLISTS, PROGRAMMES, LISTS, ACTIONS_BOX, RADIO_BOX].forEach((f, i) => desk.push({ id: f.id, x: 18 + Math.floor(i / 8) * 122, y: 14 + (i % 8) * 92 }));
     [DJ, BDAYS].forEach((o, i) => desk.push({ id: o.id, x: 140, y: 14 + i * 100, alias: false }));
   }
 }
@@ -1697,6 +1702,7 @@ function folderView(o, box, win) {
   }
   else if (o.box === "buttons") tools.append(T("Day and night…", () => open(PANEL.buttons.id)),
     el("span", { className: "note", textContent: `The radio's buttons: its day set and its night set (in use now: ${bStatus?.bank || "day"}) · drop things onto one · open one to put them in order or take them off · drag one button onto another to swap them` }));
+  else if (o.box === "radio") tools.append(el("span", { className: "note", textContent: "The radio's own things, each a folder: open one and drop things in, or drag things out to the Trash · drag a folder onto the desktop to keep a shortcut there · sliders, names and passwords are on the back of the radio" }));
   else if (o.box === "sounds") {
     tools.append(T("Save the sound as it is now", () => { win.naming = !win.naming; drawDesk(); }, "primary"), T("Sliders…", () => open(PANEL.speakers.id)));
     if (win.naming) {

@@ -708,7 +708,11 @@ The cards:
   night set of buttons is in use for the bar's stretch, then the day set,
   swapped quietly. The *Day / night buttons* action can go on a button too
   (it swaps the sets, with the three notes). The buttons' own timetable
-  (*Swap by the clock*) is still there. (The Buttons window
+  (*Swap by the clock*) is still there.
+  All of these live in one **Radio** folder on the desktop (Buttons, Noise,
+  Hold the knob, When switched on, Speaker sounds, Voices, Wi-Fi networks,
+  Backups), so the desktop itself has the media folders, Actions and
+  Radio; any of them dragged onto the desktop leaves a shortcut there. (The Buttons window
   on the radio's back keeps only the day and night sets and their
   timetable. The phone remote has none of this: it's a remote control.) The key on the radio's front shows a small
   counter (3, or 2/3 while step two plays). With one thing on a button
