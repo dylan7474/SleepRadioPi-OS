@@ -18,6 +18,13 @@ software, and the case to print.
 
 ![The radio: blue body, white front, back and knob, sunburst grilles and knob, blue lettering](hardware/case/mockup_logo_sunburst.jpg)
 
+The web page for a computer is a small desktop: your music, stations,
+podcasts and programmes are folders, the radio itself sits on it, and
+setting it up is dragging things onto it. Here its night look, with the
+Radio folder and one of the buttons open:
+
+![The desktop page at night: folders down the left, the Radio folder open showing Buttons, Noise, Hold the knob, When switched on, Speaker sounds, Voices, Wi-Fi networks and Backups, a button's folder listing six stations, and the radio on the right](docs/desktop.jpg)
+
 ## What it does
 
 ### On air
