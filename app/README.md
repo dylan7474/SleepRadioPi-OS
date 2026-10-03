@@ -310,7 +310,8 @@ for a phone, with three tabs along the bottom (and plain links: `#find`,
 - **Radio** — a glowing **dial window** with what's on (its needle points at
   the preset button that's playing; *Skip* or *Back to Sleep Radio*; greyed
   and "Paused" when paused), **the radio** itself (the knob and the four
-  preset buttons, drawn like the real one), the sleep timer and what's been
+  preset buttons, drawn like the real one), the sleep timer (on the phone
+  remote its key fills with the time left, counting down, while it runs) and what's been
   on air.
 - **Find** — one search over **artists and your themes** (*Play* a theme),
   **albums** (*Play* start to finish, or *With the DJ*), **songs** (*Play
