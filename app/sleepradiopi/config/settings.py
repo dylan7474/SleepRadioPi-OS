@@ -83,6 +83,7 @@ class Settings:
     noise_on: bool = False            # the noise layer (audio/noise.py), on top of whatever plays
     noise_kind: str = "pink"          # white, pink, brown, deep, blue, violet, ambient
     noise_mix: int = 50               # balance: 0 programme only, 50 both full, 100 noise only
+    speaker_sounds: list = field(default_factory=list)   # saved speaker set-ups: [{"name", "eq", "highpass", "mono"}]
     speaker_highpass_hz: int = 0      # low cut for the speaker (~140 with the box's bass port); 0 = off
     knob_step: int = 2                # volume change per click of the knob ("normal")
     programme_mode: bool = False      # silent unless a programme is on (an alarm clock): see broadcast/programmes.py

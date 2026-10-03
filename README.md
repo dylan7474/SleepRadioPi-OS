@@ -141,7 +141,12 @@ software, and the case to print.
   itself: save them now, drag one onto the radio to load it (the settings
   as they were are kept, so a load can be undone), or to the Trash to
   delete it. And a voice from **Voices** dragged onto **The DJ** becomes
-  his voice. (The phone page is a remote control only.) There's no
+  his voice. **Speaker sounds** keeps the EQ, low cut and mono under names:
+  drag one onto the radio's speakers to hear it. **Wi-Fi networks** shows
+  the networks the radio knows: drag one to the Trash to forget it. And a
+  programme can have a **Night buttons** bar (drag *Day / night buttons*
+  from Actions onto its timeline): the night set is in use for that
+  stretch. (The phone page is a remote control only.) There's no
   hold-to-store on the case, so a long press can't wipe one. The same four are on the web page's front.
   There are **two sets of the four, day and night**: hold **buttons 2 and
   3** together for a second to swap (or use the page's ☀ / ☾ switch), and

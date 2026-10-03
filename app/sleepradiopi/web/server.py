@@ -227,6 +227,8 @@ def make_handler(station: Station, output: Mp3Output, speaker=None,
                 self._send(json.dumps(status).encode(), "application/json")
             elif path == "/api/settings" and config_file is not None:
                 self._save_settings()
+            elif path == "/api/speaker/sounds" and config_file is not None:
+                self._send(json.dumps({"sounds": load_settings(config_file).speaker_sounds}).encode(), "application/json")
             elif path == "/api/backups" and config_file is not None:
                 self._send(json.dumps({"backups": backups.list(), "max": backup.MAX_KEPT}).encode(), "application/json")
             elif path == "/api/backups/file" and config_file is not None:
@@ -418,6 +420,15 @@ def make_handler(station: Station, output: Mp3Output, speaker=None,
                            "application/json")
             elif path == "/api/speaker" and speaker is not None:
                 self._speaker()
+            elif path == "/api/speaker/sounds" and config_file is not None:
+                try:                             # {"sounds": [...]}: the saved speaker set-ups, the whole list
+                    from sleepradiopi.audio.eq import validate_sounds
+                    sounds = validate_sounds(self._body().get("sounds"))
+                except (ValueError, TypeError, AttributeError) as e:
+                    self._error(str(e))
+                    return
+                save_setting(config_file, "speaker_sounds", sounds)
+                self._send(json.dumps({"sounds": sounds}).encode(), "application/json")
             elif path == "/api/settings" and config_file is not None:
                 self._load_settings()
             elif path.startswith("/api/backups/") and config_file is not None:

@@ -62,7 +62,8 @@ BACK_HOLD_S = 5.0         # the back button held this long: the service menu
 INSTANT = ("action", "message", "jingle", "birthday", "noise")     # done at once over what's on: nothing to pause
 SLOTS = {"knob_long": "Hold the knob", "power_on": "When switched on"}     # one preset each, besides the buttons
 ACTIONS = {"time": "Say the time", "news": "The news now", "sleep": "Sleep timer (30 min)",
-           "address": "Say the address", "noise": "Noise on/off", "dj": "DJ on/off", "pips": "The pips"}
+           "address": "Say the address", "noise": "Noise on/off", "dj": "DJ on/off", "pips": "The pips",
+           "bank": "Day / night buttons"}
 BANKS = ("day", "night")
 BANK_KEYS = (3, 4)          # buttons 2 and 3...
 BANK_HOLD_S = 1.0           # ...held together this long swap day and night
@@ -857,6 +858,8 @@ class Presets:
             self.announcer.speak()
         elif action == "noise" and self.control is not None:
             self.control.toggle_noise()          # (the noise itself says it's on: no beep)
+        elif action == "bank":
+            self.toggle_bank()                   # (its three notes say which: rising for day, falling for night)
         elif action == "dj":
             on = not self.station.dj_on
             self.station.set_dj(dj_on=on)
@@ -909,6 +912,8 @@ class Presets:
                 self._sleep_set(True)
         elif action in ("noise_on", "noise_off") and self.control is not None:
             self.control.set_noise(on=action == "noise_on")
+        elif action in ("night_on", "night_off"):          # a programme's Night buttons bar (quietly)
+            self.set_bank("night" if action == "night_on" else "day", announce=False)
         elif action in ("dj_on", "dj_off"):
             on = action == "dj_on"
             if self.station.dj_on != on:

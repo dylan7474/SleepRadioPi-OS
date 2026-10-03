@@ -148,3 +148,34 @@ class Equalizer:
                 out = old + (out - old) * fade
                 self._playing = new
         return out.astype(np.float32)
+
+
+MAX_SOUNDS = 20
+
+
+def validate_sounds(sounds) -> list[dict]:
+    """Saved speaker set-ups (the desktop's Speaker sounds folder) -> clean copies:
+    [{"name", "eq": {"bass", "mid", "treble"}, "highpass": Hz, "mono": bool}]."""
+    if not isinstance(sounds, list) or len(sounds) > MAX_SOUNDS:
+        raise ValueError(f"send a list of up to {MAX_SOUNDS} sounds")
+    out, names = [], set()
+    for s in sounds:
+        if not isinstance(s, dict):
+            raise ValueError("a sound is an object")
+        name = " ".join(s["name"].split()) if isinstance(s.get("name"), str) else ""
+        if not name or len(name) > 40:
+            raise ValueError("a sound needs a name (up to 40 letters)")
+        if name.lower() in names:
+            raise ValueError(f"there's a sound called {name!r} already")
+        names.add(name.lower())
+        eq = s.get("eq") or {}
+        if not isinstance(eq, dict) or not all(k in BANDS and isinstance(v, (int, float)) and not isinstance(v, bool)
+                                               and -MAX_DB <= v <= MAX_DB for k, v in eq.items()):
+            raise ValueError(f"{name}: eq is bass/mid/treble in dB (-{MAX_DB} to {MAX_DB})")
+        hz = s.get("highpass", 0)
+        if isinstance(hz, bool) or not isinstance(hz, int) or not 0 <= hz <= 300:
+            raise ValueError(f"{name}: highpass is 0-300 Hz")
+        if not isinstance(s.get("mono", False), bool):
+            raise ValueError(f"{name}: mono is true or false")
+        out.append({"name": name, "eq": {b: eq.get(b, 0) for b in BANDS}, "highpass": hz, "mono": s.get("mono", False)})
+    return out

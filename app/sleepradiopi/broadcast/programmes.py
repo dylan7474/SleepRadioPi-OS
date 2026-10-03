@@ -11,7 +11,7 @@ artist list -- and a rule for how long it runs:
              block before it plays on until then, and a block still playing
              is cut off (the news at 13:00)
 
-Beside the running order, switches: the noise or the DJ on for a stretch of
+Beside the running order, switches: the noise, the DJ or the night buttons on for a stretch of
 the programme ("switches": [{"what": "noise", "from": 0, "min": 60}], minutes
 from its start). On at the start of the stretch and off at its end, whatever
 they were before -- apart from the blocks, so they overlap them freely. A
@@ -60,7 +60,8 @@ ITEM_KINDS = ("album", "track", "station", "playlist", "book", "podcast", "episo
 INSTANT = ("message", "jingle", "action")     # happen at once: said, played or done, then on
 ACTIONS = ("time", "news", "sleep", "pips", "address",   # (what a button can do, but on or off, not a switch:
            "noise_on", "noise_off", "dj_on", "dj_off")     #  at a set time, a switch could go either way)
-SWITCHES = ("noise", "dj")                   # on for a stretch, then off (not in the running order)
+SWITCHES = ("noise", "dj", "night")          # on for a stretch, then off (not in the running order);
+                                             # night: the buttons' night set for the stretch, then the day set
 MAX_SWITCHES = 10
 EVERY = (15, 30, 60)                         # repeating within the day, from start to until
 MOMENT_LEAD = timedelta(seconds=60)          # a moment with the time gets ready this early (the voice is slow)

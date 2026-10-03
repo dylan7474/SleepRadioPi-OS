@@ -663,3 +663,24 @@ def test_the_knob_held_and_what_plays_at_switch_on(tmp_path: Path) -> None:
         backup.parse(saved)
     p2 = Presets(st, ctl, conf, slots={"knob_long": {"kind": "tape"}, "power_on": RP})   # (a hand-edited config)
     assert p2.slots == {"knob_long": None, "power_on": RP}
+
+
+def test_a_programme_can_put_the_night_buttons_on_for_a_stretch(tmp_path: Path) -> None:
+    st, ctl, conf, p = _presets(tmp_path, [None, None, None, {"kind": "action", "action": "bank"}])
+    assert programmes.validate([{"name": "Night", "blocks": [], "switches": [{"what": "night", "from": 0, "min": 600}]}])
+    p.scheduled("night_on")
+    assert p.bank == "night" and ctl.clips == []                 # (quietly: it may be the middle of the night)
+    p.scheduled("night_off")
+    assert p.bank == "day"
+    p.press(3)                                                   # on a button: swaps, with its three notes
+    assert p.bank == "night" and ctl.clips == ["Button"]
+
+
+def test_saved_speaker_sounds_are_checked() -> None:
+    from sleepradiopi.audio.eq import validate_sounds
+    assert validate_sounds([{"name": " Bass  port ", "eq": {"bass": 4}, "highpass": 140}]) == \
+        [{"name": "Bass port", "eq": {"bass": 4, "mid": 0, "treble": 0}, "highpass": 140, "mono": False}]
+    for bad in ([{"name": ""}], [{"name": "A"}, {"name": "a"}], [{"name": "A", "eq": {"bass": 99}}],
+                [{"name": "A", "highpass": 999}], [{"name": "A", "mono": "yes"}], "x", [{"name": "A"}] * 21):
+        with pytest.raises(ValueError):
+            validate_sounds(bad)

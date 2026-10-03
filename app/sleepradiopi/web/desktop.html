@@ -555,6 +555,10 @@ const SLOT = { knob_long: mk({ id: "slot:knob_long", kind: "button", slot: "knob
                power_on: mk({ id: "slot:power_on", kind: "button", slot: "power_on", title: "When switched on", sym: "⏻" }) };
 const NOISE_HUE = { white: 200, pink: 330, brown: 25, deep: 12, blue: 215, violet: 275, ambient: 160 };
 const noiseObj = (k, v) => mk({ id: "nz:" + k, kind: "noise", colour: k, title: (v?.label || k[0].toUpperCase() + k.slice(1)) + " noise", about: v?.about || "", h: NOISE_HUE[k] ?? 200, sym: "≈" });
+// saved speaker set-ups (EQ, low cut, mono): each a thing (drag one onto the speakers to hear it)
+const SOUNDS = mk({ id: "box:sounds", kind: "folder", title: "Speaker sounds", box: "sounds", kids: [], sym: "♫" });
+// the Wi-Fi networks the radio knows: each a thing (to the Trash: forgotten)
+const WIFI_BOX = mk({ id: "box:wifi", kind: "folder", title: "Wi-Fi networks", box: "wifi", kids: [], sym: "⌔" });
 // saved settings the radio keeps: each a thing (drag one onto the radio to load it)
 const BACKUPS = mk({ id: "box:backups", kind: "folder", title: "Backups", box: "backups", kids: [], sym: "⇅" });
 const NOISE_BOX = mk({ id: "box:noise", kind: "folder", title: "Noise", box: "noise", kids: [], sym: "≈" });
@@ -617,6 +621,13 @@ async function loadFolder(f) {
     f.kids = d.stations.map(s => stationObj(s).id);
   } else if (f.box === "buttons") {
     await loadButtons();
+  } else if (f.box === "sounds") {
+    const d = await api("/api/speaker/sounds");
+    f.kids = d.sounds.map(x => mk({ id: "eq:" + x.name.toLowerCase(), kind: "eqset", name: x.name, title: x.name, eq: x.eq, highpass: x.highpass, mono: x.mono, h: 28, sym: "♫" }).id);
+  } else if (f.box === "wifi") {
+    const d = await api("/api/wifi"), names = [...new Set([...(d.saved || []), ...(d.on_card || [])])];
+    f.kids = names.map(n => mk({ id: "wf:" + n, kind: "wifi", ssid: n, title: n, saved: (d.saved || []).includes(n), card: (d.on_card || []).includes(n),
+                                 on: d.mode !== "hotspot" && d.ssid === n, ip: d.ip, h: 190, sym: "⌔" }).id);
   } else if (f.box === "backups") {
     const d = await api("/api/backups");
     f.kids = d.backups.map(b => mk({ id: "bk:" + b.name, kind: "backup", name: b.name, title: b.name, saved: b.saved, h: 170, sym: "⇅" }).id);
@@ -721,14 +732,14 @@ function noteWhen(m) {            // "Sundays at 09:00", "25 Dec", "with the oth
 const SWITCHED = { noise: ["noise_on", "noise_off"], dj: ["dj_on", "dj_off"] };
 const FLIP = { noise_on: "noise_off", noise_off: "noise_on", dj_on: "dj_off", dj_off: "dj_on" };
 // ...and noise or the DJ dropped on a programme is a SWITCH: a bar beside the blocks, on for its length
-const SWITCH_OF = { noise: "noise", noise_on: "noise", noise_off: "noise", dj: "dj", dj_on: "dj", dj_off: "dj" };
-const SWITCH_NAME = { noise: "Noise", dj: "The DJ" }, SWITCH_WORD = { noise: "noise", dj: "the DJ" }, SWITCH_HUE = { noise: 175, dj: 320 };
+const SWITCH_OF = { noise: "noise", noise_on: "noise", noise_off: "noise", dj: "dj", dj_on: "dj", dj_off: "dj", bank: "night" };
+const SWITCH_NAME = { noise: "Noise", dj: "The DJ", night: "Night buttons" }, SWITCH_WORD = { noise: "noise", dj: "the DJ", night: "the night buttons" }, SWITCH_HUE = { noise: 175, dj: 320, night: 228 };
 const QUICK = ["time", "pips", "news", "sleep"];              // the ＋ pills under a block
 const ACTION_SUB = { time: "Says the time", pips: "Six pips", news: "The latest news", sleep: "Fades, then pauses", address: "Says its address",
-                     noise: "Noise on or off", dj: "The DJ on or off", noise_on: "Switches the noise on", noise_off: "Switches the noise off", dj_on: "Switches the DJ on", dj_off: "Switches the DJ off" };
+                     noise: "Noise on or off", dj: "The DJ on or off", bank: "Swaps the day and night buttons", noise_on: "Switches the noise on", noise_off: "Switches the noise off", dj_on: "Switches the DJ on", dj_off: "Switches the DJ off" };
 const messageObj = text => mk({ id: "msg:" + hue(text) + ":" + text.length, kind: "message", title: text.length > 38 ? text.slice(0, 36) + "…" : text, text });
 const ACTION = Object.fromEntries([["time", "The time, spoken", "◷"], ["pips", "The pips", "♪"], ["news", "The news", "N"], ["sleep", "Sleep timer", "☾"],
-                                    ["address", "Say the address", "@"], ["noise", "Noise on/off", "≈"], ["dj", "DJ on/off", "DJ"],
+                                    ["address", "Say the address", "@"], ["noise", "Noise on/off", "≈"], ["dj", "DJ on/off", "DJ"], ["bank", "Day / night buttons", "☾"],
                                     ["noise_on", "Noise on", "≈"], ["noise_off", "Noise off", "≈"], ["dj_on", "DJ on", "DJ"], ["dj_off", "DJ off", "DJ"]]
   .map(([a, title, sym]) => [a, mk({ id: "act:" + a, kind: "action", action: a, title, sym, h: 200 })]));
 function objRef(o) {
@@ -786,7 +797,7 @@ function timeline(p) {
 const $ = id => document.getElementById(id);
 const el = (tag, props = {}, ...kids) => { const e = Object.assign(document.createElement(tag), props); e.append(...kids.filter(k => k != null)); return e; };
 const KIND = { folder: "Folder", album: "Album", track: "Track", station: "Station", podcast: "Podcast", episode: "Episode", book: "Audiobook",
-               playlist: "Playlist", programme: "Programme", button: "Button", noise: "Noise", backup: "Saved settings", list: "Theme", jingle: "Jingle", message: "Message", action: "Action", person: "Birthday", voice: "Voice", show: "The show", trash: "Trash", panel: "Setting", dj: "The DJ", note: "Messages", calendar: "Birthdays", artistref: "Artist" };
+               playlist: "Playlist", programme: "Programme", button: "Button", noise: "Noise", backup: "Saved settings", eqset: "Speaker sound", wifi: "Wi-Fi network", list: "Theme", jingle: "Jingle", message: "Message", action: "Action", person: "Birthday", voice: "Voice", show: "The show", trash: "Trash", panel: "Setting", dj: "The DJ", note: "Messages", calendar: "Birthdays", artistref: "Artist" };
 const TINT = { album: 30, track: 45, station: 8, podcast: 275, episode: 265, book: 150, playlist: 215, programme: 40, list: 195, show: 40, folder: 40 };
 function wave(seed) {
   let x = hue(seed), bars = "";
@@ -805,6 +816,8 @@ const FOLDER_PIC = {
   lists: '<circle cx="9" cy="8" r="3"/><path d="M3.5 19a5.5 5.5 0 0 1 11 0"/><circle cx="16.5" cy="9" r="2.4"/><path d="M15.5 14.2a4.6 4.6 0 0 1 5.5 4.8"/>',
   artists: '<circle cx="9" cy="8" r="3"/><path d="M3.5 19a5.5 5.5 0 0 1 11 0"/><circle cx="16.5" cy="9" r="2.4"/><path d="M15.5 14.2a4.6 4.6 0 0 1 5.5 4.8"/>',
   actions: '<path d="M13 2.5 5 13.5h6l-1 8 8-11h-6z"/>',
+  sounds: '<path d="M5 6v12M12 4v16M19 6v12"/><circle cx="5" cy="9" r="1.8"/><circle cx="12" cy="15" r="1.8"/><circle cx="19" cy="10" r="1.8"/>',
+  wifi: '<path d="M3 9a13 13 0 0 1 18 0M6.2 12.5a8.5 8.5 0 0 1 11.6 0M9.3 16a4.2 4.2 0 0 1 5.4 0"/><circle cx="12" cy="19" r="1"/>',
   backups: '<path d="M7 4v13M3.5 13.5 7 17l3.5-3.500M17 20V7M13.500 10.500 17 7l3.500 3.500"/>',
   noise: '<path d="M3 12c1.5-5 3-5 4.5 0s3 5 4.5 0 3-5 4.5 0 3 5 4.5 0"/>',
   slot_knob_long: '<circle cx="12" cy="12" r="8"/><path d="M12 12V6.5"/>',
@@ -832,6 +845,8 @@ function glyph(o) {
     case "button": if (o.slot) { g.className += " g-folder"; g.innerHTML = svgPic(FOLDER_PIC["slot_" + o.slot]); break; }
       g.className += " g-folder g-bfolder" + (o.bank === "night" ? " night" : "") + (btnOf(o)?.playing ? " on" : ""); g.textContent = o.n + 1; break;
     case "backup": g.className += " g-panel"; g.textContent = "⇅"; break;
+    case "eqset": g.className += " g-panel"; g.textContent = "♫"; if (soundOn(o)) g.style.boxShadow = "0 0 0 3px var(--amber), 0 4px 10px var(--shadow)"; break;
+    case "wifi": g.className += " g-panel"; g.textContent = "⌔"; if (o.on) g.style.boxShadow = "0 0 0 3px var(--amber), 0 4px 10px var(--shadow)"; break;
     case "noise": g.className += " g-panel"; g.textContent = "≈"; if (noiseOn(o)) g.style.boxShadow = "0 0 0 3px var(--amber), 0 4px 10px var(--shadow)"; break;
     case "programme": {
       g.className += " g-programme";
@@ -870,6 +885,8 @@ function subOf(o) {
     case "button": { const b = btnOf(o), n = stepsOf(b).length;
       return !n ? (o.slot === "knob_long" ? "Says the address" : o.slot === "power_on" ? "What was on last" : "Empty") : n === 1 ? b.label : `${n} steps`; }
     case "noise": return noiseOn(o) ? "On now" : o.about;
+    case "eqset": return (soundOn(o) ? "On now · " : "") + ["bass", "mid", "treble"].map(b => `${b[0].toUpperCase()} ${db(o.eq[b] || 0)}`).join(" ") + (o.highpass ? ` · cut ${o.highpass} Hz` : "") + (o.mono ? " · mono" : "");
+    case "wifi": return o.on ? `Connected${o.ip ? " · " + o.ip : ""}` : o.saved ? "Saved" : "From the card";
     case "backup": { const d = new Date(o.saved); return isNaN(d) ? "" : `${d.getDate()} ${MONN[d.getMonth()]} ${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`; }
     case "programme": {
       const tl = timeline(o), s0 = toMin(o.start);
@@ -1024,11 +1041,11 @@ function loadDesk() {
     for (const p of s.icons) { if (!O[p.id] && p.snap) mk({ ...p.snap, kids: [], items: [], eps: [], blocks: [] }); if (O[p.id]) desk.push({ id: p.id, x: p.x, y: p.y, alias: !!p.alias }); }
     radioPos = s.radio || null;
     desk = desk.filter(p => ![SHOW.id, POWER_ON.id, NOTES.id, JINGLES.id].includes(p.id));   // (jingles and messages live in each theme)
-    for (const f of [ACTIONS_BOX, LISTS, BUTTONS_BOX, NOISE_BOX, SLOT.knob_long, SLOT.power_on, BACKUPS, VOICES])      // (new since the layout was saved: in the first free spot)
+    for (const f of [ACTIONS_BOX, LISTS, BUTTONS_BOX, NOISE_BOX, SLOT.knob_long, SLOT.power_on, BACKUPS, VOICES, SOUNDS, WIFI_BOX])      // (new since the layout was saved: in the first free spot)
       if (!desk.some(p => p.id === f.id)) desk.push({ id: f.id, ...freeSpot() });
   }
   if (!desk.length) {
-    [MUSIC, ONDEMAND, BOOKS, PODCASTS, STATIONS, PLAYLISTS, PROGRAMMES, LISTS, ACTIONS_BOX, BUTTONS_BOX, NOISE_BOX, SLOT.knob_long, SLOT.power_on, BACKUPS, VOICES].forEach((f, i) => desk.push({ id: f.id, x: 18 + Math.floor(i / 8) * 122, y: 14 + (i % 8) * 92 }));
+    [MUSIC, ONDEMAND, BOOKS, PODCASTS, STATIONS, PLAYLISTS, PROGRAMMES, LISTS, ACTIONS_BOX, BUTTONS_BOX, NOISE_BOX, SLOT.knob_long, SLOT.power_on, BACKUPS, VOICES, SOUNDS, WIFI_BOX].forEach((f, i) => desk.push({ id: f.id, x: 18 + Math.floor(i / 8) * 122, y: 14 + (i % 8) * 92 }));
     [DJ, BDAYS].forEach((o, i) => desk.push({ id: o.id, x: 140, y: 14 + i * 100, alias: false }));
   }
 }
@@ -1104,7 +1121,7 @@ function radioEl() {
     tk("rPrev", "back", "Back: this one from the start, or (in its first 5 seconds) the one before", async () => { try { await api("/api/previous", {}); setTimeout(poll, 600); } catch (e) { toast(e.message); } }),
     el("span", { className: "tlabel", textContent: "BACK · SKIP" }),
     tk("rNext", "skip", "Skip to what's next", async () => { try { await api("/api/skip", {}); setTimeout(poll, 600); } catch (e) { toast(e.message); } }));
-  const gr = () => { const g = el("div", { className: "grille", title: "Speakers: stereo, EQ, low cut, the knob" }); g.onclick = () => open(PANEL.speakers.id); return g; };
+  const gr = () => { const g = el("div", { className: "grille", title: "Speakers: stereo, EQ, low cut, the knob · drop a saved sound here" }); g.onclick = () => open(PANEL.speakers.id); g.dataset.drop = "grille"; return g; };
   const face = el("div", { className: "rface" }, gr(), el("div", {}, knob, el("div", { className: "rvol", id: "rVol", textContent: S?.speaker ? (S.speaker.playing ? "Volume " + vol : "Paused") : "" })), gr());
   const pre = el("div", { className: "presets", id: "rPresets" });
   shownButtons().forEach((b, i) => {
@@ -1251,6 +1268,24 @@ function useVoice(o) {
     try { const d = await api("/api/dj", { voice: o.name }); await loadFolder(VOICES).catch(() => {}); drawDesk();
           toast(d.restarting ? `The DJ's voice is ${o.title}: the radio is restarting.` : `The DJ's voice will be ${o.title} when the radio next starts.`); }
     catch (e) { toast("Not changed: " + e.message + "."); } });
+}
+// saved speaker sounds: the EQ, low cut and mono as they are now, kept under a name; one dropped on the speakers is heard at once
+const soundOn = o => { const sp = S?.speaker; return !!sp?.eq && ["bass", "mid", "treble"].every(b => (sp.eq[b] || 0) === (o.eq[b] || 0)) && (sp.highpass_hz || 0) === (o.highpass || 0) && !!sp.mono === !!o.mono; };
+const soundList = () => SOUNDS.kids.map(id => O[id]).filter(Boolean).map(x => ({ name: x.name, eq: x.eq, highpass: x.highpass, mono: x.mono }));
+async function saveSounds(list, said) {
+  try { await api("/api/speaker/sounds", { sounds: list }); await loadFolder(SOUNDS); drawDesk(); if (said) toast(said); }
+  catch (e) { toast("Not saved: " + e.message + "."); throw e; }
+}
+async function keepSound(name) {
+  if (!S?.speaker?.eq) return toast("This radio has no speaker EQ to save.");
+  if (!SOUNDS.loaded) await loadFolder(SOUNDS).catch(() => {});
+  name = name || `Sound ${SOUNDS.kids.length + 1}`;
+  const now = { name, eq: { bass: S.speaker.eq.bass || 0, mid: S.speaker.eq.mid || 0, treble: S.speaker.eq.treble || 0 }, highpass: S.speaker.highpass_hz || 0, mono: !!S.speaker.mono };
+  return saveSounds([...soundList().filter(x => x.name.toLowerCase() !== name.toLowerCase()), now], `The speakers as they sound now are saved as “${name}”.`).catch(() => {});
+}
+async function applySound(o) {
+  try { S.speaker = await api("/api/speaker", { eq: o.eq, highpass: o.highpass, mono: !!o.mono }); updateRadio(); drawDesk(); toast(`The speakers: “${o.title}”.`); }
+  catch (e) { toast("Not changed: " + e.message + "."); }
 }
 // saved settings (the Backups folder): keep the settings as they are now, load one back, delete one
 async function backupsChanged(said) { await loadFolder(BACKUPS).catch(() => {}); drawDesk(); if (said) toast(said); }
@@ -1445,6 +1480,8 @@ async function open(id) {
   if (["track", "station", "episode", "show", "book"].includes(o.kind)) return play(o);
   if (o.kind === "dj") return open(PANEL.dj.id);
   if (o.kind === "backup") return loadBackup(o);
+  if (o.kind === "eqset") return applySound(o);
+  if (o.kind === "wifi") return open(PANEL.wifi.id);
   if (o.kind === "action" || o.kind === "jingle" || o.kind === "noise") return play(o);   // (do it now; drag it to keep it on a button)
   if (o.kind === "panel" && o.key === "library") return open(LISTS.id);   // (each theme has its jingles and messages)
   if (o.kind === "panel" && o.key === "voices") return open(VOICES.id);
@@ -1660,6 +1697,19 @@ function folderView(o, box, win) {
   }
   else if (o.box === "buttons") tools.append(T("Day and night…", () => open(PANEL.buttons.id)),
     el("span", { className: "note", textContent: `The radio's buttons: its day set and its night set (in use now: ${bStatus?.bank || "day"}) · drop things onto one · open one to put them in order or take them off · drag one button onto another to swap them` }));
+  else if (o.box === "sounds") {
+    tools.append(T("Save the sound as it is now", () => { win.naming = !win.naming; drawDesk(); }, "primary"), T("Sliders…", () => open(PANEL.speakers.id)));
+    if (win.naming) {
+      const name = el("input", { type: "text", placeholder: "A name: Bedside, Bass port…", id: "eq-name", maxLength: 40, style: "background:var(--win);border:1px solid var(--line);border-radius:6px;padding:3px 7px;width:15em" });
+      const ok = T("Save", () => { win.naming = false; keepSound(name.value.trim()); }, "primary");
+      name.onkeydown = e => { if (e.key === "Enter") ok.click(); };
+      tools.append(name, ok);
+      setTimeout(() => name.focus(), 0);
+    } else tools.append(el("span", { className: "note", textContent: "The EQ, low cut and mono, saved under a name · drag one onto the radio's speakers (or double-click it) to hear it · to the Trash to delete it" }));
+  }
+  else if (o.box === "wifi") tools.append(T("Join a network…", () => open(PANEL.wifi.id)),
+    T("Try them now", async () => { try { await api("/api/wifi/try", {}); toast("The radio is trying its saved networks."); } catch (e) { toast(e.message); } }),
+    el("span", { className: "note", textContent: "The networks the radio knows · drag one to the Trash to forget it · joining a new one needs its password: Join a network…" }));
   else if (o.box === "backups") {
     const up = el("input", { type: "file", hidden: true, accept: ".json,application/json" });
     up.onchange = () => { const f = up.files[0]; up.value = ""; if (f) uploadBackup(f); };
@@ -2139,7 +2189,8 @@ const UI = {
           line(sbtn("Open the Buttons folder", () => open(BUTTONS_BOX.id), "primary"))),
         b.bank ? grp("Day and night sets", srow("Set in use", seg([["day", "Day"], ["night", "Night"]], b.bank, v => act(() => api("/api/buttons/bank", { bank: v })))),
           srow("Swap by the clock", sw(auto.on, v => saveAuto(v), "Swap by the clock")), srow("Night from", night), srow("Day from", day),
-          help("Or hold buttons 2 and 3 together for a second. Each set has its own four.")) : null,
+          help("Or hold buttons 2 and 3 together for a second. Each set has its own four."),
+          help("A programme can do it too: drag “Day / night buttons” from the Actions folder onto a programme's timeline, and its bar is when the night buttons are in use.")) : null,
       ];
     },
   },
@@ -2844,7 +2895,7 @@ function switchInspector(o, w, win, s0) {
   const k = win.sw, on = s0 + w.from, off = on + w.min;
   const what = el("select", { id: `sww-${o.id}-${k}` });
   what.setAttribute("aria-label", "Which switch");
-  for (const v of ["noise", "dj"]) what.append(new Option(SWITCH_NAME[v], v, false, w.what === v));
+  for (const v of ["noise", "dj", "night"]) what.append(new Option(SWITCH_NAME[v], v, false, w.what === v));
   what.onchange = () => { w.what = what.value; saveProgrammes(); };
   const onIn = el("input", { type: "time", value: hhmm(on), id: `swon-${o.id}-${k}` }), offIn = el("input", { type: "time", value: hhmm(off), id: `swoff-${o.id}-${k}` });
   onIn.setAttribute("aria-label", "On at"); offIn.setAttribute("aria-label", "Off at");
@@ -2863,7 +2914,7 @@ function switchInspector(o, w, win, s0) {
   return el("div", { className: "insp" },
     el("div", { className: "line" }, what, el("span", { className: "muted", textContent: "on at" }), onIn, el("span", { className: "muted", textContent: "off at" }), offIn,
       el("span", { className: "muted", textContent: "for" }), m, del),
-    el("div", { className: "line" }, el("span", { className: "muted", textContent: `On at the start of the bar and off at its end, whatever ${w.what === "dj" ? "the DJ was" : "the noise was"} before. It runs beside the blocks, not in their turn. Stop switches it off.` })));
+    el("div", { className: "line" }, el("span", { className: "muted", textContent: `On at the start of the bar and off at its end, whatever ${w.what === "dj" ? "the DJ was" : w.what === "night" ? "the buttons were (off: the day buttons)" : "the noise was"} before. It runs beside the blocks, not in their turn. Stop switches it off.` })));
 }
 // a switch's bar moved or stretched (startMin: on the timeline, s0: the programme's start there).
 // Only switches: the programme starts with its first bar. With blocks: not before the programme starts.
@@ -3024,9 +3075,11 @@ async function drop(src, target, ev) {
     if (o.kind === "person") return api("/api/birthdays/hear", o.b).then(() => toast(`The DJ is wishing ${o.title} a happy birthday.`)).catch(e => toast(e.message));
     if (o.kind === "voice") return open(o.id);
     if (o.kind === "backup") return loadBackup(o);
+    if (o.kind === "eqset") return applySound(o);
     if (o.kind === "note" || o.kind === "message") return api("/api/messages/hear", { text: o.text }).then(() => toast(`The DJ is saying “${o.title}”.`)).catch(e => toast(e.message));
     return play(o);
   }
+  if (kind === "grille") return o.kind === "eqset" ? applySound(o) : toast("The speakers take a saved sound: drag one from the Speaker sounds folder.");
   if (kind === "preset") return setPreset(+target.dataset.n, o);
   const dest = O[target.dataset.target];
   if (!dest) return;
@@ -3071,7 +3124,7 @@ async function drop(src, target, ev) {
       const w = W.find(w => w.id === dest.id); if (w) { w.sw = dest.switches.length - 1; w.blk = null; }
       return setSwitch(dest, dest.switches.length - 1, at, min, s0);
     }
-    if (kind === "swlane") return toast("That lane is for switches: Noise or the DJ. Drop other things on the running order above it.");
+    if (kind === "swlane") return toast("That lane is for switches: Noise, the DJ or the Night buttons. Drop other things on the running order above it.");
     if (!objRef(o)) return toast(`“${o.title}” can't go in a programme.`);
     await fetchLengths([o]);                         // its real running time, from the radio
     if (kind === "blk") { const b = dest.blocks[+target.dataset.i]; if (!b.items.includes(o.id)) b.items.push(o.id); await saveProgrammes(`Added “${o.title}” to “${b.name}”.`); }
@@ -3208,6 +3261,13 @@ function trash(src) {
     return toast(`“${o.title}” stays on the desktop.`);
   }
   const from = O[src.parent];
+  if (o.kind === "eqset") { const was = soundList();
+    return gone(`Deleted the speaker sound “${o.title}”.`, async () => { await saveSounds(was.filter(x => x.name !== o.name)); return () => saveSounds(was).catch(() => {}); }); }
+  if (o.kind === "wifi") {
+    if (!o.saved) return toast(`“${o.title}” was put on the card when it was made: it can't be forgotten from here.`);
+    return ask(o.on ? `Forget “${o.title}”? The radio is on it now: it will drop off, and you'll need another saved network or the radio's own one to reach it.` : `Forget the network “${o.title}”?`, "Forget it", async () => {
+      try { await api("/api/wifi/remove", { ssid: o.ssid }); await loadFolder(WIFI_BOX).catch(() => {}); drawDesk(); toast(`Forgot “${o.title}”.`); } catch (e) { toast("Not forgotten: " + e.message + "."); } });
+  }
   if (o.kind === "backup") return ask(`Delete the saved settings “${o.title}” for good?`, "Delete for good", async () => {
     try { await api("/api/backups/delete", { name: o.name }); desk = desk.filter(p => p.id !== o.id); saveDesk(); await backupsChanged(`Deleted “${o.title}”.`); } catch (e) { toast("Not deleted: " + e.message + "."); } });
   if (from?.kind === "button") {                      // off the button (the thing itself stays on the radio)
