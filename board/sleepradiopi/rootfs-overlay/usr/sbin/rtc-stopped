@@ -1,0 +1,30 @@
+#!/bin/sh
+# Has the real-time clock stopped since it was last set?
+#
+# A DS3231 raises a flag when its oscillator stops -- it lost its battery as
+# well as its supply -- and the time it then gives is wrong: it carried on
+# from where it stopped. The kernel's driver only mentions it ("SET TIME!")
+# and neither refuses the time nor clears the flag, so that's done here.
+#
+#   rtc-stopped         0: it stopped (don't trust its time); 1: it didn't;
+#                       2: can't tell (no RTC, or not a chip with this flag)
+#   rtc-stopped clear   the clock has just been set: clear the flag
+#                       (0 if it was set and is now clear, 1 if it wasn't set)
+#
+# S12rtc asks at boot; clock-save clears it once NTP's time is in the RTC.
+
+RTC=${RTC:-/sys/class/rtc/rtc0}
+STATUS=0x0f                              # DS3231 status register; bit 7 = oscillator stopped
+
+dev=$(readlink -f "$RTC/device" 2>/dev/null) || exit 2
+grep -qE 'ds3231|ds3232|ds1337|ds1339' "$dev/of_node/compatible" 2>/dev/null || exit 2
+node=${dev##*/}                          # "1-0068": I2C bus 1, address 0x68
+bus=${node%%-*}
+addr=0x${node#*-}
+modprobe -q i2c-dev 2>/dev/null
+v=$(i2cget -f -y "$bus" "$addr" $STATUS 2>/dev/null) || exit 2
+[ -n "$v" ] || exit 2
+[ $((v & 0x80)) -ne 0 ] || exit 1
+[ "$1" = clear ] || exit 0
+i2cset -f -y "$bus" "$addr" $STATUS $((v & 0x7f)) 2>/dev/null || exit 2
+exit 0

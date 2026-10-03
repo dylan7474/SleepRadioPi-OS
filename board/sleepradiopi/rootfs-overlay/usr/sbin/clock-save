@@ -27,7 +27,10 @@ case "$(basename "$0")" in
 		case "$1" in
 			step|stratum|periodic)
 				touch /run/time-synced /run/ntp-synced
-				[ -e /dev/rtc0 ] && hwclock -w -u -f /dev/rtc0 2>/dev/null
+				# (and, set from the real time, it's no longer a clock that stopped)
+				if [ -e /dev/rtc0 ] && hwclock -w -u -f /dev/rtc0 2>/dev/null; then
+					${STOPPED:-/usr/sbin/rtc-stopped} clear && logger -t rtc "the RTC had stopped; it's set from the internet time again"
+				fi
 				;;
 		esac
 		saved=$(cat $F 2>/dev/null || echo 0)

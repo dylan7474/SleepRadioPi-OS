@@ -7,10 +7,11 @@
 # time out and schedules news straight away, even with no Wi-Fi. Once ntpd
 # has the internet time, clock-save writes it back to the RTC.
 #
-# Sensible means: the RTC's oscillator never stopped (after a flat battery
-# the driver refuses to read it until it's set again), and its time is no
-# earlier than this image's build or the last time saved to /data, and less
-# than 10 years after that.
+# Sensible means: the RTC's oscillator hasn't stopped since it was last set
+# (a flat or missing battery: rtc-stopped asks the chip, because the kernel's
+# driver reads such a clock all the same), and its time is no earlier than
+# this image's build or the last time saved to /data, and less than 10 years
+# after that.
 #
 # No RTC fitted: nothing happens, and the time is trusted only after NTP.
 #
@@ -19,6 +20,7 @@ RTC=${RTC:-/sys/class/rtc/rtc0}
 CLOCK=${CLOCK:-/data/clock}
 BUILT=${BUILT:-/etc/build-time}
 FLAG=${FLAG:-/run/time-synced}
+STOPPED=${STOPPED:-/usr/sbin/rtc-stopped}
 
 log() { logger -t rtc "$*"; }
 
@@ -36,6 +38,10 @@ start() {
 	t=$(cat $RTC/since_epoch 2>/dev/null)
 	if [ -z "$t" ]; then
 		log "RTC unreadable (flat battery, or never set): not used until NTP sets it"
+		return 0
+	fi
+	if $STOPPED; then
+		log "the RTC stopped at some point (a flat or missing battery?): not used until NTP sets it"
 		return 0
 	fi
 	floor=$(cat $BUILT 2>/dev/null || echo 0)

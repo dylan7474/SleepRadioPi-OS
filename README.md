@@ -521,8 +521,12 @@ Other targets are passed through to Buildroot: `make menuconfig`,
 - **Offline is normal.** The station only says the time and schedules news
   once the clock can be trusted (`/run/time-synced`): either NTP has set it
   since power-on, or an **RTC** answered at boot with a sensible time (its
-  oscillator never stopped, and it's no earlier than the image build or the
-  last saved time; `S12rtc`, logged as `rtc` in `/var/log/messages`). Until
+  oscillator hasn't stopped since it was last set, and it's no earlier than
+  the image build or the last saved time; `S12rtc`, logged as `rtc` in
+  `/var/log/messages`). A DS3231 flags a stopped oscillator -- a flat or
+  missing battery -- but the kernel reads its time all the same, so
+  `rtc-stopped` asks the chip itself: a clock that stopped isn't trusted
+  until NTP sets it again, which also clears the flag (`clock-save`). Until
   then it says no times, greets with "Hello" and skips news. Without an RTC
   the clock is still restored from `/data/clock` at boot, but that can be
   hours out. When Wi-Fi comes up, a udhcpc hook restarts ntpd so the clock
