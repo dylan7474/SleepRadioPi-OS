@@ -253,6 +253,27 @@
   .tpop { position: absolute; top: 4px; z-index: 10; display: flex; gap: 6px; align-items: center; white-space: nowrap; font-size: 12px;
           background: var(--win); color: var(--ink); border: 1px solid var(--line); border-radius: 7px; padding: 4px 8px; box-shadow: 0 4px 14px var(--shadow); }
   .tpop input { font: inherit; }
+  /* a time of day: a field showing it; a click opens the keys (.tpick) */
+  .timein { font: inherit; font-variant-numeric: tabular-nums; background: var(--field); border: 1px solid var(--key-line); border-radius: 7px; padding: 5px 9px; color: var(--ink); cursor: pointer; }
+  .timein:hover:not(:disabled) { border-color: var(--engrave); }
+  .timein:disabled { opacity: .6; cursor: default; }
+  .tpick { position: fixed; z-index: 9000; background: var(--win); color: var(--ink); border: 1px solid var(--line); border-radius: 11px; padding: 10px 12px 12px; box-shadow: 0 10px 30px var(--shadow), 0 2px 6px var(--shadow); display: grid; gap: 8px; justify-items: center; }
+  .tpick .cap { font-size: 11px; color: var(--dim); max-width: 220px; text-align: center; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .tpick .cols { display: flex; align-items: center; gap: 6px; }
+  .tpick .col { display: grid; gap: 4px; justify-items: center; }
+  .tpick .col button { width: 62px; padding: 3px 0; font-size: 12px; border: 1px solid var(--key-line); background: var(--key); color: var(--key-ink); border-radius: 8px; cursor: pointer; }
+  .tpick .col button:hover { border-color: var(--engrave); color: var(--ink); }
+  .tpick .col button:active { transform: translateY(1px); }
+  .tpick .val, .tpick .colon { font: 700 32px var(--display); font-variant-numeric: tabular-nums; }
+  .tpick .val { width: 62px; text-align: center; background: var(--field); border: 1px solid var(--key-line); border-radius: 8px; }
+  .tpick .val:focus-visible { outline: 2px solid var(--amber); outline-offset: 1px; }
+  .tpick .hint { font-size: 10.5px; color: var(--faint); }
+  /* a length: minus, the length in words, plus */
+  .lenin { display: inline-flex; align-items: center; gap: 4px; }
+  .lenin b { min-width: 5.2em; text-align: center; font-weight: 600; font-variant-numeric: tabular-nums; background: var(--field); border: 1px solid var(--key-line); border-radius: 7px; padding: 5px 6px; }
+  .lenin button { width: 28px; padding: 4px 0; font-size: 14px; font-weight: 700; line-height: 1.1; border: 1px solid var(--key-line); background: var(--key); color: var(--key-ink); border-radius: 8px; cursor: pointer; }
+  .lenin button:hover { border-color: var(--engrave); color: var(--ink); }
+  .lenin button:active { transform: translateY(1px); }
   .insp { background: var(--plate); color: var(--ink); border: 1px solid var(--plate-line); border-radius: 11px; box-shadow: 0 1px 2px var(--shadow); padding: 10px 12px; display: grid; gap: 8px; }
   .insp .line { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
   .insp input.name { font-weight: 600; min-width: 0; flex: 1; }
@@ -803,6 +824,67 @@ function timeline(p) {
 // ============ drawing helpers ============
 const $ = id => document.getElementById(id);
 const el = (tag, props = {}, ...kids) => { const e = Object.assign(document.createElement(tag), props); e.append(...kids.filter(k => k != null)); return e; };
+// A time of day, chosen with up and down keys: hours, and minutes in fives (Shift: ones; the wheel
+// works too). It opens under what was clicked; Enter, Done or a click elsewhere keeps the time, Escape doesn't.
+let timePick = null;
+function timePop(anchor, value, done, label) {
+  timePick?.(true);
+  let v = toMin(value || "00:00");
+  const was = v, hv = el("div", { className: "val", tabIndex: 0 }), mv = el("div", { className: "val", tabIndex: 0 });
+  hv.setAttribute("aria-label", "Hour"); mv.setAttribute("aria-label", "Minutes");
+  const draw = () => { hv.textContent = hhmm(v).slice(0, 2); mv.textContent = hhmm(v).slice(3); };
+  const bump = (unit, up, fine) => { const st = unit === "h" ? 60 : fine ? 1 : 5;       // (minutes land on the fives)
+    v = (((up ? Math.floor(v / st) * st + st : Math.ceil(v / st) * st - st) % 1440) + 1440) % 1440; draw(); };
+  const col = (val, unit) => {
+    const key = (t, up, word) => { const k = el("button", { type: "button", textContent: t }); k.setAttribute("aria-label", word); k.onclick = e => bump(unit, up, e.shiftKey); return k; };
+    val.addEventListener("wheel", e => { e.preventDefault(); bump(unit, e.deltaY < 0, e.shiftKey); }, { passive: false });
+    val.onkeydown = e => { if (e.key === "ArrowUp" || e.key === "ArrowDown") { e.preventDefault(); bump(unit, e.key === "ArrowUp", e.shiftKey); } };
+    return el("div", { className: "col" }, key("▲", true, unit === "h" ? "An hour later" : "Later"), val, key("▼", false, unit === "h" ? "An hour earlier" : "Earlier"));
+  };
+  const ok = el("button", { className: "sbtn primary", type: "button", textContent: "Done" });
+  const pop = el("div", { className: "tpick" }, label ? el("div", { className: "cap", textContent: label }) : null,
+    el("div", { className: "cols" }, col(hv, "h"), el("span", { className: "colon", textContent: ":" }), col(mv, "m")),
+    el("div", { className: "hint", textContent: "Minutes go in fives · Shift: one at a time" }), ok);
+  pop.setAttribute("role", "dialog"); pop.setAttribute("aria-label", label || "A time");
+  const outside = e => { if (!pop.contains(e.target)) close(true); };
+  const close = keep => { if (timePick !== close) return; timePick = null; pop.remove(); document.removeEventListener("pointerdown", outside, true);
+    if (keep && v !== was) done(hhmm(v)); else if (anchor.isConnected) anchor.focus?.(); };
+  timePick = close;
+  ok.onclick = () => close(true);
+  pop.addEventListener("pointerdown", e => e.stopPropagation());
+  pop.addEventListener("keydown", e => { e.stopPropagation(); if (e.key === "Enter") { e.preventDefault(); close(true); } else if (e.key === "Escape") { e.preventDefault(); close(false); } });
+  document.body.append(pop); draw();
+  const r = anchor.getBoundingClientRect(), w = pop.offsetWidth, h = pop.offsetHeight;
+  pop.style.left = Math.max(8, Math.min(r.left, innerWidth - w - 8)) + "px";
+  pop.style.top = (r.bottom + 6 + h > innerHeight - 8 ? Math.max(8, r.top - h - 6) : r.bottom + 6) + "px";
+  setTimeout(() => document.addEventListener("pointerdown", outside, true), 0);
+  hv.focus();
+}
+// ...and the field that shows one (in place of a browser's time box): .value is "HH:MM", it fires "change"
+function timeIn(props) {
+  const b = el("button", { type: "button", className: "timein", ...props });
+  const say = () => { b.textContent = b.value || "--:--"; if (b._label) HTMLElement.prototype.setAttribute.call(b, "aria-label", `${b._label}: ${b.textContent}`); };
+  b.setAttribute = (k, val) => { if (k === "aria-label") { b._label = val; say(); } else HTMLElement.prototype.setAttribute.call(b, k, val); };
+  b.addEventListener("pointerdown", e => e.stopPropagation());
+  b.onclick = () => timePop(b, b.value, t => { b.value = t; say(); b.dispatchEvent(new Event("change")); }, b._label);
+  say();
+  return b;
+}
+// A length: minus and plus round its words ("1 h 30"); ones up to five minutes, fives up to an hour,
+// quarter hours up to three hours, then half hours. .value is the minutes; it fires onchange once the clicking stops.
+function lenIn(props, lo = 1, hi = 1440) {
+  const out = el("b"), box = el("span", { className: "lenin", id: props.id });
+  let v = props.value, timer = null;
+  box.value = v; box.setAttribute("role", "group");
+  const step = up => { const st = (up ? v >= 180 : v > 180) ? 30 : (up ? v >= 60 : v > 60) ? 15 : (up ? v >= 5 : v > 5) ? 5 : 1;
+    v = Math.max(lo, Math.min(hi, up ? Math.floor(v / st) * st + st : Math.ceil(v / st) * st - st));
+    box.value = v; out.textContent = dur(v);
+    clearTimeout(timer); timer = setTimeout(() => box.onchange?.(), 400); };
+  const key = (t, up, word) => { const k = el("button", { type: "button", textContent: t }); k.setAttribute("aria-label", word); k.onclick = () => step(up); k.addEventListener("pointerdown", e => e.stopPropagation()); return k; };
+  out.textContent = dur(v); out.setAttribute("aria-live", "polite");
+  box.append(key("−", false, "Shorter"), out, key("+", true, "Longer"));
+  return box;
+}
 const KIND = { folder: "Folder", album: "Album", track: "Track", station: "Station", podcast: "Podcast", episode: "Episode", book: "Audiobook",
                playlist: "Playlist", programme: "Programme", button: "Button", noise: "Noise", backup: "Saved settings", eqset: "Speaker sound", wifi: "Wi-Fi network", list: "Theme", jingle: "Jingle", message: "Message", action: "Action", person: "Birthday", voice: "Voice", show: "The show", trash: "Trash", panel: "Setting", dj: "The DJ", note: "Messages", calendar: "Birthdays", artistref: "Artist" };
 const TINT = { album: 30, track: 45, station: 8, podcast: 275, episode: 265, book: 150, playlist: 215, programme: 40, list: 195, show: 40, folder: 40 };
@@ -2195,7 +2277,7 @@ const UI = {
     build: (b, act) => {
       buttons = b.buttons; updateRadio();
       const auto = b.auto || {};
-      const night = el("input", { type: "time", value: hhmm(auto.night_min ?? 1260), id: "b-night" }), day = el("input", { type: "time", value: hhmm(auto.day_min ?? 420), id: "b-day" });
+      const night = timeIn({ value: hhmm(auto.night_min ?? 1260), id: "b-night" }), day = timeIn({ value: hhmm(auto.day_min ?? 420), id: "b-day" });
       const saveAuto = on => act(() => api("/api/buttons/auto", { on, night_min: minsOf(night.value), day_min: minsOf(day.value) }));
       night.onchange = () => saveAuto(!!auto.on); day.onchange = () => saveAuto(!!auto.on);
       return [
@@ -2241,7 +2323,7 @@ const UI = {
     load: () => api("/api/messages"),
     build: (m, act) => {
       const save = next => act(() => api("/api/messages", { on: m.on, every_min: m.every_min, offset_min: m.offset_min, start_min: m.start_min, end_min: m.end_min, date_first: m.date_first, list: m.list, ...next }));
-      const start = el("input", { type: "time", value: hhmm(m.start_min), id: "msg-start" }), end = el("input", { type: "time", value: hhmm(m.end_min), id: "msg-end" });
+      const start = timeIn({ value: hhmm(m.start_min), id: "msg-start" }), end = timeIn({ value: hhmm(m.end_min), id: "msg-end" });
       start.onchange = () => save({ start_min: minsOf(start.value) }); end.onchange = () => save({ end_min: minsOf(end.value) });
       return [grp("Messages the DJ reads out", srow("Reading them", sw(m.on, v => save({ on: v }), "Read the messages")),
           srow("Every", seg([[15, "15 min"], [30, "30 min"], [60, "hour"]], m.every_min, v => save({ every_min: v }))),
@@ -2272,7 +2354,7 @@ const UI = {
       ta.onchange = () => ta.value.trim() && save({ text: ta.value.trim() });
       const timed = !!m.times?.length;
       const times = el("div", { className: "line" }, ...(m.times || []).map((t, k) => {
-        const inp = el("input", { type: "time", value: t, id: "note-t" + k });
+        const inp = timeIn({ value: t, id: "note-t" + k });
         inp.onchange = () => save({ times: m.times.map((x, j) => j === k ? inp.value : x) });
         return el("span", { className: "line" }, inp, sbtn("✕", () => save({ times: m.times.filter((_, j) => j !== k) })));
       }), sbtn("＋ Time", () => save({ times: [...(m.times || []), "09:00"] })));
@@ -2284,7 +2366,7 @@ const UI = {
       const setDate = () => save({ date: mon.value && day.value ? `${String(mon.value).padStart(2, "0")}-${String(day.value).padStart(2, "0")}` : undefined });
       mon.onchange = setDate; day.onchange = setDate;
       const until = el("input", { type: "date", value: m.until || "", id: "note-until" });
-      const fromT = el("input", { type: "time", value: m.from || "08:00", id: "note-from" }), toT = el("input", { type: "time", value: m.to || "21:00", id: "note-to" });
+      const fromT = timeIn({ value: m.from || "08:00", id: "note-from" }), toT = timeIn({ value: m.to || "21:00", id: "note-to" });
       fromT.onchange = () => fromT.value && save({ from: fromT.value });
       toT.onchange = () => toT.value && save({ to: toT.value });
       until.onchange = () => save({ until: until.value || undefined });
@@ -2729,7 +2811,7 @@ function programmeView(o, box, win) {
   nameIn.setAttribute("aria-label", "Programme name");
   nameIn.onchange = () => { const old = o.id, v = nameIn.value.trim(); if (!v) return; o.title = v; delete O[old]; o.id = "pg:" + v.toLowerCase(); O[o.id] = o;
     PROGRAMMES.kids = PROGRAMMES.kids.map(x => x === old ? o.id : x); win.id = o.id; desk.forEach(p => { if (p.id === old) p.id = o.id; }); saveProgrammes("Renamed."); };
-  const startIn = el("input", { type: "time", value: o.start, id: "start-" + o.id });
+  const startIn = timeIn({ value: o.start, id: "start-" + o.id });
   startIn.setAttribute("aria-label", "Starts at");
   startIn.onchange = () => { o.start = startIn.value; saveProgrammes(); };
   const then = el("select", { id: "then-" + o.id });
@@ -2754,7 +2836,7 @@ function programmeView(o, box, win) {
   repSel.setAttribute("aria-label", "Repeat");
   for (const [v, t] of [["once", "once"], ["daily", "every day"], ["weekdays", "weekdays"], ["weekends", "weekends"], ["days", "on chosen days…"],
                         ["q15", "every 15 min"], ["q30", "every 30 min"], ["q60", "every hour"]]) repSel.append(new Option(t, v, false, rep === v));
-  const untilIn = el("input", { type: "time", value: o.until || "21:00", id: "until-" + o.id, title: "The last time it repeats, each day" });
+  const untilIn = timeIn({ value: o.until || "21:00", id: "until-" + o.id, title: "The last time it repeats, each day" });
   untilIn.setAttribute("aria-label", "Repeats until");
   untilIn.onchange = () => { o.until = untilIn.value; saveProgrammes(); };
   repSel.onchange = () => { setRepeat(o, repSel.value); saveProgrammes(o.auto ? `${o.title}: ${armText(o).toLowerCase()}.` : ""); };
@@ -2811,7 +2893,7 @@ function programmeView(o, box, win) {
     p.onclick = () => { const mid = view0 + span / 2; win.zoom = v; win.view0 = v === "fit" ? null : Math.max(0, mid - v / 2); drawDesk(); };
     zoomBar.append(p);
   }
-  zoomBar.append(el("span", { className: "muted", style: "margin-left:auto", textContent: "Scroll to move along the day · Ctrl+scroll to zoom · click a chosen block again to type its time" }));
+  zoomBar.append(el("span", { className: "muted", style: "margin-left:auto", textContent: "Scroll to move along the day · Ctrl+scroll to zoom · click a chosen block again to set its time" }));
   const strip = el("div", { className: "daystrip", title: "The whole day: click or drag to move along it" });
   const sx = m => m / D1 * 100 + "%";
   // midnight: the next day, named (from the day it next runs)
@@ -2844,7 +2926,7 @@ function programmeView(o, box, win) {
     blk.dataset.drop = "blk"; blk.dataset.target = o.id; blk.dataset.i = i;
     const bi = el("div", { className: "bi" }); b.items.slice(0, 5).forEach(id => O[id] && bi.append(glyph(O[id])));
     blk.append(el("div", { className: "bt", textContent: (live ? "● " : "") + b.name }), el("div", { className: "bw", textContent: `${hhmm(s.start)}–${hhmm(s.end)} · ${dur(s.len)}` }), bi);
-    blk.title = `${b.name}: ${hhmm(s.start)}–${hhmm(s.end)}` + (win.blk === i ? " · click again to type a start time" : "");
+    blk.title = `${b.name}: ${hhmm(s.start)}–${hhmm(s.end)}` + (win.blk === i ? " · click again to set its start time" : "");
     if (b.rule === "at") blk.append(el("span", { className: "pin", textContent: "at " + b.at }));
     const grab = el("div", { className: "grab", title: "Drag to change how long" });
     grab.addEventListener("pointerdown", e => stretch(e, o, i, px));
@@ -2911,16 +2993,14 @@ function switchInspector(o, w, win, s0) {
   what.setAttribute("aria-label", "Which switch");
   for (const v of ["noise", "dj", "night"]) what.append(new Option(SWITCH_NAME[v], v, false, w.what === v));
   what.onchange = () => { w.what = what.value; saveProgrammes(); };
-  const onIn = el("input", { type: "time", value: hhmm(on), id: `swon-${o.id}-${k}` }), offIn = el("input", { type: "time", value: hhmm(off), id: `swoff-${o.id}-${k}` });
+  const onIn = timeIn({ value: hhmm(on), id: `swon-${o.id}-${k}` }), offIn = timeIn({ value: hhmm(off), id: `swoff-${o.id}-${k}` });
   onIn.setAttribute("aria-label", "On at"); offIn.setAttribute("aria-label", "Off at");
   // a typed time: the nearest one to where the bar is (with blocks, never before the programme: the next day)
   const near = m => { let t = on + (((m - on) % 1440 + 2160) % 1440 - 720); if (o.blocks.length && t < s0) t += 1440; return t; };
   onIn.onchange = () => { const t = near(toMin(onIn.value)); setSwitch(o, k, t, off - t > 0 ? off - t : off - t + 1440, s0); };   // (the end stays)
   offIn.onchange = () => { const m = toMin(offIn.value); setSwitch(o, k, on, ((m - on) % 1440 + 1440) % 1440 || 1440, s0); };
-  const m = el("select", { id: `swmin-${o.id}-${k}` });
+  const m = lenIn({ id: `swmin-${o.id}-${k}`, value: w.min }, 5);
   m.setAttribute("aria-label", "For");
-  const MINS = [5, 10, 15, 30, 45, 60, 90, 120, 180, 240, 360, 480];
-  for (const v of MINS) m.append(new Option(dur(v), v, false, w.min === v)); if (!MINS.includes(w.min)) m.append(new Option(dur(w.min), w.min, false, true));
   m.onchange = () => setSwitch(o, k, on, +m.value, s0);
   const del = el("button", { className: "pill", type: "button", textContent: "Delete", style: "margin-left:auto" });
   del.onclick = async () => { const before = JSON.stringify(o.switches); o.switches.splice(k, 1); win.sw = null; await saveProgrammes();
@@ -2986,19 +3066,17 @@ function inspector(o, b, win) {
   for (const [v, s] of [["for", "Play for"], ["until", "Play until"], ["end", "Play until it ends"], ["at", "Start at, sharp"]]) rule.append(new Option(s, v, false, b.rule === v));
   const tl = (win.tl && win.tl[i]) || timeline(o)[i];
   rule.onchange = () => { b.rule = rule.value; if (b.rule === "until" && !b.until) b.until = hhmm(tl.end); if (b.rule === "at" && !b.at) b.at = hhmm(tl.start); if (!b.min) b.min = 60; saveProgrammes(); };
-  const startAt = el("input", { type: "time", value: hhmm(tl.start), id: `st-${o.id}-${i}`, title: "When it starts" });
+  const startAt = timeIn({ value: hhmm(tl.start), id: `st-${o.id}-${i}`, title: "When it starts" });
   startAt.setAttribute("aria-label", "Starts at");
   startAt.onchange = () => setBlockStart(o, i, toMin(startAt.value), win);
   if (win.running) { startAt.disabled = true; startAt.title = "The real time, while it plays"; }
   const moment = b.items.length && b.items.every(id => INSTANT.includes(O[id]?.kind));
   const line1 = el("div", { className: "line" }, name, el("span", { className: "muted", textContent: win.running ? (i <= (S?.programme?.index ?? -1) ? "started" : "due") : moment ? "happens at" : "starts" }), startAt, moment ? null : rule);
   if (moment && momentsOnly(o) && o.every) line1.append(el("span", { className: "muted", textContent: `then ${repeatWords(o)}, as the programme repeats` }));
-  if (b.rule === "at" && !moment) { const at = el("input", { type: "time", value: b.at, id: `at-${o.id}-${i}` }); at.setAttribute("aria-label", "At"); at.onchange = () => { b.at = at.value; saveProgrammes(); }; line1.append(at, el("span", { className: "muted", textContent: "for" })); }
-  if ((b.rule === "for" || b.rule === "at") && !moment) { const m = el("select", { id: `min-${o.id}-${i}` }); m.setAttribute("aria-label", "For");
-    const MINS = [1, 3, 5, 10, 15, 30, 45, 60, 90, 120, 180, 240];
-    for (const v of MINS) m.append(new Option(dur(v), v, false, (b.min || 60) === v)); if (!MINS.includes(b.min || 60)) m.append(new Option(dur(b.min), b.min, false, true));
+  if (b.rule === "at" && !moment) { const at = timeIn({ value: b.at, id: `at-${o.id}-${i}` }); at.setAttribute("aria-label", "At"); at.onchange = () => { b.at = at.value; saveProgrammes(); }; line1.append(at, el("span", { className: "muted", textContent: "for" })); }
+  if ((b.rule === "for" || b.rule === "at") && !moment) { const m = lenIn({ id: `min-${o.id}-${i}`, value: b.min || 60 }); m.setAttribute("aria-label", "For");
     m.onchange = () => { b.min = +m.value; saveProgrammes(); }; line1.append(m); }
-  if (b.rule === "until") { const u = el("input", { type: "time", value: b.until, id: `until-${o.id}-${i}` }); u.setAttribute("aria-label", "Until"); u.onchange = () => { b.until = u.value; saveProgrammes(); }; line1.append(u); }
+  if (b.rule === "until") { const u = timeIn({ value: b.until, id: `until-${o.id}-${i}` }); u.setAttribute("aria-label", "Until"); u.onchange = () => { b.until = u.value; saveProgrammes(); }; line1.append(u); }
   const line2 = el("div", { className: "line" });
   if (moment) line2.append(el("span", { className: "muted", textContent: "A moment: the DJ says it or it's done at that time, over what's playing, then the programme carries on." }));
   else for (const [v, s] of [["inorder", "In order"], ["shuffle", "Shuffle"]]) { const p = el("button", { className: "pill", type: "button", textContent: s }); p.setAttribute("aria-pressed", String((b.order || "inorder") === v)); p.onclick = () => { b.order = v; saveProgrammes(); }; line2.append(p); }
@@ -3380,17 +3458,7 @@ function pressBlock(e, blkEl, prog, i, win, px, wasSel) {
 }
 function editStart(blkEl, prog, i, win) {
   const t = (win.tl && win.tl[i]) || timeline(prog)[i], was = hhmm(t.start);
-  const inp = el("input", { type: "time", value: was });
-  inp.setAttribute("aria-label", "Starts at");
-  let done = false;
-  const finish = ok => { if (done) return; done = true; if (ok && inp.value && inp.value !== was) setBlockStart(prog, i, toMin(inp.value), win); else drawDesk(); };
-  inp.onkeydown = e => { if (e.key === "Enter") finish(true); else if (e.key === "Escape") finish(false); };
-  inp.onblur = () => finish(true);
-  inp.addEventListener("pointerdown", e => e.stopPropagation());
-  const pop = el("label", { className: "tpop", style: `left:${blkEl.style.left}` }, `“${prog.blocks[i].name}” starts at`, inp);
-  pop.addEventListener("pointerdown", e => e.stopPropagation());
-  blkEl.parentElement.append(pop);
-  inp.focus();
+  timePop(blkEl, was, v => setBlockStart(prog, i, toMin(v), win), `“${prog.blocks[i].name}” starts at`);
 }
 function stretch(e, prog, i, px) {
   e.stopPropagation();

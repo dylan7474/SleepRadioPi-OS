@@ -447,7 +447,7 @@ The cards:
   it shows where the programme's blocks are (click or drag it to move along),
   *Show* zooms to the programme, 1, 3, 12 or 24 hours (or Ctrl+scroll), the
   wheel scrolls along the day, a block dragged to an edge scrolls on, and a
-  second click on a chosen block opens a box to type its start time; *＋ Moment* and the block's *Say it / Time check / The
+  second click on a chosen block opens the keys to set its start time (every time of day on the page is set the same way: click it for big up and down keys, hours and minutes in fives, Shift for single minutes, the mouse wheel too; a length has a minus and a plus round it); *＋ Moment* and the block's *Say it / Time check / The
   news / Sleep in 30 minutes* add moments (any sleep time can be dragged in from its folder); drag a sticky note or a jingle in too.
   They're saved on the radio. It works like a Mac's desktop throughout: **Escape**
   closes the front window, **Delete** puts the chosen thing in the Trash, the

@@ -1,0 +1,245 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Time pickers: a mock-up</title>
+<style>
+  :root {
+    --desk: #dcd8cf; --win: #fbfaf7; --win-2: #f1eee7; --line: #cfc9bc; --title: #e7e3da;
+    --ink: #24221d; --dim: #6d685d; --faint: #9a958a;
+    --amber: #e9a23a; --amber-ink: #231703; --amber-deep: #c98522; --blue: #2f6fd6;
+    --key: linear-gradient(180deg, #ffffff, #ebe7de); --key-line: #cfc8b8; --key-ink: #4d493f;
+    --groove: #d8d2c4; --field: #f4f1ea; --shadow: #3a33251f; --night: #2a2f45;
+    --display: "Futura", "Century Gothic", "Avenir Next", "Trebuchet MS", system-ui, sans-serif;
+    --body: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    color-scheme: light;
+  }
+  @media (prefers-color-scheme: dark) { :root {
+    --desk: #1b1d26; --win: #262935; --win-2: #2c3040; --line: #3d4257; --title: #30344a;
+    --ink: #ecebe6; --dim: #a9a798; --faint: #7d7b70;
+    --key: linear-gradient(180deg, #3a3f55, #2d3144); --key-line: #4a506a; --key-ink: #e2e0d8;
+    --groove: #3a3f55; --field: #1f2230; --shadow: #00000055; --night: #11131c;
+    color-scheme: dark;
+  } }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--desk); color: var(--ink); font: 14px/1.45 var(--body); padding: 22px 16px 60px; }
+  h1 { font: 700 20px var(--display); letter-spacing: .12em; text-transform: uppercase; margin: 0 0 4px; }
+  h2 { font: 700 13px var(--display); letter-spacing: .14em; text-transform: uppercase; color: var(--dim); margin: 30px 0 10px; }
+  p.lead { color: var(--dim); margin: 0 0 6px; max-width: 62em; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(330px, 1fr)); gap: 16px; align-items: start; }
+  .win { background: var(--win); border: 1px solid var(--line); border-radius: 9px; box-shadow: 0 6px 18px var(--shadow); overflow: hidden; }
+  .win header { background: var(--title); border-bottom: 1px solid var(--line); padding: 6px 12px; display: flex; gap: 10px; align-items: baseline; }
+  .win header b { font: 700 13px var(--display); letter-spacing: .06em; }
+  .win header span { color: var(--dim); font-size: 12px; }
+  .win .body { padding: 14px 14px 12px; min-height: 150px; }
+  .win footer { border-top: 1px solid var(--line); background: var(--win-2); padding: 7px 12px; font-size: 12.5px; color: var(--dim); display: flex; justify-content: space-between; gap: 10px; }
+  .win footer output { color: var(--ink); font-weight: 600; font-variant-numeric: tabular-nums; }
+  .why { color: var(--dim); font-size: 12.5px; margin: 10px 0 0; }
+  button { font: inherit; color: var(--key-ink); background: var(--key); border: 1px solid var(--key-line); border-radius: 7px; padding: 5px 10px; cursor: pointer; }
+  button:hover { border-color: var(--amber-deep); }
+  button.on { background: var(--amber); color: var(--amber-ink); border-color: var(--amber-deep); font-weight: 600; }
+  button:focus-visible, input:focus-visible, [tabindex]:focus-visible { outline: 2px solid var(--blue); outline-offset: 2px; }
+  input[type=time], input[type=number] { font: inherit; color: var(--ink); background: var(--field); border: 1px solid var(--line); border-radius: 6px; padding: 4px 7px; }
+  .big { font: 700 34px var(--display); font-variant-numeric: tabular-nums; letter-spacing: .02em; }
+
+  /* B: steppers */
+  .step { display: flex; align-items: center; gap: 6px; justify-content: center; }
+  .step .col { display: grid; gap: 4px; justify-items: center; }
+  .step .col button { width: 58px; padding: 2px 0; font-size: 12px; }
+  .step .val { width: 58px; text-align: center; background: var(--field); border: 1px solid var(--line); border-radius: 8px; padding: 2px 0; }
+
+  /* C: day strip */
+  .strip { position: relative; height: 46px; border-radius: 8px; border: 1px solid var(--line); cursor: pointer; touch-action: none; user-select: none;
+           background: linear-gradient(90deg, var(--night) 0 25%, #f3d9a0 29%, #fbf3dc 40% 70%, #f0b877 79%, var(--night) 88% 100%); }
+  .strip i { position: absolute; top: 0; width: 1px; height: 8px; background: #00000055; }
+  .strip i.h { height: 14px; }
+  .strip .mark { position: absolute; top: -5px; bottom: -5px; width: 4px; margin-left: -2px; background: var(--blue); border-radius: 2px; box-shadow: 0 0 0 2px var(--win); }
+  .strip .mark::after { content: attr(data-t); position: absolute; left: 50%; top: 100%; transform: translateX(-50%); margin-top: 3px; font: 600 12px var(--body); color: var(--ink); background: var(--win); padding: 0 4px; border-radius: 4px; }
+  .labels { display: flex; justify-content: space-between; color: var(--faint); font-size: 11px; margin-top: 22px; font-variant-numeric: tabular-nums; }
+  .nudge { display: flex; gap: 6px; justify-content: center; margin-top: 8px; }
+
+  /* D: clock face */
+  .face { display: flex; gap: 14px; align-items: center; justify-content: center; flex-wrap: wrap; }
+  .face svg { width: 190px; height: 190px; touch-action: none; }
+  .face text { font: 600 12px var(--body); fill: var(--ink); text-anchor: middle; dominant-baseline: central; cursor: pointer; user-select: none; }
+  .face text.in { font-size: 10.5px; fill: var(--dim); }
+  .face text.sel { fill: var(--amber-ink); }
+  .face .tabs { display: grid; gap: 6px; justify-items: center; }
+
+  /* E: chips */
+  .chips { display: flex; flex-wrap: wrap; gap: 5px; }
+  .chips button { min-width: 38px; padding: 4px 6px; font-variant-numeric: tabular-nums; }
+  .chips.h { display: grid; grid-template-columns: repeat(12, 1fr); gap: 3px; }
+  .chips.h button { min-width: 0; padding: 4px 0; font-size: 12.5px; }
+  .cap { color: var(--faint); font-size: 11px; text-transform: uppercase; letter-spacing: .1em; margin: 8px 0 4px; }
+  .cap:first-child { margin-top: 0; }
+
+  /* lengths */
+  .slider { width: 100%; accent-color: var(--amber-deep); }
+  .bar { position: relative; height: 34px; background: var(--field); border: 1px solid var(--line); border-radius: 7px; touch-action: none; user-select: none; }
+  .bar .fill { position: absolute; left: 0; top: 0; bottom: 0; background: hsl(175 45% 45% / .55); border-radius: 6px 0 0 6px; border-right: 5px solid hsl(175 55% 32%); cursor: ew-resize; }
+  .bar span { position: absolute; left: 8px; top: 50%; transform: translateY(-50%); font-weight: 600; font-size: 12.5px; pointer-events: none; }
+</style>
+</head>
+<body>
+<h1>Time pickers</h1>
+<p class="lead">A mock-up, not wired to the radio. Try each one and tell me which feels right; the numbers under each window show what it would save. The first window in each row is what the desktop page had, for comparison. Chosen (2026-10-03): B for clock times, C for lengths.</p>
+
+<h2>Clock times (a programme's start, a bar's on and off, message times)</h2>
+<div class="grid" id="clocks"></div>
+
+<h2>Lengths (how long a block or a bar lasts)</h2>
+<div class="grid" id="lengths"></div>
+
+<script>
+const el = (tag, props = {}, ...kids) => { const e = Object.assign(document.createElement(tag), props); e.append(...kids.filter(k => k != null)); return e; };
+const pad = n => String(n).padStart(2, "0");
+const hhmm = m => `${pad(Math.floor(((m % 1440) + 1440) % 1440 / 60))}:${pad(((m % 1440) + 1440) % 1440 % 60)}`;
+const dur = m => m < 60 ? `${m} min` : `${Math.floor(m / 60)} h${m % 60 ? ` ${m % 60} min` : ""}`;
+const wrap = m => ((m % 1440) + 1440) % 1440;
+
+// one window: title, a body built by build(get, set), a footer showing the value
+function win(into, letter, title, note, why, start, show, build) {
+  let v = start; const subs = [];
+  const out = el("output", { textContent: show(v) });
+  const set = (n, from) => { v = n; out.textContent = show(v); subs.forEach(f => f(v, from)); };
+  const body = el("div", { className: "body" });
+  build(body, () => v, set, f => subs.push(f));
+  body.append(el("p", { className: "why", textContent: why }));
+  document.getElementById(into).append(el("section", { className: "win" },
+    el("header", {}, el("b", { textContent: `${letter} · ${title}` }), el("span", { textContent: note })),
+    body, el("footer", {}, el("span", { textContent: "It would save" }), out)));
+}
+
+// ---------- clock times ----------
+win("clocks", "A", "The box", "today", "What the page has now: click a part, then type or use the arrows. Small targets, and it looks different in every browser.", 21 * 60, hhmm, (b, get, set) => {
+  const i = el("input", { type: "time", value: hhmm(get()) });
+  i.oninput = () => { if (i.value) set(+i.value.slice(0, 2) * 60 + +i.value.slice(3)); };
+  b.append(el("div", { style: "text-align:center;padding:26px 0" }, i));
+});
+
+win("clocks", "B", "Up and down keys", "big steppers", "Hours and minutes each have their own keys; minutes go in fives (hold Shift for ones). The mouse wheel works over either number.", 21 * 60, hhmm, (b, get, set, on) => {
+  const hv = el("div", { className: "val big" }), mv = el("div", { className: "val big" });
+  const draw = () => { hv.textContent = pad(Math.floor(get() / 60)); mv.textContent = pad(get() % 60); };
+  const col = (val, stepOf) => { const up = el("button", { textContent: "▲", ariaLabel: "Later" }), dn = el("button", { textContent: "▼", ariaLabel: "Earlier" });
+    up.onclick = e => set(wrap(get() + stepOf(e))); dn.onclick = e => set(wrap(get() - stepOf(e)));
+    val.onwheel = e => { e.preventDefault(); set(wrap(get() + (e.deltaY < 0 ? 1 : -1) * stepOf(e))); };
+    return el("div", { className: "col" }, up, val, dn); };
+  b.append(el("div", { className: "step" }, col(hv, () => 60), el("span", { className: "big", textContent: ":" }), col(mv, e => e.shiftKey ? 1 : 5)));
+  on(draw); draw();
+});
+
+win("clocks", "C", "The day strip", "drag along the day", "The whole day as a strip, night dark and day light, like a programme's timeline. Click or drag; it snaps to five minutes. The keys nudge it.", 21 * 60, hhmm, (b, get, set, on) => {
+  const strip = el("div", { className: "strip", tabIndex: 0 }), mark = el("div", { className: "mark" });
+  for (let h = 0; h <= 24; h++) strip.append(el("i", { className: h % 6 ? "" : "h", style: `left:${h / 24 * 100}%` }));
+  strip.append(mark);
+  const draw = () => { mark.style.left = get() / 1440 * 100 + "%"; mark.dataset.t = hhmm(get()); };
+  const at = e => { const r = strip.getBoundingClientRect(); set(Math.min(1435, Math.max(0, Math.round((e.clientX - r.left) / r.width * 1440 / 5) * 5))); };
+  strip.onpointerdown = e => { strip.setPointerCapture(e.pointerId); at(e); strip.onpointermove = at; };
+  strip.onpointerup = () => strip.onpointermove = null;
+  strip.onkeydown = e => { const d = { ArrowLeft: -5, ArrowRight: 5, ArrowDown: -60, ArrowUp: 60 }[e.key]; if (d) { e.preventDefault(); set(wrap(get() + d)); } };
+  const nudge = (t, d) => Object.assign(el("button", { textContent: t }), { onclick: () => set(wrap(get() + d)) });
+  b.append(strip, el("div", { className: "labels" }, ...["00", "06", "12", "18", "24"].map(t => el("span", { textContent: t }))),
+    el("div", { className: "nudge" }, nudge("− 1 h", -60), nudge("− 5 min", -5), nudge("+ 5 min", 5), nudge("+ 1 h", 60)));
+  on(draw); draw();
+});
+
+win("clocks", "D", "The clock face", "hour, then minute", "As on a phone's alarm: pick the hour (the inner ring is midnight to 11, the outer is noon to 23), and it moves on to the minutes by itself.", 21 * 60, hhmm, (b, get, set, on) => {
+  const NS = "http://www.w3.org/2000/svg", svg = document.createElementNS(NS, "svg"); svg.setAttribute("viewBox", "-100 -100 200 200");
+  let mode = "h";
+  const tabH = el("button", { className: "big" }), tabM = el("button", { className: "big" });
+  const s = (tag, attrs, text) => { const e = document.createElementNS(NS, tag); for (const k in attrs) e.setAttribute(k, attrs[k]); if (text != null) e.textContent = text; return e; };
+  const draw = () => {
+    const h = Math.floor(get() / 60), m = get() % 60;
+    tabH.textContent = pad(h); tabM.textContent = pad(m); tabH.classList.toggle("on", mode === "h"); tabM.classList.toggle("on", mode === "m");
+    svg.replaceChildren(s("circle", { r: 96, fill: "var(--field)", stroke: "var(--line)" }));
+    const put = (i, n, r, label, sel, cls, pick) => { const a = i / n * 2 * Math.PI, x = Math.sin(a) * r, y = -Math.cos(a) * r;
+      if (sel) svg.append(s("line", { x1: 0, y1: 0, x2: x, y2: y, stroke: "var(--amber-deep)", "stroke-width": 2 }), s("circle", { cx: x, cy: y, r: 13, fill: "var(--amber)" }));
+      const hit = s("circle", { cx: x, cy: y, r: 13, fill: "transparent", style: "cursor:pointer" }); hit.onclick = pick;
+      const t = s("text", { x, y, class: (cls || "") + (sel ? " sel" : "") }, label); t.onclick = pick; svg.append(hit, t); };
+    if (mode === "h") for (let i = 0; i < 12; i++) {
+      put(i, 12, 56, pad(i), h === i, "in", () => { set(i * 60 + m); mode = "m"; draw(); });
+      put(i, 12, 82, String(i + 12), h === i + 12, "", () => { set((i + 12) * 60 + m); mode = "m"; draw(); });
+    } else for (let i = 0; i < 12; i++) put(i, 12, 80, pad(i * 5), m === i * 5, "", () => set(h * 60 + i * 5));
+    svg.append(s("circle", { r: 3, fill: "var(--amber-deep)" }));
+  };
+  tabH.onclick = () => { mode = "h"; draw(); }; tabM.onclick = () => { mode = "m"; draw(); };
+  b.append(el("div", { className: "face" }, svg, el("div", { className: "tabs" }, tabH, el("span", { className: "cap", textContent: "hour" }), tabM, el("span", { className: "cap", textContent: "minute" }))));
+  on(draw); draw();
+});
+
+win("clocks", "E", "Pick from keys", "two clicks, nothing to drag", "Every hour and the usual minutes laid out as keys: one click for the hour, one for the minutes. “Other” gives the minutes in between.", 21 * 60, hhmm, (b, get, set, on) => {
+  const hours = el("div", { className: "chips h" }), mins = el("div", { className: "chips" });
+  let all = false;
+  const draw = () => {
+    const h = Math.floor(get() / 60), m = get() % 60;
+    hours.replaceChildren(...Array.from({ length: 24 }, (_, i) => Object.assign(el("button", { textContent: pad(i), className: h === i ? "on" : "" }), { onclick: () => set(i * 60 + m) })));
+    const list = all || m % 15 ? Array.from({ length: 12 }, (_, i) => i * 5) : [0, 15, 30, 45];
+    mins.replaceChildren(...list.map(i => Object.assign(el("button", { textContent: ":" + pad(i), className: m === i ? "on" : "" }), { onclick: () => set(h * 60 + i) })),
+      Object.assign(el("button", { textContent: all ? "Fewer" : "Other…" }), { onclick: () => { all = !all; draw(); } }));
+  };
+  b.append(el("div", { className: "cap", textContent: "Hour" }), hours, el("div", { className: "cap", textContent: "Minutes" }), mins);
+  on(draw); draw();
+});
+
+win("clocks", "F", "Type it loosely", "for the keyboard", "One box that takes what you'd say: 9pm, 2130, 7.15, half 6. Up and down arrows nudge five minutes. Press Enter.", 21 * 60, hhmm, (b, get, set, on) => {
+  const i = el("input", { type: "text", value: "21:00", style: "font:700 26px var(--display);width:7em;text-align:center;color:var(--ink);background:var(--field);border:1px solid var(--line);border-radius:8px;padding:4px", ariaLabel: "A time" });
+  const said = el("div", { className: "cap", style: "text-align:center;margin-top:8px", textContent: "Try: 9pm · 2130 · 7.15 · half 6" });
+  const parse = t => { t = t.trim().toLowerCase(); let pm = /p/.test(t), am = /a/.test(t), m;
+    if ((m = /^half\s*(past\s*)?(\d{1,2})/.exec(t))) return ((+m[2] % 12) + (pm || (+m[2] < 7 && !am) ? 12 : 0)) * 60 + 30;
+    if ((m = /^(\d{1,2})\s*[:. ]?\s*(\d{2})?\s*(am|pm|a|p)?$/.exec(t)) || (m = /^(\d{2})(\d{2})$/.exec(t))) { let h = +m[1], mi = +(m[2] || 0);
+      if (pm && h < 12) h += 12; if (am && h === 12) h = 0; if (h < 24 && mi < 60) return h * 60 + mi; }
+    return null; };
+  const take = () => { const v = parse(i.value); if (v == null) { said.textContent = "Not a time I know: try 21:30 or 9.30pm"; return; } said.textContent = "Try: 9pm · 2130 · 7.15 · half 6"; set(v); i.value = hhmm(v); };
+  i.onkeydown = e => { if (e.key === "Enter") take(); const d = { ArrowUp: 5, ArrowDown: -5 }[e.key]; if (d) { e.preventDefault(); set(wrap(get() + d)); i.value = hhmm(get()); } };
+  i.onblur = take;
+  b.append(el("div", { style: "text-align:center;padding-top:14px" }, i), said);
+});
+
+// ---------- lengths ----------
+win("lengths", "A", "The list", "before", "What the page had: a drop-down list of set lengths.", 60, dur, (b, get, set) => {
+  const i = el("select", { style: "font:inherit;padding:4px 7px" });
+  for (const n of [1, 3, 5, 10, 15, 30, 45, 60, 90, 120, 180, 240]) i.append(new Option(dur(n), n, false, n === get()));
+  i.onchange = () => set(+i.value);
+  b.append(el("div", { style: "text-align:center;padding:26px 0" }, "for ", i));
+});
+
+win("lengths", "B", "The usual lengths", "one click", "The lengths you'd actually pick, as keys, with − and + for anything in between.", 60, dur, (b, get, set, on) => {
+  const row = el("div", { className: "chips" }), LENS = [5, 10, 15, 30, 45, 60, 90, 120, 180];
+  const draw = () => row.replaceChildren(...LENS.map(n => Object.assign(el("button", { textContent: dur(n), className: get() === n ? "on" : "" }), { onclick: () => set(n) })));
+  const nudge = (t, d) => Object.assign(el("button", { textContent: t }), { onclick: () => set(Math.max(5, Math.min(720, get() + d))) });
+  b.append(row, el("div", { className: "nudge", style: "justify-content:flex-start" }, nudge("− 5 min", -5), nudge("+ 5 min", 5)));
+  on(draw); draw();
+});
+
+win("lengths", "C", "Minus and plus", "a big readout", "Reads as words (1 h 30 min, not 90). The steps grow as it gets longer: fives up to an hour, then quarter hours.", 60, dur, (b, get, set, on) => {
+  const val = el("div", { className: "big", style: "width:170px;text-align:center;font-size:26px" });
+  const stepAt = (v, up) => (up ? v >= 60 : v > 60) ? 15 : 5;
+  const minus = el("button", { textContent: "−", className: "big", style: "width:52px", ariaLabel: "Shorter" }), plus = el("button", { textContent: "+", className: "big", style: "width:52px", ariaLabel: "Longer" });
+  minus.onclick = () => set(Math.max(5, get() - stepAt(get(), false))); plus.onclick = () => set(Math.min(720, get() + stepAt(get(), true)));
+  const draw = () => val.textContent = dur(get());
+  b.append(el("div", { className: "step", style: "padding-top:18px" }, minus, val, plus));
+  on(draw); draw();
+});
+
+win("lengths", "D", "Stretch the bar", "drag its end", "The length as a bar you pull longer or shorter, the way a programme's block already stretches on its timeline. Snaps to five minutes.", 60, dur, (b, get, set, on) => {
+  const MAX = 240, bar = el("div", { className: "bar" }), fill = el("div", { className: "fill" }), label = el("span");
+  bar.append(fill, label);
+  const draw = () => { fill.style.width = Math.min(100, get() / MAX * 100) + "%"; label.textContent = dur(get()); };
+  const at = e => { const r = bar.getBoundingClientRect(); set(Math.min(MAX, Math.max(5, Math.round((e.clientX - r.left) / r.width * MAX / 5) * 5))); };
+  bar.onpointerdown = e => { bar.setPointerCapture(e.pointerId); at(e); bar.onpointermove = at; };
+  bar.onpointerup = () => bar.onpointermove = null;
+  b.append(bar, el("div", { className: "labels", style: "margin-top:4px" }, ...["0", "1 h", "2 h", "3 h", "4 h"].map(t => el("span", { textContent: t }))));
+  on(draw); draw();
+});
+
+win("lengths", "E", "From and until", "no length at all", "Skip the length: say when it ends instead (any clock picker above would do for each end), and the page works out how long that is.", 60, dur, (b, get, set) => {
+  const from = el("input", { type: "time", value: "21:00" }), to = el("input", { type: "time", value: "22:00" });
+  const take = () => { if (!from.value || !to.value) return; const a = +from.value.slice(0, 2) * 60 + +from.value.slice(3), z = +to.value.slice(0, 2) * 60 + +to.value.slice(3); set(wrap(z - a) || 1440); };
+  from.oninput = to.oninput = take;
+  b.append(el("div", { style: "text-align:center;padding:26px 0" }, "From ", from, " until ", to));
+});
+</script>
+</body>
+</html>
