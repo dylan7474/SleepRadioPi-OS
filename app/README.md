@@ -641,7 +641,8 @@ The cards:
   time*, *The news now* (the latest top stories, made on the spot — about a
   minute on a Zero), a *sleep time* (5 to 90 minutes, each its own thing: again to cancel,
   another time's button switches to that time, and once the timer has run out
-  and paused the radio a press plays it again) or *Say the
+  and paused the radio a press plays it again and starts the countdown afresh:
+  dozed off, woke up, another go) or *Say the
   address*. A button only ever plays: **pausing is the knob's job**, and a
   long press is just a press (buttons are set from the page, so one held too
   long can't wipe what's on it). Wired as GPIO keys (KEY_1–KEY_4,

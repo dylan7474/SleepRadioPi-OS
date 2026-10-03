@@ -1513,7 +1513,7 @@ async function play(o) {
       const off = sleepOn(o), woke = !!S?.speaker?.slept;   // (it had run out and paused the radio: this wakes it)
       await api("/api/instant", { preset: presetOf(o) });
       await poll(); drawDesk();
-      return toast(woke ? "Playing again (the sleep timer had paused the radio)." : off ? "Sleep timer off." : `The radio fades out and pauses in ${o.sleep} minutes. Double-click it again to switch that off.`);
+      return toast(woke ? `Playing again, for another ${o.sleep} minutes.` : off ? "Sleep timer off." : `The radio fades out and pauses in ${o.sleep} minutes. Double-click it again to switch that off.`);
     }
     else if (["action", "jingle"].includes(o.kind)) {       // over what's on, now
       await api("/api/instant", { preset: presetOf(o) });
@@ -1832,7 +1832,7 @@ function folderView(o, box, win) {
   else if (o.box === "noise") tools.append(T("Balance…", () => open(PANEL.noise.id)),
     el("span", { className: "note", textContent: "Double-click a colour to switch it on over what's playing (again: off) · drag one onto a button, or onto the knob" }));
   else if (o.box === "sleep") tools.append(...[sleepLeft() ? T("Switch it off", async () => { try { await api("/api/speaker", { sleep: 0 }); await poll(); drawDesk(); toast("Sleep timer off."); } catch (e) { toast(e.message); } }) : null,
-    el("span", { className: "note", textContent: "Double-click a time to start it now: the radio fades out over its last minute, then pauses (again: off; once it has paused the radio, a time plays it again) · drag one onto a button, onto the knob, or into a programme" })].filter(Boolean));
+    el("span", { className: "note", textContent: "Double-click a time to start it now: the radio fades out over its last minute, then pauses (again: off; once it has paused the radio, a time plays it again and counts down afresh) · drag one onto a button, onto the knob, or into a programme" })].filter(Boolean));
   else if (o.box === "actions") tools.append(el("span", { className: "note", textContent: "Drag an action onto a button on the radio; the time, the pips and the news can go into programmes too · the sleep times and the noise colours are in their folders here" }));
   else if (o.kind === "list") themeTools(o, tools);
   else if (o.box === "artists") {

@@ -859,11 +859,10 @@ class Presets:
             self._clip(beep(), "Button")
             threading.Thread(target=self._news, name="news-now", daemon=True).start()
         elif sleep_minutes(action) is not None and self.control is not None:
-            if getattr(self.control, "slept", False):     # it ran out and paused the radio: the press wakes it
-                log.info("button: playing again after the sleep timer")
-                self.control.play()
-                return
             minutes = sleep_minutes(action)       # this time on; pressed again while it's the one counting, off
+            if getattr(self.control, "slept", False):     # it ran out and paused the radio (dozed off, awake
+                log.info("button: playing again after the sleep timer")   # again): on it plays, for as long again
+                self.control.play()
             on = self.control.status().get("sleep_min") != minutes
             self.control.set_sleep(minutes if on else 0)
             self._sleep_set(minutes if on else 0)

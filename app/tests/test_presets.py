@@ -342,8 +342,8 @@ def test_sleep_times_on_buttons(tmp_path: Path) -> None:
     assert ctl.sleep == 15 and ctl.clips == ["Button"] * 4 and said == []
     assert p.instant({"kind": "action", "action": "sleep_15"}) and ctl.sleep == 0      # the desktop's double-click: the same
     ctl.slept = True                                 # the timer ran out and paused the radio:
-    p.press(0)                                       # the press plays it again (no new timer)
-    assert ctl.calls == ["play"] and ctl.sleep == 0 and ctl.clips == ["Button"] * 5
+    p.press(0)                                       # the press plays it again, for another 15 minutes
+    assert ctl.calls == ["play"] and ctl.sleep == 15 and ctl.clips == ["Button"] * 6
 
 
 def test_show_and_album_presets(tmp_path: Path) -> None:
