@@ -639,8 +639,9 @@ The cards:
   what the button holds: the show (all artists, an artist or a list), an
   internet station or an album straight through. Or an action: *Say the
   time*, *The news now* (the latest top stories, made on the spot — about a
-  minute on a Zero), a *sleep time* (5 to 90 minutes, each its own thing: again to cancel, and
-  another time's button switches to that time) or *Say the
+  minute on a Zero), a *sleep time* (5 to 90 minutes, each its own thing: again to cancel,
+  another time's button switches to that time, and once the timer has run out
+  and paused the radio a press plays it again) or *Say the
   address*. A button only ever plays: **pausing is the knob's job**, and a
   long press is just a press (buttons are set from the page, so one held too
   long can't wipe what's on it). Wired as GPIO keys (KEY_1–KEY_4,

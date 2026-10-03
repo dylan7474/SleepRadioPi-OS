@@ -556,7 +556,7 @@ class SpeakerControl:
 
     def status(self) -> dict:
         status = {"volume": self.speaker.volume, "playing": not self.paused, "knob_mode": self.knob_mode,
-                  "mono": self.speaker.mono, "sleep_min": None, "sleep_left_s": None,
+                  "mono": self.speaker.mono, "sleep_min": None, "sleep_left_s": None, "slept": self.slept,
                   "noise": {"on": self.speaker.noise is not None, "kind": self.noise_kind,
                             "mix": self.speaker.noise_mix,
                             "kinds": {k: {"label": v[0], "about": v[1]} for k, v in NOISE_KINDS.items()}}}
