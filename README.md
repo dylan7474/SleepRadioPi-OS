@@ -93,9 +93,9 @@ Radio folder and one of the buttons open:
   layout, played straight through with no DJ, now or after the song playing.
   Any file or folder in it can be set to **remember its place**, exactly like
   an audiobook (a serial, a lecture, a book that isn't in Audiobooks).
-- **Names of your own** — any track or folder can be renamed from the
-  desktop page (shorter, or easier to say): the new name is what's shown, on
-  the buttons, and what the DJ says. The file itself is left alone.
+- **A tag editor** — change a track's title, artist and album, or a whole
+  folder's at once, from the desktop page: for names that are long, wrong or
+  in letters the DJ can't say. The originals are kept, to put back.
 - **Jingles** from your own collection, shuffled, and a short one to open
   the show. **Each station has its own:** Jingles › Sleep Radio for the main
   show, and a folder for each theme, made when the theme is (an empty one:

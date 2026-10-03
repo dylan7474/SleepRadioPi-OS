@@ -617,7 +617,7 @@ const parentOf = id => Object.values(O).find(o => o.kids && o.kids.includes(id))
 
 // ---- loading from the radio ----
 function trackObj(root, t, albumTitle) {
-  return mk({ id: "t:" + root + ":" + t.path, kind: "track", title: t.title || cleanName(t.path), artist: t.artist || "", root, path: t.path, named: !!t.named, ...(t.bytes != null && { bytes: t.bytes }),
+  return mk({ id: "t:" + root + ":" + t.path, kind: "track", title: t.title || cleanName(t.path), artist: t.artist || "", root, path: t.path, ...(t.bytes != null && { bytes: t.bytes }),
               n: t.n != null ? t.n + 1 : undefined, h: hue(albumTitle || lastPart(t.path.split("/").slice(0, -1).join("/"))) });
 }
 // On demand things set to remember their place, like a book: path -> { pos_ms, total_ms, done }
@@ -638,8 +638,7 @@ async function loadFolder(f) {
     const d = await api(`/api/browse?root=${f.root}&path=${encodeURIComponent(f.path)}`);
     const kids = d.folders.map(x => {
       const path = f.path ? f.path + "/" + x.name : x.name, leaf = x.own && !x.folders;
-      const o = mk({ id: (leaf ? "a:" : "f:") + f.root + ":" + path, kind: leaf ? "album" : "folder", named: !!x.title,      // (x.title: a name you gave it)
-                     title: x.title || (O[(leaf ? "a:" : "f:") + f.root + ":" + path]?.named ? null : O[(leaf ? "a:" : "f:") + f.root + ":" + path]?.title) || x.name,
+      const o = mk({ id: (leaf ? "a:" : "f:") + f.root + ":" + path, kind: leaf ? "album" : "folder", title: O[(leaf ? "a:" : "f:") + f.root + ":" + path]?.title || x.name,
                      root: f.root, path, kids: O[(leaf ? "a:" : "f:") + f.root + ":" + path]?.kids || [], count: x.tracks, folders: x.folders, bytes: x.bytes, alt: f.root === "ondemand" });
       return o.id;
     });
@@ -724,7 +723,7 @@ async function loadAlbum(a) {
   if (a.root === "ondemand") { try { gotKept(await api("/api/ondemand/kept")); } catch {} }
   const d = await api(`/api/browse?root=${a.root}&path=${encodeURIComponent(a.path)}`);
   if (!d.album) { a.tracks = []; return; }
-  a.title = d.album.title; a.artist = d.album.artist; a.named = !!d.album.named;
+  a.title = d.album.title; a.artist = d.album.artist;
   a.tracks = d.album.list.map(t => trackObj(a.root, t, d.album.title).id);
   a.loaded = true;
 }
@@ -1802,8 +1801,9 @@ function folderView(o, box, win) {
       T("Upload…", () => up.click()), T("Upload a folder…", () => upDir.click()),
       T("New folder", () => { win.mkdir = !win.mkdir; drawDesk(); }),
       T("Download", () => download(picked || o), "", !(picked || o.path) || (picked && !picked.root)), up, upDir);
-    tools.append(...renameTools(o, picked));
+    tools.append(infoKey(o, picked));
     if (o.root === "ondemand") tools.append(keepKey(o, picked));
+    if (tagging && tagging.where === o.id) tools.append(infoBox(o));
     if (win.mkdir) {
       const name = el("input", { type: "text", placeholder: "Folder name", id: "mk-" + o.id, style: "background:var(--win);border:1px solid var(--line);border-radius:6px;padding:3px 7px" });
       const ok = T("Make it", () => mkdir(o, name.value.trim(), win), "primary");
@@ -1919,33 +1919,97 @@ function folderView(o, box, win) {
     sortNote ? el("span", { textContent: "· " + sortNote, title: "Change it from the list view's column headings" }) : null, media ? el("span", { id: "space-" + o.id }) : null));
   if (media) space(o);
 }
-// Rename…: a name of your own for a track or a folder (the one clicked in this window, else the folder it
-// shows). It's used wherever it's shown or said; the file and its tags are left as they are.
-let renaming = null;
-async function renamed() {                  // the open windows, the buttons and the playlists show the new name
+// Info…: the tags inside the files -- a track's title, artist, album and number (the one clicked in this
+// window), or the artist and album of every track in a folder, and the folder's own name. They're changed in
+// the files themselves (each rewritten as a copy and swapped in); what they were first is kept, to put back.
+let tagging = null;      // { where: the window, id: what it's about, d: /api/tags' answer, init, mixed, vals, focus }
+const TAG_NAMES = { name: "Folder name", title: "Title", artist: "Artist", album: "Album", track: "Track number" };
+function infoKey(o, picked) {
+  const it = picked && picked.root && picked.path && ["track", "album", "folder"].includes(picked.kind) ? picked : !picked && o.path ? o : null;
+  const k = T("Info…", async () => {
+    if (tagging && tagging.where === o.id) { tagging = null; return drawDesk(); }
+    try {
+      const d = await api(`/api/tags?kind=${it.root}&path=${encodeURIComponent(it.path)}`), can = d.files.filter(f => !f.fixed);
+      const fields = d.folder ? ["name", "artist", "album"] : ["title", "artist", "album", "track"], init = {}, mixed = {};
+      for (const f of fields) { const all = f === "name" ? [d.name] : [...new Set(can.map(x => x[f]))]; mixed[f] = all.length > 1; init[f] = all.length === 1 ? all[0] : ""; }
+      tagging = { where: o.id, id: it.id, d, fields, init, mixed, vals: { ...init }, focus: fields[0] };
+      drawDesk();
+    } catch (e) { toast("Couldn't read its tags: " + e.message + "."); }
+  }, tagging && tagging.where === o.id ? "primary" : "", !it);
+  k.title = it ? `The names inside “${it.title}”: its title, artist and album (to tidy them, or make them easier for the DJ to say)` : "Click a track or a folder first";
+  return k;
+}
+function infoBox(o) {
+  const g = tagging, it = O[g.id], can = g.d.files.filter(f => !f.fixed), stuck = g.d.files.length - can.length;
+  const box = el("div", { className: "insp", style: "flex-basis:100%;margin-top:4px" });
+  box.addEventListener("pointerdown", e => e.stopPropagation());
+  box.append(el("div", { className: "line" }, el("b", { textContent: g.d.folder ? `“${it?.title || g.d.name}”: ${can.length} track${can.length === 1 ? "" : "s"}` : `“${it?.title || g.d.name}”` }),
+    el("span", { className: "muted", textContent: g.d.folder ? "What you put here goes into every track in the folder. An empty box leaves that as it is." : "Changed in the file itself." })));
+  const grid = el("div", { className: "line" });
+  for (const f of g.fields) {
+    const inp = el("input", { type: "text", value: g.vals[f], id: "tag-" + f, maxLength: 200, placeholder: g.mixed[f] ? "(several: leave empty to keep them)" : "",
+                              style: `width:${f === "track" ? "5em" : "15em"}` });
+    inp.oninput = () => { g.vals[f] = inp.value; };
+    inp.onfocus = () => { g.focus = f; };
+    inp.onkeydown = e => { e.stopPropagation(); if (e.key === "Enter") saveInfo(o); else if (e.key === "Escape") { tagging = null; drawDesk(); } };
+    grid.append(el("span", { style: "display:inline-flex;gap:6px;align-items:center;white-space:nowrap" }, el("label", { className: "muted", htmlFor: "tag-" + f, textContent: TAG_NAMES[f] }), inp));
+    if (g.focus === f) setTimeout(() => { if (document.activeElement !== inp && !document.activeElement?.id?.startsWith("tag-")) { inp.focus(); inp.setSelectionRange(inp.value.length, inp.value.length); } }, 0);
+  }
+  box.append(grid);
+  const changed = g.d.files.filter(f => f.changed).length;
+  box.append(el("div", { className: "line" }, T("Save", () => saveInfo(o), "primary"),
+    changed ? T(g.d.folder ? `Put ${changed === can.length ? "them" : changed + " of them"} back as ${changed === 1 ? "it" : "they"} came` : "Put it back as it came", () => restoreInfo(o)) : null,
+    T("Cancel", () => { tagging = null; drawDesk(); }),
+    el("span", { className: "muted", textContent: [stuck ? `${stuck} can't be changed (a .wav has no tags)` : "",
+      it?.root === "music" && g.fields.includes("artist") ? "Themes that play the old artist will play the new one too" : "",
+      can.length > 20 ? "Each file is rewritten on the card: a big folder takes a while" : ""].filter(Boolean).join(" · ") })));
+  return box;
+}
+async function tagsDone(it, gone) {          // the radio rescans; every open window, the buttons and the playlists show what's new
+  if (gone) for (let i = W.length - 1; i >= 0; i--) { const wo = O[W[i].id]; if (wo && wo.root === it.root && wo.path && (wo.path === it.path || wo.path.startsWith(it.path + "/"))) W.splice(i, 1); }
+  try { await api("/api/media/done", {}); } catch {}
   for (const w of W) { const wo = O[w.id]; try { if (wo?.kind === "folder" && wo.root) await loadFolder(wo); else if (wo?.kind === "album") await loadAlbum(wo); } catch {} }
+  for (const f of [MUSIC, ONDEMAND]) if (f.loaded && !W.some(w => w.id === f.id)) { try { await loadFolder(f); } catch {} }
   try { await loadButtons(); updateRadio(); } catch {}
   if (PLAYLISTS.loaded) await loadPlaylists().catch(() => {});
+  if (PROGRAMMES.loaded) await loadProgrammes().catch(() => {});
+  if (LISTS.loaded) await loadFolder(LISTS).catch(() => {});
   drawDesk();
 }
-function renameTools(o, picked) {
-  const it = picked && picked.root && picked.path && ["track", "album", "folder"].includes(picked.kind) ? picked : !picked && o.path ? o : null;
-  const t = renaming && renaming.where === o.id ? O[renaming.id] : null;
-  if (!t) { const k = T("Rename…", () => { renaming = { where: o.id, id: it.id }; drawDesk(); }, "", !it);
-    k.title = it ? `Give “${it.title}” a name of your own: shorter, or easier for the DJ to say. The file isn't changed` : "Click a track or a folder first";
-    return [k]; }
-  const stop = () => { renaming = null; drawDesk(); };
-  const name = el("input", { type: "text", value: t.title, id: "rename-box", maxLength: 120, style: "background:var(--win);border:1px solid var(--line);border-radius:6px;padding:3px 7px;width:17em" });
-  name.setAttribute("aria-label", "Its new name");
-  const send = async v => { renaming = null;
-    try { await api("/api/library/name", { kind: t.root, path: t.path, name: v }); await renamed();
-          toast(v ? `It's called “${v}” now, wherever it's shown or said. The file itself isn't changed.` : "Back to its own name."); }
-    catch (e) { toast("Not renamed: " + e.message + "."); drawDesk(); } };
-  const ok = T("Rename", () => name.value.trim() ? send(name.value.trim()) : toast("Give it a name."), "primary");
-  name.onkeydown = e => { e.stopPropagation(); if (e.key === "Enter") ok.click(); else if (e.key === "Escape") stop(); };
-  name.addEventListener("pointerdown", e => e.stopPropagation());
-  setTimeout(() => { if (document.activeElement !== name) { name.focus(); name.select(); } }, 0);
-  return [name, ok, t.named ? T("Use its own name", () => send(null)) : null, T("Cancel", stop)].filter(Boolean);
+async function saveInfo(o) {
+  const g = tagging, it = O[g.id], can = g.d.files.filter(f => !f.fixed), set = {};
+  if (!g || !it) return;
+  for (const f of g.fields) { const v = g.vals[f].trim().replace(/\s+/g, " ");
+    if (f !== "name" && v !== g.init[f] && (v || !g.mixed[f])) set[f] = v; }
+  const name = g.d.folder ? g.vals.name.trim() : "", rename = !!name && name !== g.d.name;
+  if (g.d.folder && !g.vals.name.trim()) return toast("The folder needs a name.");
+  if (!Object.keys(set).length && !rename) { tagging = null; drawDesk(); return toast("Nothing changed."); }
+  if (uploading) return toast("An upload is going: wait for it to finish.");
+  tagging = null; uploading = true; drawDesk();
+  let done = 0; const failed = [];
+  if (Object.keys(set).length) for (let i = 0; i < can.length; i++) {
+    if (can.length > 1) toast(`Changing the tags: ${i + 1} of ${can.length}…`, true);
+    try { await api("/api/tags", { kind: it.root, path: can[i].path, tags: set }); done++; } catch (e) { failed.push(`${lastPart(can[i].path)} (${e.message})`); }
+  }
+  let renamed = false;
+  if (rename) { try { await api("/api/media/rename", { kind: it.root, path: it.path, name }); renamed = true; } catch (e) { failed.push(`the folder's name (${e.message})`); } }
+  uploading = false;
+  await tagsDone(it, renamed);
+  toast([done ? `${done === 1 ? "Its tags are" : done + " tracks’ tags are"} changed.` : "", renamed ? `The folder is “${name}” now; its buttons and playlists came with it.` : "",
+         failed.length ? `Not changed: ${failed.slice(0, 3).join(", ")}${failed.length > 3 ? "…" : ""}.` : ""].filter(Boolean).join(" "));
+}
+async function restoreInfo(o) {
+  const g = tagging, it = O[g.id], back = g.d.files.filter(f => f.changed);
+  if (uploading) return toast("An upload is going: wait for it to finish.");
+  tagging = null; uploading = true; drawDesk();
+  let done = 0; const failed = [];
+  for (let i = 0; i < back.length; i++) {
+    if (back.length > 1) toast(`Putting the tags back: ${i + 1} of ${back.length}…`, true);
+    try { await api("/api/tags/restore", { kind: it.root, path: back[i].path }); done++; } catch (e) { failed.push(`${lastPart(back[i].path)} (${e.message})`); }
+  }
+  uploading = false;
+  await tagsDone(it, false);
+  toast(`${done} put back as ${done === 1 ? "it" : "they"} came.` + (failed.length ? ` Not changed: ${failed.slice(0, 3).join(", ")}.` : ""));
 }
 // On demand's "Remember its place" key: for the one clicked in this window, else for the folder it shows
 function keepKey(o, picked) {
@@ -1962,8 +2026,9 @@ function albumView(o, box) {
   const picked = selectedIn(o);
   box.append(el("div", { className: "wtools" }, T("▶ Play", () => play(o), "primary"),
     T("Put on a button…", () => toast("Drag the album onto a button on the radio.")),
-    ...renameTools(o, picked), o.root === "ondemand" ? keepKey(o, picked) : null,
-    el("span", { className: "note", textContent: [o.artist, `${(o.tracks || []).length} tracks`].filter(Boolean).join(" · ") + (o.root === "ondemand" ? " · click a track to set just that one" : "") })));
+    infoKey(o, picked), o.root === "ondemand" ? keepKey(o, picked) : null,
+    el("span", { className: "note", textContent: [o.artist, `${(o.tracks || []).length} tracks`].filter(Boolean).join(" · ") + (o.root === "ondemand" ? " · click a track to set just that one" : "") }),
+    tagging && tagging.where === o.id ? infoBox(o) : null));
   box.append(el("div", { className: "wbody" }, rowsOf(o.tracks || [], o.id, t => t.n ?? "", false, o)));
 }
 function podcastView(o, box) {

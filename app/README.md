@@ -621,13 +621,21 @@ The cards:
   pausing at its end -- a folder as one book, its files the chapters in order
   (`KeptLibrary` in `playback/audiobooks.py`; the list is the `ondemand_keep`
   setting, the places are kept with the books'). A button holding it carries
-  on from its place too. **A track or a folder (here or in the music) can be
-  given a name of your own** (the desktop's *Rename…*, in its window): shorter,
-  or easier for the DJ to say. It's used wherever the thing is shown or said --
-  the page, the radio's dial, the buttons and their spoken names, the DJ -- and
-  the file and its tags are left as they are (*Use its own name* puts it back;
-  the `given_names` setting; it follows the thing when it's moved). Artists'
-  names aren't changed. **It always plays with no DJ**: *Play now*
+  on from its place too.
+- **Tags** — the names inside the files can be changed from the desktop page
+  (*Info…* in a Music or On demand window): a track's title, artist, album and
+  number, or the artist and album of every track in a folder at once, and the
+  folder's own name. Useful where they're long, wrong, or in letters the DJ
+  can't say. The file is copied, the tags written to the copy and the copy
+  swapped in, so a power cut can't leave half a song; mp3, m4a, m4b, flac, ogg
+  and opus (a wav has none). What a file's tags were before the first change is
+  kept on the radio (`original-tags.json`), and *Put it back as it came*
+  restores them. Buttons, playlists and programmes point at files, so they're
+  untouched; their labels show the new names. **Themes choose songs by the
+  artist's name**, so when a song in the music gets a new artist, every theme
+  that played the old name plays the new one too, and the old name leaves the
+  themes once no song has it (`Station.follow_artist`, `retire_artists`).
+  On demand **always plays with no DJ**: *Play now*
   starts it, and *Play next* waits for the song (or album) playing to end,
   then plays it straight through (`Station.play_next`); with a station, book
   or podcast on, or the radio off, it's simply chosen. A preset button can
@@ -1085,7 +1093,9 @@ everything but the page itself and the login needs the session cookie
 | `POST /api/radio/directory` | Fetch a fresh copy of the station directory now (in the background) |
 | `POST /api/radio/play` / `/api/radio/stop` | `{"name", "url"}` — play that station instead of the show (starts the speaker if paused) / back to the show (from a station or an album) |
 | `GET /api/books` | The audiobooks, each with `key`, `title`, `author`, `total_ms`, `pos_ms` (where it was left), `chapters` |
-| `POST /api/library/name` | `{"kind": "music" \| "ondemand", "path", "name"}` — a name of your own for a track or a folder (null: its own again); the file isn't changed |
+| `GET /api/tags?kind=&path=` | The tags (title, artist, album, track number) of a track, or of every track under a folder; `changed`: not the ones it came with |
+| `POST /api/tags` / `/api/tags/restore` | `{"kind", "path", "tags": {"title", "artist", "album", "track"}}` — change one track's tags in the file (rewritten as a copy, swapped in) / `{"kind", "path"}` — as they were before they were first changed |
+| `POST /api/media/rename` | `{"kind", "path", "name"}` — rename a file or folder where it is; playlists, programmes and buttons follow |
 | `GET /api/ondemand/kept` / `POST /api/ondemand/keep` | The On demand files and folders that remember their place, each with where it was left / `{"path", "keep": true \| false}` — set one, or clear it |
 | `POST /api/books/play` / `/api/books/seek` | `{"key"}` — that book from where it was left / `{"delta_ms": -60000}` or `{"to_ms": n}` in the book on |
 | `GET /api/podcasts` | The shows followed, each with its number of episodes, how many recent ones are unheard, and the latest |

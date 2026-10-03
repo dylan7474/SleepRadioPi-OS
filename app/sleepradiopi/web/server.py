@@ -290,6 +290,14 @@ def make_handler(station: Station, output: Mp3Output, speaker=None,
             elif path == "/api/books":
                 self._send(json.dumps({"books": station.book_list(), "scanning": station.books_scanning}).encode(),
                            "application/json")
+            elif path == "/api/tags" and media is not None:     # a track's tags, or those of every track in a folder
+                qs = parse_qs(urlparse(self.path).query)
+                try:
+                    reply = media.tags(qs.get("kind", ["music"])[0], qs.get("path", [""])[0][:1000])
+                except media_mod.MediaError as e:
+                    self._error(str(e))
+                    return
+                self._send(json.dumps(reply).encode(), "application/json")
             elif path == "/api/ondemand/kept":      # the On demand things that remember their place
                 self._send(json.dumps({"kept": station.kept_list()}).encode(), "application/json")
             elif path == "/api/podcasts":
@@ -457,6 +465,26 @@ def make_handler(station: Station, output: Mp3Output, speaker=None,
                 self._request()
             elif path == "/api/album":
                 self._album()
+            elif path in ("/api/tags", "/api/tags/restore") and media is not None:
+                # {"kind", "path", "tags": {"title", "artist", "album", "track"}}: change one track's tags;
+                # restore {"kind", "path"}: as they were before they were first changed here
+                try:
+                    body = self._body()
+                    was = None                       # (a song in the music: its artist as the themes know it)
+                    if body.get("kind") == "music" and isinstance(body.get("path"), str):
+                        was = station._by_ref("music", "/".join(p for p in body["path"].split("/") if p))
+                    reply = media.untag(body.get("kind"), body.get("path")) if path.endswith("restore") \
+                        else media.retag(body.get("kind"), body.get("path"), body.get("tags"))
+                except media_mod.MediaError as e:
+                    self._error(str(e))
+                    return
+                except (ValueError, TypeError, KeyError, AttributeError):
+                    self._error("send {\"kind\", \"path\", \"tags\"}")
+                    return
+                # themes choose songs by the artist's name: one that played the old name plays the new one too
+                if was is not None and station.follow_artist(was.artist, reply["artist"]) and config_file is not None:
+                    save_setting(config_file, "profiles", station.profiles)
+                self._send(json.dumps({"tags": reply}).encode(), "application/json")
             elif path.startswith("/api/media/") and media is not None:
                 self._media(path.rsplit("/", 1)[1])
             elif path in ("/api/buttons", "/api/buttons/press") and presets is not None:
@@ -482,19 +510,6 @@ def make_handler(station: Station, output: Mp3Output, speaker=None,
                 self._button_bank(path.endswith("auto"))
             elif path.startswith("/api/podcasts/") and path.rsplit("/", 1)[1] in ("follow", "unfollow", "play", "heard"):
                 self._podcasts(path.rsplit("/", 1)[1])
-            elif path == "/api/library/name":         # {"kind": "music" | "ondemand", "path", "name" (or null: its own again)}
-                try:
-                    body = self._body()
-                    given = station.set_name(body.get("kind"), body.get("path"), body.get("name"))
-                except (ValueError, TypeError, KeyError, AttributeError) as e:
-                    self._error(str(e) if isinstance(e, ValueError) else "send {\"kind\", \"path\", \"name\"}")
-                    return
-                if config_file is not None:
-                    save_setting(config_file, "given_names", given)
-                if presets is not None:
-                    presets.bake()                  # (the buttons' spoken names: the new one)
-                self._send(json.dumps({"name": given.get(f"{body.get('kind')}/{'/'.join(p for p in body.get('path').split('/') if p)}")}).encode(),
-                           "application/json")
             elif path == "/api/ondemand/keep":      # {"path", "keep": true | false}: remember its place, like a book
                 try:
                     body = self._body()
@@ -1164,22 +1179,20 @@ def make_handler(station: Station, output: Mp3Output, speaker=None,
                 elif action == "delete":
                     media.delete(kind, body.get("path", ""))
                     reply = {"deleted": body.get("path")}
-                elif action == "move":
+                elif action in ("move", "rename"):
                     old = body.get("path", "")
-                    to_kind = body.get("to_kind", kind)
-                    new = media.move(kind, old, to_kind, body.get("to", ""))
+                    to_kind = body.get("to_kind", kind) if action == "move" else kind
+                    new = media.move(kind, old, to_kind, body.get("to", "")) if action == "move" \
+                        else media.rename(kind, old, body.get("name", ""))
                     reply = {"path": new, "kind": to_kind}
                     old_root, new_root = kind, to_kind          # playlists, programmes and buttons follow it
                     if old_root in ("music", "ondemand") and new_root in ("music", "ondemand"):
                         old_rel = "/".join(p for p in old.split("/") if p)
                         kept_before = list(station.kept.paths) if hasattr(station, "kept") else None
-                        given_before = dict(getattr(station, "given", {}))
                         if station.rename_refs(old_root, old_rel, new_root, new) and config_file is not None:
                             save_setting(config_file, "playlists", station.playlists)
                         if kept_before is not None and station.kept.paths != kept_before and config_file is not None:
                             save_setting(config_file, "ondemand_keep", station.kept.paths)
-                        if getattr(station, "given", {}) != given_before and config_file is not None:
-                            save_setting(config_file, "given_names", station.given)
                         sched = getattr(station, "scheduler", None)
                         if sched and sched.rename_refs(old_root, old_rel, new_root, new) and config_file is not None:
                             save_setting(config_file, "programmes", sched.programmes)
@@ -1187,6 +1200,10 @@ def make_handler(station: Station, output: Mp3Output, speaker=None,
                             presets.rename_refs(old_root, old_rel, new_root, new)
                 elif action == "done":
                     changed = media.done()
+                    if station.retire_artists() and config_file is not None:    # (an artist's old name, if no song has it now)
+                        save_setting(config_file, "profiles", station.profiles)
+                    if presets is not None:
+                        presets.bake()                   # (a button's spoken name follows a tag that was changed)
                     reply = {"changed": changed,
                              "library": {"tracks": len(station.tracks), "jingles": len(station.jingles),
                                          "books": len(station.books.all()) if hasattr(station, "books") else 0,

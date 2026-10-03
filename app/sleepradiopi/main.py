@@ -689,7 +689,8 @@ def main() -> None:
     # The web page's music library manager (upload / delete); the library is rescanned after.
     media = MediaLibrary({"music": cfg["music_folder"], "jingles": cfg["jingles_folder"],
                           "audiobooks": cfg["audiobooks_folder"], "ondemand": cfg["ondemand_folder"]},
-                         on_changed=station.reload_library)
+                         on_changed=station.reload_library,
+                         tag_log=Path.home() / ".local" / "state" / "sleepradiopi" / "original-tags.json")
     # Every station has its jingles folder: made a minute after start-up (not to slow it), and
     # whenever the themes change
     def folders(delay=0.0):

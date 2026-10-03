@@ -188,3 +188,54 @@ def test_a_jingle_upload_rescans_only_the_jingles(tmp_path: Path, monkeypatch) -
     calls.clear()
     st.reload_library()
     assert "music" in calls and "jingles" in calls                # (no kinds: everything)
+
+
+def _sound(path: Path, codec: list[str], meta: dict | None = None) -> None:
+    import subprocess
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tags = [x for k, v in (meta or {}).items() for x in ("-metadata", f"{k}={v}")]
+    subprocess.run(["ffmpeg", "-hide_banner", "-loglevel", "error", "-y", "-f", "lavfi", "-i", "sine=d=1", *tags, *codec, str(path)],
+                   check=True)
+
+
+def test_changing_tags(tmp_path: Path) -> None:
+    """A track's tags are rewritten in a copy and swapped in; what they were first is kept, to put back."""
+    od = tmp_path / "ondemand"
+    planets = od / "Holst The Planets"
+    _sound(planets / "01 - Mars.mp3", ["-c:a", "libmp3lame", "-b:a", "32k"], {"title": "Mars", "artist": "冨田勲", "album": "惑星", "track": "1"})
+    _sound(planets / "02 - Venus.m4a", ["-c:a", "aac", "-b:a", "32k"], {"title": "Venus", "artist": "冨田勲"})
+    _sound(planets / "03 - Bare.mp3", ["-c:a", "libmp3lame", "-b:a", "32k", "-map_metadata", "-1", "-id3v2_version", "0", "-write_id3v1", "0"])
+    _sound(planets / "04 - Wave.wav", [])
+    changed = []
+    lib = MediaLibrary({"ondemand": od}, on_changed=changed.append, lease=tmp_path / "run" / "media-rw", tag_log=tmp_path / "tags.json")
+    d = lib.tags("ondemand", "Holst The Planets")
+    assert d["folder"] and d["name"] == "Holst The Planets" and [f["path"].split("/")[-1] for f in d["files"]] == \
+        ["01 - Mars.mp3", "02 - Venus.m4a", "03 - Bare.mp3", "04 - Wave.wav"]
+    mars = d["files"][0]
+    assert (mars["title"], mars["artist"], mars["album"], mars["track"], mars["changed"]) == ("Mars", "冨田勲", "惑星", "1", False)
+    assert d["files"][2]["title"] == "" and d["files"][3].get("fixed") is True
+
+    size = (planets / "01 - Mars.mp3").stat().st_size
+    for f in d["files"][:3]:                                 # mp3, m4a, and an mp3 that had no tags at all
+        now = lib.retag("ondemand", f["path"], {"artist": "Isao Tomita", "album": " The  Planets "})
+        assert now["artist"] == "Isao Tomita" and now["album"] == "The Planets" and now["title"] == f["title"]
+    assert abs((planets / "01 - Mars.mp3").stat().st_size - size) < 4096 and not list((od / ".incoming").iterdir())
+    assert lib.tags("ondemand", mars["path"])["files"][0]["changed"] is True
+    assert json.loads((tmp_path / "tags.json").read_text())["ondemand/" + mars["path"]]["artist"] == "冨田勲"
+    lib.retag("ondemand", mars["path"], {"title": "Mars, the Bringer of War", "track": ""})
+    assert lib.tags("ondemand", mars["path"])["files"][0]["track"] == ""
+    assert json.loads((tmp_path / "tags.json").read_text())["ondemand/" + mars["path"]]["title"] == "Mars"   # (still the first)
+    lib.done()
+    assert changed == [{"ondemand"}]
+
+    back = lib.untag("ondemand", mars["path"])               # as it came
+    assert (back["title"], back["artist"], back["album"], back["track"]) == ("Mars", "冨田勲", "惑星", "1")
+    assert lib.tags("ondemand", mars["path"])["files"][0]["changed"] is False
+    for bad, tags in ((d["files"][3]["path"], {"title": "x"}), (mars["path"], {}), (mars["path"], {"year": "1976"}),
+                      (mars["path"], {"track": "three"}), (mars["path"], {"title": "x" * 300}), ("Nowhere.mp3", {"title": "x"})):
+        with pytest.raises(MediaError):
+            lib.retag("ondemand", bad, tags)
+    with pytest.raises(MediaError):
+        lib.untag("ondemand", d["files"][1]["path"] + "x")
+    with pytest.raises(MediaError):
+        lib.retag("jingles", "x.mp3", {"title": "x"})

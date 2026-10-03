@@ -108,3 +108,23 @@ def test_web_api(tmp_path: Path) -> None:
         assert err.value.code == 400 and "at least one artist" in json.load(err.value)["error"]
     finally:
         httpd.shutdown()
+
+
+def test_themes_follow_an_artist_whose_tags_are_changed(tmp_path: Path) -> None:
+    """Themes choose songs by the artist's name: a song retagged stays in the themes it was in."""
+    from sleepradiopi.broadcast.station import artist_key
+    st = _station(tmp_path)
+    st.set_profiles([FRIDAY, {"name": "Quiet", "artists": ["Nick Drake"]}])
+    assert st.follow_artist("The Beatles", "The Fab Four") is True          # the first song retagged
+    friday = next(p for p in st.profiles if p["name"] == "Friday List")
+    assert set(friday["artists"]) == {"The Beatles", "Crowded House", "The Fab Four"}
+    assert next(p for p in st.profiles if p["name"] == "Quiet")["artists"] == ["Nick Drake"]
+    assert st.follow_artist("Beatles", "the fab four") is False             # (already there) ...and the same name: nothing
+    assert st.follow_artist("Nick Drake", "nick  drake") is False and st.follow_artist("Nick Drake", "") is False
+    assert st.retire_artists() is False                                     # some Beatles songs still have the old name
+    assert "The Beatles" in next(p for p in st.profiles if p["name"] == "Friday List")["artists"]
+    st.follow_artist("The Beatles", "The Fab Four")
+    st.tracks = [t for t in st.tracks if artist_key(t.artist) != "beatles"]  # all retagged (as the rescan would find)
+    assert st.retire_artists() is True
+    assert set(next(p for p in st.profiles if p["name"] == "Friday List")["artists"]) == {"Crowded House", "The Fab Four"}
+    assert st.retire_artists() is False

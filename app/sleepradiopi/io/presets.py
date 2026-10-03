@@ -478,12 +478,23 @@ class Presets:
         return validate({"kind": "show", "artist": self.station.artist, "profile": self.station.profile})
 
     def label(self, preset: dict | None) -> str:
-        given = getattr(self.station, "given", None)
-        if preset is not None and given and preset["kind"] in ("track", "album"):       # (the name you gave it, if you did)
-            name = given.get(f"{preset.get('root', 'music')}/{preset.get('path') or preset.get('folder')}")
-            if name:
-                preset = {**preset, "title": name}
-        return label(preset, self._show_name)
+        return label(self._fresh(preset), self._show_name)
+
+    def _fresh(self, preset: dict | None) -> dict | None:
+        """A track or an album as the library has it now (its tags may have been
+        changed since it was put on the button); as it was kept, if it's gone."""
+        try:
+            if preset is not None and preset["kind"] == "track":
+                t = self.station._by_ref(preset["root"], preset["path"])
+                if t is not None:
+                    return {**preset, "title": t.title, "artist": t.artist}
+            elif preset is not None and preset["kind"] == "album" and not preset.get("deep"):
+                a = self.station._album_by_folder(preset["folder"], preset.get("root", "music"))
+                if a is not None:
+                    return {**preset, "title": a["title"], "artist": a["artist"]}
+        except Exception:
+            pass
+        return preset
 
     def _show_name(self, preset: dict) -> str:
         from sleepradiopi.broadcast import profiles as profiles_mod

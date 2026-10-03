@@ -13,10 +13,16 @@ Uploads go to a hidden .part file on the same partition and are renamed
 into place once complete, so a broken upload never leaves half a song in the
 library. The station rescans the library (only new files' tags are read)
 once changes have settled.
+
+Tags (title, artist, album, track number) can be changed too: the file is
+copied to a hidden .part file, the tags are written there, and it's swapped
+in, so a power cut never leaves a half-written song. What a file's tags were
+before the first change is kept (TAG_LOG), so they can be put back.
 """
 
 from __future__ import annotations
 
+import json
 import logging
 import os
 import shutil
@@ -26,7 +32,10 @@ import uuid
 from collections.abc import Callable
 from pathlib import Path
 
+import mutagen
+
 from sleepradiopi.broadcast.library import AUDIO_EXTENSIONS
+from sleepradiopi.config.atomic import write_atomic
 from sleepradiopi.playback.audiobooks import BOOK_FILES
 
 log = logging.getLogger(__name__)
@@ -40,6 +49,55 @@ CHUNK = 1 << 20
 IMAGES = {".jpg", ".jpeg", ".png"}   # cover art comes along in album folders; the library ignores it
 MAX_NAME = 200
 INCOMING = ".incoming"
+TAG_FIELDS = {"title": "title", "artist": "artist", "album": "album", "track": "tracknumber"}   # ours -> mutagen's easy keys
+TAGGED = {".mp3", ".m4a", ".m4b", ".flac", ".ogg", ".opus"}      # (a .wav has nowhere to keep them)
+TAG_KINDS = ("music", "ondemand", "audiobooks")
+MAX_TAG = 200
+MAX_TAG_FILES = 2000         # in one folder's list
+
+
+def _easy(path: Path, suffix: str):
+    """The file opened for its tags, by the kind its name says (a .part copy has lost its ending)."""
+    suffix = suffix.lower()
+    if suffix == ".mp3":
+        from mutagen.mp3 import EasyMP3
+        return EasyMP3(path)
+    if suffix in (".m4a", ".m4b"):
+        from mutagen.easymp4 import EasyMP4
+        return EasyMP4(path)
+    if suffix == ".flac":
+        from mutagen.flac import FLAC
+        return FLAC(path)
+    if suffix == ".opus":
+        from mutagen.oggopus import OggOpus
+        return OggOpus(path)
+    from mutagen.oggopus import OggOpus          # .ogg: Vorbis, or Opus in an .ogg
+    from mutagen.oggvorbis import OggVorbis
+    for cls in (OggVorbis, OggOpus):
+        try:
+            return cls(path)
+        except mutagen.MutagenError:
+            continue
+    raise MediaError("the radio can't read that file's tags")
+
+
+def read_tags(path: Path) -> dict:
+    """{"title", "artist", "album", "track"} as the file has them ("" where it has none)."""
+    try:
+        f = _easy(path, path.suffix)
+    except MediaError:
+        raise
+    except Exception:
+        return {k: "" for k in TAG_FIELDS}
+    tags = f.tags or {}
+    out = {}
+    for ours, theirs in TAG_FIELDS.items():
+        try:
+            v = tags.get(theirs)
+        except Exception:
+            v = None
+        out[ours] = (v[0] if isinstance(v, list) and v else v if isinstance(v, str) else "").strip()
+    return out
 
 
 class MediaError(ValueError):
@@ -65,8 +123,9 @@ def _clean_rel(rel: str | None) -> list[str]:
 
 class MediaLibrary:
     def __init__(self, roots: dict[str, Path], on_changed: Callable[[set[str]], None] | None = None,
-                 lease: Path = LEASE) -> None:
+                 lease: Path = LEASE, tag_log: Path | None = None) -> None:
         self.roots = {k: Path(v) for k, v in roots.items()}
+        self.tag_log = Path(tag_log) if tag_log is not None else None   # what tags were before they were first changed
         self.on_changed = on_changed
         self.lease = lease
         self._lock = threading.Lock()
@@ -181,6 +240,127 @@ class MediaLibrary:
             except Exception:
                 log.exception("library rescan failed")
         return bool(dirty)
+
+    # --- tags -------------------------------------------------------------------------------
+
+    def _originals(self) -> dict:
+        if self.tag_log is None:
+            return {}
+        try:
+            return json.loads(self.tag_log.read_text())
+        except (OSError, ValueError):
+            return {}
+
+    def _tag_file(self, kind: str, rel: str) -> Path:
+        if kind not in TAG_KINDS:
+            raise MediaError("tags are for the music, On demand and the audiobooks")
+        path = self.resolve(kind, rel)
+        if not path.is_file():
+            raise MediaError("that track isn't there any more")
+        if path.suffix.lower() not in TAGGED:
+            raise MediaError(f"a {path.suffix.lower() or 'file like that'} has no tags to change")
+        return path
+
+    def tags(self, kind: str, rel: str | None) -> dict:
+        """The tags of a track, or of every track under a folder (in path order):
+        {"folder": bool, "name", "files": [{"path", "title", "artist", "album",
+        "track", "changed": its tags aren't the ones it came with, "fixed": it has none to change}]}."""
+        if kind not in TAG_KINDS:
+            raise MediaError("tags are for the music, On demand and the audiobooks")
+        root, path = self._root(kind), self.resolve(kind, rel)
+        if not path.exists():
+            raise MediaError("that isn't there any more")
+        playable = BOOK_FILES if kind == "audiobooks" else AUDIO_EXTENSIONS
+        files = [path] if path.is_file() else sorted(
+            p for p in path.rglob("*") if p.is_file() and p.suffix.lower() in playable
+            and not any(part.startswith(".") for part in p.relative_to(path).parts))
+        if len(files) > MAX_TAG_FILES:
+            raise MediaError(f"that folder has more than {MAX_TAG_FILES} tracks: open a folder inside it")
+        originals = self._originals()
+        out = []
+        for p in files:
+            r = p.relative_to(root).as_posix()
+            fixed = p.suffix.lower() not in TAGGED
+            out.append({"path": r, **({k: "" for k in TAG_FIELDS} if fixed else read_tags(p)),
+                        "changed": f"{kind}/{r}" in originals, **({"fixed": True} if fixed else {})})
+        return {"folder": path.is_dir(), "name": path.name, "files": out}
+
+    def retag(self, kind: str, rel: str, tags: dict, log_original: bool = True) -> dict:
+        """Change a track's tags: {"title", "artist", "album", "track"}, any of them
+        ("" takes one off). The file is rewritten as a copy and swapped in. Returns
+        its tags as they are now."""
+        path, root = self._tag_file(kind, rel), self._root(kind)
+        if not isinstance(tags, dict) or not tags or any(k not in TAG_FIELDS for k in tags):
+            raise MediaError(f"send some of: {', '.join(TAG_FIELDS)}")
+        new = {}
+        for k, v in tags.items():
+            if not isinstance(v, str) or len(v) > MAX_TAG:
+                raise MediaError(f"the {k} is text, up to {MAX_TAG} letters")
+            v = " ".join(v.split())
+            if k == "track" and v and not all(p.isdigit() for p in v.split("/")):
+                raise MediaError("the track number is a number (3, or 3/12)")
+            new[k] = v
+        before = read_tags(path)
+        if all(before[k] == v for k, v in new.items()):
+            return before
+        size = path.stat().st_size
+        if self.usage()["free"] - size < KEEP_FREE:
+            raise MediaError(f"{path.name}: not enough room left on the radio to rewrite it")
+        self._open(root)
+        incoming = root / INCOMING
+        incoming.mkdir(exist_ok=True)
+        tmp = incoming / f"{uuid.uuid4().hex}.part"
+        try:
+            shutil.copyfile(path, tmp)
+            f = _easy(tmp, path.suffix)
+            if f.tags is None:
+                f.add_tags()
+            for k, v in new.items():
+                if v:
+                    f[TAG_FIELDS[k]] = [v]
+                elif TAG_FIELDS[k] in f:
+                    del f[TAG_FIELDS[k]]
+            f.save()
+            with open(tmp, "rb") as fh:
+                os.fsync(fh.fileno())
+            shutil.copymode(path, tmp)
+            os.replace(tmp, path)
+        except MediaError:
+            raise
+        except Exception as e:
+            raise MediaError(f"{path.name}: couldn't change its tags ({getattr(e, 'strerror', None) or e})") from None
+        finally:
+            try:
+                tmp.unlink()
+            except OSError:
+                pass
+        key = f"{kind}/{path.relative_to(root).as_posix()}"
+        if self.tag_log is not None:
+            with self._lock:
+                originals = self._originals()
+                if log_original and key not in originals:
+                    originals[key] = before
+                elif not log_original:
+                    originals.pop(key, None)
+                else:
+                    originals = None
+                if originals is not None:
+                    try:
+                        self.tag_log.parent.mkdir(parents=True, exist_ok=True)
+                        write_atomic(self.tag_log, json.dumps(originals))
+                    except OSError as e:
+                        log.warning("couldn't keep the original tags: %s", e)
+        log.info("media: tags of %s changed (%s)", key, ", ".join(new))
+        self._changed(kind)
+        return read_tags(path)
+
+    def untag(self, kind: str, rel: str) -> dict:
+        """Put a track's tags back as they were before they were first changed here."""
+        path, root = self._tag_file(kind, rel), self._root(kind)
+        original = self._originals().get(f"{kind}/{path.relative_to(root).as_posix()}")
+        if original is None:
+            raise MediaError("its tags are the ones it came with")
+        return self.retag(kind, rel, {k: original.get(k, "") for k in TAG_FIELDS}, log_original=False)
 
     # --- changing ---------------------------------------------------------------------------
 
