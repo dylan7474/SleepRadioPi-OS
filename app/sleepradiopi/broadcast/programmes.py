@@ -22,6 +22,11 @@ and what happens after the last one ("then"): back to the show, fade out and
 pause (like the sleep timer), or start again. A programme can also start by
 itself at its start time on chosen days.
 
+A programme can instead be one that **starts when it's started** ("anytime":
+a routine on a button, say). It has no time of day: its clock is at 00:00 the
+moment it's started, so a block "at 00:10" comes ten minutes in and one
+"until 01:30" runs to an hour and a half in. It never starts by itself.
+
 Each block plays through what the radio already does, so the DJ follows its
 own setting: music (albums, tracks, playlists, folders) goes through the
 show's queue, talked over as usual when the DJ is on; a station, a book, an
@@ -194,16 +199,19 @@ def validate(programmes) -> list[dict]:
                 raise ValueError(f"{name}: the gaps need something that plays")
         elif gap not in GAPS:
             raise ValueError(f"{name}: in the gaps, the show, silence or something to play")
-        entry = {"name": name, "start": _hhmm(p.get("start", "12:00"), f"{name}'s start time"),
-                 "auto": p.get("auto") is True, "days": sorted(set(days)), "then": then, "gap": gap,
-                 "blocks": [_block(b) for b in blocks]}
+        anytime = p.get("anytime") is True       # it starts when it's started: no time of day, never by itself
+        entry = {"name": name, "start": "00:00" if anytime else _hhmm(p.get("start", "12:00"), f"{name}'s start time"),
+                 "auto": p.get("auto") is True and not anytime, "days": [] if anytime else sorted(set(days)),
+                 "then": then, "gap": gap, "blocks": [_block(b) for b in blocks]}
+        if anytime:
+            entry["anytime"] = True
         switches = p.get("switches") or []
         if not isinstance(switches, list) or len(switches) > MAX_SWITCHES:
             raise ValueError(f"{name}: up to {MAX_SWITCHES} switches")
         if switches:
             entry["switches"] = [_switch(w) for w in switches]
             first = min(w["from"] for w in entry["switches"])
-            if not entry["blocks"] and first:   # only switches: it starts when the first one does
+            if not entry["blocks"] and first and not anytime:   # only switches: it starts when the first one does
                 h, m = map(int, entry["start"].split(":"))
                 t = (h * 60 + m + first) % 1440
                 entry["start"] = f"{t // 60:02d}:{t % 60:02d}"
@@ -211,7 +219,7 @@ def validate(programmes) -> list[dict]:
                     w["from"] -= first
         if p.get("wake") is False:
             entry["wake"] = False
-        every = p.get("every")
+        every = None if anytime else p.get("every")
         if every not in (None, 0):
             if every not in EVERY or isinstance(every, bool):
                 raise ValueError(f"{name}: repeats every {', '.join(map(str, EVERY))} minutes")
@@ -223,6 +231,15 @@ def validate(programmes) -> list[dict]:
             entry["chain"] = _text(p.get("chain"), f"{name}: the programme to play next", limit=NAME_MAX)
         out.append(entry)
     return out
+
+
+def _when(prog: dict, started: datetime, now: datetime, hhmm: str) -> datetime:
+    """When a block's time comes: the next time the clock says it -- or, in a
+    programme that starts when it's started, that long after it started."""
+    if prog.get("anytime"):
+        h, m = map(int, hhmm.split(":"))
+        return started + timedelta(hours=h, minutes=m)
+    return _next_clock(now, hhmm)
 
 
 def find(programmes: list[dict], name) -> dict | None:
@@ -350,14 +367,14 @@ class Scheduler:
             now = self.now()
             self._arm_switches(p, now)
             if self._overlay(p):              # only moments and switches: over whatever's on
-                for b in p["blocks"]:
-                    self._instants(b, now)
+                for b in p["blocks"]:             # (started by hand: now -- or, in one with no time of day, when each comes)
+                    self._instants(b, _when(p, now, now, b["at"]) if p.get("anytime") and b["rule"] == "at" else now)
                 self._switch_now(now)
                 log.info("programme %s: over what's on", p["name"])
                 return self.status()
             self.run = {"name": p["name"], "prog": p, "i": -1, "ends": None, "expect": None, "started": now}
             first = p["blocks"][0]
-            at = _next_clock(now, first["at"]) if first["rule"] == "at" else None
+            at = _when(p, now, now, first["at"]) if first["rule"] == "at" else None
             if at is not None and timedelta(minutes=1) <= at - now <= timedelta(hours=12):
                 # its first block is at a later time (e.g. chained on from another programme):
                 # the gaps' choice (silence, the show, something) until then
@@ -397,7 +414,7 @@ class Scheduler:
         b = blocks[r["i"]] if 0 <= r["i"] < len(blocks) else None     # (-1: waiting for the first block)
         nxt = blocks[r["i"] + 1] if r["i"] + 1 < len(blocks) else None
         return {"name": r["name"], "index": r["i"], "of": len(blocks), "block": b["name"] if b else None,
-                "started": r["started"].strftime("%H:%M"),
+                "started": r["started"].strftime("%H:%M"), "anytime": bool(r["prog"].get("anytime")),
                 "block_started": r["block_started"].strftime("%H:%M") if r.get("block_started") else None,
                 "until": r["ends"].strftime("%H:%M") if r["ends"] else None,
                 "waiting": r.get("waiting", False),
@@ -604,15 +621,15 @@ class Scheduler:
         if b["rule"] in ("for", "at"):
             r["ends"] = now + timedelta(minutes=b["min"])
         elif b["rule"] == "until":
-            r["ends"] = _next_clock(now, b["until"])
+            r["ends"] = _when(prog, r["started"], now, b["until"])
         else:
             r["ends"] = None if self._has_end(b) else now + timedelta(minutes=DEFAULT_MIN)
         nxt = prog["blocks"][i + 1] if i + 1 < len(prog["blocks"]) else None
         r["at_next"] = None
         if nxt and nxt["rule"] == "at":
-            at = _next_clock(now, nxt["at"])
+            at = _when(prog, r["started"], now, nxt["at"])
             # its time has gone today (played late): it just follows on, like any block
-            r["at_next"] = at if at - now <= timedelta(hours=12) else None
+            r["at_next"] = at if now < at <= now + timedelta(hours=12) else None
         due = due if due is not None and due > now else now
         self._instants(b, due)
         if self._is_moment(b):

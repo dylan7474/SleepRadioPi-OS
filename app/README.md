@@ -588,7 +588,7 @@ The cards:
   their time over what's playing, then on. **In the gaps** (before an "at"
   block, or an empty block): the show, silence, or something you choose.
   After the last block: back to the show, stop, fade out and pause, start
-  again, leave what's playing, or **play another programme** (chained). A programme can **start by itself** at its start time
+  again, leave what's playing, or **play another programme** (chained). Or a programme can be one that **starts when you start it** (the window's *starts at a time / starts when I start it*): a routine for a button, with no time of day -- its times are counted from the moment it's started (+0:30 is half an hour in; a block "at" or "until" a time means that long after the start), and it never starts by itself. A programme can **start by itself** at its start time
   on chosen days (and plays even if the radio was paused). Blocks use what the
   radio already does, so the DJ follows its setting: music goes through the
   show's queue (the DJ as set); a station, book, episode or a single On demand

@@ -741,7 +741,7 @@ async function loadPlaylists(d) {
 async function loadProgrammes(d) {
   d = d || await api("/api/programmes");
   PROGRAMMES.kids = d.programmes.map(p => mk({ id: "pg:" + p.name.toLowerCase(), kind: "programme", title: p.name, start: p.start, auto: p.auto, days: p.days,
-    then: p.then, chain: p.chain, once: !!p.once, wake: p.wake !== false, every: p.every || 0, until: p.until || "", gap: typeof p.gap === "object" ? { id: refObj(p.gap)?.id } : p.gap || "show", switches: (p.switches || []).map(w => ({ ...w })), blocks: p.blocks.map(b => ({ ...b, items: b.items.map(refObj).filter(Boolean).map(o => o.id) })) }).id);
+    then: p.then, chain: p.chain, anytime: !!p.anytime, once: !!p.once, wake: p.wake !== false, every: p.every || 0, until: p.until || "", gap: typeof p.gap === "object" ? { id: refObj(p.gap)?.id } : p.gap || "show", switches: (p.switches || []).map(w => ({ ...w })), blocks: p.blocks.map(b => ({ ...b, items: b.items.map(refObj).filter(Boolean).map(o => o.id) })) }).id);
   PROGRAMMES.loaded = true;
 }
 // a programme's saved things <-> the objects on the desktop
@@ -1000,6 +1000,7 @@ function subOf(o) {
       const tl = timeline(o), s0 = toMin(o.start);
       const times = !o.blocks.length && o.switches?.length ? o.switches.map(w => `${SWITCH_WORD[w.what]} ${hhmm(s0 + w.from)}–${hhmm(s0 + w.from + w.min)}`).join(", ")
         : o.every ? `every ${o.every === 60 ? "hour" : o.every + " min"} · ${o.start}–${o.until || "23:59"}`
+        : o.anytime ? (tl.length || o.switches?.length ? `when started · ${dur(Math.max(tl.length ? tl[tl.length - 1].end : 0, ...(o.switches || []).map(w => w.from + w.min)))}` : "empty")
         : tl.length ? `${hhmm(tl[0].start)}–${hhmm(Math.max(tl[tl.length - 1].end, ...(o.switches || []).map(w => s0 + w.from + w.min)))}` : "empty";
       const live = S?.programme && S.programme.name.toLowerCase() === o.title.toLowerCase();
       return (live ? "● playing · " : o.auto ? (o.once ? "⏰ " : "↻ ") : "") + times;
@@ -2795,7 +2796,7 @@ function scheduleView(o, box, win) {
 async function saveProgrammes(note) {
   const progs = PROGRAMMES.kids.map(id => O[id]).filter(Boolean);
   try {
-    const d = await api("/api/programmes", { programmes: progs.map(p => ({ name: p.title, start: p.start, auto: !!p.auto, days: p.days || [], then: p.then || "show",
+    const d = await api("/api/programmes", { programmes: progs.map(p => ({ name: p.title, start: p.start, ...(p.anytime ? { anytime: true } : {}), auto: !!p.auto, days: p.days || [], then: p.then || "show",
       gap: p.gap && typeof p.gap === "object" ? (objRef(O[p.gap.id]) || "show") : p.gap || "show", ...(p.then === "chain" ? { chain: p.chain } : {}),
       ...(p.auto && p.once ? { once: true } : {}), ...(p.wake === false ? { wake: false } : {}),
       ...(p.every ? { every: p.every, until: p.until || "23:59" } : {}),
@@ -2937,6 +2938,7 @@ function nextLineText() {
 function armText(o) {
   const run = S?.programme && S.programme.name.toLowerCase() === o.title.toLowerCase() ? S.programme : null;
   if (run) return `Playing since ${run.started}${run.next ? " · next: " + run.next : ""}`;
+  if (o.anytime) return "Starts when you start it: Play now, or put it on a button";
   if (!o.auto) return "Not armed: press Arm to have it start by itself, or Play now";
   const d = o.every ? (occurrences(o, 2)[0]?.start || null) : nextStartAt(o);
   if (!d) return o.every ? "Nothing more today or tomorrow in its hours" : "Pick a day for it to repeat on";
@@ -2952,9 +2954,12 @@ function armText(o) {
 function programmeView(o, box, win) {
   const run = S?.programme && S.programme.name.toLowerCase() === o.title.toLowerCase() ? S.programme : null;
   // playing: drawn from when it really started (and the block playing from when it did), with a line at now
-  const tl = run ? timeline({ ...o, start: run.started }) : timeline(o);
+  // (a programme with no time of day: its times are from when it's started -- tm() writes them "+0:30")
+  const since = t => (toMin(t) - toMin(run.started) + 1440) % 1440;
+  const tm = m => o.anytime ? `+${Math.floor(m / 60)}:${String(Math.round(m) % 60).padStart(2, "0")}` : hhmm(m);
+  const tl = run && !o.anytime ? timeline({ ...o, start: run.started }) : timeline(o);
   if (run && run.block_started && tl[run.index]) {
-    const shift = toMin(run.block_started) - tl[run.index].start;
+    const shift = (o.anytime ? since(run.block_started) : toMin(run.block_started)) - tl[run.index].start;
     for (let k = run.index; k < tl.length; k++) if (k === run.index || o.blocks[k].rule !== "at") { tl[k].start += shift; tl[k].end += shift; }
   }
   const nameIn = el("input", { className: "ptitle", value: o.title, id: "pn-" + o.id });
@@ -2975,6 +2980,18 @@ function programmeView(o, box, win) {
   const gapObj = o.gap && typeof o.gap === "object" ? O[o.gap.id] : null;
   for (const [v, t] of [["show", "gaps: the theme playing"], ["silence", "gaps: silence"], ["pick", gapObj ? "gaps: " + gapObj.title : "gaps: something else…"]]) gapSel.append(new Option(t, v, false, (gapObj ? "pick" : o.gap || "show") === v));
   gapSel.onchange = () => { if (gapSel.value === "pick") { win.gapPick = true; drawDesk(); toast("Drop a station, album, playlist… onto the box that appeared, to play in the gaps."); } else { o.gap = gapSel.value; win.gapPick = false; saveProgrammes(); } };
+  // at a time of day (and, armed, by itself) -- or whenever it's started: its times are then from its start
+  const modeSel = el("select", { id: "mode-" + o.id });
+  modeSel.setAttribute("aria-label", "When it starts");
+  for (const [v, t] of [["clock", "starts at a time"], ["any", "starts when I start it"]]) modeSel.append(new Option(t, v, false, (o.anytime ? "any" : "clock") === v));
+  modeSel.onchange = () => {
+    const any = modeSel.value === "any", d = new Date();
+    const from = toMin(o.start), to = any ? 0 : Math.ceil((d.getHours() * 60 + d.getMinutes()) / 15) * 15 % 1440;
+    for (const b of o.blocks) for (const k of ["at", "until"]) if (b[k]) b[k] = hhmm(toMin(b[k]) - from + to);   // (each block keeps its place in the running order)
+    o.anytime = any; o.start = hhmm(to); win.view0 = null; win.zoom = "fit";
+    if (any) { o.auto = false; o.every = 0; o.days = []; }
+    saveProgrammes(any ? `${o.title} starts when you start it: its times are now counted from then.` : `${o.title} starts at a time again (${o.start}): Arm it to have it start by itself.`);
+  };
   // Arm: it starts by itself at its time -- once, unless the repeat says otherwise
   const armBtn = T(o.auto ? `Armed ✓ · ${o.start} · Disarm` : "Arm", () => {
     if (o.auto) { o.auto = false; return saveProgrammes(`${o.title} is disarmed: it won't start by itself.`); }
@@ -3000,15 +3017,17 @@ function programmeView(o, box, win) {
   box.append(el("div", { className: "wtools" }, nameIn,
     playing || swOn ? T("■ Stop", async () => { await api("/api/programmes/stop", { name: o.title }); await poll(); drawDesk(); }, "primary")
             : T("▶ Play now", () => play(o), "", !o.blocks.length && !o.switches?.length),
-    playing ? null : armBtn, playing ? null : el("span", { className: "muted", textContent: "at" }), playing ? null : startIn,
-    playing ? null : repSel, rep === "days" && !playing ? days : null,
-    rep.startsWith("q") && !playing ? el("span", { className: "muted", textContent: "until" }) : null, rep.startsWith("q") && !playing ? untilIn : null, status));
+    playing ? null : modeSel,
+    playing || o.anytime ? null : armBtn, playing || o.anytime ? null : el("span", { className: "muted", textContent: "at" }), playing || o.anytime ? null : startIn,
+    playing || o.anytime ? null : repSel, rep === "days" && !playing && !o.anytime ? days : null,
+    rep.startsWith("q") && !playing && !o.anytime ? el("span", { className: "muted", textContent: "until" }) : null, rep.startsWith("q") && !playing && !o.anytime ? untilIn : null, status));
   const over = overOnly(o);                          // plays over what's on: no "then", no gaps, doesn't wake the radio
   if (over) for (const x of [then, gapSel]) { x.disabled = true; x.style.opacity = ".4"; x.title = "Not used: this programme plays over whatever's on"; }
   const wakeSw = el("button", { className: "sw", type: "button", role: "switch", title: over ? "If the radio's paused when it's due: on, it happens anyway; off, it's skipped" : "If the radio's paused when it's due: on, it plays anyway (an alarm); off, the pause wins and it's skipped" });
   wakeSw.setAttribute("aria-checked", String(o.wake !== false)); wakeSw.setAttribute("aria-label", "Wake the radio if it's paused");
   wakeSw.onclick = () => { o.wake = o.wake === false; saveProgrammes(o.wake ? `${o.title} wakes the radio even if it's paused.` : `${o.title} only starts if the radio's playing: a pause wins.`); };
-  box.append(el("div", { className: "wtools" }, el("span", { className: "line", style: "display:inline-flex;gap:6px;align-items:center" }, wakeSw,
+  // (the wake switch is for one that starts by itself: started by hand, it just plays)
+  box.append(el("div", { className: "wtools" }, o.anytime ? null : el("span", { className: "line", style: "display:inline-flex;gap:6px;align-items:center" }, wakeSw,
       el("span", { className: "muted", textContent: o.wake !== false ? (over ? "🔔 happens even if the radio's paused" : "🔔 wakes the radio if it's paused") : "🔕 skipped if the radio's paused" })), then, gapSel,
     T("＋ Moment", () => { const tl2 = timeline(o), end = tl2.length ? tl2[tl2.length - 1].end : toMin(o.start);
       o.blocks.push({ name: "A moment", items: [], rule: "at", at: hhmm(Math.ceil((end + 1) / 15) * 15), min: 1, order: "inorder" }); win.blk = o.blocks.length - 1; saveProgrammes("A moment: add a message, a jingle or an action to it below."); })));
@@ -3022,7 +3041,7 @@ function programmeView(o, box, win) {
   const body = el("div", { className: "wbody" });
   const wrap = el("div", { className: "prog" });
   // the switches (noise, the DJ): bars from the programme's start (or when it really started)
-  const s0 = run ? toMin(run.started) : toMin(o.start);
+  const s0 = o.anytime ? 0 : run ? toMin(run.started) : toMin(o.start);
   const sw = (o.switches || []).map(w => ({ start: s0 + w.from, end: s0 + w.from + w.min, len: w.min }));
   // moments repeating every N minutes (a talking clock): each repeat drawn faintly, and the fit covers them all
   const reps = [];
@@ -3043,7 +3062,8 @@ function programmeView(o, box, win) {
     p.onclick = () => { const mid = view0 + span / 2; win.zoom = v; win.view0 = v === "fit" ? null : Math.max(0, mid - v / 2); drawDesk(); };
     zoomBar.append(p);
   }
-  zoomBar.append(el("span", { className: "muted", style: "margin-left:auto", textContent: "Scroll to move along the day · Ctrl+scroll to zoom · click a chosen block again to set its time" }));
+  zoomBar.append(el("span", { className: "muted", style: "margin-left:auto", textContent: o.anytime ? "Times are from when it's started: +0:30 is half an hour in · Ctrl+scroll to zoom · click a chosen block again to set its time"
+    : "Scroll to move along the day · Ctrl+scroll to zoom · click a chosen block again to set its time" }));
   const strip = el("div", { className: "daystrip", title: "The whole day: click or drag to move along it" });
   const sx = m => m / D1 * 100 + "%";
   // midnight: the next day, named (from the day it next runs)
@@ -3054,13 +3074,14 @@ function programmeView(o, box, win) {
   tl.forEach((s, i) => { const f = O[o.blocks[i].items[0]]; strip.append(Object.assign(el("i", { className: "dblk" }), { style: `left:${sx(s.start)};width:max(3px,${s.len / D1 * 100}%);--h:${f ? TINT[f.kind] ?? f.h : 0}` })); });
   sw.forEach((s, k) => strip.append(Object.assign(el("i", { className: "dsw" }), { style: `left:${sx(s.start)};width:max(3px,${s.len / D1 * 100}%);--h:${SWITCH_HUE[o.switches[k].what]}` })));
   const nd = new Date();
-  strip.append(Object.assign(el("i", { className: "dnow", title: "Now" }), { style: `left:${sx(nd.getHours() * 60 + nd.getMinutes())}` }));
+  if (!o.anytime || run) strip.append(Object.assign(el("i", { className: "dnow", title: "Now" }),
+    { style: `left:${sx(o.anytime ? since(String(nd.getHours()).padStart(2, "0") + ":" + String(nd.getMinutes()).padStart(2, "0")) : nd.getHours() * 60 + nd.getMinutes())}` }));
   const vbox = el("i", { className: "dview" });
   vbox.style.cssText = `left:${sx(view0)};width:${span / D1 * 100}%`;
   strip.append(vbox);
   const ruler = el("div", { className: "ruler" });
   const lab = [5, 10, 15, 30, 60, 120, 180, 360].find(s => s * px >= 46) || 360, tick = [5, 15, 30, 60].find(s => s * px >= 7) || 60;
-  for (let m = 0; m <= D1; m += tick) { ruler.append(Object.assign(el("i"), { style: `left:${m * px}px;height:${m % 60 ? 3 : 6}px` })); if (m % lab === 0) ruler.append(el("span", { className: m && m % 1440 === 0 ? "midn" : "", textContent: m && m % 1440 === 0 ? `${dayName(m / 1440)} 00:00` : hhmm(m), style: `left:${m * px}px` })); }
+  for (let m = 0; m <= D1; m += tick) { ruler.append(Object.assign(el("i"), { style: `left:${m * px}px;height:${m % 60 ? 3 : 6}px` })); if (m % lab === 0) ruler.append(el("span", { className: m && m % 1440 === 0 ? "midn" : "", textContent: o.anytime ? tm(m) : m && m % 1440 === 0 ? `${dayName(m / 1440)} 00:00` : hhmm(m), style: `left:${m * px}px` })); }
   const midlines = el => { for (let m = 1440; m < D1; m += 1440) el.append(Object.assign(document.createElement("i"), { className: "midline", title: "Midnight: " + dayName(m / 1440), style: `left:${m * px}px` })); };
   const lane = el("div", { className: "lane" });
   lane.style.setProperty("--hourpx", (60 * px) + "px");
@@ -3075,9 +3096,9 @@ function programmeView(o, box, win) {
     blk.style.cssText = `left:${s.start * px + 1}px;width:${Math.max(18, s.len * px - 2)}px;--h:${first ? TINT[first.kind] ?? first.h : 0}` + (live ? ";box-shadow:0 0 0 3px var(--red)" : "");
     blk.dataset.drop = "blk"; blk.dataset.target = o.id; blk.dataset.i = i;
     const bi = el("div", { className: "bi" }); b.items.slice(0, 5).forEach(id => O[id] && bi.append(glyph(O[id])));
-    blk.append(el("div", { className: "bt", textContent: (live ? "● " : "") + b.name }), el("div", { className: "bw", textContent: `${hhmm(s.start)}–${hhmm(s.end)} · ${dur(s.len)}` }), bi);
-    blk.title = `${b.name}: ${hhmm(s.start)}–${hhmm(s.end)}` + (win.blk === i ? " · click again to set its start time" : "");
-    if (b.rule === "at") blk.append(el("span", { className: "pin", textContent: "at " + b.at }));
+    blk.append(el("div", { className: "bt", textContent: (live ? "● " : "") + b.name }), el("div", { className: "bw", textContent: `${tm(s.start)}–${tm(s.end)} · ${dur(s.len)}` }), bi);
+    blk.title = `${b.name}: ${tm(s.start)}–${tm(s.end)}` + (win.blk === i ? " · click again to set its start time" : "");
+    if (b.rule === "at") blk.append(el("span", { className: "pin", textContent: "at " + (o.anytime ? tm(toMin(b.at)) : b.at) }));
     const grab = el("div", { className: "grab", title: "Drag to change how long" });
     grab.addEventListener("pointerdown", e => stretch(e, o, i, px));
     blk.append(grab);
@@ -3087,7 +3108,8 @@ function programmeView(o, box, win) {
   reps.forEach(r => lane.append(Object.assign(el("div", { className: "blk repeat", title: `Again at ${hhmm(r.start)}` }),
     { style: `left:${r.start * px + 1}px;width:${Math.max(18, px - 2)}px;--h:${TINT[O[o.blocks[0]?.items[0]]?.kind] ?? 200}` })));
   if (run) {
-    const d = new Date(), nowMin = d.getHours() * 60 + d.getMinutes() + d.getSeconds() / 60;
+    const d = new Date(), clock = d.getHours() * 60 + d.getMinutes() + d.getSeconds() / 60;
+    const nowMin = o.anytime ? (clock - toMin(run.started) + 1440) % 1440 : clock;      // (no time of day: how long it's been going)
     const x = (nowMin + (nowMin < lo - 720 ? 1440 : 0)) * px;
     if (x >= 0 && x <= D1 * px) lane.append(Object.assign(el("div", { className: "now", title: "Now" }), { style: `left:${x}px` }));
   }
@@ -3101,8 +3123,8 @@ function programmeView(o, box, win) {
     const w = o.switches[k];
     const bar = el("div", { className: "blk swbar" + (win.sw === k ? " sel" : "") });
     bar.style.cssText = `left:${s.start * px + 1}px;width:${Math.max(18, s.len * px - 2)}px;--h:${SWITCH_HUE[w.what]}`;
-    bar.title = `${SWITCH_NAME[w.what]} on ${hhmm(s.start)}, off ${hhmm(s.end)} (drag it, or its ends)`;
-    bar.append(el("span", { className: "bt", textContent: `${SWITCH_NAME[w.what]} on` }), el("span", { className: "bw", textContent: `${hhmm(s.start)}–${hhmm(s.end)} · ${dur(s.len)}` }));
+    bar.title = `${SWITCH_NAME[w.what]} on ${tm(s.start)}, off ${tm(s.end)} (drag it, or its ends)`;
+    bar.append(el("span", { className: "bt", textContent: `${SWITCH_NAME[w.what]} on` }), el("span", { className: "bw", textContent: `${tm(s.start)}–${tm(s.end)} · ${dur(s.len)}` }));
     const gl = el("div", { className: "grabl", title: "Drag to change when it comes on" }), gr = el("div", { className: "grab", title: "Drag to change when it goes off" });
     gl.addEventListener("pointerdown", e => stretchSwitch(e, o, k, px, "start"));
     gr.addEventListener("pointerdown", e => stretchSwitch(e, o, k, px, "end"));

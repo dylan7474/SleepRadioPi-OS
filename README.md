@@ -93,6 +93,9 @@ Radio folder and one of the buttons open:
   layout, played straight through with no DJ, now or after the song playing.
   Any file or folder in it can be set to **remember its place**, exactly like
   an audiobook (a serial, a lecture, a book that isn't in Audiobooks).
+- **Routines** — a programme can be one that starts when you start it (from
+  a button, say), its times counted from that moment: half an hour of a
+  station, then an audiobook, with the noise on for eight hours.
 - **A tag editor** — change a track's title, artist and album, or a whole
   folder's at once, from the desktop page: for names that are long, wrong or
   in letters the DJ can't say. The originals are kept, to put back.

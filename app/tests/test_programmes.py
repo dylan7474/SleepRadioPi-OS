@@ -410,3 +410,37 @@ def test_switches_when_the_programme_gives_way(tmp_path, monkeypatch) -> None:
     assert sched.run is None and [s["what"] for s in sched.spans] == ["noise"]   # started: runs on; the DJ's: dropped
     clock.go(minutes=30); sched.tick()
     assert did == [("action", "noise_on"), ("action", "noise_off")] and sched.spans == []
+
+
+def test_a_programme_that_starts_when_its_started(tmp_path, monkeypatch) -> None:
+    """No time of day: its clock is at 00:00 when it's started, whenever that is. It never starts by itself."""
+    ok = programmes.validate([{"name": "Bedtime", "anytime": True, "start": "21:30", "auto": True, "days": [1], "every": 30,
+                               "blocks": [{"name": "R4", "items": [R4], "rule": "until", "until": "00:20"}]}])[0]
+    assert ok["anytime"] is True and ok["start"] == "00:00" and ok["auto"] is False and ok["days"] == [] and "every" not in ok
+    said = []
+    st, sched, clock, *_ = _setup(tmp_path, monkeypatch, [{"name": "Bedtime", "anytime": True, "then": "stop", "blocks": [
+        {"name": "Radio", "items": [R4], "rule": "until", "until": "00:20"},         # to twenty minutes in
+        {"name": "Rain", "items": [STORM], "rule": "at", "at": "00:30", "min": 15},  # from half an hour in
+        {"name": "Goodnight", "items": [{"kind": "message", "text": "Goodnight."}], "rule": "at", "at": "00:40", "min": 1}],
+        "switches": [{"what": "noise", "from": 5, "min": 10}]}], start=SUNDAY.replace(hour=22, minute=47))
+    sched.say = said.append
+    for _ in range(3):
+        clock.go(hours=1); sched.tick()
+    assert sched.run is None                                 # (armed or not, it doesn't start by itself)
+    sched.play("Bedtime")                                    # 01:47
+    s = sched.status()
+    assert s["anytime"] is True and s["started"] == "01:47" and s["until"] == "02:07" and st.source["name"] == "BBC Radio 4"
+    assert [(w["on"].strftime("%H:%M"), w["off"].strftime("%H:%M")) for w in sched.spans] == [("01:52", "02:02")]
+    clock.go(minutes=19); sched.tick()
+    assert st.source["name"] == "BBC Radio 4"
+    clock.go(minutes=1); sched.tick()                        # 20 minutes in: the station's time is up; too early for the rain
+    assert sched.status()["waiting"] is True
+    clock.go(minutes=10); sched.tick()                       # 30 minutes in
+    assert st.source["folder"] == "Thunderstorms" and sched.status()["until"] == "02:32"
+
+    # only moments: each at its time after the start, not all at once
+    st, sched, clock, *_ = _setup(tmp_path / "b", monkeypatch, [{"name": "Chimes", "anytime": True, "blocks": [
+        {"name": "Now", "items": [{"kind": "message", "text": "Starting."}], "rule": "at", "at": "00:00", "min": 1}]}])
+    sched.say = said.append
+    sched.play("Chimes")
+    assert said == ["Starting."] and sched.run is None
