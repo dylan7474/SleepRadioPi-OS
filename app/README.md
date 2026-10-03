@@ -613,7 +613,15 @@ The cards:
   classical pieces, your own recordings. Any layout: each folder is shown by
   its own name (the tags are used only where they give an album name). It's
   not in the show's mix, artist radio, lists or the song search; only in
-  Browse and the album search. **It always plays with no DJ**: *Play now*
+  Browse and the album search. **Anything in it can remember its place, like
+  an audiobook** (the desktop's *Remember its place*, on a file or a folder in
+  its window; off as it comes, so a piece starts from the beginning each time):
+  it's then played exactly as a book is -- from where it was left, a minute
+  back after the sleep timer, the knob seeking by the minute, the radio
+  pausing at its end -- a folder as one book, its files the chapters in order
+  (`KeptLibrary` in `playback/audiobooks.py`; the list is the `ondemand_keep`
+  setting, the places are kept with the books'). A button holding it carries
+  on from its place too. **It always plays with no DJ**: *Play now*
   starts it, and *Play next* waits for the song (or album) playing to end,
   then plays it straight through (`Station.play_next`); with a station, book
   or podcast on, or the radio off, it's simply chosen. A preset button can
@@ -740,7 +748,8 @@ The cards:
   Remembered over a restart (`noise_on`, `noise_kind`, `noise_mix`).
 - **Audiobooks** (Find, and the Radio tab while one plays) — books go in their
   own folder, next to the music (`/media/audiobooks` on the radio; upload them
-  under Settings → Media library → Audiobooks): a folder of mp3s is one book
+  in the desktop's Audiobooks window: *Upload a book…* for a file, *Upload a folder of
+  chapters…* for a book in chapters, or drop either on the window): a folder of mp3s is one book
   (its chapters in file order, CD1/CD2 sub-folders included), and a single
   `.m4b` or `.mp3` is a book too, an m4b's chapter markers becoming its chapters.
   A book plays **instead of the show, with nothing from the DJ** (no links,
@@ -1070,6 +1079,7 @@ everything but the page itself and the login needs the session cookie
 | `POST /api/radio/directory` | Fetch a fresh copy of the station directory now (in the background) |
 | `POST /api/radio/play` / `/api/radio/stop` | `{"name", "url"}` — play that station instead of the show (starts the speaker if paused) / back to the show (from a station or an album) |
 | `GET /api/books` | The audiobooks, each with `key`, `title`, `author`, `total_ms`, `pos_ms` (where it was left), `chapters` |
+| `GET /api/ondemand/kept` / `POST /api/ondemand/keep` | The On demand files and folders that remember their place, each with where it was left / `{"path", "keep": true \| false}` — set one, or clear it |
 | `POST /api/books/play` / `/api/books/seek` | `{"key"}` — that book from where it was left / `{"delta_ms": -60000}` or `{"to_ms": n}` in the book on |
 | `GET /api/podcasts` | The shows followed, each with its number of episodes, how many recent ones are unheard, and the latest |
 | `GET /api/podcasts/search?q=` | Shows from the podcast directory (`id`, `feed_url`, `title`, `author`) |

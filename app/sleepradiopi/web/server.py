@@ -290,6 +290,8 @@ def make_handler(station: Station, output: Mp3Output, speaker=None,
             elif path == "/api/books":
                 self._send(json.dumps({"books": station.book_list(), "scanning": station.books_scanning}).encode(),
                            "application/json")
+            elif path == "/api/ondemand/kept":      # the On demand things that remember their place
+                self._send(json.dumps({"kept": station.kept_list()}).encode(), "application/json")
             elif path == "/api/podcasts":
                 self._send(json.dumps({"shows": station.podcasts.summary()}).encode(), "application/json")
             elif path == "/api/podcasts/search":
@@ -480,6 +482,18 @@ def make_handler(station: Station, output: Mp3Output, speaker=None,
                 self._button_bank(path.endswith("auto"))
             elif path.startswith("/api/podcasts/") and path.rsplit("/", 1)[1] in ("follow", "unfollow", "play", "heard"):
                 self._podcasts(path.rsplit("/", 1)[1])
+            elif path == "/api/ondemand/keep":      # {"path", "keep": true | false}: remember its place, like a book
+                try:
+                    body = self._body()
+                    if not isinstance(body.get("keep"), bool):
+                        raise ValueError("keep is true or false")
+                    paths = station.set_keep(body.get("path"), body["keep"])
+                except (ValueError, TypeError, KeyError, AttributeError) as e:
+                    self._error(str(e) if isinstance(e, ValueError) else "send {\"path\", \"keep\": true | false}")
+                    return
+                if config_file is not None:
+                    save_setting(config_file, "ondemand_keep", paths)
+                self._send(json.dumps({"kept": station.kept_list()}).encode(), "application/json")
             elif path in ("/api/books/play", "/api/books/seek"):
                 self._books(path.rsplit("/", 1)[1])
             elif path == "/api/album/play":
@@ -1145,8 +1159,11 @@ def make_handler(station: Station, output: Mp3Output, speaker=None,
                     old_root, new_root = kind, to_kind          # playlists, programmes and buttons follow it
                     if old_root in ("music", "ondemand") and new_root in ("music", "ondemand"):
                         old_rel = "/".join(p for p in old.split("/") if p)
+                        kept_before = list(station.kept.paths) if hasattr(station, "kept") else None
                         if station.rename_refs(old_root, old_rel, new_root, new) and config_file is not None:
                             save_setting(config_file, "playlists", station.playlists)
+                        if kept_before is not None and station.kept.paths != kept_before and config_file is not None:
+                            save_setting(config_file, "ondemand_keep", station.kept.paths)
                         sched = getattr(station, "scheduler", None)
                         if sched and sched.rename_refs(old_root, old_rel, new_root, new) and config_file is not None:
                             save_setting(config_file, "programmes", sched.programmes)

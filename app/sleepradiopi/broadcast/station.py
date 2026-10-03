@@ -41,7 +41,7 @@ import numpy as np
 from sleepradiopi.audio import pcm
 from sleepradiopi.config.clock import clock_trusted
 from sleepradiopi.playback import radio as radio_mod
-from sleepradiopi.playback.audiobooks import BookLibrary, Positions
+from sleepradiopi.playback.audiobooks import KEPT, BookLibrary, KeptLibrary, Positions
 from sleepradiopi.playback import podcasts as pod_mod
 from sleepradiopi.tts.worker import TtsWorker
 
@@ -322,6 +322,10 @@ class Station:
         # Audiobooks: their own folder; each book's place kept on the writable storage.
         self.books = BookLibrary(cfg.get("audiobooks_folder") or Path("/nonexistent"), cfg.get("book_cache"))
         self.book_positions = Positions(cfg.get("book_positions"))
+        # ...and the On demand things set to remember their place: played as books (their keys start with KEPT)
+        cache = cfg.get("book_cache")
+        self.kept = KeptLibrary(cfg.get("ondemand_folder") or Path("/nonexistent"),
+                                Path(cache).with_name("kept.json") if cache else None, cfg.get("ondemand_keep") or [])
         self.books_scanning = True
         threading.Thread(target=self._scan_books, name="books-scan", daemon=True).start()
         self._book_seek: int | None = None
@@ -591,9 +595,10 @@ class Station:
                     "duration_ms": ep["duration_ms"]}
         if source["kind"] == "book":
             key = source.get("key")
-            book = self.books.get(key) if isinstance(key, str) else None
-            if book is None and not (isinstance(key, str) and key and ".." not in key.split("/")
-                                     and (self.books.root / key).exists()):
+            book = self._book(key) if isinstance(key, str) else None
+            at = (self.kept.root / key[len(KEPT):]) if isinstance(key, str) and key.startswith(KEPT) else \
+                (self.books.root / key) if isinstance(key, str) and key else None
+            if book is None and not (at is not None and ".." not in key.split("/") and at.exists()):
                 raise ValueError("that book isn't in the audiobooks folder")
             return {"kind": "book", "key": key, "title": book.title if book else Path(key).stem,
                     "author": book.author if book else ""}
@@ -604,6 +609,10 @@ class Station:
         ({"name", "url"}, kind "radio" by default) or an album straight through
         ({"kind": "album", "folder"}) -- or None to go back to the show. Heard at
         once if the radio is playing. ValueError if it isn't one."""
+        if source is not None and source.get("kind") == "album" and source.get("root") == "ondemand" \
+                and KEPT + str(source.get("folder")) in {KEPT + p for p in self.kept.paths} \
+                and self.kept.get(KEPT + source["folder"]) is not None and not source.get("one") and not source.get("track"):
+            source = {"kind": "book", "key": KEPT + source["folder"]}        # it remembers its place: as a book
         source = self._check_source(source) if source is not None else None
         with self._lock:
             self._source = source
@@ -638,6 +647,12 @@ class Station:
             random.shuffle(tracks)
             self.play_tracks_as(src["title"], tracks, True, then)
             return self._source
+        key = self.kept.key_for(src["folder"]) if src.get("root") == "ondemand" else None
+        if key is not None:                     # it remembers its place (or is in a folder that does): as a book
+            whole = key == KEPT + src["folder"] and not src.get("track")
+            file = None if whole else self._source_album(src)["tracks"][src.get("track") or 0].path
+            if self._kept_play(key, file) is not None:
+                return self._source
         self._next_source = None
         self.tune({**src, **({"then": "pause"} if then == "pause" else {})})
         return self._source
@@ -650,6 +665,10 @@ class Station:
         t = self._by_ref(root, path) if isinstance(path, str) else None
         if t is None:
             raise ValueError("that track isn't in the library")
+        key = self.kept.key_for(path) if root == "ondemand" else None
+        if key is not None and self._kept_play(key, t.path) is not None:      # it remembers its place: as a book
+            log.info("play now: %s (from where it was left)", t.title)
+            return {"title": t.title, "artist": t.artist}
         if then == "pause":                     # (from the desktop: that song on its own, then quiet)
             self.play_tracks_as(t.title, [t], False, "pause")
         elif root == "ondemand":
@@ -1221,6 +1240,11 @@ class Station:
             if root == old_root and (path == old or path.startswith(old + "/")):
                 return new_root, new + path[len(old):]
             return root, path
+        if old_root == "ondemand":               # (what remembered its place: still does, if it's still in On demand)
+            kept = [m[1] for p in self.kept.paths if (m := moved("ondemand", p))[0] == "ondemand"]
+            if kept != self.kept.paths:
+                self.kept.paths = sorted(kept)
+                self.kept.scan()
         changed = False
         lists = []
         for p in self.playlists:
@@ -1965,9 +1989,53 @@ class Station:
 
     # --- audiobooks -------------------------------------------------------------------------
 
+    def _book(self, key: str):
+        """A book by its key: one of the audiobooks, or an On demand thing that remembers its place."""
+        return self.kept.get(key) if key.startswith(KEPT) else self.books.get(key)
+
+    def set_keep(self, path: str, keep: bool) -> list[str]:
+        """An On demand file or folder remembers its place from now on (or stops:
+        from the start each time, as On demand does). ValueError if it isn't there."""
+        path = "/".join(p for p in path.split("/") if p) if isinstance(path, str) else ""
+        if not path or ".." in path.split("/") or self.ondemand_dir is None or not (Path(self.ondemand_dir) / path).exists():
+            raise ValueError("that isn't in On demand")
+        paths = [p for p in self.kept.paths if p != path] + ([path] if keep else [])
+        self.kept.paths = sorted(paths)
+        self.kept.scan()
+        log.info("on demand: %s %s", path, "remembers its place" if keep else "starts from the beginning")
+        return self.kept.paths
+
+    def kept_list(self) -> list[dict]:
+        """The On demand things that remember their place, with where each was left."""
+        out = []
+        for path in self.kept.paths:
+            book = self.kept.get(KEPT + path)
+            pos = self.book_positions.get(KEPT + path)
+            out.append({"path": path, "key": KEPT + path, "title": book.title if book else Path(path).stem,
+                        "total_ms": book.total_ms if book else 0, "pos_ms": pos,
+                        "done": self.book_positions.done(KEPT + path), "chapters": len(book.chapters) if book else 0})
+        return out
+
+    def _kept_play(self, key: str, file: Path | None = None) -> dict | None:
+        """Play a kept thing as the book it is, from where it was left -- or, a file
+        in a kept folder chosen: from that file (unless that's where it was left).
+        None if it hasn't been read yet (it then plays the plain way)."""
+        book = self.kept.get(key)
+        if book is None or not book.chapters:
+            return None
+        if file is not None:
+            i = next((n for n, c in enumerate(book.chapters) if c.path == file), None)
+            left_in = book.chapters[book.at(self.book_positions.get(key))[0]].path
+            if i is not None and left_in != file:
+                self.book_positions.set(key, book.chapters[i].offset_ms)
+        self._next_source = None
+        self.tune({"kind": "book", "key": key})
+        return self._source
+
     def _scan_books(self) -> None:
         try:
             self.books.scan()
+            self.kept.scan()
         except Exception:
             log.exception("audiobooks: scan failed")
         finally:
@@ -1987,7 +2055,7 @@ class Station:
             return self._episode_seek(src, delta_ms, to_ms)
         if not src or src.get("kind") != "book":
             raise ValueError("no audiobook or podcast is on")
-        book = self.books.get(src["key"])
+        book = self._book(src["key"])
         if book is None:
             raise ValueError("that book isn't in the audiobooks folder")
         now = self.book_now["pos_ms"] if self.book_now and self.book_now["key"] == book.key \
@@ -2026,7 +2094,7 @@ class Station:
             total = st.get("total_ms", 0)
             if src["kind"] == "episode":
                 return {"pos_ms": st["pos_ms"], "total_ms": total, "path": None, "ms": st["pos_ms"]}
-            book = self.books.get(src["key"])
+            book = self._book(src["key"])
             i, into = book.at(st["pos_ms"])
             ch = book.chapters[i]
             return {"pos_ms": st["pos_ms"], "total_ms": total, "path": ch.path, "ms": ch.start_ms + into}
@@ -2106,10 +2174,10 @@ class Station:
         Paused, it stops at once and keeps its place (a minute back after the
         sleep timer); at the end it pauses the radio rather than waking anyone."""
         deadline = time.monotonic() + 120
-        book = self.books.get(source["key"])
+        book = self._book(source["key"])
         while book is None and self.books_scanning and time.monotonic() < deadline and not self._halted():
             self._write(pcm.silence(0.2))        # still reading the folder (just after start-up)
-            book = self.books.get(source["key"])
+            book = self._book(source["key"])
         if book is None or not book.chapters:
             with self._lock:
                 if self._source is source:
@@ -2642,7 +2710,7 @@ class Station:
         if src["kind"] == "book":
             now = self.book_now if self.book_now and self.book_now["key"] == src["key"] else None
             if now is None:                      # not playing (paused): where it was left
-                book = self.books.get(src["key"])
+                book = self._book(src["key"])
                 now = self._book_state(book, self.book_positions.get(src["key"])) if book else {}
             return {**src, **now, "playing": on_air is not None and on_air.kind == "book"}
         if src["kind"] == "radio":

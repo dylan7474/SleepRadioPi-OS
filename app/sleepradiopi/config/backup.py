@@ -51,7 +51,7 @@ LIVE = {"speaker_mono", "speaker_eq", "speaker_highpass_hz", "broadcast_artist",
         "broadcast_announcer_speed", "news_speed", "radio_stations", "buttons", "noise_on", "noise_kind", "noise_mix",
         "podcasts", "messages", "buttons_night", "buttons_bank", "buttons_auto", "broadcast_dj",
         "glow_day", "glow_night", "meter_trim_db", "playlists", "knob_mode", "programmes", "programme_mode",
-        "knob_long", "power_on", "speaker_sounds"}
+        "knob_long", "power_on", "speaker_sounds", "ondemand_keep"}
 
 CHOICES = {
     "buttons_bank": {"day", "night"},
@@ -169,6 +169,11 @@ def _check(name: str, value):
             return messages.validate(value)
         except ValueError as e:
             raise BadSettings(f"messages: {e}") from None
+    if name == "ondemand_keep":
+        if not isinstance(value, list) or len(value) > 500 or not all(
+                isinstance(p, str) and p and len(p) <= 1000 and ".." not in p.split("/") for p in value):
+            raise BadSettings("ondemand_keep: a list of paths under On demand")
+        return value
     if name == "speaker_sounds":
         try:
             return validate_sounds(value)

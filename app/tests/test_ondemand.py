@@ -7,6 +7,8 @@ import urllib.request
 from http.server import ThreadingHTTPServer
 from pathlib import Path
 
+import pytest
+
 from sleepradiopi.io import presets
 from sleepradiopi.media import MediaLibrary
 from sleepradiopi.web.server import make_handler
@@ -216,3 +218,73 @@ def test_one_track_plays_just_that_track_then_the_show(tmp_path: Path, monkeypat
     played.clear()
     st._run_album(st.source)
     assert played == ["Adagio", "Presto"]
+
+
+def test_an_on_demand_thing_can_remember_its_place_like_a_book(tmp_path: Path, monkeypatch) -> None:
+    """Off (as it comes): from the beginning each time. On: it's played as a book, from where it was left."""
+    from sleepradiopi.playback import audiobooks as ab
+    from sleepradiopi.playback.audiobooks import KEPT
+    monkeypatch.setattr(ab, "_probe", lambda p: [600_000, [], {"title": "", "author": "", "chapter": ""}])   # ten minutes each
+    st = _od_station(tmp_path)
+    rain = "Thunderstorms/01 - Rain on a tin roof - 1 hour.mp3"
+    st.play_track("ondemand", rain, then="pause")
+    assert st.source["kind"] == "playlist"                               # not kept: the plain way, from the start
+    with pytest.raises(ValueError):
+        st.set_keep("Nowhere/x.mp3", True)
+    assert st.set_keep(rain, True) == [rain]
+    st.book_positions.set(KEPT + rain, 123_000)
+    st.play_track("ondemand", rain, then="pause")
+    assert st.source == {"kind": "book", "key": KEPT + rain, "title": "01 - Rain on a tin roof - 1 hour", "author": ""}
+    assert st.book_positions.get(KEPT + rain) == 123_000                 # its place is kept
+    kept = st.kept_list()
+    assert [(k["path"], k["pos_ms"], k["total_ms"]) for k in kept] == [(rain, 123_000, 600_000)]
+
+    # a folder: one book, its files the chapters in order
+    ninth = "Classical/Beethoven Symphony 9"
+    st.set_keep(ninth, True)
+    st.play_album(root="ondemand", folder=ninth)
+    assert st.source["key"] == KEPT + ninth and st._book(KEPT + ninth).total_ms == 2_400_000
+    st.tune({"kind": "album", "root": "ondemand", "folder": ninth})      # (as a button plays it)
+    assert st.source["kind"] == "book"
+    st.book_positions.set(KEPT + ninth, 700_000)                         # left in the second movement
+    st.play_track("ondemand", ninth + "/02 - Molto vivace.mp3")          # that one chosen: carries on where it was
+    assert st.source["key"] == KEPT + ninth and st.book_positions.get(KEPT + ninth) == 700_000
+    st.play_track("ondemand", ninth + "/04 - Presto.mp3")                # another chosen: from its start
+    assert st.book_positions.get(KEPT + ninth) == 1_800_000
+
+    # moved within On demand: still kept; switched off: the plain way again
+    assert st.rename_refs("ondemand", "Classical", "ondemand", "Music/Classical") is False
+    assert st.kept.paths == ["Music/Classical/Beethoven Symphony 9", rain]
+    assert st.set_keep(rain, False) == ["Music/Classical/Beethoven Symphony 9"]
+    st.play_track("ondemand", rain, then="pause")
+    assert st.source["kind"] == "playlist"
+
+
+def test_keeping_a_place_over_the_web(tmp_path: Path, monkeypatch) -> None:
+    import json
+    import threading
+    import urllib.request
+    from http.server import ThreadingHTTPServer
+    from sleepradiopi.config.settings import load
+    from sleepradiopi.playback import audiobooks as ab
+    from sleepradiopi.web.server import make_handler
+    monkeypatch.setattr(ab, "_probe", lambda p: [600_000, [], {"title": "", "author": "", "chapter": ""}])
+    st = _od_station(tmp_path)
+    conf = tmp_path / "config.json"
+    conf.write_text("{}")
+    httpd = ThreadingHTTPServer(("127.0.0.1", 0), make_handler(st, None, None, conf))
+    threading.Thread(target=httpd.serve_forever, daemon=True).start()
+    base = f"http://127.0.0.1:{httpd.server_address[1]}"
+
+    def post(path, body):
+        req = urllib.request.Request(base + path, data=json.dumps(body).encode(), headers={"Content-Type": "application/json"})
+        with urllib.request.urlopen(req, timeout=5) as r:
+            return json.loads(r.read())
+    try:
+        d = post("/api/ondemand/keep", {"path": "Thunderstorms", "keep": True})
+        assert [k["path"] for k in d["kept"]] == ["Thunderstorms"] and d["kept"][0]["chapters"] == 1
+        assert load(conf).ondemand_keep == ["Thunderstorms"]
+        assert json.loads(urllib.request.urlopen(base + "/api/ondemand/kept", timeout=5).read()) == d
+        assert post("/api/ondemand/keep", {"path": "Thunderstorms", "keep": False}) == {"kept": []}
+    finally:
+        httpd.shutdown()

@@ -620,7 +620,20 @@ function trackObj(root, t, albumTitle) {
   return mk({ id: "t:" + root + ":" + t.path, kind: "track", title: t.title || cleanName(t.path), artist: t.artist || "", root, path: t.path, ...(t.bytes != null && { bytes: t.bytes }),
               n: t.n != null ? t.n + 1 : undefined, h: hue(albumTitle || lastPart(t.path.split("/").slice(0, -1).join("/"))) });
 }
+// On demand things set to remember their place, like a book: path -> { pos_ms, total_ms, done }
+let KEPT = {};
+const gotKept = d => { KEPT = Object.fromEntries((d.kept || []).map(k => [k.path, k])); };
+const keptOf = o => o && o.root === "ondemand" && o.path ? KEPT[o.path] : null;
+const keptSub = k => "🔖 " + (k.pos_ms > 0 && !k.done && k.pos_ms < k.total_ms - 500 ? `${dur((k.total_ms - k.pos_ms) / 60000)} left` : "remembers its place");
+async function setKept(o, keep) {
+  try {
+    gotKept(await api("/api/ondemand/keep", { path: o.path, keep }));
+    drawDesk();
+    toast(keep ? `“${o.title}” remembers its place now, like an audiobook: it carries on where you left it.` : `“${o.title}” starts from the beginning each time.`);
+  } catch (e) { toast("Not changed: " + e.message + "."); }
+}
 async function loadFolder(f) {
+  if (f.root === "ondemand") { try { gotKept(await api("/api/ondemand/kept")); } catch {} }
   if (f.root) {
     const d = await api(`/api/browse?root=${f.root}&path=${encodeURIComponent(f.path)}`);
     const kids = d.folders.map(x => {
@@ -969,8 +982,8 @@ function glyph(o) {
 }
 function subOf(o) {
   switch (o.kind) {
-    case "album": return o.artist || (o.count ? `${o.count} tracks` : "");
-    case "track": return o.artist;
+    case "album": return keptOf(o) ? keptSub(keptOf(o)) : o.artist || (o.count ? `${o.count} tracks` : "");
+    case "track": return keptOf(o) ? keptSub(keptOf(o)) : o.artist;
     case "station": return o.info;
     case "book": return o.left;
     case "podcast": return o.fresh ? `${o.fresh} new` : o.count ? `${o.count} episodes` : "";
@@ -990,7 +1003,8 @@ function subOf(o) {
       const live = S?.programme && S.programme.name.toLowerCase() === o.title.toLowerCase();
       return (live ? "● playing · " : o.auto ? (o.once ? "⏰ " : "↻ ") : "") + times;
     }
-    case "folder": return o.box === "sleep" ? (sleepLeft() ? `Fading out in ${sleepLeft()} min` : "") : o.root && o.path ? `${o.count || 0} tracks` : "";
+    case "folder": if (keptOf(o)) return keptSub(keptOf(o));
+      return o.box === "sleep" ? (sleepLeft() ? `Fading out in ${sleepLeft()} min` : "") : o.root && o.path ? `${o.count || 0} tracks` : "";
     case "list": return (o.name?.toLowerCase() === "default" ? "always here · " : "") + (o.all ? "all my music" : o.count ? `${o.count} artist${o.count === 1 ? "" : "s"}` : "");
     case "jingle": return o.mb ? `${o.mb.toFixed(1)} MB` : "";
     case "message": return "The DJ says it";
@@ -1786,6 +1800,13 @@ function folderView(o, box, win) {
       T("Upload…", () => up.click()), T("Upload a folder…", () => upDir.click()),
       T("New folder", () => { win.mkdir = !win.mkdir; drawDesk(); }),
       T("Download", () => download(picked || o), "", !(picked || o.path) || (picked && !picked.root)), up, upDir);
+    if (o.root === "ondemand") {               // remember its place, like a book: the one clicked, else this folder
+      const it = picked && picked.root === "ondemand" && picked.path ? picked : !picked && o.path ? o : null, on = !!keptOf(it);
+      const k = T(on ? "🔖 Remembers its place" : "Remember its place", () => setKept(it, !on), on ? "primary" : "", !it);
+      k.title = !it ? "Click a track or a folder first" : on ? `“${it.title}” carries on where you left it, like an audiobook. Click to have it start from the beginning each time`
+        : `Have “${it.title}” carry on where you left it, like an audiobook` + (it.kind === "track" ? "" : " (the whole folder, as one)");
+      tools.append(k);
+    }
     if (win.mkdir) {
       const name = el("input", { type: "text", placeholder: "Folder name", id: "mk-" + o.id, style: "background:var(--win);border:1px solid var(--line);border-radius:6px;padding:3px 7px" });
       const ok = T("Make it", () => mkdir(o, name.value.trim(), win), "primary");
@@ -1868,7 +1889,11 @@ function folderView(o, box, win) {
   else if (o.box === "books") {
     const up = el("input", { type: "file", multiple: true, hidden: true, accept: ".mp3,.m4b,audio/*" });
     up.onchange = () => { upload(o, [...up.files].map(f => [f, f.name])); up.value = ""; };
-    tools.append(T("Upload a book…", () => up.click()), up, el("span", { className: "note", textContent: "A folder of mp3s or one m4b is a book · each remembers its place" }));
+    const upDir = el("input", { type: "file", multiple: true, hidden: true });       // a book in chapters: its folder, kept as a folder
+    upDir.setAttribute("webkitdirectory", "");
+    upDir.onchange = () => { upload(o, [...upDir.files].map(f => [f, f.webkitRelativePath || f.name])); upDir.value = ""; };
+    tools.append(T("Upload a book…", () => up.click()), T("Upload a folder of chapters…", () => upDir.click()), up, upDir,
+      el("span", { className: "note", textContent: "One m4b or mp3 file is a book; so is a folder of mp3 chapters (upload the folder, or drop it here) · each remembers its place" }));
   }
   if (o.kids.length) tools.append(viewSwitch(o));
   if (tools.children.length) box.append(tools);

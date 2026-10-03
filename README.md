@@ -91,6 +91,8 @@ Radio folder and one of the buttons open:
 - **On demand** — a second library for things you pick yourself but never
   want in the show (storms, old radio shows, long classical pieces): any
   layout, played straight through with no DJ, now or after the song playing.
+  Any file or folder in it can be set to **remember its place**, exactly like
+  an audiobook (a serial, a lecture, a book that isn't in Audiobooks).
 - **Jingles** from your own collection, shuffled, and a short one to open
   the show. **Each station has its own:** Jingles › Sleep Radio for the main
   show, and a folder for each theme, made when the theme is (an empty one:

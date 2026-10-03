@@ -30,6 +30,8 @@ from sleepradiopi.config.atomic import write_atomic
 log = logging.getLogger(__name__)
 
 BOOK_FILES = {".mp3", ".m4b"}
+KEPT = "@ondemand/"        # the keys of On demand things that remember their place (KeptLibrary), beside the books' own
+KEPT_FILES = BOOK_FILES | {".flac", ".m4a", ".ogg", ".opus", ".wav"}
 CACHE_VERSION = 1
 
 
@@ -116,6 +118,8 @@ class BookLibrary:
     """The books under one folder. Each file's length and chapters are cached
     (by path, size and mtime): a Zero takes a while to read a long m4b."""
 
+    files = BOOK_FILES     # what counts as a book's audio
+
     def __init__(self, root: Path, cache_path: Path | None = None) -> None:
         self.root = Path(root)
         self.cache_path = cache_path
@@ -165,7 +169,7 @@ class BookLibrary:
 
         def walk(d: Path, depth: int) -> None:
             kids = sorted((p for p in d.iterdir() if not p.name.startswith(".")), key=lambda p: _natural(p.name))
-            files = [p for p in kids if p.is_file() and p.suffix.lower() in BOOK_FILES]
+            files = [p for p in kids if p.is_file() and p.suffix.lower() in self.files]
             dirs = [p for p in kids if p.is_dir()]
             mp3s = [p for p in files if p.suffix.lower() == ".mp3"]
             found.extend(p for p in files if p.suffix.lower() == ".m4b")
@@ -188,7 +192,7 @@ class BookLibrary:
                 or [Chapter(entry, 0, duration, entry.stem)]
             title, author = tags["title"] or entry.stem, tags["author"] or near
         else:
-            files = sorted((p for p in entry.rglob("*") if p.is_file() and p.suffix.lower() in BOOK_FILES
+            files = sorted((p for p in entry.rglob("*") if p.is_file() and p.suffix.lower() in self.files
                             and not any(part.startswith(".") for part in p.relative_to(entry).parts)),
                            key=lambda p: _natural(str(p.relative_to(entry))))
             chapters, first = [], None
@@ -215,6 +219,38 @@ class BookLibrary:
     def all(self) -> list[Book]:
         with self._lock:
             return list(self._books.values())
+
+
+class KeptLibrary(BookLibrary):
+    """The On demand things set to remember their place (`paths`, under the On
+    demand folder): each is read as a book and played as one -- a file on its
+    own, or a folder as one book, its files the chapters in order. Their keys
+    start with KEPT, so they share the books' places file without clashing."""
+
+    files = KEPT_FILES
+
+    def __init__(self, root: Path, cache_path: Path | None = None, paths=()) -> None:
+        super().__init__(root, cache_path)
+        self.paths: list[str] = [p for p in paths if isinstance(p, str)]
+
+    def _book_roots(self) -> list[Path]:
+        return [self.root / p for p in self.paths if p and ".." not in p.split("/") and (self.root / p).exists()]
+
+    def _read(self, entry: Path, seen: set) -> Book:
+        book = super()._read(entry, seen)
+        if entry.is_file():                      # one piece: its own title (a book's file is named for its album)
+            tags = self._file(entry, seen)[2]
+            book.title = tags.get("chapter") or entry.stem
+            book.author = tags.get("author") or ""
+        book.key = KEPT + book.key
+        return book
+
+    def key_for(self, path: str) -> str | None:
+        """The kept thing a path under On demand is, or is in: its key, or None."""
+        for p in sorted(self.paths, key=len, reverse=True):
+            if path == p or path.startswith(p + "/"):
+                return KEPT + p
+        return None
 
 
 class Positions:

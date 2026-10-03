@@ -49,6 +49,7 @@ from sleepradiopi.config.clock import clock_trusted
 from sleepradiopi.config.settings import save_setting
 from sleepradiopi.io.announce import Clip, beep, pip, pips
 from sleepradiopi.playback import radio as radio_mod
+from sleepradiopi.playback.audiobooks import KEPT
 
 log = logging.getLogger(__name__)
 
@@ -420,7 +421,7 @@ class Presets:
         and so do the buttons for tracks in it."""
         changed = False
         for p in self._every():
-            if p["kind"] == "track" and p["root"] == old_root and p["path"].startswith(old + "/"):
+            if p["kind"] == "track" and p["root"] == old_root and (p["path"] == old or p["path"].startswith(old + "/")):
                 p["path"], p["root"] = new + p["path"][len(old):], new_root
                 changed = True
             if p["kind"] == "album" and p.get("root", "music") == old_root and (p["folder"] == old or p["folder"].startswith(old + "/")):
@@ -445,6 +446,16 @@ class Presets:
             from sleepradiopi.playback.podcasts import guid_id
             return validate({"kind": "podcast", "show": src["show"], "title": src.get("show_title", ""),
                              "start": guid_id(src["guid"]), "start_title": src.get("title", "")[:MAX_TEXT]})
+        if src is not None and src["kind"] == "book" and src["key"].startswith(KEPT):
+            # an On demand thing that remembers its place, playing as a book: the track or folder it is on a button
+            path = src["key"][len(KEPT):]
+            held = next((p for p in self._every() if (p["kind"] == "track" and p["root"] == "ondemand" and p["path"] == path)
+                         or (p["kind"] == "album" and p.get("root") == "ondemand" and p["folder"] == path)), None)
+            if held is not None:
+                return validate(held)
+            is_dir = (Path(getattr(self.station, "ondemand_dir", None) or "/nonexistent") / path).is_dir()
+            return validate({"kind": "album", "root": "ondemand", "folder": path, "title": src.get("title", ""), "artist": "", "deep": True}
+                            if is_dir else {"kind": "track", "root": "ondemand", "path": path, "title": src.get("title", "")})
         if src is not None and src["kind"] == "book":
             return validate({"kind": "book", "key": src["key"], "title": src.get("title", "")})
         if src is not None and src["kind"] == "playlist":
