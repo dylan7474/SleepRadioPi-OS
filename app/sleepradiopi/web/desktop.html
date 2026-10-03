@@ -1030,6 +1030,7 @@ const keyOf = s => `${s.id}@${s.where}${s.index != null ? "#" + s.index : ""}`;
 function showPicked() {
   document.querySelectorAll(".icon.sel, .row.sel").forEach(n => n.classList.remove("sel"));
   document.querySelectorAll(".icon, .row").forEach(n => { if (n._src && picked.has(keyOf(n._src))) n.classList.add("sel"); });
+  document.querySelectorAll(".wtools .t").forEach(b => b._sync?.());       // (the keys that are for the one picked say so)
 }
 function pickOnly(src) { picked.clear(); if (src) picked.set(keyOf(src), src); sel = src ? keyOf(src) : null; showPicked(); }
 function pickToggle(src) {
@@ -1800,7 +1801,7 @@ function folderView(o, box, win) {
     tools.append(T(o.path ? "▶ Play all" : "▶ Play everything", () => play(o), "primary", !o.kids.length),
       T("Upload…", () => up.click()), T("Upload a folder…", () => upDir.click()),
       T("New folder", () => { win.mkdir = !win.mkdir; drawDesk(); }),
-      T("Download", () => download(picked || o), "", !(picked || o.path) || (picked && !picked.root)), up, upDir);
+      syncKey(T("Download", () => download(selectedIn(o) || o)), k => { const p = selectedIn(o); k.disabled = !(p || o.path) || !!(p && !p.root); }), up, upDir);
     tools.append(infoKey(o, picked));
     if (o.root === "ondemand") tools.append(keepKey(o, picked));
     if (tagging && tagging.where === o.id) tools.append(infoBox(o));
@@ -1878,7 +1879,7 @@ function folderView(o, box, win) {
     const up = el("input", { type: "file", multiple: true, hidden: true, accept: ".mp3,audio/mpeg" });
     up.onchange = () => { upload(o, [...up.files].map(f => [f, f.name])); up.value = ""; };
     const picked = selectedIn(o);
-    tools.append(T("Upload…", () => up.click(), "", !o.path), T("Download", () => picked && download(picked), "", !picked), up,
+    tools.append(T("Upload…", () => up.click(), "", !o.path), syncKey(T("Download", () => selectedIn(o) && download(selectedIn(o))), k => { k.disabled = !selectedIn(o); }), up,
       el("span", { className: "note", textContent: o.path ? (o.path === "Power-on" ? "Played at power-on, whatever the radio goes on to play: keep it nameless (an instrumental)"
         : `${stationOf(o.path)}'s own jingles · empty: none on that station · drag one to another station's folder to move it`)
         : "A folder for each station (made with each theme) and Power-on · open one to upload into it" }));
@@ -1924,10 +1925,15 @@ function folderView(o, box, win) {
 // the files themselves (each rewritten as a copy and swapped in); what they were first is kept, to put back.
 let tagging = null;      // { where: the window, id: what it's about, d: /api/tags' answer, init, mixed, vals, focus }
 const TAG_NAMES = { name: "Folder name", title: "Title", artist: "Artist", album: "Album", track: "Track number" };
-function infoKey(o, picked) {
-  const it = picked && picked.root && picked.path && ["track", "album", "folder"].includes(picked.kind) ? picked : !picked && o.path ? o : null;
+// (A pick doesn't redraw the window -- that reset its scroll -- so these keys work out what they're
+// for when pressed, and showPicked() has them say it: _sync.)
+const syncKey = (k, fn) => { k._sync = () => fn(k); k._sync(); return k; };
+const pickedIn = o => { const p = selectedIn(o); return p && p.root && p.path && ["track", "album", "folder"].includes(p.kind) ? p : !p && o.path ? o : null; };
+function infoKey(o) {
   const k = T("Info…", async () => {
+    const it = pickedIn(o);
     if (tagging && tagging.where === o.id) { tagging = null; return drawDesk(); }
+    if (!it) return;
     try {
       const d = await api(`/api/tags?kind=${it.root}&path=${encodeURIComponent(it.path)}`), can = d.files.filter(f => !f.fixed);
       const fields = d.folder ? ["name", "artist", "album"] : ["title", "artist", "album", "track"], init = {}, mixed = {};
@@ -1935,8 +1941,10 @@ function infoKey(o, picked) {
       tagging = { where: o.id, id: it.id, d, fields, init, mixed, vals: { ...init }, focus: fields[0] };
       drawDesk();
     } catch (e) { toast("Couldn't read its tags: " + e.message + "."); }
-  }, tagging && tagging.where === o.id ? "primary" : "", !it);
-  k.title = it ? `The names inside “${it.title}”: its title, artist and album (to tidy them, or make them easier for the DJ to say)` : "Click a track or a folder first";
+  }, tagging && tagging.where === o.id ? "primary" : "");
+  k._sync = () => { const it = pickedIn(o); k.disabled = !it && !(tagging && tagging.where === o.id);
+    k.title = it ? `The names inside “${it.title}”: its title, artist and album (to tidy them, or make them easier for the DJ to say)` : "Click a track or a folder first"; };
+  k._sync();
   return k;
 }
 function infoBox(o) {
@@ -2012,14 +2020,17 @@ async function restoreInfo(o) {
   toast(`${done} put back as ${done === 1 ? "it" : "they"} came.` + (failed.length ? ` Not changed: ${failed.slice(0, 3).join(", ")}.` : ""));
 }
 // On demand's "Remember its place" key: for the one clicked in this window, else for the folder it shows
-function keepKey(o, picked) {
-  const it = picked && picked.root === "ondemand" && picked.path ? picked : !picked && o.path ? o : null, on = !!keptOf(it);
-  const what = !it ? "" : it === o ? "this folder" : `“${it.title.length > 24 ? it.title.slice(0, 22) + "…" : it.title}”`;
+function keepKey(o) {
+  const mine = () => { const it = pickedIn(o); return it && it.root === "ondemand" ? it : null; };
+  const k = T("", () => { const it = mine(); if (it) setKept(it, !keptOf(it)); });
   // (amber only for the folder this window shows; the one clicked has its bookmark on its own icon or row)
-  const k = T(!it ? "Remember its place" : !on ? `Remember its place: ${what}` : it === o ? "🔖 This folder remembers its place" : `Stop remembering: ${what}`,
-              () => setKept(it, !on), on && it === o ? "primary" : "", !it);
-  k.title = !it ? "Click a track or a folder first" : on ? `“${it.title}” carries on where you left it, like an audiobook. Click to have it start from the beginning each time`
-    : `Have “${it.title}” carry on where you left it, like an audiobook` + (it.kind === "track" ? "" : " (the whole folder, as one book)");
+  k._sync = () => { const it = mine(), on = !!keptOf(it);
+    const what = !it ? "" : it === o ? "this folder" : `“${it.title.length > 24 ? it.title.slice(0, 22) + "…" : it.title}”`;
+    k.textContent = !it ? "Remember its place" : !on ? `Remember its place: ${what}` : it === o ? "🔖 This folder remembers its place" : `Stop remembering: ${what}`;
+    k.className = "t " + (on && it === o ? "primary" : ""); k.disabled = !it;
+    k.title = !it ? "Click a track or a folder first" : on ? `“${it.title}” carries on where you left it, like an audiobook. Click to have it start from the beginning each time`
+      : `Have “${it.title}” carry on where you left it, like an audiobook` + (it.kind === "track" ? "" : " (the whole folder, as one book)"); };
+  k._sync();
   return k;
 }
 function albumView(o, box) {

@@ -251,6 +251,20 @@ class MediaLibrary:
         except (OSError, ValueError):
             return {}
 
+    def _tags_moved(self, kind: str, old: str, to_kind: str, new: str) -> None:
+        """A file or folder was renamed or moved: the tags its tracks came with are still theirs."""
+        if self.tag_log is None:
+            return
+        a, b = f"{kind}/{old}", f"{to_kind}/{new}"
+        with self._lock:
+            originals = self._originals()
+            moved = {(b + k[len(a):] if k == a or k.startswith(a + "/") else k): v for k, v in originals.items()}
+            if moved != originals:
+                try:
+                    write_atomic(self.tag_log, json.dumps(moved))
+                except OSError as e:
+                    log.warning("couldn't keep the original tags: %s", e)
+
     def _tag_file(self, kind: str, rel: str) -> Path:
         if kind not in TAG_KINDS:
             raise MediaError("tags are for the music, On demand and the audiobooks")
@@ -413,6 +427,7 @@ class MediaLibrary:
         except OSError as e:
             raise MediaError(f"couldn't rename it ({e.strerror})") from None
         log.info("media: renamed %s/%s to %s", kind, rel, dest.name)
+        self._tags_moved(kind, src.relative_to(root).as_posix(), kind, dest.relative_to(root).as_posix())
         self._changed(kind)
         return str(dest.relative_to(root))
 
@@ -442,6 +457,7 @@ class MediaLibrary:
         except OSError as e:
             raise MediaError(f"couldn't move it ({e.strerror})") from None
         log.info("media: moved %s/%s to %s/%s", kind, rel, to_kind, dest.relative_to(dst_root))
+        self._tags_moved(kind, src.relative_to(self._root(kind)).as_posix(), to_kind, dest.relative_to(dst_root).as_posix())
         self._changed(kind, to_kind)
         return str(dest.relative_to(dst_root))
 

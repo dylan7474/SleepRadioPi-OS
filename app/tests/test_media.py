@@ -228,6 +228,9 @@ def test_changing_tags(tmp_path: Path) -> None:
     lib.done()
     assert changed == [{"ondemand"}]
 
+    new = lib.rename("ondemand", "Holst The Planets", "The Planets")      # renamed: what its tracks came with comes along
+    assert lib.tags("ondemand", new)["files"][0]["changed"] is True
+    assert lib.rename("ondemand", new, "Holst The Planets") == "Holst The Planets"
     back = lib.untag("ondemand", mars["path"])               # as it came
     assert (back["title"], back["artist"], back["album"], back["track"]) == ("Mars", "冨田勲", "惑星", "1")
     assert lib.tags("ondemand", mars["path"])["files"][0]["changed"] is False
@@ -239,3 +242,60 @@ def test_changing_tags(tmp_path: Path) -> None:
         lib.untag("ondemand", d["files"][1]["path"] + "x")
     with pytest.raises(MediaError):
         lib.retag("jingles", "x.mp3", {"title": "x"})
+
+
+def test_a_new_artist_tag_over_the_web_and_the_themes_follow(tmp_path: Path) -> None:
+    """Themes choose songs by the artist's name: retagged songs stay in their theme, and the old name leaves it."""
+    from dataclasses import asdict
+    from sleepradiopi.broadcast import station as station_mod
+    from sleepradiopi.config.settings import Settings, load
+    from test_offline import FakeTts, NullOutput
+    music = tmp_path / "music"
+    for n in (1, 2):
+        _sound(music / "The Beatles" / "Help" / f"0{n} - Song {n}.mp3", ["-c:a", "libmp3lame", "-b:a", "32k"],
+               {"title": f"Song {n}", "artist": "The Beatles", "album": "Help"})
+    _sound(music / "Nick Drake" / "Pink Moon" / "01 - Pink Moon.mp3", ["-c:a", "libmp3lame", "-b:a", "32k"],
+           {"title": "Pink Moon", "artist": "Nick Drake"})
+    cfg = asdict(Settings())
+    cfg.update(music_folder=music, jingles_folder=tmp_path / "none", hooks_file="", scan_cache=tmp_path / "scans.json", tag_cache=None)
+    st = station_mod.Station(cfg, FakeTts(), NullOutput())
+    st.set_profiles([{"name": "Fab", "artists": ["The Beatles"]}])
+    conf = tmp_path / "config.json"
+    conf.write_text("{}")
+    lib = MediaLibrary({"music": music}, on_changed=st.reload_library, lease=tmp_path / "run" / "media-rw", tag_log=tmp_path / "tags.json")
+    httpd = ThreadingHTTPServer(("127.0.0.1", 0), make_handler(st, None, None, conf, media=lib))
+    threading.Thread(target=httpd.serve_forever, daemon=True).start()
+    base = f"http://127.0.0.1:{httpd.server_address[1]}"
+
+    def call(path, body=None):
+        req = urllib.request.Request(base + path, data=None if body is None else json.dumps(body).encode(),
+                                     method="GET" if body is None else "POST")
+        try:
+            with urllib.request.urlopen(req, timeout=10) as r:
+                return r.status, json.loads(r.read())
+        except urllib.error.HTTPError as e:
+            return e.code, json.loads(e.read() or b"{}")
+
+    fab = lambda: set(next(p for p in st.profiles if p["name"] == "Fab")["artists"])
+    one, two = "The Beatles/Help/01 - Song 1.mp3", "The Beatles/Help/02 - Song 2.mp3"
+    try:
+        code, d = call("/api/tags?kind=music&path=The%20Beatles")
+        assert code == 200 and d["folder"] and [f["artist"] for f in d["files"]] == ["The Beatles"] * 2
+        code, d = call("/api/tags", {"kind": "music", "path": one, "tags": {"artist": "The Fab Four"}})
+        assert code == 200 and d["tags"]["artist"] == "The Fab Four" and fab() == {"The Beatles", "The Fab Four"}
+        assert call("/api/media/done", {})[0] == 200
+        assert fab() == {"The Beatles", "The Fab Four"}          # one song still has the old name
+        assert {a["name"] for a in st.artists()} == {"The Beatles", "The Fab Four", "Nick Drake"}
+        call("/api/tags", {"kind": "music", "path": two, "tags": {"artist": "The Fab Four"}})
+        call("/api/media/done", {})
+        assert fab() == {"The Fab Four"} and set(load(conf).profiles[0]["artists"]) == {"The Fab Four"}
+        for p in (one, two):                                     # put back as they came: the theme follows them home
+            assert call("/api/tags/restore", {"kind": "music", "path": p})[1]["tags"]["artist"] == "The Beatles"
+        call("/api/media/done", {})
+        assert fab() == {"The Beatles"}
+        assert call("/api/tags", {"kind": "music", "path": one, "tags": {"year": "1965"}})[0] == 400
+        # a folder renamed where it is: reported at its new place
+        code, d = call("/api/media/rename", {"kind": "music", "path": "Nick Drake/Pink Moon", "name": "Pink Moon (1972)"})
+        assert code == 200 and d["path"] == "Nick Drake/Pink Moon (1972)" and (music / "Nick Drake" / "Pink Moon (1972)").is_dir()
+    finally:
+        httpd.shutdown()
