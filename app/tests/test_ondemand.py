@@ -288,3 +288,47 @@ def test_keeping_a_place_over_the_web(tmp_path: Path, monkeypatch) -> None:
         assert post("/api/ondemand/keep", {"path": "Thunderstorms", "keep": False}) == {"kept": []}
     finally:
         httpd.shutdown()
+
+
+def test_a_name_of_your_own_for_a_track_or_a_folder(tmp_path: Path, monkeypatch) -> None:
+    """Shown, said and on the buttons in place of the tag's or the folder's; the file is left alone."""
+    import json
+    import threading
+    import urllib.request
+    from http.server import ThreadingHTTPServer
+    from sleepradiopi.config.settings import load
+    from sleepradiopi.io.presets import Presets
+    from sleepradiopi.web.server import make_handler
+    st = _od_station(tmp_path)
+    conf = tmp_path / "config.json"
+    conf.write_text("{}")
+    rain, ninth = "Thunderstorms/01 - Rain on a tin roof - 1 hour.mp3", "Classical/Beethoven Symphony 9"
+    presets = Presets(st, None, conf, [{"kind": "track", "root": "ondemand", "path": rain, "title": "Rain on a tin roof - 1 hour"},
+                                       {"kind": "album", "root": "ondemand", "folder": ninth, "title": "Beethoven Symphony 9", "artist": ""}])
+    httpd = ThreadingHTTPServer(("127.0.0.1", 0), make_handler(st, None, None, conf, presets=presets))
+    threading.Thread(target=httpd.serve_forever, daemon=True).start()
+    base = f"http://127.0.0.1:{httpd.server_address[1]}"
+
+    def post(body):
+        req = urllib.request.Request(base + "/api/library/name", data=json.dumps(body).encode(), headers={"Content-Type": "application/json"})
+        with urllib.request.urlopen(req, timeout=5) as r:
+            return json.loads(r.read())
+    try:
+        assert post({"kind": "ondemand", "path": rain, "name": "  Rain  "}) == {"name": "Rain"}
+        assert post({"kind": "ondemand", "path": ninth, "name": "The Ninth"}) == {"name": "The Ninth"}
+        assert st._by_ref("ondemand", rain).title == "Rain" and (tmp_path / "ondemand" / rain).exists()
+        assert _album(st, "ondemand", ninth)["title"] == "The Ninth"
+        b = st.browse("ondemand", "Classical")
+        assert [(f["name"], f.get("title")) for f in b["folders"]] == [("Beethoven Symphony 9", "The Ninth")]
+        t = st.browse("ondemand", "Thunderstorms")["album"]["list"][0]
+        assert t["title"] == "Rain" and t["named"] is True
+        assert [x["label"] for x in presets.status()["buttons"][:2]] == ["Rain", "The Ninth"]
+        assert load(conf).given_names == {"ondemand/" + rain: "Rain", "ondemand/" + ninth: "The Ninth"}
+        st.rename_refs("ondemand", "Classical", "ondemand", "Music/Classical")        # moved: the name comes along
+        assert st.given["ondemand/Music/Classical/Beethoven Symphony 9"] == "The Ninth"
+        assert post({"kind": "ondemand", "path": rain, "name": None}) == {"name": None}
+        assert st._by_ref("ondemand", rain).title != "Rain"
+        with pytest.raises(urllib.error.HTTPError):
+            post({"kind": "ondemand", "path": "Nowhere", "name": "x"})
+    finally:
+        httpd.shutdown()

@@ -482,6 +482,19 @@ def make_handler(station: Station, output: Mp3Output, speaker=None,
                 self._button_bank(path.endswith("auto"))
             elif path.startswith("/api/podcasts/") and path.rsplit("/", 1)[1] in ("follow", "unfollow", "play", "heard"):
                 self._podcasts(path.rsplit("/", 1)[1])
+            elif path == "/api/library/name":         # {"kind": "music" | "ondemand", "path", "name" (or null: its own again)}
+                try:
+                    body = self._body()
+                    given = station.set_name(body.get("kind"), body.get("path"), body.get("name"))
+                except (ValueError, TypeError, KeyError, AttributeError) as e:
+                    self._error(str(e) if isinstance(e, ValueError) else "send {\"kind\", \"path\", \"name\"}")
+                    return
+                if config_file is not None:
+                    save_setting(config_file, "given_names", given)
+                if presets is not None:
+                    presets.bake()                  # (the buttons' spoken names: the new one)
+                self._send(json.dumps({"name": given.get(f"{body.get('kind')}/{'/'.join(p for p in body.get('path').split('/') if p)}")}).encode(),
+                           "application/json")
             elif path == "/api/ondemand/keep":      # {"path", "keep": true | false}: remember its place, like a book
                 try:
                     body = self._body()
@@ -1160,10 +1173,13 @@ def make_handler(station: Station, output: Mp3Output, speaker=None,
                     if old_root in ("music", "ondemand") and new_root in ("music", "ondemand"):
                         old_rel = "/".join(p for p in old.split("/") if p)
                         kept_before = list(station.kept.paths) if hasattr(station, "kept") else None
+                        given_before = dict(getattr(station, "given", {}))
                         if station.rename_refs(old_root, old_rel, new_root, new) and config_file is not None:
                             save_setting(config_file, "playlists", station.playlists)
                         if kept_before is not None and station.kept.paths != kept_before and config_file is not None:
                             save_setting(config_file, "ondemand_keep", station.kept.paths)
+                        if getattr(station, "given", {}) != given_before and config_file is not None:
+                            save_setting(config_file, "given_names", station.given)
                         sched = getattr(station, "scheduler", None)
                         if sched and sched.rename_refs(old_root, old_rel, new_root, new) and config_file is not None:
                             save_setting(config_file, "programmes", sched.programmes)

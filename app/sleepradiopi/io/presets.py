@@ -478,6 +478,11 @@ class Presets:
         return validate({"kind": "show", "artist": self.station.artist, "profile": self.station.profile})
 
     def label(self, preset: dict | None) -> str:
+        given = getattr(self.station, "given", None)
+        if preset is not None and given and preset["kind"] in ("track", "album"):       # (the name you gave it, if you did)
+            name = given.get(f"{preset.get('root', 'music')}/{preset.get('path') or preset.get('folder')}")
+            if name:
+                preset = {**preset, "title": name}
         return label(preset, self._show_name)
 
     def _show_name(self, preset: dict) -> str:

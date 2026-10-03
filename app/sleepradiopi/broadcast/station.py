@@ -30,7 +30,7 @@ import threading
 import time
 from collections import Counter, deque
 from concurrent.futures import Future, ThreadPoolExecutor
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import datetime, timedelta
 from pathlib import Path
 from collections.abc import Callable
@@ -238,11 +238,15 @@ class Station:
             self.messages = Messages()
 
         self._tag_cache = cfg.get("tag_cache")
-        self.tracks = scan_music(self.music_dir, self._tag_cache)
+        # Names you've given tracks and folders (music and On demand), in place of the tags' or the
+        # folders' own: {"root/path": name}. Shown, said by the DJ and on the buttons; the files stay as they are.
+        self.given: dict[str, str] = {k: v for k, v in (cfg.get("given_names") or {}).items()
+                                      if isinstance(k, str) and isinstance(v, str) and v.strip()}
+        self.tracks = self._renamed("music", scan_music(self.music_dir, self._tag_cache))
         # On demand: anything played only when asked for (storms, radio shows, long
         # classical pieces...), any layout. Never in the show, the song search or lists.
         self.ondemand_dir: Path | None = cfg.get("ondemand_folder")
-        self.ondemand_tracks = self._scan_ondemand()
+        self.ondemand_tracks = self._renamed("ondemand", self._scan_ondemand())
         try:
             self.playlists: list[dict] = playlists_mod.validate(cfg.get("playlists") or [])
         except ValueError as e:              # a hand-edited config: don't stop the station
@@ -752,7 +756,7 @@ class Station:
         parts.sort(key=lambda a: [_natural(p) for p in a["folder"].split("/")])
         tracks = [t for a in parts for t in a["tracks"]]
         return {"root": root, "folder": folder, "deep": True, "tracks": tracks,
-                **_album_names(tracks, folder, root, deep=True)}
+                **self._given_title(_album_names(tracks, folder, root, deep=True), root, folder)}
 
     def _run_album(self, source: dict) -> None:
         """Play an album (or a playlist) from source["track"] to the end, like a
@@ -1240,11 +1244,16 @@ class Station:
             if root == old_root and (path == old or path.startswith(old + "/")):
                 return new_root, new + path[len(old):]
             return root, path
+        given = {}                               # (the names you gave things come along)
+        for k, name in self.given.items():
+            r, _, path = k.partition("/")
+            given["/".join(moved(r, path))] = name
+        self.given = given
         if old_root == "ondemand":               # (what remembered its place: still does, if it's still in On demand)
             kept = [m[1] for p in self.kept.paths if (m := moved("ondemand", p))[0] == "ondemand"]
             if kept != self.kept.paths:
                 self.kept.paths = sorted(kept)
-                self.kept.scan()
+                self._scan_kept()
         changed = False
         lists = []
         for p in self.playlists:
@@ -1310,7 +1319,7 @@ class Station:
                         rel = str(folder)
                     rel = "" if rel == "." else rel
                     index.append({"root": root, "folder": rel, "tracks": tracks,
-                                  **_album_names(tracks, rel, root)})
+                                  **self._given_title(_album_names(tracks, rel, root), root, rel)})
             index.sort(key=lambda a: (a["root"] != "music", artist_key(a["artist"]), a["title"].lower()))
             for i, a in enumerate(index):
                 a["id"] = i
@@ -1345,10 +1354,13 @@ class Station:
         folders = sorted(subs.values(), key=lambda f: _natural(f["name"]))
         for f in folders:
             f["folders"] = len(f.pop("inner"))
+            if self.given.get(f"{root}/{prefix}{f['name']}"):          # (the name you gave it; "name" stays its folder's)
+                f["title"] = self.given[f"{root}/{prefix}{f['name']}"]
         album = None
         if here is not None:
-            album = {**self._album_info(here),
-                     "list": [{"n": i, "title": t.title, "artist": t.artist, "path": self._ref(t)[1], "bytes": _size(t.path)}
+            album = {**self._album_info(here), "named": bool(here.get("named")),
+                     "list": [{"n": i, "title": t.title, "artist": t.artist, "path": self._ref(t)[1], "bytes": _size(t.path),
+                               **({"named": True} if f"{root}/{self._ref(t)[1]}" in self.given else {})}
                               for i, t in enumerate(here["tracks"])]}
         return {"root": root, "path": path, "folders": folders, "album": album}
 
@@ -1989,6 +2001,53 @@ class Station:
 
     # --- audiobooks -------------------------------------------------------------------------
 
+    def _scan_kept(self) -> None:
+        self.kept.scan()
+        for path in self.kept.paths:             # (a name you gave it is its title as a book, too)
+            book, name = self.kept.get(KEPT + path), self.given.get("ondemand/" + path)
+            if book is not None and name:
+                book.title = name
+
+    def _renamed(self, root: str, tracks: list[BroadcastTrack]) -> list[BroadcastTrack]:
+        """The tracks, each with the name you gave it (if you did) for its title."""
+        base = self.music_dir if root == "music" else self.ondemand_dir
+        if not self.given or base is None:
+            return tracks
+        out = []
+        for t in tracks:
+            try:
+                name = self.given.get(f"{root}/{t.path.relative_to(base).as_posix()}")
+            except ValueError:
+                name = None
+            out.append(replace(t, title=name) if name else t)
+        return out
+
+    def _given_title(self, names: dict, root: str, folder: str) -> dict:
+        name = self.given.get(f"{root}/{folder}") if folder else None
+        return {**names, "title": name, "named": True} if name else names
+
+    def set_name(self, root: str, path: str, name: str | None) -> dict:
+        """Give a track or a folder (in music or On demand) a name of your own, used
+        wherever it's shown or said; None or "" goes back to its own. The file and
+        its tags are left as they are. ValueError if it isn't there."""
+        base = {"music": self.music_dir, "ondemand": self.ondemand_dir}.get(root)
+        path = "/".join(p for p in path.split("/") if p) if isinstance(path, str) else ""
+        if base is None or not path or ".." in path.split("/") or not (Path(base) / path).exists():
+            raise ValueError("that isn't in the library")
+        if name is not None and not isinstance(name, str):
+            raise ValueError("a name is text")
+        name = " ".join((name or "").split())
+        if len(name) > 120:
+            raise ValueError("a name can be up to 120 letters")
+        if name:
+            self.given[f"{root}/{path}"] = name
+        else:
+            self.given.pop(f"{root}/{path}", None)
+        self.reload_library({root})
+        self._scan_kept()
+        log.info("library: %s/%s %s", root, path, f"is now called {name!r}" if name else "has its own name again")
+        return self.given
+
     def _book(self, key: str):
         """A book by its key: one of the audiobooks, or an On demand thing that remembers its place."""
         return self.kept.get(key) if key.startswith(KEPT) else self.books.get(key)
@@ -2001,7 +2060,7 @@ class Station:
             raise ValueError("that isn't in On demand")
         paths = [p for p in self.kept.paths if p != path] + ([path] if keep else [])
         self.kept.paths = sorted(paths)
-        self.kept.scan()
+        self._scan_kept()
         log.info("on demand: %s %s", path, "remembers its place" if keep else "starts from the beginning")
         return self.kept.paths
 
@@ -2035,7 +2094,7 @@ class Station:
     def _scan_books(self) -> None:
         try:
             self.books.scan()
-            self.kept.scan()
+            self._scan_kept()
         except Exception:
             log.exception("audiobooks: scan failed")
         finally:
@@ -2428,8 +2487,8 @@ class Station:
         have gone are dropped. The song on air carries on."""
         kinds = set(kinds) if kinds else {"music", "ondemand", "audiobooks", "jingles"}
         songs = bool(kinds & {"music", "ondemand"})
-        tracks = scan_music(self.music_dir, self._tag_cache) if "music" in kinds else self.tracks
-        ondemand = self._scan_ondemand() if "ondemand" in kinds else self.ondemand_tracks
+        tracks = self._renamed("music", scan_music(self.music_dir, self._tag_cache)) if "music" in kinds else self.tracks
+        ondemand = self._renamed("ondemand", self._scan_ondemand()) if "ondemand" in kinds else self.ondemand_tracks
         if "audiobooks" in kinds:
             self._scan_books()
         with self._lock:

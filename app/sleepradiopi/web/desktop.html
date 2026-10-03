@@ -617,7 +617,7 @@ const parentOf = id => Object.values(O).find(o => o.kids && o.kids.includes(id))
 
 // ---- loading from the radio ----
 function trackObj(root, t, albumTitle) {
-  return mk({ id: "t:" + root + ":" + t.path, kind: "track", title: t.title || cleanName(t.path), artist: t.artist || "", root, path: t.path, ...(t.bytes != null && { bytes: t.bytes }),
+  return mk({ id: "t:" + root + ":" + t.path, kind: "track", title: t.title || cleanName(t.path), artist: t.artist || "", root, path: t.path, named: !!t.named, ...(t.bytes != null && { bytes: t.bytes }),
               n: t.n != null ? t.n + 1 : undefined, h: hue(albumTitle || lastPart(t.path.split("/").slice(0, -1).join("/"))) });
 }
 // On demand things set to remember their place, like a book: path -> { pos_ms, total_ms, done }
@@ -638,7 +638,8 @@ async function loadFolder(f) {
     const d = await api(`/api/browse?root=${f.root}&path=${encodeURIComponent(f.path)}`);
     const kids = d.folders.map(x => {
       const path = f.path ? f.path + "/" + x.name : x.name, leaf = x.own && !x.folders;
-      const o = mk({ id: (leaf ? "a:" : "f:") + f.root + ":" + path, kind: leaf ? "album" : "folder", title: O[(leaf ? "a:" : "f:") + f.root + ":" + path]?.title || x.name,
+      const o = mk({ id: (leaf ? "a:" : "f:") + f.root + ":" + path, kind: leaf ? "album" : "folder", named: !!x.title,      // (x.title: a name you gave it)
+                     title: x.title || (O[(leaf ? "a:" : "f:") + f.root + ":" + path]?.named ? null : O[(leaf ? "a:" : "f:") + f.root + ":" + path]?.title) || x.name,
                      root: f.root, path, kids: O[(leaf ? "a:" : "f:") + f.root + ":" + path]?.kids || [], count: x.tracks, folders: x.folders, bytes: x.bytes, alt: f.root === "ondemand" });
       return o.id;
     });
@@ -723,7 +724,7 @@ async function loadAlbum(a) {
   if (a.root === "ondemand") { try { gotKept(await api("/api/ondemand/kept")); } catch {} }
   const d = await api(`/api/browse?root=${a.root}&path=${encodeURIComponent(a.path)}`);
   if (!d.album) { a.tracks = []; return; }
-  a.title = d.album.title; a.artist = d.album.artist;
+  a.title = d.album.title; a.artist = d.album.artist; a.named = !!d.album.named;
   a.tracks = d.album.list.map(t => trackObj(a.root, t, d.album.title).id);
   a.loaded = true;
 }
@@ -1801,6 +1802,7 @@ function folderView(o, box, win) {
       T("Upload…", () => up.click()), T("Upload a folder…", () => upDir.click()),
       T("New folder", () => { win.mkdir = !win.mkdir; drawDesk(); }),
       T("Download", () => download(picked || o), "", !(picked || o.path) || (picked && !picked.root)), up, upDir);
+    tools.append(...renameTools(o, picked));
     if (o.root === "ondemand") tools.append(keepKey(o, picked));
     if (win.mkdir) {
       const name = el("input", { type: "text", placeholder: "Folder name", id: "mk-" + o.id, style: "background:var(--win);border:1px solid var(--line);border-radius:6px;padding:3px 7px" });
@@ -1917,6 +1919,34 @@ function folderView(o, box, win) {
     sortNote ? el("span", { textContent: "· " + sortNote, title: "Change it from the list view's column headings" }) : null, media ? el("span", { id: "space-" + o.id }) : null));
   if (media) space(o);
 }
+// Rename…: a name of your own for a track or a folder (the one clicked in this window, else the folder it
+// shows). It's used wherever it's shown or said; the file and its tags are left as they are.
+let renaming = null;
+async function renamed() {                  // the open windows, the buttons and the playlists show the new name
+  for (const w of W) { const wo = O[w.id]; try { if (wo?.kind === "folder" && wo.root) await loadFolder(wo); else if (wo?.kind === "album") await loadAlbum(wo); } catch {} }
+  try { await loadButtons(); updateRadio(); } catch {}
+  if (PLAYLISTS.loaded) await loadPlaylists().catch(() => {});
+  drawDesk();
+}
+function renameTools(o, picked) {
+  const it = picked && picked.root && picked.path && ["track", "album", "folder"].includes(picked.kind) ? picked : !picked && o.path ? o : null;
+  const t = renaming && renaming.where === o.id ? O[renaming.id] : null;
+  if (!t) { const k = T("Rename…", () => { renaming = { where: o.id, id: it.id }; drawDesk(); }, "", !it);
+    k.title = it ? `Give “${it.title}” a name of your own: shorter, or easier for the DJ to say. The file isn't changed` : "Click a track or a folder first";
+    return [k]; }
+  const stop = () => { renaming = null; drawDesk(); };
+  const name = el("input", { type: "text", value: t.title, id: "rename-box", maxLength: 120, style: "background:var(--win);border:1px solid var(--line);border-radius:6px;padding:3px 7px;width:17em" });
+  name.setAttribute("aria-label", "Its new name");
+  const send = async v => { renaming = null;
+    try { await api("/api/library/name", { kind: t.root, path: t.path, name: v }); await renamed();
+          toast(v ? `It's called “${v}” now, wherever it's shown or said. The file itself isn't changed.` : "Back to its own name."); }
+    catch (e) { toast("Not renamed: " + e.message + "."); drawDesk(); } };
+  const ok = T("Rename", () => name.value.trim() ? send(name.value.trim()) : toast("Give it a name."), "primary");
+  name.onkeydown = e => { e.stopPropagation(); if (e.key === "Enter") ok.click(); else if (e.key === "Escape") stop(); };
+  name.addEventListener("pointerdown", e => e.stopPropagation());
+  setTimeout(() => { if (document.activeElement !== name) { name.focus(); name.select(); } }, 0);
+  return [name, ok, t.named ? T("Use its own name", () => send(null)) : null, T("Cancel", stop)].filter(Boolean);
+}
 // On demand's "Remember its place" key: for the one clicked in this window, else for the folder it shows
 function keepKey(o, picked) {
   const it = picked && picked.root === "ondemand" && picked.path ? picked : !picked && o.path ? o : null, on = !!keptOf(it);
@@ -1930,7 +1960,7 @@ function albumView(o, box) {
   const picked = selectedIn(o);
   box.append(el("div", { className: "wtools" }, T("▶ Play", () => play(o), "primary"),
     T("Put on a button…", () => toast("Drag the album onto a button on the radio.")),
-    o.root === "ondemand" ? keepKey(o, picked) : null,
+    ...renameTools(o, picked), o.root === "ondemand" ? keepKey(o, picked) : null,
     el("span", { className: "note", textContent: [o.artist, `${(o.tracks || []).length} tracks`].filter(Boolean).join(" · ") + (o.root === "ondemand" ? " · click a track to set just that one" : "") })));
   box.append(el("div", { className: "wbody" }, rowsOf(o.tracks || [], o.id, t => t.n ?? "", false, o)));
 }

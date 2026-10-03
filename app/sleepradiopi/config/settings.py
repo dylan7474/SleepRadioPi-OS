@@ -83,6 +83,7 @@ class Settings:
     noise_on: bool = False            # the noise layer (audio/noise.py), on top of whatever plays
     noise_kind: str = "pink"          # white, pink, brown, deep, blue, violet, ambient
     noise_mix: int = 50               # balance: 0 programme only, 50 both full, 100 noise only
+    given_names: dict = field(default_factory=dict)      # names you gave tracks and folders: {"music/Artist/Album/01 - x.mp3": "Name"}
     ondemand_keep: list = field(default_factory=list)    # On demand files and folders that remember their place, like a book
     speaker_sounds: list = field(default_factory=list)   # saved speaker set-ups: [{"name", "eq", "highpass", "mono"}]
     speaker_highpass_hz: int = 0      # low cut for the speaker (~140 with the box's bass port); 0 = off
