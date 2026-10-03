@@ -437,7 +437,7 @@ The cards:
   order picked; made again each time, kept in Playlists) and plays it;
   **the radio on the desktop** showing
   what's on air (polled every 2.5 s), with **Back** (like a CD player) and **Skip** keys under the dial (pause is the knob): drop anything on its dial to play it (a theme, or a button for one, takes over at once, like turning the dial: the song playing stops and the new station opens with its welcome if it's made, else one of its short jingles, else its music -- it used to wait for the song to end; music played from the desktop -- a song, an album, a folder, a playlist, an "On the fly" one -- plays **on its own, with no DJ or jingles, and then the radio pauses**; an artist's folder plays their songs shuffled, once each; the knob then plays the theme again. Buttons keep going back to the theme),
-  on one of its buttons to keep it there (including a **message**, a **jingle** or a **birthday** — said or played over what's on — an **action** from the Actions folder: the time, the pips, the news, the address, noise on/off, DJ on/off; and a **sleep time** from the Sleep times folder (in Radio): 5, 10, 15, 30, 45, 60 or 90 minutes, each a thing -- double-click one, or drop it on the radio, to start it now (again: off), or drop it on a button, the knob's folder or a programme; or pick from each button's *Change…* list in the Buttons window), a **☀ Day / ☾ Night** switch above them shows either set, and dropping on a button programmes the set shown without swapping the radio's (*Use it now* swaps), scroll the knob for the volume,
+  on one of its buttons to keep it there (including a **message**, a **jingle** or a **birthday** — said or played over what's on — an **action** from the Actions folder: the time, the pips, the news, the address, noise on/off, DJ on/off; and a **sleep time** from the Sleep timer folder (in Actions): 5, 10, 15, 30, 45, 60 or 90 minutes, each a thing -- double-click one, or drop it on the radio, to start it now (again: off), or drop it on a button, the knob's folder or a programme; or pick from each button's *Change…* list in the Buttons window), a **☀ Day / ☾ Night** switch above them shows either set, and dropping on a button programmes the set shown without swapping the radio's (*Use it now* swaps), scroll the knob for the volume,
   click it to pause. Programmes are built in their window: drop things on the
   timeline for new blocks or on a block to add to it, drag a block to move it
   or its right edge to change its length, and set its rule, order, start time,
@@ -711,9 +711,11 @@ The cards:
   swapped quietly. The *Day / night buttons* action can go on a button too
   (it swaps the sets, with the three notes). The buttons' own timetable
   (*Swap by the clock*) is still there.
-  All of these live in one **Radio** folder on the desktop (Buttons, Noise,
-  Hold the knob, When switched on, Speaker sounds, Voices, Wi-Fi networks,
-  Backups), so the desktop itself has the media folders, Actions and
+  The ones that set the radio up live in one **Radio** folder on the desktop
+  (Buttons, Hold the knob, When switched on, Speaker sounds, Voices, Wi-Fi
+  networks, Backups); what can go on a button is in **Actions**, with the
+  **Sleep timer** and **Noise** folders (the times, and Noise on/off with the
+  colours) inside it. So the desktop itself has the media folders, Actions and
   Radio; any of them dragged onto the desktop leaves a shortcut there. (The Buttons window
   on the radio's back keeps only the day and night sets and their
   timetable. The phone remote has none of this: it's a remote control.) The key on the radio's front shows a small
@@ -861,7 +863,7 @@ The cards:
   as `messages` (`broadcast/messages.py`).
 - **Volume** — the same 0–100 scale as the knob, and it follows the knob.
   **Speakers: Stereo / Mono** switches at once. **Sleep timer** (5 min to
-  1½ h; on the desktop, the Sleep times folder) runs on the radio: it fades the speakers (and the page's own stream)
+  1½ h; on the desktop, the Sleep timer folder in Actions) runs on the radio: it fades the speakers (and the page's own stream)
   over the last minute, then pauses; every open page shows the same
   countdown, and a pause cancels it.
 - **Speaker EQ** — bass / mid / treble (±12 dB; shelves at 200 Hz and 6 kHz,

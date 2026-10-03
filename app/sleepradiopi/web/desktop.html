@@ -585,7 +585,7 @@ const BACKUPS = mk({ id: "box:backups", kind: "folder", title: "Backups", box: "
 const NOISE_BOX = mk({ id: "box:noise", kind: "folder", title: "Noise", box: "noise", kids: [], sym: "≈" });
 // the sleep times: each a thing (an action), to start now or to keep on a button
 const SLEEP_TIMES = [5, 10, 15, 30, 45, 60, 90];
-const SLEEP_BOX = mk({ id: "box:sleep", kind: "folder", title: "Sleep times", box: "sleep", kids: SLEEP_TIMES.map(m => "act:sleep_" + m), sym: "☾", loaded: true });
+const SLEEP_BOX = mk({ id: "box:sleep", kind: "folder", title: "Sleep timer", box: "sleep", kids: SLEEP_TIMES.map(m => "act:sleep_" + m), sym: "☾", loaded: true });
 // ...kept in a Buttons folder on the desktop: the day set's, then the night set's
 const BUTTONS_BOX = mk({ id: "box:buttons", kind: "folder", title: "Buttons", box: "buttons", sym: "4", loaded: true,
   kids: ["day", "night"].flatMap(b => BTNS[b].slice(0, 4).map(o => o.id)) });
@@ -608,7 +608,9 @@ const NOTES = mk({ id: "notes", kind: "folder", box: "messages", title: "Message
 const BDAYS = mk({ id: "bdays", kind: "folder", box: "birthdays", title: "Birthdays", kids: [] });   // a folder of people
 const VOICES = mk({ id: "box:voices", kind: "folder", box: "voices", title: "Voices", kids: [], sym: "“", alt: true });
 // the radio's own things, as folders, kept together in one on the desktop
-const RADIO_KIDS = ["box:buttons", "box:noise", "box:sleep", "slot:knob_long", "slot:power_on", "box:sounds", "box:voices", "box:wifi", "box:backups"];
+// (what can go on a button is in Actions -- the sleep times and the noise colours in folders there; how the radio is set up is in Radio)
+const ACTION_KIDS = ["box:sleep", "box:noise"];
+const RADIO_KIDS = ["box:buttons", "slot:knob_long", "slot:power_on", "box:sounds", "box:voices", "box:wifi", "box:backups"];
 const RADIO_BOX = mk({ id: "box:radio", kind: "folder", title: "Radio", box: "radio", kids: RADIO_KIDS, sym: "R", loaded: true });
 const parentOf = id => Object.values(O).find(o => o.kids && o.kids.includes(id));
 
@@ -660,7 +662,7 @@ async function loadFolder(f) {
     f.kids = d.backups.map(b => mk({ id: "bk:" + b.name, kind: "backup", name: b.name, title: b.name, saved: b.saved, h: 170, sym: "⇅" }).id);
   } else if (f.box === "noise") {
     const d = await api("/api/status");
-    f.kids = Object.entries(d.speaker?.noise?.kinds || {}).map(([k, v]) => noiseObj(k, v).id);
+    f.kids = [ACTION.noise.id, ...Object.entries(d.speaker?.noise?.kinds || {}).map(([k, v]) => noiseObj(k, v).id)];   // (on/off, then each colour)
   } else if (f.box === "playlists") {
     await loadPlaylists();
   } else if (f.box === "programmes") {
@@ -688,7 +690,7 @@ async function loadFolder(f) {
     f.kids = d.voices.map(v => mk({ id: "vc:" + v, kind: "voice", key: "voice", name: v, title: VOICE(v), current: v === d.current }).id);
     f.data = d;
   } else if (f.box === "actions") {
-    f.kids = Object.values(ACTION).filter(a => !FLIP[a.action] && !a.sleep).map(a => a.id);
+    f.kids = [...Object.values(ACTION).filter(a => !FLIP[a.action] && !a.sleep && a.action !== "noise").map(a => a.id), ...ACTION_KIDS];
   } else if (f.box === "jingles") {                 // a folder per station (and Power-on), each with its jingles
     const at = f.path || "", d = await api(`/api/media?kind=jingles&path=${encodeURIComponent(at)}`), pre = at ? at + "/" : "";
     f.kids = [...(d.folders || []).map(x => mk({ id: "jf:" + pre + x.name, kind: "folder", title: x.name, box: "jingles", path: pre + x.name,
@@ -1132,7 +1134,7 @@ function loadDesk() {
     for (const p of s.icons) { if (!O[p.id] && p.snap) mk({ ...p.snap, kids: [], items: [], eps: [], blocks: [] }); if (O[p.id]) desk.push({ id: p.id, x: p.x, y: p.y, alias: !!p.alias }); }
     radioPos = s.radio || null;
     desk = desk.filter(p => ![SHOW.id, POWER_ON.id, NOTES.id, JINGLES.id].includes(p.id));   // (jingles and messages live in each theme)
-    desk = desk.filter(p => p.alias || !RADIO_KIDS.includes(p.id));   // (the radio's own folders live in Radio; a shortcut you made stays)
+    desk = desk.filter(p => p.alias || ![...RADIO_KIDS, ...ACTION_KIDS].includes(p.id));   // (the radio's own folders live in Radio; a shortcut you made stays)
     for (const f of [ACTIONS_BOX, LISTS, RADIO_BOX])      // (new since the layout was saved: in the first free spot)
       if (!desk.some(p => p.id === f.id)) desk.push({ id: f.id, ...freeSpot() });
   }
@@ -1547,7 +1549,7 @@ function presetOf(o) {
 // what a button can hold, from what the desktop has loaded (the Buttons window's list)
 function buttonChoices() {
   const kids = f => f.kids.map(id => O[id]).filter(Boolean);
-  return [["Actions", Object.values(ACTION).filter(a => !FLIP[a.action] && !a.sleep)], ["Sleep times", kids(SLEEP_BOX)],
+  return [["Actions", Object.values(ACTION).filter(a => !FLIP[a.action] && !a.sleep)], ["Sleep timer", kids(SLEEP_BOX)],
           ["Themes", kids(LISTS).filter(o => o.kind === "list")],
           ["Stations", kids(STATIONS)], ["Playlists", kids(PLAYLISTS)], ["Programmes", kids(PROGRAMMES)],
           ["Podcasts", kids(PODCASTS)], ["Audiobooks", kids(BOOKS)],
@@ -1829,7 +1831,7 @@ function folderView(o, box, win) {
     el("span", { className: "note", textContent: "Double-click a colour to switch it on over what's playing (again: off) · drag one onto a button, or onto the knob" }));
   else if (o.box === "sleep") tools.append(...[sleepLeft() ? T("Switch it off", async () => { try { await api("/api/speaker", { sleep: 0 }); await poll(); drawDesk(); toast("Sleep timer off."); } catch (e) { toast(e.message); } }) : null,
     el("span", { className: "note", textContent: "Double-click a time to start it now: the radio fades out over its last minute, then pauses (again: off; once it has paused the radio, a time plays it again) · drag one onto a button, onto the knob, or into a programme" })].filter(Boolean));
-  else if (o.box === "actions") tools.append(el("span", { className: "note", textContent: "Drag an action onto a button on the radio; the time, the pips and the news can go into programmes too · the sleep times have their own folder, in Radio" }));
+  else if (o.box === "actions") tools.append(el("span", { className: "note", textContent: "Drag an action onto a button on the radio; the time, the pips and the news can go into programmes too · the sleep times and the noise colours are in their folders here" }));
   else if (o.kind === "list") themeTools(o, tools);
   else if (o.box === "artists") {
     const cur = O["ls:" + o.theme], all = !!o.all;
