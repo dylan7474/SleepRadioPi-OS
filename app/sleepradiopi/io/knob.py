@@ -15,7 +15,7 @@ radio's address).
 
 Holding two preset buttons together (a chord: 1 and 4 open the service
 menu, io/service.py) cancels both buttons' own press and hold the moment
-the second goes down, so neither plays anything or keeps a preset; held for
+the second goes down, so neither plays anything; held for
 the chord's time, its action runs.
 """
 
@@ -37,7 +37,8 @@ EVENT = struct.Struct("llHHi")
 EV_KEY, EV_REL = 1, 2
 KEY_UP, KEY_DOWN = 0, 1
 LONG_PRESS_S = 3.0
-PRESS_GUARD_S = 0.5   # a preset button pressed again this soon after a press is a bounce, not a press
+PRESS_GUARD_S = 0.15  # a preset button pressed again this soon after a press is a bounce, not a press
+                      # (short: a real second press steps a button on -- io/presets.py STEP_SETTLE_S)
 RESCAN_S = 10.0   # look for new input devices (modules can load after we start)
 
 
@@ -65,8 +66,8 @@ class PressTimer:
 
     guard_s: a press that starts this soon after the last short press doesn't
     count as another short one -- a worn or loose switch can open for a few ms
-    mid-press, which made two presses of one (and the second paused the
-    station the first had just tuned). Holding it still counts as a hold."""
+    mid-press, which made two presses of one (and the second would step a
+    button on past the one wanted). Holding it still counts as a hold."""
 
     def __init__(self, on_short: Callable[[], None], on_long: Callable[[], None],
                  long_s: float = LONG_PRESS_S, name: str = "knob", guard_s: float = 0.0) -> None:

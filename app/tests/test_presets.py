@@ -193,13 +193,86 @@ def test_a_programme_sets_things_on_or_off_where_a_button_switches(tmp_path: Pat
         assert programmes.validate([{"name": "P", "blocks": [{"name": "B", "items": [{"kind": "action", "action": a}]}]}])
 
 
-def test_a_press_plays_the_preset_and_again_pauses(tmp_path: Path) -> None:
+def test_a_press_plays_the_preset_and_never_pauses(tmp_path: Path) -> None:
     st, ctl, conf, p = _presets(tmp_path, [RP])
     p.press(0)
     assert st.source["url"] == "http://rp/" and ctl.calls == ["play"]
-    p.press(0)                                       # already playing: pause/play
-    assert ctl.calls == ["play", "toggle"]
+    p.press(0)                                       # already playing: it plays (pausing is the knob's)
+    assert ctl.calls == ["play", "play"] and ctl.clips == []      # (one thing on it: no pips)
     assert p.status()["buttons"][0]["playing"]
+
+
+RP2 = {"kind": "radio", "name": "Radio Two", "url": "http://r2/", "info": ""}
+RP3 = {"kind": "radio", "name": "Radio Three", "url": "http://r3/", "info": ""}
+
+
+def _settle(p, timeout=2.0):
+    import time
+    end = time.monotonic() + timeout
+    while p._pending is not None and time.monotonic() < end:
+        time.sleep(0.01)
+    time.sleep(0.03)
+
+
+def test_a_button_with_steps_moves_on_one_each_press(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setattr(presets_mod, "STEP_SETTLE_S", 0.05)
+    st, ctl, conf, p = _presets(tmp_path, [[RP, RP2, RP3], RP])
+    assert load(conf).buttons == [] and p.presets[0] == [RP, RP2, RP3]
+    p.press(0)
+    assert st.source is None                         # (not yet: it waits to see if it's pressed again)
+    _settle(p)
+    assert st.source["url"] == "http://rp/" and ctl.calls == ["play"] and ctl.clips == ["Button"]   # one pip
+    p.press(0); _settle(p)                           # again: the next one
+    assert st.source["url"] == "http://r2/"
+    b = p.status()["buttons"][0]
+    assert b["label"] == "Radio Two" and b["step"] == 1 and [x["playing"] for x in b["steps"]] == [False, True, False]
+    p.press(0); p.press(0); _settle(p)               # twice quickly: past Radio Three, round to the first
+    assert st.source["url"] == "http://rp/" and ctl.calls == ["play"] * 3      # (Radio Three never tuned)
+    p.press(0); _settle(p)
+    assert st.source["url"] == "http://r2/"
+    st.tune(RP3 | {"url": "http://else/"})           # something else is put on...
+    p.press(0); _settle(p)
+    assert st.source["url"] == "http://r2/"           # ...the button comes back to where it was
+    p.press(0, 2)                                    # the page's own key for a step: at once
+    assert st.source["url"] == "http://r3/"
+    with pytest.raises(ValueError):
+        p.press(0, 3)
+
+
+def test_steps_are_checked_saved_and_follow_renames(tmp_path: Path) -> None:
+    pl = {"kind": "playlist", "name": "Sunday", "shuffle": False}
+    assert presets_mod.validate_button([RP]) == RP and presets_mod.validate_button([]) is None
+    assert presets_mod.validate_button([RP, None, pl]) == [RP, pl]
+    with pytest.raises(ValueError, match="6 steps"):
+        presets_mod.validate_button([RP] * 7)
+    with pytest.raises(ValueError):
+        presets_mod.validate_button([RP, {"kind": "tape"}])
+    assert len(presets_mod.step_pips(3)) > len(presets_mod.step_pips(1))
+    st, ctl, conf, p = _presets(tmp_path)
+    p.set(0, [RP, pl])
+    assert load(conf).buttons[0] == [RP, pl]
+    p.add(0, RP2)
+    p.add(1, RP2, bank="night")
+    assert p.presets[0] == [RP, pl, RP2] and p.banks["night"][1] == RP2
+    assert p.rename_playlist("sunday", "Monday") and load(conf).buttons[0][1]["name"] == "Monday"
+    assert backup.parse(backup.export(conf, None))[0]["buttons"][0][2] == RP2
+    p.set(0, [RP])
+    assert p.presets[0] == RP                        # one thing: saved as it always was
+    with pytest.raises(ValueError, match="6 steps"):
+        p.set(0, [RP] * 7)
+
+
+def test_actions_in_the_steps(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setattr(presets_mod, "STEP_SETTLE_S", 0.05)
+    st, ctl, conf, p = _presets(tmp_path, [[RP, {"kind": "action", "action": "sleep"}]])
+    p.press(0); _settle(p)
+    p.press(0); _settle(p)                           # the sleep timer: its own pip, the station stays on
+    assert ctl.sleep == presets_mod.SLEEP_MIN and st.source["url"] == "http://rp/"
+    p.press(0); _settle(p)                           # straight after: on round to the station (already on)
+    assert ctl.sleep == presets_mod.SLEEP_MIN and ctl.calls == ["play", "play"]
+    monkeypatch.setattr(presets_mod, "STEP_RESET_S", 0.0)
+    p.press(0); _settle(p)                           # later: the one after what's playing
+    assert ctl.sleep == 0
 
 
 def test_show_and_album_presets(tmp_path: Path) -> None:
@@ -218,17 +291,12 @@ def test_show_and_album_presets(tmp_path: Path) -> None:
     assert st.source is before and ctl.clips == ["Button"]
 
 
-def test_a_hold_keeps_whats_playing(tmp_path: Path) -> None:
-    st, ctl, conf, p = _presets(tmp_path)
-    st.tune(RP)
-    p.hold(2)
-    assert p.presets[2] == RP and load(conf).buttons[2] == RP
-    st.tune(None)
-    st.set_artist("Artist")
+def test_a_hold_is_just_a_press(tmp_path: Path) -> None:
+    """A button is set from the page: one held too long can't wipe what's on it."""
+    st, ctl, conf, p = _presets(tmp_path, [RP])
+    st.tune(RP2)
     p.hold(0)
-    assert p.presets[0] == {"kind": "show", "artist": None, "profile": "Artist"}
-    assert p.status()["buttons"][0]["label"] == "Artist Radio"
-    assert ctl.clips == ["Button", "Button"]         # a beep each time
+    assert p.presets[0] == RP and st.source["url"] == "http://rp/" and ctl.calls == ["play"]
 
 
 def test_empty_buttons_and_actions(tmp_path: Path) -> None:
@@ -285,6 +353,14 @@ def test_web_api_and_backups(tmp_path: Path) -> None:
         assert st.source["url"] == "http://rp/" and d["buttons"][1]["playing"]
         code, d = call("/api/buttons", {"button": 3, "now": True})
         assert d["buttons"][2]["preset"] == RP
+        code, d = call("/api/buttons", {"button": 3, "preset": RP2, "add": True})
+        assert [x["label"] for x in d["buttons"][2]["steps"]] == ["Radio Paradise", "Radio Two"] and d["max_steps"] == 6
+        code, d = call("/api/buttons", {"button": 4, "steps": [RP2, RP], "bank": "night"})
+        assert [x["label"] for x in d["sets"]["night"][3]["steps"]] == ["Radio Two", "Radio Paradise"]
+        code, d = call("/api/buttons/press", {"button": 3, "step": 2})
+        assert code == 200 and st.source["url"] == "http://r2/" and d["buttons"][2]["step"] == 1
+        assert call("/api/buttons/press", {"button": 3, "step": 3})[0] == 400
+        assert call("/api/buttons", {"button": 3, "steps": [RP] * 7})[0] == 400
         code, d = call("/api/buttons", {"button": 5, "preset": None})
         assert code == 400
         code, d = call("/api/buttons", {"button": 1, "preset": {"kind": "action", "action": "nope"}})
@@ -427,12 +503,10 @@ def test_with_the_dj_off_the_buttons_beep_instead_of_talking(tmp_path) -> None:
             self.clips.append(clip)
     st, c = Station(), Control()
     p = pm.Presets(st, c, None, [])
-    p.hold(2)                                         # keeps what's playing on button 3...
-    p.press(1)                                        # ...an empty button
+    p.press(1)                                        # an empty button
     import time
     time.sleep(0.2)
-    assert st.rendered == [] and len(c.clips) == 2    # beeps only, no words
-    assert p.presets[2] is not None
+    assert st.rendered == [] and len(c.clips) == 1    # a beep only, no words
 
 
 def test_the_cathedral_selector_plays_where_it_settles(monkeypatch) -> None:

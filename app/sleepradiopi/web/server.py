@@ -1113,22 +1113,34 @@ def make_handler(station: Station, output: Mp3Output, speaker=None,
 
         def _buttons(self, press: bool) -> None:
             """POST /api/buttons {"button": 1-4, "preset": {...} | null} (null
-            empties it) or {"button", "now": true} (keep what's playing on it);
-            /api/buttons/press {"button", "hold": bool}: as if pressed on the case."""
+            empties it), {"button", "steps": [{...}, ...]} (several, stepped through
+            by pressing it again), {"button", "preset", "add": true} (one more step
+            on the end) or {"button", "now": true, "add"?} (what's playing, on it);
+            each takes "bank"? (day or night). /api/buttons/press {"button",
+            "step"?: 1-6}: as if pressed on the case (step: that one, at once)."""
             try:
                 body = self._body()
                 n = body["button"]
                 if isinstance(n, bool) or not isinstance(n, int) or not 1 <= n <= presets.count:
                     raise ValueError(f"button is 1 to {presets.count}")
                 if press:
-                    (presets.hold if body.get("hold") else presets.press)(n - 1)
-                elif body.get("now"):
-                    presets.set(n - 1, presets.current())
+                    step = body.get("step")
+                    if step is not None and (isinstance(step, bool) or not isinstance(step, int)):
+                        raise ValueError("step is a number")
+                    if body.get("hold"):
+                        presets.hold(n - 1)
+                    else:
+                        presets.press(n - 1, None if step is None else step - 1)
+                elif "steps" in body:
+                    if not isinstance(body["steps"], list):
+                        raise ValueError("steps is a list of presets")
+                    presets.set(n - 1, body["steps"], body.get("bank"))
                 else:
-                    presets.set(n - 1, body["preset"], body.get("bank"))
+                    preset = presets.current() if body.get("now") else body["preset"]
+                    (presets.add if body.get("add") else presets.set)(n - 1, preset, body.get("bank"))
             except (ValueError, TypeError, KeyError, AttributeError) as e:
                 self._error(str(e) if isinstance(e, ValueError) else
-                            "send {\"button\": 1-4, \"preset\": ..., \"bank\"?} or {\"button\", \"now\": true}")
+                            "send {\"button\": 1-4, \"preset\": ... | \"steps\": [...] | \"now\": true, \"add\"?, \"bank\"?}")
                 return
             self._send(json.dumps(presets.status()).encode(), "application/json")
 
@@ -1152,7 +1164,7 @@ def make_handler(station: Station, output: Mp3Output, speaker=None,
         def _button_key(self) -> None:
             """POST /api/buttons/key {"button": 1-4, "down": bool}: the page's button
             going down or up, through the same timers as the real ones -- a tap
-            plays, 3 s keeps what's playing, 1 and 4 held for 5 s open the service
+            plays (or steps on), 1 and 4 held for 5 s open the service
             menu. A button the page never lets go of is let go after KEY_HELD_MAX_S."""
             try:
                 body = self._body()

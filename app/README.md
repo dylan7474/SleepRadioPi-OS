@@ -637,16 +637,32 @@ The cards:
   The radio's buttons, opens a panel to change them) — the four preset
   buttons on the case (`io/presets.py`), like a car radio's. A press plays
   what the button holds: the show (all artists, an artist or a list), an
-  internet station or an album straight through; pressing the one that's
-  playing pauses and plays. Or an action: *Say the time*, *The news now* (the
-  latest top stories, made on the spot — about a minute on a Zero), *Sleep
-  timer* (30 minutes; again to cancel) or *Say the address*. **Holding a
-  button for 3 seconds keeps what's playing on it** (a beep, then the DJ:
-  "Button two: BBC Radio 4"); an empty button says how. On the page, each
-  button has *Set to now* and a list to choose from (Sleep Radio, your lists,
-  your stations, the actions); tapping one on the main page is the same as
-  pressing it on the case. Wired as GPIO keys (KEY_1–KEY_4, config.txt), read
-  alongside the knob.
+  internet station or an album straight through. Or an action: *Say the
+  time*, *The news now* (the latest top stories, made on the spot — about a
+  minute on a Zero), *Sleep timer* (30 minutes; again to cancel) or *Say the
+  address*. A button only ever plays: **pausing is the knob's job**, and a
+  long press is just a press (buttons are set from the page, so one held too
+  long can't wipe what's on it). Wired as GPIO keys (KEY_1–KEY_4,
+  config.txt), read alongside the knob.
+  **Steps**: a button can hold up to six things (`MAX_STEPS`), stepped
+  through by pressing it again, round and round — stations on one button,
+  podcasts on the next, audiobooks on a third. A button with steps waits
+  `STEP_SETTLE_S` (0.8 s) after its last press before playing, so stepping
+  past a book or a podcast doesn't tune it or move its place; then it gives
+  one pip for step one, two for step two... (pips only: no speech to make).
+  The next press means the step after the one that's playing; coming back
+  to a button from something else, the step it was last on (remembered until
+  a restart). An action in the steps is done and stepped past: within 30 s
+  (`STEP_RESET_S`) the next press goes on to the one after it. A second
+  press within 0.15 s is a switch bounce and ignored (`PRESS_GUARD_S`).
+  On the desktop, **dropping something on a button adds it as the next
+  step** (on the radio's front, or on the button's plate in the Buttons
+  window); the window shows each button's steps with keys to play one now,
+  move it earlier or later, or take it off, plus *Add a step…*, *＋ What's
+  playing* and *Empty it*. The key on the radio's front shows a small
+  counter (3, or 2/3 while step two plays). With one thing on a button
+  nothing changes: no wait, no pips, saved as before. The cathedral's
+  selector can't be pressed again, so it plays a position's first step.
 - **Noise** (the Radio tab's Noise toggle, Settings → Noise, or a preset button
   set to *Noise on/off*) — coloured noise to sleep to, as in the SleepRadio app:
   White, Pink, Brown, Deep brown, Blue, Violet, or Ambient (pink with a slow
@@ -694,8 +710,9 @@ The cards:
   not yet heard from there on, oldest to newest, and when one finishes the
   radio goes straight on to the next newer episode, up to the latest, then
   pauses (as at the end of a book). A button holding just the show (Settings →
-  Buttons) plays the episode part-heard, else the newest unheard; holding a
-  button for 3 s while an episode plays starts the run from that one; and
+  Buttons) plays the episode part-heard, else the newest unheard; an
+  episode dragged onto a button (or *＋ What's playing* while one plays)
+  starts the run from that one; and
   playing any episode from the list carries on through the newer ones too
   (`playback/podcasts.py`, `Station._run_episode`).
 - **Albums** (Find) — search the library's albums and play one start
@@ -804,13 +821,13 @@ The cards:
   **Open the service menu** does what holding buttons 1 and 4 for 5 s does;
   answer it with the buttons on the Radio tab. Those buttons behave like the
   real ones: each sends *down* and *up* to the radio (`/api/buttons/key`),
-  through the same timers, so a tap plays, a 3 s hold keeps what's playing,
+  through the same timers, so a tap plays (or steps on),
   and holding 1 and 4 together (two fingers) for 5 s opens the menu (the
   page counts down from 5 under the buttons, and the radio ticks once a
   second while they're held -- the same with the real buttons).
 - **The service menu** (`io/service.py`; buttons 1 and 4 held together for
-  5 s — the moment the second goes down, neither button's own press or
-  3 s hold counts, so a preset is never overwritten; `io/knob.py` `Chord`).
+  5 s — the moment the second goes down, neither button's own press
+  counts, so nothing plays; `io/knob.py` `Chord`).
   While it's open the show is **paused** and the speaker plays only the
   menu: its words, and a soft tick once a second while they're being made;
   leaving it (or cancelling, or the Wi-Fi reset) resumes what was playing;
@@ -1005,10 +1022,10 @@ everything but the page itself and the login needs the session cookie
 | `POST /api/media/mkdir` / `/api/media/delete` | `{"kind", "path", "name"}` / `{"kind", "path"}` (a file or a folder) |
 | `POST /api/media/done` | Changes finished: /media read-only again, and the library rescanned |
 | `POST /api/buttons/bank` / `/api/buttons/auto` | `{"bank": "day" \| "night"}` (or `{}` to swap), announced on the radio / `{"on", "night_min", "day_min"}`: the timetable. `GET /api/buttons` has `bank` and `auto` |
-| `POST /api/buttons/key` | `{"button": 1-4, "down": bool}` — the page's button going down / up, through the real buttons' timers (tap, 3 s hold, 1+4 for 5 s); one held over 30 s is let go |
-| `GET /api/buttons` | The four preset buttons (`preset`, `label`, `playing`), what's playing now as a preset, and the actions |
-| `POST /api/buttons` | `{"button": 1-4, "preset": {...} \| null, "bank"?: "day" \| "night"}` (bank: programme that set without swapping; `GET` has both in `sets`) or `{"button", "now": true}` (keep what's playing on it); a podcast preset is `{"kind": "podcast", "show", "title", "start": gid, "start_title"}` |
-| `POST /api/buttons/press` | `{"button": 1-4, "hold"?: bool}` — as if pressed (or held) on the case |
+| `POST /api/buttons/key` | `{"button": 1-4, "down": bool}` — the page's button going down / up, through the real buttons' timers (tap, 1+4 for 5 s); one held over 30 s is let go |
+| `GET /api/buttons` | The four preset buttons (`steps`: each `preset`, `label`, `playing`; `step`: the one playing; and, for the step playing or else the first, `preset`, `label`, `playing`), `max_steps`, what's playing now as a preset, and the actions |
+| `POST /api/buttons` | `{"button": 1-4, "preset": {...} \| null, "bank"?: "day" \| "night"}` (bank: programme that set without swapping; `GET` has both in `sets`), `{"button", "steps": [{...}, ...]}` (up to six, stepped through by pressing it again), `{"button", "preset", "add": true}` (one more step on the end) or `{"button", "now": true, "add"?}` (what's playing, on it); a podcast preset is `{"kind": "podcast", "show", "title", "start": gid, "start_title"}` |
+| `POST /api/buttons/press` | `{"button": 1-4, "step"?: 1-6}` — as if pressed on the case (a button with steps moves on one, and plays after 0.8 s); `step`: that one, at once |
 | `POST /api/radio/stations` | `{"stations": [...]}` — replace the saved list |
 | `GET /api/artists` | Every artist with a track count, your lists, and what's playing |
 | `POST /api/station` | `{"artist": name \| null}` or `{"profile": name}` |

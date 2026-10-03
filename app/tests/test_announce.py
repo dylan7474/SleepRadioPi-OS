@@ -147,4 +147,4 @@ def test_the_preset_buttons_are_guarded_and_the_knob_is_not() -> None:
     for _ in range(2):
         k.keys[2][0](); k.keys[2][1]()
         k.on_press(); k.on_release()
-    assert calls == ["b1", "knob", "knob"] and PRESS_GUARD_S == 0.5
+    assert calls == ["b1", "knob", "knob"] and PRESS_GUARD_S == 0.15

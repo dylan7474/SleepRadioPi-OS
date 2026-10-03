@@ -120,10 +120,15 @@ software, and the case to print.
 - **Four preset buttons** (optional), like a car radio's: each plays what
   it holds — Sleep Radio, an artist or list, an internet station, an album
   straight through — or does something: say the time, read the news now,
-  a 30-minute sleep timer (on or off with a single pip, never words), say the address. Press the one that's playing to
-  pause (a second press within half a second counts as the first one's
-  bounce, so a worn switch can't pause what it just tuned). **Hold one for 3 seconds** to keep what's playing on it (a beep, then
-  "Button two: BBC Radio 4"). The same four are on the web page's front.
+  a 30-minute sleep timer (on or off with a single pip, never words), say the address. Buttons only ever
+  play: pausing is the knob's job. **A button can hold several things** (up
+  to six: your stations on one, podcasts on the next, audiobooks on a
+  third): press it again to step on to the next, round and round. The radio
+  waits a moment after your last press, then gives **one pip for step one,
+  two for step two**... and plays; come back to a button later and it picks
+  up at the step it was on. Buttons are set from the desktop page (drag
+  things onto a button, or *What the buttons play…*): there's no
+  hold-to-store on the case, so a long press can't wipe one. The same four are on the web page's front.
   There are **two sets of the four, day and night**: hold **buttons 2 and
   3** together for a second to swap (or use the page's ☀ / ☾ switch), and
   optionally let the radio swap them by the clock.

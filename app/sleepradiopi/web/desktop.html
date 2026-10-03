@@ -282,7 +282,12 @@
   .knob::after { content: ""; position: absolute; left: 32px; top: 8px; width: 3px; height: 18px; border-radius: 2px; background: #fff; transform-origin: 1.5px 25px; transform: rotate(var(--rot, 0deg)); }
   .rvol { text-align: center; font-size: 11px; color: #6b6558; margin-top: 3px; font-variant-numeric: tabular-nums; }
   .presets { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-top: 10px; }
-  .pbtn { display: flex; flex-direction: column; align-items: center; gap: 4px; }
+  .pbtn { display: flex; flex-direction: column; align-items: center; gap: 4px; position: relative; }
+  /* a button with steps: a small counter on its key (always there, faded out with one thing on it) */
+  .pbtn i { position: absolute; top: -4px; left: calc(50% + 9px); min-width: 15px; padding: 1px 4px; border-radius: 99px; font: 700 8.5px var(--display);
+            font-style: normal; text-align: center; color: var(--amber-ink); background: linear-gradient(180deg, #f7c86d, var(--amber)); box-shadow: 0 1px 2px #0005;
+            pointer-events: none; opacity: 0; }
+  .pbtn.steps i { opacity: 1; }
   .pbtn button { width: 40px; height: 40px; border-radius: 50%; border: 0; background: radial-gradient(circle at 40% 35%, #fff, #c8ccd2 70%, #9aa0a8);
                  box-shadow: 0 3px 6px #0005, inset 0 -2px 3px #0002; font: 700 14px var(--display); color: #444; }
   .pbtn.over button { box-shadow: 0 0 0 3px var(--blue); }
@@ -391,6 +396,12 @@
   .sbtn:active, .pill:active, .wtools .t:active { transform: translateY(1px); }
   .sbtn.primary, .wtools .t.primary { background: linear-gradient(180deg, #f7c86d, var(--amber)); border-color: var(--amber-deep); color: var(--amber-ink); font-weight: 700; }
   .sbtn.danger { color: var(--red); }
+  .sbtn:disabled { opacity: .35; cursor: default; }
+  /* the Buttons window: a plate per button, its steps as rows with small keys */
+  .stepkeys { display: flex; gap: 4px; }
+  .stepkeys .sbtn { padding: 4px 0; width: 28px; text-align: center; }
+  .set .grp.over { outline: 2px solid var(--blue); outline-offset: 1px; }
+  .srow .playing { color: var(--amber-deep); font-weight: 600; }
   .pill { border-radius: 99px; padding: 3px 11px; }
   .pill[aria-pressed="true"] { background: linear-gradient(180deg, #f7c86d, var(--amber)); border-color: var(--amber-deep); color: var(--amber-ink); font-weight: 700; box-shadow: inset 0 1px 3px #0000003a; }
   .set .line { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
@@ -1062,10 +1073,11 @@ function radioEl() {
   shownButtons().forEach((b, i) => {
     const pb = el("div", { className: "pbtn" + (b.playing ? " on" : "") });
     pb.dataset.drop = "preset"; pb.dataset.n = i;
-    const btn = el("button", { type: "button", textContent: i + 1, title: `Button ${i + 1}: ${b.label}` });
+    const btn = el("button", { type: "button", textContent: i + 1, title: buttonTitle(b, i) });
     btn.onclick = () => shownBank() === bStatus?.bank ? pressButton(i)
       : toast(`These are the ${shownBank()} buttons; the radio's using its ${bStatus.bank} set. Press "Use it now" to switch.`);
-    pb.append(btn, el("span", { textContent: b.label }));
+    pb.classList.toggle("steps", stepsOf(b).length > 1);
+    pb.append(btn, el("span", { textContent: b.label }), el("i", { textContent: stepCount(b) }));
     pre.append(pb);
   });
   const plink = el("button", { className: "plink", type: "button", textContent: "What the buttons play…" });
@@ -1131,7 +1143,8 @@ function updateRadio() {            // the live bits, without redrawing the desk
   if ($("rPrev")) { $("rPrev").disabled = !S?.can_previous; $("rNext").disabled = !S?.can_skip; }
   const msw = document.querySelector("#radio .sw"); if (msw) msw.setAttribute("aria-checked", String(!!S?.programme_mode));
   const pbs = $("rPresets")?.children || [];
-  shownButtons().forEach((b, i) => { if (pbs[i]) { pbs[i].classList.toggle("on", !!b.playing); pbs[i].querySelector("span").textContent = b.label; } });
+  shownButtons().forEach((b, i) => { if (pbs[i]) { pbs[i].classList.toggle("on", !!b.playing); pbs[i].classList.toggle("steps", stepsOf(b).length > 1);
+    pbs[i].querySelector("span").textContent = b.label; pbs[i].querySelector("i").textContent = stepCount(b); pbs[i].querySelector("button").title = buttonTitle(b, i); } });
   $("onair").hidden = !S?.on_air || S?.speaker?.playing === false;   // (paused: not on air, whatever the station's doing)
 }
 let volTimer = null, volStep = 0;
@@ -1174,8 +1187,28 @@ function shownButtons() {
   if (!bStatus || !bStatus.sets || shownBank() === bStatus.bank) return buttons;
   return bStatus.sets[shownBank()].map(b => ({ ...b, playing: false }));
 }
-async function pressButton(i) {
-  try { await api("/api/buttons/press", { button: i + 1 }); toast(`Button ${i + 1}: ${buttons[i]?.label || ""}`); setTimeout(async () => { await loadButtons(); poll(); updateRadio(); }, 900); }
+// a button's steps: several things on one button, stepped through by pressing it again
+const stepsOf = b => (b?.steps || []).map(s => s.preset);
+const stepCount = b => { const n = stepsOf(b).length; return n > 1 ? (b.step != null ? `${b.step + 1}/${n}` : String(n)) : ""; };
+const buttonTitle = (b, i) => { const n = stepsOf(b).length;
+  return `Button ${i + 1}: ` + (n > 1 ? b.steps.map(s => s.label).join(" → ") + " · press again to step on" : b.label); };
+const stepKey = p => [p.kind, p.url ?? p.folder ?? p.key ?? p.show ?? p.action ?? p.text ?? p.path ?? p.profile ?? p.name ?? "", p.root || "", p.start || ""].join("|").toLowerCase();
+function gotButtons(st) {            // the radio's answer: the front, and the Buttons window if it's open
+  bStatus = st; buttons = st.buttons;
+  const w = W.find(w => w.id === PANEL.buttons.id); if (w?.data) w.data = st;
+  drawDesk();
+}
+async function saveSteps(i, steps, said) {
+  try { const bank = shownBank();
+        gotButtons(await api("/api/buttons", { button: i + 1, steps, ...(bank !== bStatus?.bank ? { bank } : {}) }));
+        if (said) toast(said); }
+  catch (e) { toast("Not changed: " + e.message + "."); }
+}
+async function pressButton(i, step = null) {
+  const b = buttons[i], n = stepsOf(b).length;
+  try { await api("/api/buttons/press", { button: i + 1, ...(step != null ? { step: step + 1 } : {}) });
+        toast(step != null ? `Button ${i + 1}: ${b.steps[step].label}` : n > 1 ? `Button ${i + 1}: stepping on…` : `Button ${i + 1}: ${b?.label || ""}`);
+        setTimeout(async () => { await loadButtons(); if (bStatus && !dragging) gotButtons(bStatus); poll(); }, n > 1 && step == null ? 1700 : 900); }
   catch (e) { toast(e.message); }
 }
 
@@ -1235,14 +1268,24 @@ function buttonChoices() {
           ["Podcasts", kids(PODCASTS)], ["Audiobooks", kids(BOOKS)],
           ["Messages", kids(NOTES).filter(o => o.kind === "note")], ["Jingles", kids(JINGLES)], ["Birthdays", kids(BDAYS).filter(o => o.kind === "person")]];
 }
-async function setPreset(i, o) {
-  const preset = presetOf(o);
-  if (!preset) return toast(`A button can't hold a single ${KIND[o.kind].toLowerCase()}: try its album, show or a playlist.`);
-  try { const bank = shownBank();
-        bStatus = await api("/api/buttons", { button: i + 1, preset, ...(bank !== bStatus?.bank ? { bank } : {}) }); buttons = bStatus.buttons; drawDesk();
-        const where = shownBank() !== bStatus.bank ? ` (the ${shownBank()} set)` : "";
-        toast(o.kind === "episode" ? `Button ${i + 1}${where}: ${preset.title}, starting from “${o.title}”, then on through the newer ones.` : `Button ${i + 1}${where} now ${["note", "message", "person"].includes(o.kind) ? "says" : "plays"} “${o.title}”.`); }
-  catch (e) { toast("Not changed: " + e.message + "."); }
+// something (or several things) dropped on a button, or picked for it: on an empty button it's what
+// the button plays; on one that has something, it's the next step
+async function setPreset(i, objs) {
+  objs = [].concat(objs);
+  const have = stepsOf(shownButtons()[i]), max = bStatus?.max_steps || 6, add = [];
+  for (const o of objs) {
+    const preset = presetOf(o);
+    if (!preset) return toast(`A button can't hold a single ${KIND[o.kind].toLowerCase()}: try its album, show or a playlist.`);
+    if (![...have, ...add].some(p => stepKey(p) === stepKey(preset))) add.push(preset);
+  }
+  const o = objs[0], where = bStatus && shownBank() !== bStatus.bank ? ` (the ${shownBank()} set)` : "";
+  if (!add.length) return toast(objs.length > 1 ? `Button ${i + 1} has those already.` : `Button ${i + 1} has “${o.title}” already.`);
+  if (have.length + add.length > max) return toast(`A button holds up to ${max} things. Take one off first: “What the buttons play…”.`);
+  const total = have.length + add.length;
+  return saveSteps(i, [...have, ...add],
+    total > 1 ? `Button ${i + 1}${where}: ${add.length > 1 ? `${add.length} more steps` : `“${o.title}” is step ${total}`}. Press the button again to step on through its ${total}.`
+    : o.kind === "episode" ? `Button ${i + 1}${where}: ${add[0].title}, starting from “${o.title}”, then on through the newer ones.`
+    : `Button ${i + 1}${where} now ${["note", "message", "person"].includes(o.kind) ? "says" : "plays"} “${o.title}”.`);
 }
 
 // ============ windows ============
@@ -1917,24 +1960,43 @@ const UI = {
     load: async () => { await Promise.all([LISTS, STATIONS, PLAYLISTS, PROGRAMMES, PODCASTS, BOOKS, NOTES, JINGLES, BDAYS].filter(f => !f.loaded).map(f => loadFolder(f).catch(() => {}))); return api("/api/buttons"); },
     build: (b, act) => {
       buttons = b.buttons; updateRadio();
+      const bank = shownBank(), live = bank === b.bank, set = b.sets?.[bank] || b.buttons, max = b.max_steps || 6;
       const auto = b.auto || {};
       const night = el("input", { type: "time", value: hhmm(auto.night_min ?? 1260), id: "b-night" }), day = el("input", { type: "time", value: hhmm(auto.day_min ?? 420), id: "b-day" });
       const saveAuto = on => act(() => api("/api/buttons/auto", { on, night_min: minsOf(night.value), day_min: minsOf(day.value) }));
       night.onchange = () => saveAuto(!!auto.on); day.onchange = () => saveAuto(!!auto.on);
       return [
-        grp("The radio's buttons", ...b.buttons.map((x, i) => {
-            const pick = el("select", { id: "btn-pick-" + i, style: "width:8.5em" }); pick.setAttribute("aria-label", `Change what button ${i + 1} plays`);
-            pick.append(new Option("Change…", ""));
-            const choices = buttonChoices(), flat = [];
-            for (const [label, items] of choices) { if (!items.length) continue; const g = el("optgroup"); g.label = label; pick.append(g);
-              for (const o of items) { flat.push(o); g.append(new Option(o.title.length > 48 ? o.title.slice(0, 46) + "…" : o.title, String(flat.length - 1))); } }
-            pick.append(new Option("Empty", "empty"));
-            pick.onchange = () => { if (pick.value === "empty") act(() => api("/api/buttons", { button: i + 1, preset: null }));
-                                    else if (pick.value !== "") setPreset(i, flat[+pick.value]).then(() => act(async () => {})); };
-            return srow(`Button ${i + 1}`, el("span", { textContent: x.label + (x.playing ? (S?.speaker?.playing === false ? " · tuned, paused" : " · playing") : "") }), line(sbtn("▶", () => pressButton(i)), pick));
-          }),
-          help("Or drag anything onto a button on the radio: an album, a folder, a station, a podcast or one of its episodes, a book, a playlist, a programme, a message, a jingle, a birthday, or an action from the Actions folder. Messages, jingles, birthdays and actions happen over what's playing. On the radio itself, hold a button for 3 seconds to keep what's playing on it."),
+        grp(`The ${bank} buttons` + (live ? "" : ` · the radio's using its ${b.bank} set`),
+          help("Put one thing on a button and it plays it. Put several on and each press moves on a step, round and round: the radio waits a moment after your last press, then gives one pip for step one, two for step two. Coming back to a button, it picks up where it was. Buttons only play: the knob pauses."),
+          help("Drag anything onto a button, on the radio or here: an album, a folder, a station, a theme, a podcast or one of its episodes, a book, a playlist, a programme, a message, a jingle, a birthday, or an action. It's added as the button's next step."),
           line(sbtn("Actions folder", () => open(ACTIONS_BOX.id)))),
+        ...set.map((x, i) => {
+            const have = stepsOf(x), n = have.length;
+            const moved = (k, to) => { const t = have.slice(); t.splice(to, 0, t.splice(k, 1)[0]); return t; };
+            const key = (t, title, fn, off) => { const k = sbtn(t, fn); k.title = title; k.setAttribute("aria-label", title); k.disabled = !!off; return k; };
+            const rows = x.steps.map((st, k) => srow(n > 1 ? `Step ${k + 1}` : "Plays",
+              el("span", { className: st.playing ? "playing" : "", textContent: st.label + (st.playing ? (S?.speaker?.playing === false ? " · tuned, paused" : " · playing") : "") }),
+              el("div", { className: "stepkeys" },
+                key("▶", "Play it now", () => live ? pressButton(i, k) : toast(`These are the ${bank} buttons; the radio's using its ${b.bank} set.`)),
+                key("↑", "Earlier", () => saveSteps(i, moved(k, k - 1)), k === 0),
+                key("↓", "Later", () => saveSteps(i, moved(k, k + 1)), k === n - 1),
+                key("✕", "Take it off the button", () => saveSteps(i, have.filter((_, j) => j !== k), `Button ${i + 1}: “${st.label}” taken off.`)))));
+            const pick = el("select", { id: "btn-pick-" + i, style: "width:11em" }); pick.setAttribute("aria-label", `Add a step to button ${i + 1}`);
+            pick.append(new Option(n ? "Add a step…" : "Choose what it plays…", ""));
+            const flat = [];
+            for (const [label, items] of buttonChoices()) { if (!items.length) continue; const g = el("optgroup"); g.label = label; pick.append(g);
+              for (const o of items) { flat.push(o); g.append(new Option(o.title.length > 48 ? o.title.slice(0, 46) + "…" : o.title, String(flat.length - 1))); } }
+            pick.disabled = n >= max;
+            pick.onchange = () => { if (pick.value !== "") setPreset(i, flat[+pick.value]); };
+            const nowBtn = sbtn("＋ What's playing", () => act(async () => { gotButtons(await api("/api/buttons", { button: i + 1, now: true, add: true, ...(live ? {} : { bank }) })); }));
+            nowBtn.title = `Add what's on now: ${b.now?.label || ""}`; nowBtn.disabled = n >= max;
+            const empty = sbtn("Empty it", () => saveSteps(i, [], `Button ${i + 1} is empty.`), "danger"); empty.disabled = !n;
+            const g = grp(`Button ${i + 1}` + (n > 1 ? ` · ${n} steps` : ""),
+              ...(rows.length ? rows : [srow("Plays", el("span", { className: "muted", textContent: "Nothing yet: drop something here" }))]),
+              line(pick, nowBtn, empty));
+            g.dataset.drop = "preset"; g.dataset.n = i;
+            return g;
+          }),
         b.bank ? grp("Day and night sets", srow("Set in use", seg([["day", "Day"], ["night", "Night"]], b.bank, v => act(() => api("/api/buttons/bank", { bank: v })))),
           srow("Swap by the clock", sw(auto.on, v => saveAuto(v), "Swap by the clock")), srow("Night from", night), srow("Day from", day),
           help("Or hold buttons 2 and 3 together for a second. Each set has its own four.")) : null,
@@ -2192,7 +2254,7 @@ const SUMS = {
   voices: v => `${VOICE(v.current)} · ${v.voices.length} installed`,
   wifi: w => w.mode === "hotspot" ? `Its own network: ${w.hotspot.ssid}` : w.ssid ? `${w.ssid} · ${w.ip}` : "Not connected",
   identity: ({ id, auth, status }) => [id.name, id.hardware === "cathedral" ? "cathedral case" : "box case", auth.protected ? "password on" : "no password", status.stream ? "browser listening on" : ""].filter(Boolean).join(" · "),
-  buttons: b => b.buttons.map((x, i) => `${i + 1} ${x.label}`).join(" · ") + (b.bank ? ` · ${b.bank} set` : ""),
+  buttons: b => b.buttons.map((x, i) => `${i + 1} ${x.label}${x.steps?.length > 1 ? ` +${x.steps.length - 1}` : ""}`).join(" · ") + (b.bank ? ` · ${b.bank} set` : ""),
   updates: u => u.available ? `${niceVersion(u.version)} · an update is ready` : niceVersion(u.version),
   backup: () => "Your settings, in a file you keep",
   power: () => "Restart it, or shut it down",
@@ -2885,7 +2947,7 @@ async function dropMany(srcs, target, ev) {
     saveDesk(); return drawDesk();
   }
   if (kind === "play") return playOnTheFly(objs);
-  if (kind === "preset") return toast("A button keeps one thing: drag just one onto it.");
+  if (kind === "preset") return setPreset(+target.dataset.n, objs);
   const dest = O[target.dataset.target];
   if (!dest) return;
   if (dest.kind === "trash") return trashMany(srcs);

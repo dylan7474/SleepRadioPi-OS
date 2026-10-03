@@ -3,10 +3,17 @@
 A short press plays what the button holds -- the show (all artists, one
 artist or one of your lists), an internet radio station, or an album
 straight through -- or does an action: say the time, read the news now,
-the sleep timer, or say the radio's address. Pressing the button that's
-already playing pauses, and again plays. Holding a button for LONG_PRESS_S
-stores whatever is playing now in it: a beep, then the DJ says "Button two:
-BBC Radio 4". The web page sets them too (Streaming -> Buttons).
+the sleep timer, or say the radio's address. A button only ever plays:
+pausing is the knob's job. The desktop page sets them (drag things onto a
+button, or the Buttons window); there's no hold-to-store on the case.
+
+A button can hold several **steps** (up to MAX_STEPS): stations on one,
+podcasts on the next, audiobooks on a third. Pressing it again moves on a
+step, round and round. It waits STEP_SETTLE_S after the last press before
+playing (so stepping past a book doesn't move its place), then gives one pip
+for step one, two for step two... Coming back to a button from something
+else, it picks up at the step it was last on. (The cathedral's selector has
+no second press: it plays a position's first step.)
 
 There are two sets of the four, **day** and **night**, each with its own
 presets; everything (the real buttons, the page's) uses the one in use.
@@ -53,6 +60,9 @@ BANK_HOLD_S = 1.0           # ...held together this long swap day and night
 AUTO_DEFAULT = {"on": False, "night_min": 21 * 60, "day_min": 7 * 60}
 SLEEP_MIN = 30
 MAX_TEXT = 200
+MAX_STEPS = 6               # what one button can hold, stepped through by pressing it again
+STEP_SETTLE_S = 0.8         # a button with steps plays this long after its last press
+STEP_RESET_S = 30.0         # an action step done this long ago: the next press isn't "the one after it"
 
 
 def _text(value, name: str, required: bool = False) -> str | None:
@@ -120,12 +130,40 @@ def validate(preset) -> dict | None:
                      "an action, a message, a jingle or a birthday")
 
 
+def steps(button) -> list:
+    """A button's steps, in order: [] when it's empty."""
+    if button is None:
+        return []
+    return list(button) if isinstance(button, list) else [button]
+
+
+def validate_button(button):
+    """What one button holds -> a clean copy: None (empty), a preset, or a list of
+    two to MAX_STEPS presets (its steps). A list of one is just that preset, so
+    a button with one thing on it is saved as it always was."""
+    if not isinstance(button, list):
+        return validate(button)
+    out = [p for p in (validate(p) for p in button) if p is not None]
+    if len(out) > MAX_STEPS:
+        raise ValueError(f"a button holds up to {MAX_STEPS} steps")
+    return out if len(out) > 1 else (out[0] if out else None)
+
+
+def step_pips(n: int) -> np.ndarray:
+    """Which step a button landed on: n short pips, int16 stereo."""
+    from sleepradiopi.audio import pcm
+    parts = []
+    for _ in range(max(1, n)):
+        parts += [pip(0.07), pcm.silence(0.11)]
+    return np.concatenate(parts[:-1])
+
+
 def validate_all(presets, n: int = N) -> list:
     """The buttons (a shorter list is padded with empty ones; a longer one, up
     to MAX_N, is kept -- e.g. a cathedral's six, on a box's four)."""
     if not isinstance(presets, list) or len(presets) > MAX_N:
         raise ValueError(f"send a list of up to {MAX_N} buttons")
-    out = [validate(p) for p in presets]
+    out = [validate_button(p) for p in presets]
     return (out + [None] * (n - len(out)))[:max(n, len(out))]
 
 
@@ -236,6 +274,11 @@ class Presets:
             self.auto = dict(AUTO_DEFAULT)
         self._auto_last: str | None = None
         self._lock = threading.Lock()
+        # a button with steps: the press waiting to settle (button, step, its timer), the step
+        # each button was last on {(set, button): step}, and the last one done (set, button, step, when)
+        self._pending: tuple | None = None
+        self._at: dict = {}
+        self._last: tuple | None = None
 
     @staticmethod
     def _safe(presets, n: int = N) -> list:
@@ -254,15 +297,20 @@ class Presets:
     def presets(self, value: list) -> None:
         self.banks[self.bank] = value
 
+    def _every(self):
+        """Every preset on every button, in both sets (each step of the ones with steps)."""
+        for bank in self.banks.values():
+            for button in bank:
+                yield from steps(button)
+
     def pin_shows(self, theme: str) -> bool:
         """There's no default station: buttons set to "the show" (no theme) play this
         theme instead."""
         changed = False
-        for bank in self.banks.values():
-            for p in bank:
-                if p and p["kind"] == "show" and not p.get("profile") and not p.get("artist"):
-                    p["profile"] = theme
-                    changed = True
+        for p in self._every():
+            if p["kind"] == "show" and not p.get("profile") and not p.get("artist"):
+                p["profile"] = theme
+                changed = True
         if changed:
             self._save()
         return changed
@@ -271,11 +319,10 @@ class Presets:
         """Artist radio is retired: a button that played one artist plays that
         artist's one-artist theme (theme_for makes it; Default if they've gone)."""
         changed = False
-        for bank in self.banks.values():
-            for p in bank:
-                if p and p["kind"] == "show" and not p.get("profile") and p.get("artist"):
-                    p["profile"], p["artist"] = theme_for(p["artist"]) or "Default", None
-                    changed = True
+        for p in self._every():
+            if p["kind"] == "show" and not p.get("profile") and p.get("artist"):
+                p["profile"], p["artist"] = theme_for(p["artist"]) or "Default", None
+                changed = True
         if changed:
             self._save()
         return changed
@@ -283,11 +330,10 @@ class Presets:
     def rename_theme(self, old: str, new: str) -> bool:
         """A theme was renamed: buttons that play it follow it."""
         changed = False
-        for bank in self.banks.values():
-            for p in bank:
-                if p and p["kind"] == "show" and (p.get("profile") or "").lower() == old.lower():
-                    p["profile"] = new
-                    changed = True
+        for p in self._every():
+            if p["kind"] == "show" and (p.get("profile") or "").lower() == old.lower():
+                p["profile"] = new
+                changed = True
         if changed:
             self._save()
         return changed
@@ -295,11 +341,10 @@ class Presets:
     def rename_playlist(self, old: str, new: str) -> bool:
         """A playlist was renamed: buttons that play it follow it."""
         changed = False
-        for bank in self.banks.values():
-            for p in bank:
-                if p and p["kind"] == "playlist" and p["name"].lower() == old.lower():
-                    p["name"] = new
-                    changed = True
+        for p in self._every():
+            if p["kind"] == "playlist" and p["name"].lower() == old.lower():
+                p["name"] = new
+                changed = True
         if changed:
             self._save()
         return changed
@@ -307,15 +352,14 @@ class Presets:
     def rename_refs(self, old_root: str, old: str, new_root: str, new: str) -> bool:
         """A folder was moved: album buttons that held it (or something in it) follow it."""
         changed = False
-        for bank in self.banks.values():
-            for p in bank:
-                if p and p["kind"] == "album" and p.get("root", "music") == old_root and (p["folder"] == old or p["folder"].startswith(old + "/")):
-                    p["folder"] = new + p["folder"][len(old):]
-                    if new_root == "music":
-                        p.pop("root", None)
-                    else:
-                        p["root"] = new_root
-                    changed = True
+        for p in self._every():
+            if p["kind"] == "album" and p.get("root", "music") == old_root and (p["folder"] == old or p["folder"].startswith(old + "/")):
+                p["folder"] = new + p["folder"][len(old):]
+                if new_root == "music":
+                    p.pop("root", None)
+                else:
+                    p["root"] = new_root
+                changed = True
         if changed:
             self._save()
         return changed
@@ -359,29 +403,52 @@ class Presets:
 
     def status(self) -> dict:
         now = self.current()
-        return {"buttons": [{"preset": p, "label": self.label(p), "playing": same(p, now)}
-                            for p in self.presets[:self.count]],
-                "count": self.count, "selector": self.selector,
+        return {"buttons": [self._button(b, now) for b in self.presets[:self.count]],
+                "count": self.count, "selector": self.selector, "max_steps": MAX_STEPS,
                 "now": {"preset": now, "label": self.label(now)}, "actions": ACTIONS,
                 "bank": self.bank, "auto": self.auto,
-                "sets": {b: [{"preset": p, "label": self.label(p)} for p in self.banks[b][:self.count]] for b in BANKS},
+                "sets": {b: [self._button(x, now if b == self.bank else None) for x in self.banks[b][:self.count]]
+                         for b in BANKS},
                 "service": self.menu.state if self.menu is not None else None}
+
+    def _button(self, button, now: dict | None) -> dict:
+        """A button for the page: its steps, and (as "preset" and "label") the one
+        that's playing -- or, with none playing, its first."""
+        rows = [{"preset": p, "label": self.label(p), "playing": same(p, now)} for p in steps(button)]
+        on = next((k for k, r in enumerate(rows) if r["playing"]), None)
+        shown = rows[on or 0] if rows else {"preset": None, "label": self.label(None)}
+        return {"preset": shown["preset"], "label": shown["label"], "playing": on is not None,
+                "steps": rows, "step": on}
 
     # --- setting them -------------------------------------------------------------------
 
-    def set(self, index: int, preset, bank: str | None = None) -> dict | None:
-        """Put a preset on a button (None empties it), in the set in use or the
-        one named (day or night: programming the other set without swapping). Saved."""
+    def set(self, index: int, preset, bank: str | None = None):
+        """Put a preset on a button (None empties it; a list: its steps), in the set
+        in use or the one named (day or night: programming the other set without
+        swapping). Saved."""
         if not 0 <= index < self.count:
             raise ValueError(f"buttons are 1 to {self.count}")
         if bank is not None and bank not in BANKS:
             raise ValueError("the set is day or night")
-        preset = validate(preset)
+        preset = validate_button(preset)
         with self._lock:
             self.banks[bank or self.bank][index] = preset
+            self._at.pop((bank or self.bank, index), None)        # (its steps changed: from the first)
+            if self._pending is not None and self._pending[0] == index:
+                self._pending[2].cancel()
+                self._pending = None
             self._save()
-        log.info("button %d%s: %s", index + 1, f" ({bank})" if bank else "", self.label(preset))
+        log.info("button %d%s: %s", index + 1, f" ({bank})" if bank else "",
+                 " / ".join(self.label(p) for p in steps(preset)) or self.label(None))
         return preset
+
+    def add(self, index: int, preset, bank: str | None = None):
+        """One more step on the end of a button."""
+        if not 0 <= index < self.count:
+            raise ValueError(f"buttons are 1 to {self.count}")
+        if bank is not None and bank not in BANKS:
+            raise ValueError("the set is day or night")
+        return self.set(index, steps(self.banks[bank or self.bank][index]) + [validate(preset)], bank)
 
     def set_all(self, presets: list) -> None:
         presets = validate_all(presets, self.count)
@@ -506,9 +573,11 @@ class Presets:
         if self.menu is not None and not self.menu.active:
             self.menu.open()
 
-    def press(self, index: int) -> None:
-        """A short press: play the button's preset, or pause/play if it's what's
-        playing already; do its action. (The selector: a position reached.)"""
+    def press(self, index: int, step: int | None = None) -> None:
+        """A press: play what the button holds (it never pauses: that's the knob),
+        or do its action. A button with steps moves on one each press, and plays
+        once it's been left alone for STEP_SETTLE_S. step: that one, now (the
+        page's own play keys). (The selector: a position reached.)"""
         if not 0 <= index < self.count:
             return
         if self.menu is not None and self.menu.active:
@@ -517,34 +586,81 @@ class Presets:
         if self.selector:
             self._choose(index)
             return
-        preset = self.presets[index]
-        log.info("button %d pressed: %s", index + 1, self.label(preset))
-        if preset is None:
-            self._say(f"Button {WORDS[index]} is empty. Hold it down to keep what's playing on it.")
+        chain = steps(self.presets[index])
+        if not chain:
+            log.info("button %d pressed: empty", index + 1)
+            self._say(f"Button {WORDS[index]} is empty. Set it from the radio's page.")
             return
-        if preset["kind"] in INSTANT:
-            self._instant(preset)
+        if step is not None:
+            if isinstance(step, bool) or not isinstance(step, int) or not 0 <= step < len(chain):
+                raise ValueError(f"button {index + 1} has {len(chain)} step{'' if len(chain) == 1 else 's'}")
+            with self._lock:
+                self._drop_pending()
+            self._step(index, step, quiet=len(chain) == 1)
             return
-        if same(preset, self.current()) and self.control is not None:
-            self.control.toggle()
+        if len(chain) == 1:
+            with self._lock:
+                self._drop_pending()
+            self._step(index, 0, quiet=True)
             return
-        try:
-            self.apply(preset)
-        except ValueError as e:
-            log.warning("button %d: %s", index + 1, e)
-            self._say(f"Sorry, I can't play {self.label(preset)}.")
-            return
-        if self.control is not None:
-            self.control.play()
+        with self._lock:
+            k = self._next_step(index, chain)
+            self._drop_pending()
+            timer = threading.Timer(STEP_SETTLE_S, self._step_settled, args=(index, k))
+            timer.daemon = True
+            self._pending = (index, k, timer)
+            timer.start()
+        log.info("button %d pressed: step %d of %d", index + 1, k + 1, len(chain))
 
-    def _choose(self, index: int) -> None:
-        """The selector landed on a position: play it (nothing to toggle -- it's already
-        on if it's what's playing). An empty position just beeps."""
-        preset = self.presets[index]
-        log.info("selector %d: %s", index + 1, self.label(preset))
-        if preset is None:
-            self._clip(beep((440.0, 330.0)), "Button")
+    def _drop_pending(self) -> None:
+        if self._pending is not None:
+            self._pending[2].cancel()
+            self._pending = None
+
+    def _next_step(self, index: int, chain: list) -> int:
+        """Which step this press of a button with steps means: the one after the
+        last press (still settling), after the one that's playing, or after an
+        action it has just done; otherwise -- coming back to the button from
+        something else -- the step it was last on."""
+        import time as _time
+        n = len(chain)
+        if self._pending is not None and self._pending[0] == index:
+            return (self._pending[1] + 1) % n
+        now, last = self.current(), self._last
+        if last is not None and last[:2] == (self.bank, index) and last[2] < n \
+                and chain[last[2]]["kind"] in INSTANT and _time.monotonic() - last[3] < STEP_RESET_S:
+            return (last[2] + 1) % n
+        on = next((k for k, p in enumerate(chain) if same(p, now)), None)
+        if on is not None:
+            return (on + 1) % n
+        was = self._at.get((self.bank, index), 0)
+        return was if was < n and chain[was]["kind"] not in INSTANT else 0
+
+    def _step_settled(self, index: int, k: int) -> None:
+        with self._lock:
+            if self._pending is None or self._pending[:2] != (index, k):
+                return                       # (pressed again, or its steps were changed)
+            self._pending = None
+        if self.menu is not None and self.menu.active:
             return
+        self._step(index, k)
+
+    def _step(self, index: int, k: int, quiet: bool = False) -> None:
+        """Do a button's step k. quiet: no pips (a button with just the one thing)."""
+        import time as _time
+        chain = steps(self.presets[index])
+        if k >= len(chain):
+            return
+        preset = chain[k]
+        log.info("button %d%s: %s", index + 1, "" if len(chain) == 1 else f" step {k + 1}", self.label(preset))
+        self._at[(self.bank, index)] = k
+        self._last = (self.bank, index, k, _time.monotonic())
+        if not quiet and preset["kind"] not in INSTANT:      # (an action is heard anyway: its own beep or words)
+            self._clip(step_pips(k + 1), "Button")
+        self._play(preset, f"button {index + 1}")
+
+    def _play(self, preset: dict, what: str) -> None:
+        """Play a preset (tuning to it unless it's what's on already), or do it if it's an action."""
         if preset["kind"] in INSTANT:
             self._instant(preset)
             return
@@ -552,24 +668,31 @@ class Presets:
             try:
                 self.apply(preset)
             except ValueError as e:
-                log.warning("selector %d: %s", index + 1, e)
+                log.warning("%s: %s", what, e)
                 self._say(f"Sorry, I can't play {self.label(preset)}.")
                 return
         if self.control is not None:
             self.control.play()
 
+    def _choose(self, index: int) -> None:
+        """The selector landed on a position: play it (its first step: a switch can't
+        be pressed again). An empty position just beeps."""
+        chain = steps(self.presets[index])
+        log.info("selector %d: %s", index + 1, self.label(chain[0] if chain else None))
+        if not chain:
+            self._clip(beep((440.0, 330.0)), "Button")
+            return
+        self._play(chain[0], f"selector {index + 1}")
+
     def hold(self, index: int) -> None:
-        """A long press: keep what's playing now on this button."""
+        """A long press: just a press (a button is set from the page, so one held
+        too long can't wipe its steps). In the service menu, it answers the menu."""
         if self.menu is not None and self.menu.active:
             self.menu.press(index)
             return
         if self.selector:
-            return                           # (a switch has no hold: save from the page)
-        preset = self.set(index, self.current())
-        if not getattr(self.station, "dj_on", True):     # the DJ off: no words -- a "saved" sound instead
-            self._clip(beep((1320.0, 1760.0, 1320.0, 1760.0), 0.07), "Button")
-            return
-        self._say(f"Button {WORDS[index]}: {self.label(preset)}.")
+            return                           # (a switch has no hold)
+        self.press(index)
 
     def apply(self, preset: dict) -> None:
         """Play a (non-action) preset. ValueError if it can't be played here."""
