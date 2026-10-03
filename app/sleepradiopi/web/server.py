@@ -567,6 +567,7 @@ def make_handler(station: Station, output: Mp3Output, speaker=None,
             length = int(self.headers.get("Content-Length", 0))
             try:
                 if length > MAX_SETTINGS_BYTES:
+                    self._drain(length)
                     raise backup.BadSettings("that file is far too big to be a settings file")
                 try:
                     data = json.loads(self.rfile.read(length))
@@ -576,6 +577,23 @@ def make_handler(station: Station, output: Mp3Output, speaker=None,
                 self._error(str(e))
                 return
             self._apply_settings(data)
+
+        def _drain(self, length: int, most: int = 16 * 1024 * 1024) -> None:
+            """Read and throw away a body that's being refused. Answering while
+            the page is still sending makes the send fail (a broken pipe), and
+            the page then shows a lost connection instead of the reason. Past
+            `most`, give up on that and just close afterwards."""
+            left = min(length, most)
+            try:
+                while left > 0:
+                    chunk = self.rfile.read(min(left, 65536))
+                    if not chunk:
+                        break
+                    left -= len(chunk)
+            except OSError:
+                pass
+            if length > most:
+                self.close_connection = True
 
         def _backups(self, action: str) -> None:
             """The settings files the radio keeps (the desktop's Backups folder):
@@ -590,6 +608,7 @@ def make_handler(station: Station, output: Mp3Output, speaker=None,
                 if action == "upload":
                     length = int(self.headers.get("Content-Length", 0))
                     if length > MAX_SETTINGS_BYTES:
+                        self._drain(length)
                         raise backup.BadSettings("that file is far too big to be a settings file")
                     try:
                         data = json.loads(self.rfile.read(length))
