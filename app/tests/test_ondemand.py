@@ -288,3 +288,37 @@ def test_keeping_a_place_over_the_web(tmp_path: Path, monkeypatch) -> None:
         assert post("/api/ondemand/keep", {"path": "Thunderstorms", "keep": False}) == {"kept": []}
     finally:
         httpd.shutdown()
+
+
+def test_what_was_on_is_let_go_when_its_files_are_deleted(tmp_path: Path, monkeypatch) -> None:
+    """A deleted album, track or kept thing mustn't stay as "what's on": back to the show at the next rescan."""
+    import shutil
+    from sleepradiopi.playback import audiobooks as ab
+    monkeypatch.setattr(ab, "_probe", lambda p: [600_000, [], {"title": "", "author": "", "chapter": ""}])
+    st = _od_station(tmp_path)
+    od = tmp_path / "ondemand"
+    st.play_album(root="ondemand", folder="Classical/Beethoven Symphony 9")
+    st.reload_library({"ondemand"})
+    assert st.source["kind"] == "album"                      # still there: left alone
+    st.reload_library({"audiobooks", "jingles"})
+    assert st.source is not None
+    shutil.rmtree(od / "Classical")
+    st.reload_library({"music"})
+    assert st.source is not None                             # (the music was rescanned, not On demand)
+    st.reload_library({"ondemand"})
+    assert st.source is None
+
+    rain = "Thunderstorms/01 - Rain on a tin roof - 1 hour.mp3"
+    st.play_track("ondemand", rain, then="pause")            # one track on its own
+    assert st.source["kind"] == "playlist"
+    st.set_keep("Old radio shows/Hancock/Series 2", True)    # ...and a kept folder, then played: a book
+    (od / rain).unlink()
+    st.reload_library({"ondemand"})
+    assert st.source is None
+    st.play_album(root="ondemand", folder="Old radio shows/Hancock/Series 2")
+    assert st.source["kind"] == "book"
+    st.reload_library({"ondemand"})
+    assert st.source["kind"] == "book"
+    shutil.rmtree(od / "Old radio shows" / "Hancock" / "Series 2")
+    st.reload_library({"ondemand"})
+    assert st.source is None

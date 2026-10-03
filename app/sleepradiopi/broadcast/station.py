@@ -2451,12 +2451,40 @@ class Station:
             self._pending = deque(t for t in self._pending if t.path.exists())
             if self._opening is not None and not self._opening[2].path.exists():
                 self._opening = None
+        gone = self._source_gone(kinds)
+        if gone:                                 # what was on (or paused) has been deleted: back to the show
+            log.info("streaming: %s is no longer in the library", gone)
+            self.tune(None)
         if self._opening is None and not self.is_on_air:
             self._prepare_opening()
         log.info("library reloaded (%s): %d tracks, %d jingles, %d audiobooks", ", ".join(sorted(kinds)),
                  len(tracks), len(jingles), len(self.books.all()))
         return {"tracks": len(tracks), "jingles": self._jingle_count(), "books": len(self.books.all()),
                 "ondemand": len(ondemand)}
+
+    def _source_gone(self, kinds: set[str]) -> str | None:
+        """After a rescan: the name of what's playing instead of the show (a book,
+        an album, a folder, a track or playlist of tracks) if its files have all
+        gone -- deleted, or moved away -- else None. It would otherwise stay as
+        "what's on" until played, and then fail."""
+        src = self._source
+        if src is None:
+            return None
+        try:
+            if src["kind"] == "book":
+                kept = src["key"].startswith(KEPT)
+                if ("ondemand" if kept else "audiobooks") in kinds and self._book(src["key"]) is None:
+                    return src.get("title") or src["key"]
+            elif src["kind"] == "album" and src.get("root", "music") in kinds:
+                if self._album_by_folder(src["folder"], src.get("root", "music"), src.get("deep", False)) is None:
+                    return src.get("title") or src["folder"]
+            elif src["kind"] == "playlist" and kinds & {"music", "ondemand"}:
+                refs = src.get("refs") or []
+                if refs and not any(self._by_ref(*r) is not None for r in refs):
+                    return src.get("name") or "the playlist"
+        except (KeyError, TypeError, ValueError):
+            pass
+        return None
 
     def _jingle_count(self) -> int:
         """How many jingles there are: loaded only while jingles are on, so counted from

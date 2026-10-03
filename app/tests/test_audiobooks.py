@@ -255,3 +255,19 @@ def test_m4a_files_are_books_too(tmp_path: Path) -> None:
     assert [c.title for c in books["Bleak Expectations"].chapters] == ["Episode 1", "Episode 2"]
     assert 3500 < books["Bleak Expectations"].total_ms < 4500
     assert [c.title for c in books["Marked.m4a"].chapters] == ["An Unexpected Party", "Roast Mutton"]
+
+
+def test_a_deleted_book_isnt_left_as_whats_on(books_dir: Path, tmp_path: Path) -> None:
+    """Found on the radio: a book deleted while it was the last thing played stayed as the source."""
+    import shutil
+    books = tmp_path / "audiobooks"
+    shutil.copytree(books_dir, books)
+    st = _station(tmp_path, books)
+    st.tune({"kind": "book", "key": "Short Story.mp3"})
+    st.reload_library({"audiobooks"})
+    assert st.source["key"] == "Short Story.mp3"             # still there: left alone
+    (books / "Short Story.mp3").unlink()
+    st.reload_library({"ondemand"})
+    assert st.source is not None                             # (the books weren't rescanned)
+    st.reload_library({"audiobooks"})
+    assert st.source is None and st.books.get("Short Story.mp3") is None
