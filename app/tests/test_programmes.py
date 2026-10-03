@@ -430,6 +430,7 @@ def test_a_programme_that_starts_when_its_started(tmp_path, monkeypatch) -> None
     sched.play("Bedtime")                                    # 01:47
     s = sched.status()
     assert s["anytime"] is True and s["started"] == "01:47" and s["until"] == "02:07" and st.source["name"] == "BBC Radio 4"
+    assert s["next"] == "Rain at +0:30"
     assert [(w["on"].strftime("%H:%M"), w["off"].strftime("%H:%M")) for w in sched.spans] == [("01:52", "02:02")]
     clock.go(minutes=19); sched.tick()
     assert st.source["name"] == "BBC Radio 4"

@@ -418,7 +418,9 @@ class Scheduler:
                 "block_started": r["block_started"].strftime("%H:%M") if r.get("block_started") else None,
                 "until": r["ends"].strftime("%H:%M") if r["ends"] else None,
                 "waiting": r.get("waiting", False),
-                "next": (nxt["name"] + (f" at {nxt['at']}" if nxt["rule"] == "at" else "")) if nxt else None}
+                # (one with no time of day: "at +0:30", half an hour after it started)
+                "next": (nxt["name"] + ((f" at +{int(nxt['at'][:2])}:{nxt['at'][3:]}" if r["prog"].get("anytime") else f" at {nxt['at']}")
+                                        if nxt["rule"] == "at" else "")) if nxt else None}
 
     # --- the clock --------------------------------------------------------------------
 
