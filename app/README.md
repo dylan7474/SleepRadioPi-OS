@@ -684,7 +684,17 @@ The cards:
   it always does while the radio is its own hotspot, so it can still be
   found) — and **When switched on** — what the radio plays when it's
   powered (something that plays, not an action; empty: what was on last;
-  not used in programme mode). (The Buttons window
+  not used in programme mode).
+  **Backups** is a folder of saved settings kept on the radio itself
+  (`config/backup.py` `Store`: `backups/<name>.json` beside `config.json`,
+  up to 30): *Save the settings now* (with a name, or the date and time),
+  *Upload…* a settings file from the PC, *Download* one; drag one onto the
+  radio (or double-click it) to load it — the settings as they were are
+  kept first as *Before the last load*, so a load can be undone — or to the
+  Trash to delete it. **Voices** is on the desktop too: a voice dragged
+  onto **The DJ** becomes his voice (the radio restarts: only one voice
+  fits in a Zero's memory, which is also why the news can't have a voice
+  of its own there). (The Buttons window
   on the radio's back keeps only the day and night sets and their
   timetable. The phone remote has none of this: it's a remote control.) The key on the radio's front shows a small
   counter (3, or 2/3 while step two plays). With one thing on a button
@@ -1052,6 +1062,8 @@ everything but the page itself and the login needs the session cookie
 | `POST /api/buttons/key` | `{"button": 1-4, "down": bool}` — the page's button going down / up, through the real buttons' timers (tap, 1+4 for 5 s); one held over 30 s is let go |
 | `GET /api/buttons` | The four preset buttons (`steps`: each `preset`, `label`, `playing`; `step`: the one playing; and, for the step playing or else the first, `preset`, `label`, `playing`), `max_steps`, what's playing now as a preset, and the actions |
 | `POST /api/buttons` | `{"button": 1-4, "preset": {...} \| null, "bank"?: "day" \| "night"}` (bank: programme that set without swapping; `GET` has both in `sets`), `{"button", "steps": [{...}, ...]}` (up to six, stepped through by pressing it again), `{"button", "preset", "add": true}` (one more step on the end) or `{"button", "now": true, "add"?}` (what's playing, on it); a podcast preset is `{"kind": "podcast", "show", "title", "start": gid, "start_title"}` |
+| `GET /api/backups` | The settings files kept on the radio: `{"backups": [{"name", "saved", "bytes"}], "max"}`; `GET /api/backups/file?name=N` downloads one |
+| `POST /api/backups/save` / `/load` / `/delete` / `/upload?name=N` | `{"name"?}` keeps the settings as they are now (no name: the date and time) / `{"name"}` loads one (as `POST /api/settings`; the settings as they were are kept as "Before the last load") / `{"name"}` deletes one / a settings file as the body is kept (not loaded) |
 | `POST /api/buttons/slot` | `{"slot": "knob_long" \| "power_on", "preset": {...} \| null}` — what holding the knob does / what plays at switch-on (null: as it came); `GET /api/buttons` has them in `slots` |
 | `POST /api/buttons/press` | `{"button": 1-4, "step"?: 1-6}` — as if pressed on the case (a button with steps moves on one, and plays after 0.8 s); `step`: that one, at once |
 | `POST /api/radio/stations` | `{"stations": [...]}` — replace the saved list |

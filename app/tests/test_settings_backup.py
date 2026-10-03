@@ -20,6 +20,8 @@ class FakeStation:
     def status(self):
         return {"on_air": False}
 
+    def set_messages(self, messages): ...        # (a whole saved file sets these too)
+
 
 def _file(**settings):
     return {"format": backup.FORMAT, "version": 1, "settings": settings, "volume": None}
@@ -142,3 +144,52 @@ def test_web_load_rejects_a_bad_file_and_changes_nothing(radio) -> None:
             _load(base, body)
         assert err.value.code == 400 and "error" in json.load(err.value)
     assert conf.read_text() == before and not ctl.speaker.mono and not restarts
+
+
+def test_the_radio_keeps_saved_settings_and_loads_them_back(radio) -> None:
+    """The desktop's Backups folder: save now, list, load (undoable), take one to the PC, delete."""
+    base, ctl, conf, restarts = radio
+
+    def call(path, body=None, raw=None):
+        req = urllib.request.Request(base + path, data=raw if raw is not None else None if body is None else json.dumps(body).encode(),
+                                     method="GET" if body is None and raw is None else "POST")
+        try:
+            with urllib.request.urlopen(req) as r:
+                return r.status, json.load(r)
+        except urllib.error.HTTPError as e:
+            return e.code, json.load(e)
+
+    assert call("/api/backups")[1]["backups"] == []
+    ctl.set_volume(40)
+    code, d = call("/api/backups/save", {"name": "Quiet evenings"})
+    assert code == 200 and d["name"] == "Quiet evenings" and [b["name"] for b in d["backups"]] == ["Quiet evenings"]
+    assert call("/api/backups/save", {"name": "Quiet evenings"})[1]["name"] == "Quiet evenings (2)"   # (never over another)
+    assert call("/api/backups/save", {})[1]["name"][:2] == "20"                                       # (no name: the date)
+    for bad in ("../x", ".hidden", "a/b", "x" * 61):
+        assert call("/api/backups/save", {"name": bad})[0] == 400
+    ctl.set_volume(70)
+    ctl.set_mono(True)
+    code, d = call("/api/backups/load", {"name": "Quiet evenings"})
+    assert code == 200 and ctl.speaker.volume == 40 and not ctl.speaker.mono and not restarts
+    assert backup.BEFORE in [b["name"] for b in call("/api/backups")[1]["backups"]]
+    call("/api/backups/load", {"name": backup.BEFORE})                 # ...undone: as it was before the load
+    assert ctl.speaker.volume == 70 and ctl.speaker.mono
+    code, data = call("/api/backups/file?name=Quiet%20evenings")
+    assert code == 200 and data["volume"] == 40
+    code, d = call("/api/backups/upload?name=From%20the%20PC", raw=json.dumps(data).encode())
+    assert code == 200 and d["name"] == "From the PC" and ctl.speaker.volume == 70      # (kept, not loaded)
+    assert call("/api/backups/upload?name=Junk", raw=b"not json")[0] == 400
+    assert call("/api/backups/delete", {"name": "From the PC"})[0] == 200
+    assert call("/api/backups/delete", {"name": "From the PC"})[0] == 400
+    assert call("/api/backups/load", {"name": "Never saved"})[0] == 400
+    assert "From the PC" not in [b["name"] for b in call("/api/backups")[1]["backups"]]
+    store = backup.Store(conf.parent / "backups")
+    for i in range(backup.MAX_KEPT):
+        try:
+            store.save(data, f"Copy {i}")
+        except backup.BadSettings as e:
+            assert "delete one first" in str(e)
+            break
+    else:
+        assert False, "no limit"
+    assert len(store.list()) == backup.MAX_KEPT

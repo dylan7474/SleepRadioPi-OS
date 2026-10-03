@@ -137,7 +137,11 @@ software, and the case to print.
   (drop one thing in and a 3-second hold of the knob does that instead of
   saying the address) and **When switched on** (drop a station, theme,
   album or programme in and the radio starts with it; empty, it carries on
-  with what was on last). (The phone page is a remote control only.) There's no
+  with what was on last). **Backups** keeps saved settings on the radio
+  itself: save them now, drag one onto the radio to load it (the settings
+  as they were are kept, so a load can be undone), or to the Trash to
+  delete it. And a voice from **Voices** dragged onto **The DJ** becomes
+  his voice. (The phone page is a remote control only.) There's no
   hold-to-store on the case, so a long press can't wipe one. The same four are on the web page's front.
   There are **two sets of the four, day and night**: hold **buttons 2 and
   3** together for a second to swap (or use the page's ☀ / ☾ switch), and

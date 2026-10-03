@@ -555,6 +555,8 @@ const SLOT = { knob_long: mk({ id: "slot:knob_long", kind: "button", slot: "knob
                power_on: mk({ id: "slot:power_on", kind: "button", slot: "power_on", title: "When switched on", sym: "⏻" }) };
 const NOISE_HUE = { white: 200, pink: 330, brown: 25, deep: 12, blue: 215, violet: 275, ambient: 160 };
 const noiseObj = (k, v) => mk({ id: "nz:" + k, kind: "noise", colour: k, title: (v?.label || k[0].toUpperCase() + k.slice(1)) + " noise", about: v?.about || "", h: NOISE_HUE[k] ?? 200, sym: "≈" });
+// saved settings the radio keeps: each a thing (drag one onto the radio to load it)
+const BACKUPS = mk({ id: "box:backups", kind: "folder", title: "Backups", box: "backups", kids: [], sym: "⇅" });
 const NOISE_BOX = mk({ id: "box:noise", kind: "folder", title: "Noise", box: "noise", kids: [], sym: "≈" });
 // ...kept in a Buttons folder on the desktop: the day set's, then the night set's
 const BUTTONS_BOX = mk({ id: "box:buttons", kind: "folder", title: "Buttons", box: "buttons", sym: "4", loaded: true,
@@ -615,6 +617,9 @@ async function loadFolder(f) {
     f.kids = d.stations.map(s => stationObj(s).id);
   } else if (f.box === "buttons") {
     await loadButtons();
+  } else if (f.box === "backups") {
+    const d = await api("/api/backups");
+    f.kids = d.backups.map(b => mk({ id: "bk:" + b.name, kind: "backup", name: b.name, title: b.name, saved: b.saved, h: 170, sym: "⇅" }).id);
   } else if (f.box === "noise") {
     const d = await api("/api/status");
     f.kids = Object.entries(d.speaker?.noise?.kinds || {}).map(([k, v]) => noiseObj(k, v).id);
@@ -781,7 +786,7 @@ function timeline(p) {
 const $ = id => document.getElementById(id);
 const el = (tag, props = {}, ...kids) => { const e = Object.assign(document.createElement(tag), props); e.append(...kids.filter(k => k != null)); return e; };
 const KIND = { folder: "Folder", album: "Album", track: "Track", station: "Station", podcast: "Podcast", episode: "Episode", book: "Audiobook",
-               playlist: "Playlist", programme: "Programme", button: "Button", noise: "Noise", list: "Theme", jingle: "Jingle", message: "Message", action: "Action", person: "Birthday", voice: "Voice", show: "The show", trash: "Trash", panel: "Setting", dj: "The DJ", note: "Messages", calendar: "Birthdays", artistref: "Artist" };
+               playlist: "Playlist", programme: "Programme", button: "Button", noise: "Noise", backup: "Saved settings", list: "Theme", jingle: "Jingle", message: "Message", action: "Action", person: "Birthday", voice: "Voice", show: "The show", trash: "Trash", panel: "Setting", dj: "The DJ", note: "Messages", calendar: "Birthdays", artistref: "Artist" };
 const TINT = { album: 30, track: 45, station: 8, podcast: 275, episode: 265, book: 150, playlist: 215, programme: 40, list: 195, show: 40, folder: 40 };
 function wave(seed) {
   let x = hue(seed), bars = "";
@@ -800,6 +805,7 @@ const FOLDER_PIC = {
   lists: '<circle cx="9" cy="8" r="3"/><path d="M3.5 19a5.5 5.5 0 0 1 11 0"/><circle cx="16.5" cy="9" r="2.4"/><path d="M15.5 14.2a4.6 4.6 0 0 1 5.5 4.8"/>',
   artists: '<circle cx="9" cy="8" r="3"/><path d="M3.5 19a5.5 5.5 0 0 1 11 0"/><circle cx="16.5" cy="9" r="2.4"/><path d="M15.5 14.2a4.6 4.6 0 0 1 5.5 4.8"/>',
   actions: '<path d="M13 2.5 5 13.5h6l-1 8 8-11h-6z"/>',
+  backups: '<path d="M7 4v13M3.5 13.5 7 17l3.5-3.500M17 20V7M13.500 10.500 17 7l3.500 3.500"/>',
   noise: '<path d="M3 12c1.5-5 3-5 4.5 0s3 5 4.5 0 3-5 4.5 0 3 5 4.5 0"/>',
   slot_knob_long: '<circle cx="12" cy="12" r="8"/><path d="M12 12V6.5"/>',
   slot_power_on: '<path d="M12 3.5v8"/><path d="M7 6.5a7.5 7.5 0 1 0 10 0"/>',
@@ -825,6 +831,7 @@ function glyph(o) {
     case "playlist": g.className += " g-playlist"; g.append(el("i"), el("i"), el("i")); break;
     case "button": if (o.slot) { g.className += " g-folder"; g.innerHTML = svgPic(FOLDER_PIC["slot_" + o.slot]); break; }
       g.className += " g-folder g-bfolder" + (o.bank === "night" ? " night" : "") + (btnOf(o)?.playing ? " on" : ""); g.textContent = o.n + 1; break;
+    case "backup": g.className += " g-panel"; g.textContent = "⇅"; break;
     case "noise": g.className += " g-panel"; g.textContent = "≈"; if (noiseOn(o)) g.style.boxShadow = "0 0 0 3px var(--amber), 0 4px 10px var(--shadow)"; break;
     case "programme": {
       g.className += " g-programme";
@@ -863,6 +870,7 @@ function subOf(o) {
     case "button": { const b = btnOf(o), n = stepsOf(b).length;
       return !n ? (o.slot === "knob_long" ? "Says the address" : o.slot === "power_on" ? "What was on last" : "Empty") : n === 1 ? b.label : `${n} steps`; }
     case "noise": return noiseOn(o) ? "On now" : o.about;
+    case "backup": { const d = new Date(o.saved); return isNaN(d) ? "" : `${d.getDate()} ${MONN[d.getMonth()]} ${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`; }
     case "programme": {
       const tl = timeline(o), s0 = toMin(o.start);
       const times = !o.blocks.length && o.switches?.length ? o.switches.map(w => `${SWITCH_WORD[w.what]} ${hhmm(s0 + w.from)}–${hhmm(s0 + w.from + w.min)}`).join(", ")
@@ -911,7 +919,7 @@ function iconEl(o, ctx) {
   d.dataset.id = o.id;
   if (ctx.alias) d.classList.add("alias");
   if (picked.has(keyOf({ id: o.id, ...ctx }))) d.classList.add("sel");
-  if (["folder", "playlist", "programme", "trash", "list", "button"].includes(o.kind)) { d.dataset.drop = "icon"; d.dataset.target = o.id; }
+  if (["folder", "playlist", "programme", "trash", "list", "button", "dj"].includes(o.kind)) { d.dataset.drop = "icon"; d.dataset.target = o.id; }
   const sub = subOf(o);
   d.append(glyph(o), el("div", { className: "lbl", textContent: o.title }));
   if (sub) d.append(el("div", { className: "sub", textContent: sub }));
@@ -924,7 +932,7 @@ function iconEl(o, ctx) {
 function listEl(o, ctx) {           // a folder's list view: one row, which drags, drops and opens as its icon does
   const d = el("li", { className: "row lrow" + (picked.has(keyOf({ id: o.id, ...ctx })) ? " sel" : ""), tabIndex: 0 });
   d.dataset.id = o.id;
-  if (["folder", "playlist", "programme", "trash", "list", "button"].includes(o.kind)) { d.dataset.drop = "icon"; d.dataset.target = o.id; }
+  if (["folder", "playlist", "programme", "trash", "list", "button", "dj"].includes(o.kind)) { d.dataset.drop = "icon"; d.dataset.target = o.id; }
   const sub = subOf(o);
   d.append(el("span", { className: "gi" }, glyph(o)), el("b", { textContent: o.title }),
            el("span", { className: "det", textContent: sub }), el("span", { className: "size", textContent: bytesText(o.bytes) }),
@@ -1016,11 +1024,11 @@ function loadDesk() {
     for (const p of s.icons) { if (!O[p.id] && p.snap) mk({ ...p.snap, kids: [], items: [], eps: [], blocks: [] }); if (O[p.id]) desk.push({ id: p.id, x: p.x, y: p.y, alias: !!p.alias }); }
     radioPos = s.radio || null;
     desk = desk.filter(p => ![SHOW.id, POWER_ON.id, NOTES.id, JINGLES.id].includes(p.id));   // (jingles and messages live in each theme)
-    for (const f of [ACTIONS_BOX, LISTS, BUTTONS_BOX, NOISE_BOX, SLOT.knob_long, SLOT.power_on])      // (new since the layout was saved: in the first free spot)
+    for (const f of [ACTIONS_BOX, LISTS, BUTTONS_BOX, NOISE_BOX, SLOT.knob_long, SLOT.power_on, BACKUPS, VOICES])      // (new since the layout was saved: in the first free spot)
       if (!desk.some(p => p.id === f.id)) desk.push({ id: f.id, ...freeSpot() });
   }
   if (!desk.length) {
-    [MUSIC, ONDEMAND, BOOKS, PODCASTS, STATIONS, PLAYLISTS, PROGRAMMES, LISTS, ACTIONS_BOX, BUTTONS_BOX, NOISE_BOX, SLOT.knob_long, SLOT.power_on].forEach((f, i) => desk.push({ id: f.id, x: 18 + Math.floor(i / 8) * 122, y: 14 + (i % 8) * 92 }));
+    [MUSIC, ONDEMAND, BOOKS, PODCASTS, STATIONS, PLAYLISTS, PROGRAMMES, LISTS, ACTIONS_BOX, BUTTONS_BOX, NOISE_BOX, SLOT.knob_long, SLOT.power_on, BACKUPS, VOICES].forEach((f, i) => desk.push({ id: f.id, x: 18 + Math.floor(i / 8) * 122, y: 14 + (i % 8) * 92 }));
     [DJ, BDAYS].forEach((o, i) => desk.push({ id: o.id, x: 140, y: 14 + i * 100, alias: false }));
   }
 }
@@ -1236,6 +1244,33 @@ async function saveSteps(i, steps, said, bank = shownBank()) {
         if (said) toast(said); }
   catch (e) { toast("Not changed: " + e.message + "."); }
 }
+// a voice dropped on The DJ: his voice from now on (the radio restarts: only one fits in its memory)
+function useVoice(o) {
+  if (o.current) return toast(`${o.title} is the DJ's voice already.`);
+  ask(`Make “${o.title}” the DJ's voice? The radio restarts to load it: about half a minute.`, "Use this voice", async () => {
+    try { const d = await api("/api/dj", { voice: o.name }); await loadFolder(VOICES).catch(() => {}); drawDesk();
+          toast(d.restarting ? `The DJ's voice is ${o.title}: the radio is restarting.` : `The DJ's voice will be ${o.title} when the radio next starts.`); }
+    catch (e) { toast("Not changed: " + e.message + "."); } });
+}
+// saved settings (the Backups folder): keep the settings as they are now, load one back, delete one
+async function backupsChanged(said) { await loadFolder(BACKUPS).catch(() => {}); drawDesk(); if (said) toast(said); }
+async function saveBackup(name) {
+  try { const d = await api("/api/backups/save", name ? { name } : {}); await backupsChanged(`The settings as they are now are saved as “${d.name}”.`); }
+  catch (e) { toast("Not saved: " + e.message + "."); }
+}
+function loadBackup(o) {
+  ask(`Load “${o.title}”? The radio's settings go back to what was saved then. How they are now is kept as “Before the last load”, so you can go back.`, "Load it", async () => {
+    try { const d = await api("/api/backups/load", { name: o.name });
+          await backupsChanged(d.restarting ? `“${o.title}” loaded: the radio restarts to take it up.` : `“${o.title}” loaded${d.changed?.length ? ": " + d.changed.length + " settings changed" : ": nothing was different"}.`);
+          await loadButtons(); if (bStatus) gotButtons(bStatus); poll(); }
+    catch (e) { toast("Not loaded: " + e.message + "."); } });
+}
+async function uploadBackup(file) {
+  try { const r = await fetch("/api/backups/upload?name=" + encodeURIComponent(file.name.replace(/\.json$/i, "").replace(/[^\w .,()'&+-]/g, " ").trim().slice(0, 60)), { method: "POST", body: file });
+        const d = await r.json().catch(() => ({})); if (!r.ok) throw new Error(d.error || "that file wasn't taken");
+        await backupsChanged(`“${d.name}” is in Backups. Drag it onto the radio to load it.`); }
+  catch (e) { toast("Not kept: " + e.message + "."); }
+}
 // a button as a container (BTNS): what the radio says is on it, and its steps as things on the desktop
 const btnOf = o => o.slot ? bStatus?.slots?.[o.slot] : (bStatus?.sets?.[o.bank] || (o.bank === bStatus?.bank ? buttons : []))[o.n];
 const noiseOn = o => !!S?.speaker?.noise?.on && S.speaker.noise.kind === o.colour;
@@ -1409,6 +1444,7 @@ async function open(id) {
   if (!o) return;
   if (["track", "station", "episode", "show", "book"].includes(o.kind)) return play(o);
   if (o.kind === "dj") return open(PANEL.dj.id);
+  if (o.kind === "backup") return loadBackup(o);
   if (o.kind === "action" || o.kind === "jingle" || o.kind === "noise") return play(o);   // (do it now; drag it to keep it on a button)
   if (o.kind === "panel" && o.key === "library") return open(LISTS.id);   // (each theme has its jingles and messages)
   if (o.kind === "panel" && o.key === "voices") return open(VOICES.id);
@@ -1620,10 +1656,24 @@ function folderView(o, box, win) {
     const up = el("input", { type: "file", hidden: true, accept: ".tar.bz2,.tar.gz,.zip" });
     up.onchange = () => { const f = up.files[0]; up.value = ""; if (f) uploadVoice(f); };
     tools.append(...[o.data && !o.data.has_standard ? T("Download the standard voice", async () => { try { await api("/api/voices/standard", {}); toast("Downloading the standard voice onto the radio…"); } catch (e) { toast(e.message); } }) : null,
-      T("Upload a voice…", () => up.click()), up, el("span", { className: "note", textContent: "Double-click a voice to make it the DJ's (the radio restarts) · drop a voice archive here to install it" })].filter(Boolean));
+      T("Upload a voice…", () => up.click()), up, el("span", { className: "note", textContent: "Drag a voice onto The DJ to make it his (the radio restarts), or double-click it · drop a voice archive here to install it" })].filter(Boolean));
   }
   else if (o.box === "buttons") tools.append(T("Day and night…", () => open(PANEL.buttons.id)),
     el("span", { className: "note", textContent: `The radio's buttons: its day set and its night set (in use now: ${bStatus?.bank || "day"}) · drop things onto one · open one to put them in order or take them off · drag one button onto another to swap them` }));
+  else if (o.box === "backups") {
+    const up = el("input", { type: "file", hidden: true, accept: ".json,application/json" });
+    up.onchange = () => { const f = up.files[0]; up.value = ""; if (f) uploadBackup(f); };
+    tools.append(T("Save the settings now", () => { win.naming = !win.naming; drawDesk(); }, "primary"), T("Upload…", () => up.click()), up,
+      T("Download", () => { const one = selectedIn(o); if (one?.kind !== "backup") return toast("Click one first, then Download.");
+        const a = el("a", { href: "/api/backups/file?name=" + encodeURIComponent(one.name), download: "" }); document.body.append(a); a.click(); a.remove(); }));
+    if (win.naming) {
+      const name = el("input", { type: "text", placeholder: "A name (or leave it: today's date)", id: "bk-name", maxLength: 60, style: "background:var(--win);border:1px solid var(--line);border-radius:6px;padding:3px 7px;width:15em" });
+      const ok = T("Save", () => { win.naming = false; saveBackup(name.value.trim()); }, "primary");
+      name.onkeydown = e => { if (e.key === "Enter") ok.click(); };
+      tools.append(name, ok);
+      setTimeout(() => name.focus(), 0);
+    } else tools.append(el("span", { className: "note", textContent: "Your buttons, themes, playlists, programmes, stations, the DJ, the EQ… never Wi-Fi passwords · drag one onto the radio (or double-click it) to load it · to the Trash to delete it" }));
+  }
   else if (o.box === "noise") tools.append(T("Balance…", () => open(PANEL.noise.id)),
     el("span", { className: "note", textContent: "Double-click a colour to switch it on over what's playing (again: off) · drag one onto a button, or onto the knob" }));
   else if (o.box === "actions") tools.append(el("span", { className: "note", textContent: "Drag an action onto a button on the radio; the time, the pips, the news and the sleep timer can go into programmes too" }));
@@ -2108,7 +2158,9 @@ const UI = {
       f.onchange = () => { const file = f.files[0]; if (!file) return; act(async () => {
         const r = await fetch("/api/settings", { method: "POST", body: file }); const d = await r.json().catch(() => ({}));
         if (!r.ok) throw new Error(d.error || "that file wasn't taken"); toast(d.restarting ? "Settings loaded: the radio restarts to take them up." : `Settings loaded${d.changed?.length ? ": " + d.changed.length + " changed" : ""}.`); }); };
-      return [grp("Save and load", line(sbtn("Save settings", () => { const a = el("a", { href: "/api/settings", download: "" }); document.body.append(a); a.click(); a.remove(); }), sbtn("Load settings…", () => f.click()), f),
+      return [grp("Kept on the radio", help("The Backups folder on the desktop keeps saved settings on the radio itself: save them now, drag one onto the radio to load it, or to the Trash to delete it."),
+          line(sbtn("Open the Backups folder", () => open(BACKUPS.id), "primary"))),
+        grp("Save and load a file", line(sbtn("Save settings", () => { const a = el("a", { href: "/api/settings", download: "" }); document.body.append(a); a.click(); a.remove(); }), sbtn("Load settings…", () => f.click()), f),
         help("The file has your buttons, lists, playlists, programmes, stations, podcasts, the DJ, the EQ… never Wi-Fi passwords or keys.")),
         grp("Start again", help("To put every setting back as it came (keeping your music, books and voices): hold buttons 1 and 4 on the radio for 15 seconds, then choose 4."))];
     },
@@ -2971,12 +3023,14 @@ async function drop(src, target, ev) {
     if (o.kind === "panel") return open(o.id);
     if (o.kind === "person") return api("/api/birthdays/hear", o.b).then(() => toast(`The DJ is wishing ${o.title} a happy birthday.`)).catch(e => toast(e.message));
     if (o.kind === "voice") return open(o.id);
+    if (o.kind === "backup") return loadBackup(o);
     if (o.kind === "note" || o.kind === "message") return api("/api/messages/hear", { text: o.text }).then(() => toast(`The DJ is saying “${o.title}”.`)).catch(e => toast(e.message));
     return play(o);
   }
   if (kind === "preset") return setPreset(+target.dataset.n, o);
   const dest = O[target.dataset.target];
   if (!dest) return;
+  if (dest.kind === "dj") return o.kind === "voice" ? useVoice(o) : toast("The DJ takes a voice: drag one from the Voices folder.");
   if (dest.kind === "button") {                      // into a button: its next step, or where it was dropped among them
     const at = kind === "bstep" ? +target.dataset.k : null;
     if (src.parent === dest.id) {                    // within the button: to that place (dropped below the last one: to the end)
@@ -3154,6 +3208,8 @@ function trash(src) {
     return toast(`“${o.title}” stays on the desktop.`);
   }
   const from = O[src.parent];
+  if (o.kind === "backup") return ask(`Delete the saved settings “${o.title}” for good?`, "Delete for good", async () => {
+    try { await api("/api/backups/delete", { name: o.name }); desk = desk.filter(p => p.id !== o.id); saveDesk(); await backupsChanged(`Deleted “${o.title}”.`); } catch (e) { toast("Not deleted: " + e.message + "."); } });
   if (from?.kind === "button") {                      // off the button (the thing itself stays on the radio)
     const was = stepsOf(btnOf(from));
     return gone(`Took “${o.title}” off ${from.title}.`, async () => { await saveBox(from, was.filter((_, i) => i !== src.index));

@@ -5,6 +5,11 @@ from config.json plus the speaker's volume. Load settings sends such a file
 back -- to restore a radio after its card is re-flashed, or to copy the
 settings to a second radio.
 
+The radio keeps such files itself too (Store: the desktop's Backups folder),
+in a "backups" folder beside config.json: saved with a name, loaded back,
+deleted, or taken to the PC. Before one is loaded, the settings as they are
+go into "Before the last load", so a load can be undone.
+
 A radio's own set-up (where its music and voices are, its web port, its sound
 card and pins) isn't in the file, and loading never changes it: it belongs
 to that radio, and a wrong value could stop the station starting. Everything
@@ -14,6 +19,7 @@ in a loaded file is checked before any of it is written.
 from __future__ import annotations
 
 import json
+import re
 import time
 import types
 import typing
@@ -200,3 +206,68 @@ def apply(config_file: Path, settings: dict) -> set[str]:
         Settings(**{k: v for k, v in conf.items() if k in {f.name for f in fields(Settings)}})
         write_atomic(config_file, json.dumps(conf, indent=2) + "\n")
     return changed
+
+
+MAX_KEPT = 30                       # saved settings the radio keeps
+BEFORE = "Before the last load"     # the settings as they were, kept when one is loaded
+
+
+class Store:
+    """Saved settings kept on the radio: one <name>.json each, in a folder."""
+
+    def __init__(self, folder: Path) -> None:
+        self.folder = folder
+
+    @staticmethod
+    def name(name) -> str:
+        """A name that's safe as a file's (BadSettings if not)."""
+        if not isinstance(name, str):
+            raise BadSettings("its name must be text")
+        name = " ".join(name.split())
+        if not name or len(name) > 60 or name.startswith(".") or not re.fullmatch(r"[\w .,()'&+-]+", name):
+            raise BadSettings("a name is up to 60 letters, numbers, spaces and . , ( ) ' & + -")
+        return name
+
+    def _path(self, name) -> Path:
+        return self.folder / (self.name(name) + ".json")
+
+    def list(self) -> list[dict]:
+        """What's kept, newest first: [{"name", "saved", "bytes"}]."""
+        out = []
+        for p in self.folder.glob("*.json") if self.folder.is_dir() else ():
+            try:
+                st = p.stat()
+                out.append({"name": p.stem, "saved": time.strftime("%Y-%m-%dT%H:%M:%S", time.localtime(st.st_mtime)),
+                            "bytes": st.st_size, "_t": st.st_mtime})
+            except OSError:
+                continue
+        out.sort(key=lambda b: b.pop("_t"), reverse=True)
+        return out
+
+    def save(self, data: dict, name=None, replace: bool = False) -> str:
+        """Keep these settings (an export()) under a name; without one, the date
+        and time. A name that's taken gets a number, unless replace. Returns the name."""
+        parse(data)                                   # (only ever a file that could be loaded back)
+        name = self.name(name if name else time.strftime("%Y-%m-%d %H.%M"))
+        taken = {b["name"].lower() for b in self.list()}
+        if not replace:
+            base, n = name, 2
+            while name.lower() in taken:
+                name, n = f"{base} ({n})", n + 1
+        if name.lower() not in taken and len(taken) >= MAX_KEPT:
+            raise BadSettings(f"the radio keeps up to {MAX_KEPT}: delete one first")
+        self.folder.mkdir(parents=True, exist_ok=True)
+        write_atomic(self._path(name), json.dumps(data, indent=2) + "\n")
+        return name
+
+    def read(self, name) -> dict:
+        try:
+            return json.loads(self._path(name).read_text())
+        except (OSError, ValueError):
+            raise BadSettings(f"there's no saved settings file called {name!r}") from None
+
+    def delete(self, name) -> None:
+        try:
+            self._path(name).unlink()
+        except OSError:
+            raise BadSettings(f"there's no saved settings file called {name!r}") from None

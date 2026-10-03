@@ -77,6 +77,7 @@ def make_handler(station: Station, output: Mp3Output, speaker=None,
                  config_file: Path | None = None, announcer=None, voice_jobs=None, updates=None,
                  presets=None, directory=None, media=None, lamps=None):
     auth = Auth(config_file)
+    backups = backup.Store(config_file.parent / "backups") if config_file is not None else None
     open_paths = {"/", "/index.html", "/desktop", "/classic", "/api/auth", "/api/login", "/analyser", "/analyser/", "/analyser/index.html"}
 
     _held: dict = {}                  # the page's buttons held down: keycode -> auto let-go timer
@@ -226,6 +227,14 @@ def make_handler(station: Station, output: Mp3Output, speaker=None,
                 self._send(json.dumps(status).encode(), "application/json")
             elif path == "/api/settings" and config_file is not None:
                 self._save_settings()
+            elif path == "/api/backups" and config_file is not None:
+                self._send(json.dumps({"backups": backups.list(), "max": backup.MAX_KEPT}).encode(), "application/json")
+            elif path == "/api/backups/file" and config_file is not None:
+                try:
+                    name = backups.name(parse_qs(urlparse(self.path).query).get("name", [""])[0])
+                    self._send_settings(backups.read(name), f"{name}.json")
+                except backup.BadSettings as e:
+                    self._error(str(e))
             elif path == "/api/birthdays":
                 self._send(json.dumps(self._birthdays_state()).encode(), "application/json")
             elif path == "/api/messages":
@@ -411,6 +420,8 @@ def make_handler(station: Station, output: Mp3Output, speaker=None,
                 self._speaker()
             elif path == "/api/settings" and config_file is not None:
                 self._load_settings()
+            elif path.startswith("/api/backups/") and config_file is not None:
+                self._backups(path.rsplit("/", 1)[1])
             elif path == "/api/knob" and speaker is not None:
                 self._knob()
             elif path == "/api/station":
@@ -525,11 +536,13 @@ def make_handler(station: Station, output: Mp3Output, speaker=None,
         def _save_settings(self) -> None:
             """GET /api/settings: the settings as a file to download."""
             data = backup.export(config_file, speaker.volume if speaker is not None else None)
+            self._send_settings(data, f'sleepradio-settings-{time.strftime("%Y-%m-%d")}.json')
+
+        def _send_settings(self, data: dict, filename: str) -> None:
             body = (json.dumps(data, indent=2) + "\n").encode()
             self.send_response(200)
             self.send_header("Content-Type", "application/json")
-            self.send_header("Content-Disposition",
-                             f'attachment; filename="sleepradio-settings-{time.strftime("%Y-%m-%d")}.json"')
+            self.send_header("Content-Disposition", f'attachment; filename="{filename}"')
             self.send_header("Content-Length", str(len(body)))
             self.send_header("Cache-Control", "no-store")
             self.end_headers()
@@ -548,14 +561,61 @@ def make_handler(station: Station, output: Mp3Output, speaker=None,
                     data = json.loads(self.rfile.read(length))
                 except ValueError:
                     raise backup.BadSettings("this isn't a Sleep Radio settings file") from None
+            except backup.BadSettings as e:
+                self._error(str(e))
+                return
+            self._apply_settings(data)
+
+        def _backups(self, action: str) -> None:
+            """The settings files the radio keeps (the desktop's Backups folder):
+            POST /api/backups/save {"name"?} (the settings as they are now; no
+            name: the date and time), /delete {"name"}, /load {"name"} (as
+            POST /api/settings does; the settings as they were are kept as
+            "Before the last load"), /upload?name=N with a settings file as the
+            body (kept, not loaded). GET /api/backups lists them;
+            /api/backups/file?name=N downloads one."""
+            now = lambda: backup.export(config_file, speaker.volume if speaker is not None else None)
+            try:
+                if action == "upload":
+                    length = int(self.headers.get("Content-Length", 0))
+                    if length > MAX_SETTINGS_BYTES:
+                        raise backup.BadSettings("that file is far too big to be a settings file")
+                    try:
+                        data = json.loads(self.rfile.read(length))
+                    except ValueError:
+                        raise backup.BadSettings("this isn't a Sleep Radio settings file") from None
+                    name = backups.save(data, parse_qs(urlparse(self.path).query).get("name", [""])[0] or None)
+                else:
+                    body = self._body()
+                    if not isinstance(body, dict):
+                        raise backup.BadSettings("send a JSON object")
+                    if action == "save":
+                        name = backups.save(now(), body.get("name"))
+                    elif action == "delete":
+                        name = backups.name(body.get("name"))
+                        backups.delete(name)
+                    elif action == "load":
+                        name = backups.name(body.get("name"))
+                        data = backups.read(name)
+                        backup.parse(data)
+                        if name != backup.BEFORE:
+                            backups.save(now(), backup.BEFORE, replace=True)
+                        self._apply_settings(data)
+                        return
+                    else:
+                        self.send_error(404)
+                        return
+            except (backup.BadSettings, ValueError, TypeError) as e:
+                self._error(str(e))
+                return
+            self._send(json.dumps({"ok": True, "name": name, "backups": backups.list()}).encode(), "application/json")
+
+        def _apply_settings(self, data: dict) -> None:
+            """Take up a settings file's contents (already read): see _load_settings."""
+            try:
                 settings, volume = backup.parse(data)
             except backup.BadSettings as e:
-                body = json.dumps({"error": str(e)}).encode()
-                self.send_response(400)
-                self.send_header("Content-Type", "application/json")
-                self.send_header("Content-Length", str(len(body)))
-                self.end_headers()
-                self.wfile.write(body)
+                self._error(str(e))
                 return
             try:
                 changed = backup.apply(config_file, settings)     # before the live ones save theirs
