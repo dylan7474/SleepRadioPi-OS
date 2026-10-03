@@ -1,8 +1,8 @@
 """Preset buttons: four buttons on the case, like a car radio's.
 
 A short press plays what the button holds -- the show (all artists, one
-artist or one of your lists), an internet radio station, or an album
-straight through -- or does an action: say the time, read the news now,
+artist or one of your lists), an internet radio station, an album
+straight through, or one track on its own (then the radio pauses) -- or does an action: say the time, read the news now,
 a sleep time (5 to 90 minutes), or say the radio's address. A button only ever plays:
 pausing is the knob's job. The desktop page sets them (drag things onto a
 button, or the Buttons window); there's no hold-to-store on the case.
@@ -107,6 +107,15 @@ def validate(preset) -> dict | None:
         if preset.get("deep") is True:
             out["deep"] = True
         return out
+    if kind == "track":                                       # one song or piece (a long one from On demand, say)
+        path = preset.get("path")
+        if not isinstance(path, str) or not path.strip("/") or len(path) > 1000 or ".." in path.split("/"):
+            raise ValueError("a track button needs its file")
+        if preset.get("root", "music") not in ("music", "ondemand"):
+            raise ValueError("a track is in music or ondemand")
+        return {"kind": "track", "root": preset.get("root", "music"), "path": path.strip("/"),
+                "title": _text(preset.get("title"), "track title") or Path(path).stem,
+                "artist": _text(preset.get("artist"), "artist") or ""}
     if kind == "programme":
         return {"kind": "programme", "name": _text(preset.get("name"), "programme", True)}
     if kind == "playlist":
@@ -143,7 +152,7 @@ def validate(preset) -> dict | None:
     if kind == "birthday":
         from sleepradiopi.broadcast import birthdays
         return {"kind": "birthday", **birthdays.validate([{k: preset.get(k) for k in ("name", "day", "month", "year") if preset.get(k) is not None}])[0]}
-    raise ValueError("a button holds the show, a radio station, an album, a playlist, a programme, an audiobook, a podcast, "
+    raise ValueError("a button holds the show, a radio station, an album, a track, a playlist, a programme, an audiobook, a podcast, "
                      "an action, a noise, a message, a jingle or a birthday")
 
 
@@ -235,7 +244,7 @@ def label(preset: dict | None, station_name: Callable[[dict], str] | None = None
     kind = preset["kind"]
     if kind == "radio":
         return preset["name"]
-    if kind == "album":
+    if kind in ("album", "track"):
         return f"{preset['title']} — {preset['artist']}" if preset["artist"] else preset["title"]
     if kind == "book":
         return preset["title"] or preset["key"]
@@ -278,6 +287,8 @@ def same(a: dict | None, b: dict | None) -> bool:
     if a["kind"] == "album":
         return (a["folder"], a.get("root", "music"), a.get("deep", False)) == \
             (b["folder"], b.get("root", "music"), b.get("deep", False))
+    if a["kind"] == "track":
+        return (a["root"], a["path"]) == (b["root"], b["path"])
     if a["kind"] == "book":
         return a["key"] == b["key"]
     if a["kind"] == "playlist":
@@ -405,9 +416,13 @@ class Presets:
         return changed
 
     def rename_refs(self, old_root: str, old: str, new_root: str, new: str) -> bool:
-        """A folder was moved: album buttons that held it (or something in it) follow it."""
+        """A folder was moved: album buttons that held it (or something in it) follow it,
+        and so do the buttons for tracks in it."""
         changed = False
         for p in self._every():
+            if p["kind"] == "track" and p["root"] == old_root and p["path"].startswith(old + "/"):
+                p["path"], p["root"] = new + p["path"][len(old):], new_root
+                changed = True
             if p["kind"] == "album" and p.get("root", "music") == old_root and (p["folder"] == old or p["folder"].startswith(old + "/")):
                 p["folder"] = new + p["folder"][len(old):]
                 if new_root == "music":
@@ -433,6 +448,11 @@ class Presets:
         if src is not None and src["kind"] == "book":
             return validate({"kind": "book", "key": src["key"], "title": src.get("title", "")})
         if src is not None and src["kind"] == "playlist":
+            refs = src.get("refs") or []          # one track on its own (not a playlist of yours with one song): that track
+            if len(refs) == 1 and src["name"].lower() not in {p["name"].lower() for p in getattr(self.station, "playlists", [])}:
+                t = self.station._by_ref(*refs[0]) if hasattr(self.station, "_by_ref") else None
+                return validate({"kind": "track", "root": refs[0][0], "path": refs[0][1], "title": src["name"][:MAX_TEXT],
+                                 "artist": (getattr(t, "artist", "") or "")[:MAX_TEXT]})
             return validate({"kind": "playlist", "name": src["name"], "shuffle": src.get("shuffle", False)})
         if src is not None and src["kind"] == "album":
             return validate({"kind": "album", "folder": src["folder"], "title": src["title"],
@@ -836,6 +856,8 @@ class Presets:
                 save_setting(self.config_file, "broadcast_profile", self.station.profile)
         elif preset["kind"] in ("radio", "album", "book"):
             self.station.tune(preset)
+        elif preset["kind"] == "track":           # on its own, no DJ; when it ends the radio pauses
+            self.station.play_track(preset["root"], preset["path"], then="pause")
         elif preset["kind"] == "playlist":
             self.station.play_playlist(preset["name"], preset["shuffle"])
         elif preset["kind"] == "programme":

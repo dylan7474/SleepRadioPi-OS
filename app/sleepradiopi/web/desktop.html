@@ -1429,6 +1429,8 @@ function presetObj(p) {
     case "radio": return O["st:" + p.url] || stationObj(p);
     case "show": return p.profile ? refObj({ kind: "list", name: p.profile }) : SHOW;
     case "album": { const o = refObj({ kind: "album", root: p.root || "music", folder: p.folder, deep: !!p.deep }); if (!o.artist && p.artist) o.artist = p.artist; return o; }
+    case "track": { const known = !!O["t:" + (p.root || "music") + ":" + p.path], o = refObj({ kind: "track", root: p.root || "music", path: p.path });
+      if (!known) { if (p.title) o.title = p.title; if (p.artist) o.artist = p.artist; } return o; }
     case "book": { const o = refObj({ kind: "book", key: p.key }); if (p.title) o.title = p.title; return o; }
     case "playlist": return refObj({ kind: "playlist", name: p.name });
     case "programme": return O["pg:" + p.name.toLowerCase()] || mk({ id: "pg:" + p.name.toLowerCase(), kind: "programme", title: p.name, start: "07:00", blocks: [] });
@@ -1539,6 +1541,7 @@ function presetOf(o) {
     case "station": return { kind: "radio", name: o.name, url: o.url, info: o.info };
     case "album": return { kind: "album", folder: o.path, title: o.title, artist: o.artist || "", ...(o.root === "ondemand" ? { root: "ondemand" } : {}) };
     case "folder": return o.root && o.path ? { kind: "album", folder: o.path, title: o.title, artist: "", deep: true, ...(o.root === "ondemand" ? { root: "ondemand" } : {}) } : null;
+    case "track": return { kind: "track", root: o.root, path: o.path, title: o.title, artist: o.artist || "" };
     case "book": return { kind: "book", key: o.key, title: o.title };
     case "podcast": return { kind: "podcast", show: o.pid, title: o.title };
     case "episode": return o.gid ? { kind: "podcast", show: o.pid, title: O["pod:" + o.pid]?.title || "Podcast", start: o.gid, start_title: o.title } : null;

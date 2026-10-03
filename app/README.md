@@ -638,7 +638,9 @@ The cards:
   The radio's buttons, opens a panel to change them) — the four preset
   buttons on the case (`io/presets.py`), like a car radio's. A press plays
   what the button holds: the show (all artists, an artist or a list), an
-  internet station or an album straight through. Or an action: *Say the
+  internet station, an album straight through, or **one track on its own**
+  (a long piece from On demand, say: drag the track onto the button; when it
+  ends the radio pauses). Or an action: *Say the
   time*, *The news now* (the latest top stories, made on the spot — about a
   minute on a Zero), a *sleep time* (5 to 90 minutes, each its own thing: again to cancel,
   another time's button switches to that time, and once the timer has run out

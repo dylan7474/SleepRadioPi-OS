@@ -346,6 +346,30 @@ def test_sleep_times_on_buttons(tmp_path: Path) -> None:
     assert ctl.calls == ["play"] and ctl.sleep == 15 and ctl.clips == ["Button"] * 6
 
 
+def test_a_track_on_a_button(tmp_path: Path) -> None:
+    """One track (a long piece from On demand, say): it plays on its own, then the radio pauses."""
+    long = {"kind": "track", "root": "ondemand", "path": "Classical/Symphony 9.mp3", "title": "Symphony 9", "artist": "Beethoven"}
+    assert presets_mod.validate({"kind": "track", "path": "/A/One.mp3"}) == \
+        {"kind": "track", "root": "music", "path": "A/One.mp3", "title": "One", "artist": ""}
+    for bad in ({"kind": "track"}, {"kind": "track", "path": "../x.mp3"}, {"kind": "track", "path": "a.mp3", "root": "jingles"}):
+        with pytest.raises(ValueError):
+            presets_mod.validate(bad)
+    assert presets_mod.label(long) == "Symphony 9 — Beethoven"
+    assert presets_mod.same(long, {**long, "title": "Ninth"}) and not presets_mod.same(long, {**long, "root": "music"})
+    st, ctl, conf, p = _presets(tmp_path, [long])
+    played = []
+    st.play_track = lambda root, path, then=None: played.append((root, path, then))
+    p.press(0)
+    assert played == [("ondemand", "Classical/Symphony 9.mp3", "pause")] and ctl.calls == ["play"]
+    p.set(1, [RP, long])                             # as a step, too; and it's kept
+    assert p.presets[1][1] == long and long["path"] in conf.read_text()
+    # playing: it's what "what's playing" is, and its button is the one lit (a playlist of yours with one song stays a playlist)
+    st._source = {"kind": "playlist", "name": "Symphony 9", "refs": [["ondemand", "Classical/Symphony 9.mp3"]], "shuffle": False, "then": "pause"}
+    assert presets_mod.same(p.current(), long) and p.status()["buttons"][0]["playing"]
+    assert p.rename_refs("ondemand", "Classical", "music", "Beethoven/Classical")      # its folder moved: the button follows
+    assert p.presets[0]["root"] == "music" and p.presets[0]["path"] == "Beethoven/Classical/Symphony 9.mp3"
+
+
 def test_show_and_album_presets(tmp_path: Path) -> None:
     st, ctl, conf, p = _presets(tmp_path, [
         {"kind": "show", "artist": "Artist"},
