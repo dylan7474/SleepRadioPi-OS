@@ -62,7 +62,7 @@ Radio folder and one of the buttons open:
 - **Noise to sleep to** — white, pink, brown, blue and more, played on top of
   whatever's on, with a balance control; the sleep timer fades the programme
   but leaves the noise playing. A preset button can switch it on and off.
-- **Audiobooks** — mp3 folders or m4b files in their own folder, read with
+- **Audiobooks** — mp3 or m4a folders, or m4b, m4a or mp3 files, in their own folder, read with
   nothing from the DJ; each book remembers its place (a minute back after the
   sleep timer, for when you drifted off), with a whole-book progress bar and
   one-minute back / forward on the web page. At the end of a book the radio

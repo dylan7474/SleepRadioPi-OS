@@ -239,3 +239,19 @@ def test_books_can_be_uploaded(tmp_path: Path) -> None:
     assert lib.receive("audiobooks", "", "Tolkien/The Hobbit.m4b", 4, io.BytesIO(b"book").read)["status"] == "added"
     with pytest.raises(MediaError):
         lib.receive("music", "", "The Hobbit.m4b", 4, io.BytesIO(b"book").read)
+
+
+def test_m4a_files_are_books_too(tmp_path: Path) -> None:
+    """A folder of m4a chapters is one book; an m4a on its own is a book, its own chapter markers kept."""
+    root = tmp_path / "audiobooks"
+    for i in (1, 2):
+        p = root / "Bleak Expectations" / f"{i:02d} - Episode {i}.m4a"
+        p.parent.mkdir(parents=True, exist_ok=True)
+        subprocess.run([*FF, "-f", "lavfi", "-i", "sine=d=2", "-c:a", "aac", "-b:a", "32k", str(p)], check=True)
+    _m4b(root / "The Hobbit.m4b", [("An Unexpected Party", 3), ("Roast Mutton", 2)])
+    (root / "The Hobbit.m4b").rename(root / "Marked.m4a")
+    books = {b.key: b for b in BookLibrary(root).scan()}
+    assert set(books) == {"Bleak Expectations", "Marked.m4a"}
+    assert [c.title for c in books["Bleak Expectations"].chapters] == ["Episode 1", "Episode 2"]
+    assert 3500 < books["Bleak Expectations"].total_ms < 4500
+    assert [c.title for c in books["Marked.m4a"].chapters] == ["An Unexpected Party", "Roast Mutton"]

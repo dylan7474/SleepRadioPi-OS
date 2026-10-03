@@ -749,9 +749,9 @@ The cards:
 - **Audiobooks** (Find, and the Radio tab while one plays) — books go in their
   own folder, next to the music (`/media/audiobooks` on the radio; upload them
   in the desktop's Audiobooks window: *Upload a book…* for a file, *Upload a folder of
-  chapters…* for a book in chapters, or drop either on the window): a folder of mp3s is one book
+  chapters…* for a book in chapters, or drop either on the window): a folder of mp3s or m4as is one book
   (its chapters in file order, CD1/CD2 sub-folders included), and a single
-  `.m4b` or `.mp3` is a book too, an m4b's chapter markers becoming its chapters.
+  `.m4b`, `.m4a` or `.mp3` is a book too, an m4b's or m4a's chapter markers becoming its chapters.
   A book plays **instead of the show, with nothing from the DJ** (no links,
   jingles or news), and **every book remembers its place**: saved every 30 s
   and on pause, the sleep timer, switching to something else, restarts and

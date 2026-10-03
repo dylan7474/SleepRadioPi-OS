@@ -1887,13 +1887,13 @@ function folderView(o, box, win) {
         : "A folder for each station (made with each theme) and Power-on · open one to upload into it" }));
   }
   else if (o.box === "books") {
-    const up = el("input", { type: "file", multiple: true, hidden: true, accept: ".mp3,.m4b,audio/*" });
+    const up = el("input", { type: "file", multiple: true, hidden: true, accept: ".mp3,.m4b,.m4a,audio/*" });
     up.onchange = () => { upload(o, [...up.files].map(f => [f, f.name])); up.value = ""; };
     const upDir = el("input", { type: "file", multiple: true, hidden: true });       // a book in chapters: its folder, kept as a folder
     upDir.setAttribute("webkitdirectory", "");
     upDir.onchange = () => { upload(o, [...upDir.files].map(f => [f, f.webkitRelativePath || f.name])); upDir.value = ""; };
     tools.append(T("Upload a book…", () => up.click()), T("Upload a folder of chapters…", () => upDir.click()), up, upDir,
-      el("span", { className: "note", textContent: "One m4b or mp3 file is a book; so is a folder of mp3 chapters (upload the folder, or drop it here) · each remembers its place" }));
+      el("span", { className: "note", textContent: "One m4b, m4a or mp3 file is a book; so is a folder of mp3 or m4a chapters (upload the folder, or drop it here) · each remembers its place" }));
   }
   if (o.kids.length) tools.append(viewSwitch(o));
   if (tools.children.length) box.append(tools);

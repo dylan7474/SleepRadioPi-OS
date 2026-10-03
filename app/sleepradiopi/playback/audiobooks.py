@@ -1,8 +1,9 @@
 """Audiobooks: find the books, their chapters, and where each one was left.
 
-A book is either a folder of mp3 files (one per chapter, in natural file
-order; the whole book is everything under the folder, e.g. CD1/, CD2/) or a
-single .m4b or .mp3 file (an .m4b's own chapter markers become its chapters).
+A book is either a folder of mp3 or m4a files (one per chapter, in natural
+file order; the whole book is everything under the folder, e.g. CD1/, CD2/)
+or a single .m4b, .m4a or .mp3 file (an .m4b's or .m4a's own chapter markers
+become its chapters).
 Books live in their own folder next to the music: Author/Book/..., or Book/...
 
 Every book remembers its place -- one position in ms through the whole book
@@ -29,7 +30,8 @@ from sleepradiopi.config.atomic import write_atomic
 
 log = logging.getLogger(__name__)
 
-BOOK_FILES = {".mp3", ".m4b"}
+BOOK_FILES = {".mp3", ".m4b", ".m4a"}
+MARKED = {".m4b", ".m4a"}  # these can carry chapter markers of their own
 KEPT = "@ondemand/"        # the keys of On demand things that remember their place (KeptLibrary), beside the books' own
 KEPT_FILES = BOOK_FILES | {".flac", ".m4a", ".ogg", ".opus", ".wav"}
 CACHE_VERSION = 1
@@ -88,7 +90,7 @@ def _probe(path: Path) -> list:
         f = None
     duration = int((getattr(getattr(f, "info", None), "length", 0) or 0) * 1000) if f is not None else 0
     tags = dict(f.tags) if f is not None and f.tags else {}
-    markers = _m4b_chapters(path) if path.suffix.lower() == ".m4b" else []
+    markers = _m4b_chapters(path) if path.suffix.lower() in MARKED else []
     return [duration, markers, {"title": _tag(tags, "album", "title"), "author": _tag(tags, "artist", "albumartist"),
                                 "chapter": _tag(tags, "title")}]
 
@@ -162,16 +164,16 @@ class BookLibrary:
         return list(books.values())
 
     def _book_roots(self) -> list[Path]:
-        """Each book's folder or single file. A folder holding mp3s (and no other
-        books' folders beside them) is one book, sub-folders and all; an .m4b,
-        or an mp3 on its own, is a book by itself."""
+        """Each book's folder or single file. A folder holding mp3s or m4as (and no
+        other books' folders beside them) is one book, sub-folders and all; an
+        .m4b, or an mp3 or m4a on its own, is a book by itself."""
         found = []
 
         def walk(d: Path, depth: int) -> None:
             kids = sorted((p for p in d.iterdir() if not p.name.startswith(".")), key=lambda p: _natural(p.name))
             files = [p for p in kids if p.is_file() and p.suffix.lower() in self.files]
             dirs = [p for p in kids if p.is_dir()]
-            mp3s = [p for p in files if p.suffix.lower() == ".mp3"]
+            mp3s = [p for p in files if p.suffix.lower() != ".m4b"]      # chapter files: mp3s, m4as
             found.extend(p for p in files if p.suffix.lower() == ".m4b")
             if d != self.root and mp3s and (len(mp3s) > 1 or not dirs):
                 found.append(d)                      # a folder of chapters (CD1/, CD2/... included)
