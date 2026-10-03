@@ -720,6 +720,7 @@ async function loadFolder(f) {
 }
 const stationObj = s => mk({ id: "st:" + s.url, kind: "station", name: s.name, url: s.url, info: s.info || "Internet radio", title: s.name, short: initials(s.name).slice(0, 3) || "FM" });
 async function loadAlbum(a) {
+  if (a.root === "ondemand") { try { gotKept(await api("/api/ondemand/kept")); } catch {} }
   const d = await api(`/api/browse?root=${a.root}&path=${encodeURIComponent(a.path)}`);
   if (!d.album) { a.tracks = []; return; }
   a.title = d.album.title; a.artist = d.album.artist;
@@ -1800,13 +1801,7 @@ function folderView(o, box, win) {
       T("Upload…", () => up.click()), T("Upload a folder…", () => upDir.click()),
       T("New folder", () => { win.mkdir = !win.mkdir; drawDesk(); }),
       T("Download", () => download(picked || o), "", !(picked || o.path) || (picked && !picked.root)), up, upDir);
-    if (o.root === "ondemand") {               // remember its place, like a book: the one clicked, else this folder
-      const it = picked && picked.root === "ondemand" && picked.path ? picked : !picked && o.path ? o : null, on = !!keptOf(it);
-      const k = T(on ? "🔖 Remembers its place" : "Remember its place", () => setKept(it, !on), on ? "primary" : "", !it);
-      k.title = !it ? "Click a track or a folder first" : on ? `“${it.title}” carries on where you left it, like an audiobook. Click to have it start from the beginning each time`
-        : `Have “${it.title}” carry on where you left it, like an audiobook` + (it.kind === "track" ? "" : " (the whole folder, as one)");
-      tools.append(k);
-    }
+    if (o.root === "ondemand") tools.append(keepKey(o, picked));
     if (win.mkdir) {
       const name = el("input", { type: "text", placeholder: "Folder name", id: "mk-" + o.id, style: "background:var(--win);border:1px solid var(--line);border-radius:6px;padding:3px 7px" });
       const ok = T("Make it", () => mkdir(o, name.value.trim(), win), "primary");
@@ -1922,10 +1917,21 @@ function folderView(o, box, win) {
     sortNote ? el("span", { textContent: "· " + sortNote, title: "Change it from the list view's column headings" }) : null, media ? el("span", { id: "space-" + o.id }) : null));
   if (media) space(o);
 }
+// On demand's "Remember its place" key: for the one clicked in this window, else for the folder it shows
+function keepKey(o, picked) {
+  const it = picked && picked.root === "ondemand" && picked.path ? picked : !picked && o.path ? o : null, on = !!keptOf(it);
+  const what = !it ? "" : it === o ? "this folder" : `“${it.title.length > 24 ? it.title.slice(0, 22) + "…" : it.title}”`;
+  const k = T(!it ? "Remember its place" : on ? `🔖 ${what} remembers its place` : `Remember its place: ${what}`, () => setKept(it, !on), on ? "primary" : "", !it);
+  k.title = !it ? "Click a track or a folder first" : on ? `“${it.title}” carries on where you left it, like an audiobook. Click to have it start from the beginning each time`
+    : `Have “${it.title}” carry on where you left it, like an audiobook` + (it.kind === "track" ? "" : " (the whole folder, as one book)");
+  return k;
+}
 function albumView(o, box) {
+  const picked = selectedIn(o);
   box.append(el("div", { className: "wtools" }, T("▶ Play", () => play(o), "primary"),
     T("Put on a button…", () => toast("Drag the album onto a button on the radio.")),
-    el("span", { className: "note", textContent: [o.artist, `${(o.tracks || []).length} tracks`].filter(Boolean).join(" · ") })));
+    o.root === "ondemand" ? keepKey(o, picked) : null,
+    el("span", { className: "note", textContent: [o.artist, `${(o.tracks || []).length} tracks`].filter(Boolean).join(" · ") + (o.root === "ondemand" ? " · click a track to set just that one" : "") })));
   box.append(el("div", { className: "wbody" }, rowsOf(o.tracks || [], o.id, t => t.n ?? "", false, o)));
 }
 function podcastView(o, box) {
@@ -1969,7 +1975,7 @@ function rowsOf(ids, where, num, removable, album) {
     p.onclick = () => play(o); p.onpointerdown = e => e.stopPropagation();
     const extra = album && o.artist && o.artist !== album.artist ? o.artist : removable ? o.artist : "";
     li.append(el("span", { className: "n", textContent: num(o, i) }), el("b", {}, o.title, extra ? el("small", { textContent: extra }) : null),
-              el("span", { className: "len", textContent: o.kind === "episode" ? dur(o.min) : "" }), p);
+              el("span", { className: "len", textContent: o.kind === "episode" ? dur(o.min) : keptOf(o) ? keptSub(keptOf(o)) : "" }), p);
     li._src = { id, where, parent: where, index: i, row: true };
     li.addEventListener("pointerdown", e => press(e, li, { id, where, parent: where, index: i, row: true }));
     ul.append(li);
