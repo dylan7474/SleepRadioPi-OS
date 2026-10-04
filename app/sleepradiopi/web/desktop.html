@@ -561,6 +561,19 @@ const ONDEMAND = mk({ id: "root:ondemand", kind: "folder", title: "On demand", r
 const BOOKS = mk({ id: "box:books", kind: "folder", title: "Audiobooks", box: "books", kids: [], sym: "B" });
 const PODCASTS = mk({ id: "box:podcasts", kind: "folder", title: "Podcasts", box: "podcasts", kids: [], sym: "P" });
 const STATIONS = mk({ id: "box:stations", kind: "folder", title: "Stations", box: "stations", kids: [], sym: "R", alt: true });
+// A receiver of your own (receiver/ in the repository: a dongle on a spare Pi): its bands, each a folder of
+// channels, and every channel a station -- to listen to, or to keep on a button. It's found from the stations:
+// any whose address is a receiver's (http://HOST:8074/audio?band=... or ?freq=...) says where one is.
+const RECEIVER = mk({ id: "box:receiver", kind: "folder", title: "Receiver", box: "receiver", kids: [], sym: "⌁", alt: true });
+const rxOrigin = url => { const m = /^(https?:\/\/[^/]+)\/audio\?(?:.*&)?(?:band|freq)=/.exec(url || ""); return m && m[1]; };
+const rxOrigins = stations => [...new Set(stations.map(x => rxOrigin(x.url)).filter(Boolean))];
+const rxMhz = hz => String(+(hz / 1e6).toFixed(4));
+const rxAgo = sec => sec < 90 ? `${Math.max(1, Math.round(sec))} s` : sec < 5400 ? `${Math.round(sec / 60)} min` : `${Math.round(sec / 3600)} h`;
+async function rxGet(origin, path) {              // (asked of the receiver itself, not through the radio)
+  const r = await fetch(origin + path, { cache: "no-store" });
+  if (!r.ok) throw new Error(`the receiver said ${r.status}`);
+  return r.json();
+}
 const PLAYLISTS = mk({ id: "box:playlists", kind: "folder", title: "Playlists", box: "playlists", kids: [], sym: "≡" });
 const PROGRAMMES = mk({ id: "box:programmes", kind: "folder", title: "Programmes", box: "programmes", kids: [], sym: "◷" });
 const LISTS = mk({ id: "box:lists", kind: "folder", title: "Themes", box: "lists", kids: [], sym: "A", alt: true });
@@ -662,6 +675,31 @@ async function loadFolder(f) {
   } else if (f.box === "stations") {
     const d = await api("/api/radio");
     f.kids = d.stations.map(s => stationObj(s).id);
+  } else if (f.box === "receiver") {                // each receiver's bands, as folders
+    const d = await api("/api/radio"), kids = [];
+    f.origins = rxOrigins(d.stations); f.down = null;
+    for (const origin of f.origins) {
+      let bands, st;
+      try { [bands, st] = await Promise.all([rxGet(origin, "/bands"), rxGet(origin, "/status")]); }
+      catch (e) { f.down = `${origin.replace(/^https?:\/\//, "")} isn't answering`; continue; }
+      for (const [id, b] of Object.entries(bands)) {
+        const key = `rxb:${origin}:${id}`, on = st.receiving?.band === id;
+        kids.push(mk({ id: key, kind: "folder", box: "rxband", origin, band: id, mode: b.mode || "nfm", title: b.name, chans: b.channels, count: b.channels.length,
+                       kids: O[key]?.kids || [], info: on ? (st.on_air ? `On air: ${st.on_air.name}` : "Listening now") : `${b.channels.length} channels`,
+                       sym: "⌁", alt: true }).id);
+      }
+    }
+    f.kids = kids;
+  } else if (f.box === "rxband") {                  // a band: the whole of it at once, then its channels one by one
+    let st = {}; try { st = await rxGet(f.origin, "/status"); } catch {}
+    const mine = st.receiving?.band === f.band, onAir = mine ? st.on_air?.freq : null;
+    const heard = new Map((mine ? st.heard || [] : []).map(c => [c.freq, c.ago_s]));
+    const all = `${f.origin}/audio?band=${encodeURIComponent(f.band)}`;
+    f.kids = [(O["st:" + all] || stationObj({ name: `${f.title}: every channel`, url: all, info: "The whole band at once: whichever channel opens" })).id,
+      ...f.chans.map(c => {
+        const o = stationObj({ name: c.name, url: `${f.origin}/audio?freq=${rxMhz(c.freq)}&mode=${f.mode || "nfm"}`, info: "" });
+        o.info = c.freq === onAir ? "On air now" : heard.has(c.freq) ? `Heard ${rxAgo(heard.get(c.freq))} ago` : `${rxMhz(c.freq)} MHz${c.priority ? " · priority" : ""}`;
+        return o.id; })];
   } else if (f.box === "buttons" || f.box === "radio") {
     await loadButtons();
   } else if (f.box === "sounds") {
@@ -1006,7 +1044,7 @@ function subOf(o) {
       return (live ? "● playing · " : o.auto ? (o.once ? "⏰ " : "↻ ") : "") + times;
     }
     case "folder": if (keptOf(o)) return keptSub(keptOf(o));
-      return o.box === "sleep" ? (sleepLeft() ? `Fading out in ${sleepLeft()} min` : "") : o.root && o.path ? `${o.count || 0} tracks` : "";
+      return o.box === "sleep" ? (sleepLeft() ? `Fading out in ${sleepLeft()} min` : "") : o.box === "rxband" ? o.info || "" : o.root && o.path ? `${o.count || 0} tracks` : "";
     case "list": return (o.name?.toLowerCase() === "default" ? "always here · " : "") + (o.all ? "all my music" : o.count ? `${o.count} artist${o.count === 1 ? "" : "s"}` : "");
     case "jingle": return o.mb ? `${o.mb.toFixed(1)} MB` : "";
     case "message": return "The DJ says it";
@@ -1650,9 +1688,9 @@ async function refreshOpen() {
   if (PROGRAMMES.loaded && !fresh.includes(PROGRAMMES)) fresh.push(PROGRAMMES);
   let changed = false;
   for (const o of fresh) {
-    const before = JSON.stringify([o.kids, o.eps, o.kids && o.kids.map(id => [O[id]?.title, O[id]?.items?.length, O[id]?.blocks?.length, O[id]?.fresh])]);
+    const before = JSON.stringify([o.kids, o.eps, o.kids && o.kids.map(id => [O[id]?.title, O[id]?.items?.length, O[id]?.blocks?.length, O[id]?.fresh, O[id]?.info])]);
     try { o.kind === "podcast" ? await loadEpisodes(o) : await loadFolder(o); } catch { continue; }
-    if (before !== JSON.stringify([o.kids, o.eps, o.kids && o.kids.map(id => [O[id]?.title, O[id]?.items?.length, O[id]?.blocks?.length, O[id]?.fresh])])) changed = true;
+    if (before !== JSON.stringify([o.kids, o.eps, o.kids && o.kids.map(id => [O[id]?.title, O[id]?.items?.length, O[id]?.blocks?.length, O[id]?.fresh, O[id]?.info])])) changed = true;
   }
   if (changed && !dragging && !document.querySelector(".win input:focus, .win textarea:focus, .win select:focus")) drawDesk();
 }
@@ -1819,6 +1857,27 @@ function folderView(o, box, win) {
   else if (o.box === "stations") tools.append(T("Find a station", () => open(PANEL.findstation.id)), el("span", { className: "note", textContent: "Drag a station onto a button to keep it there" }));
   else if (o.box === "podcasts") tools.append(T("Follow a podcast", () => open(PANEL.findpodcast.id)), el("span", { className: "note", textContent: "Open a show for its episodes" }));
   else if (o.box === "lists") tools.append(T("New theme", () => open(PANEL.newlist.id)), el("span", { className: "note", textContent: "Double-click a theme to change it · drag one onto the radio to play it" }));
+  else if (o.box === "receiver" || o.box === "rxband") {
+    const origin = o.origin || o.origins?.[0];
+    tools.append(T("Tune…", () => { win.naming = !win.naming; drawDesk(); }));
+    if (win.naming && origin) {
+      const box = "background:var(--win);border:1px solid var(--line);border-radius:6px;padding:3px 7px";
+      const f = el("input", { type: "text", inputMode: "decimal", placeholder: "145.500", id: "rx-freq", maxLength: 12, style: box + ";width:7em" });
+      const mode = el("select", { style: box }, ...[["nfm", "FM (narrow)"], ["am", "AM"], ["wfm", "FM broadcast"]].map(([v, t]) => el("option", { value: v, textContent: t })));
+      const go = T("Listen", () => {
+        const mhz = parseFloat(f.value);
+        if (!(mhz >= 24 && mhz <= 1766)) return toast("A frequency in MHz, from 24 to 1766: 145.5");
+        win.naming = false;
+        play(stationObj({ name: `${+mhz.toFixed(4)} MHz`, url: `${origin}/audio?freq=${+mhz.toFixed(4)}&mode=${mode.value}`, info: "Receiver" }));
+        drawDesk();
+      }, "primary");
+      f.onkeydown = e => { if (e.key === "Enter") go.click(); };
+      tools.append(f, el("span", { className: "note", textContent: "MHz" }), mode, go);
+      setTimeout(() => f.focus(), 0);
+    } else tools.append(el("span", { className: "note", textContent: o.down ? `${o.down}: is the receiver on?`
+      : o.box === "receiver" ? "Your receiver's bands · open one for its channels · a band listens to all of them at once"
+      : "Double-click one to listen · drag it onto a button to keep it there · the first is the whole band at once (allow 10 seconds after choosing)" }));
+  }
   else if (o.box === "birthdays") tools.append(T("New birthday", () => newBirthday()), el("span", { className: "note", textContent: "Soonest first · the DJ wishes them a happy birthday on the day · drag one onto the radio to hear it" }));
   else if (o.box === "voices") {
     const up = el("input", { type: "file", hidden: true, accept: ".tar.bz2,.tar.gz,.zip" });
@@ -3852,6 +3911,10 @@ async function boot() {
       const w = W.find(w => w.id === s.id); if (w) Object.assign(w, { x: s.x, y: s.y, w: s.w, h: s.h, fitted: true });
     }
     booted = true; drawDesk(); setInterval(tick, 10000); setInterval(poll, 2500); setInterval(refreshOpen, 20000);
+    // The Receiver folder appears on the desktop once a station says there's a receiver; while one of its
+    // windows is open it's asked every few seconds who has the air.
+    api("/api/radio").then(d => { if (rxOrigins(d.stations).length && !desk.some(p => p.id === RECEIVER.id)) { desk.push({ id: RECEIVER.id, ...freeSpot() }); saveDesk(); drawDesk(); } }).catch(() => {});
+    setInterval(() => { if (!document.hidden && W.some(w => ["receiver", "rxband"].includes(O[w.id]?.box))) refreshOpen(); }, 4000);
     document.addEventListener("visibilitychange", () => { if (!document.hidden) { refreshOpen(); poll(); } }); setInterval(async () => { await loadButtons(); updateRadio(); }, 15000); }
   takeTune();
 }

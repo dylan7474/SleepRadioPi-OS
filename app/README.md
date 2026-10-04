@@ -961,6 +961,14 @@ The cards:
   see below), and a **phase check** (every 3 s: both speakers the same, then the right
   one inverted — if the inverted part sounds fuller, a speaker is wired the
   wrong way round, and vocals would vanish in stereo but not in mono).
+- **Receiver** — a folder that appears on the desktop once a station's
+  address is a receiver's (`receiver/` in the repository: an RTL-SDR dongle
+  on a spare Pi, `http://HOST:8074/audio?band=…`). It holds the receiver's
+  bands, each a folder: the whole band at once, then its channels one by one,
+  every one a station -- double-click to listen, drag onto a button to keep
+  it there. While its window is open the page asks the receiver itself (not
+  the radio) every few seconds who has the air: "On air now", "Heard 3 min
+  ago". *Tune…* listens to any frequency (narrow FM, AM or broadcast FM).
 - **Wi-Fi** — the connection; saved networks (the card's, and ones added
   here — kept as WPA keys, never passwords); *Find networks*; add or remove
   one; the hotspot's name and password (SleepRadio-Setup / sleepradio to
