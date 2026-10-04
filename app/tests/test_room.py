@@ -160,21 +160,25 @@ def test_the_register_of_rooms(tmp_path: Path) -> None:
     assert len(found) == 22 and found[0] == {"id": "00009", "name": "GB-CQ-UK", "about": "Main Reflector", "url": "ysf://149.102.158.76:42200/GB-CQ-UK"}
     assert found[1]["url"] == "ysf://63.250.41.136:42000/US-America%20Link"
     asked = []
-    book = rooms_dir.RoomDirectory(tmp_path / "rooms.json", fetch=lambda u: asked.append(u) or HOSTS, clock=lambda: 100.0)
-    assert [r["name"] for r in book.search("america link")] == ["US-America Link"] and asked == [rooms_dir.SOURCE, rooms_dir.FCS_SOURCE]
-    assert [r["name"] for r in book.search("00009")] == ["GB-CQ-UK"] and len(book.search("")) == 22
-    again = rooms_dir.RoomDirectory(tmp_path / "rooms.json", fetch=lambda u: 1 / 0, clock=lambda: 200.0)
-    assert again.search("cq-uk")[0]["id"] == "00009" and again.status() == {"count": 22, "age_s": 100, "error": None}
-    # a list kept from before the FCS rooms were in it: fetched again in the background, though it's fresh
     fcs = "FCS00290;America-Link-WiresX;FCS002 - America-Link-WiresX;;;\n"
-    fresh = rooms_dir.RoomDirectory(tmp_path / "rooms.json", fetch=lambda u: fcs if u == rooms_dir.FCS_SOURCE else HOSTS, clock=lambda: 300.0)
-    assert fresh.search("wiresx") == [] and _wait(lambda: [r["id"] for r in fresh.search("wiresx")] == ["FCS00290"])
+    both = lambda u: asked.append(u) or (fcs if u == rooms_dir.FCS_SOURCE else HOSTS)
+    book = rooms_dir.RoomDirectory(tmp_path / "rooms.json", fetch=both, clock=lambda: 100.0)
+    assert [r["name"] for r in book.search("america link")] == ["America-Link-WiresX", "US-America Link"]
+    assert asked == [rooms_dir.SOURCE, rooms_dir.FCS_SOURCE]
+    assert [r["name"] for r in book.search("00009")] == ["GB-CQ-UK"] and len(book.search("")) == 23
+    again = rooms_dir.RoomDirectory(tmp_path / "rooms.json", fetch=lambda u: 1 / 0, clock=lambda: 200.0)      # kept: not asked for again
+    assert again.search("cq-uk")[0]["id"] == "00009" and again.status() == {"count": 23, "age_s": 100, "error": None}
+    # a list kept from before the FCS rooms were in it is fetched again in the background, though it's fresh
+    old = tmp_path / "old.json"
+    old.write_text(json.dumps({"at": 250.0, "rooms": rooms_dir.parse_hosts(HOSTS)}))
+    fresh = rooms_dir.RoomDirectory(old, fetch=lambda u: fcs if u == rooms_dir.FCS_SOURCE else HOSTS, clock=lambda: 300.0)
+    assert len(fresh.rooms) == 22 and _wait(lambda: [r["id"] for r in fresh.search("wiresx")] == ["FCS00290"])
     down = rooms_dir.RoomDirectory(tmp_path / "none.json", fetch=lambda u: 1 / 0)
     assert down.search("x") == [] and "couldn't be reached" in down.status()["error"]
 
 
 def test_web_api(tmp_path: Path, monkeypatch) -> None:
-    monkeypatch.setattr(rooms_dir, "_shared", rooms_dir.RoomDirectory(tmp_path / "rooms.json", fetch=lambda u: HOSTS))
+    monkeypatch.setattr(rooms_dir, "_shared", rooms_dir.RoomDirectory(tmp_path / "rooms.json", fetch=lambda u: "FCS00290;A;B;;;" if u == rooms_dir.FCS_SOURCE else HOSTS))
     monkeypatch.setattr(room, "CALLSIGN", None)
     monkeypatch.setattr(room, "DECODER", tmp_path / "libmbe.so")
     conf = tmp_path / "config.json"
@@ -194,7 +198,7 @@ def test_web_api(tmp_path: Path, monkeypatch) -> None:
     try:
         assert call("/api/rooms") == (200, {"callsign": "", "decoder": False, "decoder_path": str(tmp_path / "libmbe.so"), "monitor": None})
         code, reply = call("/api/rooms/search?q=cq-uk")
-        assert code == 200 and reply["results"][0]["url"] == "ysf://149.102.158.76:42200/GB-CQ-UK" and reply["directory"]["count"] == 22
+        assert code == 200 and reply["results"][0]["url"] == "ysf://149.102.158.76:42200/GB-CQ-UK" and reply["directory"]["count"] == 23
         assert call("/api/rooms/callsign", {"callsign": "m8odj"}) == (200, {"callsign": "M8ODJ", "decoder": False})
         assert room.CALLSIGN == "M8ODJ" and load(conf).callsign == "M8ODJ" and call("/api/rooms")[1]["callsign"] == "M8ODJ"
         code, reply = call("/api/rooms/callsign", {"callsign": "not one"})
