@@ -37,7 +37,7 @@ fi
 git -C "$OUT/mbelib" checkout -q "$COMMIT"
 echo "mbelib $(git -C "$OUT/mbelib" rev-parse --short HEAD), from $REPO"
 echo "its patent notice:"
-sed -n '/PATENT NOTICE/,/^$/p' "$OUT/mbelib/README.md" | sed 's/^/    /'
+sed -n '/PATENT NOTICE/,/^mbelib /p' "$OUT/mbelib/README.md" | sed '$d' | sed 's/^/    /'
 ( cd "$OUT/mbelib" && "$OLDPWD/$CC" -O2 -shared -fPIC -I. ./*.c -o ../libmbe.so -lm )
 echo "built $OUT/libmbe.so ($(stat -c %s "$OUT/libmbe.so") bytes)"
 
