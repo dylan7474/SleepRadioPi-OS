@@ -25,6 +25,13 @@ radio's page shows who has the air, and its history is a log of what was
 heard. With nobody transmitting the stream is silence, so the radio stays
 tuned in.
 
+A channel that stays open for half a minute -- a repeater's carrier, a
+gateway that's keyed all day -- gives way to another that opens, and one
+that's always open can be left out of its band: `POST /skip {"freq":
+145237500}` (`"on": false` to take it back), or *Skip it* in the radio's
+Receiver folder. That's remembered. Narrow FM is high-passed at 300 Hz, so
+CTCSS tones aren't heard as a hum.
+
 One dongle does one thing at a time. The latest request wins and listeners
 to what it was doing before are disconnected, so 2 m *or* marine, not both
 (they're 10 MHz apart; that needs a second dongle). With no listener for a
@@ -61,6 +68,8 @@ measures the error; OpenWebRX keeps it as the dongle's "ppm".)
 - `GET /status`: what it's receiving, who has the air (`on_air`), which
   channels are open now (`active`) and which were heard lately (`heard`).
 - `GET /bands`: the bands and their channels.
+- `POST /skip {"freq": HZ, "on": true}`: leave a channel out of its band (kept in
+  `/var/lib/sleepradio-receiver/skip.json`); `/status` lists them as `skipping`.
 - `POST /select {"band": "2m"}` (or `{"freq": 145.5, "mode": "nfm"}`): change
   what it receives without listening.
 - Your own bands: `/etc/sleepradio-receiver/bands.json`,

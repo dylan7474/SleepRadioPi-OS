@@ -9,6 +9,7 @@ EnvironmentFile=-/etc/sleepradio-receiver/options
 ExecStart=/usr/bin/python3 -u /opt/sleepradio-receiver/sleepradio_receiver.py --airband /usr/local/bin/rtl_airband $OPTIONS
 # Its own throwaway user, with the group the rtl-sdr package gives the dongle to.
 DynamicUser=yes
+StateDirectory=sleepradio-receiver
 SupplementaryGroups=plugdev
 Restart=always
 RestartSec=3

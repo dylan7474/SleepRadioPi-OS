@@ -691,14 +691,15 @@ async function loadFolder(f) {
     }
     f.kids = kids;
   } else if (f.box === "rxband") {                  // a band: the whole of it at once, then its channels one by one
-    let st = {}; try { st = await rxGet(f.origin, "/status"); } catch {}
+    let st = {}; try { st = await rxGet(f.origin, "/status"); f.chans = (await rxGet(f.origin, "/bands"))[f.band]?.channels || f.chans; } catch {}
     const mine = st.receiving?.band === f.band, onAir = mine ? st.on_air?.freq : null;
     const heard = new Map((mine ? st.heard || [] : []).map(c => [c.freq, c.ago_s]));
     const all = `${f.origin}/audio?band=${encodeURIComponent(f.band)}`;
     f.kids = [(O["st:" + all] || stationObj({ name: `${f.title}: every channel`, url: all, info: "The whole band at once: whichever channel opens" })).id,
       ...f.chans.map(c => {
         const o = stationObj({ name: c.name, url: `${f.origin}/audio?freq=${rxMhz(c.freq)}&mode=${f.mode || "nfm"}`, info: "" });
-        o.info = c.freq === onAir ? "On air now" : heard.has(c.freq) ? `Heard ${rxAgo(heard.get(c.freq))} ago` : `${rxMhz(c.freq)} MHz${c.priority ? " · priority" : ""}`;
+        o.rxFreq = c.freq; o.rxSkip = !!c.skip;
+        o.info = c.skip ? "Skipped: the band leaves it out" : c.freq === onAir ? "On air now" : heard.has(c.freq) ? `Heard ${rxAgo(heard.get(c.freq))} ago` : `${rxMhz(c.freq)} MHz${c.priority ? " · priority" : ""}`;
         return o.id; })];
   } else if (f.box === "buttons" || f.box === "radio") {
     await loadButtons();
@@ -1860,6 +1861,16 @@ function folderView(o, box, win) {
   else if (o.box === "receiver" || o.box === "rxband") {
     const origin = o.origin || o.origins?.[0];
     tools.append(T("Tune…", () => { win.naming = !win.naming; drawDesk(); }));
+    if (o.box === "rxband") tools.append(T("Skip it", async () => {      // (one that's always open: a stuck gateway, a carrier)
+      const one = selectedIn(o);
+      if (!one?.rxFreq) return toast("Click a channel first, then Skip it: the band leaves it out from then on (again to listen to it once more).");
+      try {
+        const r = await fetch(o.origin + "/skip", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ freq: one.rxFreq, on: !one.rxSkip }) });
+        if (!r.ok) throw new Error(`the receiver said ${r.status}`);
+        await loadFolder(o); drawDesk();
+        toast(one.rxSkip ? `The band listens to ${one.title} again.` : `The band now skips ${one.title}. (It can still be listened to on its own.)`);
+      } catch (e) { toast(e.message); }
+    }));
     if (win.naming && origin) {
       const box = "background:var(--win);border:1px solid var(--line);border-radius:6px;padding:3px 7px";
       const f = el("input", { type: "text", inputMode: "decimal", placeholder: "145.500", id: "rx-freq", maxLength: 12, style: box + ";width:7em" });

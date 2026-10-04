@@ -968,7 +968,8 @@ The cards:
   every one a station -- double-click to listen, drag onto a button to keep
   it there. While its window is open the page asks the receiver itself (not
   the radio) every few seconds who has the air: "On air now", "Heard 3 min
-  ago". *Tune…* listens to any frequency (narrow FM, AM or broadcast FM).
+  ago". *Tune…* listens to any frequency (narrow FM, AM or broadcast FM); *Skip it*
+  leaves the channel you clicked out of its band (one that's always open).
 - **Wi-Fi** — the connection; saved networks (the card's, and ones added
   here — kept as WPA keys, never passwords); *Find networks*; add or remove
   one; the hotspot's name and password (SleepRadio-Setup / sleepradio to

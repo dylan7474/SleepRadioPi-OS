@@ -1,4 +1,5 @@
 """The receiver service's own logic (no dongle, no network)."""
+import json
 import struct
 import sys
 from pathlib import Path
@@ -63,6 +64,33 @@ def test_the_first_to_speak_has_the_air_and_a_priority_channel_takes_it() -> Non
     assert m.packet(2, pcm, 0.1, 12.2) == pcm and m.title(12.2, "idle") == "Calling"   # priority: at once
     assert m.packet(1, pcm, 0.1, 12.3) is None                    # and B can't take it back
     assert m.title(20.0, "2 metres") == "2 metres"                # all quiet again
+
+
+def test_a_carrier_that_stays_up_gives_way_and_can_be_skipped(tmp_path: Path) -> None:
+    chans = [{"freq": 1, "name": "Gateway"}, {"freq": 2, "name": "B"}]
+    m = rx.Mixer(chans, hang_s=2.0, hog_s=30.0)
+    pcm, t = bytes(4000), 100.0
+    while t < 125.0:                                              # the gateway's carrier, up all the while
+        assert m.packet(0, pcm, 0.1, t) == pcm
+        t += 0.125
+    assert m.packet(1, pcm, 0.1, 125.0) is None                   # 25 s: still its air
+    while t < 131.0:
+        m.packet(0, pcm, 0.1, t)
+        t += 0.125
+    assert m.packet(1, pcm, 0.1, 131.0) == pcm and m.title(131.0, "") == "B"       # past 30 s: B, newly open, takes it
+    assert m.packet(0, pcm, 0.1, 131.1) is None                   # and the carrier doesn't take it back
+    assert m.packet(0, pcm, 0.1, 134.0) == pcm                    # until B has finished (2 s after its last)
+
+    skips = tmp_path / "state" / "skip.json"
+    r = rx.Receiver(rx.DEFAULT_BANDS, skips_file=skips)
+    r.skip(145_237_500)
+    assert json.loads(skips.read_text()) == [145_237_500] and r.status()["skipping"] == [145_237_500]
+    name, left = rx.spec_channels({"band": "2m"}, r.bands, r.skips)
+    assert len(left) == 47 and all(c["freq"] != 145_237_500 for c in left)
+    assert rx.load_skips(skips) == {145_237_500}                  # remembered for the next start
+    r.skip(145_237_500, on=False)
+    assert json.loads(skips.read_text()) == [] and len(rx.spec_channels({"band": "2m"}, r.bands, r.skips)[1]) == 48
+    assert "highpass = 300" in rx.airband_conf(chans) and "highpass" not in rx.airband_conf(chans, mode="am")
 
 
 def test_silence_fills_the_gaps_at_real_time() -> None:

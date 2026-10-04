@@ -13,7 +13,10 @@ A band is watched all at once (rtl_airband takes the whole 2.4 MHz the dongle
 hears apart into its channels, each with its own squelch), so it's a scanner
 that never misses the start of a call: whichever channel opens is what you
 hear, a priority channel takes over from the others, and the stream carries
-the channel's name as its "now playing" title. With nobody transmitting the
+the channel's name as its "now playing" title. A channel that stays open for
+half a minute (a repeater's carrier, a stuck gateway) gives way to another
+that opens; one that's always open can be skipped (/skip), which is
+remembered. With nobody transmitting the
 stream is silence, so a player stays tuned in.
 
 The audio is a WAV stream (16-bit mono) with ICY titles. /status says what
@@ -58,6 +61,8 @@ USABLE = 0.8                 # of that, the part away from the filter's edges
 FFT_SIZE = 512               # a Pi 2 keeps up with 512 (1024 and 2048 overflowed)
 UDP_BASE = 47_000            # rtl_airband sends channel i's audio to this + i
 HANG_S = 2.0                 # stay with a channel this long after it closes, for the reply
+HOG_S = 30.0                 # a channel open this long without a break gives way to another that opens
+HIGHPASS_HZ = 300            # narrow FM: below the speech (takes out CTCSS tones, a hum otherwise)
 IDLE_S = 60.0                # no listener this long: the dongle rests
 GAIN_DB = 40.0
 VOLUME = 1.0
@@ -107,6 +112,13 @@ DEFAULT_BANDS = {
 }
 
 
+def load_skips(path: Path | None) -> set[int]:
+    try:
+        return {int(f) for f in json.loads(path.read_text())} if path is not None else set()
+    except (OSError, ValueError, TypeError):
+        return set()
+
+
 def load_bands(path: Path | None) -> dict:
     """The built-in bands, with a JSON file's on top ({"id": {"name", "mode", "channels": [{"freq", "name"}]}})."""
     bands = {k: dict(v) for k, v in DEFAULT_BANDS.items()}
@@ -148,10 +160,11 @@ def parse_spec(query: dict, bands: dict) -> dict:
     return spec
 
 
-def spec_channels(spec: dict, bands: dict) -> tuple[str, list[dict]]:
-    """(what to call it, its channels)."""
+def spec_channels(spec: dict, bands: dict, skips: set[int] = frozenset()) -> tuple[str, list[dict]]:
+    """(what to call it, its channels: a band's, less the ones being skipped)."""
     if "band" in spec:
-        return bands[spec["band"]]["name"], bands[spec["band"]]["channels"]
+        chans = [c for c in bands[spec["band"]]["channels"] if c["freq"] not in skips]
+        return bands[spec["band"]]["name"], chans or bands[spec["band"]]["channels"]
     mhz = f"{spec['freq'] / 1e6:.4f}".rstrip("0").rstrip(".")
     return f"{mhz} MHz", [{"freq": spec["freq"], "name": f"{mhz} MHz"}]
 
@@ -180,6 +193,8 @@ def airband_conf(channels: list[dict], mode: str = "nfm", squelch: bool = True, 
     rows = []
     for i, c in enumerate(channels):
         sq = "" if squelch else " squelch_threshold = -100;"
+        if mode == "nfm":
+            sq += f" highpass = {HIGHPASS_HZ};"
         rows.append(f'    {{ freq = {c["freq"] / 1e6:.6f}; modulation = "{mode}";{sq} outputs: ({{ type = "udp_stream"; '
                     f'dest_address = "127.0.0.1"; dest_port = {udp_base + i}; continuous = false; }}); }}')
     return (f"fft_size = {FFT_SIZE};\ndevices: ({{\n  type = \"rtlsdr\"; index = {device}; gain = {gain:.1f}; correction = {ppm};\n"
@@ -223,14 +238,17 @@ class Mixer:
     packet(i, audio, now) is a channel's audio arriving (only open channels
     send any): it comes back as what to play if that channel has the air.
     The first to speak takes it and keeps it until HANG_S after its last
-    packet; a priority channel takes it from one that isn't. filler(now) is
+    packet; a priority channel takes it from one that isn't; and one that has
+    been open for HOG_S without a break gives it to another that opens (it's
+    a carrier that's simply there, and the news is elsewhere). filler(now) is
     silence, whenever the stream has fallen behind real time -- so a player
     hears a station that's simply quiet, and never one that has stalled."""
 
-    def __init__(self, channels: list[dict], rate: int = RATE, hang_s: float = HANG_S) -> None:
-        self.channels, self.rate, self.hang_s = channels, rate, hang_s
+    def __init__(self, channels: list[dict], rate: int = RATE, hang_s: float = HANG_S, hog_s: float = HOG_S) -> None:
+        self.channels, self.rate, self.hang_s, self.hog_s = channels, rate, hang_s, hog_s
         self.current: int | None = None
         self.last = [0.0] * len(channels)           # when each channel last sent audio
+        self.since = [0.0] * len(channels)          # ...and when its present spell began
         self.level = [0.0] * len(channels)
         self.t0: float | None = None
         self.sent = 0                               # samples sent since t0
@@ -242,10 +260,13 @@ class Mixer:
         return [i for i, t in enumerate(self.last) if t and now - t <= within]
 
     def packet(self, i: int, pcm: bytes, level: float, now: float) -> bytes | None:
+        if not self._open(i, now):
+            self.since[i] = now
         self.last[i], self.level[i] = now, level
         cur = self.current
-        if cur is None or not self._open(cur, now) or \
-                (cur != i and self.channels[i].get("priority") and not self.channels[cur].get("priority")):
+        if cur is None or not self._open(cur, now) or (cur != i and (
+                (self.channels[i].get("priority") and not self.channels[cur].get("priority"))
+                or (now - self.since[cur] > self.hog_s >= now - self.since[i]))):
             self.current = cur = i
         if cur != i:
             return None
@@ -284,8 +305,10 @@ class Listener:
 
 class Receiver:
     def __init__(self, bands: dict, airband: str | None = None, rtl_fm: str | None = None, gain: float = GAIN_DB,
-                 ppm: int = 0, device: int = 0) -> None:
+                 ppm: int = 0, device: int = 0, skips_file: Path | None = None) -> None:
         self.bands = bands
+        self.skips_file = skips_file
+        self.skips = load_skips(skips_file)          # frequencies left out of the bands (always open, or of no interest)
         self.airband = airband or shutil.which("rtl_airband") or "/usr/local/bin/rtl_airband"
         self.rtl_fm = rtl_fm or shutil.which("rtl_fm") or "/usr/bin/rtl_fm"
         self.gain, self.ppm, self.device = gain, ppm, device
@@ -311,7 +334,7 @@ class Receiver:
             if spec == self.spec and self.proc is not None and self.proc.poll() is None:
                 return
             self._stop()
-            name, channels = spec_channels(spec, self.bands)
+            name, channels = spec_channels(spec, self.bands, self.skips)
             self.spec, self.name, self.error = spec, name, None
             self.gen += 1
             for lis in self.listeners:               # (they were listening to something else)
@@ -355,6 +378,30 @@ class Receiver:
                 proc.wait()
             time.sleep(0.3)                           # (the dongle needs a moment before it's opened again)
 
+    def skip(self, freq: int, on: bool = True) -> None:
+        """Leave a frequency out of the bands from now on (or take it back); remembered."""
+        with self.lock:
+            before = set(self.skips)
+            (self.skips.add if on else self.skips.discard)(int(freq))
+            if self.skips == before:
+                return
+            if self.skips_file is not None:
+                try:
+                    self.skips_file.parent.mkdir(parents=True, exist_ok=True)
+                    self.skips_file.write_text(json.dumps(sorted(self.skips)))
+                except OSError as e:
+                    log.warning("couldn't keep the skipped channels: %s", e)
+            log.info("%s %.4f MHz", "skipping" if on else "no longer skipping", freq / 1e6)
+            spec = self.spec
+            if spec and "band" in spec and self.proc is not None and \
+                    any(c["freq"] == int(freq) for c in self.bands[spec["band"]]["channels"]):
+                listeners = self.listeners             # the band is restarted without it; whoever is listening stays
+                self.spec = None
+                self.select(spec)
+                for lis in listeners:
+                    lis.dead = False
+                self.listeners = listeners
+
     def rest(self) -> None:
         with self.lock:
             if self.proc is not None:
@@ -396,10 +443,7 @@ class Receiver:
                 for s in ready:
                     data, _ = s.recvfrom(65536)
                     i = index[s]
-                    if mixer.current in (None, i) or mixer.channels[i].get("priority") or not mixer._open(mixer.current, now):
-                        pcm, level = to_pcm(data)
-                    else:
-                        pcm, level = b"", mixer.level[i]          # (not on air: only noted as active)
+                    pcm, level = to_pcm(data)
                     out = mixer.packet(i, pcm, level, now)
                     if out:
                         self._send(gen, out)
@@ -452,7 +496,8 @@ class Receiver:
             mixer, running = self.mixer, self.proc is not None and self.proc.poll() is None
             out = {"receiving": self.spec, "name": self.name if self.spec else None, "running": running,
                    "listeners": len(self.listeners), "title": self.title if self.spec else None, "error": self.error,
-                   "rate": self.rate, "bands": {k: {"name": b["name"], "channels": len(b["channels"])} for k, b in self.bands.items()}}
+                   "rate": self.rate, "skipping": sorted(self.skips),
+                   "bands": {k: {"name": b["name"], "channels": len(b["channels"])} for k, b in self.bands.items()}}
             if running and mixer is not None and self.spec and self.spec.get("mode") != "wfm":
                 on = mixer.current if mixer.current is not None and mixer._open(mixer.current, now) else None
                 out["on_air"] = mixer.channels[on] if on is not None else None
@@ -488,7 +533,8 @@ def make_handler(receiver: Receiver):
             if url.path == "/status":
                 return self._json(receiver.status())
             if url.path == "/bands":
-                return self._json(receiver.bands)
+                return self._json({k: {**b, "channels": [c | ({"skip": True} if c["freq"] in receiver.skips else {}) for c in b["channels"]]}
+                                   for k, b in receiver.bands.items()})
             if url.path == "/":
                 host = self.headers.get("Host") or f"localhost:{PORT}"
                 return self._json({"what": "Sleep Radio receiver", "status": f"http://{host}/status",
@@ -536,13 +582,24 @@ def make_handler(receiver: Receiver):
             finally:
                 receiver.leave(lis)
 
+        def do_OPTIONS(self) -> None:                 # (a web page on another machine asking first)
+            self.send_response(204)
+            self.send_header("Access-Control-Allow-Origin", "*")
+            self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+            self.send_header("Access-Control-Allow-Headers", "Content-Type")
+            self.end_headers()
+
         def do_POST(self) -> None:
-            if urlparse(self.path).path != "/select":
+            path = urlparse(self.path).path
+            if path not in ("/select", "/skip"):
                 return self._json({"error": "not found"}, 404)
             try:
                 body = json.loads(self.rfile.read(int(self.headers.get("Content-Length") or 0)) or b"{}")
-                receiver.select(parse_spec({k: str(v) for k, v in body.items()}, receiver.bands))
-            except (ValueError, TypeError, AttributeError) as e:
+                if path == "/skip":                   # {"freq": Hz, "on": true | false}
+                    receiver.skip(int(body["freq"]), body.get("on", True) is not False)
+                else:
+                    receiver.select(parse_spec({k: str(v) for k, v in body.items()}, receiver.bands))
+            except (ValueError, TypeError, AttributeError, KeyError) as e:
                 return self._json({"error": str(e)}, 400)
             self._json(receiver.status())
     return Handler
@@ -558,9 +615,11 @@ def main(argv=None) -> int:
                          "dongle can be 50 ppm out, which at 145 MHz is 7 kHz -- most of a channel")
     ap.add_argument("--device", type=int, default=0)
     ap.add_argument("--airband", help="path to rtl_airband")
+    ap.add_argument("--state", type=Path, default=Path("/var/lib/sleepradio-receiver"), help="where the skipped channels are kept")
     args = ap.parse_args(argv)
     logging.basicConfig(level=logging.INFO, format="%(message)s")
-    receiver = Receiver(load_bands(args.bands), airband=args.airband, gain=args.gain, ppm=args.ppm, device=args.device)
+    receiver = Receiver(load_bands(args.bands), airband=args.airband, gain=args.gain, ppm=args.ppm, device=args.device,
+                        skips_file=args.state / "skip.json")
     httpd = ThreadingHTTPServer(("", args.port), make_handler(receiver))
     httpd.daemon_threads = True
     log.info("Sleep Radio receiver on port %d: bands %s", args.port, ", ".join(receiver.bands))
