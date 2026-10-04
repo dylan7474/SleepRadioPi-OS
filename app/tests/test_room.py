@@ -165,6 +165,10 @@ def test_the_register_of_rooms(tmp_path: Path) -> None:
     assert [r["name"] for r in book.search("00009")] == ["GB-CQ-UK"] and len(book.search("")) == 22
     again = rooms_dir.RoomDirectory(tmp_path / "rooms.json", fetch=lambda u: 1 / 0, clock=lambda: 200.0)
     assert again.search("cq-uk")[0]["id"] == "00009" and again.status() == {"count": 22, "age_s": 100, "error": None}
+    # a list kept from before the FCS rooms were in it: fetched again in the background, though it's fresh
+    fcs = "FCS00290;America-Link-WiresX;FCS002 - America-Link-WiresX;;;\n"
+    fresh = rooms_dir.RoomDirectory(tmp_path / "rooms.json", fetch=lambda u: fcs if u == rooms_dir.FCS_SOURCE else HOSTS, clock=lambda: 300.0)
+    assert fresh.search("wiresx") == [] and _wait(lambda: [r["id"] for r in fresh.search("wiresx")] == ["FCS00290"])
     down = rooms_dir.RoomDirectory(tmp_path / "none.json", fetch=lambda u: 1 / 0)
     assert down.search("x") == [] and "couldn't be reached" in down.status()["error"]
 

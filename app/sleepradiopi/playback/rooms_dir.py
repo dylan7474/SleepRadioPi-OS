@@ -25,6 +25,7 @@ log = logging.getLogger(__name__)
 SOURCE = "https://www.pistar.uk/downloads/YSF_Hosts.txt"
 FCS_SOURCE = "https://www.pistar.uk/downloads/FCS_Hosts.txt"
 STALE_S = 24 * 3600
+RETRY_S = 600
 MAX_RESULTS = 60
 
 
@@ -71,6 +72,7 @@ class RoomDirectory:
         self.at = 0.0
         self.error: str | None = None
         self._refreshing = False
+        self._tried = -1e9
         try:
             data = json.loads(path.read_text())
             self.rooms, self.at = data["rooms"], float(data["at"])
@@ -103,10 +105,13 @@ class RoomDirectory:
 
     def search(self, q: str = "", limit: int = MAX_RESULTS) -> list[dict]:
         """Rooms whose name, description or number has every word of q, by name."""
+        # (a list kept from before the FCS rooms were in it is fetched again, but not on every search if that fails)
+        lacking = not any(r["id"].startswith("FCS") for r in self.rooms) and self._clock() - self._tried > RETRY_S
         if not self.rooms:
             self.refresh()
-        elif self._clock() - self.at > STALE_S and not self._refreshing:
+        elif (self._clock() - self.at > STALE_S or lacking) and not self._refreshing:
             self._refreshing = True
+            self._tried = self._clock()
 
             def run():
                 try:
