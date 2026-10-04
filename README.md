@@ -238,10 +238,14 @@ Actions, Sleep timer and Radio folders open:
   whose address is a receiver's own link plays it, with no browser: an
   **OpenWebRX** (`http://HOST:8073/#freq=145500000,mod=nfm`: FM with an
   automatic squelch, so it's silent until someone transmits) or a
-  **KiwiSDR** for short wave (`http://HOST:8073/?f=7150.00lsb`). Copy the
-  link from the receiver's page once it's tuned, and save it as a station.
+  **KiwiSDR** for short wave (`http://HOST:8073/?f=7150.00lsb`). *Find a
+  receiver* on the desktop searches the public directory (receiverbook.de,
+  over a thousand of them) by place or callsign, the nearest first; pick
+  one, give it a frequency, and listen or save it as a station. Or copy
+  the link from the receiver's own page once it's tuned.
   Public receivers have few listener slots and time limits: the radio says
-  why if one won't have it. See `app/sleepradiopi/playback/receiver.py`.
+  why if one won't have it. See `app/sleepradiopi/playback/receiver.py`
+  and `receivers_dir.py`.
 - **Offline is normal.** Without the internet it keeps playing and talking;
   it only leaves out what needs the right time (time checks, news, birthday
   wishes) until the clock is known, from the internet or an optional

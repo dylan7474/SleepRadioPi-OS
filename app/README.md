@@ -970,6 +970,18 @@ The cards:
   the radio) every few seconds who has the air: "On air now", "Heard 3 min
   ago". *Tune…* listens to any frequency (narrow FM, AM or broadcast FM); *Skip it*
   leaves the channel you clicked out of its band (one that's always open).
+- **Find a receiver** — in the Stations folder's toolbar (and the Receiver
+  folder's): other people's receivers on the internet, from the public
+  directory at receiverbook.de (fetched once a day and kept; OpenWebRX and
+  KiwiSDR -- WebSDRs need a browser, so they're left out). Search by place,
+  callsign or country. *Nearest to this* on any result makes that spot
+  "here": from then on the nearest come first, with their distance (the
+  page remembers it; the radio never needs to know where it is). *Tune…*
+  asks the receiver about itself -- an OpenWebRX its bands, a KiwiSDR how
+  many places are taken -- then a frequency and a mode, and *Listen* or
+  *Save as a station*. `GET /api/receivers/search?q=&kind=owrx|kiwi&near=LAT,LON`
+  and `/api/receivers/info?url=` (only for a receiver that's in the
+  directory).
 - **Wi-Fi** — the connection; saved networks (the card's, and ones added
   here — kept as WPA keys, never passwords); *Find networks*; add or remove
   one; the hotspot's name and password (SleepRadio-Setup / sleepradio to

@@ -336,6 +336,28 @@ def make_handler(station: Station, output: Mp3Output, speaker=None,
                 self._send(json.dumps({"results": found, "from": where,
                                        "directory": directory.status() if directory else None}).encode(),
                            "application/json")
+            elif path in ("/api/receivers/search", "/api/receivers/info"):
+                # Find a receiver: the public directory of internet software radios (OpenWebRX, KiwiSDR).
+                # search?q=&kind=owrx|kiwi&near=LAT,LON -> the nearest first; info?url= -> one receiver's own word.
+                from sleepradiopi.playback import receivers_dir
+                q = parse_qs(urlparse(self.path).query)
+                one = lambda k: q.get(k, [""])[0][:300]
+                book = receivers_dir.shared()
+                try:
+                    if path.endswith("/info"):
+                        self._send(json.dumps(book.info(one("url"))).encode(), "application/json")
+                        return
+                    near = None
+                    if one("near"):
+                        lat, lon = (float(v) for v in one("near").split(",")[:2])
+                        if not (-90 <= lat <= 90 and -180 <= lon <= 180):
+                            raise ValueError("near is LATITUDE,LONGITUDE")
+                        near = (lat, lon)
+                    found = book.search(one("q"), one("kind") if one("kind") in ("owrx", "kiwi") else "", near)
+                except ValueError as e:
+                    self._error(str(e))
+                    return
+                self._send(json.dumps({"results": found, "directory": book.status()}).encode(), "application/json")
             elif path == "/stream":
                 if output is None or not output.enabled:
                     self.send_error(404, "listening in a browser is switched off")

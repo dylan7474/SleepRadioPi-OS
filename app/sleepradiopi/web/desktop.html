@@ -615,7 +615,7 @@ const PANEL = {};
 for (const [key, title, sym, h, page] of PANELS) PANEL[key] = mk({ id: "set:" + key, kind: "panel", key, title, sym, h, page });
 for (const [key, title, sym, h] of [["messages", "Messages", "✎", 55], ["birthdays", "Birthdays", "✿", 340], ["stations", "Stations", "R", 8],
                                     ["tests", "Test sounds", "▶", 150], ["stream", "Listen in a browser", "◠", 200], ["lists", "Themes", "A", 195],
-                                    ["findstation", "Find a station", "R", 8], ["findpodcast", "Follow a podcast", "P", 275], ["newlist", "New theme", "A", 195]])
+                                    ["findstation", "Find a station", "R", 8], ["findreceiver", "Find a receiver", "⌁", 200], ["findpodcast", "Follow a podcast", "P", 275], ["newlist", "New theme", "A", 195]])
   PANEL[key] = mk({ id: "set:" + key, kind: "panel", key, title, sym, h, page: key });
 const DJ = mk({ id: "dj", kind: "dj", title: "The DJ" });
 const NOTES = mk({ id: "notes", kind: "folder", box: "messages", title: "Messages", kids: [], sym: "✎" });   // a folder of sticky notes
@@ -1855,12 +1855,13 @@ function folderView(o, box, win) {
   }
   else if (o.box === "playlists") tools.append(T("New playlist", newPlaylist), el("span", { className: "note", textContent: "Drop songs, albums or folders onto a playlist" }));
   else if (o.box === "programmes") tools.append(T("New programme", newProgramme), el("span", { className: "note", textContent: "A running order the radio plays by itself" }));
-  else if (o.box === "stations") tools.append(T("Find a station", () => open(PANEL.findstation.id)), el("span", { className: "note", textContent: "Drag a station onto a button to keep it there" }));
+  else if (o.box === "stations") tools.append(T("Find a station", () => open(PANEL.findstation.id)), T("Find a receiver", () => open(PANEL.findreceiver.id)), el("span", { className: "note", textContent: "Drag a station onto a button to keep it there" }));
   else if (o.box === "podcasts") tools.append(T("Follow a podcast", () => open(PANEL.findpodcast.id)), el("span", { className: "note", textContent: "Open a show for its episodes" }));
   else if (o.box === "lists") tools.append(T("New theme", () => open(PANEL.newlist.id)), el("span", { className: "note", textContent: "Double-click a theme to change it · drag one onto the radio to play it" }));
   else if (o.box === "receiver" || o.box === "rxband") {
     const origin = o.origin || o.origins?.[0];
     tools.append(T("Tune…", () => { win.naming = !win.naming; drawDesk(); }));
+    if (o.box === "receiver") tools.append(T("Find a receiver", () => open(PANEL.findreceiver.id)));
     if (o.box === "rxband") tools.append(T("Skip it", async () => {      // (one that's always open: a stuck gateway, a carrier)
       const one = selectedIn(o);
       if (!one?.rxFreq) return toast("Click a channel first, then Skip it: the band leaves it out from then on (again to listen to it once more).");
@@ -2735,8 +2736,88 @@ const UI = {
       const have = new Set(STATIONS.kids.map(id => O[id].url));
       return [grp("Find a station", line(q, sbtn("Search", go, "primary")),
         ...d.results.slice(0, 40).map(st => srow(st.name, help(st.info || ""), have.has(st.url) ? help("Saved") : line(sbtn("▶", () => play(stationObj(st))), sbtn("Save", async () => {
-          const list = [...STATIONS.kids.map(id => O[id]).map(o => ({ name: o.name, url: o.url, info: o.info })), { name: st.name, url: st.url, info: st.info }];
-          try { await api("/api/radio/stations", { stations: list }); await loadFolder(STATIONS); toast(`Saved the station “${st.name}”.`); drawDesk(); } catch (e) { toast(e.message); } })))))];
+          try {
+            await loadFolder(STATIONS);      // the list as the radio has it now: what's sent replaces all of it
+            const list = [...STATIONS.kids.map(id => O[id]).map(o => ({ name: o.name, url: o.url, info: o.info })), { name: st.name, url: st.url, info: st.info }];
+            await api("/api/radio/stations", { stations: list }); await loadFolder(STATIONS); toast(`Saved the station “${st.name}”.`); drawDesk(); } catch (e) { toast(e.message); } })))))];
+    },
+  },
+  // Other people's receivers on the internet (OpenWebRX, KiwiSDR), from the public directory: the nearest
+  // first once you've said where "here" is (by picking one that's near you), then a frequency, and it's a station.
+  findreceiver: {
+    load: async () => { let near = null; try { near = JSON.parse(localStorage.getItem("srd.rxnear")); } catch {}
+                        return { q: "", kind: "", near, results: null, pick: null, info: null }; },
+    build: (d, act, win) => {
+      const me = PANEL.findreceiver.id, box = "background:var(--win);border:1px solid var(--line);border-radius:6px;padding:3px 7px";
+      const q = el("input", { type: "search", placeholder: "A place, a callsign, a country: York, G8AOE, Japan", id: "rx-q", value: d.q });
+      const go = async () => {
+        d.q = q.value; d.pick = d.info = null;
+        try {
+          const r = await api(`/api/receivers/search?q=${encodeURIComponent(d.q)}&kind=${d.kind}${d.near ? `&near=${d.near.lat},${d.near.lon}` : ""}`);
+          d.results = r.results || [];
+          if (!r.directory?.count && r.directory?.error) toast(`No list of receivers: ${r.directory.error}.`);
+        } catch (e) { toast(e.message); }
+        drawDesk(); fitWin(me);
+      };
+      q.onkeydown = e => { if (e.key === "Enter") go(); };
+      const nearest = r => { d.near = { lat: r.lat, lon: r.lon, label: r.place || r.name }; try { localStorage.setItem("srd.rxnear", JSON.stringify(d.near)); } catch {} q.value = ""; go(); };
+      const pick = async r => {
+        d.pick = r; d.info = null; win.rxFreq = win.rxMode = undefined; drawDesk();
+        try { d.info = await api(`/api/receivers/info?url=${encodeURIComponent(r.url)}`); } catch (e) { d.info = { error: e.message }; }
+        drawDesk(); fitWin(me);
+      };
+      const label = t => t.length > 46 ? t.slice(0, 44) + "…" : t;
+      const station = (r, freqText, mode) => {
+        const f = parseFloat(freqText);
+        if (!(f > 0)) { toast(r.kind === "kiwi" ? "A frequency in kHz: 7150" : "A frequency in MHz: 145.5"); return null; }
+        const who = (r.name.split(/\s-\s|\|/).map(p => p.trim()).find(p => p && !/^https?:/i.test(p)) || r.place || r.name).slice(0, 28);
+        return r.kind === "kiwi"
+          ? stationObj({ name: `${+f.toFixed(2)} kHz ${mode.toUpperCase()} · ${who}`.slice(0, 60), url: `${r.url}?f=${f.toFixed(2)}${mode}`, info: `KiwiSDR · ${label(r.place || r.name)}` })
+          : stationObj({ name: `${+f.toFixed(4)} MHz ${mode === "nfm" ? "FM" : mode.toUpperCase()} · ${who}`.slice(0, 60), url: `${r.url}#freq=${Math.round(f * 1e6)},mod=${mode}`, info: `OpenWebRX · ${label(r.place || r.name)}` });
+      };
+      const keep = async st => {
+        try {
+          await loadFolder(STATIONS);        // the list as the radio has it now: what's sent replaces all of it
+          const have = STATIONS.kids.map(id => O[id]).filter(o => o?.kind === "station").map(o => ({ name: o.name, url: o.url, info: o.info }));
+          if (have.some(o => o.url === st.url)) return toast("That one is already with your stations.");
+          await api("/api/radio/stations", { stations: [...have, { name: st.name, url: st.url, info: st.info }] }); await loadFolder(STATIONS); toast(`Saved “${st.name}” with your stations.`); drawDesk(); } catch (e) { toast(e.message); }
+      };
+      const tuner = r => {
+        const i = d.info;
+        if (!i) return help("Asking the receiver…");
+        if (i.error) return help(`${i.error}. Try another.`);
+        const kiwi = r.kind === "kiwi";
+        const guess = b => /air/i.test(b.name) ? "am" : b.centre < 30e6 ? (b.centre < 10e6 ? "lsb" : "usb") : "nfm";      // what a band is usually heard in
+        const f = el("input", { type: "text", inputMode: "decimal", id: "rxf-freq", style: box + ";width:7em", value: win.rxFreq ?? (kiwi ? "7150" : i.bands?.[0] ? String(+(i.bands[0].centre / 1e6).toFixed(4)) : "") });
+        f.oninput = () => { win.rxFreq = f.value; };
+        const modes = kiwi ? [["lsb", "LSB"], ["usb", "USB"], ["am", "AM"], ["cw", "CW"], ["nbfm", "FM"]] : [["nfm", "FM (narrow)"], ["am", "AM"], ["usb", "USB"], ["lsb", "LSB"]];
+        const mode = el("select", { style: box, id: "rxf-mode" }, ...modes.map(([v, t]) => el("option", { value: v, textContent: t, selected: v === (win.rxMode || (!kiwi && i.bands?.[0] ? guess(i.bands[0]) : modes[0][0])) })));
+        mode.onchange = () => { win.rxMode = mode.value; };
+        const set = (v, m) => { win.rxFreq = String(v); win.rxMode = m; drawDesk(); };
+        const quick = kiwi
+          ? [["80 m", 3700, "lsb"], ["40 m", 7150, "lsb"], ["20 m", 14200, "usb"], ["Short wave AM", 6050, "am"]].map(([t, v, m]) => sbtn(t, () => set(v, m)))
+          : (i.bands || []).slice(0, 14).map(b => sbtn(b.name.length > 20 ? b.name.slice(0, 18) + "…" : b.name, () => set(+(b.centre / 1e6).toFixed(4), guess(b))));
+        const full = kiwi ? (i.offline ? "It's switched off just now." : i.users != null && i.users_max != null ? `${i.users} of ${i.users_max} places taken${i.users >= i.users_max ? ": full just now" : ""}.` : "")
+                          : (i.max_clients ? `Room for ${i.max_clients} listener${i.max_clients === 1 ? "" : "s"}.` : "");
+        return el("div", { className: "grp" }, el("h3", { textContent: label(i.title || r.name) }),
+          help(`${kiwi ? "A KiwiSDR: short wave, 0–30 MHz" + (i.antenna ? ` · ${i.antenna}` : "") : "An OpenWebRX: its bands are below (changing band moves everyone listening to it)"}. ${full} It's someone's own radio: be a good guest.`),
+          el("div", { className: "line", style: "flex-wrap:wrap" }, ...quick),
+          line(f, el("span", { className: "note", textContent: kiwi ? "kHz" : "MHz" }), mode,
+               sbtn("Listen", () => { const st = station(r, f.value, mode.value); if (st) play(st); }, "primary"),
+               sbtn("Save as a station", () => { const st = station(r, f.value, mode.value); if (st) keep(st); })));
+      };
+      const kinds = seg([["", "All"], ["kiwi", "KiwiSDR (short wave)"], ["owrx", "OpenWebRX"]], d.kind, v => { d.kind = v; go(); });
+      const rows = (d.results || []).slice(0, 40).map(r => {
+        const open_ = d.pick?.url === r.url;
+        return el("div", {}, srow(label(r.name), help(`${r.kind === "kiwi" ? "KiwiSDR" : "OpenWebRX"}${r.km != null ? ` · ${r.km} km` : ""}${r.place && r.place !== r.name ? ` · ${label(r.place)}` : ""}`),
+          line(sbtn(open_ ? "Close" : "Tune…", () => open_ ? (d.pick = d.info = null, drawDesk(), fitWin(me)) : pick(r), open_ ? "" : "primary"), sbtn("Nearest to this", () => nearest(r)))),
+          open_ ? tuner(r) : null);
+      });
+      return [grp("Find a receiver", line(q, sbtn("Search", go, "primary")), kinds,
+        help(d.near ? `Nearest to ${label(d.near.label)} first. Search for somewhere else and press “Nearest to this” to change it.`
+                    : "Radio amateurs' own receivers, on the internet for anyone to tune. Search for a place near you, then “Nearest to this” on one: after that the nearest come first."),
+        d.results === null ? line(sbtn(d.near ? "Show the nearest" : "Show them all", go)) : d.results.length ? null : help("None found.")),
+        ...rows];
     },
   },
   findpodcast: {
@@ -2774,6 +2855,7 @@ const SUMS = {
   birthdays: b => `${b.birthdays.length} ${b.birthdays.length === 1 ? "person" : "people"}${b.today?.length ? " · a birthday today!" : ""}`,
   lists: d => `${d.profiles.length} theme${d.profiles.length === 1 ? "" : "s"} · ${d.artists.length} artists to choose from`,
   findstation: () => "From the internet radio directory",
+  findreceiver: () => "Other people's receivers on the internet",
   findpodcast: () => "From Apple's podcast directory",
 };
 function win4(data) { const w = W.find(w => w.data === data); if (w) drawDesk(); }
