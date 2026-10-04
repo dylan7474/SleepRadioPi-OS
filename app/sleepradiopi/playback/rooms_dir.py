@@ -1,0 +1,109 @@
+"""Find a room: the public register of System Fusion reflectors (see room.py).
+
+Reflector owners register them at register.ysfreflector.de; Pi-Star keeps a
+copy as a plain list (one a line: id;name;description;host;port;...), which is
+what's fetched here, once a day, kept in a file and searched by words.
+"""
+
+from __future__ import annotations
+
+import json
+import logging
+import threading
+import time
+import urllib.request
+from collections.abc import Callable
+from pathlib import Path
+
+from sleepradiopi.config.atomic import write_atomic
+from sleepradiopi.playback import room
+
+log = logging.getLogger(__name__)
+
+SOURCE = "https://www.pistar.uk/downloads/YSF_Hosts.txt"
+STALE_S = 24 * 3600
+MAX_RESULTS = 60
+
+
+def _get_text(url: str, timeout: float = 20.0) -> str:
+    req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0 (X11; Linux) SleepRadio"})
+    with urllib.request.urlopen(req, timeout=timeout) as r:
+        return r.read(2_000_000).decode("utf-8", errors="replace")
+
+
+def parse_hosts(text: str) -> list[dict]:
+    """The list -> [{"id", "name", "about", "url"}], each address once."""
+    out, seen = [], set()
+    for line in text.splitlines():
+        p = [x.strip() for x in line.split(";")]
+        if line.startswith("#") or len(p) < 5 or not p[1] or not p[3] or not p[4].isdigit() or not 0 < int(p[4]) < 65536:
+            continue
+        if any(ch in p[3] for ch in "/ @?#") or len(p[3]) > 100:
+            continue
+        url = room.link(p[3], int(p[4]), p[1][:40])
+        if (p[3], p[4]) in seen:
+            continue
+        seen.add((p[3], p[4]))
+        out.append({"id": p[0][:8], "name": p[1][:40], "about": p[2][:60], "url": url})
+    return out
+
+
+class RoomDirectory:
+    def __init__(self, path: Path, fetch: Callable[[str], str] = _get_text, clock: Callable[[], float] = time.time) -> None:
+        self.path, self._fetch, self._clock = path, fetch, clock
+        self.rooms: list[dict] = []
+        self.at = 0.0
+        self.error: str | None = None
+        self._refreshing = False
+        try:
+            data = json.loads(path.read_text())
+            self.rooms, self.at = data["rooms"], float(data["at"])
+        except (OSError, ValueError, KeyError, TypeError):
+            pass
+
+    def status(self) -> dict:
+        return {"count": len(self.rooms), "age_s": round(self._clock() - self.at) if self.at else None, "error": self.error}
+
+    def refresh(self) -> int:
+        try:
+            found = parse_hosts(self._fetch(SOURCE))
+            if len(found) < 20:
+                raise ValueError("the register came back nearly empty")
+        except Exception as e:
+            self.error = str(e) if isinstance(e, ValueError) else f"the register couldn't be reached ({e})"
+            log.warning("rooms: %s", self.error)
+            return 0
+        self.rooms, self.at, self.error = found, self._clock(), None
+        try:
+            self.path.parent.mkdir(parents=True, exist_ok=True)
+            write_atomic(self.path, json.dumps({"at": self.at, "rooms": found}))
+        except OSError:
+            log.exception("rooms: couldn't keep the register")
+        return len(found)
+
+    def search(self, q: str = "", limit: int = MAX_RESULTS) -> list[dict]:
+        """Rooms whose name, description or number has every word of q, by name."""
+        if not self.rooms:
+            self.refresh()
+        elif self._clock() - self.at > STALE_S and not self._refreshing:
+            self._refreshing = True
+
+            def run():
+                try:
+                    self.refresh()
+                finally:
+                    self._refreshing = False
+            threading.Thread(target=run, name="room-directory", daemon=True).start()
+        words = q.lower().split()
+        found = [r for r in self.rooms if all(w in f"{r['name']} {r['about']} {r['id']}".lower() for w in words)]
+        return sorted(found, key=lambda r: r["name"].lower())[:max(1, min(limit, MAX_RESULTS))]
+
+
+_shared: RoomDirectory | None = None
+
+
+def shared() -> RoomDirectory:
+    global _shared
+    if _shared is None:
+        _shared = RoomDirectory(Path.home() / ".cache" / "sleepradiopi" / "rooms.json")
+    return _shared

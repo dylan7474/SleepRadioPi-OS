@@ -563,6 +563,8 @@ def main() -> None:
         save(args.config, load(args.config))
         logging.info("wrote default settings to %s", args.config)
     settings = load(args.config)
+    from sleepradiopi.playback import room as room_mod
+    room_mod.CALLSIGN = settings.callsign
     from sleepradiopi.config import brand
     brand.set_name(brand.name_for(asdict(settings)))   # "Sleep Radio", "Phonosphere", or station_name
 

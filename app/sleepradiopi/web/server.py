@@ -336,6 +336,17 @@ def make_handler(station: Station, output: Mp3Output, speaker=None,
                 self._send(json.dumps({"results": found, "from": where,
                                        "directory": directory.status() if directory else None}).encode(),
                            "application/json")
+            elif path in ("/api/rooms", "/api/rooms/search"):
+                # Rooms (radio amateurs' digital voice: playback/room.py). /api/rooms: the radio's callsign and
+                # whether the voice decoder is on it; /search?q=: the public register of rooms, by words.
+                from sleepradiopi.playback import room as room_mod, rooms_dir
+                if path == "/api/rooms":
+                    self._send(json.dumps({"callsign": room_mod.CALLSIGN or "", "decoder": room_mod.DECODER.is_file(),
+                                           "decoder_path": str(room_mod.DECODER)}).encode(), "application/json")
+                else:
+                    book = rooms_dir.shared()
+                    found = book.search(parse_qs(urlparse(self.path).query).get("q", [""])[0][:200])
+                    self._send(json.dumps({"results": found, "directory": book.status()}).encode(), "application/json")
             elif path == "/api/rx":
                 # The rig on the desktop: the receiver being listened to (a KiwiSDR), where it's tuned and
                 # its waterfall since row ?since=N. {"on": false} when the radio is playing something else.
@@ -572,6 +583,19 @@ def make_handler(station: Station, output: Mp3Output, speaker=None,
                     threading.Thread(target=lambda: _quietly(directory.refresh), name="station-directory",
                                      daemon=True).start()
                 self._send(json.dumps({**directory.status(), "refreshing": True}).encode(), "application/json")
+            elif path == "/api/rooms/callsign":
+                # {"callsign": "M0ABC"} ("" clears it): what rooms are joined under. Kept.
+                from sleepradiopi.playback import room as room_mod
+                try:
+                    body = json.loads(self.rfile.read(int(self.headers.get("Content-Length", 0))) or b"{}")
+                    call = room_mod.clean_callsign(body.get("callsign"))
+                except (ValueError, TypeError, AttributeError) as e:
+                    self._error(str(e))
+                    return
+                room_mod.CALLSIGN = call or None
+                if config_file is not None:
+                    save_setting(config_file, "callsign", call or None)
+                self._send(json.dumps({"callsign": call, "decoder": room_mod.DECODER.is_file()}).encode(), "application/json")
             elif path == "/api/rx/tune":
                 # {"base", "freq" (Hz), "mode", "zoom", "centre" (Hz), "profile"}: retune the receiver being listened to, where
                 # it is (any of them; "base" must be the one that's on, so a stale window can't move another).

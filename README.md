@@ -256,6 +256,16 @@ Actions, Sleep timer and Radio folders open:
   it is, through the one connection the radio holds to it.
 
   ![The rig: a receiver's window, with its waterfall](docs/rig.jpg)
+- **Rooms: radio amateurs' digital voice.** Yaesu "System Fusion" radios
+  talk across the internet through reflectors -- rooms like CQ-UK or America
+  Link, the network a Pi-Star hotspot uses, with many of Yaesu's WIRES-X
+  rooms bridged onto it. *Find a room* on the desktop searches the public
+  register of them; a room plays like any station, with the callsign of
+  whoever is speaking as what's playing, and stays tuned through the long
+  quiet between overs. It only ever listens, and joins under your own
+  callsign, which you give it once (rooms are for licensed amateurs, and
+  show who is connected). **Hearing a room needs a voice decoder that is
+  not part of Sleep Radio**: see [Rooms and the voice decoder](#rooms-and-the-voice-decoder).
 - **Offline is normal.** Without the internet it keeps playing and talking;
   it only leaves out what needs the right time (time checks, news, birthday
   wishes) until the clock is known, from the internet or an optional
@@ -457,6 +467,47 @@ Pi doesn't come back, put the card in the PC and set `root=` in
 `cmdline.txt` on the boot partition back to the other slot. Kernel changes
 can't be done this way (the kernel is on the shared boot partition): the
 script refuses, and you use `flash.sh`.
+
+### Rooms and the voice decoder
+
+A room's speech is not ordinary audio. A Fusion radio squeezes a voice into
+a few thousand bits a second with a codec called AMBE+2, and that is what a
+room passes round. To hear it, something has to turn those bits back into
+sound.
+
+AMBE+2 belongs to a company (Digital Voice Systems, Inc.) and is patented.
+Radio makers pay to use it. There is an open implementation, **mbelib**,
+that decodes it well -- but its own authors attach a notice saying that
+using it may be covered by patents, and that it's for you to check. People
+disagree about which of those patents are still in force, and it varies by
+country. This project can't settle that for you, so it takes the careful
+line:
+
+- **Sleep Radio contains no AMBE decoder.** Not in this repository, not in
+  the image, not in any release. What's here is only the part that joins a
+  room, reads who is talking, and unpacks the voice bits.
+- **Without a decoder a room still works, silently**: you see who is
+  talking and who was heard last. *Find a room* says plainly whether a
+  decoder is on the radio.
+- **Adding the decoder is a step you take yourself**, knowingly, on your
+  own radio:
+
+  ```sh
+  make                                             # (once: it needs the image's toolchain)
+  scripts/build-voice-decoder.sh sleepradiopi-os   # fetch mbelib, build it, put it on the radio
+  ```
+
+  The script fetches mbelib from its own home on GitHub (a fixed version),
+  shows you its patent notice, builds it for the radio, and copies one
+  file to the radio's data partition: `/data/radio/decoders/libmbe.so`.
+  That partition is yours -- updates never touch it and release images never
+  contain it -- so the decoder stays through updates, and deleting the file
+  takes it away again. A factory reset leaves the file where it is (it
+  clears the settings, your callsign among them).
+
+If you'd rather not rely on software for this at all, the fully licensed
+route is a hardware decoder (a DVSI USB stick); Sleep Radio doesn't support
+one yet.
 
 ### Going back to the previous version
 

@@ -1016,6 +1016,21 @@ The cards:
   local airband, 70 cm repeaters -- up to 64 channels within the 1.9 MHz a
   dongle hears at once; it's then a folder like the others, and *Remove this
   band* in its window takes it away again (the built-in two stay).
+- **Find a room** — in the Stations and Receivers folders' toolbars: radio
+  amateurs' digital voice rooms (Yaesu System Fusion reflectors: CQ-UK,
+  America Link, ...), from the public register Pi-Star also uses (fetched
+  once a day and kept). First *your callsign*: a room shows who is
+  connected, so the radio joins under yours, and won't join without one.
+  Then search by name, country or number, and *Listen* or *Save as a
+  station*. A room is a station with the address `ysf://HOST:PORT/NAME`: it
+  plays whoever speaks, with their callsign as what's playing, and silence
+  in between (rooms are quiet most of the time), and it only ever listens.
+  The window also says whether the *voice decoder* is on the radio: it
+  isn't part of the software (the top README's "Rooms and the voice
+  decoder" says why, and how to add it); without it a room shows who's
+  talking but makes no sound. A key held with nobody speaking is left as
+  silence, not hiss. `GET /api/rooms`, `/api/rooms/search?q=`,
+  `POST /api/rooms/callsign {"callsign"}`; `playback/room.py`, `rooms_dir.py`.
 - **Find a receiver** — in the Stations folder's toolbar (and the Receiver
   folder's): other people's receivers on the internet, from the public
   directory at receiverbook.de (fetched once a day and kept; OpenWebRX and

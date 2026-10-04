@@ -659,7 +659,7 @@ const PANEL = {};
 for (const [key, title, sym, h, page] of PANELS) PANEL[key] = mk({ id: "set:" + key, kind: "panel", key, title, sym, h, page });
 for (const [key, title, sym, h] of [["messages", "Messages", "✎", 55], ["birthdays", "Birthdays", "✿", 340], ["stations", "Stations", "R", 8],
                                     ["tests", "Test sounds", "▶", 150], ["stream", "Listen in a browser", "◠", 200], ["lists", "Themes", "A", 195],
-                                    ["findstation", "Find a station", "R", 8], ["findreceiver", "Find a receiver", "⌁", 200], ["findpodcast", "Follow a podcast", "P", 275], ["newlist", "New theme", "A", 195]])
+                                    ["findstation", "Find a station", "R", 8], ["findreceiver", "Find a receiver", "⌁", 200], ["findroom", "Find a room", "☊", 265], ["findpodcast", "Follow a podcast", "P", 275], ["newlist", "New theme", "A", 195]])
   PANEL[key] = mk({ id: "set:" + key, kind: "panel", key, title, sym, h, page: key });
 const DJ = mk({ id: "dj", kind: "dj", title: "The DJ" });
 const NOTES = mk({ id: "notes", kind: "folder", box: "messages", title: "Messages", kids: [], sym: "✎" });   // a folder of sticky notes
@@ -2357,10 +2357,10 @@ function folderView(o, box, win) {
   }
   else if (o.box === "playlists") tools.append(T("New playlist", newPlaylist), el("span", { className: "note", textContent: "Drop songs, albums or folders onto a playlist" }));
   else if (o.box === "programmes") tools.append(T("New programme", newProgramme), el("span", { className: "note", textContent: "A running order the radio plays by itself" }));
-  else if (o.box === "stations") tools.append(T("Find a station", () => open(PANEL.findstation.id)), T("Find a receiver", () => open(PANEL.findreceiver.id)), el("span", { className: "note", textContent: "Drag a station onto a button to keep it there" }));
+  else if (o.box === "stations") tools.append(T("Find a station", () => open(PANEL.findstation.id)), T("Find a receiver", () => open(PANEL.findreceiver.id)), T("Find a room", () => open(PANEL.findroom.id)), el("span", { className: "note", textContent: "Drag a station onto a button to keep it there" }));
   else if (o.box === "podcasts") tools.append(T("Follow a podcast", () => open(PANEL.findpodcast.id)), el("span", { className: "note", textContent: "Open a show for its episodes" }));
   else if (o.box === "lists") tools.append(T("New theme", () => open(PANEL.newlist.id)), el("span", { className: "note", textContent: "Double-click a theme to change it · drag one onto the radio to play it" }));
-  else if (o.box === "receiver") tools.append(T("Find a receiver", () => open(PANEL.findreceiver.id)), el("span", { className: "note", textContent: "Each opens as a rig · they're the receivers your saved stations use" }));
+  else if (o.box === "receiver") tools.append(T("Find a receiver", () => open(PANEL.findreceiver.id)), T("Find a room", () => open(PANEL.findroom.id)), el("span", { className: "note", textContent: "Each opens as a rig · they're the receivers your saved stations use" }));
   else if (o.box === "rxbands" || o.box === "rxband") {
     const origin = o.origin;
     tools.append(T("Tune…", () => { win.naming = !win.naming; win.banding = false; drawDesk(); }));
@@ -3350,6 +3350,48 @@ const UI = {
         ...rows];
     },
   },
+  // Rooms: radio amateurs' digital voice (Yaesu System Fusion reflectors), joined to listen. The radio needs the
+  // owner's callsign (a room shows who's connected), and a voice decoder that isn't part of the radio's software.
+  findroom: {
+    load: async () => ({ q: "", results: null, me: await api("/api/rooms") }),
+    build: (d, act, win) => {
+      const me = PANEL.findroom.id, box = "background:var(--win);border:1px solid var(--line);border-radius:6px;padding:3px 7px";
+      const call = el("input", { type: "text", id: "room-call", placeholder: "M0ABC", maxLength: 10, style: box + ";width:8em;text-transform:uppercase", value: win.call ?? d.me.callsign });
+      call.oninput = () => { win.call = call.value; };
+      const keepCall = async () => {
+        try { d.me = { ...d.me, ...(await api("/api/rooms/callsign", { callsign: call.value })) }; win.call = undefined; toast(d.me.callsign ? `Rooms are joined as ${d.me.callsign}.` : "The callsign is cleared: rooms can't be joined."); drawDesk(); }
+        catch (e) { toast(e.message[0].toUpperCase() + e.message.slice(1) + "."); }
+      };
+      call.onkeydown = e => { if (e.key === "Enter") keepCall(); };
+      const q = el("input", { type: "search", placeholder: "A room's name, country or number: CQ-UK, America, 00009", id: "room-q", value: d.q });
+      const go = async () => {
+        d.q = q.value;
+        try { const r = await api(`/api/rooms/search?q=${encodeURIComponent(d.q)}`); d.results = r.results || []; if (!r.directory?.count && r.directory?.error) toast(`No list of rooms: ${r.directory.error}.`); }
+        catch (e) { toast(e.message); }
+        drawDesk(); fitWin(me);
+      };
+      q.onkeydown = e => { if (e.key === "Enter") go(); };
+      const station = r => stationObj({ name: r.name, url: r.url, info: `Room · ${r.about || "digital voice"}` });
+      const need = fn => () => d.me.callsign ? fn() : toast("Give the radio your callsign first: a room is joined under it.");
+      const keep = async r => {
+        try {
+          await loadFolder(STATIONS);        // the list as the radio has it now: what's sent replaces all of it
+          const have = STATIONS.kids.map(id => O[id]).filter(o => o?.kind === "station").map(o => ({ name: o.name, url: o.url, info: o.info })), st = station(r);
+          if (have.some(o => o.url === st.url)) return toast("That one is already with your stations.");
+          await api("/api/radio/stations", { stations: [...have, { name: st.name, url: st.url, info: st.info }] }); await loadFolder(STATIONS); toast(`Saved the room “${st.name}” with your stations.`); drawDesk();
+        } catch (e) { toast(e.message); }
+      };
+      return [grp("Your callsign", line(call, sbtn("Keep", keepCall, "primary")),
+          help("Rooms are for licensed radio amateurs, and show who is connected: the radio joins under your callsign. It only ever listens.")),
+        grp("The voice decoder", help(d.me.decoder ? "It's on this radio: rooms can be heard."
+          : `It isn't on this radio. A room still shows who is talking, but there's no sound. The speech is in a patented codec (AMBE) that the radio's software doesn't include: scripts/build-voice-decoder.sh in the repository builds the decoder and puts it on the radio (the README says why it's separate).`)),
+        grp("Find a room", line(q, sbtn("Search", go, "primary")),
+          help("Rooms are quiet most of the time: many connected, nobody talking. The radio stays tuned and plays whoever speaks, with their callsign as what's playing."),
+          d.results === null ? null : d.results.length ? null : help("None found.")),
+        ...(d.results || []).slice(0, 40).map(r => srow(r.name, help(`${r.about || ""}${r.about ? " · " : ""}room ${r.id}`),
+          line(sbtn("Listen", need(() => play(station(r))), "primary"), sbtn("Save as a station", need(() => keep(r))))))];
+    },
+  },
   findpodcast: {
     load: async () => ({ q: "", results: [] }),
     build: (d) => {
@@ -3386,6 +3428,7 @@ const SUMS = {
   lists: d => `${d.profiles.length} theme${d.profiles.length === 1 ? "" : "s"} · ${d.artists.length} artists to choose from`,
   findstation: () => "From the internet radio directory",
   findreceiver: () => "Other people's receivers on the internet",
+  findroom: () => "Radio amateurs' digital voice rooms",
   findpodcast: () => "From Apple's podcast directory",
 };
 function win4(data) { const w = W.find(w => w.data === data); if (w) drawDesk(); }

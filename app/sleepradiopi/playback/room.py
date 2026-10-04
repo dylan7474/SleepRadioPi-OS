@@ -1,0 +1,243 @@
+"""A room: radio amateurs' digital voice, listened to as a station.
+
+Yaesu "System Fusion" radios talk to each other across the internet through
+reflectors -- rooms -- that anyone licensed can join (the YSF network a
+Pi-Star hotspot uses; many of Yaesu's own WIRES-X rooms are bridged onto
+it). A station whose address is a room's
+
+    ysf://HOST:PORT/NAME
+
+joins it and plays whoever speaks, with their callsign as the "now playing"
+title. It only listens: nothing is ever sent but "I'm here" every few
+seconds, under the callsign the radio has been given (a room shows who is
+connected, and wants a real one). Rooms are quiet most of the time: silence
+goes out meanwhile, so the radio stays tuned in.
+
+The speech is in the AMBE+2 codec, which this software does not contain.
+A separate decoder -- mbelib, built by scripts/build-voice-decoder.sh and
+put on the radio as DECODER -- is loaded if it's there. Without it a room
+still shows who is talking; it just can't be heard. (Why it's separate is
+in the README: the codec is patented, and what's covered where is for
+whoever installs it to weigh.)
+
+A frame from the reflector is "YSFD", three callsigns, a counter, then a
+Fusion radio frame: 5 bytes of sync, 25 of header (FICH), and five blocks
+of 40 data bits + 104 voice bits. In the usual "DN" mode a voice block,
+de-interleaved and un-whitened, is 27 bits each sent three times and 22
+sent once: the 49 bits of one 20 ms AMBE+2 frame. That the triples agree is
+how a voice frame is told from a header or a data frame.
+"""
+
+from __future__ import annotations
+
+import collections
+import ctypes
+import logging
+import re
+import socket
+import time
+from collections.abc import Callable
+from pathlib import Path
+from urllib.parse import quote, unquote, urlparse
+
+import numpy as np
+
+from sleepradiopi.playback.receiver import ReceiverStream, Resampler
+
+log = logging.getLogger(__name__)
+
+DECODER = Path.home() / "decoders" / "libmbe.so"
+CALLSIGN: str | None = None      # the radio's (main.py sets it from the settings; the web side when it's changed)
+PORT = 42000
+POLL_S = 5.0                     # "I'm here", this often
+GONE_S = 60.0                    # no answer this long: the room has gone
+STATUS_S = 60.0                  # how many are connected: asked this often
+OVER_S = 1.5                     # nothing from the talker this long: the over has ended
+VOICE_RATE = 8000
+HEARD = 20                       # overs remembered, for "last heard"
+
+_WHITEN = np.unpackbits(np.frombuffer(bytes([0x93, 0xD7, 0x51, 0x21, 0x9C, 0x2F, 0x6C, 0xD0, 0xEF, 0x0F, 0xF8, 0x3D, 0xF1]), dtype=np.uint8))
+_ORDER = np.array([(i % 26) * 4 + i // 26 for i in range(104)])
+
+
+def parse(url: str) -> dict | None:
+    """ysf://HOST[:PORT][/NAME] -> {"host", "port", "name"}; None if it isn't a room's address."""
+    try:
+        u = urlparse(url)
+        if u.scheme != "ysf" or not u.hostname:
+            return None
+        return {"host": u.hostname, "port": u.port or PORT, "name": unquote(u.path.strip("/"))[:40] or u.hostname}
+    except ValueError:
+        return None
+
+
+def is_room(url: str) -> bool:
+    return parse(url) is not None
+
+
+def link(host: str, port: int, name: str) -> str:
+    return f"ysf://{host}:{int(port)}/{quote(name.strip(), safe='')}"
+
+
+def clean_callsign(text) -> str:
+    """A callsign as a room wants it (M8ODJ, or M8ODJ-1 / M8ODJ/P); "" clears it. ValueError if it isn't one."""
+    call = str(text or "").strip().upper()
+    if call and not re.fullmatch(r"(?=.*\d)(?=.*[A-Z])[A-Z0-9]{3,8}([-/][A-Z0-9]{1,3})?", call):
+        raise ValueError("a callsign is letters and digits, like M0ABC")
+    if len(call) > 10:
+        raise ValueError("a callsign is 10 characters at most")
+    return call
+
+
+def voice(payload: bytes) -> tuple[list[np.ndarray], float]:
+    """One 120-byte Fusion frame -> its five 49-bit voice frames, and how well the
+    bits sent three times agree (1.0: all of them -- it's voice in DN mode)."""
+    body = np.unpackbits(np.frombuffer(payload[:120], dtype=np.uint8))[(5 + 25) * 8:]
+    out, agree = [], 0
+    for j in range(5):
+        block = body[j * 144 + 40:j * 144 + 144][_ORDER] ^ _WHITEN
+        sums = block[:81].reshape(27, 3).sum(axis=1)
+        agree += int((sums % 3 == 0).sum())
+        out.append(np.concatenate([(sums >= 2).astype(np.uint8), block[81:103]]))
+    return out, agree / 135
+
+
+def is_silence(bits: np.ndarray) -> bool:
+    """The codec's own "nothing is being said" frame (its pitch field is 124 or 125): a key
+    held with nobody speaking. Played, it's only hiss."""
+    b0 = 0
+    for b in (*bits[0:6], bits[48]):
+        b0 = b0 * 2 + int(b)
+    return b0 in (124, 125)
+
+
+class Decoder:
+    """mbelib, if it has been put on the radio (see the module's words): 49 bits -> 20 ms of speech."""
+
+    def __init__(self, path: Path = DECODER) -> None:
+        self.lib = ctypes.CDLL(str(path))
+        self.out = (ctypes.c_short * 160)()
+        self.errs, self.errs2, self.err_str = ctypes.c_int(), ctypes.c_int(), ctypes.create_string_buffer(256)
+        self.parms = [ctypes.create_string_buffer(65536) for _ in range(3)]      # (mbe_parms: more room than it needs)
+        self.reset()
+
+    def reset(self) -> None:
+        self.lib.mbe_initMbeParms(*self.parms)
+
+    def decode(self, bits: np.ndarray) -> np.ndarray:
+        buf = (ctypes.c_char * 49).from_buffer_copy(bytes(bits[:49].tolist()))
+        self.lib.mbe_processAmbe2450Data(self.out, ctypes.byref(self.errs), ctypes.byref(self.errs2), self.err_str, buf,
+                                         self.parms[0], self.parms[1], self.parms[2], 3)
+        return np.frombuffer(self.out, dtype=np.int16).copy()
+
+
+def load_decoder(path: Path | None = None) -> Decoder | None:
+    path = DECODER if path is None else path
+    if not path.is_file():
+        return None
+    try:
+        return Decoder(path)
+    except (OSError, AttributeError) as e:
+        log.warning("room: the voice decoder at %s can't be used: %s", path, e)
+        return None
+
+
+def _udp():
+    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    s.settimeout(0.5)
+    return s
+
+
+class RoomStream(ReceiverStream):
+    """A room, joined, as the station sees a stream (see radio.RadioStream)."""
+
+    def __init__(self, url: str, callsign: str | None = None, sock: Callable = _udp, decoder: Callable = load_decoder,
+                 clock: Callable[[], float] = time.monotonic) -> None:
+        super().__init__(url, clock=clock)
+        self.room = parse(url)
+        self.callsign = CALLSIGN if callsign is None else callsign
+        self._sock_factory, self._decoder_factory = sock, decoder
+        self.name = self.room["name"] if self.room else ""
+        self.title = self.name or None
+        self.talker: str | None = None
+        self.connected: int | None = None
+        self.heard: collections.deque = collections.deque(maxlen=HEARD)       # [callsign, when (time.time()), seconds]
+        self.has_decoder: bool | None = None
+
+    def rig(self, since: int = 0) -> dict:
+        return {"kind": "room", "base": self.url, "name": self.name, "title": self.title, "ended": self.ended, "tunes": False,
+                "talker": self.talker, "connected": self.connected, "decoder": self.has_decoder,
+                "heard": [{"call": c, "at": round(at), "s": round(s, 1)} for c, at, s in list(self.heard)[::-1]],
+                "freq": None, "mode": None, "dbm": None, "lo": None, "hi": None, "n": 0, "rows": []}
+
+    def tune(self, *args, **kwargs) -> None:
+        raise ValueError("a room isn't tuned: choose another room")
+
+    def _run(self) -> None:
+        sock = None
+        try:
+            room = self.room
+            if room is None:
+                raise ValueError("that isn't a room's address")
+            call = clean_callsign(self.callsign)
+            if not call:
+                raise ValueError("rooms need your callsign: give the radio one first (Find a room)")
+            decoder = self._decoder_factory()
+            self.has_decoder = decoder is not None
+            if decoder is None:
+                log.info("room: no voice decoder on this radio: %s will show who talks, without sound", self.name)
+            where = (socket.gethostbyname(room["host"]), room["port"])
+            sock = self._sock_factory()
+            me, resample = call.ljust(10).encode(), Resampler(VOICE_RATE)
+            polled = asked = -1e9
+            answered = self._clock()
+            last_frame, over_from = 0.0, 0.0
+            while not self._closed.is_set():
+                now = self._clock()
+                if now - polled >= POLL_S:
+                    sock.sendto(b"YSFP" + me, where)
+                    polled = now
+                if now - asked >= STATUS_S:
+                    sock.sendto(b"YSFS", where)
+                    asked = now
+                if self.talker is not None and now - last_frame > OVER_S:        # the over has ended
+                    self.heard.append([self.talker, time.time(), last_frame - over_from])
+                    self.talker, self.title = None, self.name
+                if now - answered > GONE_S:
+                    raise ValueError("the room stopped answering")
+                try:
+                    d, _ = sock.recvfrom(400)
+                except (TimeoutError, socket.timeout):
+                    continue
+                answered = now
+                if d[:4] == b"YSFS" and len(d) >= 42:
+                    count = d[39:42].decode(errors="replace").strip()
+                    self.connected = int(count) if count.isdigit() else None
+                elif d[:4] == b"YSFD" and len(d) >= 155:
+                    who = d[14:24].decode(errors="replace").strip() or "?"
+                    if who != self.talker:
+                        if self.talker is not None:
+                            self.heard.append([self.talker, time.time(), last_frame - over_from])
+                        self.talker, over_from = who, now
+                        self.title = f"{who} · {self.name}"
+                        if decoder is not None:
+                            decoder.reset()
+                    last_frame = now
+                    frames, agree = voice(d[35:155])
+                    if decoder is None or agree < 0.93:                           # (a header, the end, or data: no speech in it)
+                        continue
+                    speech = [decoder.decode(bits) for bits in frames if not is_silence(bits)]
+                    if speech:
+                        self._audio(resample.process(np.concatenate(speech)))
+        except Exception as e:
+            if not self._closed.is_set():
+                self._end(str(e) if isinstance(e, ValueError) else f"the room couldn't be reached ({str(e)[:80]})")
+        finally:
+            if sock is not None:
+                try:
+                    if self.room is not None and self.callsign:
+                        sock.sendto(b"YSFU" + clean_callsign(self.callsign).ljust(10).encode(),
+                                    (socket.gethostbyname(self.room["host"]), self.room["port"]))
+                except (OSError, ValueError):
+                    pass
+                sock.close()
