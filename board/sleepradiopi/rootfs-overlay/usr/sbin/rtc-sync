@@ -12,15 +12,19 @@
 #                       how far it had wandered and save the time to /data
 #   rtc-sync diff       print RTC minus the radio's clock, in hundredths of a
 #                       second (both read as their seconds tick over)
+#   rtc-sync set        set the RTC from the radio's clock, as its second ticks
+#                       over (hwclock alone drops the part-second, leaving
+#                       the RTC up to a second behind)
 #   rtc-sync note TEXT  add a dated line to /data/clock.log (the last 200 are
 #                       kept) and to the system log
 #   rtc-sync secs N     print N hundredths of a second as "1.25 s fast" / "slow"
 #                       (N: how far ahead the clock in question is)
 #
-# clock-save uses diff, note and secs to record how far out the RTC was each
-# time the internet time comes back.
+# clock-save uses set for every NTP update, and diff, note and secs to record
+# how far out the RTC was each time the internet time comes back.
 
 RTC=${RTC:-/sys/class/rtc/rtc0}
+DEV=${RTCDEV:-/dev/rtc0}
 RUN=${RUN:-/run}
 LOG=${CLOCKLOG:-/data/clock.log}
 STOPPED=${STOPPED:-/usr/sbin/rtc-stopped}
@@ -52,10 +56,15 @@ rtc_edge() {
 	while [ "$t" = "$t0" ] && [ $ucs -lt $stop ]; do read t < "$RTC/since_epoch"; ticks; done
 }
 
-diff() {
+# Wait for the radio's clock to tick over; s is then its time.
+sys_edge() {
 	s0=$(date +%s); s=$s0
 	ticks; stop=$((ucs + EDGE))
 	while [ "$s" = "$s0" ] && [ $ucs -lt $stop ]; do s=$(date +%s); ticks; done
+}
+
+diff() {
+	sys_edge
 	u0=$ucs                                 # the radio's clock read s exactly at u0
 	rtc_edge || return 1                    # ... and the RTC read t exactly at ucs
 	if [ "$s" != "$s0" ] && [ "$t" != "$t0" ]; then
@@ -87,8 +96,9 @@ resync() {
 
 case "$1" in
 	diff) diff ;;
+	set) sys_edge; hwclock -w -u -f "$DEV" 2>/dev/null ;;
 	note) shift; note "$*" ;;
 	secs) secs "$2" ;;
 	"") resync ;;
-	*) echo "Usage: $0 [diff | note TEXT | secs N]" >&2; exit 1 ;;
+	*) echo "Usage: $0 [diff | set | note TEXT | secs N]" >&2; exit 1 ;;
 esac

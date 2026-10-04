@@ -531,7 +531,8 @@ Other targets are passed through to Buildroot: `make menuconfig`,
   the clock is still restored from `/data/clock` at boot, but that can be
   hours out. When Wi-Fi comes up, a udhcpc hook restarts ntpd so the clock
   is set within seconds, and every NTP update (on sync, then every 11
-  minutes) is written to the RTC. To test offline:
+  minutes) is written to the RTC as the second ticks over (`rtc-sync set`;
+  `hwclock -w` alone leaves it up to a second behind). To test offline:
   `touch /data/wifi-off-once; reboot` (Wi-Fi off for 5 minutes).
 - **How well the RTC keeps time is written down.** Setting the RTC from the
   internet time wipes the evidence, so just before it does, `clock-save`

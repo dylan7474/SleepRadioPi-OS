@@ -113,7 +113,12 @@ def test_how_far_out_the_rtc_was_is_noted_when_the_internet_time_comes_back(rig)
     assert line.split("  ", 1)[1] in read("log") and "-w -u" in read("hwclock.log")     # in the system log too; then it's set
 
     assert run(SAVE, "periodic", offset="+0.010000") == 0    # NTP is keeping it now: nothing more to note
-    assert read("clock.log") == line
+    assert read("clock.log") == line and not (tmp / "clock-drift").exists()
+
+    (tmp / "ntp-synced").unlink()                            # ntpd restarted as Wi-Fi came up, and the first
+    (tmp / "clock-drift").mkdir()                            # is still measuring: said once, not twice
+    assert run(SAVE, "step", offset="+2.500000") == 0 and read("clock.log") == line
+    (tmp / "clock-drift").rmdir()                            # (the first one's to clear, and still there)
 
     (tmp / "ntp-synced").unlink()                            # the next power-on: not stepped, so the radio's clock
     (rtc / "since_epoch").write_text(str(now + 121))         # (and the RTC read against it) is still 1 s behind

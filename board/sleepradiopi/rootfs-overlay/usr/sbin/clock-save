@@ -28,6 +28,9 @@ drift() {
 	last=$(cat $SET 2>/dev/null)
 	[ -e $RUN/ntp-synced ] && [ $((now - ${last:-0})) -lt 10800 ] && return
 	$STOPPED && return                      # (it stopped: its time means nothing)
+	# (once per sync: ntpd is restarted as Wi-Fi comes up, and both may get here)
+	mkdir $RUN/clock-drift 2>/dev/null || return
+	mine=1
 	d=$($SYNC diff) && [ -n "$d" ] || return
 	off=$(awk -v o="${offset:-0}" 'BEGIN { printf "%d", o * 100 + (o < 0 ? -0.5 : 0.5) }')
 	[ "$1" = step ] || d=$((d - off))
@@ -56,10 +59,11 @@ case "$(basename "$0")" in
 				[ -e $DEV ] && drift "$1"
 				touch $RUN/time-synced $RUN/ntp-synced
 				# (and, set from the real time, it's no longer a clock that stopped)
-				if [ -e $DEV ] && hwclock -w -u -f $DEV 2>/dev/null; then
+				if [ -e $DEV ] && $SYNC set; then
 					$STOPPED clear && logger -t rtc "the RTC had stopped; it's set from the internet time again"
 					echo "$now" > $SET.tmp && mv -f $SET.tmp $SET
 				fi
+				[ -z "$mine" ] || rmdir $RUN/clock-drift
 				;;
 		esac
 		saved=$(cat $F 2>/dev/null || echo 0)
