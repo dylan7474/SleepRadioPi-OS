@@ -31,6 +31,7 @@ from sleepradiopi.io import service as service_mod
 from sleepradiopi.io import presets as presets_mod
 from sleepradiopi.playback import radio as radio_mod
 from sleepradiopi.media import MediaLibrary
+from sleepradiopi.tts import plain as plain_voice
 from sleepradiopi.tts.worker import TtsWorker
 from sleepradiopi.web.server import serve
 from sleepradiopi.web.stream import Mp3Output
@@ -177,18 +178,10 @@ def _hotspot() -> dict | None:
     return st.get("hotspot") if st.get("mode") == "hotspot" else None
 
 
-def _wifi_lines(host: str) -> list[str]:
-    """The Wi-Fi set-up's spoken lines, made ahead (the announcer keeps them on disk)."""
-    from sleepradiopi.io import announce
-    spot = wifi.status().get("hotspot")
-    if not spot:                          # (no Wi-Fi manager: not the appliance)
-        return []
-    return [announce.announcement([], host, spot), announce.failed_text(spot), announce.JOINING, announce.JOINED]
-
-
 def _wifi_event(announcer, was: dict | None, st: dict) -> None:
-    """Say what the Wi-Fi is doing while it's being set up: a tune at once, and
-    the words as soon as they're ready. Becoming a hotspot (no network set up,
+    """Say what the Wi-Fi is doing while it's being set up: a tune at once, then
+    the words in the plain voice (instant, and there before the DJ's is).
+    Becoming a hotspot (no network set up,
     or asked for) says how to join it, once each time -- in a new place you'd
     otherwise never know; a join asked for from the hotspot says it's joining,
     then that it's on (and its new address) or that it couldn't. Everything
@@ -201,14 +194,16 @@ def _wifi_event(announcer, was: dict | None, st: dict) -> None:
         if st.get("again"):
             return
         if st.get("failed"):
-            announcer.say([announce.failed_text(st["hotspot"])], announce.cue("failed"), wait=20)
+            announcer.say([announce.failed_text(st["hotspot"], st["failed"])], announce.cue("failed"),
+                          wait=20, plain=True)
         else:
-            announcer.say([announcer.text], announce.cue("setup"), wait=20)
+            announcer.say([announcer.text], announce.cue("setup"), wait=20, plain=True)
     elif st.get("setup") and was is not None:     # (seen happening, not found so at start-up)
         if mode == "connecting":
-            announcer.say([announce.JOINING], announce.cue("joining"), wait=20)
+            announcer.say([announce.JOINING], announce.cue("joining"), wait=20, plain=True)
         elif mode == "station":
-            announcer.say([announce.JOINED, announcer.text], announce.cue("joined"), wait=20)
+            announcer.say([announce.joined_text(st.get("ssid")), announcer.text], announce.cue("joined"),
+                          wait=20, plain=True)
 
 
 def _wifi_watch(announcer) -> None:
@@ -561,9 +556,7 @@ def main() -> None:
         on_air = lambda: bool(tts and tts.ready) and station.music_started
         announcer = Announcer(station.render_speech if station._has_voice else None, control.play_clip,
                               voice_ready=on_air, hotspot=_hotspot,
-                              keep=Path.home() / ".cache" / "sleepradiopi" / "wifi-lines",
-                              key=lambda: f"{station.dj_voice}|{station.config.announcer_speed}|{station.announcer_volume}")
-        announcer.ahead = lambda: _wifi_lines(announcer.host)
+                              plain=plain_voice.render if plain_voice.available() else None)
         announcer.start()
         if station._has_voice:          # the sides test's "Left speaker" / "Right speaker"
             control.speech = lambda text: station.render_speech(text) if on_air() else None

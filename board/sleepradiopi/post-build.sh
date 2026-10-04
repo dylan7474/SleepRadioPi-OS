@@ -11,6 +11,15 @@ rm -f "${TARGET_DIR}"/etc/ssh/ssh_host_* "${TARGET_DIR}/root/.ssh/authorized_key
 
 mkdir -p "${TARGET_DIR}/boot"
 
+# eSpeak (the plain voice for setting up): English only.
+ESPEAK="${TARGET_DIR}/usr/share/espeak-data"
+if [ -d "${ESPEAK}" ]; then
+	find "${ESPEAK}" -maxdepth 1 -name '*_dict' ! -name 'en_dict' -delete
+	rm -rf "${ESPEAK}/mbrola" "${ESPEAK}/mbrola_ph" "${ESPEAK}/soundicons" "${ESPEAK}/phondata-manifest"
+	find "${ESPEAK}/voices" -mindepth 1 -maxdepth 1 ! -name en ! -name default ! -name '!v' -exec rm -rf {} +
+fi
+rm -f "${TARGET_DIR}/usr/lib/libespeak.a"
+
 # The image's version, shown on the web page and compared with GitHub
 # releases: scripts/release.sh sets SLEEPRADIOPI_RELEASE; otherwise it's
 # git's description of this checkout (e.g. v1.0.0-3-gabc1234-dirty).

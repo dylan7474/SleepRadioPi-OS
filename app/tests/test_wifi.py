@@ -277,7 +277,6 @@ def test_a_join_from_the_hotspot_says_how_it_went(tmp_path: Path) -> None:
     assert st["mode"] == "hotspot" and st["failed"] == "Home" and not st.get("setup") and not st.get("again")
     assert wifi.JOIN_S <= pi.now - t0 < wifi.JOIN_S + 15
     assert seen[0]["mode"] == "connecting" and seen[0]["setup"]         # (while it tried: "joining")
-    first_cmd = [c[0] for c in pi.cmds].index("wpa_supplicant")
     assert len(seen) >= 2 and seen[1]["mode"] == "connecting"           # said before the Wi-Fi is even started
 
     _run_for(m, pi, wifi.RETRY_S + 60)         # nobody on the hotspot: the regular try, and back -- not news
@@ -309,7 +308,8 @@ def test_the_station_says_what_the_wifi_is_doing() -> None:
         def text(self):
             return "the address"
 
-        def say(self, lines, tune, label="Wi-Fi", wait=0):
+        def say(self, lines, tune, label="Wi-Fi", wait=0, plain=False):
+            assert plain                           # set-up lines: the plain voice (instant)
             self.said.append(([line() if callable(line) else line for line in lines], len(tune)))
             return True
     a = FakeAnnouncer()
@@ -322,11 +322,11 @@ def test_the_station_says_what_the_wifi_is_doing() -> None:
         ({"mode": "hotspot", "hotspot": spot}, (["the address"], tune("setup"))),            # asked for on the page
         ({"mode": "hotspot", "hotspot": spot}, None),                           # (still: said once)
         ({"mode": "connecting", "setup": True}, ([announce.JOINING], tune("joining"))),
-        ({"mode": "hotspot", "hotspot": spot, "failed": "Home"}, ([announce.failed_text(spot)], tune("failed"))),
+        ({"mode": "hotspot", "hotspot": spot, "failed": "Home"}, ([announce.failed_text(spot, "Home")], tune("failed"))),
         ({"mode": "connecting"}, None),                                         # the regular retry
         ({"mode": "hotspot", "hotspot": spot, "failed": "Home", "again": True}, None),
         ({"mode": "connecting", "setup": True}, ([announce.JOINING], tune("joining"))),
-        ({"mode": "station", "setup": True}, ([announce.JOINED, "the address"], tune("joined"))),
+        ({"mode": "station", "setup": True, "ssid": "Home"}, (["I'm on Home.", "the address"], tune("joined"))),
     ]
     was = None
     for st, expect in steps:

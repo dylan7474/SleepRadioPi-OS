@@ -212,13 +212,16 @@ Actions, Sleep timer and Radio folders open:
   **Setting it up is the one time it isn't quiet:** each step has its own
   short tune, played at once, and then the words. Two rising pairs of notes
   and how to join, when its own network comes on; two pips and "Joining your
-  Wi-Fi now"; three rising notes, "I'm on your Wi-Fi" and its new address;
-  or two falling notes if it couldn't join (a mistyped password) -- and then
-  its own network comes back within a minute so you can put it right, rather
-  than the radio trying for ever out of reach. The lines are made ahead and
-  kept (per voice), so they follow the tune within a second or two; a radio
-  with no voice yet still plays the tunes. A radio with no network set up
-  makes its own network about 10 seconds after the Wi-Fi starts.
+  Wi-Fi now"; three rising notes, "I'm on" your network's name and its new
+  address; or two falling notes and "I couldn't join" it (a mistyped
+  password) -- and then its own network comes back within a minute so you can
+  put it right, rather than the radio trying for ever out of reach. These
+  lines are in a **plain voice** (eSpeak, `tts/plain.py`), not the DJ's: it's
+  in the image and makes a sentence in a fraction of a second, so even a new
+  radio that has no DJ's voice yet talks you through it. (Holding the knob
+  still says the address in the DJ's voice; the plain one only if there's no
+  other.) A radio with no network set up makes its own network about 10
+  seconds after the Wi-Fi starts.
 - **Offline is normal.** Without the internet it keeps playing and talking;
   it only leaves out what needs the right time (time checks, news, birthday
   wishes) until the clock is known, from the internet or an optional
@@ -312,12 +315,12 @@ can't add the music yet.
 5. **Put the card in the Pi and power on.** The first start takes a little
    longer.
 6. **Connect it to your Wi-Fi.** With no network it knows, the radio makes its
-   own within half a minute of power-on and plays two rising pairs of notes
-   (a new radio has no voice yet; later it says how to join as well):
+   own within half a minute of power-on, plays two rising pairs of notes
+   and says how to join it (in a plain voice: the DJ's comes later):
    **SleepRadio-Setup**, password **sleepradio**. Join it on your phone, open
    http://192.168.4.1 if the phone doesn't offer to, pick your Wi-Fi from the
    list and type its password. Two pips mean it's joining; three rising
-   notes mean it's on. Two falling notes mean it couldn't: its own network
+   notes mean it's on, and it says its address. Two falling notes mean it couldn't: its own network
    comes back within a minute, so join that again and check the password.
 7. **The first time it's online**, it downloads the standard DJ voice (67 MB,
    a few minutes), and the show starts. Open **http://sleepradiopi.local** to
@@ -723,6 +726,6 @@ What's left to do (everything else described here is built and running):
 
 Build scripts, configs and the case design: GPL-2.0-or-later, the same as Buildroot. The radio
 software in `app/` is GPL-3.0-or-later (`app/LICENSE`; its offline voice engine links eSpeak-NG,
-which is GPL). The standard voice, downloaded by the radio when it has none, is Piper's
+which is GPL; the image also has eSpeak itself, GPL-3.0-or-later, as the plain voice for setting up). The standard voice, downloaded by the radio when it has none, is Piper's
 "southern_english_female" (low) via sherpa-onnx; its training data is OpenSLR 83, CC BY-SA 4.0. The image
 contains many packages under their own licences; `make legal-info` lists them.

@@ -73,43 +73,60 @@ def test_announcer_beeps_then_speaks_and_caches() -> None:
     assert _wait(lambda: len(played) == 4) and len(rendered) == 1
 
 
-def test_set_up_lines_are_kept_on_disk_and_said_at_once(tmp_path: Path) -> None:
+def test_set_up_lines_are_said_in_the_plain_voice(tmp_path: Path) -> None:
     from sleepradiopi.io import announce
-    played, rendered = [], []
+    from sleepradiopi.tts import plain
+    played, rendered, plainly = [], [], []
 
     def render(text):
         rendered.append(text)
-        return np.full((4410, 2), len(text), dtype=np.int16)
+        return np.full((4410, 2), 5, dtype=np.int16)
+
+    def say_plainly(text):
+        plainly.append(text)
+        return np.full((2205, 2), 7, dtype=np.int16)
 
     def play(clip):
         played.append(clip)
         clip.pos = clip.total
-    voice = ["amy"]
-    a = Announcer(render, play, get_addresses=lambda: [("wlan0", "192.168.1.9")], host="sleepradiopi",
-                  ahead=lambda: [announce.JOINING, announce.JOINED], keep=tmp_path / "lines", key=lambda: voice[0])
-    assert a.make_ahead() == 2 and rendered == [announce.JOINING, announce.JOINED]
-    assert a.make_ahead() == 0 and len(list((tmp_path / "lines").glob("*.raw"))) == 2
+    a = Announcer(render, play, get_addresses=lambda: [("wlan0", "192.168.1.9")], host="sleepradiopi", plain=say_plainly)
+    assert a.say([announce.joined_text("Home"), a.text], announce.cue("joined"), plain=True)
+    assert _wait(lambda: len(played) == 3) and rendered == []           # the DJ's voice isn't waited for
+    assert plainly == ["I'm on Home.", a.text()] and played[1].label == "Wi-Fi" and played[1].audio[-1, 0] == 7
+    assert a.say([announce.JOINING], announce.cue("joining"), wait=3, plain=True)   # (waits its turn, isn't dropped)
+    assert _wait(lambda: not a._busy.locked())
 
-    rendered.clear()                         # the next power-on: said from disk, before the voice has even loaded
-    b = Announcer(None, play, host="sleepradiopi", keep=tmp_path / "lines", key=lambda: voice[0])
-    assert b.say([announce.JOINED], announce.cue("joined"))
-    assert _wait(lambda: len(played) == 2) and rendered == []
-    assert [c.kind for c in played] == ["beep", "announce"] and played[1].label == "Wi-Fi"
-    assert played[1].audio[-1, 0] == len(announce.JOINED)
+    played.clear()                           # the long press stays in the DJ's voice ...
+    assert a.speak() and _wait(lambda: len(played) == 2) and rendered == [a.text()]
+    assert _wait(lambda: not a._busy.locked())
+    b = Announcer(None, play, get_addresses=lambda: [], host="sleepradiopi", plain=say_plainly)
+    played.clear()                           # ... unless there isn't one (a new radio): the plain one
+    assert b.speak() and _wait(lambda: len(played) == 2) and plainly[-1] == "I'm not connected to a network."
+    assert _wait(lambda: not b._busy.locked())
 
-    played.clear()                           # a line that was never made, and no voice: the tune alone says it
-    assert _wait(lambda: b.say(["Something else."], announce.cue("failed")))
-    assert _wait(lambda: not b._busy.locked()) and [c.kind for c in played] == ["beep"]
+    c = Announcer(render, play, host="sleepradiopi")                     # no eSpeak (not the image): the DJ's
+    played.clear()
+    assert c.say([announce.JOINING], announce.cue("joining"), plain=True)
+    assert _wait(lambda: len(played) == 2) and rendered[-1] == announce.JOINING
+    d = Announcer(None, play, host="sleepradiopi")                       # neither: the tune alone says it
+    played.clear()
+    assert _wait(lambda: d.say([announce.JOINING], announce.cue("failed"), plain=True))
+    assert _wait(lambda: not d._busy.locked()) and [c.kind for c in played] == ["beep"]
 
-    played.clear()                           # two lines: the kept one at once, then the address when it's made
-    assert _wait(lambda: a.say([announce.JOINED, a.text], announce.cue("joined")))
-    assert _wait(lambda: len(played) == 3) and rendered == [a.text()]
-    assert a.say([announce.JOINING], announce.cue("joining"), wait=3)   # (waits its turn rather than being dropped)
-
-    voice[0] = "bob"                         # another voice: its own lines, and the old ones go
-    assert a.make_ahead() == 2 and len(list((tmp_path / "lines").glob("*.raw"))) == 2
+    assert "I couldn't join Home," in announce.failed_text({"ssid": "SleepRadio-Setup"}, "Home")
     for name in announce.CUES:
         assert announce.cue(name).shape[1] == 2 and 0.2 < len(announce.cue(name)) / 44100 < 1
+
+    # eSpeak's own WAV (sizes not filled in when piped), brought to the speaker's rate and channels
+    wav = b"RIFF\xff\xff\xff\x7fWAVEfmt \x10\0\0\0\x01\0\x01\0" + (22050).to_bytes(4, "little") + \
+        (44100).to_bytes(4, "little") + b"\x02\0\x10\0data\xff\xff\xff\x7f" + \
+        (np.sin(np.arange(2205) / 5) * 3000).astype("<i2").tobytes()
+    audio = plain.from_wav(wav)
+    assert audio.shape == (4410, 2) and audio.dtype == np.int16 and abs(int(np.abs(audio).max()) - plain.PEAK) < 50
+    assert plain.from_wav(b"") is None and plain.from_wav(b"RIFF....WAVEfmt ") is None
+    if plain.available():                    # (this computer has eSpeak: the real thing)
+        spoken = plain.render("Joining your Wi-Fi now.")
+        assert spoken is not None and 0.5 < len(spoken) / 44100 < 5
 
 
 def test_play_clip_while_paused_leaves_the_show_paused(tmp_path: Path) -> None:

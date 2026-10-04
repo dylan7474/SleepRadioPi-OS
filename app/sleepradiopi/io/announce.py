@@ -11,19 +11,18 @@ loaded after power-on the press waits for it.
 
 Setting the Wi-Fi up is the other time the radio has to say where it is, and
 there the wait matters most: someone is standing by a silent box. So each
-step has a short tune of its own (CUES), played at once -- a radio with no
-voice at all still says that much -- and the lines that go with them (how to
-join the radio's own network, "Joining", "I'm on your Wi-Fi", "I couldn't
-join") are made ahead and kept on disk per voice, so they follow within a
-second or two even before the voice has loaded.
+step has a short tune of its own (CUES), played at once, and the lines that go
+with them (how to join the radio's own network, "Joining", "I'm on ...",
+"I couldn't join ...") are said in the plain voice (tts/plain.py: eSpeak),
+which is in the image and instant -- so a new radio, with no DJ's voice yet,
+talks you through it. The long press keeps the DJ's voice (the plain one
+only if there's no other).
 """
 
 from __future__ import annotations
 
 import fcntl
-import hashlib
 import logging
-import os
 import socket
 import struct
 import threading
@@ -94,7 +93,6 @@ def announcement(addrs: list[tuple[str, str]], host: str, hotspot: dict | None =
 
 
 JOINING = "Joining your Wi-Fi now."
-JOINED = "I'm on your Wi-Fi."
 
 # The Wi-Fi set-up's tunes: (notes in Hz, 0 = a rest; seconds each).
 CUES = {
@@ -105,10 +103,13 @@ CUES = {
 }
 
 
-def failed_text(hotspot: dict) -> str:
-    """Said when a join asked for from the hotspot didn't work (the name isn't
-    said, so the line can be made ahead)."""
-    return (f"I couldn't join that Wi-Fi network, so I've made my own again. "
+def joined_text(ssid: str | None) -> str:
+    return f"I'm on {ssid}." if ssid else "I'm on your Wi-Fi."
+
+
+def failed_text(hotspot: dict, ssid: str | None = None) -> str:
+    """Said when a join asked for from the hotspot didn't work."""
+    return (f"I couldn't join {ssid or 'that Wi-Fi network'}, so I've made my own again. "
             f"On your phone, join {hotspot['ssid']}, and check the Wi-Fi name and password.")
 
 
@@ -177,22 +178,20 @@ class Clip:
 
 
 class Announcer:
-    """speak() = the long press. render(text) makes int16 stereo speech (blocking).
-
-    ahead(): lines to make ahead and keep in the `keep` folder (named by key():
-    the voice and how it's set), so they're there at once when wanted."""
+    """speak() = the long press. render(text) makes int16 stereo speech in the
+    DJ's voice (blocking, slow); plain(text) in the plain one (instant; None if
+    it can't)."""
 
     def __init__(self, render: Callable[[str], np.ndarray] | None, play: Callable[[Clip], None],
                  voice_ready: Callable[[], bool] = lambda: True,
                  get_addresses: Callable[[], list] = addresses,
                  host: str | None = None, hotspot: Callable[[], dict | None] = lambda: None,
-                 ahead: Callable[[], list[str]] = lambda: [], keep: Path | None = None,
-                 key: Callable[[], str] = lambda: "") -> None:
+                 plain: Callable[[str], np.ndarray | None] | None = None) -> None:
         self.hotspot = hotspot
         self.render, self.play = render, play
         self.voice_ready, self.get_addresses = voice_ready, get_addresses
         self.host = host or socket.gethostname()
-        self.ahead, self.keep, self.key = ahead, keep, key
+        self.plain = plain
         self._lock = threading.Lock()
         self._cache: tuple[str, np.ndarray] | None = None
         self._busy = threading.Lock()   # one announcement at a time
@@ -200,53 +199,14 @@ class Announcer:
     def text(self) -> str:
         return announcement(self.get_addresses(), self.host, self.hotspot())
 
-    def _kept(self, text: str) -> Path | None:
-        if self.keep is None:
-            return None
-        return self.keep / (hashlib.sha1(f"{self.key()}|{text}".encode()).hexdigest()[:16] + ".raw")
-
-    def _from_disk(self, text: str) -> np.ndarray | None:
-        path = self._kept(text)
-        try:
-            return np.frombuffer(path.read_bytes(), dtype=np.int16).reshape(-1, pcm.CHANNELS) if path else None
-        except (OSError, ValueError):
-            return None
-
     def _speech(self, text: str) -> np.ndarray:
         with self._lock:
             if self._cache and self._cache[0] == text:
                 return self._cache[1]
-        audio = self._from_disk(text)
-        if audio is not None:
-            return audio
         audio = self.render(text)
         with self._lock:
             self._cache = (text, audio)
         return audio
-
-    def make_ahead(self) -> int:
-        """Make and keep any of ahead()'s lines that aren't kept yet (and drop
-        kept ones no longer wanted: another voice's, an old hotspot name's)."""
-        if self.keep is None or self.render is None:
-            return 0
-        texts = self.ahead()
-        made = 0
-        for text in texts:
-            path = self._kept(text)
-            if path.is_file():
-                continue
-            audio = self.render(text)
-            path.parent.mkdir(parents=True, exist_ok=True)
-            tmp = path.with_suffix(".tmp")
-            tmp.write_bytes(audio.astype("<i2").tobytes())
-            os.replace(tmp, path)
-            made += 1
-            log.info("kept for the Wi-Fi set-up: %s", text)
-        wanted = {self._kept(t) for t in texts}
-        for old in self.keep.glob("*.raw"):
-            if old not in wanted:
-                old.unlink(missing_ok=True)
-        return made
 
     def start(self) -> None:
         """Keep the announcement ready in the background."""
@@ -258,10 +218,9 @@ class Announcer:
                         wait = WAIT_VOICE_S
                     elif self.render is not None:
                         text = self.text()
-                        if not (self._cache and self._cache[0] == text) and self._from_disk(text) is None:
+                        if not (self._cache and self._cache[0] == text):
                             self._speech(text)
                             log.info("announcement ready: %s", text)
-                        self.make_ahead()
                 except Exception:
                     log.exception("announcement: couldn't prepare it")
                 threading.Event().wait(wait)
@@ -271,10 +230,13 @@ class Announcer:
         """Beep, then say the address (in the background). False if one is already going."""
         return self.say([self.text], beep(), "Address")
 
-    def say(self, lines: list, tune: np.ndarray, label: str = "Wi-Fi", wait: float = 0) -> bool:
+    def say(self, lines: list, tune: np.ndarray, label: str = "Wi-Fi", wait: float = 0,
+            plain: bool = False) -> bool:
         """Play a tune at once, then say each line as soon as it's made (in the
         background). lines: texts, or functions giving one when its turn comes.
-        False if an announcement is already going (after waiting `wait` s for it)."""
+        plain: in the plain voice (the DJ's if there's no plain one), else the
+        DJ's (the plain one if there's no DJ's). False if an announcement is
+        already going (after waiting `wait` s for it)."""
         if not self._busy.acquire(timeout=wait) if wait else not self._busy.acquire(blocking=False):
             return False
         ack = Clip(tune, "beep", label)
@@ -286,11 +248,13 @@ class Announcer:
                 for line in lines:
                     text = line() if callable(line) else line
                     log.info("saying: %s", text)
-                    if self.render is None and self._from_disk(text) is None:
-                        if label == "Address":       # (the long press: a second beep says "no voice")
-                            self.play(Clip(beep((440.0, 330.0)), "beep", "No voice"))
-                        return
-                    speech = self._speech(text)
+                    speech = self.plain(text) if self.plain and (plain or self.render is None) else None
+                    if speech is None:
+                        if self.render is None:
+                            if label == "Address":   # (the long press: a second beep says "no voice")
+                                self.play(Clip(beep((440.0, 330.0)), "beep", "No voice"))
+                            return
+                        speech = self._speech(text)
                     for _ in range(int(last.duration_s / 0.02) + 100):       # let what's playing finish
                         if last.done:
                             break
