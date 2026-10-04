@@ -607,7 +607,7 @@ const rxKiwi = url => { const m = /^(https?:\/\/[^/?#]+\/)\?f=[\d.]+[a-z]/i.exec
 const rxOwrx = url => { const m = /^(https?:\/\/[^/?#]+\/(?:[^?#]*\/)?)#(?:.*,)?freq=\d/i.exec(url || ""); return m && m[1]; };
 const rxNice = r => (r.name.split(/\s-\s|\|/).map(p => p.trim()).find(p => p && !/^https?:/i.test(p)) || r.place || rxHost(r.url)).slice(0, 30);
 const RX_WORD = { kiwi: "KiwiSDR · short wave", owrx: "OpenWebRX", room: "Room · digital voice" };
-const rxRoom = url => /^ysf:\/\/[^/]+/i.test(url || "") ? url : null;
+const rxRoom = url => /^(ysf|fcs):\/\/[^/]+/i.test(url || "") ? url : null;
 const rxHost = origin => origin.replace(/^https?:\/\//, "").replace(/\/$/, "");
 const rxObj = (rx, origin, title, info) => mk({ id: "rx:" + origin, kind: "rx", rx, origin, title, name: title, info, sym: "⌁" });
 const rxOrigin = url => { const m = /^(https?:\/\/[^/]+)\/audio\?(?:.*&)?(?:band|freq)=/.exec(url || ""); return m && m[1]; };

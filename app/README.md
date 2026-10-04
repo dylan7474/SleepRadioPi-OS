@@ -1037,7 +1037,10 @@ The cards:
   once a day and kept). First *your callsign*: a room shows who is
   connected, so the radio joins under yours, and won't join without one.
   Then search by name, country or number, and *Listen* or *Save as a
-  station*. A room is a station with the address `ysf://HOST:PORT/NAME`: it
+  station*. Rooms on the FCS network are found too (it's where most of
+  Yaesu's WIRES-X rooms are bridged: "CQ-UK-WiresX", "America-Link-WiresX").
+  A room is a station with the address `ysf://HOST:PORT/NAME`, or
+  `fcs://FCS00290/NAME` for an FCS one: it
   plays whoever speaks, with their callsign as what's playing, and silence
   in between (rooms are quiet most of the time), and it only ever listens.
   The window also says whether the *voice decoder* is on the radio: it

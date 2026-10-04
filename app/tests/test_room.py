@@ -78,8 +78,8 @@ def _wait(cond, timeout=3.0):
 
 
 def test_addresses_and_callsigns() -> None:
-    assert room.parse("ysf://63.250.41.136:42000/US-America%20Link") == {"host": "63.250.41.136", "port": 42000, "name": "US-America Link"}
-    assert room.parse("ysf://room.example") == {"host": "room.example", "port": 42000, "name": "room.example"}
+    assert room.parse("ysf://63.250.41.136:42000/US-America%20Link") == {"net": "ysf", "host": "63.250.41.136", "port": 42000, "name": "US-America Link"}
+    assert room.parse("ysf://room.example") == {"net": "ysf", "host": "room.example", "port": 42000, "name": "room.example"}
     assert room.parse("http://room.example/") is None and not room.is_room("ysf://")
     assert room.link("1.2.3.4", 42200, "GB-CQ-UK ") == "ysf://1.2.3.4:42200/GB-CQ-UK"
     assert radio.validate_station({"name": "CQ-UK", "url": "ysf://1.2.3.4:42200/GB-CQ-UK"})["url"].startswith("ysf://")
@@ -161,7 +161,7 @@ def test_the_register_of_rooms(tmp_path: Path) -> None:
     assert found[1]["url"] == "ysf://63.250.41.136:42000/US-America%20Link"
     asked = []
     book = rooms_dir.RoomDirectory(tmp_path / "rooms.json", fetch=lambda u: asked.append(u) or HOSTS, clock=lambda: 100.0)
-    assert [r["name"] for r in book.search("america link")] == ["US-America Link"] and asked == [rooms_dir.SOURCE]
+    assert [r["name"] for r in book.search("america link")] == ["US-America Link"] and asked == [rooms_dir.SOURCE, rooms_dir.FCS_SOURCE]
     assert [r["name"] for r in book.search("00009")] == ["GB-CQ-UK"] and len(book.search("")) == 22
     again = rooms_dir.RoomDirectory(tmp_path / "rooms.json", fetch=lambda u: 1 / 0, clock=lambda: 200.0)
     assert again.search("cq-uk")[0]["id"] == "00009" and again.status() == {"count": 22, "age_s": 100, "error": None}
@@ -325,3 +325,85 @@ def test_monitoring_from_the_web(tmp_path: Path, monkeypatch) -> None:
         assert code == 200 and reply["monitor"]["rooms"] == [] and load(conf).monitor_rooms == []
     finally:
         httpd.shutdown()
+
+
+# --- the frame's own header and data; rooms on the FCS network ---------------------------------
+
+def _fold(bits100: np.ndarray) -> np.ndarray:
+    """What room._unfold undoes: each bit as a pair, spread over 200."""
+    out = np.zeros(200, dtype=np.uint8)
+    d1 = d2 = d3 = d4 = 0
+    for i, d in enumerate(int(b) for b in bits100):
+        out[room._SPREAD[i]], out[room._SPREAD[i] + 1] = d ^ d3 ^ d4, d ^ d1 ^ d2 ^ d4
+        d1, d2, d3, d4 = d, d1, d2, d3
+    return out
+
+
+def _crc(data: bytes) -> bytes:
+    crc = 0
+    for b in data:
+        crc ^= b << 8
+        for _ in range(8):
+            crc = ((crc << 1) ^ 0x1021 if crc & 0x8000 else crc << 1) & 0xFFFF
+    return (crc ^ 0xFFFF).to_bytes(2, "big")
+
+
+def radio_frame(fi: int, fn: int, dt: int = 2, voice_bits=None, data: bytes | None = None) -> bytes:
+    """A whole 120-byte frame as a Fusion radio sends it: header, and for voice its five blocks and ten bytes of data."""
+    four = bytes([fi << 6, fn << 3, dt, 0])
+    six = np.unpackbits(np.frombuffer(four + _crc(four), dtype=np.uint8))
+    words = np.concatenate([np.concatenate([six[k * 12:k * 12 + 12], np.zeros(12, dtype=np.uint8)]) for k in range(4)])
+    head = np.packbits(_fold(np.concatenate([words, np.zeros(4, dtype=np.uint8)]))).tobytes()
+    body = np.unpackbits(np.frombuffer(frame("X", voice_bits)[65:155], dtype=np.uint8)).copy()
+    if data is not None:
+        ten = bytes(b ^ w for b, w in zip(data.ljust(10)[:10], room._WHITEN20))
+        coded = _fold(np.concatenate([np.unpackbits(np.frombuffer(ten + _crc(ten), dtype=np.uint8)), np.zeros(4, dtype=np.uint8)]))
+        for j in range(5):
+            body[j * 144:j * 144 + 40] = coded[j * 40:j * 40 + 40]
+    return bytes.fromhex("d471c9634d") + head + np.packbits(body).tobytes()
+
+
+def test_a_frames_header_and_the_callsign_riding_with_the_voice() -> None:
+    f = radio_frame(1, 1, 2, speech(3), b"M0ABC")
+    assert room.fich(f) == {"fi": 1, "fn": 1, "ft": 0, "dt": 2} and room.dch(f) == b"M0ABC     "
+    assert room.fich(radio_frame(2, 0)) == {"fi": 2, "fn": 0, "ft": 0, "dt": 2}
+    damaged = bytearray(f)
+    damaged[7] ^= 0x40                                                    # a bit wrong in the header: not guessed at
+    assert room.fich(bytes(damaged)) is None
+    damaged = bytearray(f)
+    damaged[31] ^= 0x01
+    assert room.dch(bytes(damaged)) is None
+    assert room.fich(frame("M0ABC", speech(1))[35:155]) is None           # (the plainer test frames have no header at all)
+
+
+def test_a_room_on_the_fcs_network() -> None:
+    assert room.parse("fcs://FCS00290/America-Link-WiresX") == {"net": "fcs", "host": "fcs002.xreflector.net", "port": 62500,
+                                                                   "name": "America-Link-WiresX", "id": "FCS00290"}
+    assert room.fcs_link("fcs00291", "CQ-UK-WiresX") == "fcs://FCS00291/CQ-UK-WiresX" and room.is_room("fcs://FCS00291/x")
+    assert room.parse("fcs://FCS002/x") is None and room.parse("fcs://room.example/x") is None
+    assert radio.validate_station({"name": "CQ-UK", "url": "fcs://FCS00291/CQ-UK-WiresX"})["url"] == "fcs://FCS00291/CQ-UK-WiresX"
+    assert rooms_dir.parse_fcs("FCS00290;America-Link-WiresX;FCS002 - America-Link-WiresX;;;\nFCS00100;;empty;;;\nnonsense\n") == [
+        {"id": "FCS00290", "name": "America-Link-WiresX", "about": "FCS002 - America-Link-WiresX", "url": "fcs://FCS00290/America-Link-WiresX"}]
+
+    wrap = lambda f, n: f + bytes([n]) + b"FCS00290 "                     # the FCS envelope: 130 bytes, no callsigns outside the frame
+    sock = FakeSock([b"ONLINE7", wrap(radio_frame(0, 0), 0), wrap(radio_frame(1, 0, 2, speech(1), b"ALL"), 2),
+                     wrap(radio_frame(1, 1, 2, speech(2), b"G4XYZ"), 4), wrap(radio_frame(1, 2, 2, [SILENCE] * 5, b"x"), 6), wrap(radio_frame(2, 0), 8)])
+    s = room.RoomStream("fcs://FCS00290/America-Link-WiresX", callsign="M8ODJ", sock=lambda: sock, decoder=FakeDecoder)
+    import socket as _socket
+    real = _socket.gethostbyname
+    _socket.gethostbyname = lambda h: "10.0.0.1" if h == "fcs002.xreflector.net" else real(h)
+    try:
+        s.start()
+        assert _wait(lambda: len(s.heard) == 1)
+    finally:
+        _socket.gethostbyname = real
+    assert sock.sent[0] == (b"PING" + b"M8ODJ " + b"FCS00290" + bytes(7), ("10.0.0.1", 62500))
+    info = next(m for m, _ in sock.sent if len(m) == 100)
+    assert info.decode().split() == ["0", "0", "SleepRadio", "0"]            # once it had us: what we are
+    assert list(s.heard)[0][0] == "G4XYZ" and s.talker is None and s.title == "America-Link-WiresX"      # named from the frames; over at the end frame
+    blocks = []
+    while (b := s.read(0.05)) is not None:
+        blocks.append(b)
+    assert blocks and int(np.concatenate(blocks).max()) > 3000              # the two spoken frames were played
+    s.close()
+    assert _wait(lambda: sock.closed) and sock.sent[-1][0] == b"CLOSE      "

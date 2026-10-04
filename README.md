@@ -259,8 +259,8 @@ Actions, Sleep timer and Radio folders open:
 - **Rooms: radio amateurs' digital voice.** Yaesu "System Fusion" radios
   talk across the internet through reflectors -- rooms like CQ-UK or America
   Link, the network a Pi-Star hotspot uses, with many of Yaesu's WIRES-X
-  rooms bridged onto it. *Find a room* on the desktop searches the public
-  register of them; a room plays like any station, with the callsign of
+  rooms bridged onto it or onto its sister FCS network. *Find a room* on the
+  desktop searches the public registers of both; a room plays like any station, with the callsign of
   whoever is speaking as what's playing, and stays tuned through the long
   quiet between overs -- or *monitor* it, and it comes over whatever else
   is playing when someone speaks. It only ever listens, and joins under your own

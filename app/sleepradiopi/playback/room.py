@@ -7,6 +7,10 @@ it). A station whose address is a room's
 
     ysf://HOST:PORT/NAME
 
+(or fcs://FCS00290/NAME for a room on the FCS network, where Yaesu's
+WIRES-X rooms are mostly bridged: the same radio frames in another
+envelope, on fcs002.xreflector.net and its like)
+
 joins it and plays whoever speaks, with their callsign as the "now playing"
 title. It only listens: nothing is ever sent but "I'm here" every few
 seconds, under the callsign the radio has been given (a room shows who is
@@ -49,6 +53,8 @@ log = logging.getLogger(__name__)
 DECODER = Path.home() / "decoders" / "libmbe.so"
 CALLSIGN: str | None = None      # the radio's (main.py sets it from the settings; the web side when it's changed)
 PORT = 42000
+FCS_PORT = 62500
+FCS_POLL_S = 0.8                 # (the FCS network wants to hear from you this often)
 POLL_S = 5.0                     # "I'm here", this often
 GONE_S = 60.0                    # no answer this long: the room has gone
 STATUS_S = 60.0                  # how many are connected: asked this often
@@ -56,19 +62,26 @@ OVER_S = 1.5                     # nothing from the talker this long: the over h
 VOICE_RATE = 8000
 HEARD = 20                       # overs remembered, for "last heard"
 
+_WHITEN20 = bytes([0x93, 0xD7, 0x51, 0x21, 0x9C, 0x2F, 0x6C, 0xD0, 0xEF, 0x0F, 0xF8, 0x3D, 0xF1, 0x73, 0x20, 0x94, 0xED, 0x1E, 0x7C, 0xD8])
+_SPREAD = np.array([(i % 5) * 40 + (i // 5) * 2 for i in range(100)])     # where each coded pair sits among 200 bits
 _WHITEN = np.unpackbits(np.frombuffer(bytes([0x93, 0xD7, 0x51, 0x21, 0x9C, 0x2F, 0x6C, 0xD0, 0xEF, 0x0F, 0xF8, 0x3D, 0xF1]), dtype=np.uint8))
 _ORDER = np.array([(i % 26) * 4 + i // 26 for i in range(104)])
 
 
 def parse(url: str) -> dict | None:
-    """ysf://HOST[:PORT][/NAME] -> {"host", "port", "name"}; None if it isn't a room's address."""
+    """ysf://HOST[:PORT][/NAME] or fcs://FCS00290[/NAME] -> {"net", "host", "port", "name"} (and, for FCS,
+    "id": the room's eight characters); None if it isn't a room's address."""
     try:
         u = urlparse(url)
-        if u.scheme != "ysf" or not u.hostname:
-            return None
-        return {"host": u.hostname, "port": u.port or PORT, "name": unquote(u.path.strip("/"))[:40] or u.hostname}
+        name = unquote(u.path.strip("/"))[:40]
+        if u.scheme == "ysf" and u.hostname:
+            return {"net": "ysf", "host": u.hostname, "port": u.port or PORT, "name": name or u.hostname}
+        if u.scheme == "fcs" and re.fullmatch(r"fcs\d{5}", u.hostname or ""):
+            rid = u.hostname.upper()
+            return {"net": "fcs", "host": f"{rid[:6].lower()}.xreflector.net", "port": FCS_PORT, "name": name or rid, "id": rid}
     except ValueError:
-        return None
+        pass
+    return None
 
 
 def is_room(url: str) -> bool:
@@ -77,6 +90,10 @@ def is_room(url: str) -> bool:
 
 def link(host: str, port: int, name: str) -> str:
     return f"ysf://{host}:{int(port)}/{quote(name.strip(), safe='')}"
+
+
+def fcs_link(room_id: str, name: str) -> str:
+    return f"fcs://{room_id.upper()}/{quote(name.strip(), safe='')}"
 
 
 def clean_callsign(text) -> str:
@@ -100,6 +117,58 @@ def voice(payload: bytes) -> tuple[list[np.ndarray], float]:
         agree += int((sums % 3 == 0).sum())
         out.append(np.concatenate([(sums >= 2).astype(np.uint8), block[81:103]]))
     return out, agree / 135
+
+
+def _crc_ok(data: bytes) -> bool:
+    """CRC-16 (CCITT, from zero, inverted) over all but the last two bytes, which are it."""
+    crc = 0
+    for b in data[:-2]:
+        crc ^= b << 8
+        for _ in range(8):
+            crc = ((crc << 1) ^ 0x1021 if crc & 0x8000 else crc << 1) & 0xFFFF
+    return (crc ^ 0xFFFF) == int.from_bytes(data[-2:], "big")
+
+
+def _unfold(bits200: np.ndarray) -> np.ndarray | None:
+    """200 bits off the air -> the 100 they carry. They're spread out, and each one was
+    sent as a pair (a rate-1/2 convolutional code: g1 = d + d3 + d4, g2 = d + d1 + d2 + d4).
+    What a reflector passes on has already been put right by the radio that received it,
+    so the first of each pair gives the bit and the second only checks it: None if any
+    pair disagrees (the caller's CRC catches what that doesn't)."""
+    g1, g2 = bits200[_SPREAD], bits200[_SPREAD + 1]
+    out = np.zeros(100, dtype=np.uint8)
+    d1 = d2 = d3 = d4 = 0
+    for i in range(100):
+        d = int(g1[i]) ^ d3 ^ d4
+        if d ^ d1 ^ d2 ^ d4 != int(g2[i]):
+            return None
+        out[i] = d
+        d1, d2, d3, d4 = d, d1, d2, d3
+    return out
+
+
+def fich(payload: bytes) -> dict | None:
+    """A frame's header: {"fi": 0 header | 1 voice or data | 2 the end, "fn": its number in the
+    cycle, "dt": 0 | 1 data | 2 voice (DN) | 3 voice (VW)}; None if it can't be read."""
+    bits = _unfold(np.unpackbits(np.frombuffer(payload[5:30], dtype=np.uint8)))
+    if bits is None:
+        return None
+    # four Golay (24,12) words: the first twelve bits of each are the data
+    data = np.packbits(np.concatenate([bits[k * 24:k * 24 + 12] for k in range(4)])).tobytes()
+    if not _crc_ok(data):
+        return None
+    return {"fi": data[0] >> 6, "fn": (data[1] >> 3) & 7, "ft": data[1] & 7, "dt": data[2] & 3}
+
+
+def dch(payload: bytes) -> bytes | None:
+    """The ten bytes of data riding with a DN voice frame -- frame 0 of a cycle has who it's
+    to, frame 1 who it's from -- or None if they can't be read."""
+    body = np.unpackbits(np.frombuffer(payload[30:120], dtype=np.uint8))
+    bits = _unfold(np.concatenate([body[j * 144:j * 144 + 40] for j in range(5)]))
+    if bits is None:
+        return None
+    data = np.packbits(bits[:96]).tobytes()
+    return bytes(b ^ w for b, w in zip(data[:10], _WHITEN20)) if _crc_ok(data) else None
 
 
 def is_silence(bits: np.ndarray) -> bool:
@@ -163,6 +232,8 @@ class RoomStream(ReceiverStream):
         self.connected: int | None = None
         self.heard: collections.deque = collections.deque(maxlen=HEARD)       # [callsign, when (time.time()), seconds]
         self.has_decoder: bool | None = None
+        self._over = False               # someone has the air (on FCS their callsign comes a moment after they start)
+        self._bye: tuple | None = None   # what to say on leaving, and to whom
 
     def rig(self, since: int = 0) -> dict:
         return {"kind": "room", "base": self.url, "name": self.name, "title": self.title, "ended": self.ended, "tunes": False,
@@ -188,21 +259,24 @@ class RoomStream(ReceiverStream):
                 log.info("room: no voice decoder on this radio: %s will show who talks, without sound", self.name)
             where = (socket.gethostbyname(room["host"]), room["port"])
             sock = self._sock_factory()
-            me, resample = call.ljust(10).encode(), Resampler(VOICE_RATE)
+            fcs = room["net"] == "fcs"
+            # "I'm here": a YSF reflector takes the callsign; an FCS one the callsign (six letters) and the room
+            hello = (b"PING" + call[:6].ljust(6).encode() + room["id"].encode() + bytes(7)) if fcs else b"YSFP" + call.ljust(10).encode()
+            self._bye = (b"CLOSE      " if fcs else b"YSFU" + call.ljust(10).encode(), where)
+            every, resample = (FCS_POLL_S if fcs else POLL_S), Resampler(VOICE_RATE)
             polled = asked = -1e9
             answered = self._clock()
-            last_frame, over_from = 0.0, 0.0
+            last_frame, over_from, introduced = 0.0, 0.0, False
             while not self._closed.is_set():
                 now = self._clock()
-                if now - polled >= POLL_S:
-                    sock.sendto(b"YSFP" + me, where)
+                if now - polled >= every:
+                    sock.sendto(hello, where)
                     polled = now
-                if now - asked >= STATUS_S:
+                if not fcs and now - asked >= STATUS_S:
                     sock.sendto(b"YSFS", where)
                     asked = now
-                if self.talker is not None and now - last_frame > OVER_S:        # the over has ended
-                    self.heard.append([self.talker, time.time(), last_frame - over_from])
-                    self.talker, self.title = None, self.name
+                if self._over and now - last_frame > OVER_S:                      # the over has ended
+                    self._end_over(last_frame - over_from)
                 if now - answered > GONE_S:
                     raise ValueError("the room stopped answering")
                 try:
@@ -210,34 +284,62 @@ class RoomStream(ReceiverStream):
                 except (TimeoutError, socket.timeout):
                     continue
                 answered = now
-                if d[:4] == b"YSFS" and len(d) >= 42:
+                if fcs:
+                    if len(d) in (7, 10) and not introduced:                      # it has us: say what we are (a listener)
+                        sock.sendto(f"{0:9d}{0:9d}{'':6s}{'SleepRadio':12s}{0:7d}".ljust(100).encode(), where)
+                        introduced = True
+                    if len(d) != 130:
+                        continue
+                    payload, who = d[:120], None
+                elif d[:4] == b"YSFS" and len(d) >= 42:
                     count = d[39:42].decode(errors="replace").strip()
                     self.connected = int(count) if count.isdigit() else None
+                    continue
                 elif d[:4] == b"YSFD" and len(d) >= 155:
-                    who = d[14:24].decode(errors="replace").strip() or "?"
-                    if who != self.talker:
-                        if self.talker is not None:
-                            self.heard.append([self.talker, time.time(), last_frame - over_from])
-                        self.talker, over_from = who, now
-                        self.title = f"{who} · {self.name}"
+                    payload, who = d[35:155], d[14:24].decode(errors="replace").strip() or None
+                else:
+                    continue
+                head = fich(payload)
+                if head is not None and head["fi"] == 2:                          # the end of the over
+                    if self._over:
+                        self._end_over(last_frame - over_from)
+                    continue
+                if not self._over:
+                    self._over, over_from = True, now
+                    if decoder is not None:
+                        decoder.reset()
+                last_frame = now
+                dn = head is not None and head["fi"] == 1 and head["dt"] == 2
+                if who is None and dn and head["fn"] == 1:                        # (FCS: who it's from rides with the voice)
+                    sent = dch(payload)
+                    who = sent.decode("ascii", errors="replace").strip() if sent is not None else None
+                    who = who if who and re.fullmatch(r"[A-Z0-9/\- ]{3,10}", who) else None
+                if who and who != self.talker:
+                    if self.talker is not None:                                   # (another voice with no gap between)
+                        self._end_over(last_frame - over_from)
+                        self._over, over_from = True, now
                         if decoder is not None:
                             decoder.reset()
-                    last_frame = now
-                    frames, agree = voice(d[35:155])
-                    if decoder is None or agree < 0.93:                           # (a header, the end, or data: no speech in it)
-                        continue
-                    speech = [decoder.decode(bits) for bits in frames if not is_silence(bits)]
-                    if speech:
-                        self._audio(resample.process(np.concatenate(speech)))
+                    self.talker = who
+                    self.title = f"{who} · {self.name}"
+                frames, agree = voice(payload)
+                if decoder is None or not (dn if head is not None else agree >= 0.93):   # (a header, the end, data, or the wide mode)
+                    continue
+                speech = [decoder.decode(bits) for bits in frames if not is_silence(bits)]
+                if speech:
+                    self._audio(resample.process(np.concatenate(speech)))
         except Exception as e:
             if not self._closed.is_set():
                 self._end(str(e) if isinstance(e, ValueError) else f"the room couldn't be reached ({str(e)[:80]})")
         finally:
             if sock is not None:
                 try:
-                    if self.room is not None and self.callsign:
-                        sock.sendto(b"YSFU" + clean_callsign(self.callsign).ljust(10).encode(),
-                                    (socket.gethostbyname(self.room["host"]), self.room["port"]))
-                except (OSError, ValueError):
+                    if self._bye is not None:
+                        sock.sendto(*self._bye)
+                except OSError:
                     pass
                 sock.close()
+
+    def _end_over(self, seconds: float) -> None:
+        self.heard.append([self.talker or "?", time.time(), max(0.0, seconds)])
+        self.talker, self.title, self._over = None, self.name, False

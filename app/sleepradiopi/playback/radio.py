@@ -103,8 +103,8 @@ def validate_station(d) -> dict:
     if not isinstance(name, str) or not name.strip() or len(name) > MAX_NAME:
         raise ValueError(f"a station needs a name (up to {MAX_NAME} letters)")
     parts = urlparse(url.strip()) if isinstance(url, str) else None
-    # (ysf://: a room of radio amateurs' digital voice -- playback/room.py)
-    if parts is None or len(url) > MAX_URL or parts.scheme not in ("http", "https", "ysf") or not parts.netloc:
+    # (ysf:// and fcs://: a room of radio amateurs' digital voice -- playback/room.py)
+    if parts is None or len(url) > MAX_URL or parts.scheme not in ("http", "https", "ysf", "fcs") or not parts.netloc:
         raise ValueError(f"{name.strip()}: the address must start http:// or https://")
     if not isinstance(info, str):
         info = ""
