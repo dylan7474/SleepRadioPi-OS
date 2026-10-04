@@ -86,10 +86,6 @@ def validate_settings(own, name: str = "") -> dict:
 
 def station_name(profile_name: str) -> str:
     """A theme is a station: "Carisbrooke" -> "Carisbrooke Radio"; "Rock Radio" stays;
-    Default is the radio's own name (This radio: Sleep Radio unless renamed), not
-    "Default Radio"."""
+    Default is "Default Radio", like any other (not the radio's own name)."""
     name = profile_name.strip()
-    if name.lower() == DEFAULT.lower():
-        from sleepradiopi.config import brand
-        return brand.name
     return name if name.lower().endswith("radio") else f"{name} Radio"

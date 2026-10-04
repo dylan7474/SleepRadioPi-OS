@@ -473,8 +473,9 @@ The cards:
   Buttons (and the day and night sets), Updates, Save & load, Power.
   **There's always a theme called Default** (`profiles.DEFAULT`; it can't be
   renamed or deleted): all my music (`"all": true`) unless given artists,
-  first in Themes. Its jingles are the start-up ones, and fill gaps, when the
-  theme playing has none of its own. Going "back" (after a station, an album,
+  first in Themes. The DJ calls it "Default Radio", a station like any
+  other (`profiles.station_name`). Its jingles are the start-up ones, and
+  fill gaps, when the theme playing has none of its own. Going "back" (after a station, an album,
   artist radio, a programme ending) is the theme last played, else Default
   (`Station._fallback_theme`). `main.ensure_default_theme` makes it (the
   "Sleep Radio" theme of all my music made earlier became it, jingles folder,
