@@ -188,7 +188,7 @@
   .rig .rtag.rx { border-color: #5fd08a; color: #05090d; background: #5fd08a; }
   .rig .rtags .sp { margin-left: auto; color: #7f97a8; letter-spacing: 0; }
   .rig .rvfo { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0 14px; }
-  .rig .rfreq { font-family: ui-monospace, "DejaVu Sans Mono", Menlo, Consolas, monospace; font-size: 38px; line-height: 1.05; font-variant-numeric: tabular-nums; white-space: nowrap; cursor: text; background: none; border: 0; color: inherit; padding: 0; }
+  .rig .rfreq { touch-action: none; font-family: ui-monospace, "DejaVu Sans Mono", Menlo, Consolas, monospace; font-size: 38px; line-height: 1.05; font-variant-numeric: tabular-nums; white-space: nowrap; cursor: text; background: none; border: 0; color: inherit; padding: 0; }
   .rig .rfreq small { font-size: .6em; color: #7f97a8; }
   .rig .rwho { color: #f0b045; font-size: 13px; font-weight: 600; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .rig .rentry { font: inherit; font-family: ui-monospace, "DejaVu Sans Mono", Menlo, Consolas, monospace; font-size: 30px; width: 7.5em; background: #0d1820; color: #f4f6f7; border: 1px solid #58d0e8; border-radius: 4px; padding: 0 6px; }
@@ -2019,6 +2019,13 @@ const RXD = {
       await open(f.id);
       const win = W.find(w => w.id === f.id); if (win && banding) { win.banding = true; drawDesk(); }
     },
+    station(R) {                                    // where it's tuned, as a station: a band's channel is the band held there
+      const hz = this.tuned(R), band = this.band(R), r = R.st?.receiving;
+      if (!hz) return null;
+      const c = band?.channels.find(c => c.freq === hz);
+      if (c) return { name: c.name, url: `${R.origin}/audio?band=${encodeURIComponent(band.id)}&hold=${rxMhz(hz)}`, info: band.name };
+      return { name: `${rxMhz(hz)} MHz`, url: `${R.origin}/audio?freq=${rxMhz(hz)}&mode=${r?.mode || R.mode}`, info: "Receiver" };
+    },
     tune(R, hz, mode) {
       if (!(hz >= 24e6 && hz <= 1766e6)) return toast("A frequency in MHz, from 24 to 1766: 145.5");
       rigListen(R, stationObj({ name: `${rxMhz(hz)} MHz`, url: `${R.origin}/audio?freq=${rxMhz(hz)}&mode=${mode}`, info: "Receiver" }));
@@ -2053,6 +2060,7 @@ const RXD = {
     unit: "kHz", example: () => "7150", steps: [10, 100, 1000, 5000, 9000], word: "KiwiSDR",
     link(R, hz, mode) { return `${R.origin}?f=${(hz / 1000).toFixed(2)}${mode}`; },
     label(R, hz, mode) { return `${+(hz / 1000).toFixed(2)} kHz ${mode.toUpperCase()} · ${R.o.title}`.slice(0, 60); },
+    station(R) { const hz = this.tuned(R), mode = this.on(R) ? R.st.mode : R.mode; return hz ? { name: this.label(R, hz, mode), url: this.link(R, hz, mode), info: `${this.word} · ${R.o.title}` } : null; },
     on(R) { return !!R.st?.on && R.st.base === R.origin && !R.st.ended; },
     tuned(R) { return this.on(R) ? (R.last = R.st.freq) : R.last; },
     pass(R, hz) { const [a, b] = KIWI_PASS[this.on(R) ? R.st.mode : R.mode] || [-2700, 2700]; return [hz + a, hz + b]; },
@@ -2291,8 +2299,19 @@ function rigView(o, box, win) {
     vfo = el("div", { className: "rvfo" }, f, d.who = el("span", { className: "rwho", textContent: `${D.unit}, then Enter` }));
     setTimeout(() => f.focus(), 0);
   } else {
-    const fr = el("button", { type: "button", className: "rfreq", title: "Click to type a frequency" }, d.main = el("span"), d.sub = el("small"));
-    fr.onclick = () => { R.entering = true; drawDesk(); };
+    // the frequency: click it to type one; drag it onto a radio button (or the radio, or the desktop) as a station
+    const fr = el("button", { type: "button", className: "rfreq", title: "Click to type a frequency · drag it onto a button to keep it there" }, d.main = el("span"), d.sub = el("small"));
+    fr.onpointerdown = e => {
+      if (e.button > 0) return;
+      const x0 = e.clientX, y0 = e.clientY, st = D.station(R);
+      let moved = false;
+      const mv = ev => { if (Math.hypot(ev.clientX - x0, ev.clientY - y0) >= 5) moved = true; };
+      const up = () => { fr.removeEventListener("pointermove", mv); fr.removeEventListener("pointerup", up); fr.removeEventListener("pointercancel", up);
+                         if (!moved) setTimeout(() => { R.entering = true; drawDesk(); }, 0); };
+      fr.addEventListener("pointermove", mv); fr.addEventListener("pointerup", up); fr.addEventListener("pointercancel", up);
+      if (st) press(e, fr, { id: stationObj(st).id, where: "rig:" + o.id, row: true });
+    };
+    fr.onkeydown = e => { if (e.key === "Enter") { R.entering = true; drawDesk(); } };
     vfo = el("div", { className: "rvfo" }, fr, d.who = el("div", { className: "rwho" }));
   }
   const tft = el("div", { className: "tft" },
@@ -2301,7 +2320,7 @@ function rigView(o, box, win) {
     el("div", { className: "rmeter" }, el("span", { textContent: "S" }), el("div", { className: "rtrack" }, d.fill = el("div", { className: "rfill" })), el("span"),
        el("div", { className: "rticks" }, ...["1", "3", "5", "7", "9", "+20", "+40", "+60"].map(t => el("span", { textContent: t })))),
     rigCanvas(R), d.scale = el("div", { className: "rscale" }));
-  const foot = el("div", { className: "rfoot" }, ...D.foot(R, k), el("span", { className: "rtip", textContent: R.kind !== "own" ? "Click the scope to tune · wheel for fine steps · someone's own radio: be a good guest" : "Click the scope to tune" }));
+  const foot = el("div", { className: "rfoot" }, ...D.foot(R, k), el("span", { className: "rtip", textContent: R.kind !== "own" ? "Click the scope to tune · wheel for fine steps · drag the frequency onto a button · be a good guest" : "Click the scope to tune · drag the frequency onto a button" }));
   box.append(el("div", { className: "wbody" }, el("div", { className: "rig" }, bands, tft, modes, foot)));
   rigDraw(R); setTimeout(() => rigPaint(R), 0);
 }

@@ -971,7 +971,10 @@ The cards:
   as a **rig**, laid out like the screen of a radio amateur's transceiver:
   the frequency, an S meter, and the band's spectrum over a waterfall. Band
   keys down the left, modes down the right; *click the scope* to tune; click
-  the frequency to type one.
+  the frequency to type one, or **drag the frequency onto a radio button** to
+  keep where it's tuned there (onto the radio plays it; onto the desktop
+  leaves a shortcut). It's dragged as a station: a channel of your own
+  receiver's band is that band held on the channel.
   - *A receiver of your own* hears a whole band at once. Press a band and the
     radio tunes in (allow ten seconds). A click on the scope is instant and
     stays on that channel (*Hold*); *Scan* goes back to whoever speaks, ◀ ▶
