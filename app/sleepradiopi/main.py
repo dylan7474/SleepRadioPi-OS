@@ -220,9 +220,13 @@ def _wifi_watch(announcer) -> None:
 
 def _say_now(station: Station, control, text: str) -> None:
     """Say something on the radio's speaker now (in the background), e.g. an
-    update's progress. Needs a voice and a speaker; otherwise it's only logged."""
+    update's progress: in the DJ's voice, or the plain one on a radio that has
+    no DJ's voice yet. Needs a speaker; otherwise it's only logged."""
     logging.info("say: %s", text)
-    if control is None or not station._has_voice:
+    if control is None:
+        return
+    if not station._has_voice:
+        _say_plainly(control, text)
         return
 
     def run():
@@ -232,6 +236,22 @@ def _say_now(station: Station, control, text: str) -> None:
         except Exception:
             logging.exception("couldn't say it")
     threading.Thread(target=run, name="say", daemon=True).start()
+
+
+def _say_plainly(control, text: str, label: str = "Notice") -> float:
+    """Say it now in the plain voice (tts/plain.py: instant, and in the image),
+    for what can't wait for the DJ's. Returns how long it takes to say, in
+    seconds (0 if there's no plain voice here, or no speaker)."""
+    from sleepradiopi.io.announce import Clip
+    audio = plain_voice.render(text) if control is not None else None
+    if audio is None:
+        return 0.0
+    control.play_clip(Clip(audio, "notice", label))
+    return len(audio) / pcm.SAMPLE_RATE
+
+
+NO_VOICE_YET = "I have no voice of my own yet. I'm downloading one now. It takes a few minutes."
+VOICE_READY = "My voice is ready. I'm restarting to use it."
 
 
 def _lock_in_memory() -> None:
@@ -265,11 +285,18 @@ def _after_first_song(station: Station, updates: Updates) -> None:
     updates.on_air()
 
 
-def _fetch_standard_voice(jobs: VoiceJobs) -> None:
+def _fetch_standard_voice(jobs: VoiceJobs, control=None, online=None) -> None:
     """A radio with no voice at all (e.g. a fresh card): get the standard one
-    once it's online. Tries again every minute until it works."""
+    once it's online. Tries again every minute until it works. The first time
+    it's online it says so (in the plain voice), or the radio would just play
+    music for a few minutes with no word of why the DJ is missing."""
     logging.warning("no voice packs: downloading the standard voice when online")
+    online = online or (lambda: wifi.status().get("mode") in ("station", "unknown"))
+    said = False
     while True:
+        if not said and online():
+            said = True
+            _say_plainly(control, NO_VOICE_YET)
         try:
             jobs.download_standard(wait=True)
         except ValueError:            # one is already going (e.g. started from the page)
@@ -288,6 +315,7 @@ def _voice_installed(station: Station, config_file: Path, control, name: str) ->
     save_setting(config_file, "broadcast_voice", name)
     logging.info("using the new voice %s", name)
     if os.environ.get(RESTART_ENV):
+        time.sleep(_say_plainly(control, VOICE_READY) + 0.5)      # (said before it goes quiet to restart)
         _restart_soon(control)
 
 
@@ -370,6 +398,26 @@ def _service_menu(station: Station, control, presets, config_file: Path, ready=l
                 made[text] = audio
             return audio
 
+    def quick(text):
+        """The words for now: the DJ's if they're already made (kept, or just
+        made ahead), else the plain voice at once -- on a radio with no DJ's
+        voice, or one still making its lines -- and only then the DJ's, made
+        while you wait."""
+        try:
+            return np.frombuffer(kept(text).read_bytes(), dtype=np.int16).reshape(-1, pcm.CHANNELS)
+        except (OSError, ValueError):
+            pass
+        if text in made:
+            return made[text]
+        audio = plain_voice.render(text)
+        if audio is None and station._has_voice:
+            audio = render(text)
+        if audio is None:
+            raise RuntimeError("no voice to say it with")
+        return audio
+
+    can_speak = station._has_voice or plain_voice.available()
+
     def make_fixed_lines():
         """Once per voice: the fixed lines, made while the show plays; then the
         status report, remade whenever what it says changes (checked every
@@ -397,20 +445,20 @@ def _service_menu(station: Station, control, presets, config_file: Path, ready=l
         logging.info("service menu: %s", text)
         if not held[0]:               # (not in the menu: over the show, as a notice)
             presets._clip(beep(), "Service menu")
-            if station._has_voice:
-                threading.Thread(target=lambda: control.play_clip(Clip(render(text), "button", "Service menu")),
+            if can_speak:
+                threading.Thread(target=lambda: control.play_clip(Clip(quick(text), "button", "Service menu")),
                                  name="service-say", daemon=True).start()
             return
         said[0] += 1
         me = said[0]
         sound.put(beep())
-        if not station._has_voice:
+        if not can_speak:
             return
         sound.making += 1
 
         def run():
             try:
-                audio = render(text)
+                audio = quick(text)
                 if said[0] == me:
                     sound.add(np.concatenate([pcm.silence(0.2), audio]))
             except Exception:
@@ -558,8 +606,9 @@ def main() -> None:
                               voice_ready=on_air, hotspot=_hotspot,
                               plain=plain_voice.render if plain_voice.available() else None)
         announcer.start()
-        if station._has_voice:          # the sides test's "Left speaker" / "Right speaker"
-            control.speech = lambda text: station.render_speech(text) if on_air() else None
+        # The sides test's "Left speaker" / "Right speaker": the DJ's voice once it's loaded, the
+        # plain one until then (a new build's wiring is checked before there's a DJ's voice at all).
+        control.speech = lambda text: station.render_speech(text) if on_air() else plain_voice.render(text)
         threading.Thread(target=_wifi_watch, args=(announcer,), name="wifi-watch", daemon=True).start()
         if station._has_voice:
             threading.Thread(target=_make_warming_up, args=(station, on_air), name="warming-up",
@@ -710,7 +759,8 @@ def main() -> None:
     jobs = VoiceJobs(voices, Path.home() / "voice-inbox",
                      on_installed=lambda name: _voice_installed(station, args.config, control, name))
     if not station.voices():
-        threading.Thread(target=_fetch_standard_voice, args=(jobs,), name="voice-fetch", daemon=True).start()
+        threading.Thread(target=_fetch_standard_voice, args=(jobs, control), name="voice-fetch",
+                         daemon=True).start()
     # Internet radio's station search: a copy of the directory, kept fresh.
     directory = radio_mod.Directory(Path.home() / ".cache" / "sleepradiopi" / "stations.tsv")
     directory.keep_fresh()

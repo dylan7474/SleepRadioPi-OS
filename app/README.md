@@ -925,7 +925,10 @@ The cards:
   and only then act, so no music comes back in between.
   Its fixed lines are made once per voice in the background after start-up
   and kept (`~/.cache/sleepradiopi/service-menu/`), so they play at once;
-  only the status report is made fresh (while the buttons are held).
+  only the status report is made fresh (while the buttons are held). A line
+  the DJ hasn't made yet -- a new voice still making them, or a radio with no
+  DJ's voice at all -- is said at once in the plain voice (eSpeak,
+  `tts/plain.py`) instead, so the menu always talks.
   While it's open the four buttons answer it. **1**: restart (the Pi).
   **2**: reset the Wi-Fi — delete `/data/radio/wifi.json` (the networks
   added on the page, and a renamed hotspot) and ask the Wi-Fi manager for

@@ -220,7 +220,12 @@ Actions, Sleep timer and Radio folders open:
   in the image and makes a sentence in a fraction of a second, so even a new
   radio that has no DJ's voice yet talks you through it. (Holding the knob
   still says the address in the DJ's voice; the plain one only if there's no
-  other.) A radio with no network set up makes its own network about 10
+  other.) The plain voice also stands in wherever the radio has to say
+  something before the DJ can: on a radio with no DJ's voice yet it says the
+  update notices and that it's downloading its voice ("I have no voice of my
+  own yet…", then "My voice is ready. I'm restarting to use it."); the
+  service menu uses it for any line the DJ hasn't made yet; and the
+  left/right speaker test uses it until the DJ's voice has loaded. A radio with no network set up makes its own network about 10
   seconds after the Wi-Fi starts.
 - **Offline is normal.** Without the internet it keeps playing and talking;
   it only leaves out what needs the right time (time checks, news, birthday
