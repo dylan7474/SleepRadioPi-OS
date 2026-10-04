@@ -533,6 +533,22 @@ Other targets are passed through to Buildroot: `make menuconfig`,
   is set within seconds, and every NTP update (on sync, then every 11
   minutes) is written to the RTC. To test offline:
   `touch /data/wifi-off-once; reboot` (Wi-Fi off for 5 minutes).
+- **How well the RTC keeps time is written down.** Setting the RTC from the
+  internet time wipes the evidence, so just before it does, `clock-save`
+  notes how far out the RTC was -- at the first sync after power-on, and
+  after any 3 hours without one -- in `/data/clock.log` (the last 200 lines;
+  also logged as `rtc`): `the RTC was 0.41 s slow after 6 d 2 h 10 min
+  without the internet time (the radio's own clock: 0.39 s slow)`, with a
+  warning past a minute. Both clocks are read as their seconds tick over
+  (`rtc-sync diff`), so the figure is good to a few hundredths of a second.
+- **Off Wi-Fi for good, the clock follows the RTC.** While the radio is on,
+  the Pi's own crystal keeps the time and wanders by seconds a day; the RTC
+  is only read at boot. So with no internet time for 3 hours, `rtc-sync`
+  (started by `S12rtc`, once a day) sets the clock from the RTC again, notes
+  the wander in `/data/clock.log` (`clock re-read from the RTC: the radio's
+  own clock had gone 2.31 s fast`) and saves the time to `/data/clock`. It
+  leaves both alone if the RTC has stopped or the two are more than 10
+  minutes apart.
 - **An update restarts the station, and it plays at start-up.** To update a
   paused radio without it starting to play: `POST /api/speaker
   {"volume": 0}`, wait 4 s (the volume is saved), run `update.sh`, then as

@@ -13,6 +13,10 @@
 # this image's build or the last time saved to /data, and less than 10 years
 # after that.
 #
+# While the radio is on, the Pi's own crystal keeps the time and wanders by
+# seconds a day. ntpd corrects that; with no internet time, rtc-sync re-reads
+# the RTC once a day instead (and notes the wander in /data/clock.log).
+#
 # No RTC fitted: nothing happens, and the time is trusted only after NTP.
 #
 
@@ -21,6 +25,8 @@ CLOCK=${CLOCK:-/data/clock}
 BUILT=${BUILT:-/etc/build-time}
 FLAG=${FLAG:-/run/time-synced}
 STOPPED=${STOPPED:-/usr/sbin/rtc-stopped}
+RESYNC=${RESYNC:-/usr/sbin/rtc-sync}
+EVERY=${RESYNC_EVERY:-86400}             # seconds between re-reads (0: never)
 
 log() { logger -t rtc "$*"; }
 
@@ -33,6 +39,9 @@ start() {
 	if [ ! -e $RTC ]; then
 		log "no RTC found; the time is trusted once NTP sets it"
 		return 0
+	fi
+	if [ "$EVERY" -gt 0 ]; then
+		(while sleep "$EVERY"; do $RESYNC; done) </dev/null >/dev/null 2>&1 &
 	fi
 
 	t=$(cat $RTC/since_epoch 2>/dev/null)

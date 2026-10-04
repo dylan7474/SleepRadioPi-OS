@@ -1,0 +1,94 @@
+#!/bin/sh
+# The real-time clock against the radio's own clock.
+#
+# While the radio is on, the time is kept by the Pi's own crystal, which
+# wanders by seconds a day; the RTC is far steadier but is only read at boot.
+# With the internet time, ntpd corrects both. Without it (a radio that lives
+# off Wi-Fi), this brings the clock back to the RTC once a day.
+#
+#   rtc-sync            the daily re-read (S12rtc runs it): if the time is
+#                       trusted, no internet time has come for 3 hours and the
+#                       RTC hasn't stopped, set the clock from the RTC, note
+#                       how far it had wandered and save the time to /data
+#   rtc-sync diff       print RTC minus the radio's clock, in hundredths of a
+#                       second (both read as their seconds tick over)
+#   rtc-sync note TEXT  add a dated line to /data/clock.log (the last 200 are
+#                       kept) and to the system log
+#   rtc-sync secs N     print N hundredths of a second as "1.25 s fast" / "slow"
+#                       (N: how far ahead the clock in question is)
+#
+# clock-save uses diff, note and secs to record how far out the RTC was each
+# time the internet time comes back.
+
+RTC=${RTC:-/sys/class/rtc/rtc0}
+RUN=${RUN:-/run}
+LOG=${CLOCKLOG:-/data/clock.log}
+STOPPED=${STOPPED:-/usr/sbin/rtc-stopped}
+SAVE=${SAVE:-/usr/sbin/clock-save}
+UPTIME=${UPTIME:-/proc/uptime}
+EDGE=${EDGE:-120}                        # how long to wait for a second to tick over (1/100 s; 0: don't)
+APART=60000                              # more than 10 minutes apart: something is wrong, leave both alone
+
+note() {
+	logger -t rtc "$*"
+	echo "$(date '+%F %T %Z')  $*" >> "$LOG" 2>/dev/null || return 0
+	[ "$(wc -l < "$LOG")" -le 200 ] || { tail -n 200 "$LOG" > "$LOG.tmp" && mv -f "$LOG.tmp" "$LOG"; }
+}
+
+secs() {
+	a=${1#-}
+	way=fast; [ "$1" -lt 0 ] && way=slow
+	printf '%d.%02d s %s\n' $((a / 100)) $((a % 100)) $way
+}
+
+ticks() { read u _ < "$UPTIME"; ucs=$((${u%.*} * 100 + 1${u#*.} - 100)); }      # (1.. so "08" isn't octal)
+
+# Wait for the RTC's second to tick over; t is then its time, to a few 1/100 s.
+rtc_edge() {
+	t0=; read t0 < "$RTC/since_epoch" 2>/dev/null
+	[ -n "$t0" ] || return 1
+	t=$t0
+	ticks; stop=$((ucs + EDGE))
+	while [ "$t" = "$t0" ] && [ $ucs -lt $stop ]; do read t < "$RTC/since_epoch"; ticks; done
+}
+
+diff() {
+	s0=$(date +%s); s=$s0
+	ticks; stop=$((ucs + EDGE))
+	while [ "$s" = "$s0" ] && [ $ucs -lt $stop ]; do s=$(date +%s); ticks; done
+	u0=$ucs                                 # the radio's clock read s exactly at u0
+	rtc_edge || return 1                    # ... and the RTC read t exactly at ucs
+	if [ "$s" != "$s0" ] && [ "$t" != "$t0" ]; then
+		echo $(((t - s) * 100 - (ucs - u0)))
+	else
+		echo $(((t0 - s0) * 100))            # no tick seen: whole seconds only
+	fi
+}
+
+resync() {
+	[ -e "$RTC" ] && [ -e "$RUN/time-synced" ] || return 0
+	if [ -e "$RUN/ntp-synced" ]; then        # ntpd is keeping the clock (and the RTC): nothing to do
+		[ $(($(date +%s) - $(date -r "$RUN/ntp-synced" +%s))) -ge 10800 ] || return 0
+	fi
+	if $STOPPED; then
+		logger -t rtc "the RTC stopped at some point: the clock isn't re-read from it"
+		return 0
+	fi
+	d=$(diff) || return 0
+	if [ ${d#-} -gt $APART ]; then
+		note "the RTC and the radio's clock are $((${d#-} / 6000)) minutes apart: left alone until the internet time settles it"
+		return 0
+	fi
+	rtc_edge || return 0
+	date -u -s "@$t" >/dev/null
+	note "clock re-read from the RTC: the radio's own clock had gone $(secs $((-d)))"
+	$SAVE
+}
+
+case "$1" in
+	diff) diff ;;
+	note) shift; note "$*" ;;
+	secs) secs "$2" ;;
+	"") resync ;;
+	*) echo "Usage: $0 [diff | note TEXT | secs N]" >&2; exit 1 ;;
+esac

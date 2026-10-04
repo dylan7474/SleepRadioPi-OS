@@ -2,7 +2,10 @@
 # Save the time to /data so the next boot starts close to it: without an RTC
 # every boot would begin in 1970 until NTP answers (seconds after Wi-Fi comes
 # up, or never if it doesn't). With an RTC (S12rtc), the RTC is set from NTP
-# here too.
+# here too -- after noting in /data/clock.log how far out the RTC was, each
+# time the internet time comes back (the first sync since power-on, or after
+# 3 hours without one): the only record of how well the RTC keeps time, as
+# setting it wipes the evidence.
 #
 # Run by ntpd (-S) after it sets the clock and every 11 minutes, and by
 # S00data at shutdown. Never saves a time earlier than the saved one, so a
@@ -11,8 +14,32 @@
 # clock-restore (at boot, before anything else) moves the clock forward to
 # the saved time if it's behind.
 
-F=/data/clock
+F=${CLOCK:-/data/clock}
+SET=$F.ntp                               # when the internet time last set the RTC
+RUN=${RUN:-/run}
+DEV=${RTCDEV:-/dev/rtc0}
+SYNC=${SYNC:-/usr/sbin/rtc-sync}
+STOPPED=${STOPPED:-/usr/sbin/rtc-stopped}
 now=$(date +%s)
+
+# How far out was the RTC? ntpd gives how far the radio's clock was behind the
+# internet time ($offset, seconds; already put right after a step).
+drift() {
+	last=$(cat $SET 2>/dev/null)
+	[ -e $RUN/ntp-synced ] && [ $((now - ${last:-0})) -lt 10800 ] && return
+	$STOPPED && return                      # (it stopped: its time means nothing)
+	d=$($SYNC diff) && [ -n "$d" ] || return
+	off=$(awk -v o="${offset:-0}" 'BEGIN { printf "%d", o * 100 + (o < 0 ? -0.5 : 0.5) }')
+	[ "$1" = step ] || d=$((d - off))
+	gap="an unknown time"
+	if [ -n "$last" ]; then
+		m=$(((now - last) / 60))
+		gap="$((m / 1440)) d $((m % 1440 / 60)) h $((m % 60)) min"
+	fi
+	msg="the RTC was $($SYNC secs $d) after $gap without the internet time (the radio's own clock: $($SYNC secs $((-off))))"
+	[ ${d#-} -lt 6000 ] || msg="$msg -- over a minute: check the RTC and its battery"
+	$SYNC note "$msg"
+}
 
 case "$(basename "$0")" in
 	clock-restore)
@@ -26,10 +53,12 @@ case "$(basename "$0")" in
 		# trusted it already, from the RTC). Keep the RTC in step with it.
 		case "$1" in
 			step|stratum|periodic)
-				touch /run/time-synced /run/ntp-synced
+				[ -e $DEV ] && drift "$1"
+				touch $RUN/time-synced $RUN/ntp-synced
 				# (and, set from the real time, it's no longer a clock that stopped)
-				if [ -e /dev/rtc0 ] && hwclock -w -u -f /dev/rtc0 2>/dev/null; then
-					${STOPPED:-/usr/sbin/rtc-stopped} clear && logger -t rtc "the RTC had stopped; it's set from the internet time again"
+				if [ -e $DEV ] && hwclock -w -u -f $DEV 2>/dev/null; then
+					$STOPPED clear && logger -t rtc "the RTC had stopped; it's set from the internet time again"
+					echo "$now" > $SET.tmp && mv -f $SET.tmp $SET
 				fi
 				;;
 		esac

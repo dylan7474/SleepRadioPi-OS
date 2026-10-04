@@ -79,6 +79,9 @@ and with no network, and is set up from its web page. See
   the time, greets with "Hello" rather than "Good evening", and there's no
   news** (or birthday wishes); hooks, idents, track intros and jingles carry
   on. When Wi-Fi comes back, time checks and news return within seconds.
+  A radio that lives off Wi-Fi keeps its clock to the RTC (re-read once a
+  day), and how far out the RTC was is noted each time the internet time
+  comes back (`/data/clock.log` on the appliance image).
 - **Pull the plug any time.** On the appliance image the system and the
   music are read-only, and settings are saved atomically (temp file, fsync,
   rename), so a power cut can't leave a half-written file.
