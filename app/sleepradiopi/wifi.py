@@ -229,6 +229,8 @@ class Manager:
         self.sh("ip", "addr", "flush", "dev", IFACE)
 
     def start_station(self) -> None:
+        self.mode = "connecting"                  # said first: starting it takes seconds (udhcpc waits for
+        self._write_status()                      # an address), and a set-up join plays its pips meanwhile
         self._stop_everything()
         (self.rundir / "wifi-extra.conf").write_text(extra_conf(load(self.networks)["networks"]))
         self.sh("ip", "link", "set", IFACE, "up")

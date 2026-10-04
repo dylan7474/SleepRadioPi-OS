@@ -277,6 +277,8 @@ def test_a_join_from_the_hotspot_says_how_it_went(tmp_path: Path) -> None:
     assert st["mode"] == "hotspot" and st["failed"] == "Home" and not st.get("setup") and not st.get("again")
     assert wifi.JOIN_S <= pi.now - t0 < wifi.JOIN_S + 15
     assert seen[0]["mode"] == "connecting" and seen[0]["setup"]         # (while it tried: "joining")
+    first_cmd = [c[0] for c in pi.cmds].index("wpa_supplicant")
+    assert len(seen) >= 2 and seen[1]["mode"] == "connecting"           # said before the Wi-Fi is even started
 
     _run_for(m, pi, wifi.RETRY_S + 60)         # nobody on the hotspot: the regular try, and back -- not news
     st = wifi.status(run)
