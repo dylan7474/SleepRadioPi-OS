@@ -961,9 +961,20 @@ The cards:
   see below), and a **phase check** (every 3 s: both speakers the same, then the right
   one inverted — if the inverted part sounds fuller, a speaker is wired the
   wrong way round, and vocals would vanish in stereo but not in mono).
-- **Receiver** — a folder that appears on the desktop once a station's
-  address is a receiver's (`receiver/` in the repository: an RTL-SDR dongle
-  on a spare Pi, `http://HOST:8074/audio?band=…`). It holds the receiver's
+- **Receiver** — appears on the desktop once a station's address is a
+  receiver's (`receiver/` in the repository: an RTL-SDR dongle on a spare
+  Pi, `http://HOST:8074/audio?band=…`). It opens as a **rig**, laid out
+  like the screen of a radio amateur's transceiver: the frequency, an S
+  meter, and the band's spectrum over a waterfall, drawn from what the
+  receiver itself sends ten times a second. Band keys down the left (press
+  one and the radio tunes in; allow ten seconds), modes down the right.
+  *Click the scope* to tune: within a band that's instant, as the receiver
+  hears every channel at once, and it stays on the one you clicked (*Hold*);
+  *Scan* goes back to whoever speaks, ◀ ▶ step a channel, *Skip* leaves the
+  channel out of the band. Click the frequency to type one (any, in the
+  mode that's lit: FM, AM or broadcast WFM). *Channels…* opens the band as
+  a folder of stations to drag onto buttons, and *Bands…* shows the older
+  folder view (*◂ Rig* comes back). The folder view holds the receiver's
   bands, each a folder: the whole band at once, then its channels one by one,
   every one a station -- double-click to listen, drag onto a button to keep
   it there. While its window is open the page asks the receiver itself (not
