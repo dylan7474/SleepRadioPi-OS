@@ -51,6 +51,10 @@ IMAGES=output/images
 leaks=$( { output/host/bin/unsquashfs -l -d / "$IMAGES/rootfs.squashfs" | grep -E 'ssh_host_|authorized_keys'
 	output/host/bin/mdir -b -i "$IMAGES/boot.vfat" ::/ | grep -iE 'wpa_supplicant|authorized_keys'; } || true)
 [ -z "$leaks" ] || { printf 'private files in the release image:\n%s\n' "$leaks" >&2; exit 1; }
+# ...nor the voice decoder for rooms (mbelib: see the README's "Rooms and the voice decoder"), which is
+# only ever added to a radio by its owner.
+decoder=$(output/host/bin/unsquashfs -l -d / "$IMAGES/rootfs.squashfs" | grep -iE 'libmbe|mbelib' || true)
+[ -z "$decoder" ] || { printf 'the voice decoder is in the release image:\n%s\n' "$decoder" >&2; exit 1; }
 
 OUT="output/release/$VERSION"
 rm -rf "$OUT" && mkdir -p "$OUT"
