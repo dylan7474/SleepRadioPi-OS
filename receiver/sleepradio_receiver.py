@@ -6,6 +6,7 @@ turns its dongle into something a Sleep Radio -- or any internet radio player
 -- can tune in to as an ordinary station:
 
     http://RECEIVER:8074/audio?band=2m          every channel of a band at once
+    http://RECEIVER:8074/audio?band=2m&hold=145.5   ...staying on one of them
     http://RECEIVER:8074/audio?freq=145.5       one frequency (narrow FM)
     http://RECEIVER:8074/audio?freq=95.0&mode=wfm   broadcast FM
 
@@ -211,14 +212,24 @@ def load_bands(path: Path | None, into: dict | None = None) -> dict:
 
 
 def parse_spec(query: dict, bands: dict) -> dict:
-    """?band=2m | ?freq=145.5[&mode=nfm|am|wfm][&squelch=off] -> a spec; ValueError says what's wrong.
-    freq is in MHz (145.5) or Hz (145500000)."""
+    """?band=2m[&hold=145.5] | ?freq=145.5[&mode=nfm|am|wfm][&squelch=off] -> a spec; ValueError says
+    what's wrong. freq and hold are in MHz (145.5) or Hz (145500000). hold: the band, staying on that
+    one of its channels (the whole band is still received: letting go of it is instant)."""
     one = lambda k: (query.get(k) or [None])[0] if isinstance(query.get(k), list) else query.get(k)
     band, freq = one("band"), one("freq")
     if band:
         if band not in bands:
             raise ValueError(f"no band called {band}: there is {', '.join(sorted(bands))}")
-        return {"band": band}
+        hold = one("hold")
+        if hold in (None, ""):
+            return {"band": band}
+        try:
+            hz = _hz(hold)
+        except (TypeError, ValueError):
+            raise ValueError("hold is a frequency: 145.5 (MHz)") from None
+        if not any(c["freq"] == hz for c in bands[band]["channels"]):
+            raise ValueError(f"{_mhz(hz)} MHz isn't a channel of {bands[band]['name']}")
+        return {"band": band, "hold": hz}
     if freq is None:
         raise ValueError("say what to listen to: ?band=NAME or ?freq=MHZ")
     try:
@@ -650,7 +661,14 @@ class Receiver:
 
     def listen(self, spec: dict | None) -> Listener:
         with self.lock:
-            if spec is not None:
+            if spec is not None and "band" in spec:
+                hold = spec.get("hold")
+                if hold in self.skips:               # (skipped: the band doesn't receive it, so it's listened to on its own)
+                    self.select({"freq": hold, "mode": self.bands[spec["band"]].get("mode", "nfm")})
+                else:                                # the band (as it is, if it's already being received), held or let go
+                    self.select({"band": spec["band"]})
+                    self.hold(hold)
+            elif spec is not None:
                 self.select(spec)
             elif self.spec is None:
                 raise ValueError("nothing is being received: ask for ?band=NAME or ?freq=MHZ")

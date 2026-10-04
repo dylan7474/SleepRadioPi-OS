@@ -88,6 +88,11 @@ measures the error; OpenWebRX keeps it as the dongle's "ppm".)
   it's built, which `install.sh` does -- so it costs next to nothing (measured
   on a Pi 2 with 48 channels: 94% of one core without, 97% with). Only while a
   band or a narrow FM / AM frequency is being received.
+- `/audio?band=2m&hold=145.5`: the band, staying on that one of its channels
+  -- what a single channel is as a station (a Sleep Radio's button, say). The
+  whole band is still received, so moving to another channel, or letting go
+  (`/audio?band=2m`, or `POST /hold`), is instant. A channel that's being
+  skipped isn't in the band, so it's received on its own instead.
 - `POST /hold {"freq": HZ}`: listen to that one channel of the band, whoever
   else speaks (instant: every channel is already being received);
   `{"freq": null}` lets go. `/status` says which as `hold`.

@@ -753,7 +753,7 @@ async function loadFolder(f) {
     const all = `${f.origin}/audio?band=${encodeURIComponent(f.band)}`;
     f.kids = [(O["st:" + all] || stationObj({ name: `${f.title}: every channel`, url: all, info: "The whole band at once: whichever channel opens" })).id,
       ...f.chans.map(c => {
-        const o = stationObj({ name: c.name, url: `${f.origin}/audio?freq=${rxMhz(c.freq)}&mode=${f.mode || "nfm"}`, info: "" });
+        const o = stationObj({ name: c.name, url: `${f.origin}/audio?band=${encodeURIComponent(f.band)}&hold=${rxMhz(c.freq)}`, info: "" });   // (its band, held on it: Scan lets go)
         o.rxFreq = c.freq; o.rxSkip = !!c.skip;
         o.info = c.skip ? "Skipped: the band leaves it out" : c.freq === onAir ? "On air now" : heard.has(c.freq) ? `Heard ${rxAgo(heard.get(c.freq))} ago` : `${rxMhz(c.freq)} MHz${c.priority ? " · priority" : ""}`;
         return o.id; })];

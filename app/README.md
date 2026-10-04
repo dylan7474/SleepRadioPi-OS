@@ -977,7 +977,9 @@ The cards:
     stays on that channel (*Hold*); *Scan* goes back to whoever speaks, ◀ ▶
     step a channel, *Skip* leaves the channel out of the band. Modes: FM, AM
     or broadcast WFM for a typed frequency. *Channels…* opens the band as a
-    folder of stations to drag onto buttons; *Bands…* opens its bands as
+    folder of stations to drag onto buttons (a channel as a station is its
+    band held on that channel: the rig looks the same as after a click on
+    the scope, and *Scan* lets go); *Bands…* opens its bands as
     folders (*◂ Rig* comes back).
   - *A KiwiSDR* is short wave, one frequency at a time. The radio holds the
     one connection to it -- the sound and the waterfall -- so it takes one

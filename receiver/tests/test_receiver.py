@@ -198,3 +198,36 @@ def test_hold_one_channel_and_the_spectrum_for_a_waterfall() -> None:
     assert fall["running"] and fall["centre"] == 145_100_000 and fall["n"] == 3
     assert fall["rows"] == [[2, "AgICAg=="], [3, "AwMDAw=="]]
     r.proc = None
+
+
+def test_a_channel_as_a_station_is_its_band_held_there(tmp_path: Path) -> None:
+    bands = rx.DEFAULT_BANDS
+    assert rx.parse_spec({"band": ["2m"], "hold": ["145.3"]}, bands) == {"band": "2m", "hold": 145_300_000}
+    assert rx.parse_spec({"band": ["2m"], "hold": ["145300000"]}, bands) == {"band": "2m", "hold": 145_300_000}
+    assert rx.parse_spec({"band": ["2m"], "hold": [""]}, bands) == {"band": "2m"}
+    for bad, why in (({"band": ["2m"], "hold": ["156.8"]}, "isn't a channel of 2 metres"), ({"band": ["2m"], "hold": ["x"]}, "hold is a frequency")):
+        with pytest.raises(ValueError, match=why):
+            rx.parse_spec(bad, bands)
+
+    class Running:
+        def poll(self): return None
+        def terminate(self): pass
+        def wait(self, timeout=None): return 0
+    r = rx.Receiver(bands, skips_file=tmp_path / "skip.json")
+    asked = []
+    def select(spec):                              # (no dongle here: note what would be received)
+        asked.append(spec)
+        r.spec, r.name, r.proc = spec, "2 metres", Running()
+        if "band" in spec:
+            r.mixer = rx.Mixer(rx.spec_channels(spec, r.bands, r.skips)[1])
+    r.select = select
+    r.listen({"band": "2m", "hold": 145_300_000})
+    assert asked == [{"band": "2m"}] and r.status()["hold"]["freq"] == 145_300_000 and r.status()["receiving"] == {"band": "2m"}
+    r.listen({"band": "2m", "hold": 145_500_000})                 # another of its channels: the band isn't started again
+    assert r.status()["hold"]["name"] == "145.5, Calling channel"
+    r.listen({"band": "2m"})                                      # the whole band: let go
+    assert r.status()["hold"] is None and asked == [{"band": "2m"}] * 3
+    r.skips.add(145_237_500)                                      # a skipped channel isn't in the band: on its own
+    r.listen({"band": "2m", "hold": 145_237_500})
+    assert asked[-1] == {"freq": 145_237_500, "mode": "nfm"}
+    r.proc = None
