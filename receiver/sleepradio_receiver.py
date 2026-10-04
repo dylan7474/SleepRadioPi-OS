@@ -19,6 +19,11 @@ that opens; one that's always open can be skipped (/skip), which is
 remembered. With nobody transmitting the
 stream is silence, so a player stays tuned in.
 
+2 metres and marine VHF are built in. Any other stretch of spectrum the
+dongle can hear at once (1.9 MHz) becomes a band by saying where it starts
+and ends and how far apart its channels are (POST /bands); those are kept
+too.
+
 The audio is a WAV stream (16-bit mono) with ICY titles. /status says what
 it's doing as JSON; /bands lists the bands. One dongle does one thing at a
 time: the latest request wins, and listeners to what it was doing before are
@@ -64,6 +69,8 @@ HANG_S = 2.0                 # stay with a channel this long after it closes, fo
 HOG_S = 30.0                 # a channel open this long without a break gives way to another that opens
 HIGHPASS_HZ = 300            # narrow FM: below the speech (takes out CTCSS tones, a hum otherwise)
 IDLE_S = 60.0                # no listener this long: the dongle rests
+MAX_CHANNELS = 64            # in one band (48 use most of one of a Pi 2's cores)
+MIN_HZ, MAX_HZ = 24_000_000, 1_766_000_000      # what an RTL-SDR tunes
 GAIN_DB = 40.0
 VOLUME = 1.0
 
@@ -119,14 +126,79 @@ def load_skips(path: Path | None) -> set[int]:
         return set()
 
 
-def load_bands(path: Path | None) -> dict:
-    """The built-in bands, with a JSON file's on top ({"id": {"name", "mode", "channels": [{"freq", "name"}]}})."""
-    bands = {k: dict(v) for k, v in DEFAULT_BANDS.items()}
+def _hz(value) -> int:
+    """145.5 (MHz) or 145500000 (Hz) -> Hz."""
+    f = float(value)
+    return int(round(f * 1e6)) if f < 100_000 else int(round(f))
+
+
+def _mhz(hz: int) -> str:
+    return f"{hz / 1e6:.4f}".rstrip("0").rstrip(".")
+
+
+def make_band(body: dict) -> dict:
+    """A band from what was asked for -> {"name", "mode", "channels"}; ValueError says what's wrong.
+
+    Either its channels one by one ({"channels": [{"freq", "name"?, "priority"?}]}) or a stretch
+    of spectrum ({"from": MHz, "to": MHz, "step": kHz}: a channel every step, both ends
+    included), with "name", "mode" (nfm or am) and, for a stretch, "priority": the frequency
+    that takes over from the others."""
+    name = " ".join(str(body.get("name") or "").split())[:40]
+    if not name:
+        raise ValueError("the band needs a name")
+    mode = str(body.get("mode") or "nfm").lower()
+    if mode not in ("nfm", "am"):
+        raise ValueError("a band's mode is nfm or am")
+    try:
+        if body.get("channels"):
+            chans = [{"freq": _hz(c["freq"]), "name": " ".join(str(c.get("name") or "").split())[:40] or _mhz(_hz(c["freq"])),
+                      **({"priority": True} if c.get("priority") else {})} for c in body["channels"]]
+        else:
+            lo, hi, step = _hz(body["from"]), _hz(body["to"]), int(round(float(body.get("step") or 12.5) * 1000))
+            if hi < lo:
+                lo, hi = hi, lo
+            centre_for([lo, hi])                         # (too wide for one dongle: it says so)
+            if step < 5000:
+                raise ValueError("channels are at least 5 kHz apart")
+            if (hi - lo) // step >= MAX_CHANNELS:
+                raise ValueError(f"that's {(hi - lo) // step + 1} channels: a band has {MAX_CHANNELS} at most (a wider step, or a shorter stretch)")
+            first = _hz(body["priority"]) if body.get("priority") else None
+            chans = [{"freq": hz, "name": _mhz(hz), **({"priority": True} if hz == first else {})} for hz in range(lo, hi + 1, step)]
+    except (KeyError, TypeError, AttributeError):
+        raise ValueError("a band is its channels, or from, to (MHz) and step (kHz)") from None
+    except ValueError as e:
+        raise ValueError(str(e) if "channel" in str(e) else "frequencies are numbers: 446.00625 (MHz)") from None
+    once: dict[int, dict] = {}
+    for c in chans:
+        once.setdefault(c["freq"], c)                    # (each frequency once: the first to name it)
+    chans = sorted(once.values(), key=lambda c: c["freq"])
+    if not chans or len(chans) > MAX_CHANNELS:
+        raise ValueError(f"a band has 1 to {MAX_CHANNELS} channels")
+    if not all(MIN_HZ <= c["freq"] <= MAX_HZ for c in chans):
+        raise ValueError("an RTL-SDR tunes from 24 to 1766 MHz")
+    centre_for([c["freq"] for c in chans])               # (too wide for one dongle: it says so)
+    return {"name": name, "mode": mode, "channels": chans}
+
+
+def band_id(name: str) -> str:
+    return "".join(ch if ch.isalnum() else "-" for ch in name.lower()).strip("-")[:30] or "band"
+
+
+def load_bands(path: Path | None, into: dict | None = None) -> dict:
+    """The built-in bands, with a JSON file's on top ({"id": {"name", "mode", "channels": [{"freq", "name"}]}});
+    one in the file that can't be used is left out."""
+    bands = {k: dict(v) for k, v in DEFAULT_BANDS.items()} if into is None else into
     if path is not None and path.is_file():
-        for key, band in json.loads(path.read_text()).items():
-            chans = [{"freq": int(c["freq"]), "name": str(c.get("name") or f"{int(c['freq']) / 1e6:.4f}"),
-                      **({"priority": True} if c.get("priority") else {})} for c in band["channels"]]
-            bands[str(key)] = {"name": str(band.get("name") or key), "mode": band.get("mode", "nfm"), "channels": chans}
+        try:
+            found = json.loads(path.read_text())
+        except (OSError, ValueError) as e:
+            log.warning("%s can't be read: %s", path, e)
+            return bands
+        for key, band in found.items():
+            try:
+                bands[str(key)] = make_band({"name": band.get("name") or key, "mode": band.get("mode"), "channels": band["channels"]})
+            except (ValueError, KeyError, TypeError, AttributeError) as e:
+                log.warning("band %s in %s left out: %s", key, path, e)
     return bands
 
 
@@ -148,8 +220,8 @@ def parse_spec(query: dict, bands: dict) -> dict:
         f = float(freq)
     except (TypeError, ValueError):
         raise ValueError("freq is a number: 145.5 (MHz) or 145500000 (Hz)") from None
-    hz = int(round(f * 1e6)) if f < 100_000 else int(round(f))
-    if not 24_000_000 <= hz <= 1_766_000_000:
+    hz = _hz(f)
+    if not MIN_HZ <= hz <= MAX_HZ:
         raise ValueError("an RTL-SDR tunes from 24 to 1766 MHz")
     mode = (one("mode") or "nfm").lower()
     if mode not in ("nfm", "am", "wfm"):
@@ -305,8 +377,11 @@ class Listener:
 
 class Receiver:
     def __init__(self, bands: dict, airband: str | None = None, rtl_fm: str | None = None, gain: float = GAIN_DB,
-                 ppm: int = 0, device: int = 0, skips_file: Path | None = None) -> None:
-        self.bands = bands
+                 ppm: int = 0, device: int = 0, skips_file: Path | None = None, bands_file: Path | None = None) -> None:
+        self.bands = dict(bands)
+        self.bands_file = bands_file                  # the bands made from the web side (POST /bands), kept here
+        self.own = load_bands(bands_file, into={})
+        self.bands.update({k: b for k, b in self.own.items() if k not in bands})
         self.skips_file = skips_file
         self.skips = load_skips(skips_file)          # frequencies left out of the bands (always open, or of no interest)
         self.airband = airband or shutil.which("rtl_airband") or "/usr/local/bin/rtl_airband"
@@ -393,14 +468,60 @@ class Receiver:
                     log.warning("couldn't keep the skipped channels: %s", e)
             log.info("%s %.4f MHz", "skipping" if on else "no longer skipping", freq / 1e6)
             spec = self.spec
-            if spec and "band" in spec and self.proc is not None and \
-                    any(c["freq"] == int(freq) for c in self.bands[spec["band"]]["channels"]):
-                listeners = self.listeners             # the band is restarted without it; whoever is listening stays
-                self.spec = None
-                self.select(spec)
-                for lis in listeners:
-                    lis.dead = False
-                self.listeners = listeners
+            if spec and "band" in spec and any(c["freq"] == int(freq) for c in self.bands[spec["band"]]["channels"]):
+                self._again()                         # the band is restarted without it
+
+    def _again(self) -> None:
+        """What's being received has changed under it: start it afresh; whoever is listening stays."""
+        spec = self.spec
+        if spec is None or self.proc is None:
+            return
+        listeners = self.listeners
+        self.spec = None
+        self.select(spec)
+        for lis in listeners:
+            lis.dead = False
+        self.listeners = listeners
+
+    def _keep_bands(self) -> None:
+        if self.bands_file is not None:
+            try:
+                self.bands_file.parent.mkdir(parents=True, exist_ok=True)
+                self.bands_file.write_text(json.dumps(self.own, indent=1))
+            except OSError as e:
+                log.warning("couldn't keep the bands: %s", e)
+
+    def set_band(self, body: dict) -> str:
+        """Make a band (or, with the "id" of one made here, change it); its id. ValueError says why not."""
+        band = make_band(body)
+        with self.lock:
+            key = str(body.get("id") or "")
+            if key and key not in self.own:
+                raise ValueError(f"no band of your own called {key}")
+            if not key:
+                key = base = band_id(band["name"])
+                n = 2
+                while key in self.bands:
+                    key, n = f"{base}-{n}", n + 1
+            self.own[key] = self.bands[key] = band
+            self._keep_bands()
+            log.info("band %s: %s, %d channels", key, band["name"], len(band["channels"]))
+            if self.spec == {"band": key}:
+                self._again()
+        return key
+
+    def remove_band(self, key: str) -> None:
+        with self.lock:
+            if key not in self.own:
+                raise ValueError(f"{key} is built in: it can't be removed" if key in self.bands else f"no band called {key}")
+            if self.spec == {"band": key}:
+                for lis in self.listeners:
+                    lis.dead = True
+                self.listeners = []
+                self.rest()
+            del self.own[key], self.bands[key]
+            self._keep_bands()
+            log.info("band %s removed", key)
 
     def rest(self) -> None:
         with self.lock:
@@ -533,7 +654,8 @@ def make_handler(receiver: Receiver):
             if url.path == "/status":
                 return self._json(receiver.status())
             if url.path == "/bands":
-                return self._json({k: {**b, "channels": [c | ({"skip": True} if c["freq"] in receiver.skips else {}) for c in b["channels"]]}
+                return self._json({k: {**b, **({"own": True} if k in receiver.own else {}),
+                                       "channels": [c | ({"skip": True} if c["freq"] in receiver.skips else {}) for c in b["channels"]]}
                                    for k, b in receiver.bands.items()})
             if url.path == "/":
                 host = self.headers.get("Host") or f"localhost:{PORT}"
@@ -591,12 +713,17 @@ def make_handler(receiver: Receiver):
 
         def do_POST(self) -> None:
             path = urlparse(self.path).path
-            if path not in ("/select", "/skip"):
+            if path not in ("/select", "/skip", "/bands"):
                 return self._json({"error": "not found"}, 404)
             try:
                 body = json.loads(self.rfile.read(int(self.headers.get("Content-Length") or 0)) or b"{}")
                 if path == "/skip":                   # {"freq": Hz, "on": true | false}
                     receiver.skip(int(body["freq"]), body.get("on", True) is not False)
+                elif path == "/bands":                # a new band, a change to one ("id"), or {"id", "remove": true}
+                    if body.get("remove"):
+                        receiver.remove_band(str(body.get("id")))
+                    else:
+                        return self._json({"id": receiver.set_band(body), **receiver.status()})
                 else:
                     receiver.select(parse_spec({k: str(v) for k, v in body.items()}, receiver.bands))
             except (ValueError, TypeError, AttributeError, KeyError) as e:
@@ -615,11 +742,12 @@ def main(argv=None) -> int:
                          "dongle can be 50 ppm out, which at 145 MHz is 7 kHz -- most of a channel")
     ap.add_argument("--device", type=int, default=0)
     ap.add_argument("--airband", help="path to rtl_airband")
-    ap.add_argument("--state", type=Path, default=Path("/var/lib/sleepradio-receiver"), help="where the skipped channels are kept")
+    ap.add_argument("--state", type=Path, default=Path("/var/lib/sleepradio-receiver"),
+                    help="where the skipped channels and the bands made from the web side are kept")
     args = ap.parse_args(argv)
     logging.basicConfig(level=logging.INFO, format="%(message)s")
     receiver = Receiver(load_bands(args.bands), airband=args.airband, gain=args.gain, ppm=args.ppm, device=args.device,
-                        skips_file=args.state / "skip.json")
+                        skips_file=args.state / "skip.json", bands_file=args.state / "bands.json")
     httpd = ThreadingHTTPServer(("", args.port), make_handler(receiver))
     httpd.daemon_threads = True
     log.info("Sleep Radio receiver on port %d: bands %s", args.port, ", ".join(receiver.bands))

@@ -970,6 +970,11 @@ The cards:
   the radio) every few seconds who has the air: "On air now", "Heard 3 min
   ago". *Tune…* listens to any frequency (narrow FM, AM or broadcast FM); *Skip it*
   leaves the channel you clicked out of its band (one that's always open).
+  *New band…* makes a band of your own on the receiver: a name, where it
+  starts and ends (MHz) and how far apart its channels are -- PMR 446, the
+  local airband, 70 cm repeaters -- up to 64 channels within the 1.9 MHz a
+  dongle hears at once; it's then a folder like the others, and *Remove this
+  band* in its window takes it away again (the built-in two stay).
 - **Find a receiver** — in the Stations folder's toolbar (and the Receiver
   folder's): other people's receivers on the internet, from the public
   directory at receiverbook.de (fetched once a day and kept; OpenWebRX and

@@ -684,7 +684,7 @@ async function loadFolder(f) {
       catch (e) { f.down = `${origin.replace(/^https?:\/\//, "")} isn't answering`; continue; }
       for (const [id, b] of Object.entries(bands)) {
         const key = `rxb:${origin}:${id}`, on = st.receiving?.band === id;
-        kids.push(mk({ id: key, kind: "folder", box: "rxband", origin, band: id, mode: b.mode || "nfm", title: b.name, chans: b.channels, count: b.channels.length,
+        kids.push(mk({ id: key, kind: "folder", box: "rxband", origin, band: id, mode: b.mode || "nfm", title: b.name, chans: b.channels, count: b.channels.length, own: !!b.own,
                        kids: O[key]?.kids || [], info: on ? (st.on_air ? `On air: ${st.on_air.name}` : "Listening now") : `${b.channels.length} channels`,
                        sym: "⌁", alt: true }).id);
       }
@@ -1860,19 +1860,45 @@ function folderView(o, box, win) {
   else if (o.box === "lists") tools.append(T("New theme", () => open(PANEL.newlist.id)), el("span", { className: "note", textContent: "Double-click a theme to change it · drag one onto the radio to play it" }));
   else if (o.box === "receiver" || o.box === "rxband") {
     const origin = o.origin || o.origins?.[0];
-    tools.append(T("Tune…", () => { win.naming = !win.naming; drawDesk(); }));
-    if (o.box === "receiver") tools.append(T("Find a receiver", () => open(PANEL.findreceiver.id)));
+    tools.append(T("Tune…", () => { win.naming = !win.naming; win.banding = false; drawDesk(); }));
+    if (o.box === "receiver") tools.append(T("New band…", () => { win.banding = !win.banding; win.naming = false; drawDesk(); }), T("Find a receiver", () => open(PANEL.findreceiver.id)));
+    const rxPost = async (path, body) => {             // (said to the receiver itself; its "error" is the reason)
+      const r = await fetch(origin + path, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+      const d = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(d.error || `the receiver said ${r.status}`);
+      return d;
+    };
+    if (o.box === "rxband" && o.own) tools.append(T("Remove this band", () => ask(`Remove the band “${o.title}” from the receiver?`, "Remove it", async () => {
+      try { await rxPost("/bands", { id: o.band, remove: true }); closeFor(o); await loadFolder(RECEIVER); drawDesk(); toast(`The band “${o.title}” is gone.`); } catch (e) { toast(e.message); }
+    })));
     if (o.box === "rxband") tools.append(T("Skip it", async () => {      // (one that's always open: a stuck gateway, a carrier)
       const one = selectedIn(o);
       if (!one?.rxFreq) return toast("Click a channel first, then Skip it: the band leaves it out from then on (again to listen to it once more).");
       try {
-        const r = await fetch(o.origin + "/skip", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ freq: one.rxFreq, on: !one.rxSkip }) });
-        if (!r.ok) throw new Error(`the receiver said ${r.status}`);
+        await rxPost("/skip", { freq: one.rxFreq, on: !one.rxSkip });
         await loadFolder(o); drawDesk();
         toast(one.rxSkip ? `The band listens to ${one.title} again.` : `The band now skips ${one.title}. (It can still be listened to on its own.)`);
       } catch (e) { toast(e.message); }
     }));
-    if (win.naming && origin) {
+    if (win.banding && origin && o.box === "receiver") {   // a band of your own: a stretch of spectrum, a channel every step
+      const box = "background:var(--win);border:1px solid var(--line);border-radius:6px;padding:3px 7px", b = win.band ||= { name: "", from: "", to: "", step: "12.5", mode: "nfm" };
+      const inp = (key, ph, w, id) => { const i = el("input", { type: "text", placeholder: ph, id, maxLength: key === "name" ? 40 : 12, style: `${box};width:${w}`, value: b[key] }); if (key !== "name") i.inputMode = "decimal"; i.oninput = () => { b[key] = i.value; }; return i; };
+      const sel = (key, opts, id) => { const e = el("select", { style: box, id }, ...opts.map(([v, t]) => el("option", { value: v, textContent: t, selected: v === b[key] }))); e.onchange = () => { b[key] = e.value; }; return e; };
+      const name = inp("name", "Its name: PMR 446", "11em", "rxb-name");
+      const go = T("Make it", async () => {
+        const from = parseFloat(b.from), to = parseFloat(b.to);
+        if (!b.name.trim()) return toast("Give the band a name.");
+        if (!(from >= 24 && to >= 24)) return toast("Where it starts and ends, in MHz: 446.00625 to 446.19375");
+        try {
+          await rxPost("/bands", { name: b.name, from, to, step: parseFloat(b.step), mode: b.mode });
+          win.banding = false; win.band = null; await loadFolder(o); drawDesk(); toast(`The band “${b.name.trim()}” is with the receiver's bands.`);
+        } catch (e) { toast(e.message[0].toUpperCase() + e.message.slice(1) + "."); }
+      }, "primary");
+      tools.append(name, inp("from", "from", "6.5em", "rxb-from"), el("span", { className: "note", textContent: "to" }), inp("to", "to", "6.5em", "rxb-to"), el("span", { className: "note", textContent: "MHz, every" }),
+                   sel("step", [["6.25", "6.25 kHz"], ["12.5", "12.5 kHz"], ["25", "25 kHz"], ["50", "50 kHz"]], "rxb-step"), sel("mode", [["nfm", "FM (narrow)"], ["am", "AM"]], "rxb-mode"), go);
+      if (!b.name && !win.bandFocused) { win.bandFocused = true; setTimeout(() => name.focus(), 0); }
+    }
+    else if (win.naming && origin) {
       const box = "background:var(--win);border:1px solid var(--line);border-radius:6px;padding:3px 7px";
       const f = el("input", { type: "text", inputMode: "decimal", placeholder: "145.500", id: "rx-freq", maxLength: 12, style: box + ";width:7em" });
       const mode = el("select", { style: box }, ...[["nfm", "FM (narrow)"], ["am", "AM"], ["wfm", "FM broadcast"]].map(([v, t]) => el("option", { value: v, textContent: t })));

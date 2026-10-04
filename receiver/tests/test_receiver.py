@@ -123,3 +123,36 @@ def test_extra_bands_from_a_file(tmp_path: Path) -> None:
     assert set(bands) == {"2m", "marine", "pmr"} and bands["pmr"]["channels"][0]["name"] == "446.0063"
     assert bands["pmr"]["channels"][1] == {"freq": 446_018_750, "name": "Two", "priority": True}
     assert set(rx.load_bands(tmp_path / "none.json")) == {"2m", "marine"}
+
+
+def test_a_band_of_your_own_from_a_stretch_of_spectrum(tmp_path: Path) -> None:
+    pmr = rx.make_band({"name": " PMR  446 ", "from": 446.00625, "to": 446.09375, "step": 12.5, "priority": 446.00625})
+    assert pmr["name"] == "PMR 446" and pmr["mode"] == "nfm" and len(pmr["channels"]) == 8
+    assert pmr["channels"][0] == {"freq": 446_006_250, "name": "446.0063", "priority": True}
+    assert pmr["channels"][-1] == {"freq": 446_093_750, "name": "446.0938"}
+    air = rx.make_band({"name": "Airband", "mode": "am", "channels": [{"freq": "118.85", "name": "Teesside tower"}, {"freq": 118_850_000}, {"freq": 119.8}]})
+    assert [c["name"] for c in air["channels"]] == ["Teesside tower", "119.8"] and air["mode"] == "am"     # (each frequency once)
+    for bad, why in (({"from": 446, "to": 447}, "name"), ({"name": "x", "from": 145, "to": 156}, "one dongle"),
+                     ({"name": "x", "from": 145, "to": 146, "step": 6.25}, "64 at most"), ({"name": "x", "from": 5, "to": 5.1}, "24 to 1766"),
+                     ({"name": "x", "from": "abc", "to": 1}, "numbers"), ({"name": "x"}, "from, to"), ({"name": "x", "from": 145, "to": 145.1, "mode": "usb"}, "nfm or am"),
+                     ({"name": "x", "from": 145, "to": 145.1, "step": 1}, "5 kHz"), ({"name": "x", "channels": "no"}, "from, to")):
+        with pytest.raises(ValueError, match=why):
+            rx.make_band(bad)
+
+    kept = tmp_path / "state" / "bands.json"
+    r = rx.Receiver(rx.DEFAULT_BANDS, bands_file=kept)
+    key = r.set_band({"name": "PMR 446", "from": 446.00625, "to": 446.09375})
+    assert key == "pmr-446" and r.status()["bands"]["pmr-446"] == {"name": "PMR 446", "channels": 8}
+    assert rx.parse_spec({"band": ["pmr-446"]}, r.bands) == {"band": "pmr-446"}
+    assert r.set_band({"name": "PMR 446", "from": 446.0, "to": 446.1, "step": 25}) == "pmr-446-2"      # a second of the same name
+    assert r.set_band({"id": "pmr-446", "name": "PMR", "from": 446.00625, "to": 446.19375}) == "pmr-446" and len(r.bands["pmr-446"]["channels"]) == 16
+    with pytest.raises(ValueError, match="of your own"):
+        r.set_band({"id": "2m", "name": "Mine", "from": 145, "to": 145.1})
+    with pytest.raises(ValueError, match="built in"):
+        r.remove_band("marine")
+    r.remove_band("pmr-446-2")
+    again = rx.Receiver(rx.DEFAULT_BANDS, bands_file=kept)             # remembered for the next start
+    assert set(again.bands) == {"2m", "marine", "pmr-446"} and again.bands["pmr-446"]["name"] == "PMR"
+    assert set(rx.DEFAULT_BANDS) == {"2m", "marine"}                   # (the built-in table isn't touched)
+    kept.write_text('{"bad": {"channels": [{"freq": 1}]}, "ok": {"channels": [{"freq": 433500000}]}}')
+    assert set(rx.Receiver(rx.DEFAULT_BANDS, bands_file=kept).own) == {"ok"}

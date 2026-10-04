@@ -70,6 +70,15 @@ measures the error; OpenWebRX keeps it as the dongle's "ppm".)
 - `GET /bands`: the bands and their channels.
 - `POST /skip {"freq": HZ, "on": true}`: leave a channel out of its band (kept in
   `/var/lib/sleepradio-receiver/skip.json`); `/status` lists them as `skipping`.
+- `POST /bands {"name": "PMR 446", "from": 446.00625, "to": 446.19375, "step": 12.5}`:
+  a band of your own -- a stretch of spectrum (MHz) with a channel every step
+  (kHz); `"mode": "am"` for airband, `"priority": MHZ` for the channel that
+  takes over from the others, or `"channels": [{"freq", "name"}]` to name them
+  one by one. Up to 64 channels within the 1.9 MHz the dongle hears at once.
+  Replies with its `id`; with an `"id"` it changes that band, and
+  `{"id": ..., "remove": true}` removes it. Kept in
+  `/var/lib/sleepradio-receiver/bands.json`. On a Sleep Radio's desktop this
+  is *New band…* in the Receiver folder.
 - `POST /select {"band": "2m"}` (or `{"freq": 145.5, "mode": "nfm"}`): change
   what it receives without listening.
 - Your own bands: `/etc/sleepradio-receiver/bands.json`,
