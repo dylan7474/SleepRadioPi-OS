@@ -55,7 +55,6 @@ class Monitor:
         self.rooms: list[dict] = []
         self._streams: dict = {}                    # url -> the room, joined
         self._ended: dict[str, float] = {}          # url -> when it dropped
-        self._levellers: dict = {}
         self._buf: list[np.ndarray] = []
         self._buffered = 0
         self._active: str | None = None             # the room that has the air
@@ -115,7 +114,6 @@ class Monitor:
                 st = None
             if st is None and now - self._ended.get(url, -1e9) >= RETRY_S:
                 st = self._streams[url] = self._open(url)
-                self._levellers[url] = radio.Leveller()
                 st.start()
 
     def mix(self, block: np.ndarray, playing_url: str | None = None) -> np.ndarray:
@@ -134,7 +132,7 @@ class Monitor:
                     if self._active is None:
                         self._active = url
                     if url == self._active:
-                        self._buf.append(self._levellers[url].process(b))
+                        self._buf.append(b)                   # (at the level the room gives it: room.Shaper)
                         self._buffered += len(b)
                         self._last_speech = now
             while self._buffered > MAX_BUFFER_S * pcm.SAMPLE_RATE and len(self._buf) > 1:

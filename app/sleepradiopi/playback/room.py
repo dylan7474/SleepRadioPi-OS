@@ -46,6 +46,7 @@ from urllib.parse import quote, unquote, urlparse
 
 import numpy as np
 
+from sleepradiopi.audio import pcm
 from sleepradiopi.playback.receiver import ReceiverStream, Resampler
 
 log = logging.getLogger(__name__)
@@ -60,6 +61,10 @@ GONE_S = 60.0                    # no answer this long: the room has gone
 STATUS_S = 60.0                  # how many are connected: asked this often
 OVER_S = 1.5                     # nothing from the talker this long: the over has ended
 VOICE_RATE = 8000
+LEVEL = 100                      # how loud rooms are, % (the "room level" setting: main.py and the web side set it)
+MIN_LEVEL, MAX_LEVEL = 25, 200
+CEILING = 0.14                   # the most a talker's level may be (rms of full scale, over a tenth of a second)
+RELEASE_S = 1.5                  # held down for a loud talker, it comes back up over this long
 HEARD = 20                       # overs remembered, for "last heard"
 
 _WHITEN20 = bytes([0x93, 0xD7, 0x51, 0x21, 0x9C, 0x2F, 0x6C, 0xD0, 0xEF, 0x0F, 0xF8, 0x3D, 0xF1, 0x73, 0x20, 0x94, 0xED, 0x1E, 0x7C, 0xD8])
@@ -211,6 +216,31 @@ def load_decoder(path: Path | None = None) -> Decoder | None:
         return None
 
 
+class Shaper:
+    """A room's speech at the level it's played. It comes from the decoder a little under
+    the level music is kept at, which is where a voice wants to be -- so it is NOT
+    levelled like a station (that turned it up, to the same average as music, where
+    speech sounds much louder, and clipped it). Instead: the room level setting, a hold
+    on any talker louder than CEILING (down at once, back up slowly), and a soft limit
+    on what's left."""
+
+    def __init__(self, rate: int = VOICE_RATE) -> None:
+        self.rate = rate
+        self.down = 1.0                  # how far it's being held down (1 = not at all)
+
+    def process(self, speech: np.ndarray) -> np.ndarray:
+        gain = max(MIN_LEVEL, min(MAX_LEVEL, LEVEL)) / 100.0
+        out = np.empty(len(speech), dtype=np.float32)
+        step = self.rate // 10
+        for i in range(0, len(speech), step):
+            x = speech[i:i + step].astype(np.float32) * gain
+            rms = float(np.sqrt(np.mean(x * x))) / 32768.0 if len(x) else 0.0
+            want = min(1.0, CEILING / rms) if rms > 0 else 1.0
+            self.down = want if want < self.down else min(want, self.down + (1.0 - self.down) * len(x) / (RELEASE_S * self.rate) + 1e-4)
+            out[i:i + step] = x * self.down
+        return pcm.soft_limit(out)
+
+
 def _udp():
     s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     s.settimeout(0.5)
@@ -232,6 +262,7 @@ class RoomStream(ReceiverStream):
         self.connected: int | None = None
         self.heard: collections.deque = collections.deque(maxlen=HEARD)       # [callsign, when (time.time()), seconds]
         self.has_decoder: bool | None = None
+        self.levelled = True             # (its level is its own: the station doesn't level it like a stream -- see Shaper)
         self._over = False               # someone has the air (on FCS their callsign comes a moment after they start)
         self._bye: tuple | None = None   # what to say on leaving, and to whom
 
@@ -263,7 +294,7 @@ class RoomStream(ReceiverStream):
             # "I'm here": a YSF reflector takes the callsign; an FCS one the callsign (six letters) and the room
             hello = (b"PING" + call[:6].ljust(6).encode() + room["id"].encode() + bytes(7)) if fcs else b"YSFP" + call.ljust(10).encode()
             self._bye = (b"CLOSE      " if fcs else b"YSFU" + call.ljust(10).encode(), where)
-            every, resample = (FCS_POLL_S if fcs else POLL_S), Resampler(VOICE_RATE)
+            every, resample, shaper = (FCS_POLL_S if fcs else POLL_S), Resampler(VOICE_RATE), Shaper()
             polled = asked = -1e9
             answered = self._clock()
             last_frame, over_from, introduced = 0.0, 0.0, False
@@ -327,7 +358,7 @@ class RoomStream(ReceiverStream):
                     continue
                 speech = [decoder.decode(bits) for bits in frames if not is_silence(bits)]
                 if speech:
-                    self._audio(resample.process(np.concatenate(speech)))
+                    self._audio(resample.process(shaper.process(np.concatenate(speech))))
         except Exception as e:
             if not self._closed.is_set():
                 self._end(str(e) if isinstance(e, ValueError) else f"the room couldn't be reached ({str(e)[:80]})")

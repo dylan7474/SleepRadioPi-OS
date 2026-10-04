@@ -3466,6 +3466,13 @@ const UI = {
           help("Rooms are for licensed radio amateurs, and show who is connected: the radio joins under your callsign. It only ever listens.")),
         grp("The voice decoder", help(d.me.decoder ? "It's on this radio: rooms can be heard."
           : `It isn't on this radio. A room still shows who is talking, but there's no sound. The speech is in a patented codec (AMBE) that the radio's software doesn't include: scripts/build-voice-decoder.sh in the repository builds the decoder and puts it on the radio (the README says why it's separate).`)),
+        (() => {                                       // how loud rooms are: a voice isn't levelled like music, so it's yours to set
+          const lv = el("input", { type: "range", id: "room-level", min: 25, max: 200, step: 5, value: d.me.level ?? 100, style: "flex:1" });
+          const word = el("span", { className: "note", textContent: `${d.me.level ?? 100}%` });
+          lv.oninput = () => { word.textContent = `${lv.value}%`; };
+          lv.onchange = async () => { try { d.me.level = (await api("/api/rooms/level", { level: +lv.value })).level; } catch (e) { toast(e.message); } };
+          return grp("Room level", line(lv, word), help("How loud rooms are beside everything else (100% is a little under the music). It takes effect at once, and a loud talker is held down to the same level as the rest."));
+        })(),
         grp("Find a room", line(q, sbtn("Search", go, "primary")),
           help("Rooms are quiet most of the time: many connected, nobody talking. The radio stays tuned and plays whoever speaks, with their callsign as what's playing."),
           d.results === null ? null : d.results.length ? null : help("None found.")),

@@ -1047,7 +1047,13 @@ The cards:
   isn't part of the software (the top README's "Rooms and the voice
   decoder" says why, and how to add it); without it a room shows who's
   talking but makes no sound. A key held with nobody speaking is left as
-  silence, not hiss. `GET /api/rooms`, `/api/rooms/search?q=`,
+  silence, not hiss. *Room level* sets how loud rooms are beside everything
+  else: a room isn't levelled like music and stations are (speech at the
+  same average level as music sounds far louder, and levelling turned it up
+  until it clipped) -- it's played as it's decoded, a little under the music,
+  times this setting; a talker louder than the rest is held down to the
+  same level at once and let back up slowly, and nothing clips.
+  `POST /api/rooms/level {"level": 25-200}`. `GET /api/rooms`, `/api/rooms/search?q=`,
   `POST /api/rooms/callsign {"callsign"}`; `playback/room.py`, `rooms_dir.py`.
 - **Find a receiver** — in the Stations folder's toolbar (and the Receiver
   folder's): other people's receivers on the internet, from the public

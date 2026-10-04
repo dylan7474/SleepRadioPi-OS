@@ -196,7 +196,7 @@ def test_web_api(tmp_path: Path, monkeypatch) -> None:
             return e.code, json.loads(e.read() or b"{}")
 
     try:
-        assert call("/api/rooms") == (200, {"callsign": "", "decoder": False, "decoder_path": str(tmp_path / "libmbe.so"), "monitor": None})
+        assert call("/api/rooms") == (200, {"callsign": "", "decoder": False, "decoder_path": str(tmp_path / "libmbe.so"), "level": room.LEVEL, "monitor": None})
         code, reply = call("/api/rooms/search?q=cq-uk")
         assert code == 200 and reply["results"][0]["url"] == "ysf://149.102.158.76:42200/GB-CQ-UK" and reply["directory"]["count"] == 23
         assert call("/api/rooms/callsign", {"callsign": "m8odj"}) == (200, {"callsign": "M8ODJ", "decoder": False})
@@ -415,3 +415,49 @@ def test_a_room_on_the_fcs_network() -> None:
     assert blocks and int(np.concatenate(blocks).max()) > 3000              # the two spoken frames were played
     s.close()
     assert _wait(lambda: sock.closed) and sock.sent[-1][0] == b"CLOSE      "
+
+
+# --- how loud a room is ---------------------------------------------------------------------
+
+def test_a_rooms_level_is_its_own_set_by_you_and_a_loud_talker_is_held_down(monkeypatch) -> None:
+    rng = np.random.default_rng(5)
+    talk = lambda rms, seconds=2.0: (rng.standard_normal(int(8000 * seconds)) * rms * 32768).clip(-32768, 32767).astype(np.int16)
+    level = lambda x: float(np.sqrt(np.mean((x.astype(float) / 32768) ** 2)))
+    monkeypatch.setattr(room, "LEVEL", 100)
+    assert abs(level(room.Shaper().process(talk(0.07))) - 0.07) < 0.004               # an ordinary voice: as it comes, not turned up
+    loud = room.Shaper().process(talk(0.30))
+    assert abs(level(loud[8000:]) - room.CEILING) < 0.01 and abs(loud).max() < 32768   # a loud one: held to the ceiling, not clipped
+    sh = room.Shaper()
+    sh.process(talk(0.30))
+    after = sh.process(talk(0.07, 4.0))                                                 # then a normal one: it comes back up, not at once
+    assert level(after[:800]) < 0.05 and abs(level(after[-8000:]) - 0.07) < 0.006
+    monkeypatch.setattr(room, "LEVEL", 50)
+    assert abs(level(room.Shaper().process(talk(0.07))) - 0.035) < 0.003               # the room level setting
+    monkeypatch.setattr(room, "LEVEL", 9999)                                            # (kept within its range)
+    assert level(room.Shaper().process(talk(0.02))) < 0.02 * room.MAX_LEVEL / 100 + 0.002
+    assert room.RoomStream("ysf://127.0.0.1/x", callsign="M8ODJ").levelled             # the station doesn't level it like a stream
+
+
+def test_the_room_level_from_the_web(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setattr(room, "LEVEL", 100)
+    conf = tmp_path / "config.json"
+    conf.write_text("{}")
+    httpd = ThreadingHTTPServer(("127.0.0.1", 0), make_handler(None, None, None, conf))
+    threading.Thread(target=httpd.serve_forever, daemon=True).start()
+    base = f"http://127.0.0.1:{httpd.server_address[1]}"
+
+    def call(path, body=None):
+        req = urllib.request.Request(base + path, data=None if body is None else json.dumps(body).encode(), method="POST" if body is not None else "GET")
+        try:
+            with urllib.request.urlopen(req, timeout=5) as r:
+                return r.status, json.loads(r.read())
+        except urllib.error.HTTPError as e:
+            return e.code, json.loads(e.read() or b"{}")
+
+    try:
+        assert call("/api/rooms")[1]["level"] == 100
+        assert call("/api/rooms/level", {"level": 60}) == (200, {"level": 60}) and room.LEVEL == 60 and load(conf).room_level == 60
+        for bad in ({"level": 10}, {"level": 500}, {"level": "loud"}, {}, {"level": True}):
+            assert call("/api/rooms/level", bad)[0] == 400 and room.LEVEL == 60
+    finally:
+        httpd.shutdown()

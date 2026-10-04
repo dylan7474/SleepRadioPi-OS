@@ -565,6 +565,7 @@ def main() -> None:
     settings = load(args.config)
     from sleepradiopi.playback import room as room_mod
     room_mod.CALLSIGN = settings.callsign
+    room_mod.LEVEL = settings.room_level
     from sleepradiopi.playback import monitor as monitor_mod
     try:
         monitor = monitor_mod.Monitor(settings.monitor_rooms)       # rooms heard over whatever's playing

@@ -868,7 +868,8 @@ class Station:
                     self._radio_heard = True
                     last_sound = time.monotonic()
                     on_air.title = self.radio_title or name
-                    self._write(leveller.process(block))
+                    # (a room's speech comes at its own level: it isn't levelled like a stream -- playback/room.py)
+                    self._write(block if getattr(stream, "levelled", False) else leveller.process(block))
             finally:
                 stream.close()
                 self.radio_stream = None

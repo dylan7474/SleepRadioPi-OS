@@ -343,7 +343,7 @@ def make_handler(station: Station, output: Mp3Output, speaker=None,
                 if path == "/api/rooms":
                     monitor = getattr(station, "monitor", None)
                     self._send(json.dumps({"callsign": room_mod.CALLSIGN or "", "decoder": room_mod.DECODER.is_file(),
-                                           "decoder_path": str(room_mod.DECODER),
+                                           "decoder_path": str(room_mod.DECODER), "level": room_mod.LEVEL,
                                            "monitor": monitor.status() if monitor is not None else None}).encode(), "application/json")
                 else:
                     book = rooms_dir.shared()
@@ -591,6 +591,21 @@ def make_handler(station: Station, output: Mp3Output, speaker=None,
                     threading.Thread(target=lambda: _quietly(directory.refresh), name="station-directory",
                                      daemon=True).start()
                 self._send(json.dumps({**directory.status(), "refreshing": True}).encode(), "application/json")
+            elif path == "/api/rooms/level":
+                # {"level": 25-200}: how loud rooms are, % (at once: also for one that's playing). Kept.
+                from sleepradiopi.playback import room as room_mod
+                try:
+                    body = json.loads(self.rfile.read(int(self.headers.get("Content-Length", 0))) or b"{}")
+                    level = int(body["level"])
+                    if isinstance(body["level"], bool) or not room_mod.MIN_LEVEL <= level <= room_mod.MAX_LEVEL:
+                        raise ValueError
+                except (ValueError, TypeError, KeyError, AttributeError):
+                    self._error(f"the room level is {room_mod.MIN_LEVEL} to {room_mod.MAX_LEVEL} (%)")
+                    return
+                room_mod.LEVEL = level
+                if config_file is not None:
+                    save_setting(config_file, "room_level", level)
+                self._send(json.dumps({"level": level}).encode(), "application/json")
             elif path == "/api/rooms/monitor":
                 # {"url", "name", "on": true | false}: hear that room over whatever's playing (or stop). Kept.
                 from sleepradiopi.playback import monitor as monitor_mod
