@@ -241,11 +241,21 @@ Actions, Sleep timer and Radio folders open:
   **KiwiSDR** for short wave (`http://HOST:8073/?f=7150.00lsb`). *Find a
   receiver* on the desktop searches the public directory (receiverbook.de,
   over a thousand of them) by place or callsign, the nearest first; pick
-  one, give it a frequency, and listen or save it as a station. Or copy
-  the link from the receiver's own page once it's tuned.
+  one and open it as a rig, or give it a frequency and listen or save it
+  as a station. Or copy the link from the receiver's own page once it's tuned.
   Public receivers have few listener slots and time limits: the radio says
   why if one won't have it. See `app/sleepradiopi/playback/receiver.py`
   and `receivers_dir.py`.
+- **A receiver opens as a rig.** On the desktop every receiver -- your own,
+  a KiwiSDR, an OpenWebRX -- is an object in the *Receivers* folder, and
+  opens as a radio amateur's rig: the frequency, an S meter, the band's
+  spectrum over a live waterfall. Click the scope to tune, band keys down
+  one side and modes down the other, and drag the frequency onto one of the
+  radio's buttons to keep it there. Your own receiver hears a whole band at
+  once, so there's scan, hold and skip; an internet receiver is tuned where
+  it is, through the one connection the radio holds to it.
+
+  ![The rig: a receiver's window, with its waterfall](docs/rig.jpg)
 - **Offline is normal.** Without the internet it keeps playing and talking;
   it only leaves out what needs the right time (time checks, news, birthday
   wishes) until the clock is known, from the internet or an optional

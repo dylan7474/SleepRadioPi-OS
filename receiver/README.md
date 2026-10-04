@@ -67,6 +67,10 @@ measures the error; OpenWebRX keeps it as the dongle's "ppm".)
 
 - `GET /status`: what it's receiving, who has the air (`on_air`), which
   channels are open now (`active`) and which were heard lately (`heard`).
+On a Sleep Radio's desktop the receiver opens as a rig -- frequency, meter,
+scope and waterfall, click to tune -- which is what `/spectrum`, `/hold`,
+`/skip` and `/bands` below are for.
+
 - `GET /bands`: the bands and their channels.
 - `POST /skip {"freq": HZ, "on": true}`: leave a channel out of its band (kept in
   `/var/lib/sleepradio-receiver/skip.json`); `/status` lists them as `skipping`.
