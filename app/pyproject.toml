@@ -19,6 +19,8 @@ dependencies = [
     "sounddevice",
     # Audio tag / duration reading for local music + audiobooks
     "mutagen",
+    # Internet receivers (OpenWebRX, KiwiSDR) as stations
+    "websockets",
     # Physical buttons
     "gpiozero",
     # LCD panel driver (swap for the actual panel's library once chosen)

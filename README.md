@@ -233,6 +233,15 @@ Actions, Sleep timer and Radio folders open:
   what you hear, and its name is the "now playing" title), one frequency, or
   broadcast FM. It's a separate small service, installed on that computer
   with `receiver/install.sh`; the radio needs nothing new.
+- **Other people's receivers as stations.** Thousands of software radios are
+  on the internet for anyone to tune, mostly radio amateurs' own. A station
+  whose address is a receiver's own link plays it, with no browser: an
+  **OpenWebRX** (`http://HOST:8073/#freq=145500000,mod=nfm`: FM with an
+  automatic squelch, so it's silent until someone transmits) or a
+  **KiwiSDR** for short wave (`http://HOST:8073/?f=7150.00lsb`). Copy the
+  link from the receiver's page once it's tuned, and save it as a station.
+  Public receivers have few listener slots and time limits: the radio says
+  why if one won't have it. See `app/sleepradiopi/playback/receiver.py`.
 - **Offline is normal.** Without the internet it keeps playing and talking;
   it only leaves out what needs the right time (time checks, news, birthday
   wishes) until the clock is known, from the internet or an optional

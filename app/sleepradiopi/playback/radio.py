@@ -463,6 +463,13 @@ class Leveller:
 
 # --- one station playing -------------------------------------------------------------------
 
+def open_stream(url: str):
+    """What plays a station: a receiver's own client if the address is one's
+    (OpenWebRX, KiwiSDR: see receiver.py), else the ordinary stream."""
+    from sleepradiopi.playback import receiver
+    return receiver.ReceiverStream(url) if receiver.is_receiver(url) else RadioStream(url)
+
+
 class RadioStream:
     """One connection to a station. A fetch thread sends the stream's bytes to
     ffmpeg; a decode thread queues ffmpeg's PCM for the show, which takes it

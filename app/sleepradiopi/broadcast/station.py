@@ -838,7 +838,7 @@ class Station:
         last_sound = time.monotonic()
         why = "no sound from the station"
         while not self._halted():
-            stream = radio_mod.RadioStream(tuned["url"])
+            stream = radio_mod.open_stream(tuned["url"])
             try:
                 stream.start()
                 playing = False
