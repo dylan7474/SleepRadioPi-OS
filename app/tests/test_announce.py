@@ -73,6 +73,45 @@ def test_announcer_beeps_then_speaks_and_caches() -> None:
     assert _wait(lambda: len(played) == 4) and len(rendered) == 1
 
 
+def test_set_up_lines_are_kept_on_disk_and_said_at_once(tmp_path: Path) -> None:
+    from sleepradiopi.io import announce
+    played, rendered = [], []
+
+    def render(text):
+        rendered.append(text)
+        return np.full((4410, 2), len(text), dtype=np.int16)
+
+    def play(clip):
+        played.append(clip)
+        clip.pos = clip.total
+    voice = ["amy"]
+    a = Announcer(render, play, get_addresses=lambda: [("wlan0", "192.168.1.9")], host="sleepradiopi",
+                  ahead=lambda: [announce.JOINING, announce.JOINED], keep=tmp_path / "lines", key=lambda: voice[0])
+    assert a.make_ahead() == 2 and rendered == [announce.JOINING, announce.JOINED]
+    assert a.make_ahead() == 0 and len(list((tmp_path / "lines").glob("*.raw"))) == 2
+
+    rendered.clear()                         # the next power-on: said from disk, before the voice has even loaded
+    b = Announcer(None, play, host="sleepradiopi", keep=tmp_path / "lines", key=lambda: voice[0])
+    assert b.say([announce.JOINED], announce.cue("joined"))
+    assert _wait(lambda: len(played) == 2) and rendered == []
+    assert [c.kind for c in played] == ["beep", "announce"] and played[1].label == "Wi-Fi"
+    assert played[1].audio[-1, 0] == len(announce.JOINED)
+
+    played.clear()                           # a line that was never made, and no voice: the tune alone says it
+    assert _wait(lambda: b.say(["Something else."], announce.cue("failed")))
+    assert _wait(lambda: not b._busy.locked()) and [c.kind for c in played] == ["beep"]
+
+    played.clear()                           # two lines: the kept one at once, then the address when it's made
+    assert _wait(lambda: a.say([announce.JOINED, a.text], announce.cue("joined")))
+    assert _wait(lambda: len(played) == 3) and rendered == [a.text()]
+    assert a.say([announce.JOINING], announce.cue("joining"), wait=3)   # (waits its turn rather than being dropped)
+
+    voice[0] = "bob"                         # another voice: its own lines, and the old ones go
+    assert a.make_ahead() == 2 and len(list((tmp_path / "lines").glob("*.raw"))) == 2
+    for name in announce.CUES:
+        assert announce.cue(name).shape[1] == 2 and 0.2 < len(announce.cue(name)) / 44100 < 1
+
+
 def test_play_clip_while_paused_leaves_the_show_paused(tmp_path: Path) -> None:
     """The time signal on a paused radio: it plays on its own -- the show isn't
     woken for it (that let a burst of music out after the pips)."""

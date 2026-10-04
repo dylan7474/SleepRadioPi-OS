@@ -19,6 +19,14 @@ page, or a settings reset), or on a radio with no network set up at all.
 While it's a hotspot with nobody on it, it tries the saved networks again
 every RETRY_S.
 
+Setting it up is the one time it isn't quiet. The networks nearby are looked
+for just before the hotspot comes on (and again, from the hotspot, when the
+page asks), so the set-up page has them to pick from. A join asked for from
+the hotspot is marked in STATUS ("setup"), and if it doesn't work within
+JOIN_S -- a mistyped password -- the hotspot comes back ("failed": the
+network's name) rather than the radio trying for ever out of reach. The
+station watches STATUS for those and says what's happening (main.py).
+
 The manager runs as root (started by S35wifi):
 
     python3 -m sleepradiopi.wifi manager
@@ -158,6 +166,26 @@ def dnsmasq_conf() -> str:
             f"address=/#/{HOTSPOT_IP}\n")         # every name -> the radio: phones open its page
 
 
+def iw_scan(text: str) -> dict[str, int]:
+    """`iw dev wlan0 scan` -> {name: signal in dBm}, the strongest of each name."""
+    seen: dict[str, int] = {}
+    signal = -999
+    for line in text.splitlines():
+        line = line.strip()
+        if line.startswith("BSS "):
+            signal = -999
+        elif line.startswith("signal:"):
+            try:
+                signal = int(float(line.split()[1]))
+            except (IndexError, ValueError):
+                signal = -999
+        elif line.startswith("SSID:"):
+            name = line[5:].strip()
+            if name and "\\x00" not in name:
+                seen[name] = max(seen.get(name, -999), signal)
+    return seen
+
+
 # --- the manager (root) ----------------------------------------------------------------------
 
 class Manager:
@@ -169,6 +197,8 @@ class Manager:
         self.mode = "off"
         self.status = {"mode": "off"}
         self.nearby: list[dict] = []
+        self.setup = False                        # joining (or joined) because someone on the hotspot asked
+        self.lost_since, self.retry_at = None, 0.0
 
     @staticmethod
     def _sh(*cmd: str, check: bool = False, timeout: float = 20) -> str:
@@ -186,7 +216,8 @@ class Manager:
         self.status = {"mode": self.mode, "hotspot": {"ssid": data["hotspot"]["ssid"],
                                                       "password": data["hotspot"]["password"],
                                                       "ip": HOTSPOT_IP},
-                       "nearby": self.nearby, "at": time.time(), **extra}
+                       "nearby": self.nearby, "at": time.time(), **({"setup": True} if self.setup else {}),
+                       **extra}
         tmp = self.rundir / "wifi-status.tmp"
         tmp.write_text(json.dumps(self.status))
         os.chmod(tmp, 0o644)
@@ -214,7 +245,8 @@ class Manager:
                 "-p", f"/run/udhcpc.{IFACE}.pid")
         self.mode = "connecting"
         self._write_status()
-        log.info("wifi: joining a saved network")
+        if self.have_networks():
+            log.info("wifi: joining a saved network")
 
     def connected(self) -> dict | None:
         """{"ssid", "ip"} once associated and addressed, else None."""
@@ -224,7 +256,15 @@ class Manager:
             return None
         return {"ssid": st.get("ssid", ""), "ip": st["ip_address"]}
 
-    def start_hotspot(self) -> None:
+    def start_hotspot(self, failed: str | None = None, again: bool = False) -> None:
+        """failed: the network a set-up join couldn't reach (the station says so).
+        again: back after the regular try of the saved networks (not news: nothing is said)."""
+        if self.mode not in ("station", "connecting"):
+            self.start_station()                  # (only to look around: the set-up page lists what's nearby)
+        self.scan()
+        if not self.nearby:                       # (the Wi-Fi had only just come up)
+            self.scan()
+        self.setup = False
         self._stop_everything()
         spot = load(self.networks)["hotspot"]
         (self.rundir / "hostapd.conf").write_text(hostapd_conf(spot["ssid"], spot["password"]))
@@ -234,8 +274,10 @@ class Manager:
         self.sh("hostapd", "-B", "-P", "/run/hostapd.pid", str(self.rundir / "hostapd.conf"), check=True)
         self.sh("dnsmasq", "-C", str(self.rundir / "dnsmasq.conf"), "-x", "/run/dnsmasq.pid", check=True)
         self.mode = "hotspot"
-        self._write_status()
-        log.warning("wifi: no saved network; hotspot %s is on at %s", spot["ssid"], HOTSPOT_IP)
+        self._write_status(**({"failed": failed} if failed else {}), **({"again": True} if again else {}))
+        log.warning("wifi: %s; hotspot %s is on at %s (%d networks nearby)",
+                    f"couldn't join {failed}" if failed else "no saved network", spot["ssid"], HOTSPOT_IP,
+                    len(self.nearby))
 
     def have_networks(self) -> bool:
         return bool(load(self.networks)["networks"] or card_networks(self.base_conf))
@@ -243,11 +285,15 @@ class Manager:
     def join_or_keep_trying(self) -> dict | None:
         """Join a saved network; if none answers, keep trying in the background
         (never the hotspot, unless there's no network to try at all)."""
+        if not self.have_networks():              # nothing to join: no point waiting JOIN_S for it
+            self.start_hotspot()
+            return None
         got = self.join()
         if got:
             return got
-        if not self.have_networks():
-            self.start_hotspot()
+        if self.setup:                            # asked for from the hotspot, and it didn't work (a
+            nets = load(self.networks)["networks"]   # mistyped password?): back to where it can be put right
+            self.start_hotspot(failed=nets[0]["ssid"] if nets else "that network")
             return None
         self._reconnecting()
         return None
@@ -255,6 +301,7 @@ class Manager:
     def _reconnecting(self) -> None:
         now = self.clock()
         if self.mode != "connecting" or not getattr(self, "lost_since", None):
+            self.setup = False                    # (quietly: nobody is setting it up now)
             self.lost_since, self.nudge_every = now, RECONNECT_S
             self.next_nudge, self.next_restart = now + RECONNECT_S, now + RESTART_S
             log.warning("wifi: no network; reconnecting quietly")
@@ -293,18 +340,28 @@ class Manager:
         return None
 
     def scan(self) -> None:
-        if self.mode not in ("station", "connecting"):
-            return
-        self.sh("wpa_cli", "-i", IFACE, "scan")
-        self.sleep(4)
         seen: dict[str, int] = {}
-        for line in self.sh("wpa_cli", "-i", IFACE, "scan_results").splitlines()[1:]:
-            parts = line.split("\t")
-            if len(parts) >= 5 and parts[4].strip():
-                seen[parts[4]] = max(seen.get(parts[4], -999), int(parts[2]) if parts[2].lstrip("-").isdigit() else -999)
-        self.nearby = [{"ssid": s, "signal": sig} for s, sig in sorted(seen.items(), key=lambda kv: -kv[1])][:20]
+        if self.mode in ("station", "connecting"):
+            self.sh("wpa_cli", "-i", IFACE, "scan")
+            self.sleep(4)
+            for line in self.sh("wpa_cli", "-i", IFACE, "scan_results").splitlines()[1:]:
+                parts = line.split("\t")
+                if len(parts) >= 5 and parts[4].strip():
+                    seen[parts[4]] = max(seen.get(parts[4], -999),
+                                         int(parts[2]) if parts[2].lstrip("-").isdigit() else -999)
+        elif self.mode == "hotspot":              # without leaving it (whoever is on it stays on)
+            seen = iw_scan(self.sh("iw", "dev", IFACE, "scan", "ap-force", timeout=30))
+            if not seen:
+                return                            # (the chip wouldn't, or was busy: keep the last look)
+        else:
+            return
+        own = load(self.networks)["hotspot"]["ssid"]
+        self.nearby = [{"ssid": s, "signal": sig} for s, sig in sorted(seen.items(), key=lambda kv: -kv[1])
+                       if s != own][:20]
 
     def handle(self, action: str) -> None:
+        if self.mode == "hotspot" and action in ("reload", "station"):
+            self.setup = True                     # someone is setting it up: say how it goes, and come back if it fails
         if action == "reload":
             if self.mode in ("station", "connecting"):
                 (self.rundir / "wifi-extra.conf").write_text(extra_conf(load(self.networks)["networks"]))
@@ -317,7 +374,8 @@ class Manager:
             self.start_hotspot()
         elif action == "station":
             self.join_or_keep_trying()
-        self._write_status(**(self.connected() or {}))
+        keep = {k: self.status[k] for k in ("failed", "again") if k in self.status} if self.mode == "hotspot" else {}
+        self._write_status(**(self.connected() or {}), **keep)
 
     def start(self) -> None:
         """At start-up: join a saved network (or keep trying)."""
@@ -345,8 +403,9 @@ class Manager:
                 self._keep_trying()
         elif self.mode == "hotspot" and self.clock() >= self.retry_at:
             if not self.hotspot_in_use() and self.have_networks():
+                failed = self.status.get("failed")
                 if not self.join():
-                    self.start_hotspot()
+                    self.start_hotspot(failed=failed, again=True)
             self.retry_at = self.clock() + RETRY_S
 
     def run(self) -> None:

@@ -1079,7 +1079,7 @@ everything but the page itself and the login needs the session cookie
 | `POST /api/playlists/play` / `/stop` | `{"name", "shuffle": bool}` — now, straight through (no DJ), then the show / end it after the song playing |
 | `POST /api/playlists/rename` | `{"old", "new"}` → `{"name", "playlists", "playing"}`; buttons and programmes that play it follow |
 | `GET` / `POST /api/dj` | The DJ settings (and the voices there are) / any of `{"voice", "chattiness", "dj_hooks", "jingle_every", "news_enabled", "startup_sound", "dj_speed", "news_speed"}` |
-| `GET /api/wifi` | Wi-Fi: mode (station / hotspot / connecting), network and address, saved networks, nearby ones |
+| `GET /api/wifi` | Wi-Fi: mode (station / hotspot / connecting), network and address, saved networks, nearby ones (`signal` in dBm); `setup` while a join asked for from the hotspot is under way or has worked, `failed` (the network's name) when it didn't and the hotspot came back |
 | `POST /api/wifi/add` / `remove` / `scan` / `hotspot` / `try` | `{"ssid", "password"}` / `{"ssid"}` / – / `{"ssid", "password"}` / – |
 | `GET /api/voices` | The voices, the one in use, and any download/upload/install under way |
 | `POST /api/voices/standard` | Download and install the standard voice |
