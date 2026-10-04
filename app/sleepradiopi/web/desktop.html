@@ -606,7 +606,8 @@ const RECEIVER = mk({ id: "box:receiver", kind: "folder", title: "Receivers", bo
 const rxKiwi = url => { const m = /^(https?:\/\/[^/?#]+\/)\?f=[\d.]+[a-z]/i.exec(url || ""); return m && m[1]; };
 const rxOwrx = url => { const m = /^(https?:\/\/[^/?#]+\/(?:[^?#]*\/)?)#(?:.*,)?freq=\d/i.exec(url || ""); return m && m[1]; };
 const rxNice = r => (r.name.split(/\s-\s|\|/).map(p => p.trim()).find(p => p && !/^https?:/i.test(p)) || r.place || rxHost(r.url)).slice(0, 30);
-const RX_WORD = { kiwi: "KiwiSDR · short wave", owrx: "OpenWebRX" };
+const RX_WORD = { kiwi: "KiwiSDR · short wave", owrx: "OpenWebRX", room: "Room · digital voice" };
+const rxRoom = url => /^ysf:\/\/[^/]+/i.test(url || "") ? url : null;
 const rxHost = origin => origin.replace(/^https?:\/\//, "").replace(/\/$/, "");
 const rxObj = (rx, origin, title, info) => mk({ id: "rx:" + origin, kind: "rx", rx, origin, title, name: title, info, sym: "⌁" });
 const rxOrigin = url => { const m = /^(https?:\/\/[^/]+)\/audio\?(?:.*&)?(?:band|freq)=/.exec(url || ""); return m && m[1]; };
@@ -732,6 +733,7 @@ async function loadFolder(f) {
       const o = rxObj(kind, base, (title || rxHost(base)).slice(0, 30), RX_WORD[kind]); o.named = title;
       kids.push(o.id);
     }
+    for (const st of d.stations.filter(x => rxRoom(x.url))) kids.push(rxObj("room", st.url, st.name.slice(0, 30), RX_WORD.room).id);
     f.kids = kids;
   } else if (f.box === "rxbands") {                 // a receiver of your own: its bands, as folders
     const origin = f.origin, kids = [];
@@ -2211,6 +2213,72 @@ RXD.owrx = { ...RXD.kiwi,
     this.say(R, { freq: hz });
   },
 };
+// ---- a room: radio amateurs' digital voice (playback/room.py), through the radio. Nothing to tune: the screen
+// shows who is talking and who was heard last; the keys down the side are your saved rooms.
+RXD.room = {
+  modes: [], unit: "", example: () => "", noEntry: true, keysWord: "Rooms", tip: "Listening only · drag the room's name onto a button to keep it there",
+  on(R) { return !!R.st?.on && R.st.kind === "room" && R.st.base === R.origin && !R.st.ended; },
+  tuned() { return null; },
+  station(R) { return { name: R.o.title, url: R.origin, info: RX_WORD.room }; },
+  async poll(R, tick) {
+    R.st = await api("/api/rx");
+    if (tick % 30 === 0 || !R.rooms) {
+      const [radio, me] = await Promise.all([api("/api/radio"), api("/api/rooms")]);
+      const rooms = radio.stations.filter(x => rxRoom(x.url)), changed = JSON.stringify(rooms.map(x => x.url)) !== JSON.stringify((R.rooms || []).map(x => x.url));
+      R.rooms = rooms; R.me = me;
+      if (changed && !document.querySelector(".win input:focus")) drawDesk();
+    }
+  },
+  readout(R) {
+    const d = R.st;
+    return this.on(R) ? [d.talker || "LISTENING", ""] : ["- - - - -", ""];
+  },
+  words(R) {
+    const on = this.on(R), d = R.st || {};
+    return { mode: "C4FM", modeOn: null, sql: "", scan: on ? "RX ONLY" : "", rx: on && !!d.talker, band: R.o.title.toUpperCase(), bandOn: R.origin, meter: on && d.talker ? .62 : 0,
+             who: d.ended && d.base === R.origin ? d.ended : !on ? (R.wait > Date.now() ? "Joining…" : R.me && !R.me.callsign ? "Give the radio your callsign first (Find…)" : "Press Listen to join on the radio")
+               : d.talker ? "is talking" : d.decoder === false ? "No voice decoder on this radio: no sound" : "Nobody talking",
+             right: on && d.connected != null ? `${d.connected} connected` : "" };
+  },
+  draw(R, g) {
+    const on = this.on(R), d = R.st || {}, now = Date.now() / 1000;
+    const ago = s => s < 90 ? `${Math.max(0, Math.round(s))} s ago` : s < 5400 ? `${Math.round(s / 60)} min ago` : `${Math.round(s / 3600)} h ago`;
+    g.textAlign = "left"; g.fillStyle = "#7f97a8"; g.font = "600 13px system-ui, sans-serif";
+    g.fillText(on ? "LAST HEARD" : "", 14, 22);
+    if (!on) { g.textAlign = "center"; g.font = "600 17px system-ui, sans-serif"; return g.fillText(R.down || (d.ended && d.base === R.origin ? d.ended : R.wait > Date.now() ? "Joining…" : "Press Listen to join"), RIG_W / 2, RIG_TOP + 70); }
+    const rows = (d.heard || []).slice(0, 9);
+    if (d.talker) { g.fillStyle = "#5fd08a"; g.font = "700 22px ui-monospace, Menlo, monospace"; g.fillText(d.talker, 14, 54); g.fillStyle = "#f0b045"; g.font = "600 15px system-ui, sans-serif"; g.fillText("on air now", 200, 53); }
+    rows.forEach((h, i) => {
+      const y = (d.talker ? 86 : 54) + i * 26;
+      if (y > RIG_H - 8) return;
+      g.fillStyle = "#f4f6f7"; g.font = "600 18px ui-monospace, Menlo, monospace"; g.fillText(h.call, 14, y);
+      g.fillStyle = "#7f97a8"; g.font = "15px system-ui, sans-serif"; g.fillText(`${h.s < 1 ? "<1" : Math.round(h.s)} s`, 200, y); g.fillText(ago(now - h.at), 290, y);
+    });
+    if (!rows.length && !d.talker) { g.fillStyle = "#7f97a8"; g.font = "15px system-ui, sans-serif"; g.fillText("Nobody yet. Rooms are quiet most of the time: it stays tuned.", 14, 54); }
+  },
+  idle() { return ""; }, pass() { return [0, 0]; }, ticks() { return []; }, click() {}, step() {}, setMode() {}, enter() {}, lamps() {},
+  bandKeys(R) {
+    const mine = { name: R.o.title, url: R.origin }, list = (R.rooms || []).some(x => x.url === R.origin) ? R.rooms : [mine, ...(R.rooms || [])];
+    return list.map(x => ({ id: x.url, label: x.name.length > 15 ? x.name.slice(0, 14) + "…" : x.name, title: x.name,
+      go: () => x.url === R.origin ? this.listen(R) : open(rxObj("room", x.url, x.name.slice(0, 30), RX_WORD.room).id) }));
+  },
+  listen(R) {
+    if (R.me && !R.me.callsign) { toast("Give the radio your callsign first: a room is joined under it."); return open(PANEL.findroom.id); }
+    rigListen(R, stationObj(this.station(R)));
+  },
+  foot(R, k) {
+    return [el("div", { className: "rgrp" }, k("Listen", () => this.listen(R), "Join this room on the radio (it only listens)"),
+        k("Save", async () => {
+          const st = this.station(R);
+          try {
+            await loadFolder(STATIONS);    // the list as the radio has it now: what's sent replaces all of it
+            const have = STATIONS.kids.map(id => O[id]).filter(o => o?.kind === "station").map(o => ({ name: o.name, url: o.url, info: o.info }));
+            if (have.some(o => o.url === st.url)) return toast("That one is already with your stations.");
+            await api("/api/radio/stations", { stations: [...have, st] }); await loadFolder(STATIONS); R.rooms = null; toast(`Saved the room “${st.name}” with your stations.`); drawDesk();
+          } catch (e) { rigOops(e); } }, "Keep this room as a station")),
+      el("div", { className: "rgrp" }, k("Find…", () => open(PANEL.findroom.id), "Other rooms, your callsign, the voice decoder"))];
+  },
+};
 const rigX = (R, hz) => (hz - R.range[0]) / (R.range[1] - R.range[0]) * RIG_W;
 function rigCanvas(R) {
   if (R.cv) return R.cv;
@@ -2234,6 +2302,7 @@ function rigDraw(R) {
   for (let i = 1; i < 4; i++) { g.moveTo(0, RIG_TOP * i / 4 + .5); g.lineTo(RIG_W, RIG_TOP * i / 4 + .5); }
   for (let i = 1; i < 8; i++) { g.moveTo(RIG_W * i / 8 + .5, 0); g.lineTo(RIG_W * i / 8 + .5, RIG_TOP); }
   g.stroke();
+  if (D.draw) return D.draw(R, g);
   if (!R.range || !R.line) {
     g.drawImage(R.fall, 0, RIG_TOP);
     g.fillStyle = "#7f97a8"; g.font = "600 17px system-ui, sans-serif"; g.textAlign = "center";
@@ -2257,7 +2326,8 @@ function rigPaint(R) {                              // the words and lamps on th
   const d = R.dom, D = RXD[R.kind];
   if (!d || !d.who.isConnected) return;
   const w = D.words(R), tuned = D.tuned(R), mhz = tuned ? (tuned / 1e6).toFixed(5) : "---.---";
-  if (d.main) { d.main.textContent = tuned ? mhz.slice(0, -2) : mhz; d.sub.textContent = tuned ? "." + mhz.slice(-2) : ""; }
+  if (d.main && D.readout) [d.main.textContent, d.sub.textContent] = D.readout(R);
+  else if (d.main) { d.main.textContent = tuned ? mhz.slice(0, -2) : mhz; d.sub.textContent = tuned ? "." + mhz.slice(-2) : ""; }
   if (!R.entering) d.who.textContent = R.down || w.who;
   d.mode.textContent = w.mode;
   d.sql.textContent = w.sql; d.sql.hidden = !w.sql;
@@ -2287,9 +2357,9 @@ function rigView(o, box, win) {
   const R = o.rig ||= rigNew(o), D = RXD[R.kind];
   const k = (text, fn, title) => { const b = el("button", { type: "button", className: "rk", textContent: text }); if (title) b.title = title; b.onclick = fn; return b; };
   const d = R.dom = { bandKeys: {}, modeKeys: {} };
-  const keys = D.bandKeys(R), bands = el("div", { className: "rcol" + (R.kind === "owrx" ? " many" : keys.length > 8 ? " two" : "") }, el("h4", { textContent: "Band" }));
+  const keys = D.bandKeys(R), bands = el("div", { className: "rcol" + (R.kind === "owrx" || R.kind === "room" ? " many" : keys.length > 8 ? " two" : "") }, el("h4", { textContent: D.keysWord || "Band" }));
   for (const b of keys) { const key = k(b.label, b.go, b.title); if (b.id !== "+") d.bandKeys[b.id] = key; bands.append(key); }
-  const modes = el("div", { className: "rcol" }, el("h4", { textContent: "Mode" }));
+  const modes = el("div", { className: "rcol" }, D.modes.length ? el("h4", { textContent: "Mode" }) : null);
   for (const [m, t, tip] of D.modes) modes.append(d.modeKeys[m] = k(t, () => D.setMode(R, m), tip));
   let vfo;
   if (R.entering) {
@@ -2307,11 +2377,12 @@ function rigView(o, box, win) {
       let moved = false;
       const mv = ev => { if (Math.hypot(ev.clientX - x0, ev.clientY - y0) >= 5) moved = true; };
       const up = () => { fr.removeEventListener("pointermove", mv); fr.removeEventListener("pointerup", up); fr.removeEventListener("pointercancel", up);
-                         if (!moved) setTimeout(() => { R.entering = true; drawDesk(); }, 0); };
+                         if (!moved && !D.noEntry) setTimeout(() => { R.entering = true; drawDesk(); }, 0); };
       fr.addEventListener("pointermove", mv); fr.addEventListener("pointerup", up); fr.addEventListener("pointercancel", up);
       if (st) press(e, fr, { id: stationObj(st).id, where: "rig:" + o.id, row: true });
     };
-    fr.onkeydown = e => { if (e.key === "Enter") { R.entering = true; drawDesk(); } };
+    fr.onkeydown = e => { if (e.key === "Enter" && !D.noEntry) { R.entering = true; drawDesk(); } };
+    if (D.noEntry) fr.title = "Drag it onto a button to keep the room there";
     vfo = el("div", { className: "rvfo" }, fr, d.who = el("div", { className: "rwho" }));
   }
   const tft = el("div", { className: "tft" },
@@ -2320,7 +2391,7 @@ function rigView(o, box, win) {
     el("div", { className: "rmeter" }, el("span", { textContent: "S" }), el("div", { className: "rtrack" }, d.fill = el("div", { className: "rfill" })), el("span"),
        el("div", { className: "rticks" }, ...["1", "3", "5", "7", "9", "+20", "+40", "+60"].map(t => el("span", { textContent: t })))),
     rigCanvas(R), d.scale = el("div", { className: "rscale" }));
-  const foot = el("div", { className: "rfoot" }, ...D.foot(R, k), el("span", { className: "rtip", textContent: R.kind !== "own" ? "Click the scope to tune · wheel for fine steps · drag the frequency onto a button · be a good guest" : "Click the scope to tune · drag the frequency onto a button" }));
+  const foot = el("div", { className: "rfoot" }, ...D.foot(R, k), el("span", { className: "rtip", textContent: D.tip || (R.kind !== "own" ? "Click the scope to tune · wheel for fine steps · drag the frequency onto a button · be a good guest" : "Click the scope to tune · drag the frequency onto a button") }));
   box.append(el("div", { className: "wbody" }, el("div", { className: "rig" }, bands, tft, modes, foot)));
   rigDraw(R); setTimeout(() => rigPaint(R), 0);
 }
@@ -3389,7 +3460,7 @@ const UI = {
           help("Rooms are quiet most of the time: many connected, nobody talking. The radio stays tuned and plays whoever speaks, with their callsign as what's playing."),
           d.results === null ? null : d.results.length ? null : help("None found.")),
         ...(d.results || []).slice(0, 40).map(r => srow(r.name, help(`${r.about || ""}${r.about ? " · " : ""}room ${r.id}`),
-          line(sbtn("Listen", need(() => play(station(r))), "primary"), sbtn("Save as a station", need(() => keep(r))))))];
+          line(sbtn("Rig", () => open(rxObj("room", r.url, r.name.slice(0, 30), RX_WORD.room).id), "primary"), sbtn("Listen", need(() => play(station(r)))), sbtn("Save as a station", need(() => keep(r))))))];
     },
   },
   findpodcast: {
@@ -4579,7 +4650,7 @@ async function boot() {
     booted = true; drawDesk(); setInterval(tick, 10000); setInterval(poll, 2500); setInterval(refreshOpen, 20000);
     // The Receiver folder appears on the desktop once a station says there's a receiver; while one of its
     // windows is open it's asked every few seconds who has the air.
-    api("/api/radio").then(d => { if ((rxOrigins(d.stations).length || d.stations.some(x => rxKiwi(x.url) || rxOwrx(x.url))) && !desk.some(p => p.id === RECEIVER.id)) { desk.push({ id: RECEIVER.id, ...freeSpot() }); saveDesk(); drawDesk(); } }).catch(() => {});
+    api("/api/radio").then(d => { if ((rxOrigins(d.stations).length || d.stations.some(x => rxKiwi(x.url) || rxOwrx(x.url) || rxRoom(x.url))) && !desk.some(p => p.id === RECEIVER.id)) { desk.push({ id: RECEIVER.id, ...freeSpot() }); saveDesk(); drawDesk(); } }).catch(() => {});
     setInterval(() => { if (!document.hidden && W.some(w => ["rxbands", "rxband"].includes(O[w.id]?.box))) refreshOpen(); }, 4000);
     setInterval(rigPoll, 350);
     document.addEventListener("visibilitychange", () => { if (!document.hidden) { refreshOpen(); poll(); } }); setInterval(async () => { await loadButtons(); updateRadio(); }, 15000); }

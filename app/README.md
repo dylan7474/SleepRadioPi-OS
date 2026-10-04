@@ -1005,6 +1005,12 @@ The cards:
     *Zoom +* looks closer at the part round where you're tuned (on the page:
     nothing is asked of the receiver). The radio passes the receiver's
     waterfall lines on as they come (compressed); the page works them out.
+  - *A room* (radio amateurs' digital voice: see *Find a room*) is in the
+    Receivers folder too, once it's a saved station, and opens as the same
+    rig with nothing to tune: the screen shows who is talking, the last
+    heard with how long each spoke and how long ago, and how many are
+    connected. The keys down the side are your saved rooms; *Listen* joins it
+    on the radio; the room's name drags onto a button.
   A receiver of your own's *Bands…* folder holds its bands, each a folder: the whole band at once, then its channels one by one,
   every one a station -- double-click to listen, drag onto a button to keep
   it there. While its window is open the page asks the receiver itself (not
