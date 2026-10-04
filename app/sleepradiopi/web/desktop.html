@@ -169,11 +169,13 @@
   .wtools .note { color: var(--dim); font-size: 11.5px; margin-left: auto; }
   .wbody { flex: 1; overflow: auto; position: relative; }
   /* the receiver as a rig: a charcoal body round a dark screen, the same in the light and the dark look */
-  .rig { min-height: 100%; box-sizing: border-box; background: linear-gradient(180deg, #3b3d40, #2a2c2f); padding: 10px; display: grid; grid-template-columns: auto minmax(0, 1fr) 62px; grid-template-rows: minmax(0, 1fr) auto; gap: 9px; }
+  .rig { height: 100%; min-height: 400px; box-sizing: border-box; background: linear-gradient(180deg, #3b3d40, #2a2c2f); padding: 10px; display: grid; grid-template-columns: auto minmax(0, 1fr) 62px; grid-template-rows: minmax(0, 1fr) auto; gap: 9px; }
   .rig .rcol { display: flex; flex-direction: column; gap: 5px; min-width: 62px; }
   .rig .rcol:first-child { min-width: 78px; }
   .rig .rcol.two { display: grid; grid-template-columns: 58px 58px; align-content: start; }
   .rig .rcol.two h4 { grid-column: 1 / -1; }
+  .rig .rcol.many { width: 118px; overflow-y: auto; max-height: 100%; min-height: 0; scrollbar-width: thin; }
+  .rig .rcol.many .rk { flex: none; font-size: 10.5px; }
   .rig h4 { margin: 0; font-family: var(--display); font-size: 9px; letter-spacing: .16em; text-transform: uppercase; color: #7f97a8; font-weight: 600; }
   .rig .rk { font-family: var(--display); font-size: 11.5px; font-weight: 600; letter-spacing: .03em; color: #e9e7e1; background: linear-gradient(180deg, #55585c, #3e4145); border: 1px solid #17181a; border-radius: 5px; padding: 6px 4px; cursor: pointer; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .rig .rk.on { background: #f0b045; color: #231703; }
@@ -602,6 +604,9 @@ const RECEIVER = mk({ id: "box:receiver", kind: "folder", title: "Receivers", bo
 // Each receiver is an object of its own, and opens as a rig: one of your own (receiver/ in the repository), or
 // someone's KiwiSDR on the internet. They're the ones your saved stations point at.
 const rxKiwi = url => { const m = /^(https?:\/\/[^/?#]+\/)\?f=[\d.]+[a-z]/i.exec(url || ""); return m && m[1]; };
+const rxOwrx = url => { const m = /^(https?:\/\/[^/?#]+\/(?:[^?#]*\/)?)#(?:.*,)?freq=\d/i.exec(url || ""); return m && m[1]; };
+const rxNice = r => (r.name.split(/\s-\s|\|/).map(p => p.trim()).find(p => p && !/^https?:/i.test(p)) || r.place || rxHost(r.url)).slice(0, 30);
+const RX_WORD = { kiwi: "KiwiSDR · short wave", owrx: "OpenWebRX" };
 const rxHost = origin => origin.replace(/^https?:\/\//, "").replace(/\/$/, "");
 const rxObj = (rx, origin, title, info) => mk({ id: "rx:" + origin, kind: "rx", rx, origin, title, name: title, info, sym: "⌁" });
 const rxOrigin = url => { const m = /^(https?:\/\/[^/]+)\/audio\?(?:.*&)?(?:band|freq)=/.exec(url || ""); return m && m[1]; };
@@ -717,13 +722,14 @@ async function loadFolder(f) {
   } else if (f.box === "receiver") {                // every receiver a saved station points at
     const d = await api("/api/radio"), own = rxOrigins(d.stations), kiwis = [...new Set(d.stations.map(x => rxKiwi(x.url)).filter(Boolean))];
     const kids = own.map(origin => rxObj("own", origin, own.length === 1 ? "Home receiver" : rxHost(origin), `Your own · ${rxHost(origin)}`).id);
-    for (const base of kiwis) {
+    const owrxs = [...new Set(d.stations.map(x => rxOwrx(x.url)).filter(Boolean))];
+    for (const [kind, base] of [...kiwis.map(b => ["kiwi", b]), ...owrxs.map(b => ["owrx", b])]) {
       let title = O["rx:" + base]?.named;
       if (!title) try {                              // (its name, from the directory of receivers the radio keeps)
-        const r = (await api(`/api/receivers/search?q=${encodeURIComponent(rxHost(base).split(":")[0])}&kind=kiwi`)).results.find(r => r.url === base);
-        title = r && (r.name.split(/\s-\s|\|/).map(p => p.trim()).find(p => p && !/^https?:/i.test(p)) || r.place);
+        const r = (await api(`/api/receivers/search?q=${encodeURIComponent(rxHost(base).split(/[:/]/)[0])}&kind=${kind}`)).results.find(r => r.url === base);
+        title = r && rxNice(r);
       } catch {}
-      const o = rxObj("kiwi", base, (title || rxHost(base)).slice(0, 30), "KiwiSDR · short wave"); o.named = title;
+      const o = rxObj(kind, base, (title || rxHost(base)).slice(0, 30), RX_WORD[kind]); o.named = title;
       kids.push(o.id);
     }
     f.kids = kids;
@@ -1899,7 +1905,6 @@ const KIWI_BANDS = [["160 m", 1810, 2000, 1900, "lsb"], ["80 m", 3500, 3800, 370
   ["12 m", 24890, 24990, 24950, "usb"], ["10 m", 28000, 29700, 28500, "usb"], ["MW", 531, 1602, 909, "am"], ["49 m", 5900, 6200, 6050, "am"],
   ["41 m", 7200, 7450, 7300, "am"], ["31 m", 9400, 9900, 9600, "am"], ["25 m", 11600, 12100, 11800, "am"], ["19 m", 15100, 15800, 15400, "am"]];
 const KIWI_PASS = { lsb: [-2700, -300], usb: [300, 2700], am: [-4900, 4900], cw: [300, 700], nbfm: [-6000, 6000] };
-const KIWI_STEPS = [10, 100, 1000, 5000, 9000];
 async function rxSay(origin, path, body) {          // (said to a receiver of your own; its "error" is the reason)
   const r = await fetch(origin + path, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
   const d = await r.json().catch(() => ({}));
@@ -1907,7 +1912,7 @@ async function rxSay(origin, path, body) {          // (said to a receiver of yo
   return d;
 }
 const rigNew = o => ({ o, kind: o.rx, origin: o.origin, st: null, bands: null, down: null, since: 0, range: null, line: null, floor: null, n: 0, busy: false, got: 0,
-                       mode: o.rx === "kiwi" ? "lsb" : "nfm", step: 1000, entering: false, last: null, wait: 0, want: null, dom: null, cv: null, fall: null });
+                       mode: o.rx === "kiwi" ? "lsb" : "nfm", step: o.rx === "owrx" ? 12500 : 1000, zoom: 1, entering: false, last: null, wait: 0, want: null, dom: null, cv: null, fall: null });
 const rigOops = e => toast(e.message[0].toUpperCase() + e.message.slice(1) + ".");
 const rigOnRadio = R => !!S?.source?.url?.startsWith(R.origin);
 function rigListen(R, station) { R.wait = Date.now() + 14000; R.n = 0; play(station); rigPaint(R); rigDraw(R); }
@@ -1920,10 +1925,12 @@ function rigRow(R, bytes, lo, hi, db) {
   const [a0, b0] = R.range, n = bytes.length, per = (hi - lo) / n, row = new Float32Array(RIG_COLS);
   for (let x = 0; x < RIG_COLS; x++) {
     const a = Math.floor((a0 + x / RIG_COLS * (b0 - a0) - lo) / per), b = Math.floor((a0 + (x + 1) / RIG_COLS * (b0 - a0) - lo) / per);
-    let v = 0;
+    let v = -Infinity;
     for (let k = Math.max(0, a); k <= Math.min(n - 1, Math.max(a, b - 1)); k++) if (bytes[k] > v) v = bytes[k];
-    row[x] = db(v);
+    row[x] = v === -Infinity ? NaN : db(v);
   }
+  const least = row.reduce((m, v) => v < m ? v : m, Infinity);          // (beyond what the receiver sees: as quiet as its quietest)
+  for (let x = 0; x < RIG_COLS; x++) if (Number.isNaN(row[x])) row[x] = least === Infinity ? -120 : least;
   const floor = Float32Array.from(row).sort()[RIG_COLS * .3 | 0];
   R.floor = R.floor == null ? floor : R.floor + (floor - R.floor) * .1;
   R.line = R.line ? R.line.map((v, i) => v + (row[i] - v) * .5) : row;
@@ -1933,6 +1940,26 @@ function rigRow(R, bytes, lo, hi, db) {
   R.got = Date.now();
 }
 const rigBytes = b64 => Uint8Array.from(atob(b64), c => c.charCodeAt(0));
+// An OpenWebRX's waterfall line as it sends it: IMA ADPCM from a fresh start (low nibble first), the first
+// ten values to throw away, the rest hundredths of a dB.
+const ADPCM_STEP = [7, 8, 9, 10, 11, 12, 13, 14, 16, 17, 19, 21, 23, 25, 28, 31, 34, 37, 41, 45, 50, 55, 60, 66, 73, 80, 88, 97, 107, 118, 130, 143, 157, 173, 190, 209, 230, 253, 279, 307, 337, 371, 408, 449,
+  494, 544, 598, 658, 724, 796, 876, 963, 1060, 1166, 1282, 1411, 1552, 1707, 1878, 2066, 2272, 2499, 2749, 3024, 3327, 3660, 4026, 4428, 4871, 5358, 5894, 6484, 7132, 7845, 8630, 9493, 10442, 11487,
+  12635, 13899, 15289, 16818, 18500, 20350, 22385, 24623, 27086, 29794, 32767];
+const ADPCM_INDEX = [-1, -1, -1, -1, 2, 4, 6, 8];
+function rigAdpcm(bytes) {
+  const out = new Int16Array(bytes.length * 2);
+  let idx = 0, pred = 0, i = 0;
+  for (const byte of bytes) for (const n of [byte & 15, byte >> 4]) {
+    const step = ADPCM_STEP[idx]; let d = step >> 3;
+    if (n & 1) d += step >> 2;
+    if (n & 2) d += step >> 1;
+    if (n & 4) d += step;
+    pred = Math.max(-32768, Math.min(32767, n & 8 ? pred - d : pred + d));
+    idx = Math.max(0, Math.min(88, idx + ADPCM_INDEX[n & 7]));
+    out[i++] = pred;
+  }
+  return out.subarray(10);
+}
 
 const RXD = {
   // ---- a receiver of your own: a whole band at once
@@ -2023,7 +2050,9 @@ const RXD = {
   // ---- someone's KiwiSDR, through the radio: short wave, one frequency, tuned where it is
   kiwi: {
     modes: [["lsb", "LSB", "Lower sideband"], ["usb", "USB", "Upper sideband"], ["am", "AM", "AM (broadcast)"], ["cw", "CW", "Morse"], ["nbfm", "FM", "Narrow FM"]],
-    unit: "kHz", example: () => "7150",
+    unit: "kHz", example: () => "7150", steps: [10, 100, 1000, 5000, 9000], word: "KiwiSDR",
+    link(R, hz, mode) { return `${R.origin}?f=${(hz / 1000).toFixed(2)}${mode}`; },
+    label(R, hz, mode) { return `${+(hz / 1000).toFixed(2)} kHz ${mode.toUpperCase()} · ${R.o.title}`.slice(0, 60); },
     on(R) { return !!R.st?.on && R.st.base === R.origin && !R.st.ended; },
     tuned(R) { return this.on(R) ? (R.last = R.st.freq) : R.last; },
     pass(R, hz) { const [a, b] = KIWI_PASS[this.on(R) ? R.st.mode : R.mode] || [-2700, 2700]; return [hz + a, hz + b]; },
@@ -2059,7 +2088,7 @@ const RXD = {
       }
       const hz = w.freq || R.last || 7150000, mode = w.mode || R.mode;
       R.mode = mode; R.last = hz; R.want = { zoom: w.zoom ?? 6, centre: w.centre ?? hz };
-      rigListen(R, stationObj({ name: `${+(hz / 1000).toFixed(2)} kHz ${mode.toUpperCase()} · ${R.o.title}`.slice(0, 60), url: `${R.origin}?f=${(hz / 1000).toFixed(2)}${mode}`, info: "KiwiSDR" }));
+      rigListen(R, stationObj({ name: this.label(R, hz, mode), url: this.link(R, hz, mode), info: this.word }));
     },
     click(R, hz) {
       const mode = this.on(R) ? R.st.mode : R.mode;
@@ -2070,12 +2099,12 @@ const RXD = {
     setMode(R, m) { R.mode = m; if (this.on(R)) this.say(R, { mode: m }); else rigPaint(R); },
     enter(R, text) { const v = parseFloat(text), hz = Math.round(v < 30 ? v * 1e6 : v * 1000); if (!(hz > 0 && hz <= 30e6)) return toast("A frequency in kHz, up to 30000: 7150"); this.say(R, { freq: hz, centre: hz }); },
     foot(R, k) {
-      const stepKey = k(this.stepWord(R), () => { R.step = KIWI_STEPS[(KIWI_STEPS.indexOf(R.step) + 1) % KIWI_STEPS.length]; stepKey.textContent = this.stepWord(R); }, "How far ◀ ▶ and the mouse wheel move it");
+      const stepKey = k(this.stepWord(R), () => { R.step = this.steps[(this.steps.indexOf(R.step) + 1) % this.steps.length]; stepKey.textContent = this.stepWord(R); }, "How far ◀ ▶ and the mouse wheel move it");
       return [el("div", { className: "rgrp" }, k("◀", () => this.step(R, -1), "Down a step"), k("▶", () => this.step(R, 1), "Up a step"), stepKey,
           k("Zoom −", () => this.zoom(R, -1), "See more of the band"), k("Zoom +", () => this.zoom(R, 1), "See less, closer")),
         el("div", { className: "rgrp" }, k("Save", async () => {
             const hz = this.tuned(R), mode = this.on(R) ? R.st.mode : R.mode; if (!hz) return toast("Tune it first.");
-            const st = { name: `${+(hz / 1000).toFixed(2)} kHz ${mode.toUpperCase()} · ${R.o.title}`.slice(0, 60), url: `${R.origin}?f=${(hz / 1000).toFixed(2)}${mode}`, info: `KiwiSDR · ${R.o.title}` };
+            const st = { name: this.label(R, hz, mode), url: this.link(R, hz, mode), info: `${this.word} · ${R.o.title}` };
             try {
               await loadFolder(STATIONS);    // the list as the radio has it now: what's sent replaces all of it
               const have = STATIONS.kids.map(id => O[id]).filter(o => o?.kind === "station").map(o => ({ name: o.name, url: o.url, info: o.info }));
@@ -2086,6 +2115,92 @@ const RXD = {
     },
     stepWord(R) { return R.step >= 1000 ? `${R.step / 1000} kHz` : `${R.step} Hz`; },
     lamps() {},
+  },
+};
+// ---- someone's OpenWebRX, through the radio: whatever bands its owner has set up (changing band moves
+// everyone listening to it, so the rig asks first), one frequency, tuned where it is. Its waterfall is the
+// whole band; Zoom looks closer at a part of it, here on the page.
+const OWRX_PASS = { nfm: [-4000, 4000], am: [-4000, 4000], usb: [300, 3000], lsb: [-3000, -300], cw: [700, 900] };
+RXD.owrx = { ...RXD.kiwi,
+  modes: [["nfm", "FM", "Narrow FM"], ["am", "AM", "AM"], ["usb", "USB", "Upper sideband"], ["lsb", "LSB", "Lower sideband"], ["cw", "CW", "Morse"]],
+  unit: "MHz", example: () => "145.500", steps: [100, 1000, 5000, 6250, 12500, 25000], word: "OpenWebRX",
+  link(R, hz, mode) { return `${R.origin}#freq=${Math.round(hz)},mod=${mode}`; },
+  label(R, hz, mode) { return `${+(hz / 1e6).toFixed(4)} MHz ${mode === "nfm" ? "FM" : mode.toUpperCase()} · ${R.o.title}`.slice(0, 60); },
+  pass(R, hz) { const [a, b] = OWRX_PASS[this.on(R) ? R.st.mode : R.mode] || [-4000, 4000]; return [hz + a, hz + b]; },
+  names(list) {                                     // band names as key labels: what they all begin with dropped, kept short
+    const names = list.map(b => b.name.trim());
+    let cut = 0;
+    if (names.length > 1) { while (names[0][cut] && names.every(n => n[cut] === names[0][cut])) cut++; cut = names[0].lastIndexOf(" ", cut - 1) + 1; }
+    return names.map(n => { const t = n.slice(cut).trim() || n; return t.length > 15 ? t.slice(0, 14) + "…" : t; });
+  },
+  view(R, span, hz) {                               // the part of the band the scope shows (all of it until Zoom +)
+    const z = R.zoom || 1, w = (span[1] - span[0]) / z, v = R.view;
+    if (v && v.z === z && v.span === String(span) && (!hz || (hz >= v.r[0] && hz <= v.r[1]))) return v.r;
+    const mid = z === 1 || !hz ? (span[0] + span[1]) / 2 : Math.max(span[0] + w / 2, Math.min(span[1] - w / 2, hz));
+    R.view = { z, span: String(span), r: [Math.round(mid - w / 2), Math.round(mid + w / 2)] };
+    return R.view.r;
+  },
+  async poll(R) {
+    const d = R.st = await api(`/api/rx?since=${R.since}`), on = this.on(R);
+    if (!on && !R.asked) {                          // (not listening yet: its bands, from the receiver's own word)
+      R.asked = true;
+      api(`/api/receivers/info?url=${encodeURIComponent(R.origin)}`).then(i => { R.info = i; drawDesk(); }).catch(() => {});
+    }
+    const sig = on ? "on:" + (d.bands || []).map(b => b.id).join() : "off";
+    if (sig !== R.sig) { R.sig = sig; if (!document.querySelector(".win input:focus")) drawDesk(); }
+    if (!on) { if (R.range) rigClear(R, null); R.since = 0; return; }
+    if (R.step < 100) R.step = d.freq > 30e6 ? 12500 : 1000;
+    if (d.n < R.since) R.since = 0;
+    const range = d.lo != null ? this.view(R, [d.lo, d.hi], d.freq) : null;
+    if (JSON.stringify(range) !== JSON.stringify(R.range)) rigClear(R, range);
+    if (range) for (const [n, b64] of d.rows) {
+      R.since = n;
+      const raw = rigBytes(b64);
+      if (d.codec === "none") rigRow(R, new Float32Array(raw.buffer, 0, raw.length >> 2), d.lo, d.hi, v => v);
+      else rigRow(R, rigAdpcm(raw), d.lo, d.hi, v => v / 100);
+    }
+    if (d.name && !R.o.named) R.o.named = R.o.title = d.name.split(/\s-\s|\|/).map(p => p.trim()).find(p => p && !/^https?:/i.test(p))?.slice(0, 30) || R.o.title;
+  },
+  words(R) {
+    const on = this.on(R), d = R.st || {}, mode = on ? d.mode : R.mode, tuned = this.tuned(R);
+    const band = on && (d.bands || []).find(b => b.id === d.band);
+    let meter = 0;
+    if (R.line && R.range && tuned) { const x = Math.max(1, Math.min(RIG_COLS - 2, rigX(R, tuned) / RIG_W * RIG_COLS | 0)); meter = (Math.max(R.line[x - 1], R.line[x], R.line[x + 1]) - R.floor) / 54; }
+    return { mode: { nfm: "FM" }[mode] || mode.toUpperCase(), modeOn: mode, sql: on && mode === "nfm" ? "SQL AUTO" : "", scan: on ? "VFO" : "", rx: false,
+             band: band ? (band.name.length > 34 ? band.name.slice(0, 33) + "…" : band.name).toUpperCase() : "", bandOn: on ? d.band : null, meter,
+             who: d.ended && d.base === R.origin ? d.ended : on ? (d.name || "") : R.wait > Date.now() ? "Tuning…" : R.info?.bands?.length ? "Press a band to listen on the radio" : "Click the frequency and type one to listen",
+             right: on && (R.zoom || 1) > 1 ? `zoom ×${R.zoom}` : "" };
+  },
+  bandKeys(R) {
+    if (this.on(R)) {
+      const list = R.st.bands || [], labels = this.names(list);
+      return list.map((b, i) => ({ id: b.id, label: labels[i], title: b.name, go: () => b.id === R.st.band ? null
+        : ask(`Change this receiver to “${labels[i]}”? It moves everyone who is listening to it, not only you.`, "Change band", () => { R.zoom = 1; this.say(R, { profile: b.id }); }) }));
+    }
+    const list = R.info?.bands || [], labels = this.names(list);                 // (not listening yet: a band starts it there)
+    return list.map((b, i) => ({ id: "i" + i, label: labels[i], title: b.name,
+      go: () => { R.zoom = 1; this.say(R, { freq: Math.round((b.centre + b.width / 8) / 12500) * 12500, mode: /air/i.test(b.name) ? "am" : b.centre < 10e6 ? "lsb" : b.centre < 30e6 ? "usb" : "nfm" }); } }));
+  },
+  async say(R, w) {
+    if (this.on(R)) {
+      try { R.st = { ...R.st, ...(await api("/api/rx/tune", { base: R.origin, ...w })), rows: [] }; if (w.freq) R.last = w.freq; if (w.mode) R.st.mode = w.mode; if (w.freq) R.st.freq = w.freq; rigDraw(R); rigPaint(R); } catch (e) { rigOops(e); }
+      return;
+    }
+    const hz = w.freq || R.last, mode = w.mode || R.mode;
+    if (!hz) return toast("Click the frequency and type one first.");
+    R.mode = mode; R.last = hz;
+    rigListen(R, stationObj({ name: this.label(R, hz, mode), url: this.link(R, hz, mode), info: this.word }));
+  },
+  click(R, hz) {
+    const mode = this.on(R) ? R.st.mode : R.mode, grid = mode === "nfm" ? 12500 : mode === "am" ? (hz > 108e6 ? 25000 / 3 : hz < 1.7e6 ? 9000 : 5000) : 1000;
+    this.say(R, { freq: Math.round(Math.round(hz / grid) * grid) });
+  },
+  zoom(R, n) { if (!this.on(R)) return; R.zoom = Math.max(1, Math.min(64, (R.zoom || 1) * (n > 0 ? 2 : .5))); R.view = null; rigPaint(R); },
+  setMode(R, m) { R.mode = m; if (this.on(R)) this.say(R, { mode: m }); else rigPaint(R); },
+  enter(R, text) {
+    const v = parseFloat(text), hz = Math.round(v < 2000 ? v * 1e6 : v * 1000);
+    if (!(hz > 0)) return toast("A frequency in MHz: 145.5");
+    this.say(R, { freq: hz });
   },
 };
 const rigX = (R, hz) => (hz - R.range[0]) / (R.range[1] - R.range[0]) * RIG_W;
@@ -2164,7 +2279,7 @@ function rigView(o, box, win) {
   const R = o.rig ||= rigNew(o), D = RXD[R.kind];
   const k = (text, fn, title) => { const b = el("button", { type: "button", className: "rk", textContent: text }); if (title) b.title = title; b.onclick = fn; return b; };
   const d = R.dom = { bandKeys: {}, modeKeys: {} };
-  const keys = D.bandKeys(R), bands = el("div", { className: "rcol" + (keys.length > 8 ? " two" : "") }, el("h4", { textContent: "Band" }));
+  const keys = D.bandKeys(R), bands = el("div", { className: "rcol" + (R.kind === "owrx" ? " many" : keys.length > 8 ? " two" : "") }, el("h4", { textContent: "Band" }));
   for (const b of keys) { const key = k(b.label, b.go, b.title); if (b.id !== "+") d.bandKeys[b.id] = key; bands.append(key); }
   const modes = el("div", { className: "rcol" }, el("h4", { textContent: "Mode" }));
   for (const [m, t, tip] of D.modes) modes.append(d.modeKeys[m] = k(t, () => D.setMode(R, m), tip));
@@ -2186,7 +2301,7 @@ function rigView(o, box, win) {
     el("div", { className: "rmeter" }, el("span", { textContent: "S" }), el("div", { className: "rtrack" }, d.fill = el("div", { className: "rfill" })), el("span"),
        el("div", { className: "rticks" }, ...["1", "3", "5", "7", "9", "+20", "+40", "+60"].map(t => el("span", { textContent: t })))),
     rigCanvas(R), d.scale = el("div", { className: "rscale" }));
-  const foot = el("div", { className: "rfoot" }, ...D.foot(R, k), el("span", { className: "rtip", textContent: R.kind === "kiwi" ? "Click the scope to tune · wheel for fine steps · someone's own radio: be a good guest" : "Click the scope to tune" }));
+  const foot = el("div", { className: "rfoot" }, ...D.foot(R, k), el("span", { className: "rtip", textContent: R.kind !== "own" ? "Click the scope to tune · wheel for fine steps · someone's own radio: be a good guest" : "Click the scope to tune" }));
   box.append(el("div", { className: "wbody" }, el("div", { className: "rig" }, bands, tft, modes, foot)));
   rigDraw(R); setTimeout(() => rigPaint(R), 0);
 }
@@ -3205,8 +3320,8 @@ const UI = {
       const rows = (d.results || []).slice(0, 40).map(r => {
         const open_ = d.pick?.url === r.url;
         return el("div", {}, srow(label(r.name), help(`${r.kind === "kiwi" ? "KiwiSDR" : "OpenWebRX"}${r.km != null ? ` · ${r.km} km` : ""}${r.place && r.place !== r.name ? ` · ${label(r.place)}` : ""}`),
-          line(r.kind === "kiwi" ? sbtn("Rig", () => open(rxObj("kiwi", r.url, (r.name.split(/\s-\s|\|/).map(p => p.trim()).find(p => p && !/^https?:/i.test(p)) || r.place || rxHost(r.url)).slice(0, 30), "KiwiSDR · short wave").id), "primary") : null,
-               sbtn(open_ ? "Close" : "Tune…", () => open_ ? (d.pick = d.info = null, drawDesk(), fitWin(me)) : pick(r), open_ || r.kind === "kiwi" ? "" : "primary"), sbtn("Nearest to this", () => nearest(r)))),
+          line(sbtn("Rig", () => open(rxObj(r.kind, r.url, rxNice(r), RX_WORD[r.kind]).id), "primary"),
+               sbtn(open_ ? "Close" : "Tune…", () => open_ ? (d.pick = d.info = null, drawDesk(), fitWin(me)) : pick(r)), sbtn("Nearest to this", () => nearest(r)))),
           open_ ? tuner(r) : null);
       });
       return [grp("Find a receiver", line(q, sbtn("Search", go, "primary")), kinds,
@@ -4402,7 +4517,7 @@ async function boot() {
     booted = true; drawDesk(); setInterval(tick, 10000); setInterval(poll, 2500); setInterval(refreshOpen, 20000);
     // The Receiver folder appears on the desktop once a station says there's a receiver; while one of its
     // windows is open it's asked every few seconds who has the air.
-    api("/api/radio").then(d => { if ((rxOrigins(d.stations).length || d.stations.some(x => rxKiwi(x.url))) && !desk.some(p => p.id === RECEIVER.id)) { desk.push({ id: RECEIVER.id, ...freeSpot() }); saveDesk(); drawDesk(); } }).catch(() => {});
+    api("/api/radio").then(d => { if ((rxOrigins(d.stations).length || d.stations.some(x => rxKiwi(x.url) || rxOwrx(x.url))) && !desk.some(p => p.id === RECEIVER.id)) { desk.push({ id: RECEIVER.id, ...freeSpot() }); saveDesk(); drawDesk(); } }).catch(() => {});
     setInterval(() => { if (!document.hidden && W.some(w => ["rxbands", "rxband"].includes(O[w.id]?.box))) refreshOpen(); }, 4000);
     setInterval(rigPoll, 350);
     document.addEventListener("visibilitychange", () => { if (!document.hidden) { refreshOpen(); poll(); } }); setInterval(async () => { await loadButtons(); updateRadio(); }, 15000); }

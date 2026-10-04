@@ -965,8 +965,9 @@ The cards:
   station's address is a receiver's. Each receiver in it is an object of
   its own -- one of your own (`receiver/` in the repository: an RTL-SDR
   dongle on a spare Pi, `http://HOST:8074/audio?band=…`) or someone's
-  **KiwiSDR** on the internet (a station like `http://HOST:8073/?f=7150.00lsb`;
-  *Find a receiver* has a *Rig* button on each KiwiSDR too) -- and each opens
+  **KiwiSDR** or **OpenWebRX** on the internet (a station like
+  `http://HOST:8073/?f=7150.00lsb`; *Find a receiver* has a *Rig* button on
+  each one too) -- and each opens
   as a **rig**, laid out like the screen of a radio amateur's transceiver:
   the frequency, an S meter, and the band's spectrum over a waterfall. Band
   keys down the left, modes down the right; *click the scope* to tune; click
@@ -987,8 +988,18 @@ The cards:
     meter is the receiver's own reading in dBm. Some KiwiSDRs have fewer
     waterfalls than listeners: then the scope says so and the sound carries
     on. `GET /api/rx?since=N` and `POST /api/rx/tune {"base", "freq", "mode",
-    "zoom", "centre"}` are what the page uses.
-  An OpenWebRX still plays as a plain station.
+    "zoom", "centre", "profile"}` are what the page uses.
+  - *An OpenWebRX* (a station like `http://HOST:8073/#freq=145500000,mod=nfm`)
+    works the same way, through the radio's one connection. Its band keys are
+    whatever bands its owner has set up; **changing band moves everyone who
+    is listening to that receiver**, so the rig asks first. Within a band:
+    FM / AM / USB / LSB / CW, a click on the scope, ◀ ▶ and the wheel, a typed
+    frequency (MHz). Narrow FM gets an automatic squelch, worked out again
+    after each retune (a couple of seconds of quiet); the other modes are
+    left open. Its waterfall is the whole band -- often several MHz -- so
+    *Zoom +* looks closer at the part round where you're tuned (on the page:
+    nothing is asked of the receiver). The radio passes the receiver's
+    waterfall lines on as they come (compressed); the page works them out.
   A receiver of your own's *Bands…* folder holds its bands, each a folder: the whole band at once, then its channels one by one,
   every one a station -- double-click to listen, drag onto a button to keep
   it there. While its window is open the page asks the receiver itself (not

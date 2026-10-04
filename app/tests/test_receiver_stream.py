@@ -210,10 +210,40 @@ def test_kiwisdr_for_the_rig_its_waterfall_its_meter_and_tuning_where_it_is() ->
     s.close()
     assert ws.closed and ws.wf.closed
 
-    o = rx.ReceiverStream("http://owrx.example/#freq=145500000,mod=nfm")
-    try:
-        o.tune(freq=145_550_000)
-        raise AssertionError("took it")
-    except ValueError as e:
-        assert "choosing it again" in str(e)
-    assert o.rig()["tunes"] is False and o.rig()["rows"] == []
+
+
+def test_openwebrx_for_the_rig_its_waterfall_its_bands_and_tuning_where_it_is() -> None:
+    conf = lambda **v: json.dumps({"type": "config", "value": v})
+    fft = b"\x01" + bytes(range(64))
+    ws = FakeWs([conf(center_freq=145_000_000, samp_rate=2_000_000, fft_compression="adpcm", sdr_id="rtl", profile_id="2m", squelch_auto_margin=10),
+                 json.dumps({"type": "profiles", "value": [{"id": "rtl|2m", "name": "2m"}, {"id": "rtl|40m", "name": "40m"}]}), fft])
+    s = rx.ReceiverStream("http://owrx.example/#freq=145500000,mod=nfm", connect=lambda u: ws, get_text=lambda u: json.dumps({"receiver": {"name": "M0XYZ"}}))
+    s.rig()
+    s.start()
+    assert _wait(lambda: s.rig()["n"] == 1 and ws.params())
+    state = s.rig()
+    assert (state["kind"], state["tunes"], state["codec"], state["band"], state["name"]) == ("owrx", True, "adpcm", "rtl|2m", "M0XYZ")
+    assert (state["lo"], state["hi"]) == (144_000_000, 146_000_000) and state["bands"][1] == {"id": "rtl|40m", "name": "40m"}
+    assert rx.base64.b64decode(state["rows"][0][1]) == bytes(range(64))                     # as it was sent: the page works it out
+
+    s.tune(freq=145_550_000)                                                               # in the band: on the same connection
+    assert _wait(lambda: ws.params()[-1]["offset_freq"] == 550_000) and s.rig()["freq"] == 145_550_000
+    s.tune(mode="am")
+    assert _wait(lambda: ws.params()[-1]["mod"] == "am" and ws.params()[-1]["offset_freq"] == 550_000)
+    assert s.title == "145.55 MHz AM · M0XYZ"
+    for bad, why in (({"freq": 7_100_000}, "outside the band"), ({"profile": "rtl|70cm"}, "no such band"), ({"mode": "nbfm"}, "modes")):
+        try:
+            s.tune(**bad)
+            raise AssertionError("took it")
+        except ValueError as e:
+            assert why in str(e)
+
+    s.tune(profile="rtl|40m")                                                              # another band: it says where that starts
+    assert _wait(lambda: any('"selectprofile"' in m and "rtl|40m" in m for m in ws.sent))
+    ws.messages.append(conf(center_freq=7_100_000, samp_rate=500_000, start_freq=7_150_000, start_mod="lsb", profile_id="40m"))
+    assert _wait(lambda: ws.params()[-1]["mod"] == "lsb" and ws.params()[-1]["offset_freq"] == 50_000)
+    assert s.rig()["freq"] == 7_150_000 and s.rig()["band"] == "rtl|40m" and s.rig()["rows"] == []      # the old band's waterfall is gone
+    time.sleep(0.2)                                # (six frames a second are kept, no more)
+    ws.messages.append(fft)
+    assert _wait(lambda: len(s.rig()["rows"]) == 1) and s.rig()["lo"] == 6_850_000
+    s.close()

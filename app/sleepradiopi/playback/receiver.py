@@ -227,6 +227,10 @@ class ReceiverStream:
         self._wf_n = 0
         self._wf_view: tuple[int, float] | None = None       # (zoom, centre kHz) asked for
         self._wf_asked = 0.0
+        self._wf_last = 0.0
+        self._cfg: dict = {}              # an OpenWebRX's settings as it sends them (its band's centre and width, ...)
+        self._profiles: list = []         # ...its bands
+        self._asks: list[dict] = []       # ...and what the rig has asked of it, for its loop to do
 
     # (what the station uses)
 
@@ -264,15 +268,44 @@ class ReceiverStream:
         self._wf_asked = self._clock()
         rows = list(self._wf_rows)
         lo, hi = (rows[-1][1], rows[-1][2]) if rows else (None, None)
-        return {"kind": spec.get("kind"), "base": spec.get("base"), "freq": spec.get("freq"), "mode": spec.get("mode"),
-                "name": self.name, "title": self.title, "dbm": self.dbm, "ended": self.ended, "tunes": spec.get("kind") == "kiwi",
-                "lo": lo, "hi": hi, "n": self._wf_n,
-                "rows": [[n, base64.b64encode(row).decode()] for n, a, b, row in rows if n > since and (a, b) == (lo, hi)]}
+        out = {"kind": spec.get("kind"), "base": spec.get("base"), "freq": spec.get("freq"), "mode": spec.get("mode"),
+               "name": self.name, "title": self.title, "dbm": self.dbm, "ended": self.ended, "tunes": spec.get("kind") in ("kiwi", "owrx"),
+               "lo": lo, "hi": hi, "n": self._wf_n,
+               "rows": [[n, base64.b64encode(row).decode()] for n, a, b, row in rows if n > since and (a, b) == (lo, hi)]}
+        if spec.get("kind") == "owrx":
+            # Its rows are as it sent them (the page works them out: "adpcm" is IMA ADPCM from a fresh
+            # start, ten values to throw away, then hundredths of a dB; "none" is float32 dB), and it has bands.
+            cfg = self._cfg
+            out.update(codec=cfg.get("fft_compression", "adpcm"), band=f"{cfg.get('sdr_id')}|{cfg.get('profile_id')}",
+                       bands=[{"id": p.get("id"), "name": str(p.get("name", ""))[:200]} for p in self._profiles if isinstance(p, dict)])
+        return out
 
-    def tune(self, freq: int | None = None, mode: str | None = None, zoom: int | None = None, centre: int | None = None) -> None:
-        """Retune where it is, on the connection it has (a KiwiSDR): the frequency (Hz)
-        and mode it listens on, and the zoom and centre (Hz) of its waterfall. ValueError says why not."""
+    def tune(self, freq: int | None = None, mode: str | None = None, zoom: int | None = None, centre: int | None = None,
+             profile: str | None = None) -> None:
+        """Retune where it is, on the connection it has: the frequency (Hz) and mode it
+        listens on; a KiwiSDR's waterfall zoom and centre (Hz); an OpenWebRX's band
+        (profile: it moves everyone listening to that receiver). ValueError says why not."""
         spec, ws = self.spec, self._ws
+        if spec is not None and spec["kind"] == "owrx":
+            ask: dict = {}
+            if profile is not None:
+                if not any(isinstance(p, dict) and p.get("id") == profile for p in self._profiles):
+                    raise ValueError("that receiver has no such band")
+                ask["profile"] = profile
+            if mode is not None:
+                if mode.lower() not in OWRX_MODES:
+                    raise ValueError(f"its modes are {', '.join(sorted(OWRX_MODES))}")
+                ask["mode"] = mode.lower()
+            if freq is not None:
+                cfg = self._cfg
+                if profile is None and ("center_freq" not in cfg or abs(freq - cfg["center_freq"]) > cfg.get("samp_rate", 0) / 2 * 0.98):
+                    raise ValueError("that's outside the band it's on: choose another band")
+                ask["freq"] = int(freq)
+            if ask:
+                if ws is None:
+                    raise ValueError("the receiver isn't connected yet")
+                self._asks.append(ask)
+            return
         if spec is None or spec["kind"] != "kiwi":
             raise ValueError("this kind of receiver is tuned by choosing it again")
         if freq is not None or mode is not None:
@@ -429,19 +462,19 @@ class ReceiverStream:
             status = json.loads(self._get_text(spec["base"] + "status.json"))
         except Exception:
             pass                                    # (older ones have none: it's only for finding the right band)
-        name = (status.get("receiver") or {}).get("name") or ""
+        name = self.name = (status.get("receiver") or {}).get("name") or ""
         self.title = said(spec) + (f" · {name[:60]}" if name else "")
         ws = self._ws = self._connect(_ws_url(spec["base"], "/ws/"))
         ws.send("SERVER DE CLIENT client=sleepradio type=receiver")
         ws.send(json.dumps({"type": "connectionproperties", "params": {"output_rate": RX_RATE, "hd_output_rate": 48000}}))
-        cfg: dict = {}
+        cfg = self._cfg = {}
         profiles: list = []
         adpcm, resample = Adpcm(), Resampler(RX_RATE)
-        tuned = asked_profile = False
+        tuned = asked_profile = chosen = False
         margin = 10.0
         levels: list[float] = []
         learn_from: float | None = None
-        squelch_set = "sql" in spec
+        squelch_set = "sql" in spec or spec["mode"] != "nfm"      # (narrow FM gets an automatic squelch; the rest are left open)
         deadline = self._clock() + 25.0             # (a sleeping dongle takes ~10 s to start sending)
 
         def tune() -> None:
@@ -450,15 +483,41 @@ class ReceiverStream:
             ws.send(json.dumps({"type": "dspcontrol", "params": {
                 "low_cut": lo, "high_cut": hi, "offset_freq": spec["freq"] - cfg["center_freq"], "mod": spec["mode"],
                 "squelch_level": spec.get("sql", -150), "secondary_mod": False}}))
+            self.title = said(spec) + (f" · {name[:60]}" if name else "")
 
         while not self._closed.is_set():
             m = self._recv(ws)
             now = self._clock()
+            while self._asks:                       # (from the rig: another band, or another frequency or mode in this one)
+                ask = self._asks.pop(0)
+                if "mode" in ask:
+                    spec["mode"] = ask["mode"]
+                if "profile" in ask:
+                    log.info("receiver: asking for the band %s", ask["profile"])
+                    ws.send(json.dumps({"type": "selectprofile", "params": {"profile": ask["profile"]}}))
+                    for k in ("center_freq", "samp_rate", "start_freq", "start_mod"):
+                        cfg.pop(k, None)
+                    spec["freq"] = ask.get("freq", 0)             # (0: wherever that band starts)
+                    tuned, asked_profile, chosen, deadline = False, True, True, now + 25.0
+                    self._wf_rows.clear()
+                else:
+                    spec["freq"] = ask.get("freq", spec["freq"])
+                    if tuned:
+                        tune()
+                # narrow FM gets a squelch, worked out afresh where it now is; the other modes are left open
+                squelch_set, levels, learn_from = "sql" in spec or spec["mode"] != "nfm", [], None
             if m is None:
                 if not tuned and now > deadline:
                     raise ValueError("the receiver didn't answer")
                 continue
             if isinstance(m, bytes):
+                if m[:1] == b"\x01" and "center_freq" in cfg and "samp_rate" in cfg:        # its waterfall, for the rig
+                    if now - self._wf_asked < 15 and now - self._wf_last >= 0.15:           # (someone's looking; six a second is plenty)
+                        self._wf_last = now
+                        self._wf_n += 1
+                        half = cfg["samp_rate"] / 2
+                        self._wf_rows.append((self._wf_n, int(cfg["center_freq"] - half), int(cfg["center_freq"] + half), bytes(m[1:])))
+                    continue
                 if tuned and m[:1] == b"\x02":
                     x = adpcm.decode(m[1:]) if cfg.get("audio_compression", "adpcm") == "adpcm" else np.frombuffer(
                         m[1:1 + (len(m) - 1) // 2 * 2], dtype="<i2")
@@ -476,7 +535,7 @@ class ReceiverStream:
                 cfg.update(value)
                 margin = float(cfg.get("squelch_auto_margin", margin) or margin)
             elif kind == "profiles" and isinstance(value, list):
-                profiles = value
+                profiles = self._profiles = value
             elif kind == "smeter" and tuned and not squelch_set and value:
                 if learn_from is None:
                     learn_from = now
@@ -492,6 +551,12 @@ class ReceiverStream:
                 raise ValueError("the receiver is full")
             if not tuned and "center_freq" in cfg and "samp_rate" in cfg:
                 half = cfg["samp_rate"] / 2
+                if chosen and abs(spec["freq"] - cfg["center_freq"]) > half * 0.98:          # a band chosen on the rig: where it starts
+                    start = cfg.get("start_freq")
+                    spec["freq"] = int(start) if start and abs(start - cfg["center_freq"]) <= half * 0.98 else int(cfg["center_freq"] + half / 2)
+                    if cfg.get("start_mod") in OWRX_MODES and cfg["start_mod"] != "wfm":
+                        spec["mode"] = cfg["start_mod"]
+                    squelch_set = "sql" in spec or spec["mode"] != "nfm"
                 if abs(spec["freq"] - cfg["center_freq"]) <= half * 0.98:
                     tune()
                     tuned = True
@@ -501,7 +566,9 @@ class ReceiverStream:
                         raise ValueError(f"that receiver has no band with {said(spec)} in it")
                     log.info("receiver: asking for the band %s", want)
                     ws.send(json.dumps({"type": "selectprofile", "params": {"profile": want}}))
-                    asked_profile, cfg = True, {k: v for k, v in cfg.items() if k not in ("center_freq", "samp_rate")}
+                    asked_profile = True
+                    for k in ("center_freq", "samp_rate"):
+                        cfg.pop(k, None)
                     deadline = now + 25.0
                 elif asked_profile and now > deadline:
                     raise ValueError("the receiver wouldn't change band (someone else may be using it)")

@@ -573,7 +573,7 @@ def make_handler(station: Station, output: Mp3Output, speaker=None,
                                      daemon=True).start()
                 self._send(json.dumps({**directory.status(), "refreshing": True}).encode(), "application/json")
             elif path == "/api/rx/tune":
-                # {"base", "freq" (Hz), "mode", "zoom", "centre" (Hz)}: retune the receiver being listened to, where
+                # {"base", "freq" (Hz), "mode", "zoom", "centre" (Hz), "profile"}: retune the receiver being listened to, where
                 # it is (any of them; "base" must be the one that's on, so a stale window can't move another).
                 try:
                     body = json.loads(self.rfile.read(int(self.headers.get("Content-Length", 0))) or b"{}")
@@ -581,7 +581,8 @@ def make_handler(station: Station, output: Mp3Output, speaker=None,
                     if not hasattr(stream, "tune") or (stream.spec or {}).get("base") != body.get("base"):
                         raise ValueError("the radio isn't listening to that receiver")
                     num = lambda k: None if body.get(k) is None else int(float(body[k]))
-                    stream.tune(num("freq"), None if body.get("mode") is None else str(body["mode"]), num("zoom"), num("centre"))
+                    stream.tune(num("freq"), None if body.get("mode") is None else str(body["mode"]), num("zoom"), num("centre"),
+                                None if body.get("profile") is None else str(body["profile"]))
                 except (ValueError, TypeError, AttributeError) as e:
                     self._error(str(e))
                     return
