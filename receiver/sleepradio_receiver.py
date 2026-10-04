@@ -37,9 +37,12 @@ from __future__ import annotations
 
 import argparse
 import array
+import base64
+import collections
 import json
 import logging
 import math
+import os
 import queue
 import select
 import shutil
@@ -65,6 +68,8 @@ SAMPLE_RATE_MS = 2.4         # what the dongle is asked for (MS/s)
 USABLE = 0.8                 # of that, the part away from the filter's edges
 FFT_SIZE = 512               # a Pi 2 keeps up with 512 (1024 and 2048 overflowed)
 UDP_BASE = 47_000            # rtl_airband sends channel i's audio to this + i
+SPECTRUM_PORT = UDP_BASE - 1 # ...and, built with rtl_airband_spectrum.py, its spectrum to this, ten times a second
+SPECTRUM_ROWS = 50           # how many of those are kept for whoever draws a waterfall (5 s)
 HANG_S = 2.0                 # stay with a channel this long after it closes, for the reply
 HOG_S = 30.0                 # a channel open this long without a break gives way to another that opens
 HIGHPASS_HZ = 300            # narrow FM: below the speech (takes out CTCSS tones, a hum otherwise)
@@ -277,6 +282,21 @@ def airband_conf(channels: list[dict], mode: str = "nfm", squelch: bool = True, 
 # --- audio -----------------------------------------------------------------------------
 
 
+def spectrum_row(data: bytes) -> bytes:
+    """rtl_airband's spectrum (float32 mean power per FFT bin, bin 0 = the centre frequency)
+    -> one byte per bin from the lowest frequency to the highest: 0 = -40 dB, 2.5 steps per dB."""
+    a = array.array("f")
+    a.frombytes(data[:len(data) // 4 * 4])
+    if sys.byteorder == "big":
+        a.byteswap()
+    n, half = len(a), len(a) // 2
+    out = bytearray(n)
+    for k in range(n):
+        p = a[(k + half) % n]
+        out[k] = max(0, min(255, int((10 * math.log10(p) + 40) * 2.5))) if p > 1e-9 else 0
+    return bytes(out)
+
+
 def wav_header(rate: int) -> bytes:
     """A WAV header for a stream with no end (16-bit mono)."""
     return (b"RIFF" + struct.pack("<I", 0xFFFFFFFF) + b"WAVEfmt " + struct.pack("<IHHIIHH", 16, 1, 1, rate, rate * 2, 2, 16)
@@ -322,6 +342,7 @@ class Mixer:
         self.last = [0.0] * len(channels)           # when each channel last sent audio
         self.since = [0.0] * len(channels)          # ...and when its present spell began
         self.level = [0.0] * len(channels)
+        self.hold: int | None = None                # listen to this channel only, whoever else speaks
         self.t0: float | None = None
         self.sent = 0                               # samples sent since t0
 
@@ -336,7 +357,9 @@ class Mixer:
             self.since[i] = now
         self.last[i], self.level[i] = now, level
         cur = self.current
-        if cur is None or not self._open(cur, now) or (cur != i and (
+        if self.hold is not None:
+            self.current = cur = self.hold
+        elif cur is None or not self._open(cur, now) or (cur != i and (
                 (self.channels[i].get("priority") and not self.channels[cur].get("priority"))
                 or (now - self.since[cur] > self.hog_s >= now - self.since[i]))):
             self.current = cur = i
@@ -347,6 +370,8 @@ class Mixer:
 
     def title(self, now: float, idle: str) -> str:
         cur = self.current
+        if self.hold is not None:
+            return self.channels[self.hold]["name"]
         return self.channels[cur]["name"] if cur is not None and self._open(cur, now) else idle
 
     def _count(self, n: int, now: float) -> None:
@@ -399,6 +424,10 @@ class Receiver:
         self.idle_since = time.monotonic()
         self.error: str | None = None
         self.started = 0.0
+        self.centre = 0                               # where the dongle's centre is (a band, or one frequency)
+        self.spectrum: collections.deque = collections.deque(maxlen=SPECTRUM_ROWS)    # (number, spectrum_row)
+        self.spectrum_n = 0
+        self.spectrum_wanted = 0.0                    # when a waterfall last asked: nobody asking, nothing worked out
         threading.Thread(target=self._housekeeping, name="housekeeping", daemon=True).start()
 
     # (what's received)
@@ -426,6 +455,8 @@ class Receiver:
             else:
                 mode = spec.get("mode") or self.bands[spec["band"]].get("mode", "nfm")
                 conf = airband_conf(channels, mode, spec.get("squelch", True), self.gain, self.ppm, self.device)
+                self.centre = centre_for([c["freq"] for c in channels])
+                self.spectrum.clear()
                 path = Path(tempfile.gettempdir()) / "sleepradio-receiver.conf"
                 path.write_text(conf)
                 self.rate, self.mixer, self.title = RATE, Mixer(channels), name
@@ -435,8 +466,12 @@ class Receiver:
                     s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
                     s.bind(("127.0.0.1", UDP_BASE + i))
                     socks.append(s)
+                s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)       # (the spectrum: the last of them)
+                s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+                s.bind(("127.0.0.1", SPECTRUM_PORT))
+                socks.append(s)
                 self.proc = subprocess.Popen([self.airband, "-F", "-e", "-c", str(path)], stdout=subprocess.DEVNULL,
-                                             stderr=subprocess.PIPE)
+                                             stderr=subprocess.PIPE, env={**os.environ, "SPECTRUM_UDP_PORT": str(SPECTRUM_PORT)})
                 threading.Thread(target=self._airband_run, args=(self.proc, socks, self.mixer, self.gen), name="airband",
                                  daemon=True).start()
             threading.Thread(target=self._stderr_run, args=(self.proc,), name="engine-log", daemon=True).start()
@@ -523,6 +558,29 @@ class Receiver:
             self._keep_bands()
             log.info("band %s removed", key)
 
+    def hold(self, freq: int | None) -> None:
+        """Listen to one channel of the band being received, whoever else speaks (None: all of them again)."""
+        with self.lock:
+            mixer = self.mixer
+            if mixer is None or self.proc is None or not self.spec or self.spec.get("mode") == "wfm":
+                raise ValueError("nothing is being received to hold a channel of")
+            if freq is None:
+                mixer.hold = None
+                return
+            at = [i for i, c in enumerate(mixer.channels) if c["freq"] == int(freq)]
+            if not at:
+                raise ValueError(f"{_mhz(int(freq))} MHz isn't a channel of {self.name}")
+            mixer.hold = at[0]
+
+    def waterfall(self, since: int = 0) -> dict:
+        """The spectra after number `since` (5 s of them are kept), for a waterfall."""
+        with self.lock:
+            self.spectrum_wanted = time.monotonic()
+            running = self.proc is not None and self.proc.poll() is None and bool(self.spec) and self.spec.get("mode") != "wfm"
+            rows = [(n, row) for n, row in self.spectrum if n > since] if running else []
+            return {"running": running, "centre": self.centre, "rate": int(SAMPLE_RATE_MS * 1e6), "n": self.spectrum_n,
+                    "zero_db": -40, "per_db": 2.5, "rows": [[n, base64.b64encode(row).decode()] for n, row in rows]}
+
     def rest(self) -> None:
         with self.lock:
             if self.proc is not None:
@@ -564,6 +622,11 @@ class Receiver:
                 for s in ready:
                     data, _ = s.recvfrom(65536)
                     i = index[s]
+                    if i == len(mixer.channels):                  # the spectrum
+                        if now - self.spectrum_wanted < 10:
+                            self.spectrum_n += 1
+                            self.spectrum.append((self.spectrum_n, spectrum_row(data)))
+                        continue
                     pcm, level = to_pcm(data)
                     out = mixer.packet(i, pcm, level, now)
                     if out:
@@ -620,6 +683,7 @@ class Receiver:
                    "rate": self.rate, "skipping": sorted(self.skips),
                    "bands": {k: {"name": b["name"], "channels": len(b["channels"])} for k, b in self.bands.items()}}
             if running and mixer is not None and self.spec and self.spec.get("mode") != "wfm":
+                out["hold"] = mixer.channels[mixer.hold] if mixer.hold is not None else None
                 on = mixer.current if mixer.current is not None and mixer._open(mixer.current, now) else None
                 out["on_air"] = mixer.channels[on] if on is not None else None
                 out["active"] = [mixer.channels[i] | {"level": round(mixer.level[i], 4)} for i in mixer.active(now)]
@@ -657,6 +721,11 @@ def make_handler(receiver: Receiver):
                 return self._json({k: {**b, **({"own": True} if k in receiver.own else {}),
                                        "channels": [c | ({"skip": True} if c["freq"] in receiver.skips else {}) for c in b["channels"]]}
                                    for k, b in receiver.bands.items()})
+            if url.path == "/spectrum":
+                try:
+                    return self._json(receiver.waterfall(int((query.get("since") or ["0"])[0])))
+                except ValueError:
+                    return self._json({"error": "since is a number"}, 400)
             if url.path == "/":
                 host = self.headers.get("Host") or f"localhost:{PORT}"
                 return self._json({"what": "Sleep Radio receiver", "status": f"http://{host}/status",
@@ -713,12 +782,14 @@ def make_handler(receiver: Receiver):
 
         def do_POST(self) -> None:
             path = urlparse(self.path).path
-            if path not in ("/select", "/skip", "/bands"):
+            if path not in ("/select", "/skip", "/bands", "/hold"):
                 return self._json({"error": "not found"}, 404)
             try:
                 body = json.loads(self.rfile.read(int(self.headers.get("Content-Length") or 0)) or b"{}")
                 if path == "/skip":                   # {"freq": Hz, "on": true | false}
                     receiver.skip(int(body["freq"]), body.get("on", True) is not False)
+                elif path == "/hold":                 # {"freq": Hz} or {"freq": null}
+                    receiver.hold(None if body.get("freq") is None else _hz(body["freq"]))
                 elif path == "/bands":                # a new band, a change to one ("id"), or {"id", "remove": true}
                     if body.get("remove"):
                         receiver.remove_band(str(body.get("id")))

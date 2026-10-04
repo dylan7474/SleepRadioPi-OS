@@ -79,6 +79,18 @@ measures the error; OpenWebRX keeps it as the dongle's "ppm".)
   `{"id": ..., "remove": true}` removes it. Kept in
   `/var/lib/sleepradio-receiver/bands.json`. On a Sleep Radio's desktop this
   is *New band…* in the Receiver folder.
+- `GET /spectrum?since=N`: for a waterfall. The spectrum of everything the
+  dongle hears (2.4 MHz round `centre`), ten rows a second, the last five
+  seconds kept: `rows` is `[[number, base64], ...]` after number `since`, each
+  row one byte per 4.7 kHz from the lowest frequency up (0 = `zero_db`,
+  `per_db` steps per dB). It comes from the FFT rtl_airband already does to
+  find its channels -- `rtl_airband_spectrum.py` adds a few lines to it before
+  it's built, which `install.sh` does -- so it costs next to nothing (measured
+  on a Pi 2 with 48 channels: 94% of one core without, 97% with). Only while a
+  band or a narrow FM / AM frequency is being received.
+- `POST /hold {"freq": HZ}`: listen to that one channel of the band, whoever
+  else speaks (instant: every channel is already being received);
+  `{"freq": null}` lets go. `/status` says which as `hold`.
 - `POST /select {"band": "2m"}` (or `{"freq": 145.5, "mode": "nfm"}`): change
   what it receives without listening.
 - Your own bands: `/etc/sleepradio-receiver/bands.json`,

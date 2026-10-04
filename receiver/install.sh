@@ -23,16 +23,18 @@ HOST=${1:?usage: receiver/install.sh USER@HOST [--disable-openwebrx]}
 OWRX=${2:-}
 HERE=$(cd "$(dirname "$0")" && pwd)
 
-scp -q "$HERE/sleepradio_receiver.py" "$HERE/sleepradio-receiver.service" "$HOST:/tmp/"
+scp -q "$HERE/sleepradio_receiver.py" "$HERE/sleepradio-receiver.service" "$HERE/rtl_airband_spectrum.py" "$HOST:/tmp/"
 ssh "$HOST" OWRX="$OWRX" sh -s <<'REMOTE'
 set -eu
-if [ ! -x /usr/local/bin/rtl_airband ]; then
+# (built with the spectrum tap, for the waterfall: one built before that is built again)
+if [ ! -x /usr/local/bin/rtl_airband ] || ! grep -q SPECTRUM_UDP_PORT /usr/local/bin/rtl_airband; then
 	echo "building rtl_airband (a few minutes) ..."
 	sudo apt-get update -qq
 	sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq build-essential cmake pkg-config git rtl-sdr \
 		libmp3lame-dev libshout3-dev libconfig++-dev libfftw3-dev librtlsdr-dev
 	B=$HOME/rtl_airband-build
 	[ -d "$B" ] || git clone -q --depth 1 --branch v5.4.2 https://github.com/rtl-airband/RTLSDR-Airband.git "$B"
+	(cd "$B" && python3 /tmp/rtl_airband_spectrum.py)
 	mkdir -p "$B/build" && cd "$B/build"
 	cmake -DPLATFORM=native -DNFM=ON -DRTLSDR=ON -DSOAPYSDR=OFF -DMIRISDR=OFF -DPULSEAUDIO=OFF \
 		-DCMAKE_BUILD_TYPE=Release .. >/dev/null
@@ -47,7 +49,7 @@ sudo install -d /opt/sleepradio-receiver /etc/sleepradio-receiver
 sudo install -m 644 /tmp/sleepradio_receiver.py /opt/sleepradio-receiver/sleepradio_receiver.py
 [ -e /etc/sleepradio-receiver/options ] || echo 'OPTIONS=""' | sudo tee /etc/sleepradio-receiver/options >/dev/null
 sudo install -m 644 /tmp/sleepradio-receiver.service /etc/systemd/system/sleepradio-receiver.service
-rm -f /tmp/sleepradio_receiver.py /tmp/sleepradio-receiver.service
+rm -f /tmp/sleepradio_receiver.py /tmp/sleepradio-receiver.service /tmp/rtl_airband_spectrum.py
 sudo systemctl daemon-reload
 sudo systemctl enable -q sleepradio-receiver
 sudo systemctl restart sleepradio-receiver

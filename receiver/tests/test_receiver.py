@@ -156,3 +156,45 @@ def test_a_band_of_your_own_from_a_stretch_of_spectrum(tmp_path: Path) -> None:
     assert set(rx.DEFAULT_BANDS) == {"2m", "marine"}                   # (the built-in table isn't touched)
     kept.write_text('{"bad": {"channels": [{"freq": 1}]}, "ok": {"channels": [{"freq": 433500000}]}}')
     assert set(rx.Receiver(rx.DEFAULT_BANDS, bands_file=kept).own) == {"ok"}
+
+
+def test_hold_one_channel_and_the_spectrum_for_a_waterfall() -> None:
+    chans = [{"freq": 1, "name": "A"}, {"freq": 2, "name": "B"}, {"freq": 3, "name": "Calling", "priority": True}]
+    m = rx.Mixer(chans, hang_s=2.0)
+    pcm = bytes(4000)
+    m.hold = 1
+    assert m.title(5.0, "idle") == "B"                           # held: it's what you're on, open or not
+    assert m.packet(0, pcm, 0.1, 10.0) is None and m.packet(2, pcm, 0.1, 10.1) is None    # not even the priority channel
+    assert m.packet(1, pcm, 0.1, 10.2) == pcm and m.active(10.3) == [0, 1, 2]              # (the others are still seen)
+    m.hold = None
+    assert m.packet(2, pcm, 0.1, 10.4) == pcm and m.title(10.4, "idle") == "Calling"       # let go: the usual rules
+
+    # eight bins of power in the FFT's order (bin 0 = the centre) -> low frequency first, a byte each
+    power = [1.0, 10.0, 0.0, 0.0, 1e-4, 1e-9, 1e12, 0.1]
+    row = rx.spectrum_row(struct.pack("<8f", *power))
+    assert list(row) == [0, 0, 255, 75, 100, 125, 0, 0]          # -40 dB -> 0, 0 dB -> 100, 10 dB -> 125; nothing -> 0
+
+    r = rx.Receiver(rx.DEFAULT_BANDS)
+    with pytest.raises(ValueError, match="nothing is being received"):
+        r.hold(145_500_000)
+    assert r.waterfall() == {"running": False, "centre": 0, "rate": 2_400_000, "n": 0, "zero_db": -40, "per_db": 2.5, "rows": []}
+    r.spec, r.name, r.mixer, r.centre = {"band": "2m"}, "2 metres", rx.Mixer(rx.DEFAULT_BANDS["2m"]["channels"]), 145_100_000
+
+    class Running:
+        def poll(self): return None
+        def terminate(self): pass
+        def wait(self, timeout=None): return 0
+    r.proc = Running()
+    r.hold(145_500_000)
+    assert r.status()["hold"]["name"] == "145.5, Calling channel"
+    with pytest.raises(ValueError, match="isn't a channel"):
+        r.hold(145_501_000)
+    r.hold(None)
+    assert r.status()["hold"] is None
+    for n in (1, 2, 3):
+        r.spectrum.append((n, bytes([n] * 4)))
+    r.spectrum_n = 3
+    fall = r.waterfall(since=1)
+    assert fall["running"] and fall["centre"] == 145_100_000 and fall["n"] == 3
+    assert fall["rows"] == [[2, "AgICAg=="], [3, "AwMDAw=="]]
+    r.proc = None
