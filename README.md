@@ -227,6 +227,12 @@ Actions, Sleep timer and Radio folders open:
   service menu uses it for any line the DJ hasn't made yet; and the
   left/right speaker test uses it until the DJ's voice has loaded. A radio with no network set up makes its own network about 10
   seconds after the Wi-Fi starts.
+- **Your own receiver as a station.** [`receiver/`](receiver/README.md) turns an
+  RTL-SDR dongle on a spare Pi into a station the radio can tune in to: a
+  whole band watched at once (2 m, marine VHF: whichever channel opens is
+  what you hear, and its name is the "now playing" title), one frequency, or
+  broadcast FM. It's a separate small service, installed on that computer
+  with `receiver/install.sh`; the radio needs nothing new.
 - **Offline is normal.** Without the internet it keeps playing and talking;
   it only leaves out what needs the right time (time checks, news, birthday
   wishes) until the clock is known, from the internet or an optional
