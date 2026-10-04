@@ -33,6 +33,8 @@ Be a good guest: these are someone's own radio.
 
 from __future__ import annotations
 
+import base64
+import collections
 import json
 import logging
 import math
@@ -61,6 +63,9 @@ USER_AGENT = "SleepRadio"
 OWRX_MODES = {"nfm", "am", "usb", "lsb", "cw", "sam", "wfm"}
 OWRX_PASSBAND = {"nfm": (-4000, 4000), "am": (-4000, 4000), "sam": (-4000, 4000), "usb": (300, 3000), "lsb": (-3000, -300),
                  "cw": (700, 900), "wfm": (-75000, 75000)}
+WF_ROWS = 80                # of a KiwiSDR's waterfall kept for the rig (about 6 s)
+WF_ZOOM = 6                 # its zoom to begin with: 30 MHz / 2**6 = 469 kHz across
+WF_SPEED = 3                # (of 4: about 13 rows a second)
 KIWI_PASSBAND = {"am": (-4900, 4900), "amn": (-2500, 2500), "sam": (-4900, 4900), "usb": (300, 2700), "lsb": (-2700, -300),
                  "cw": (300, 700), "cwn": (470, 530), "nbfm": (-6000, 6000)}
 
@@ -214,6 +219,14 @@ class ReceiverStream:
         self._last_audio = 0.0
         self._t0: float | None = None
         self._sent = 0                    # frames queued since _t0 (audio and silence): kept in step with the clock
+        # (for the rig on the desktop: where it's tuned, how strong, and the receiver's own waterfall)
+        self.dbm: float | None = None
+        self.name = ""
+        self._wf = None
+        self._wf_rows: collections.deque = collections.deque(maxlen=WF_ROWS)    # (number, lo Hz, hi Hz, a byte per bin: dBm + 255)
+        self._wf_n = 0
+        self._wf_view: tuple[int, float] | None = None       # (zoom, centre kHz) asked for
+        self._wf_asked = 0.0
 
     # (what the station uses)
 
@@ -233,12 +246,107 @@ class ReceiverStream:
 
     def close(self) -> None:
         self._closed.set()
-        ws, self._ws = self._ws, None
-        if ws is not None:
-            try:
-                ws.close()
-            except Exception:
-                pass
+        for name in ("_ws", "_wf"):
+            ws = getattr(self, name)
+            setattr(self, name, None)
+            if ws is not None:
+                try:
+                    ws.close()
+                except Exception:
+                    pass
+
+    # (what the rig uses: one connection to the receiver serves the listening and the looking)
+
+    def rig(self, since: int = 0) -> dict:
+        """Where it's tuned and what its waterfall shows: the rows after number `since`
+        that belong to the present view (each a byte per bin from lo to hi: dBm + 255)."""
+        spec = self.spec or {}
+        self._wf_asked = self._clock()
+        rows = list(self._wf_rows)
+        lo, hi = (rows[-1][1], rows[-1][2]) if rows else (None, None)
+        return {"kind": spec.get("kind"), "base": spec.get("base"), "freq": spec.get("freq"), "mode": spec.get("mode"),
+                "name": self.name, "title": self.title, "dbm": self.dbm, "ended": self.ended, "tunes": spec.get("kind") == "kiwi",
+                "lo": lo, "hi": hi, "n": self._wf_n,
+                "rows": [[n, base64.b64encode(row).decode()] for n, a, b, row in rows if n > since and (a, b) == (lo, hi)]}
+
+    def tune(self, freq: int | None = None, mode: str | None = None, zoom: int | None = None, centre: int | None = None) -> None:
+        """Retune where it is, on the connection it has (a KiwiSDR): the frequency (Hz)
+        and mode it listens on, and the zoom and centre (Hz) of its waterfall. ValueError says why not."""
+        spec, ws = self.spec, self._ws
+        if spec is None or spec["kind"] != "kiwi":
+            raise ValueError("this kind of receiver is tuned by choosing it again")
+        if freq is not None or mode is not None:
+            mode = (mode or spec["mode"]).lower()
+            freq = int(spec["freq"] if freq is None else freq)
+            if mode not in KIWI_PASSBAND:
+                raise ValueError(f"its modes are {', '.join(KIWI_PASSBAND)}")
+            if not 0 < freq <= 32_000_000:
+                raise ValueError("a KiwiSDR tunes from 0 to 30 MHz")
+            if ws is None:
+                raise ValueError("the receiver isn't connected yet")
+            lo, hi = KIWI_PASSBAND[mode]
+            ws.send(f"SET mod={mode} low_cut={lo} high_cut={hi} freq={freq / 1000:.3f}")
+            spec["freq"], spec["mode"] = freq, mode
+            self.title = said(spec) + (f" · {self.name[:60]}" if self.name else "")
+        if zoom is not None or centre is not None:
+            z = max(0, min(14, int(self._wf_view[0] if zoom is None and self._wf_view else zoom or 0)))
+            cf = (centre if centre is not None else spec["freq"]) / 1000
+            self._wf_view = (z, cf)
+            wf = self._wf
+            if wf is not None:
+                wf.send(f"SET zoom={z} cf={cf:.3f}")
+
+    def _kiwi_waterfall(self, spec: dict, stamp: int) -> None:
+        """The KiwiSDR's waterfall, on its own socket beside the sound's (the same stamp pairs
+        them). Some have fewer waterfalls than listeners: then there's simply none."""
+        bandwidth, zoom_max, started, keep = 30_000_000, 14, False, 0.0
+        try:
+            wf = self._wf = self._connect(_ws_url(spec["base"], f"/kiwi/{stamp}/W/F"))
+            wf.send("SET auth t=kiwi p=")
+            while not self._closed.is_set() and self.ended is None:
+                now = self._clock()
+                if now - keep > 4:
+                    wf.send("SET keepalive")
+                    keep = now
+                m = self._recv(wf, 1.0)
+                if m is None:
+                    continue
+                if isinstance(m, str):
+                    m = m.encode()
+                if m[:3] == b"MSG":
+                    text = m[4:].decode(errors="replace")
+                    for key, word in (("bandwidth=", "bandwidth"), ("zoom_max=", "zoom_max")):
+                        if key in text:
+                            try:
+                                value = int(float(text.split(key)[1].split()[0]))
+                                bandwidth, zoom_max = (value, zoom_max) if word == "bandwidth" else (bandwidth, value)
+                            except ValueError:
+                                pass
+                    if not started:
+                        z, cf = self._wf_view or (WF_ZOOM, spec["freq"] / 1000)
+                        self._wf_view = (z, cf)
+                        for c in (f"SET zoom={z} cf={cf:.3f}", "SET maxdb=0 mindb=-100", f"SET wf_speed={WF_SPEED}", "SET wf_comp=0",
+                                  "SET ident_user=SleepRadio"):
+                            wf.send(c)
+                        started = True
+                elif m[:3] == b"W/F" and len(m) > 16:
+                    if self._clock() - self._wf_asked > 15:       # (nobody is looking: not kept)
+                        continue
+                    x_bin, flags = struct.unpack("<II", m[4:12])
+                    zoom, bins = flags & 0xFFFF, len(m) - 16
+                    lo = x_bin * bandwidth / (bins << zoom_max)
+                    self._wf_n += 1
+                    self._wf_rows.append((self._wf_n, int(lo), int(lo + bandwidth / (1 << zoom)), bytes(m[16:])))
+        except Exception as e:
+            if not self._closed.is_set():
+                log.info("receiver: no waterfall: %s", _why(e))
+        finally:
+            wf, self._wf = self._wf, None
+            if wf is not None:
+                try:
+                    wf.close()
+                except Exception:
+                    pass
 
     def _end(self, why: str) -> None:
         if self.ended is None and not self._closed.is_set():
@@ -404,9 +512,10 @@ class ReceiverStream:
             st = dict(line.split("=", 1) for line in self._get_text(spec["base"] + "status").splitlines() if "=" in line)
         except Exception:
             st = {}
-        name = st.get("name", "")
+        name = self.name = st.get("name", "")
         self.title = said(spec) + (f" · {name[:60]}" if name else "")
-        ws = self._ws = self._connect(_ws_url(spec["base"], f"/kiwi/{int(time.time())}/SND"))
+        stamp = int(time.time())
+        ws = self._ws = self._connect(_ws_url(spec["base"], f"/kiwi/{stamp}/SND"))
         ws.send("SET auth t=kiwi p=")
         started, resample, keep = False, None, 0.0
         deadline = self._clock() + 20.0
@@ -441,7 +550,9 @@ class ReceiverStream:
                               "SET agc=1 hang=0 thresh=-100 slope=6 decay=1000 manGain=50", "SET compression=0", "SET keepalive"):
                         ws.send(c)
                     started, resample = True, Resampler(rate)
+                    threading.Thread(target=self._kiwi_waterfall, args=(spec, stamp), name="receiver-waterfall", daemon=True).start()
             elif tag == b"SND" and started and len(m) > 10:
+                self.dbm = 0.1 * struct.unpack(">H", m[8:10])[0] - 127
                 self._audio(resample.process(np.frombuffer(m[10:10 + (len(m) - 10) // 2 * 2], dtype=">i2")))
         ws.close()
 

@@ -336,6 +336,16 @@ def make_handler(station: Station, output: Mp3Output, speaker=None,
                 self._send(json.dumps({"results": found, "from": where,
                                        "directory": directory.status() if directory else None}).encode(),
                            "application/json")
+            elif path == "/api/rx":
+                # The rig on the desktop: the receiver being listened to (a KiwiSDR), where it's tuned and
+                # its waterfall since row ?since=N. {"on": false} when the radio is playing something else.
+                stream = getattr(station, "radio_stream", None)
+                try:
+                    since = int(parse_qs(urlparse(self.path).query).get("since", ["0"])[0])
+                except ValueError:
+                    since = 0
+                state = {"on": True, **stream.rig(since)} if hasattr(stream, "rig") else {"on": False}
+                self._send(json.dumps(state).encode(), "application/json")
             elif path in ("/api/receivers/search", "/api/receivers/info"):
                 # Find a receiver: the public directory of internet software radios (OpenWebRX, KiwiSDR).
                 # search?q=&kind=owrx|kiwi&near=LAT,LON -> the nearest first; info?url= -> one receiver's own word.
@@ -562,6 +572,23 @@ def make_handler(station: Station, output: Mp3Output, speaker=None,
                     threading.Thread(target=lambda: _quietly(directory.refresh), name="station-directory",
                                      daemon=True).start()
                 self._send(json.dumps({**directory.status(), "refreshing": True}).encode(), "application/json")
+            elif path == "/api/rx/tune":
+                # {"base", "freq" (Hz), "mode", "zoom", "centre" (Hz)}: retune the receiver being listened to, where
+                # it is (any of them; "base" must be the one that's on, so a stale window can't move another).
+                try:
+                    body = json.loads(self.rfile.read(int(self.headers.get("Content-Length", 0))) or b"{}")
+                    stream = getattr(station, "radio_stream", None)
+                    if not hasattr(stream, "tune") or (stream.spec or {}).get("base") != body.get("base"):
+                        raise ValueError("the radio isn't listening to that receiver")
+                    num = lambda k: None if body.get(k) is None else int(float(body[k]))
+                    stream.tune(num("freq"), None if body.get("mode") is None else str(body["mode"]), num("zoom"), num("centre"))
+                except (ValueError, TypeError, AttributeError) as e:
+                    self._error(str(e))
+                    return
+                except Exception as e:                 # (the connection went as it was told)
+                    self._error(f"the receiver didn't take it ({str(e)[:60]})")
+                    return
+                self._send(json.dumps({"on": True, **stream.rig(1 << 60)}).encode(), "application/json")
             elif path in ("/api/radio/play", "/api/radio/stop", "/api/radio/stations"):
                 self._radio(path.rsplit("/", 1)[1])
             elif path == "/api/voices/standard" and voice_jobs is not None:

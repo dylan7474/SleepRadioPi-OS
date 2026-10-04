@@ -50,7 +50,15 @@ def _drain(s, wait=0.05):
 
 
 def _run(url, ws, text=lambda u: "{}"):
-    s = rx.ReceiverStream(url, connect=lambda u: (ws.__setattr__("url", u), ws)[1], get_text=text)
+    def connect(u):                                # (a KiwiSDR's waterfall is a second socket: ws.wf, if the test has one)
+        if u.endswith("/W/F"):
+            if getattr(ws, "wf", None) is None:
+                raise OSError("no waterfall")
+            ws.wf.url = u
+            return ws.wf
+        ws.url = u
+        return ws
+    s = rx.ReceiverStream(url, connect=connect, get_text=text)
     s.start()
     return s
 
@@ -164,3 +172,48 @@ def test_silence_goes_out_in_real_time_when_the_receiver_is_quiet() -> None:
     assert s.fill(now[0]) == pcm.CHUNK_FRAMES
     blocks = _drain(s, 0.01)
     assert blocks and all(b.shape == (pcm.CHUNK_FRAMES, pcm.CHANNELS) for b in blocks)
+
+
+def test_kiwisdr_for_the_rig_its_waterfall_its_meter_and_tuning_where_it_is() -> None:
+    snd = b"SND" + bytes([0]) + struct.pack("<I", 1) + struct.pack(">H", 270) + (np.ones(600, dtype=">i2") * 3000).tobytes()
+    row = lambda x_bin, zoom, fill: b"W/F" + bytes([0]) + struct.pack("<III", x_bin, zoom, 0) + bytes([fill]) * 1024
+    ws = FakeWs([b"MSG sample_rate=12000", snd])
+    # zoom 6 of 14 round 7100 kHz: 30 MHz / 64 = 468.75 kHz across, from 6865.625 kHz
+    ws.wf = FakeWs([b"MSG wf_setup zoom_max=14 bandwidth=30000000", row(3839658, 6, 155), row(3839658, 6, 160)])
+    s = rx.ReceiverStream("http://kiwi.example:8073/?f=7150.00lsb", get_text=lambda u: "name=G0XYZ\n",
+                          connect=lambda u: (ws.wf if u.endswith("/W/F") else ws).__setattr__("url", u) or (ws.wf if u.endswith("/W/F") else ws))
+    s.rig()                                        # (someone is looking: rows are kept)
+    s.start()
+    assert _wait(lambda: s.rig()["n"] == 2 and s.rig()["dbm"] is not None)
+    assert ws.wf.url.endswith("/W/F") and ws.url.rsplit("/", 2)[1] == ws.wf.url.rsplit("/", 3)[1]      # the same stamp pairs them
+    assert "SET zoom=6 cf=7150.000" in ws.wf.sent and "SET wf_comp=0" in ws.wf.sent
+    state = s.rig()
+    assert (state["kind"], state["freq"], state["mode"], state["name"], state["tunes"]) == ("kiwi", 7_150_000, "lsb", "G0XYZ", True)
+    assert state["dbm"] == -100.0 and abs(state["lo"] - 6_865_844) < 2 and state["hi"] - state["lo"] == 468_750
+    assert [n for n, _ in state["rows"]] == [1, 2] and len(rx.base64.b64decode(state["rows"][0][1])) == 1024
+    assert [n for n, _ in s.rig(since=1)["rows"]] == [2]
+
+    s.tune(freq=14_200_000, mode="usb", zoom=7, centre=14_175_000)             # another band, on the same connection
+    assert ws.sent[-1] == "SET mod=usb low_cut=300 high_cut=2700 freq=14200.000" and ws.wf.sent[-1] == "SET zoom=7 cf=14175.000"
+    assert s.title == "14200 kHz USB · G0XYZ" and s.rig()["freq"] == 14_200_000
+    ws.wf.messages.append(row(7927398, 7, 150))    # the new view's first row: the old view's rows are no longer given
+    assert _wait(lambda: s.rig()["n"] == 3)
+    assert [n for n, _ in s.rig()["rows"]] == [3] and s.rig()["hi"] - s.rig()["lo"] == 234_375
+    s.tune(freq=14_205_000)                        # (the mode stays)
+    assert ws.sent[-1] == "SET mod=usb low_cut=300 high_cut=2700 freq=14205.000"
+    for bad, why in (({"mode": "wfm"}, "modes"), ({"freq": 99_000_000}, "30 MHz")):
+        try:
+            s.tune(**bad)
+            raise AssertionError("took it")
+        except ValueError as e:
+            assert why in str(e)
+    s.close()
+    assert ws.closed and ws.wf.closed
+
+    o = rx.ReceiverStream("http://owrx.example/#freq=145500000,mod=nfm")
+    try:
+        o.tune(freq=145_550_000)
+        raise AssertionError("took it")
+    except ValueError as e:
+        assert "choosing it again" in str(e)
+    assert o.rig()["tunes"] is False and o.rig()["rows"] == []

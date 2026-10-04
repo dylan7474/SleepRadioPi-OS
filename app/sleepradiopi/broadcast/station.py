@@ -315,6 +315,7 @@ class Station:
         self._radio_heard = False            # a station has made a sound since start-up
         self._in_music = False               # the music show is playing (not a station, album or book)
         self.radio_title: str | None = None  # the station's now-playing, if it sends one
+        self.radio_stream = None             # the open stream, while a station plays (a receiver's can be retuned)
         self.radio_playing = False           # its sound is on air (not tuning in / reconnecting)
         self.source_error: str | None = None # why the last source stopped
         # Called with the source (or None) when it changes, so it can be saved
@@ -838,7 +839,7 @@ class Station:
         last_sound = time.monotonic()
         why = "no sound from the station"
         while not self._halted():
-            stream = radio_mod.open_stream(tuned["url"])
+            stream = self.radio_stream = radio_mod.open_stream(tuned["url"])     # (the rig on the desktop tunes it: web/server.py)
             try:
                 stream.start()
                 playing = False
@@ -869,6 +870,7 @@ class Station:
                     self._write(leveller.process(block))
             finally:
                 stream.close()
+                self.radio_stream = None
                 self.radio_playing = False
             if self._halted():
                 break

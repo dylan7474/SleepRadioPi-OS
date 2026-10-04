@@ -961,21 +961,35 @@ The cards:
   see below), and a **phase check** (every 3 s: both speakers the same, then the right
   one inverted — if the inverted part sounds fuller, a speaker is wired the
   wrong way round, and vocals would vanish in stereo but not in mono).
-- **Receiver** — appears on the desktop once a station's address is a
-  receiver's (`receiver/` in the repository: an RTL-SDR dongle on a spare
-  Pi, `http://HOST:8074/audio?band=…`). It opens as a **rig**, laid out
-  like the screen of a radio amateur's transceiver: the frequency, an S
-  meter, and the band's spectrum over a waterfall, drawn from what the
-  receiver itself sends ten times a second. Band keys down the left (press
-  one and the radio tunes in; allow ten seconds), modes down the right.
-  *Click the scope* to tune: within a band that's instant, as the receiver
-  hears every channel at once, and it stays on the one you clicked (*Hold*);
-  *Scan* goes back to whoever speaks, ◀ ▶ step a channel, *Skip* leaves the
-  channel out of the band. Click the frequency to type one (any, in the
-  mode that's lit: FM, AM or broadcast WFM). *Channels…* opens the band as
-  a folder of stations to drag onto buttons, and *Bands…* shows the older
-  folder view (*◂ Rig* comes back). The folder view holds the receiver's
-  bands, each a folder: the whole band at once, then its channels one by one,
+- **Receivers** — a folder that appears on the desktop once a saved
+  station's address is a receiver's. Each receiver in it is an object of
+  its own -- one of your own (`receiver/` in the repository: an RTL-SDR
+  dongle on a spare Pi, `http://HOST:8074/audio?band=…`) or someone's
+  **KiwiSDR** on the internet (a station like `http://HOST:8073/?f=7150.00lsb`;
+  *Find a receiver* has a *Rig* button on each KiwiSDR too) -- and each opens
+  as a **rig**, laid out like the screen of a radio amateur's transceiver:
+  the frequency, an S meter, and the band's spectrum over a waterfall. Band
+  keys down the left, modes down the right; *click the scope* to tune; click
+  the frequency to type one.
+  - *A receiver of your own* hears a whole band at once. Press a band and the
+    radio tunes in (allow ten seconds). A click on the scope is instant and
+    stays on that channel (*Hold*); *Scan* goes back to whoever speaks, ◀ ▶
+    step a channel, *Skip* leaves the channel out of the band. Modes: FM, AM
+    or broadcast WFM for a typed frequency. *Channels…* opens the band as a
+    folder of stations to drag onto buttons; *Bands…* opens its bands as
+    folders (*◂ Rig* comes back).
+  - *A KiwiSDR* is short wave, one frequency at a time. The radio holds the
+    one connection to it -- the sound and the waterfall -- so it takes one
+    listener's place, and the rig tunes it where it is: band keys for the
+    amateur bands (160 m to 10 m) and the broadcast ones, LSB / USB / AM / CW /
+    FM, a click on the scope, ◀ ▶ and the mouse wheel in steps of 10 Hz to
+    9 kHz, *Zoom − / +*, and *Save* to keep the frequency as a station. The
+    meter is the receiver's own reading in dBm. Some KiwiSDRs have fewer
+    waterfalls than listeners: then the scope says so and the sound carries
+    on. `GET /api/rx?since=N` and `POST /api/rx/tune {"base", "freq", "mode",
+    "zoom", "centre"}` are what the page uses.
+  An OpenWebRX still plays as a plain station.
+  A receiver of your own's *Bands…* folder holds its bands, each a folder: the whole band at once, then its channels one by one,
   every one a station -- double-click to listen, drag onto a button to keep
   it there. While its window is open the page asks the receiver itself (not
   the radio) every few seconds who has the air: "On air now", "Heard 3 min
