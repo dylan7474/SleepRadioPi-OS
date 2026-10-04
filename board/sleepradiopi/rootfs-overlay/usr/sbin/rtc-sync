@@ -15,6 +15,8 @@
 #   rtc-sync set        set the RTC from the radio's clock, as its second ticks
 #                       over (hwclock alone drops the part-second, leaving
 #                       the RTC up to a second behind)
+#   rtc-sync edge       wait for the RTC's second to tick over and print it
+#                       (S12rtc sets the clock with it at boot)
 #   rtc-sync note TEXT  add a dated line to /data/clock.log (the last 200 are
 #                       kept) and to the system log
 #   rtc-sync secs N     print N hundredths of a second as "1.25 s fast" / "slow"
@@ -96,9 +98,10 @@ resync() {
 
 case "$1" in
 	diff) diff ;;
+	edge) rtc_edge && echo "$t" ;;
 	set) sys_edge; hwclock -w -u -f "$DEV" 2>/dev/null ;;
 	note) shift; note "$*" ;;
 	secs) secs "$2" ;;
 	"") resync ;;
-	*) echo "Usage: $0 [diff | set | note TEXT | secs N]" >&2; exit 1 ;;
+	*) echo "Usage: $0 [diff | edge | set | note TEXT | secs N]" >&2; exit 1 ;;
 esac

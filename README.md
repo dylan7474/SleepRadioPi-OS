@@ -520,7 +520,8 @@ Other targets are passed through to Buildroot: `make menuconfig`,
   it; `SLEEPRADIOPI_SUPERVISED=1` in `sleepradiopi-station` allows this).
 - **Offline is normal.** The station only says the time and schedules news
   once the clock can be trusted (`/run/time-synced`): either NTP has set it
-  since power-on, or an **RTC** answered at boot with a sensible time (its
+  since power-on, or an **RTC** answered at boot with a sensible time (read
+  as its second ticks over, so the clock starts within a few hundredths; its
   oscillator hasn't stopped since it was last set, and it's no earlier than
   the image build or the last saved time; `S12rtc`, logged as `rtc` in
   `/var/log/messages`). A DS3231 flags a stopped oscillator -- a flat or

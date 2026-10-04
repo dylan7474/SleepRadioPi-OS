@@ -25,7 +25,8 @@ CLOCK=${CLOCK:-/data/clock}
 BUILT=${BUILT:-/etc/build-time}
 FLAG=${FLAG:-/run/time-synced}
 STOPPED=${STOPPED:-/usr/sbin/rtc-stopped}
-RESYNC=${RESYNC:-/usr/sbin/rtc-sync}
+SYNC=${SYNC:-/usr/sbin/rtc-sync}
+RESYNC=${RESYNC:-$SYNC}
 EVERY=${RESYNC_EVERY:-86400}             # seconds between re-reads (0: never)
 
 log() { logger -t rtc "$*"; }
@@ -62,6 +63,8 @@ start() {
 		return 0
 	fi
 
+	# (checking took a moment, and t has no part-second: take it again, as it ticks over)
+	t=$($SYNC edge || echo "$t")
 	date -u -s "@$t" >/dev/null
 	touch $FLAG
 	log "clock set from the RTC: $(date '+%F %T %Z')"
