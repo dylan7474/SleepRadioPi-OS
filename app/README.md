@@ -1016,7 +1016,9 @@ The cards:
     programme dips (to about a quarter) and they come through, then it comes
     back a second or so after the last word. Up to four rooms can be
     monitored at once (the first to speak has the air); they're kept, and
-    joined again after a restart. A paused radio stays silent.
+    joined again after a restart. A paused radio stays silent. While
+    someone is talking over the programme, the radio's display (and the
+    phone remote's) says who and in which room (`"over"` in `/api/status`).
     `POST /api/rooms/monitor {"url", "name", "on"}`; `playback/monitor.py`.
   A receiver of your own's *Bands…* folder holds its bands, each a folder: the whole band at once, then its channels one by one,
   every one a station -- double-click to listen, drag onto a button to keep

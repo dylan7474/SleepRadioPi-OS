@@ -2800,6 +2800,8 @@ class Station:
             "on_air": self.is_on_air,
             "dj_on": self.dj_on,
             "listeners": self._listeners,
+            # who is talking over the programme just now, in a room that's monitored: {"call", "room"} (playback/monitor.py)
+            "over": self.monitor.status()["talking"] if self.monitor is not None else None,
             "now": None if on_air is None else {
                 "kind": on_air.kind, "title": on_air.title, "artist": on_air.artist,
                 "album": on_air.album, "elapsed_s": round(time.time() - on_air.started, 1),

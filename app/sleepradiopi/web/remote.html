@@ -354,6 +354,7 @@ function look() {
 // --- the remote ------------------------------------------------------------------------------
 function dialWords(s) {
   const src = s.source, n = s.now;
+  if (s.over) return [`Room · ${s.over.room}`, s.over.call, "talking, over what's playing"];     // (a monitored room)
   if (src?.kind === "playlist") return [`Playlist · ${src.name}`, n?.title, n?.artist];
   if (src?.kind === "album") return [`Album · ${src.title}`, n?.title || src.title, n?.artist || src.artist];
   if (src?.kind === "radio") return ["Internet radio", src.name, src.title || src.info || ""];

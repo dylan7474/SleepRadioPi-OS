@@ -1297,6 +1297,7 @@ function nowWords() {
   if (n) { title = n.title; sub = [n.artist, n.kind === "track" && !src ? (S.station_name || radioName) : src ? (src.kind === "radio" ? "Internet radio" : src.kind === "album" ? "Straight through, no DJ" : src.kind === "playlist" ? "Playlist " + src.name + ", no DJ" : src.kind === "book" ? "Audiobook" : "Podcast") : ""].filter(Boolean).join(" · "); }
   if (n && ["dj", "news", "jingle"].includes(n.kind)) sub = { dj: "The DJ", news: "The news", jingle: "A jingle" }[n.kind];
   const prog = pr ? `Programme: ${pr.name} · ${pr.waiting ? "waiting for the next block" : pr.block}${pr.until ? " until " + pr.until : ""}` : "";
+  if (S.over) return [S.over.call, `Talking in ${S.over.room} · over ${title}`, prog];      // (a monitored room, over what's playing)
   if (S.programme_mode && !pr && !(S.speaker && S.speaker.playing)) {
     const nx = nextArmed();
     const ov = nextOver(nx);

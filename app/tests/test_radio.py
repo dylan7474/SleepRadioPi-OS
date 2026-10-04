@@ -330,6 +330,17 @@ def test_status_while_a_station_plays(tmp_path: Path, monkeypatch) -> None:
 
     def look():
         seen.update(st.status())
+        assert seen["over"] is None                              # (nobody talking over it from a monitored room)
+
+        class Talking:                                           # ...and when someone is: who, and where
+            def status(self):
+                return {"rooms": [], "talking": {"call": "M0ABC", "room": "CQ-UK"}}
+
+            def mix(self, block, playing_url=None):
+                return block
+        st.monitor = Talking()
+        assert st.status()["over"] == {"call": "M0ABC", "room": "CQ-UK"}
+        st.monitor = None
         st.tune(None)
     st.output = Counting(after=20, then=look)
     st._switch.clear()
