@@ -565,6 +565,12 @@ def main() -> None:
     settings = load(args.config)
     from sleepradiopi.playback import room as room_mod
     room_mod.CALLSIGN = settings.callsign
+    from sleepradiopi.playback import monitor as monitor_mod
+    try:
+        monitor = monitor_mod.Monitor(settings.monitor_rooms)       # rooms heard over whatever's playing
+    except ValueError as e:
+        log.warning("monitor: the saved rooms can't be used (%s)", e)
+        monitor = monitor_mod.Monitor()
     from sleepradiopi.config import brand
     brand.set_name(brand.name_for(asdict(settings)))   # "Sleep Radio", "Phonosphere", or station_name
 
@@ -594,6 +600,7 @@ def main() -> None:
                                 eq=Equalizer(pcm.SAMPLE_RATE, pcm.CHANNELS, settings.speaker_eq,
                                              settings.speaker_highpass_hz))
         station = Station(cfg, tts, TeeOutput(speaker, stream))
+        station.monitor = monitor
         speaker.on_stuck = _speaker_stuck
         control = SpeakerControl(
             speaker, station.listener_joined, station.listener_left,
@@ -674,6 +681,7 @@ def main() -> None:
         knob.start()
     else:
         station = Station(cfg, tts, stream)
+        station.monitor = monitor
         control = None
         cathedral = settings.hardware == "cathedral"
         presets = presets_mod.Presets(station, None, args.config, settings.buttons, None,

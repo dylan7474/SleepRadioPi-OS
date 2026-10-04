@@ -188,7 +188,7 @@ def test_web_api(tmp_path: Path, monkeypatch) -> None:
             return e.code, json.loads(e.read() or b"{}")
 
     try:
-        assert call("/api/rooms") == (200, {"callsign": "", "decoder": False, "decoder_path": str(tmp_path / "libmbe.so")})
+        assert call("/api/rooms") == (200, {"callsign": "", "decoder": False, "decoder_path": str(tmp_path / "libmbe.so"), "monitor": None})
         code, reply = call("/api/rooms/search?q=cq-uk")
         assert code == 200 and reply["results"][0]["url"] == "ysf://149.102.158.76:42200/GB-CQ-UK" and reply["directory"]["count"] == 22
         assert call("/api/rooms/callsign", {"callsign": "m8odj"}) == (200, {"callsign": "M8ODJ", "decoder": False})
@@ -196,5 +196,132 @@ def test_web_api(tmp_path: Path, monkeypatch) -> None:
         code, reply = call("/api/rooms/callsign", {"callsign": "not one"})
         assert code == 400 and "callsign" in reply["error"] and room.CALLSIGN == "M8ODJ"
         assert call("/api/rooms/callsign", {"callsign": ""})[1]["callsign"] == "" and room.CALLSIGN is None and load(conf).callsign is None
+        assert call("/api/rooms/monitor", {"url": "ysf://a.example/A", "name": "A"})[0] == 400      # (no monitor on this one)
+    finally:
+        httpd.shutdown()
+
+
+# --- monitor: a room over whatever's playing ---------------------------------------------------
+
+from sleepradiopi.playback import monitor as mon          # noqa: E402
+
+
+class FakeRoom:
+    """A joined room as the monitor sees it: blocks to read, a talker, perhaps ended."""
+    opened: list = []
+
+    def __init__(self, url):
+        self.url, self.blocks, self.talker, self.ended, self.closed, self.started = url, [], None, None, False, False
+        FakeRoom.opened.append(self)
+
+    def start(self):
+        self.started = True
+
+    def read(self, timeout=0.1):
+        return self.blocks.pop(0) if self.blocks else None
+
+    def close(self):
+        self.closed = True
+
+    def rig(self, since=0):
+        return {"kind": "room", "base": self.url, "talker": self.talker}
+
+    def say(self, seconds, level=6000):
+        n = int(pcm.SAMPLE_RATE * seconds)
+        for i in range(0, n, 4096):
+            self.blocks.append(np.full((min(4096, n - i), pcm.CHANNELS), level, dtype=np.int16))
+
+
+def test_a_monitored_room_comes_over_the_programme_and_goes_again() -> None:
+    FakeRoom.opened = []
+    now = [100.0]
+    A, B = {"name": "CQ-UK", "url": "ysf://a.example:42000/A"}, {"name": "America", "url": "ysf://b.example:42000/B"}
+    m = mon.Monitor([A, B], open_room=FakeRoom, clock=lambda: now[0])
+    music = np.full((4410, pcm.CHANNELS), 10000, dtype=np.int16)              # a tenth of a second of programme
+
+    def play(seconds):
+        out = []
+        for _ in range(round(seconds * 10)):
+            out.append(m.mix(music.copy()))
+            now[0] += 0.1
+        return np.concatenate(out)
+
+    out = play(0.5)
+    assert np.array_equal(out, np.tile(music, (5, 1))) and [r.url for r in FakeRoom.opened] == [A["url"], B["url"]]     # joined; untouched
+    a, b = FakeRoom.opened
+    assert a.started and m.status()["talking"] is None and m.status()["rooms"][0]["joined"]
+    a.blocks.append(np.zeros((4096, pcm.CHANNELS), dtype=np.int16))           # the room's own silence: nothing happens
+    assert np.array_equal(play(0.2), np.tile(music, (2, 1)))
+
+    a.talker = "M0ABC"
+    a.say(2.0)
+    b.say(1.0)                                                                # (someone in the other room too: the first has the air)
+    out = play(3.0)[:, 0].astype(int)
+    assert m.status()["talking"] == {"call": "M0ABC", "room": "CQ-UK"}
+    assert out[-1] < 10000 * 0.3                                              # the programme is down
+    assert out.max() > 10000 * 0.22 + 1000                                    # and the room is over it
+    assert m.state(A["url"]) == {"kind": "room", "base": A["url"], "talker": "M0ABC", "monitor": True} and m.state("ysf://x/") is None
+    a.talker = None
+    out = play(3.0)[:, 0].astype(int)
+    assert out[-1] == 10000 and m.status()["talking"] is None                 # back up, and exactly the programme again
+
+    # the room that's the station itself just now isn't joined twice; afterwards it's joined again
+    m.mix(music.copy(), playing_url=A["url"])
+    assert a.closed and len(FakeRoom.opened) == 2
+    m.mix(music.copy())
+    assert len(FakeRoom.opened) == 3 and FakeRoom.opened[2].url == A["url"]
+    # one that dropped is joined again, but not at once
+    b.ended = "the room stopped answering"
+    m.mix(music.copy())
+    assert b.closed and len(FakeRoom.opened) == 3
+    now[0] += mon.RETRY_S + 1
+    m.mix(music.copy())
+    assert len(FakeRoom.opened) == 4 and FakeRoom.opened[3].url == B["url"]
+    m.set_rooms([B])
+    assert FakeRoom.opened[2].closed and m.rooms == [B]
+
+    for bad, why in (([{"name": "x", "url": "http://x/"}], "only a room"), ([{"name": str(i), "url": f"ysf://r{i}.example/"} for i in range(5)], "at most")):
+        with pytest.raises(ValueError, match=why):
+            mon.clean_rooms(bad)
+    assert mon.clean_rooms([A, A]) == [A]
+    assert mon.Monitor().mix(music) is music                                  # nothing monitored: the block itself
+
+
+def test_monitoring_from_the_web(tmp_path: Path, monkeypatch) -> None:
+    FakeRoom.opened = []
+    monkeypatch.setattr(room, "CALLSIGN", "M8ODJ")
+
+    class St:
+        monitor = mon.Monitor(open_room=FakeRoom)
+        radio_stream = None
+
+    conf = tmp_path / "config.json"
+    conf.write_text("{}")
+    httpd = ThreadingHTTPServer(("127.0.0.1", 0), make_handler(St, None, None, conf))
+    threading.Thread(target=httpd.serve_forever, daemon=True).start()
+    base = f"http://127.0.0.1:{httpd.server_address[1]}"
+
+    def call(path, body=None):
+        req = urllib.request.Request(base + path, data=None if body is None else json.dumps(body).encode(), method="POST" if body is not None else "GET")
+        try:
+            with urllib.request.urlopen(req, timeout=5) as r:
+                return r.status, json.loads(r.read())
+        except urllib.error.HTTPError as e:
+            return e.code, json.loads(e.read() or b"{}")
+
+    url = "ysf://a.example:42000/A"
+    try:
+        code, reply = call("/api/rooms/monitor", {"url": url, "name": "CQ-UK"})
+        assert code == 200 and reply["monitor"]["rooms"] == [{"name": "CQ-UK", "url": url, "talker": None, "joined": False}]
+        assert load(conf).monitor_rooms == [{"name": "CQ-UK", "url": url}] and call("/api/rooms")[1]["monitor"]["rooms"][0]["name"] == "CQ-UK"
+        St.monitor.mix(np.zeros((100, pcm.CHANNELS), dtype=np.int16))        # the station plays something: the room is joined
+        FakeRoom.opened[0].talker = "M0ABC"
+        code, reply = call("/api/rx?base=" + urllib.request.quote(url, safe=""))
+        assert code == 200 and reply == {"on": True, "kind": "room", "base": url, "talker": "M0ABC", "monitor": True}
+        assert call("/api/rx") == (200, {"on": False})
+        assert call("/api/rooms/monitor", {"url": "http://x/", "name": "x"})[0] == 400
+        assert call("/api/rooms/callsign", {"callsign": "M0XYZ"})[0] == 200 and FakeRoom.opened[0].closed      # joined afresh under it
+        code, reply = call("/api/rooms/monitor", {"url": url, "on": False})
+        assert code == 200 and reply["monitor"]["rooms"] == [] and load(conf).monitor_rooms == []
     finally:
         httpd.shutdown()

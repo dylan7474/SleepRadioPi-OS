@@ -2220,8 +2220,9 @@ RXD.room = {
   on(R) { return !!R.st?.on && R.st.kind === "room" && R.st.base === R.origin && !R.st.ended; },
   tuned() { return null; },
   station(R) { return { name: R.o.title, url: R.origin, info: RX_WORD.room }; },
+  monitored(R) { return (R.me?.monitor?.rooms || []).some(r => r.url === R.origin); },
   async poll(R, tick) {
-    R.st = await api("/api/rx");
+    R.st = await api(`/api/rx?base=${encodeURIComponent(R.origin)}`);      // (as the station, or as a room being monitored)
     if (tick % 30 === 0 || !R.rooms) {
       const [radio, me] = await Promise.all([api("/api/radio"), api("/api/rooms")]);
       const rooms = radio.stations.filter(x => rxRoom(x.url)), changed = JSON.stringify(rooms.map(x => x.url)) !== JSON.stringify((R.rooms || []).map(x => x.url));
@@ -2235,9 +2236,9 @@ RXD.room = {
   },
   words(R) {
     const on = this.on(R), d = R.st || {};
-    return { mode: "C4FM", modeOn: null, sql: "", scan: on ? "RX ONLY" : "", rx: on && !!d.talker, band: R.o.title.toUpperCase(), bandOn: R.origin, meter: on && d.talker ? .62 : 0,
+    return { mode: "C4FM", modeOn: null, sql: "", scan: on ? (d.monitor ? "MONITOR" : "RX ONLY") : "", rx: on && !!d.talker, band: R.o.title.toUpperCase(), bandOn: R.origin, meter: on && d.talker ? .62 : 0,
              who: d.ended && d.base === R.origin ? d.ended : !on ? (R.wait > Date.now() ? "Joining…" : R.me && !R.me.callsign ? "Give the radio your callsign first (Find…)" : "Press Listen to join on the radio")
-               : d.talker ? "is talking" : d.decoder === false ? "No voice decoder on this radio: no sound" : "Nobody talking",
+               : d.talker ? "is talking" : d.decoder === false ? "No voice decoder on this radio: no sound" : d.monitor ? "Monitoring: it comes over whatever's playing" : "Nobody talking",
              right: on && d.connected != null ? `${d.connected} connected` : "" };
   },
   draw(R, g) {
@@ -2256,7 +2257,8 @@ RXD.room = {
     });
     if (!rows.length && !d.talker) { g.fillStyle = "#7f97a8"; g.font = "15px system-ui, sans-serif"; g.fillText("Nobody yet. Rooms are quiet most of the time: it stays tuned.", 14, 54); }
   },
-  idle() { return ""; }, pass() { return [0, 0]; }, ticks() { return []; }, click() {}, step() {}, setMode() {}, enter() {}, lamps() {},
+  idle() { return ""; }, pass() { return [0, 0]; }, ticks() { return []; }, click() {}, step() {}, setMode() {}, enter() {},
+  lamps(R) { R.dom.kmon?.classList.toggle("on", this.monitored(R)); },
   bandKeys(R) {
     const mine = { name: R.o.title, url: R.origin }, list = (R.rooms || []).some(x => x.url === R.origin) ? R.rooms : [mine, ...(R.rooms || [])];
     return list.map(x => ({ id: x.url, label: x.name.length > 15 ? x.name.slice(0, 14) + "…" : x.name, title: x.name,
@@ -2268,6 +2270,13 @@ RXD.room = {
   },
   foot(R, k) {
     return [el("div", { className: "rgrp" }, k("Listen", () => this.listen(R), "Join this room on the radio (it only listens)"),
+        R.dom.kmon = k("Monitor", async () => {
+          if (R.me && !R.me.callsign) { toast("Give the radio your callsign first: a room is joined under it."); return open(PANEL.findroom.id); }
+          const on = !this.monitored(R);
+          try {
+            R.me = { ...(R.me || {}), ...(await api("/api/rooms/monitor", { url: R.origin, name: R.o.title, on })) }; rigPaint(R);
+            toast(on ? `“${R.o.title}” is monitored: when someone speaks there, what's playing dips and they come through.` : `“${R.o.title}” is no longer monitored.`);
+          } catch (e) { rigOops(e); } }, "Hear this room over whatever is playing: the music dips when someone speaks"),
         k("Save", async () => {
           const st = this.station(R);
           try {

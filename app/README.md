@@ -1010,7 +1010,14 @@ The cards:
     rig with nothing to tune: the screen shows who is talking, the last
     heard with how long each spoke and how long ago, and how many are
     connected. The keys down the side are your saved rooms; *Listen* joins it
-    on the radio; the room's name drags onto a button.
+    on the radio; the room's name drags onto a button. **Monitor** hears
+    the room over whatever is playing instead: the radio carries on with its
+    music, station or book, and when someone speaks in the room the
+    programme dips (to about a quarter) and they come through, then it comes
+    back a second or so after the last word. Up to four rooms can be
+    monitored at once (the first to speak has the air); they're kept, and
+    joined again after a restart. A paused radio stays silent.
+    `POST /api/rooms/monitor {"url", "name", "on"}`; `playback/monitor.py`.
   A receiver of your own's *Bands…* folder holds its bands, each a folder: the whole band at once, then its channels one by one,
   every one a station -- double-click to listen, drag onto a button to keep
   it there. While its window is open the page asks the receiver itself (not

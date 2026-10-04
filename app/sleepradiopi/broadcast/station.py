@@ -316,6 +316,7 @@ class Station:
         self._in_music = False               # the music show is playing (not a station, album or book)
         self.radio_title: str | None = None  # the station's now-playing, if it sends one
         self.radio_stream = None             # the open stream, while a station plays (a receiver's can be retuned)
+        self.monitor = None                  # playback/monitor.Monitor, if main.py gave it one
         self.radio_playing = False           # its sound is on air (not tuning in / reconnecting)
         self.source_error: str | None = None # why the last source stopped
         # Called with the source (or None) when it changes, so it can be saved
@@ -887,6 +888,9 @@ class Station:
     # --- output -----------------------------------------------------------------------
 
     def _write(self, block: np.ndarray) -> None:
+        monitor = self.monitor                       # (rooms heard over whatever's playing: playback/monitor.py)
+        if monitor is not None:
+            block = monitor.mix(block, getattr(self.radio_stream, "url", None))
         self.output.write(block)
 
     def _await(self, fut: Future, limit_s: float = SPEECH_WAIT_S, skip_for: OnAir | None = None):

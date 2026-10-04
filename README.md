@@ -262,7 +262,8 @@ Actions, Sleep timer and Radio folders open:
   rooms bridged onto it. *Find a room* on the desktop searches the public
   register of them; a room plays like any station, with the callsign of
   whoever is speaking as what's playing, and stays tuned through the long
-  quiet between overs. It only ever listens, and joins under your own
+  quiet between overs -- or *monitor* it, and it comes over whatever else
+  is playing when someone speaks. It only ever listens, and joins under your own
   callsign, which you give it once (rooms are for licensed amateurs, and
   show who is connected). **Hearing a room needs a voice decoder that is
   not part of Sleep Radio**: see [Rooms and the voice decoder](#rooms-and-the-voice-decoder).

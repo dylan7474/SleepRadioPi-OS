@@ -341,8 +341,10 @@ def make_handler(station: Station, output: Mp3Output, speaker=None,
                 # whether the voice decoder is on it; /search?q=: the public register of rooms, by words.
                 from sleepradiopi.playback import room as room_mod, rooms_dir
                 if path == "/api/rooms":
+                    monitor = getattr(station, "monitor", None)
                     self._send(json.dumps({"callsign": room_mod.CALLSIGN or "", "decoder": room_mod.DECODER.is_file(),
-                                           "decoder_path": str(room_mod.DECODER)}).encode(), "application/json")
+                                           "decoder_path": str(room_mod.DECODER),
+                                           "monitor": monitor.status() if monitor is not None else None}).encode(), "application/json")
                 else:
                     book = rooms_dir.shared()
                     found = book.search(parse_qs(urlparse(self.path).query).get("q", [""])[0][:200])
@@ -351,11 +353,17 @@ def make_handler(station: Station, output: Mp3Output, speaker=None,
                 # The rig on the desktop: the receiver being listened to (a KiwiSDR), where it's tuned and
                 # its waterfall since row ?since=N. {"on": false} when the radio is playing something else.
                 stream = getattr(station, "radio_stream", None)
+                query = parse_qs(urlparse(self.path).query)
                 try:
-                    since = int(parse_qs(urlparse(self.path).query).get("since", ["0"])[0])
+                    since = int(query.get("since", ["0"])[0])
                 except ValueError:
                     since = 0
                 state = {"on": True, **stream.rig(since)} if hasattr(stream, "rig") else {"on": False}
+                want, monitor = query.get("base", [""])[0], getattr(station, "monitor", None)
+                if want and state.get("base") != want and monitor is not None:      # (a room being monitored, not the station)
+                    watched = monitor.state(want)
+                    if watched is not None:
+                        state = {"on": True, **watched}
                 self._send(json.dumps(state).encode(), "application/json")
             elif path in ("/api/receivers/search", "/api/receivers/info"):
                 # Find a receiver: the public directory of internet software radios (OpenWebRX, KiwiSDR).
@@ -583,6 +591,24 @@ def make_handler(station: Station, output: Mp3Output, speaker=None,
                     threading.Thread(target=lambda: _quietly(directory.refresh), name="station-directory",
                                      daemon=True).start()
                 self._send(json.dumps({**directory.status(), "refreshing": True}).encode(), "application/json")
+            elif path == "/api/rooms/monitor":
+                # {"url", "name", "on": true | false}: hear that room over whatever's playing (or stop). Kept.
+                from sleepradiopi.playback import monitor as monitor_mod
+                monitor = getattr(station, "monitor", None)
+                try:
+                    body = json.loads(self.rfile.read(int(self.headers.get("Content-Length", 0))) or b"{}")
+                    if monitor is None:
+                        raise ValueError("this radio can't monitor rooms")
+                    rooms = [r for r in monitor.rooms if r["url"] != body.get("url")]
+                    if body.get("on", True):
+                        rooms.append({"name": body.get("name"), "url": body.get("url")})
+                    rooms = monitor.set_rooms(monitor_mod.clean_rooms(rooms))
+                except (ValueError, TypeError, AttributeError) as e:
+                    self._error(str(e))
+                    return
+                if config_file is not None:
+                    save_setting(config_file, "monitor_rooms", rooms)
+                self._send(json.dumps({"monitor": monitor.status()}).encode(), "application/json")
             elif path == "/api/rooms/callsign":
                 # {"callsign": "M0ABC"} ("" clears it): what rooms are joined under. Kept.
                 from sleepradiopi.playback import room as room_mod
@@ -593,6 +619,8 @@ def make_handler(station: Station, output: Mp3Output, speaker=None,
                     self._error(str(e))
                     return
                 room_mod.CALLSIGN = call or None
+                if getattr(station, "monitor", None) is not None:
+                    station.monitor.restart()                      # (rooms being monitored are joined again under it)
                 if config_file is not None:
                     save_setting(config_file, "callsign", call or None)
                 self._send(json.dumps({"callsign": call, "decoder": room_mod.DECODER.is_file()}).encode(), "application/json")
