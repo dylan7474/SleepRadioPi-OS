@@ -2267,7 +2267,7 @@ RXD.room = {
   },
   async level(R, by) {                                // how loud rooms are (the room level setting: every room, kept), a step at a time
     try {
-      const now = R.me?.level ?? (R.me = await api("/api/rooms")).level, to = Math.max(25, Math.min(400, now + by));
+      const now = R.me?.level ?? (R.me = await api("/api/rooms")).level, to = Math.max(25, Math.min(150, now + by));
       R.me = { ...R.me, ...(await api("/api/rooms/level", { level: to })) }; rigPaint(R);
       toast(`Voice level ${R.me.level}%${to === now ? (by > 0 ? ": as loud as it goes" : ": as quiet as it goes") : ""}`);
     } catch (e) { rigOops(e); }
@@ -2300,8 +2300,8 @@ RXD.room = {
             if (have.some(o => o.url === st.url)) return toast("That one is already with your stations.");
             await api("/api/radio/stations", { stations: [...have, st] }); await loadFolder(STATIONS); R.rooms = null; toast(`Saved the room “${st.name}” with your stations.`); drawDesk();
           } catch (e) { rigOops(e); } }, "Keep this room as a station")),
-      el("div", { className: "rgrp" }, k("Voice −", () => this.level(R, -10), "The voices in rooms a little quieter (every room)"),
-        k("Voice +", () => this.level(R, 10), "The voices in rooms a little louder (every room)")),
+      el("div", { className: "rgrp" }, k("Voice −", () => this.level(R, -5), "The voices in rooms a little quieter (every room)"),
+        k("Voice +", () => this.level(R, 5), "The voices in rooms a little louder (every room)")),
       el("div", { className: "rgrp" }, k("Music −", () => this.music(R, -5), "When a monitored room speaks: what's playing drops further under the voice"),
         k("Music +", () => this.music(R, 5), "When a monitored room speaks: what's playing stays louder under the voice")),
       el("div", { className: "rgrp" }, k("Find…", () => open(PANEL.findroom.id), "Other rooms, your callsign, the voice decoder"))];
@@ -3485,15 +3485,15 @@ const UI = {
         grp("The voice decoder", help(d.me.decoder ? "It's on this radio: rooms can be heard."
           : `It isn't on this radio. A room still shows who is talking, but there's no sound. The speech is in a patented codec (AMBE) that the radio's software doesn't include: scripts/build-voice-decoder.sh in the repository builds the decoder and puts it on the radio (the README says why it's separate).`)),
         (() => {                                       // how loud rooms are: a voice isn't levelled like music, so it's yours to set
-          const lv = el("input", { type: "range", id: "room-level", min: 25, max: 400, step: 5, value: d.me.level ?? 100, style: "flex:1" });
+          const lv = el("input", { type: "range", id: "room-level", min: 25, max: 150, step: 5, value: d.me.level ?? 100, style: "flex:1" });
           const word = el("span", { className: "note", textContent: `${d.me.level ?? 100}%` });
           lv.oninput = () => { word.textContent = `${lv.value}%`; };
           lv.onchange = async () => { try { d.me.level = (await api("/api/rooms/level", { level: +lv.value })).level; } catch (e) { toast(e.message); } };
-          return grp("Voice level", line(lv, word), help("How loud rooms are beside everything else (100% is a little under the music). It takes effect at once. Every talker is brought to the same level: a quiet one is turned up, a loud one down. Well past 200% the loudest moments are squashed. A room's own window has Voice − and Voice + keys for the same setting."));
+          return grp("Voice level", line(lv, word), help("How loud rooms are beside everything else (100% is about as loud as the music, on the radio's speaker). It takes effect at once. Every talker is brought to the same level: a quiet one is turned up, a loud one down. Above 100% the loudest moments are squashed more than made louder. A room's own window has Voice − and Voice + keys for the same setting."));
         })(),
         (() => {                                       // a monitored room over what's playing: how far that drops
-          const mu = el("input", { type: "range", id: "room-music", min: 0, max: 100, step: 1, value: d.me.music ?? 22, style: "flex:1" });
-          const word = el("span", { className: "note", textContent: `${d.me.music ?? 22}%` });
+          const mu = el("input", { type: "range", id: "room-music", min: 0, max: 100, step: 1, value: d.me.music ?? 10, style: "flex:1" });
+          const word = el("span", { className: "note", textContent: `${d.me.music ?? 10}%` });
           mu.oninput = () => { word.textContent = `${mu.value}%`; };
           mu.onchange = async () => { try { d.me.music = (await api("/api/rooms/music", { level: +mu.value })).music; } catch (e) { toast(e.message); } };
           return grp("Music under a room", line(mu, word), help("When a room you monitor speaks, what's playing drops to this much of itself and comes back afterwards (0% is silent under the voice, 100% isn't turned down). A room's own window has Music − and Music + keys for it."));

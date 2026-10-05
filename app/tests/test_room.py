@@ -217,7 +217,7 @@ def test_web_api(tmp_path: Path, monkeypatch) -> None:
             return e.code, json.loads(e.read() or b"{}")
 
     try:
-        assert call("/api/rooms") == (200, {"callsign": "", "decoder": False, "decoder_path": str(tmp_path / "libmbe.so"), "level": room.LEVEL, "music": 22, "monitor": None})
+        assert call("/api/rooms") == (200, {"callsign": "", "decoder": False, "decoder_path": str(tmp_path / "libmbe.so"), "level": room.LEVEL, "music": 10, "monitor": None})
         code, reply = call("/api/rooms/search?q=cq-uk")
         assert code == 200 and reply["results"][0]["url"] == "ysf://149.102.158.76:42200/GB-CQ-UK" and reply["directory"]["count"] == 23
         assert call("/api/rooms/callsign", {"callsign": "m8odj"}) == (200, {"callsign": "M8ODJ", "decoder": False})
@@ -453,6 +453,9 @@ def test_a_rooms_level_is_its_own_every_talker_brought_to_the_same_place(monkeyp
     level = lambda x: float(np.sqrt(np.mean((x.astype(float) / 32768) ** 2)))
     played = lambda sh, x: np.concatenate([sh.process(x[i:i + 800]) for i in range(0, len(x), 800)])   # (as it arrives: a packet at a time)
     monkeypatch.setattr(room, "LEVEL", 100)
+    monkeypatch.setattr(room, "TARGET", 0.15)                                           # (a level where the limit plays no part: this is about the following)
+    monkeypatch.setattr(room, "MIN_GAIN", 0.25)
+    monkeypatch.setattr(room, "MAX_GAIN", 12.0)
     for rms in (0.02, 0.07, 0.30):                                                      # a quiet talker, an ordinary one, a loud one
         out = played(room.Shaper(), talk(rms))
         assert abs(level(out[8000:]) - room.TARGET) < 0.012 and abs(out).max() < 32768, rms

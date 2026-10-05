@@ -64,9 +64,12 @@ STATUS_S = 60.0                  # how many are connected: asked this often
 OVER_S = 1.5                     # nothing from the talker this long: the over has ended
 VOICE_RATE = 8000
 LEVEL = 100                      # how loud rooms are, % (the "room level" setting: main.py and the web side set it)
-MIN_LEVEL, MAX_LEVEL = 25, 400
-TARGET = 0.15                    # where the loud parts of a voice are put (rms of full scale, over a tenth of a second), at 100%
-MIN_GAIN, MAX_GAIN = 0.25, 12.0  # how far a talker may be turned down, and up, to get there (the room level is on top of this)
+MIN_LEVEL, MAX_LEVEL = 25, 150
+TARGET = 0.45                    # where the loud parts of a voice are put (rms of full scale, over a tenth of a second), at 100%:
+                                 # set by ear on the radio's own speaker, music and a monitored room in turn. It's well into the
+                                 # soft limit (measured before the speaker, a third of this already matches the music), but a
+                                 # narrow radio voice on small speakers needs it
+MIN_GAIN, MAX_GAIN = 0.75, 36.0  # how far a talker may be turned down, and up, to get there (the room level is on top of this)
 OVER_TARGET = 1.4                # no tenth of a second leaves louder than this many times the target
 FALL_S = 3.0                     # a talker who drops their voice is followed down over this long
 HEARD = 20                       # overs remembered, for "last heard"
@@ -225,9 +228,8 @@ class Shaper:
     different levels (one a little under the music, the next a seventh of it), so each
     is brought to the same place: the level of the loud parts of their voice is followed
     (up quickly, down slowly, the gaps between words left out of it) and put at TARGET
-    times the room level setting -- a little under the music, since speech at music's
-    average level sounds much louder. Nothing leaves far over that, and a soft limit
-    takes what's left. It is NOT the station's leveller, which works on the average over
+    times the room level setting -- where a voice sounds as loud as the music on the
+    radio's speaker. Nothing leaves far over that, and a soft limit takes what's left. It is NOT the station's leveller, which works on the average over
     seconds: that turned speech up to music's level and clipped it."""
 
     def __init__(self, rate: int = VOICE_RATE) -> None:

@@ -1054,21 +1054,22 @@ The cards:
   (talkers arrive at very different levels: one a little under the music,
   the next a seventh of it). Each talker is brought to the same place
   instead: the level of the loud parts of their voice is followed (up
-  quickly, down slowly, the gaps between words left alone) and put a
-  little under the music; a faint talker is turned up at most twelve times
-  to get there. This setting is then on top of that, for every talker
-  alike, and nothing clips (well past 200% the loudest moments are
-  squashed instead). A room's own window has *Voice −* and *Voice +* keys
-  for it, ten at a time.
+  quickly, down slowly, the gaps between words left alone) and put where
+  a voice sounds as loud as the music on the radio's own speaker (set by
+  ear: a narrow radio voice on small speakers needs a good deal more level
+  than the music does, and the loudest moments are squashed by the limiter
+  rather than clipped). This setting is then on top of that, for every
+  talker alike. A room's own window has *Voice −* and *Voice +* keys for
+  it, five at a time.
   A talker who comes in over a DMR bridge arrives under their DMR ID (a
   seven-figure number) rather than a callsign: the radio looks the number up
   in radioid.net's register (Pi-Star's copy of it, fetched once a week in the
   background and kept as a small file: `playback/dmr_ids.py`) and shows the
   callsign; a number it doesn't have stays a number.
-  *Music under a room* (0-100%, 22 to begin with) is how loud what's playing
+  *Music under a room* (0-100%, 10 to begin with) is how loud what's playing
   stays while a monitored room speaks: `POST /api/rooms/music {"level": 0-100}`,
   and the *Music −* / *Music +* keys in a room's window.
-  `POST /api/rooms/level {"level": 25-400}`. `GET /api/rooms`, `/api/rooms/search?q=`,
+  `POST /api/rooms/level {"level": 25-150}`. `GET /api/rooms`, `/api/rooms/search?q=`,
   `POST /api/rooms/callsign {"callsign"}`; `playback/room.py`, `rooms_dir.py`.
 - **Find a receiver** — in the Stations folder's toolbar (and the Receiver
   folder's): other people's receivers on the internet, from the public

@@ -26,7 +26,7 @@ from sleepradiopi.playback import radio, room
 log = logging.getLogger(__name__)
 
 MAX_ROOMS = 4
-DUCK = 0.22                  # the programme's level under a room (about -13 dB): the "music under a room" setting, as a fraction
+DUCK = 0.10                  # the programme's level under a room (-20 dB): the "music under a room" setting, as a fraction
                              # (main.py and the web side set it; 0 = silent under a voice, 1 = not turned down at all)
 JITTER_S = 0.3               # this much of an over is in hand before it starts: the internet delivers in lumps
 HOLD_S = 1.2                 # the programme stays down this long after the last word, for the reply
