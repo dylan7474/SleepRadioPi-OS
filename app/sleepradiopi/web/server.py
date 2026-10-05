@@ -592,7 +592,7 @@ def make_handler(station: Station, output: Mp3Output, speaker=None,
                                      daemon=True).start()
                 self._send(json.dumps({**directory.status(), "refreshing": True}).encode(), "application/json")
             elif path == "/api/rooms/level":
-                # {"level": 25-200}: how loud rooms are, % (at once: also for one that's playing). Kept.
+                # {"level": 25-400}: how loud rooms are, % (at once: also for one that's playing). Kept.
                 from sleepradiopi.playback import room as room_mod
                 try:
                     body = json.loads(self.rfile.read(int(self.headers.get("Content-Length", 0))) or b"{}")

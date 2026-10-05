@@ -39,7 +39,7 @@ class Settings:
     podcasts: list = field(default_factory=list)  # the shows followed: [{"feed_url", "title", "author"}]
     radio_stations: list | None = None    # internet radio: [{"name", "url", "info"?}]; None = the starter set
     callsign: str | None = None           # the owner's amateur radio callsign: what a room is joined under (playback/room.py)
-    room_level: int = 100                 # how loud rooms are, % (25-200): a voice, not levelled like music (playback/room.py)
+    room_level: int = 100                 # how loud rooms are, % (25-400): a voice, not levelled like music (playback/room.py)
     monitor_rooms: list = field(default_factory=list)   # rooms heard over whatever's playing: [{"name", "url"}] (playback/monitor.py)
     station_name: str | None = None       # the radio's name as spoken and shown; None: by the hardware
                                           # ("Sleep Radio", or "Phonosphere" for the cathedral) -- config/brand.py

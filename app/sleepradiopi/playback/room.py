@@ -63,9 +63,9 @@ STATUS_S = 60.0                  # how many are connected: asked this often
 OVER_S = 1.5                     # nothing from the talker this long: the over has ended
 VOICE_RATE = 8000
 LEVEL = 100                      # how loud rooms are, % (the "room level" setting: main.py and the web side set it)
-MIN_LEVEL, MAX_LEVEL = 25, 200
+MIN_LEVEL, MAX_LEVEL = 25, 400
 TARGET = 0.15                    # where the loud parts of a voice are put (rms of full scale, over a tenth of a second), at 100%
-MIN_GAIN, MAX_GAIN = 0.25, 8.0   # how far a talker may be turned down, and up
+MIN_GAIN, MAX_GAIN = 0.25, 12.0  # how far a talker may be turned down, and up, to get there (the room level is on top of this)
 OVER_TARGET = 1.4                # no tenth of a second leaves louder than this many times the target
 FALL_S = 3.0                     # a talker who drops their voice is followed down over this long
 HEARD = 20                       # overs remembered, for "last heard"
@@ -235,12 +235,15 @@ class Shaper:
 
     def reset(self) -> None:
         """A new voice: its level is found afresh."""
+        if getattr(self, "said", 0.0) > 1.0 and self.heard:
+            log.info("room: that talker's level was %.3f, played at %.1f times that", math.sqrt(self.heard), self.gain or 1.0)
         self.heard: float | None = None  # the level of this talker's loud parts (mean square of full scale)
         self.gain: float | None = None
         self.said = 0.0                  # how long they've been talking, seconds
 
     def process(self, speech: np.ndarray) -> np.ndarray:
-        target = TARGET * max(MIN_LEVEL, min(MAX_LEVEL, LEVEL)) / 100.0
+        level = max(MIN_LEVEL, min(MAX_LEVEL, LEVEL)) / 100.0
+        target = TARGET * level
         out = np.empty(len(speech), dtype=np.float32)
         step = self.rate // 10
         for i in range(0, len(speech), step):
@@ -253,11 +256,11 @@ class Shaper:
                 self.heard += (ms - self.heard) * 0.6
             elif ms > self.heard / 16:                               # (quieter than a quarter of it: a gap, not their voice)
                 self.heard += (ms - self.heard) * (1.0 - math.exp(-len(x) / (FALL_S * self.rate)))
-            want = 1.0 if self.heard is None else max(MIN_GAIN, min(MAX_GAIN, target / math.sqrt(self.heard)))
+            want = level * (1.0 if self.heard is None else max(MIN_GAIN, min(MAX_GAIN, TARGET / math.sqrt(self.heard))))
             if self.heard is not None:
                 self.said += len(x) / self.rate
             over = OVER_TARGET if self.said > 1.0 else 1.0           # (their first second: the level isn't known yet, so nothing over it)
-            most = over * target / math.sqrt(ms) if ms > 0 else MAX_GAIN
+            most = over * target / math.sqrt(ms) if ms > 0 else want
             want = min(want, most)
             was = want if self.gain is None else min(self.gain, most)
             self.gain = want

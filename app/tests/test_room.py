@@ -444,6 +444,8 @@ def test_a_rooms_level_is_its_own_every_talker_brought_to_the_same_place(monkeyp
     assert abs(level(played(room.Shaper(), talk(0.07))[8000:]) - room.TARGET / 2) < 0.006   # the room level setting: for everyone
     monkeypatch.setattr(room, "LEVEL", 150)
     assert abs(level(played(room.Shaper(), talk(0.30))[8000:]) - room.TARGET * 1.5) < 0.02  # (a loud talker too)
+    faint = played(room.Shaper(), talk(0.005))[8000:]                                    # (a faint one too: the setting is on top of what's done for them)
+    assert abs(level(faint) - 0.005 * room.MAX_GAIN * 1.5) < 0.006
     monkeypatch.setattr(room, "LEVEL", 9999)                                            # (kept within its range)
     assert level(played(room.Shaper(), talk(0.07))[8000:]) < room.TARGET * room.MAX_LEVEL / 100 + 0.01
     assert room.RoomStream("ysf://127.0.0.1/x", callsign="M8ODJ").levelled             # the station doesn't level it like a stream

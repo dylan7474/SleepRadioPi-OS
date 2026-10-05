@@ -1055,9 +1055,12 @@ The cards:
   the next a seventh of it). Each talker is brought to the same place
   instead: the level of the loud parts of their voice is followed (up
   quickly, down slowly, the gaps between words left alone) and put a
-  little under the music, times this setting; a faint talker is turned up
-  at most eight times, and nothing clips.
-  `POST /api/rooms/level {"level": 25-200}`. `GET /api/rooms`, `/api/rooms/search?q=`,
+  little under the music; a faint talker is turned up at most twelve times
+  to get there. This setting is then on top of that, for every talker
+  alike, and nothing clips (well past 200% the loudest moments are
+  squashed instead). A room's own window has *Quieter* and *Louder* keys
+  for it, ten at a time.
+  `POST /api/rooms/level {"level": 25-400}`. `GET /api/rooms`, `/api/rooms/search?q=`,
   `POST /api/rooms/callsign {"callsign"}`; `playback/room.py`, `rooms_dir.py`.
 - **Find a receiver** — in the Stations folder's toolbar (and the Receiver
   folder's): other people's receivers on the internet, from the public
