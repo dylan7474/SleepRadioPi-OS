@@ -4,13 +4,20 @@ The speaker is one listener and a browser another (audio/speaker.py), so
 moving the sound is three steps: the stream is made for the browser (switched
 on for now if it was off -- the setting isn't changed), the browser tunes in,
 and only then is the speaker let go, so the show never finds itself with
-nobody listening. Afterwards the speaker comes back and the stream goes off
-again if it was off.
+nobody listening.
+
+While the browser has it, play and pause are about the listening there,
+wherever they're pressed -- the knob, a button, the page, the sleep timer
+(audio/speaker.py sends them here): paused, the browser is let go and the
+speaker stays quiet; played again, the browser tunes back in. The speaker
+only comes back when Listen here is switched off, and then it carries on as
+things stand: playing if it was playing there, paused if it was paused.
 
 And if the browser just goes -- the laptop's lid shut, the tab killed, the
-Wi-Fi dropped -- nobody would be left to say "back to the speaker", so the
-radio watches: once nobody has been tuned in for GONE_S, it takes the sound
-back by itself.
+Wi-Fi dropped -- nobody would be left to say "back to the speaker". So the
+page says it's still there every few seconds, and once nothing has been heard
+from it (and nobody is tuned in) for GONE_S, the radio takes the sound back
+by itself, the same way.
 """
 
 from __future__ import annotations
@@ -22,7 +29,7 @@ from collections.abc import Callable
 
 log = logging.getLogger(__name__)
 
-GONE_S = 20.0                # nobody tuned in for this long: the speaker takes it back
+GONE_S = 20.0                # no word from the browser, and nobody tuned in, for this long: the speaker takes it back
 LOOK_S = 2.0
 
 
@@ -33,24 +40,21 @@ class HearHere:
         self.gone_s, self.look_s = gone_s, look_s
         self._lock = threading.RLock()
         self.on = False
+        self.held = False            # paused, while the browser has it
         self._stream_was = True      # the stream was being made before
-        self._playing_was = False    # the speaker was playing before
-        self._hushed = False         # ...and has been let go
-        self._seen = 0.0             # when somebody was last tuned in
+        self._seen = 0.0             # when the browser was last there
         self._gen = 0
 
     def start(self) -> None:
-        """A browser is about to tune in: the stream is made for it."""
+        """A browser is about to tune in (the stream is made for it) -- or, already on, says it's still there."""
         with self._lock:
+            self._seen = self._clock()
             if self.on:
-                self._seen = self._clock()
                 return
-            self.on, self._hushed = True, False
+            self.on, self.held = True, False
             self._stream_was = bool(self.output.enabled)
-            self._playing_was = self.speaker is not None and not self.speaker.paused
             if not self._stream_was:
                 self.output.set_enabled(True)
-            self._seen = self._clock()
             self._gen += 1
             threading.Thread(target=self._watch, args=(self._gen,), name="hear-here", daemon=True).start()
         log.info("listen here: a browser has the radio")
@@ -58,24 +62,40 @@ class HearHere:
     def hush(self) -> None:
         """It's heard there now: the speaker goes quiet."""
         with self._lock:
-            if not self.on or self._hushed:
+            if self.on and self.speaker is not None:
+                self.speaker._pause()
+
+    def hold(self) -> None:
+        """Paused: the browser is let go, and the speaker stays as quiet as it was."""
+        with self._lock:
+            if not self.on or self.held:
                 return
-            self._hushed = True
-            if self.speaker is not None and self._playing_was:
-                self.speaker.pause()
+            self.held = True
+            self.output.drop_listeners()
+        log.info("listen here: paused")
+
+    def resume(self) -> None:
+        """Played again: the browser tunes back in (the page sees to that)."""
+        with self._lock:
+            if not self.on or not self.held:
+                return
+            self.held = False
+            self._seen = self._clock()
+        log.info("listen here: play")
 
     def stop(self, why: str = "asked") -> None:
-        """Back to the speaker (and the stream off again, if it was)."""
+        """Back to the speaker, as things stand: playing, or paused."""
         with self._lock:
             if not self.on:
                 return
-            self.on = False
+            self.on, held = False, self.held
+            self.held = False
             self._gen += 1
-            if self._hushed and self._playing_was and self.speaker is not None:
-                self.speaker.play()
+            if self.speaker is not None:
+                (self.speaker._pause if held else self.speaker._play)()
             if not self._stream_was:
                 self.output.set_enabled(False)
-        log.info("listen here: back to the speaker (%s)", why)
+        log.info("listen here: back to the speaker, %s (%s)", "paused" if held else "playing", why)
 
     def _watch(self, gen: int) -> None:
         while True:

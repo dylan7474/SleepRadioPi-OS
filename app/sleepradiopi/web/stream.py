@@ -141,6 +141,15 @@ class Mp3Output:
                         q.queue.clear()
                     q.put_nowait(None)  # tells its connection to close
 
+    def drop_listeners(self) -> None:
+        """Every browser tuned in is let go (its connection closes); the stream itself carries on."""
+        with self._lock:
+            clients, self._clients = list(self._clients), set()
+        for q in clients:
+            with q.mutex:
+                q.queue.clear()
+            q.put_nowait(None)
+
     def listeners(self) -> int:
         """How many browsers are tuned in."""
         with self._lock:

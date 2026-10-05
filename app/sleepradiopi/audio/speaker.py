@@ -317,7 +317,8 @@ class SpeakerControl:
         self._join, self._leave = join, leave
         self.state_file = state_file
         self.config_file = config_file
-        self.paused = True
+        self._paused = True              # the speaker's own state (see paused)
+        self.elsewhere = None            # web/hear.HearHere: a browser has the radio instead of the speaker
         self.slept = False               # the last pause was the sleep timer's
         self._lock = threading.Lock()
         self._save_timer: threading.Timer | None = None
@@ -463,23 +464,50 @@ class SpeakerControl:
         self._save_setting("knob_mode", mode)
         log.info("speaker: knob %s", mode)
 
+    @property
+    def paused(self) -> bool:
+        """Has the radio been paused (by a person, or the sleep timer)? While a browser has the radio instead
+        of the speaker, that's whether the listening there is paused -- the speaker is quiet either way."""
+        e = self.elsewhere
+        return e.held if e is not None and e.on else self._paused
+
+    @paused.setter
+    def paused(self, value: bool) -> None:
+        self._paused = bool(value)
+
     def play(self) -> None:
         self.slept = False
-        with self._lock:
-            if not self.paused:
-                return
-            self.paused = False
-            self.speaker.set_enabled(True)
-        log.info("speaker: play")
-        self._join()
+        e = self.elsewhere
+        if e is not None and e.on:   # a browser has the radio: it's there that it plays again
+            e.resume()
+            return
+        self._play()
 
     def pause(self) -> None:
         self.set_sleep(0)            # a pause (knob, page or the timer itself) ends the timer
         self.stop_test()
+        e = self.elsewhere
+        if e is not None and e.on:   # ...and there that it stops: the speaker doesn't come on
+            e.hold()
+            return
+        self._pause()
+
+    def _play(self) -> None:
+        """The speaker itself on."""
         with self._lock:
-            if self.paused:
+            if not self._paused:
                 return
-            self.paused = True
+            self._paused = False
+            self.speaker.set_enabled(True)
+        log.info("speaker: play")
+        self._join()
+
+    def _pause(self) -> None:
+        """The speaker itself off."""
+        with self._lock:
+            if self._paused:
+                return
+            self._paused = True
             self.speaker.set_enabled(False)
         log.info("speaker: pause")
         self._leave()

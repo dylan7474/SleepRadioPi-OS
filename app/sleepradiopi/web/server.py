@@ -79,6 +79,8 @@ def make_handler(station: Station, output: Mp3Output, speaker=None,
     auth = Auth(config_file)
     from sleepradiopi.web.hear import HearHere
     hear = HearHere(output, speaker) if output is not None else None      # the menu bar's Listen here
+    if hear is not None and speaker is not None:
+        speaker.elsewhere = hear          # (play and pause are about the listening there, while it's on)
     backups = backup.Store(config_file.parent / "backups") if config_file is not None else None
     open_paths = {"/", "/index.html", "/desktop", "/classic", "/api/auth", "/api/login", "/analyser", "/analyser/", "/analyser/index.html"}
 
@@ -225,6 +227,7 @@ def make_handler(station: Station, output: Mp3Output, speaker=None,
                 status["buttons_bank"] = presets.bank if presets is not None else None
                 status["stream"] = output is not None and output.enabled
                 status["hear"] = bool(hear is not None and hear.on)        # a browser has the radio (Listen here)
+                status["hear_held"] = bool(hear is not None and hear.on and hear.held)   # ...and it's paused there
                 from sleepradiopi.audio import denoise as denoise_mod
                 status["nr"] = denoise_mod.LEVEL          # receivers' noise reduction: off, light, strong or rig
                 status["version"] = updater_mod.this_version()
@@ -609,7 +612,7 @@ def make_handler(station: Station, output: Mp3Output, speaker=None,
                 except (ValueError, TypeError, KeyError, AttributeError) as e:
                     self._error(str(e) if isinstance(e, ValueError) and str(e) else 'send {"here": true | "quiet" | false}')
                     return
-                self._send(json.dumps({"hear": hear.on, "stream": output.enabled}).encode(), "application/json")
+                self._send(json.dumps({"hear": hear.on, "held": hear.held, "stream": output.enabled}).encode(), "application/json")
             elif path == "/api/radio/directory" and directory is not None:
                 self._body()
                 if not directory.refreshing:          # fetch a fresh copy now, in the background

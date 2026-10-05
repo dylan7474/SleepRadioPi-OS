@@ -1327,7 +1327,7 @@ function radioEl() {
   const knob = el("button", { className: "knob", type: "button", id: "rKnob", title: "Scroll to change the volume · click to pause or play · double-click: speakers and knob settings" });
   knob.setAttribute("aria-label", "Volume " + vol);
   knob.style.setProperty("--rot", (vol / 100 * 270 - 135) + "deg");
-  knob.onclick = async () => { try { S.speaker = await api("/api/speaker", { pause: "toggle" }); updateRadio(); } catch (e) { toast(e.message); } };
+  knob.onclick = async () => { try { S.speaker = await api("/api/speaker", { pause: "toggle" }); updateRadio(); if (hearing) poll(); } catch (e) { toast(e.message); } };
   knob.ondblclick = () => open(PANEL.speakers.id);
   knob.onwheel = e => { e.preventDefault(); volume(-Math.sign(e.deltaY) * 2); };
   // like a CD player: Back (the start of this one, or the one before in its first 5 s), play/pause, Skip
@@ -1433,6 +1433,7 @@ function volume(delta) {
 let lastProg = "";
 async function poll() {
   try { S = await api("/api/status"); radioName = S.radio_name || radioName; updateRadio(); applyTheme(); } catch { return; }
+  hearSync();
   // the radio was updated with a new desktop page: this one is old -- load the new one (not mid-drag or mid-typing)
   if (S.desktop) {
     pageTag = pageTag || S.desktop;
@@ -4613,13 +4614,14 @@ $("wifiMenu").onclick = () => open(PANEL.wifi.id);
 // The speaker is one listener and a browser another, so the show carries on for whichever is listening: the browser is
 // tuned in first, then the speaker let go; afterwards the speaker comes back and the radio stops making the stream if it
 // wasn't making one before.
-let hearing = false;                                  // this browser is the one listening
+let hearing = false, hearSince = 0;                   // this browser is the one listening
 function hearPaint(busy) {
-  const b = $("hearHere"); b.classList.toggle("on", hearing); b.classList.toggle("busy", !!busy);
-  b.textContent = busy ? "One moment…" : hearing ? "● Listening here" : "Listen here";
+  const b = $("hearHere"), held = hearing && S?.hear_held; b.classList.toggle("on", hearing); b.classList.toggle("busy", !!busy);
+  b.textContent = busy ? "One moment…" : hearing ? (held ? "● Listening here · paused" : "● Listening here") : "Listen here";
   b.title = hearing ? "Back to the radio's own speaker" : "Hear the radio in this browser instead: its own speaker goes quiet until you press this again";
 }
 function hearAudio() { return $("listenHere") || document.body.appendChild(el("audio", { id: "listenHere" })); }
+function hearSilence() { const a = hearAudio(); a.pause(); a.removeAttribute("src"); a.load(); }
 async function hearStart() {
   await api("/api/hear", { here: true });               // (the stream is made for us)
   const a = hearAudio();
@@ -4627,18 +4629,29 @@ async function hearStart() {
     a.src = "/stream"; await a.play();
     await new Promise(done => { const t = setTimeout(done, 6000); a.addEventListener("playing", () => { clearTimeout(t); done(); }, { once: true }); });   // (heard here before it's quiet there)
   } catch (e) {
-    a.removeAttribute("src"); a.load();
+    hearSilence();
     await api("/api/hear", { here: false }).catch(() => {});
     throw new Error("this browser wouldn't play it");
   }
   await api("/api/hear", { here: "quiet" });
-  hearing = true;
+  hearing = true; hearSince = Date.now();
 }
 async function hearStop() {
   hearing = false;
-  const a = hearAudio(); a.pause(); a.removeAttribute("src"); a.load();
+  hearSilence();
   await api("/api/hear", { here: false });
 }
+// As the radio's state comes in: paused (anywhere: the knob, a button, the page, the sleep timer) is silence here and
+// played again is tuning back in; and if the radio has taken the sound back, this stops.
+function hearSync() {
+  if (!hearing || !S || Date.now() - hearSince < 4000) return;
+  const a = hearAudio();
+  if (!S.hear) { hearing = false; hearSilence(); hearPaint(); toast("Back on the radio's own speaker.", false, null, true); return; }
+  if (S.hear_held) { if (a.getAttribute("src")) hearSilence(); }
+  else if (!a.getAttribute("src") || a.ended || a.error) { a.src = "/stream"; a.play().catch(() => {}); }
+  hearPaint();
+}
+setInterval(() => { if (hearing) api("/api/hear", { here: true }).catch(() => {}); }, 5000);   // (still here)
 $("hearHere").onclick = async () => {
   const on = !hearing;
   hearPaint(true);
