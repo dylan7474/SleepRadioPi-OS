@@ -49,6 +49,34 @@ def test_the_hiss_goes_down_and_the_voice_stays() -> None:
     assert 5 < left["light"] < 10 and 12 < left["strong"] < 19                       # the hiss between words: down, to a floor, never gone
 
 
+def test_the_rig_level_keeps_the_voice_and_takes_out_a_whistle() -> None:
+    rng = np.random.default_rng(4)
+    t = np.arange(RATE * 10) / RATE
+    hiss = rng.standard_normal(len(t)) * 1500
+    on = np.sin(2 * np.pi * 3 * t)
+    # a "voice": tones that come and go a syllable at a time, and move about in pitch as a voice does
+    pitch = np.cumsum(1 + 0.2 * np.sin(2 * np.pi * 0.7 * t) + 0.1 * np.sin(2 * np.pi * 2.3 * t)) / RATE   # (a fifth either way: a held note is a whistle)
+    said = (on > 0.2) * (np.sin(2 * np.pi * 400 * pitch) + 0.6 * np.sin(2 * np.pi * 1100 * pitch) + 0.4 * np.sin(2 * np.pi * 2100 * pitch)) * 5000
+    whistle = np.sin(2 * np.pi * 1700 * t) * 4000                                   # (it stays put: a voice doesn't)
+    rumble = np.sin(2 * np.pi * 60 * t) * 4000 + np.sin(2 * np.pi * 6000 * t) * 4000  # (and nothing outside the voice's band gets through)
+    x = np.repeat(np.clip(hiss + said + whistle + rumble, -32768, 32767).astype(np.int16)[:, None], pcm.CHANNELS, axis=1)
+    y = _played(denoise.Rig(), x)
+    assert y.dtype == np.int16 and y.shape[1] == pcm.CHANNELS and 0 <= len(x) - len(y) < denoise.FRAME
+    was, now = x[:, 0], y[:, 0]
+
+    def line(sig, hz, a=RATE * 6, b=RATE * 9):                                       # how strong one frequency is, once it has settled
+        seg = sig[a:b].astype(float)
+        return abs(np.dot(seg, np.exp(-2j * np.pi * hz * np.arange(len(seg)) / RATE))) / len(seg)
+    assert 20 * np.log10(line(was, 1700) / line(now, 1700)) > 15                     # the whistle: notched out
+    assert 20 * np.log10(line(was, 60) / line(now, 60)) > 30 and 20 * np.log10(line(was, 6000) / line(now, 6000)) > 30
+    settled = np.arange(len(now)) > RATE * 6
+    speaking, gaps = (on[:len(now)] > 0.5) & settled, (on[:len(now)] < -0.3) & settled
+    assert abs(20 * np.log10(_rms(now[speaking]) / _rms(said[:len(now)][speaking]))) < 2.5   # the voice: all but as it was
+    in_band = 1500 * np.sqrt((denoise.RIG_BAND[1] - denoise.RIG_BAND[0]) / (RATE / 2))       # the hiss that's in the voice's band
+    assert 20 * np.log10(in_band / _rms(now[gaps])) > 6                              # between words: down (these gaps are a tenth of a second)
+    assert np.array_equal(_played(denoise.Rig(), x[:RATE], size=777), denoise.Rig().process(x[:RATE]))   # however it's cut up
+
+
 def test_blocks_of_any_size_and_one_channel() -> None:
     rng = np.random.default_rng(2)
     x = (rng.standard_normal(RATE) * 3000).astype(np.int16)
@@ -72,7 +100,9 @@ def test_the_switch_follows_the_setting(monkeypatch) -> None:
     assert _rms(x) * 0.3 < _rms(light[-RATE:]) < _rms(x) * 0.6                        # a change of level: started afresh
     monkeypatch.setattr(denoise, "LEVEL", "off")
     assert sw.process(x) is x
-    assert denoise.clean_level(None) == "off" and denoise.clean_level("Strong") == "strong"
+    monkeypatch.setattr(denoise, "LEVEL", "rig")
+    assert sw._denoiser is None and len(sw.process(x)) and isinstance(sw._denoiser, denoise.Rig)
+    assert denoise.clean_level(None) == "off" and denoise.clean_level("Strong") == "strong" and denoise.clean_level("rig") == "rig"
     with pytest.raises(ValueError):
         denoise.clean_level("loud")
 
@@ -105,6 +135,7 @@ def test_the_setting_from_the_web(tmp_path: Path, monkeypatch) -> None:
         assert call("/api/rx/nr", {"level": "strong"}) == (200, {"nr": "strong"}) and denoise.LEVEL == "strong" and load(conf).noise_reduction == "strong"
         for bad in ({"level": "loud"}, {"level": 3}, {}):
             assert call("/api/rx/nr", bad)[0] == 400 and denoise.LEVEL == "strong"
+        assert call("/api/rx/nr", {"level": "rig"}) == (200, {"nr": "rig"}) and load(conf).noise_reduction == "rig"
         assert call("/api/rx/nr", {"level": "off"}) == (200, {"nr": "off"}) and load(conf).noise_reduction == "off"
     finally:
         httpd.shutdown()

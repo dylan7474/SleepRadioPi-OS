@@ -1919,14 +1919,16 @@ const rigNew = o => ({ o, kind: o.rx, origin: o.origin, st: null, bands: null, d
                        mode: o.rx === "kiwi" ? "lsb" : "nfm", step: o.rx === "owrx" ? 12500 : 1000, zoom: 1, entering: false, last: null, wait: 0, want: null, dom: null, cv: null, fall: null });
 const rigOops = e => toast(e.message[0].toUpperCase() + e.message.slice(1) + ".");
 // Noise reduction (audio/denoise.py): one setting for every receiver, a key in each one's window that steps it round.
-const NR_STEPS = ["off", "light", "strong"];
+const NR_STEPS = ["off", "light", "strong", "rig"];
+const NR_SAYS = { light: "Noise reduction 1: the hiss under a voice is turned down a little.", strong: "Noise reduction 2: the hiss under a voice is turned down hard.",
+  rig: "Noise reduction 3, as a rig does it: narrowed to the voice, whistles notched out, the hiss turned down hard with more of the voice kept. For speech only, not music." };
 function rigNrKey(R, k) {
   return R.dom.knr = k("NR", async () => {
     const to = NR_STEPS[(NR_STEPS.indexOf(S?.nr || "off") + 1) % NR_STEPS.length];
     try {
       S = { ...(S || {}), ...(await api("/api/rx/nr", { level: to })) }; rigPaint(R);
-      toast(to === "off" ? "Noise reduction off." : `Noise reduction: ${to}. The hiss under a voice is turned down${to === "strong" ? " hard" : ""} (it takes a few seconds to learn the noise).`);
-    } catch (e) { rigOops(e); } }, "Noise reduction for receivers: off, light, strong (for speech in hiss; not for music)");
+      toast(to === "off" ? "Noise reduction off." : `${NR_SAYS[to]} (It takes a few seconds to learn the noise.)`);
+    } catch (e) { rigOops(e); } }, "Noise reduction for receivers: off, 1, 2, 3 (for speech in hiss; not for music)");
 }
 const rigOnRadio = R => !!S?.source?.url?.startsWith(R.origin);
 function rigListen(R, station) { R.wait = Date.now() + 14000; R.n = 0; play(station); rigPaint(R); rigDraw(R); }
@@ -2401,7 +2403,7 @@ function rigPaint(R) {                              // the words and lamps on th
   for (const [id, k] of Object.entries(d.bandKeys)) k.classList.toggle("on", w.bandOn === id);
   for (const [m, k] of Object.entries(d.modeKeys)) k.classList.toggle("on", m === w.modeOn);
   D.lamps(R, w);
-  if (R.dom.knr) { const nr = S?.nr || "off"; R.dom.knr.classList.toggle("on", nr !== "off"); R.dom.knr.textContent = nr === "off" ? "NR" : nr === "light" ? "NR 1" : "NR 2"; }
+  if (R.dom.knr) { const nr = S?.nr || "off"; R.dom.knr.classList.toggle("on", nr !== "off"); R.dom.knr.textContent = nr === "off" ? "NR" : `NR ${NR_STEPS.indexOf(nr)}`; }
   d.fill.style.width = Math.max(0, Math.min(100, w.meter * 100)) + "%"; d.fill.style.backgroundSize = d.fill.parentNode.clientWidth + "px 100%";
   const [lo, hi] = R.range || [0, 0], wide = hi - lo > 2e6;
   d.scale.replaceChildren(...[0, 1, 2, 3, 4].map(i => el("span", { textContent: R.range ? ((lo + (hi - lo) * i / 4) / 1e6).toFixed(wide ? 2 : 3) : "" })));

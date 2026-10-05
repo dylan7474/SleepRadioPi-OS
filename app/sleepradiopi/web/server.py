@@ -223,7 +223,7 @@ def make_handler(station: Station, output: Mp3Output, speaker=None,
                 status["buttons_bank"] = presets.bank if presets is not None else None
                 status["stream"] = output is not None and output.enabled
                 from sleepradiopi.audio import denoise as denoise_mod
-                status["nr"] = denoise_mod.LEVEL          # receivers' noise reduction: off, light or strong
+                status["nr"] = denoise_mod.LEVEL          # receivers' noise reduction: off, light, strong or rig
                 status["version"] = updater_mod.this_version()
                 status["desktop"] = DESKTOP_TAG
                 self._send(json.dumps(status).encode(), "application/json")
@@ -595,13 +595,13 @@ def make_handler(station: Station, output: Mp3Output, speaker=None,
                                      daemon=True).start()
                 self._send(json.dumps({**directory.status(), "refreshing": True}).encode(), "application/json")
             elif path == "/api/rx/nr":
-                # {"level": "off" | "light" | "strong"}: receivers' noise reduction (at once). Kept.
+                # {"level": "off" | "light" | "strong" | "rig"}: receivers' noise reduction (at once). Kept.
                 from sleepradiopi.audio import denoise as denoise_mod
                 try:
                     body = json.loads(self.rfile.read(int(self.headers.get("Content-Length", 0))) or b"{}")
                     level = denoise_mod.clean_level(body["level"])
                 except (ValueError, TypeError, KeyError, AttributeError) as e:
-                    self._error(str(e) if isinstance(e, ValueError) and "noise" in str(e) else "noise reduction is off, light or strong")
+                    self._error(str(e) if isinstance(e, ValueError) and "noise" in str(e) else "noise reduction is off, light, strong or rig")
                     return
                 denoise_mod.LEVEL = level
                 if config_file is not None:
