@@ -481,7 +481,8 @@
   .ghost { position: fixed; z-index: 2000; pointer-events: none; opacity: .9; transform: translate(-50%, -55%) scale(1.05); }
   .toast { position: fixed; left: 50%; bottom: calc(env(safe-area-inset-bottom, 0px) + 18px); transform: translateX(-50%); z-index: 3000;
            background: var(--toast); color: var(--toast-ink); border: 1px solid var(--line); border-radius: 10px; padding: 8px 14px; max-width: min(560px, calc(100% - 32px));
-           box-shadow: 0 10px 30px var(--shadow); font-size: 13px; }
+           box-shadow: 0 10px 30px var(--shadow); font-size: 13px; pointer-events: none; }   /* (a click goes through it to what's under) */
+  .toast.high { bottom: auto; top: calc(env(safe-area-inset-top, 0px) + 46px); }   /* (said from the top: a key pressed again and again isn't hidden) */
   .toast .undo { margin-left: 12px; border: 1px solid var(--amber); background: none; color: var(--amber); border-radius: 99px; padding: 1px 10px; font: 600 12px var(--body); cursor: pointer; pointer-events: auto; }
   .toast:has(.undo) { pointer-events: auto; }
   .confirm { position: fixed; inset: 0; z-index: 2500; display: grid; place-items: center; background: #0006; }
@@ -1927,7 +1928,7 @@ function rigNrKey(R, k) {
     const to = NR_STEPS[(NR_STEPS.indexOf(S?.nr || "off") + 1) % NR_STEPS.length];
     try {
       S = { ...(S || {}), ...(await api("/api/rx/nr", { level: to })) }; rigPaint(R);
-      toast(to === "off" ? "Noise reduction off." : `${NR_SAYS[to]} (It takes a few seconds to learn the noise.)`);
+      toast(to === "off" ? "Noise reduction off." : `${NR_SAYS[to]} (It takes a few seconds to learn the noise.)`, false, null, true);
     } catch (e) { rigOops(e); } }, "Noise reduction for receivers: off, 1, 2, 3 (for speech in hiss; not for music)");
 }
 const rigOnRadio = R => !!S?.source?.url?.startsWith(R.origin);
@@ -2307,14 +2308,14 @@ RXD.room = {
     try {
       const now = R.me?.level ?? (R.me = await api("/api/rooms")).level, to = Math.max(25, Math.min(150, now + by));
       R.me = { ...R.me, ...(await api("/api/rooms/level", { level: to })) }; rigPaint(R);
-      toast(`Voice level ${R.me.level}%${to === now ? (by > 0 ? ": as loud as it goes" : ": as quiet as it goes") : ""}`);
+      toast(`Voice level ${R.me.level}%${to === now ? (by > 0 ? ": as loud as it goes" : ": as quiet as it goes") : ""}`, false, null, true);
     } catch (e) { rigOops(e); }
   },
   async music(R, by) {                                // how loud what's playing stays under a monitored room, % of itself (kept)
     try {
       const now = R.me?.music ?? (R.me = await api("/api/rooms")).music, to = Math.max(0, Math.min(100, now + by));
       R.me = { ...R.me, ...(await api("/api/rooms/music", { level: to })) }; rigPaint(R);
-      toast(`Music under a room: ${R.me.music}%${R.me.music === 0 ? " (silent while someone speaks)" : R.me.music === 100 ? " (not turned down at all)" : ""}`);
+      toast(`Music under a room: ${R.me.music}%${R.me.music === 0 ? " (silent while someone speaks)" : R.me.music === 100 ? " (not turned down at all)" : ""}`, false, null, true);
     } catch (e) { rigOops(e); }
   },
   listen(R) {
@@ -4680,8 +4681,9 @@ document.querySelectorAll("[data-new]").forEach(b => b.onclick = async () => {
   if (what === "podcast") return open(PANEL.findpodcast.id);
 });
 let tt;
-function toast(msg, sticky, undo) {
+function toast(msg, sticky, undo, high) {
   const t = $("toast"); t.textContent = msg; t.hidden = false; clearTimeout(tt);
+  t.classList.toggle("high", !!high);                // (high: at the top of the screen, clear of a window's keys)
   if (undo) {                                      // something that can come back: Undo, for a while
     const b = el("button", { type: "button", className: "undo", textContent: "Undo" });
     b.onclick = async () => { t.hidden = true; try { await undo(); toast("Put back."); } catch (e) { toast("Couldn't put it back: " + e.message + "."); } };
