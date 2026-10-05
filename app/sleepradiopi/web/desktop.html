@@ -2957,6 +2957,11 @@ const testsGrp = (sp, act) => grp("Test sounds",
   line(...[["left", "Left"], ["right", "Right"], ["sides", "Left, then right"], ["phase", "Phase check"]].map(([k, t]) => sbtn(t, () => act(() => api("/api/speaker", { test: k }))))),
   line(sbtn("Stop", () => act(() => api("/api/speaker", { test: "stop" })))),
   help(sp.test ? `Playing: ${sp.test.label}` : "They play on the radio's own speakers at the current volume, with the EQ and low cut off, instead of the show for a moment: turn the volume down first. Phase check: in phase should sound fuller and centred; if out of phase sounds fuller, one speaker's wires are the wrong way round at the amp."));
+// Listening in this browser (when the radio's making its stream): the two keys, wherever the switch is shown
+function listenLine() {
+  return line(sbtn("Listen here", () => { const a = $("listenHere") || document.body.appendChild(el("audio", { id: "listenHere" })); a.src = "/stream"; a.play().catch(() => toast("The browser wouldn't play it.")); }, "primary"),
+              sbtn("Stop listening", () => { const a = $("listenHere"); if (a) { a.pause(); a.removeAttribute("src"); a.load(); } }));
+}
 // each: load() -> data; build(data, act) -> nodes. act(fn) runs a change, reloads, redraws.
 const UI = {
   tests: {
@@ -2967,8 +2972,7 @@ const UI = {
     load: () => api("/api/status"),
     build: (s, act) => [grp("Listen in a browser",
       srow("Listening", seg([[true, "On"], [false, "Off"]], !!s.stream, v => act(() => api("/api/stream", { enabled: v })))),
-      ...(s.stream ? [line(sbtn("Listen here", () => { const a = $("listenHere") || document.body.appendChild(el("audio", { id: "listenHere" })); a.src = "/stream"; a.play().catch(() => toast("The browser wouldn't play it.")); }),
-                           sbtn("Stop listening", () => { const a = $("listenHere"); if (a) { a.pause(); a.removeAttribute("src"); a.load(); } }))] : []),
+      ...(s.stream ? [listenLine()] : []),
       help("With it on, the show plays in a browser too (on a phone or computer: Listen here). Off, the radio saves the work of making the stream."))],
   },
   stations: {
@@ -3158,7 +3162,8 @@ const UI = {
         grp("Password", help(auth.protected ? "The page asks for a password, once per browser." : "Off: anyone on your Wi-Fi can use the page."),
           line(pw, sbtn(auth.protected ? "Change it" : "Set it", () => pw.value && act(() => api("/api/password", { password: pw.value })), "primary"),
                auth.protected ? sbtn("Remove the password", () => act(() => api("/api/password", { password: null }))) : null)),
-        grp("Listening elsewhere", srow("In a browser", sw(status.stream, v => act(() => api("/api/stream", { enabled: v })), "Listen in a browser"), help("Costs the radio some effort while it's on"))),
+        grp("Listening elsewhere", srow("In a browser", sw(status.stream, v => act(() => api("/api/stream", { enabled: v })), "Listen in a browser"), help("Costs the radio some effort while it's on")),
+          status.stream ? listenLine() : help("Switch it on and a Listen here key appears: the radio then plays in this browser too.")),
       ];
     },
   },
