@@ -217,7 +217,7 @@ def test_web_api(tmp_path: Path, monkeypatch) -> None:
             return e.code, json.loads(e.read() or b"{}")
 
     try:
-        assert call("/api/rooms") == (200, {"callsign": "", "decoder": False, "decoder_path": str(tmp_path / "libmbe.so"), "level": room.LEVEL, "monitor": None})
+        assert call("/api/rooms") == (200, {"callsign": "", "decoder": False, "decoder_path": str(tmp_path / "libmbe.so"), "level": room.LEVEL, "music": 22, "monitor": None})
         code, reply = call("/api/rooms/search?q=cq-uk")
         assert code == 200 and reply["results"][0]["url"] == "ysf://149.102.158.76:42200/GB-CQ-UK" and reply["directory"]["count"] == 23
         assert call("/api/rooms/callsign", {"callsign": "m8odj"}) == (200, {"callsign": "M8ODJ", "decoder": False})
@@ -498,6 +498,11 @@ def test_the_room_level_from_the_web(tmp_path: Path, monkeypatch) -> None:
     try:
         assert call("/api/rooms")[1]["level"] == 100
         assert call("/api/rooms/level", {"level": 60}) == (200, {"level": 60}) and room.LEVEL == 60 and load(conf).room_level == 60
+        monkeypatch.setattr(mon, "DUCK", 0.22)                                # how loud the programme stays under a monitored room
+        assert call("/api/rooms")[1]["music"] == 22
+        assert call("/api/rooms/music", {"level": 10}) == (200, {"music": 10}) and mon.DUCK == 0.10 and load(conf).monitor_music == 10
+        for bad in ({"level": 101}, {"level": -1}, {"level": True}, {}):
+            assert call("/api/rooms/music", bad)[0] == 400 and mon.DUCK == 0.10
         for bad in ({"level": 10}, {"level": 500}, {"level": "loud"}, {}, {"level": True}):
             assert call("/api/rooms/level", bad)[0] == 400 and room.LEVEL == 60
     finally:

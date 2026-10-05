@@ -339,11 +339,12 @@ def make_handler(station: Station, output: Mp3Output, speaker=None,
             elif path in ("/api/rooms", "/api/rooms/search"):
                 # Rooms (radio amateurs' digital voice: playback/room.py). /api/rooms: the radio's callsign and
                 # whether the voice decoder is on it; /search?q=: the public register of rooms, by words.
-                from sleepradiopi.playback import room as room_mod, rooms_dir
+                from sleepradiopi.playback import monitor as monitor_mod, room as room_mod, rooms_dir
                 if path == "/api/rooms":
                     monitor = getattr(station, "monitor", None)
                     self._send(json.dumps({"callsign": room_mod.CALLSIGN or "", "decoder": room_mod.DECODER.is_file(),
                                            "decoder_path": str(room_mod.DECODER), "level": room_mod.LEVEL,
+                                           "music": round(monitor_mod.DUCK * 100),
                                            "monitor": monitor.status() if monitor is not None else None}).encode(), "application/json")
                 else:
                     book = rooms_dir.shared()
@@ -606,6 +607,21 @@ def make_handler(station: Station, output: Mp3Output, speaker=None,
                 if config_file is not None:
                     save_setting(config_file, "room_level", level)
                 self._send(json.dumps({"level": level}).encode(), "application/json")
+            elif path == "/api/rooms/music":
+                # {"level": 0-100}: how loud the programme stays under a monitored room, % of itself (at once). Kept.
+                from sleepradiopi.playback import monitor as monitor_mod
+                try:
+                    body = json.loads(self.rfile.read(int(self.headers.get("Content-Length", 0))) or b"{}")
+                    level = int(body["level"])
+                    if isinstance(body["level"], bool) or not 0 <= level <= 100:
+                        raise ValueError
+                except (ValueError, TypeError, KeyError, AttributeError):
+                    self._error("the music under a room is 0 to 100 (%)")
+                    return
+                monitor_mod.DUCK = level / 100.0
+                if config_file is not None:
+                    save_setting(config_file, "monitor_music", level)
+                self._send(json.dumps({"music": level}).encode(), "application/json")
             elif path == "/api/rooms/monitor":
                 # {"url", "name", "on": true | false}: hear that room over whatever's playing (or stop). Kept.
                 from sleepradiopi.playback import monitor as monitor_mod

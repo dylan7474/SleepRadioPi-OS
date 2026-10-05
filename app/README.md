@@ -1058,13 +1058,16 @@ The cards:
   little under the music; a faint talker is turned up at most twelve times
   to get there. This setting is then on top of that, for every talker
   alike, and nothing clips (well past 200% the loudest moments are
-  squashed instead). A room's own window has *Quieter* and *Louder* keys
+  squashed instead). A room's own window has *Voice −* and *Voice +* keys
   for it, ten at a time.
   A talker who comes in over a DMR bridge arrives under their DMR ID (a
   seven-figure number) rather than a callsign: the radio looks the number up
   in radioid.net's register (Pi-Star's copy of it, fetched once a week in the
   background and kept as a small file: `playback/dmr_ids.py`) and shows the
   callsign; a number it doesn't have stays a number.
+  *Music under a room* (0-100%, 22 to begin with) is how loud what's playing
+  stays while a monitored room speaks: `POST /api/rooms/music {"level": 0-100}`,
+  and the *Music −* / *Music +* keys in a room's window.
   `POST /api/rooms/level {"level": 25-400}`. `GET /api/rooms`, `/api/rooms/search?q=`,
   `POST /api/rooms/callsign {"callsign"}`; `playback/room.py`, `rooms_dir.py`.
 - **Find a receiver** — in the Stations folder's toolbar (and the Receiver

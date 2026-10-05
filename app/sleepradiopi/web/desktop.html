@@ -2269,7 +2269,14 @@ RXD.room = {
     try {
       const now = R.me?.level ?? (R.me = await api("/api/rooms")).level, to = Math.max(25, Math.min(400, now + by));
       R.me = { ...R.me, ...(await api("/api/rooms/level", { level: to })) }; rigPaint(R);
-      toast(`Room level ${R.me.level}%${to === now ? (by > 0 ? ": as loud as it goes" : ": as quiet as it goes") : ""}`);
+      toast(`Voice level ${R.me.level}%${to === now ? (by > 0 ? ": as loud as it goes" : ": as quiet as it goes") : ""}`);
+    } catch (e) { rigOops(e); }
+  },
+  async music(R, by) {                                // how loud what's playing stays under a monitored room, % of itself (kept)
+    try {
+      const now = R.me?.music ?? (R.me = await api("/api/rooms")).music, to = Math.max(0, Math.min(100, now + by));
+      R.me = { ...R.me, ...(await api("/api/rooms/music", { level: to })) }; rigPaint(R);
+      toast(`Music under a room: ${R.me.music}%${R.me.music === 0 ? " (silent while someone speaks)" : R.me.music === 100 ? " (not turned down at all)" : ""}`);
     } catch (e) { rigOops(e); }
   },
   listen(R) {
@@ -2293,8 +2300,10 @@ RXD.room = {
             if (have.some(o => o.url === st.url)) return toast("That one is already with your stations.");
             await api("/api/radio/stations", { stations: [...have, st] }); await loadFolder(STATIONS); R.rooms = null; toast(`Saved the room “${st.name}” with your stations.`); drawDesk();
           } catch (e) { rigOops(e); } }, "Keep this room as a station")),
-      el("div", { className: "rgrp" }, k("Quieter", () => this.level(R, -10), "Rooms a little quieter beside everything else"),
-        k("Louder", () => this.level(R, 10), "Rooms a little louder beside everything else")),
+      el("div", { className: "rgrp" }, k("Voice −", () => this.level(R, -10), "The voices in rooms a little quieter (every room)"),
+        k("Voice +", () => this.level(R, 10), "The voices in rooms a little louder (every room)")),
+      el("div", { className: "rgrp" }, k("Music −", () => this.music(R, -5), "When a monitored room speaks: what's playing drops further under the voice"),
+        k("Music +", () => this.music(R, 5), "When a monitored room speaks: what's playing stays louder under the voice")),
       el("div", { className: "rgrp" }, k("Find…", () => open(PANEL.findroom.id), "Other rooms, your callsign, the voice decoder"))];
   },
 };
@@ -3480,7 +3489,14 @@ const UI = {
           const word = el("span", { className: "note", textContent: `${d.me.level ?? 100}%` });
           lv.oninput = () => { word.textContent = `${lv.value}%`; };
           lv.onchange = async () => { try { d.me.level = (await api("/api/rooms/level", { level: +lv.value })).level; } catch (e) { toast(e.message); } };
-          return grp("Room level", line(lv, word), help("How loud rooms are beside everything else (100% is a little under the music). It takes effect at once. Every talker is brought to the same level: a quiet one is turned up, a loud one down. Well past 200% the loudest moments are squashed. A room's own window has Quieter and Louder keys for the same setting."));
+          return grp("Voice level", line(lv, word), help("How loud rooms are beside everything else (100% is a little under the music). It takes effect at once. Every talker is brought to the same level: a quiet one is turned up, a loud one down. Well past 200% the loudest moments are squashed. A room's own window has Voice − and Voice + keys for the same setting."));
+        })(),
+        (() => {                                       // a monitored room over what's playing: how far that drops
+          const mu = el("input", { type: "range", id: "room-music", min: 0, max: 100, step: 1, value: d.me.music ?? 22, style: "flex:1" });
+          const word = el("span", { className: "note", textContent: `${d.me.music ?? 22}%` });
+          mu.oninput = () => { word.textContent = `${mu.value}%`; };
+          mu.onchange = async () => { try { d.me.music = (await api("/api/rooms/music", { level: +mu.value })).music; } catch (e) { toast(e.message); } };
+          return grp("Music under a room", line(mu, word), help("When a room you monitor speaks, what's playing drops to this much of itself and comes back afterwards (0% is silent under the voice, 100% isn't turned down). A room's own window has Music − and Music + keys for it."));
         })(),
         grp("Find a room", line(q, sbtn("Search", go, "primary")),
           help("Rooms are quiet most of the time: many connected, nobody talking. The radio stays tuned and plays whoever speaks, with their callsign as what's playing."),

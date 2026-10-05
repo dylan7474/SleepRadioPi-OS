@@ -567,6 +567,7 @@ def main() -> None:
     room_mod.CALLSIGN = settings.callsign
     room_mod.LEVEL = settings.room_level
     from sleepradiopi.playback import monitor as monitor_mod
+    monitor_mod.DUCK = max(0, min(100, settings.monitor_music)) / 100.0
     try:
         monitor = monitor_mod.Monitor(settings.monitor_rooms)       # rooms heard over whatever's playing
     except ValueError as e:
