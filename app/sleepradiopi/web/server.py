@@ -222,6 +222,8 @@ def make_handler(station: Station, output: Mp3Output, speaker=None,
                 status["programme_mode"] = bool(sched and sched.quiet)
                 status["buttons_bank"] = presets.bank if presets is not None else None
                 status["stream"] = output is not None and output.enabled
+                from sleepradiopi.audio import denoise as denoise_mod
+                status["nr"] = denoise_mod.LEVEL          # receivers' noise reduction: off, light or strong
                 status["version"] = updater_mod.this_version()
                 status["desktop"] = DESKTOP_TAG
                 self._send(json.dumps(status).encode(), "application/json")
@@ -592,6 +594,19 @@ def make_handler(station: Station, output: Mp3Output, speaker=None,
                     threading.Thread(target=lambda: _quietly(directory.refresh), name="station-directory",
                                      daemon=True).start()
                 self._send(json.dumps({**directory.status(), "refreshing": True}).encode(), "application/json")
+            elif path == "/api/rx/nr":
+                # {"level": "off" | "light" | "strong"}: receivers' noise reduction (at once). Kept.
+                from sleepradiopi.audio import denoise as denoise_mod
+                try:
+                    body = json.loads(self.rfile.read(int(self.headers.get("Content-Length", 0))) or b"{}")
+                    level = denoise_mod.clean_level(body["level"])
+                except (ValueError, TypeError, KeyError, AttributeError) as e:
+                    self._error(str(e) if isinstance(e, ValueError) and "noise" in str(e) else "noise reduction is off, light or strong")
+                    return
+                denoise_mod.LEVEL = level
+                if config_file is not None:
+                    save_setting(config_file, "noise_reduction", level)
+                self._send(json.dumps({"nr": level}).encode(), "application/json")
             elif path == "/api/rooms/level":
                 # {"level": 25-150}: how loud rooms are, % (at once: also for one that's playing). Kept.
                 from sleepradiopi.playback import room as room_mod

@@ -38,7 +38,7 @@ from typing import Protocol
 
 import numpy as np
 
-from sleepradiopi.audio import pcm
+from sleepradiopi.audio import denoise, pcm
 from sleepradiopi.config.clock import clock_trusted
 from sleepradiopi.playback import radio as radio_mod
 from sleepradiopi.playback.audiobooks import KEPT, BookLibrary, KeptLibrary, Positions
@@ -90,6 +90,12 @@ BOOK_BACK_SLEEP_MS = 60_000   # resuming after the sleep timer: a minute back (y
 BOOK_BACK_PAUSE_MS = 5_000    # ...after an ordinary pause: a few seconds
 BOOK_SEEK_MS = 60_000     # the page's rewind / fast-forward
 
+
+
+def _is_receiver(url: str) -> bool:
+    """A software radio -- someone's on the internet, or one of your own -- rather than an ordinary stream."""
+    from sleepradiopi.playback import monitor, receiver
+    return receiver.is_receiver(url) or monitor.receiver_of(url) is not None
 
 class Output(Protocol):
     def start(self) -> None: ...
@@ -837,6 +843,7 @@ class Station:
         self.radio_title = None
         self.history.appendleft({"kind": "radio", "text": name, "at": time.time()})
         leveller = radio_mod.Leveller()
+        cleaner = denoise.Switch() if _is_receiver(tuned["url"]) else None    # (a receiver: its noise reduction, if that's on)
         last_sound = time.monotonic()
         why = "no sound from the station"
         while not self._halted():
@@ -868,6 +875,8 @@ class Station:
                     self._radio_heard = True
                     last_sound = time.monotonic()
                     on_air.title = self.radio_title or name
+                    if cleaner is not None:
+                        block = cleaner.process(block)
                     # (a room's speech comes at its own level: it isn't levelled like a stream -- playback/room.py)
                     self._write(block if getattr(stream, "levelled", False) else leveller.process(block))
             finally:

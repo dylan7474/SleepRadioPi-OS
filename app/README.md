@@ -1066,6 +1066,15 @@ The cards:
   in radioid.net's register (Pi-Star's copy of it, fetched once a week in the
   background and kept as a small file: `playback/dmr_ids.py`) and shows the
   callsign; a number it doesn't have stays a number.
+  *Noise reduction* for receivers (the **NR** key in any receiver's window:
+  off, light, strong; `POST /api/rx/nr {"level"}`): the steady hiss under a
+  voice is turned down -- 6 to 8 dB between words at light, 12 to 16 at
+  strong, the voice itself all but untouched. It's done on what's about to
+  be played, so it's the same for your own receiver, a KiwiSDR or an
+  OpenWebRX, and for a receiver that's monitored. It's for speech in noise:
+  a steady tone is taken for noise after a couple of seconds, and on a
+  clean broadcast station there's nothing for it to take away but the
+  programme's own quiet parts (`audio/denoise.py`).
   A receiver of your own can be monitored too (the *Monitor* key in its
   window): what it's doing just then -- a band, a held channel or one
   frequency -- comes over the programme whenever a squelch opens, named by

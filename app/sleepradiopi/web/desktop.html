@@ -1918,6 +1918,16 @@ async function rxSay(origin, path, body) {          // (said to a receiver of yo
 const rigNew = o => ({ o, kind: o.rx, origin: o.origin, st: null, bands: null, down: null, since: 0, range: null, line: null, floor: null, n: 0, busy: false, got: 0,
                        mode: o.rx === "kiwi" ? "lsb" : "nfm", step: o.rx === "owrx" ? 12500 : 1000, zoom: 1, entering: false, last: null, wait: 0, want: null, dom: null, cv: null, fall: null });
 const rigOops = e => toast(e.message[0].toUpperCase() + e.message.slice(1) + ".");
+// Noise reduction (audio/denoise.py): one setting for every receiver, a key in each one's window that steps it round.
+const NR_STEPS = ["off", "light", "strong"];
+function rigNrKey(R, k) {
+  return R.dom.knr = k("NR", async () => {
+    const to = NR_STEPS[(NR_STEPS.indexOf(S?.nr || "off") + 1) % NR_STEPS.length];
+    try {
+      S = { ...(S || {}), ...(await api("/api/rx/nr", { level: to })) }; rigPaint(R);
+      toast(to === "off" ? "Noise reduction off." : `Noise reduction: ${to}. The hiss under a voice is turned down${to === "strong" ? " hard" : ""} (it takes a few seconds to learn the noise).`);
+    } catch (e) { rigOops(e); } }, "Noise reduction for receivers: off, light, strong (for speech in hiss; not for music)");
+}
 const rigOnRadio = R => !!S?.source?.url?.startsWith(R.origin);
 function rigListen(R, station) { R.wait = Date.now() + 14000; R.n = 0; play(station); rigPaint(R); rigDraw(R); }
 function rigClear(R, range) {                       // another band or view: a clean screen
@@ -2078,7 +2088,7 @@ const RXD = {
             try { await rxSay(R.origin, "/skip", { freq: hz, on: true }); R.bands = null; toast(`The band now skips ${c.name}. (Channels… has it back.)`); } catch (e) { rigOops(e); } }), "Leave this channel out of the band"),
           k("◀", need(() => this.step(R, -1)), "One channel down"), k("▶", need(() => this.step(R, 1)), "One channel up")),
         el("div", { className: "rgrp" }, k("Channels…", need(async () => { const id = `rxb:${R.origin}:${this.band(R).id}`; if (!O[id]) await loadFolder(mk({ id: "rxf:" + R.origin, kind: "folder", box: "rxbands", origin: R.origin, title: `${R.o.title}: bands`, kids: [], sym: "⌁", alt: true })); open(id); }), "The band's channels as stations: drag one onto a button"),
-          k("Bands…", () => this.folder(R), "The bands as folders"), k("Find…", () => open(PANEL.findreceiver.id), "Other people's receivers on the internet"))];
+          k("Bands…", () => this.folder(R), "The bands as folders"), rigNrKey(R, k), k("Find…", () => open(PANEL.findreceiver.id), "Other people's receivers on the internet"))];
     },
     lamps(R, w) { R.dom.kscan?.classList.toggle("on", !!this.band(R) && this.band(R).mode !== "wfm" && !R.st.hold); R.dom.khold?.classList.toggle("on", !!R.st?.hold); R.dom.kmon?.classList.toggle("on", !!this.monitored(R)); },
   },
@@ -2148,7 +2158,7 @@ const RXD = {
               if (have.some(o => o.url === st.url)) return toast("That one is already with your stations.");
               await api("/api/radio/stations", { stations: [...have, st] }); await loadFolder(STATIONS); toast(`Saved “${st.name}” with your stations.`); drawDesk();
             } catch (e) { rigOops(e); } }, "Keep this frequency as a station (drag it onto a button from Stations)"),
-          k("Find…", () => open(PANEL.findreceiver.id), "Other people's receivers on the internet"))];
+          rigNrKey(R, k), k("Find…", () => open(PANEL.findreceiver.id), "Other people's receivers on the internet"))];
     },
     stepWord(R) { return R.step >= 1000 ? `${R.step / 1000} kHz` : `${R.step} Hz`; },
     lamps() {},
@@ -2391,6 +2401,7 @@ function rigPaint(R) {                              // the words and lamps on th
   for (const [id, k] of Object.entries(d.bandKeys)) k.classList.toggle("on", w.bandOn === id);
   for (const [m, k] of Object.entries(d.modeKeys)) k.classList.toggle("on", m === w.modeOn);
   D.lamps(R, w);
+  if (R.dom.knr) { const nr = S?.nr || "off"; R.dom.knr.classList.toggle("on", nr !== "off"); R.dom.knr.textContent = nr === "off" ? "NR" : nr === "light" ? "NR 1" : "NR 2"; }
   d.fill.style.width = Math.max(0, Math.min(100, w.meter * 100)) + "%"; d.fill.style.backgroundSize = d.fill.parentNode.clientWidth + "px 100%";
   const [lo, hi] = R.range || [0, 0], wide = hi - lo > 2e6;
   d.scale.replaceChildren(...[0, 1, 2, 3, 4].map(i => el("span", { textContent: R.range ? ((lo + (hi - lo) * i / 4) / 1e6).toFixed(wide ? 2 : 3) : "" })));

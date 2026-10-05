@@ -566,6 +566,11 @@ def main() -> None:
     from sleepradiopi.playback import room as room_mod
     room_mod.CALLSIGN = settings.callsign
     room_mod.LEVEL = settings.room_level
+    from sleepradiopi.audio import denoise as denoise_mod
+    try:
+        denoise_mod.LEVEL = denoise_mod.clean_level(settings.noise_reduction)
+    except ValueError:
+        denoise_mod.LEVEL = "off"
     from sleepradiopi.playback import monitor as monitor_mod
     monitor_mod.DUCK = max(0, min(100, settings.monitor_music)) / 100.0
     try:

@@ -28,7 +28,7 @@ from urllib.parse import parse_qs, urlparse
 
 import numpy as np
 
-from sleepradiopi.audio import pcm
+from sleepradiopi.audio import denoise, pcm
 from sleepradiopi.playback import radio, room
 
 log = logging.getLogger(__name__)
@@ -74,6 +74,7 @@ class ReceiverWatch:
         self.url = url
         self._stream = open_stream(url)
         self._shaper = room.Shaper(pcm.SAMPLE_RATE)
+        self._cleaner = denoise.Switch()             # (its noise reduction, if that's on)
         self._pending: list[np.ndarray] = []
         self._pending_n = 0
         self._quiet_n = 0
@@ -95,7 +96,7 @@ class ReceiverWatch:
         return {"kind": "own", "base": self.url, "talker": self.talker, "ended": self.ended}
 
     def _shaped(self, block: np.ndarray) -> np.ndarray:
-        return np.repeat(self._shaper.process(block[:, 0])[:, None], block.shape[1], axis=1)
+        return np.repeat(self._shaper.process(self._cleaner.process(block[:, 0]))[:, None], block.shape[1], axis=1)
 
     def read(self, timeout: float = 0.0) -> np.ndarray | None:
         while (block := self._stream.read(0)) is not None:
