@@ -141,6 +141,11 @@ class Mp3Output:
                         q.queue.clear()
                     q.put_nowait(None)  # tells its connection to close
 
+    def listeners(self) -> int:
+        """How many browsers are tuned in."""
+        with self._lock:
+            return len(self._clients)
+
     def add_client(self) -> queue.Queue:
         q: queue.Queue = queue.Queue(CLIENT_QUEUE_CHUNKS)
         with self._lock:

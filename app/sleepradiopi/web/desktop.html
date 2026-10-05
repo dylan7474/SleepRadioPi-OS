@@ -4613,34 +4613,31 @@ $("wifiMenu").onclick = () => open(PANEL.wifi.id);
 // The speaker is one listener and a browser another, so the show carries on for whichever is listening: the browser is
 // tuned in first, then the speaker let go; afterwards the speaker comes back and the radio stops making the stream if it
 // wasn't making one before.
-let hearing = null;                                   // { streamWas, playingWas } while this browser is the one listening
+let hearing = false;                                  // this browser is the one listening
 function hearPaint(busy) {
-  const b = $("hearHere"); b.classList.toggle("on", !!hearing); b.classList.toggle("busy", !!busy);
+  const b = $("hearHere"); b.classList.toggle("on", hearing); b.classList.toggle("busy", !!busy);
   b.textContent = busy ? "One moment…" : hearing ? "● Listening here" : "Listen here";
   b.title = hearing ? "Back to the radio's own speaker" : "Hear the radio in this browser instead: its own speaker goes quiet until you press this again";
 }
 function hearAudio() { return $("listenHere") || document.body.appendChild(el("audio", { id: "listenHere" })); }
 async function hearStart() {
-  const st = await api("/api/status"), was = { streamWas: !!st.stream, playingWas: !!st.speaker?.playing };
-  if (!was.streamWas) await api("/api/stream", { enabled: true });
+  await api("/api/hear", { here: true });               // (the stream is made for us)
   const a = hearAudio();
   try {
     a.src = "/stream"; await a.play();
     await new Promise(done => { const t = setTimeout(done, 6000); a.addEventListener("playing", () => { clearTimeout(t); done(); }, { once: true }); });   // (heard here before it's quiet there)
   } catch (e) {
     a.removeAttribute("src"); a.load();
-    if (!was.streamWas) await api("/api/stream", { enabled: false }).catch(() => {});
+    await api("/api/hear", { here: false }).catch(() => {});
     throw new Error("this browser wouldn't play it");
   }
-  await api("/api/speaker", { pause: true });
-  hearing = was;
+  await api("/api/hear", { here: "quiet" });
+  hearing = true;
 }
-async function hearStop(quiet) {
-  const was = hearing; hearing = null;
-  if (!was) return;
+async function hearStop() {
+  hearing = false;
   const a = hearAudio(); a.pause(); a.removeAttribute("src"); a.load();
-  if (was.playingWas) await api("/api/speaker", { pause: false });
-  if (!was.streamWas) await api("/api/stream", { enabled: false });
+  await api("/api/hear", { here: false });
 }
 $("hearHere").onclick = async () => {
   const on = !hearing;
@@ -4651,12 +4648,10 @@ $("hearHere").onclick = async () => {
   } catch (e) { toast(e.message); }
   hearPaint(false);
 };
-// (the page closed or left while listening here: the speaker isn't left quiet)
+// (the page closed or left while listening here: the speaker isn't left quiet -- and if this never arrives, the radio
+// takes the sound back by itself once nobody has been tuned in for a while)
 addEventListener("pagehide", () => {
-  if (!hearing) return;
-  const post = (path, body) => fetch(path, { method: "POST", keepalive: true, headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }).catch(() => {});
-  if (hearing.playingWas) post("/api/speaker", { pause: false });
-  if (!hearing.streamWas) post("/api/stream", { enabled: false });
+  if (hearing) fetch("/api/hear", { method: "POST", keepalive: true, headers: { "Content-Type": "application/json" }, body: JSON.stringify({ here: false }) }).catch(() => {});
 });
 $("scheduleMenu").onclick = async () => { if (!PROGRAMMES.loaded) await loadProgrammes(); open(SCHEDULE.id); };
 $("nextLine").onclick = () => $("scheduleMenu").click();

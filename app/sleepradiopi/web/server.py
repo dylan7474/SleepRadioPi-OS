@@ -77,6 +77,8 @@ def make_handler(station: Station, output: Mp3Output, speaker=None,
                  config_file: Path | None = None, announcer=None, voice_jobs=None, updates=None,
                  presets=None, directory=None, media=None, lamps=None):
     auth = Auth(config_file)
+    from sleepradiopi.web.hear import HearHere
+    hear = HearHere(output, speaker) if output is not None else None      # the menu bar's Listen here
     backups = backup.Store(config_file.parent / "backups") if config_file is not None else None
     open_paths = {"/", "/index.html", "/desktop", "/classic", "/api/auth", "/api/login", "/analyser", "/analyser/", "/analyser/index.html"}
 
@@ -222,6 +224,7 @@ def make_handler(station: Station, output: Mp3Output, speaker=None,
                 status["programme_mode"] = bool(sched and sched.quiet)
                 status["buttons_bank"] = presets.bank if presets is not None else None
                 status["stream"] = output is not None and output.enabled
+                status["hear"] = bool(hear is not None and hear.on)        # a browser has the radio (Listen here)
                 from sleepradiopi.audio import denoise as denoise_mod
                 status["nr"] = denoise_mod.LEVEL          # receivers' noise reduction: off, light, strong or rig
                 status["version"] = updater_mod.this_version()
@@ -588,6 +591,25 @@ def make_handler(station: Station, output: Mp3Output, speaker=None,
                 self._set_dj()
             elif path == "/api/stream":
                 self._set_stream()
+            elif path == "/api/hear":
+                # {"here": true}: a browser is about to tune in (the stream is made for it); {"here": "quiet"}: it's
+                # heard there, so the speaker goes quiet; {"here": false}: back to the speaker. See web/hear.py.
+                try:
+                    here = self._body()["here"]
+                    if hear is None:
+                        raise ValueError("this radio makes no stream to listen to")
+                    if here is True:
+                        hear.start()
+                    elif here == "quiet":
+                        hear.hush()
+                    elif here is False:
+                        hear.stop()
+                    else:
+                        raise ValueError
+                except (ValueError, TypeError, KeyError, AttributeError) as e:
+                    self._error(str(e) if isinstance(e, ValueError) and str(e) else 'send {"here": true | "quiet" | false}')
+                    return
+                self._send(json.dumps({"hear": hear.on, "stream": output.enabled}).encode(), "application/json")
             elif path == "/api/radio/directory" and directory is not None:
                 self._body()
                 if not directory.refreshing:          # fetch a fresh copy now, in the background
