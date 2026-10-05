@@ -48,6 +48,7 @@ from urllib.parse import quote, unquote, urlparse
 import numpy as np
 
 from sleepradiopi.audio import pcm
+from sleepradiopi.playback import dmr_ids
 from sleepradiopi.playback.receiver import ReceiverStream, Resampler
 
 log = logging.getLogger(__name__)
@@ -278,11 +279,12 @@ class RoomStream(ReceiverStream):
     """A room, joined, as the station sees a stream (see radio.RadioStream)."""
 
     def __init__(self, url: str, callsign: str | None = None, sock: Callable = _udp, decoder: Callable = load_decoder,
-                 clock: Callable[[], float] = time.monotonic) -> None:
+                 clock: Callable[[], float] = time.monotonic, ids: Callable[[str], str | None] | None = None) -> None:
         super().__init__(url, clock=clock)
         self.room = parse(url)
         self.callsign = CALLSIGN if callsign is None else callsign
         self._sock_factory, self._decoder_factory = sock, decoder
+        self._callsign = ids or (lambda number: dmr_ids.shared().callsign(number))    # whose a DMR ID is (dmr_ids.py)
         self.name = self.room["name"] if self.room else ""
         self.title = self.name or None
         self.talker: str | None = None
@@ -373,6 +375,8 @@ class RoomStream(ReceiverStream):
                     sent = dch(payload)
                     who = sent.decode("ascii", errors="replace").strip() if sent is not None else None
                     who = who if who and re.fullmatch(r"[A-Z0-9/\- ]{3,10}", who) else None
+                if who and who.isdigit():                                         # (in from DMR: under their DMR ID, not a callsign)
+                    who = self._callsign(who) or who
                 if who and who != self.talker:
                     if self.talker is not None:                                   # (another voice with no gap between)
                         self._end_over(last_frame - over_from)

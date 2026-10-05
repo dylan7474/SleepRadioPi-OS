@@ -102,6 +102,27 @@ def test_voice_frames_are_unpacked_and_told_from_the_rest() -> None:
     assert room.is_silence(SILENCE) and not room.is_silence(want[0])
 
 
+def test_a_talker_in_from_dmr_is_named_by_their_callsign(tmp_path: Path) -> None:
+    from sleepradiopi.playback import dmr_ids
+    lines = [b"2341001\tG0AAA\tAnn\n", b"not a line\n", b"2345153\tM0XHN\tHubnet\n", b"3101234\tK1ABC\tBob\n"] + [b"%d\tX%dX\tN\n" % (4000000 + i, i) for i in range(1200)]
+    asked = []
+    ids = dmr_ids.Ids(tmp_path / "ids.bin", fetch=lambda url: asked.append(url) or iter(lines), clock=lambda: 1e9)
+    assert _wait(lambda: ids.callsign(2345153) == "M0XHN") and asked == [dmr_ids.SOURCE]    # fetched in the background, the first time it's wanted
+    assert ids.callsign("2341001") == "G0AAA" and ids.callsign(4001199) == "X1199X" and ids.callsign(2345154) is None and ids.callsign("M0ABC") is None
+    assert (tmp_path / "ids.bin").stat().st_size == 1203 * dmr_ids.RECORD.size and len(asked) == 1     # kept; not fetched again
+    back = dmr_ids.Ids(tmp_path / "back.bin", fetch=lambda url: iter(lines[::-1]))    # (a list out of order is put in order)
+    assert back.refresh() == 1203 and back.callsign(2345153) == "M0XHN" and back.callsign(2341001) == "G0AAA"
+    gone = dmr_ids.Ids(tmp_path / "gone.bin", fetch=lambda url: iter([]))
+    assert gone.refresh() == 0 and gone.callsign(2345153) is None and not (tmp_path / "gone.bin").exists()
+
+    sock = FakeSock([b"YSFPREFLECTOR ", frame("2345153"), frame("2345153", speech(1), 2), frame("2345153", speech(2), 5), frame("7654321", speech(3), 0)])
+    s = room.RoomStream("ysf://127.0.0.1:42002/GB-HUBNet", callsign="M8ODJ", sock=lambda: sock, decoder=FakeDecoder, ids=back.callsign)
+    s.start()
+    assert _wait(lambda: len(s.heard) == 1 and s.talker == "7654321")              # (one the list doesn't have stays a number)
+    assert list(s.heard)[0][0] == "M0XHN"
+    s.close()
+
+
 def test_a_room_joined_who_talks_and_what_is_heard() -> None:
     FakeDecoder.resets = 0
     status = b"YSFS" + b"00009" + b"CQ-UK".ljust(16) + b"CQ-UK Network ".ljust(14) + b"119"
@@ -272,6 +293,13 @@ def test_a_monitored_room_comes_over_the_programme_and_goes_again() -> None:
     a.talker = None
     out = play(3.0)[:, 0].astype(int)
     assert out[-1] == 10000 and m.status()["talking"] is None                 # back up, and exactly the programme again
+
+    # a word shorter than what's kept in hand before playing (a key pressed and let go): played, and the programme comes back
+    a.talker = "M0ABC"
+    a.say(mon.JITTER_S / 2)
+    a.talker = None
+    out = play(4.0)[:, 0].astype(int)
+    assert out.min() < 10000 * 0.3 and m._buffered == 0 and out[-1] == 10000 and m.status()["talking"] is None
 
     # the room that's the station itself just now isn't joined twice; afterwards it's joined again
     m.mix(music.copy(), playing_url=A["url"])

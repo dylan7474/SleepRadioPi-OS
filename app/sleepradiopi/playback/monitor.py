@@ -138,7 +138,9 @@ class Monitor:
             while self._buffered > MAX_BUFFER_S * pcm.SAMPLE_RATE and len(self._buf) > 1:
                 self._buffered -= len(self._buf.pop(0))
             n = len(block)
-            if not self._playing and self._buffered >= JITTER_S * pcm.SAMPLE_RATE:
+            # (enough in hand -- or a last short piece that nothing more is coming after: left waiting,
+            # it would hold the programme down until the room next spoke)
+            if not self._playing and self._buffered and (self._buffered >= JITTER_S * pcm.SAMPLE_RATE or now - self._last_speech > JITTER_S):
                 self._playing = True
             speech = None
             if self._playing and n:
