@@ -3471,7 +3471,7 @@ const UI = {
           const word = el("span", { className: "note", textContent: `${d.me.level ?? 100}%` });
           lv.oninput = () => { word.textContent = `${lv.value}%`; };
           lv.onchange = async () => { try { d.me.level = (await api("/api/rooms/level", { level: +lv.value })).level; } catch (e) { toast(e.message); } };
-          return grp("Room level", line(lv, word), help("How loud rooms are beside everything else (100% is a little under the music). It takes effect at once, and a loud talker is held down to the same level as the rest."));
+          return grp("Room level", line(lv, word), help("How loud rooms are beside everything else (100% is a little under the music). It takes effect at once. Every talker is brought to the same level: a quiet one is turned up, a loud one down."));
         })(),
         grp("Find a room", line(q, sbtn("Search", go, "primary")),
           help("Rooms are quiet most of the time: many connected, nobody talking. The radio stays tuned and plays whoever speaks, with their callsign as what's playing."),

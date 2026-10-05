@@ -1048,11 +1048,15 @@ The cards:
   decoder" says why, and how to add it); without it a room shows who's
   talking but makes no sound. A key held with nobody speaking is left as
   silence, not hiss. *Room level* sets how loud rooms are beside everything
-  else: a room isn't levelled like music and stations are (speech at the
+  else. A room isn't levelled like music and stations are (speech at the
   same average level as music sounds far louder, and levelling turned it up
-  until it clipped) -- it's played as it's decoded, a little under the music,
-  times this setting; a talker louder than the rest is held down to the
-  same level at once and let back up slowly, and nothing clips.
+  until it clipped), and it isn't played just as it's decoded either
+  (talkers arrive at very different levels: one a little under the music,
+  the next a seventh of it). Each talker is brought to the same place
+  instead: the level of the loud parts of their voice is followed (up
+  quickly, down slowly, the gaps between words left alone) and put a
+  little under the music, times this setting; a faint talker is turned up
+  at most eight times, and nothing clips.
   `POST /api/rooms/level {"level": 25-200}`. `GET /api/rooms`, `/api/rooms/search?q=`,
   `POST /api/rooms/callsign {"callsign"}`; `playback/room.py`, `rooms_dir.py`.
 - **Find a receiver** — in the Stations folder's toolbar (and the Receiver

@@ -117,7 +117,7 @@ def test_a_room_joined_who_talks_and_what_is_heard() -> None:
     blocks = []
     assert _wait(lambda: (b := s.read(0.05)) is not None and blocks.append(b) is None and sum(len(x) for x in blocks) >= 8000)
     heard = np.concatenate(blocks)
-    assert heard.shape[1] == pcm.CHANNELS and abs(int(heard.max()) - 4000) < 50      # the two spoken frames; the silent one isn't played
+    assert heard.shape[1] == pcm.CHANNELS and abs(int(heard.max()) - room.TARGET * 32768) < 60      # the two spoken frames, at the room's level; the silent one isn't played
     assert _wait(lambda: s.talker is None, 4) and s.title == "GB-CQ-UK"               # the over ends when the frames stop
     state = s.rig()
     assert [h["call"] for h in state["heard"]] == ["G4XYZ", "M0ABC"] and state["connected"] == 119 and state["decoder"] is True
@@ -419,22 +419,33 @@ def test_a_room_on_the_fcs_network() -> None:
 
 # --- how loud a room is ---------------------------------------------------------------------
 
-def test_a_rooms_level_is_its_own_set_by_you_and_a_loud_talker_is_held_down(monkeypatch) -> None:
+def test_a_rooms_level_is_its_own_every_talker_brought_to_the_same_place(monkeypatch) -> None:
     rng = np.random.default_rng(5)
-    talk = lambda rms, seconds=2.0: (rng.standard_normal(int(8000 * seconds)) * rms * 32768).clip(-32768, 32767).astype(np.int16)
+    talk = lambda rms, seconds=3.0: (rng.standard_normal(int(8000 * seconds)) * rms * 32768).clip(-32768, 32767).astype(np.int16)
     level = lambda x: float(np.sqrt(np.mean((x.astype(float) / 32768) ** 2)))
+    played = lambda sh, x: np.concatenate([sh.process(x[i:i + 800]) for i in range(0, len(x), 800)])   # (as it arrives: a packet at a time)
     monkeypatch.setattr(room, "LEVEL", 100)
-    assert abs(level(room.Shaper().process(talk(0.07))) - 0.07) < 0.004               # an ordinary voice: as it comes, not turned up
-    loud = room.Shaper().process(talk(0.30))
-    assert abs(level(loud[8000:]) - room.CEILING) < 0.01 and abs(loud).max() < 32768   # a loud one: held to the ceiling, not clipped
+    for rms in (0.02, 0.07, 0.30):                                                      # a quiet talker, an ordinary one, a loud one
+        out = played(room.Shaper(), talk(rms))
+        assert abs(level(out[8000:]) - room.TARGET) < 0.012 and abs(out).max() < 32768, rms
+        assert level(out[:800]) <= room.TARGET * 1.05                                    # (and no burst while their level is being found)
+    assert abs(level(played(room.Shaper(), talk(0.005))[8000:]) - 0.005 * room.MAX_GAIN) < 0.004   # a very faint one: only so far up
     sh = room.Shaper()
-    sh.process(talk(0.30))
-    after = sh.process(talk(0.07, 4.0))                                                 # then a normal one: it comes back up, not at once
-    assert level(after[:800]) < 0.05 and abs(level(after[-8000:]) - 0.07) < 0.006
+    played(sh, talk(0.30))
+    after = played(sh, talk(0.03, 0.5))                                                  # the same talker drops their voice: followed slowly
+    assert level(after) < room.TARGET / 4
+    sh.reset()                                                                           # ... but a new voice is found afresh
+    assert abs(level(played(sh, talk(0.03))[8000:]) - room.TARGET) < 0.012
+    sh = room.Shaper()
+    words = np.concatenate([talk(0.07, 1.0), talk(0.002, 2.0), talk(0.07, 1.0)])         # a gap between words isn't turned up
+    out = played(sh, words)
+    assert level(out[12000:20000]) < 0.01 and abs(level(out[-4000:]) - room.TARGET) < 0.012
     monkeypatch.setattr(room, "LEVEL", 50)
-    assert abs(level(room.Shaper().process(talk(0.07))) - 0.035) < 0.003               # the room level setting
+    assert abs(level(played(room.Shaper(), talk(0.07))[8000:]) - room.TARGET / 2) < 0.006   # the room level setting: for everyone
+    monkeypatch.setattr(room, "LEVEL", 150)
+    assert abs(level(played(room.Shaper(), talk(0.30))[8000:]) - room.TARGET * 1.5) < 0.02  # (a loud talker too)
     monkeypatch.setattr(room, "LEVEL", 9999)                                            # (kept within its range)
-    assert level(room.Shaper().process(talk(0.02))) < 0.02 * room.MAX_LEVEL / 100 + 0.002
+    assert level(played(room.Shaper(), talk(0.07))[8000:]) < room.TARGET * room.MAX_LEVEL / 100 + 0.01
     assert room.RoomStream("ysf://127.0.0.1/x", callsign="M8ODJ").levelled             # the station doesn't level it like a stream
 
 

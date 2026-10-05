@@ -37,6 +37,7 @@ from __future__ import annotations
 import collections
 import ctypes
 import logging
+import math
 import re
 import socket
 import time
@@ -63,8 +64,10 @@ OVER_S = 1.5                     # nothing from the talker this long: the over h
 VOICE_RATE = 8000
 LEVEL = 100                      # how loud rooms are, % (the "room level" setting: main.py and the web side set it)
 MIN_LEVEL, MAX_LEVEL = 25, 200
-CEILING = 0.14                   # the most a talker's level may be (rms of full scale, over a tenth of a second)
-RELEASE_S = 1.5                  # held down for a loud talker, it comes back up over this long
+TARGET = 0.15                    # where the loud parts of a voice are put (rms of full scale, over a tenth of a second), at 100%
+MIN_GAIN, MAX_GAIN = 0.25, 8.0   # how far a talker may be turned down, and up
+OVER_TARGET = 1.4                # no tenth of a second leaves louder than this many times the target
+FALL_S = 3.0                     # a talker who drops their voice is followed down over this long
 HEARD = 20                       # overs remembered, for "last heard"
 
 _WHITEN20 = bytes([0x93, 0xD7, 0x51, 0x21, 0x9C, 0x2F, 0x6C, 0xD0, 0xEF, 0x0F, 0xF8, 0x3D, 0xF1, 0x73, 0x20, 0x94, 0xED, 0x1E, 0x7C, 0xD8])
@@ -217,27 +220,48 @@ def load_decoder(path: Path | None = None) -> Decoder | None:
 
 
 class Shaper:
-    """A room's speech at the level it's played. It comes from the decoder a little under
-    the level music is kept at, which is where a voice wants to be -- so it is NOT
-    levelled like a station (that turned it up, to the same average as music, where
-    speech sounds much louder, and clipped it). Instead: the room level setting, a hold
-    on any talker louder than CEILING (down at once, back up slowly), and a soft limit
-    on what's left."""
+    """A room's speech at the level it's played. Talkers come out of the decoder at very
+    different levels (one a little under the music, the next a seventh of it), so each
+    is brought to the same place: the level of the loud parts of their voice is followed
+    (up quickly, down slowly, the gaps between words left out of it) and put at TARGET
+    times the room level setting -- a little under the music, since speech at music's
+    average level sounds much louder. Nothing leaves far over that, and a soft limit
+    takes what's left. It is NOT the station's leveller, which works on the average over
+    seconds: that turned speech up to music's level and clipped it."""
 
     def __init__(self, rate: int = VOICE_RATE) -> None:
         self.rate = rate
-        self.down = 1.0                  # how far it's being held down (1 = not at all)
+        self.reset()
+
+    def reset(self) -> None:
+        """A new voice: its level is found afresh."""
+        self.heard: float | None = None  # the level of this talker's loud parts (mean square of full scale)
+        self.gain: float | None = None
+        self.said = 0.0                  # how long they've been talking, seconds
 
     def process(self, speech: np.ndarray) -> np.ndarray:
-        gain = max(MIN_LEVEL, min(MAX_LEVEL, LEVEL)) / 100.0
+        target = TARGET * max(MIN_LEVEL, min(MAX_LEVEL, LEVEL)) / 100.0
         out = np.empty(len(speech), dtype=np.float32)
         step = self.rate // 10
         for i in range(0, len(speech), step):
-            x = speech[i:i + step].astype(np.float32) * gain
-            rms = float(np.sqrt(np.mean(x * x))) / 32768.0 if len(x) else 0.0
-            want = min(1.0, CEILING / rms) if rms > 0 else 1.0
-            self.down = want if want < self.down else min(want, self.down + (1.0 - self.down) * len(x) / (RELEASE_S * self.rate) + 1e-4)
-            out[i:i + step] = x * self.down
+            x = speech[i:i + step].astype(np.float32)
+            ms = float(np.mean(x * x)) / 32768.0 ** 2 if len(x) else 0.0
+            if self.heard is None:
+                if ms > pcm.SILENCE_FLOOR ** 2:
+                    self.heard = ms
+            elif ms > self.heard:
+                self.heard += (ms - self.heard) * 0.6
+            elif ms > self.heard / 16:                               # (quieter than a quarter of it: a gap, not their voice)
+                self.heard += (ms - self.heard) * (1.0 - math.exp(-len(x) / (FALL_S * self.rate)))
+            want = 1.0 if self.heard is None else max(MIN_GAIN, min(MAX_GAIN, target / math.sqrt(self.heard)))
+            if self.heard is not None:
+                self.said += len(x) / self.rate
+            over = OVER_TARGET if self.said > 1.0 else 1.0           # (their first second: the level isn't known yet, so nothing over it)
+            most = over * target / math.sqrt(ms) if ms > 0 else MAX_GAIN
+            want = min(want, most)
+            was = want if self.gain is None else min(self.gain, most)
+            self.gain = want
+            out[i:i + step] = x * np.linspace(was, want, len(x), endpoint=False, dtype=np.float32)   # (no step in the level: no click)
         return pcm.soft_limit(out)
 
 
@@ -339,6 +363,7 @@ class RoomStream(ReceiverStream):
                     self._over, over_from = True, now
                     if decoder is not None:
                         decoder.reset()
+                    shaper.reset()
                 last_frame = now
                 dn = head is not None and head["fi"] == 1 and head["dt"] == 2
                 if who is None and dn and head["fn"] == 1:                        # (FCS: who it's from rides with the voice)
@@ -351,6 +376,7 @@ class RoomStream(ReceiverStream):
                         self._over, over_from = True, now
                         if decoder is not None:
                             decoder.reset()
+                        shaper.reset()
                     self.talker = who
                     self.title = f"{who} · {self.name}"
                 frames, agree = voice(payload)
