@@ -1,4 +1,4 @@
-"""Monitor: rooms heard over whatever is playing.
+"""Monitor: rooms -- and your own receiver -- heard over whatever is playing.
 
 A room (room.py) is quiet nearly all the time, so tuning one in as the
 station means mostly silence. Monitored instead, the radio carries on with
@@ -6,6 +6,13 @@ its music, a station or a book, sits in the room in the background, and
 when someone speaks there the programme dips and the room comes through;
 then the programme comes back. Up to MAX_ROOMS rooms at once: the first to
 speak has the air until its over ends.
+
+A receiver of your own (receiver/sleepradio_receiver.py: a band watched all
+at once, or one frequency) can be monitored the same way: its stream is
+silence until a squelch opens, and then that channel comes over the
+programme, named by its channel. One receiver does one thing at a time, so
+one thing on it at most is monitored, and while the radio is playing that
+receiver itself the monitor leaves it alone.
 
 The station passes every block it's about to play through mix(); with
 nobody talking that's the block itself, untouched.
@@ -17,6 +24,7 @@ import logging
 import threading
 import time
 from collections.abc import Callable
+from urllib.parse import parse_qs, urlparse
 
 import numpy as np
 
@@ -32,26 +40,111 @@ JITTER_S = 0.3               # this much of an over is in hand before it starts:
 HOLD_S = 1.2                 # the programme stays down this long after the last word, for the reply
 MAX_BUFFER_S = 4.0           # speech waiting to be played: more than this and the oldest goes (the radio was paused)
 RETRY_S = 30.0               # a room that dropped is joined again after this
+OPEN_S = 0.4                 # a receiver's squelch has to stay open this long to count: a click or a burst of noise doesn't
+BLIP_S = 0.25                # ...and a gap this long before then means it didn't
+SHUT_S = 0.6                 # quiet this long: that transmission is over
+GATE = 48                    # samples under this are the receiver's silence (of 32768)
+
+
+def receiver_of(url: str | None) -> str | None:
+    """Which receiver of your own this is the stream of (http://HOST:8074, from .../audio?band=2m or ?freq=145.5);
+    None if it isn't one."""
+    try:
+        u = urlparse(url or "")
+        q = parse_qs(u.query)
+    except ValueError:
+        return None
+    if u.scheme not in ("http", "https") or not u.netloc or u.path != "/audio" or not ("band" in q or "freq" in q):
+        return None
+    return f"{u.scheme}://{u.netloc}"
+
+
+def never_quiet(url: str) -> bool:
+    """A receiver stream with nothing to wait for: broadcast FM, or the squelch off."""
+    q = parse_qs(urlparse(url).query)
+    return q.get("mode", [""])[0].lower() == "wfm" or q.get("squelch", [""])[0].lower() in ("off", "0", "false", "no")
+
+
+class ReceiverWatch:
+    """Your own receiver as the monitor sees a room: start(), read(), talker, ended, close(). Its stream is
+    played like any station's and is silence between transmissions; what's passed on is a transmission that
+    has lasted OPEN_S (from its start: nothing is lost), brought to the level rooms are (room.Shaper)."""
+
+    def __init__(self, url: str, open_stream: Callable = radio.RadioStream) -> None:
+        self.url = url
+        self._stream = open_stream(url)
+        self._shaper = room.Shaper(pcm.SAMPLE_RATE)
+        self._pending: list[np.ndarray] = []
+        self._pending_n = 0
+        self._quiet_n = 0
+        self._open = False
+        self._out: list[np.ndarray] = []
+        self.talker: str | None = None
+
+    def start(self) -> None:
+        self._stream.start()
+
+    def close(self) -> None:
+        self._stream.close()
+
+    @property
+    def ended(self) -> str | None:
+        return self._stream.ended
+
+    def rig(self, since: int = 0) -> dict:
+        return {"kind": "own", "base": self.url, "talker": self.talker, "ended": self.ended}
+
+    def _shaped(self, block: np.ndarray) -> np.ndarray:
+        return np.repeat(self._shaper.process(block[:, 0])[:, None], block.shape[1], axis=1)
+
+    def read(self, timeout: float = 0.0) -> np.ndarray | None:
+        while (block := self._stream.read(0)) is not None:
+            n = len(block)
+            if n and int(np.abs(block).max()) > GATE:
+                self._quiet_n = 0
+                if self._open:
+                    self._out.append(self._shaped(block))
+                else:
+                    self._pending.append(block)
+                    self._pending_n += n
+                    if self._pending_n >= OPEN_S * pcm.SAMPLE_RATE:
+                        self._open = True
+                        self._shaper.reset()
+                        self._out += [self._shaped(b) for b in self._pending]
+                        self._pending, self._pending_n = [], 0
+            else:
+                self._quiet_n += n
+                if self._open and self._quiet_n > SHUT_S * pcm.SAMPLE_RATE:
+                    self._open = False
+                elif not self._open and self._pending and self._quiet_n > BLIP_S * pcm.SAMPLE_RATE:
+                    self._pending, self._pending_n = [], 0
+            # (the stream's title is the channel that has the air)
+            self.talker = (getattr(self._stream, "title", None) or "A signal") if self._open else None
+        return self._out.pop(0) if self._out else None
 
 
 def clean_rooms(rooms) -> list[dict]:
-    """[{"name", "url"}] of rooms, each once, MAX_ROOMS at most. ValueError if one isn't a room."""
-    out, seen = [], set()
+    """[{"name", "url"}] of rooms and receivers of your own, each once, MAX_ROOMS at most; a receiver does one
+    thing at a time, so the last thing asked of it is the one kept. ValueError if one can't be monitored."""
+    out: list[dict] = []
     for r in rooms or []:
         st = radio.validate_station(r)
-        if not room.is_room(st["url"]):
-            raise ValueError(f"{st['name']}: only a room can be monitored")
-        if st["url"] not in seen:
-            seen.add(st["url"])
-            out.append({"name": st["name"], "url": st["url"]})
+        rx = receiver_of(st["url"])
+        if rx is None and not room.is_room(st["url"]):
+            raise ValueError(f"{st['name']}: only a room, or a receiver of your own, can be monitored")
+        if rx is not None and never_quiet(st["url"]):
+            raise ValueError(f"{st['name']}: that never goes quiet, so there would be nothing to wait for")
+        out = [o for o in out if o["url"] != st["url"] and (rx is None or receiver_of(o["url"]) != rx)]
+        out.append({"name": st["name"], "url": st["url"]})
     if len(out) > MAX_ROOMS:
-        raise ValueError(f"{MAX_ROOMS} rooms at most can be monitored at once")
+        raise ValueError(f"{MAX_ROOMS} at most can be monitored at once")
     return out
 
 
 class Monitor:
-    def __init__(self, rooms=(), open_room: Callable = room.RoomStream, clock: Callable[[], float] = time.monotonic) -> None:
-        self._open, self._clock = open_room, clock
+    def __init__(self, rooms=(), open_room: Callable = room.RoomStream, clock: Callable[[], float] = time.monotonic,
+                 open_receiver: Callable = ReceiverWatch) -> None:
+        self._open, self._clock = lambda url: (open_receiver if receiver_of(url) else open_room)(url), clock
         self._lock = threading.RLock()
         self.rooms: list[dict] = []
         self._streams: dict = {}                    # url -> the room, joined
@@ -104,7 +197,8 @@ class Monitor:
         and two connections under one callsign would trip over each other)."""
         for r in self.rooms:
             url, st = r["url"], self._streams.get(r["url"])
-            if url == playing_url:
+            rx = receiver_of(url)
+            if url == playing_url or (rx is not None and rx == receiver_of(playing_url)):   # (...or that receiver, doing something else)
                 if st is not None:
                     self._streams.pop(url).close()
                 continue

@@ -323,6 +323,99 @@ def test_a_monitored_room_comes_over_the_programme_and_goes_again() -> None:
     assert mon.Monitor().mix(music) is music                                  # nothing monitored: the block itself
 
 
+def test_a_receiver_of_your_own_is_monitored_like_a_room(monkeypatch) -> None:
+    A, B = "http://rx.local:8074/audio?band=2m", "http://rx.local:8074/audio?band=marine&hold=156.8"
+    assert mon.receiver_of(A) == mon.receiver_of(B) == "http://rx.local:8074"
+    for other in ("ysf://a.example:42000/A", "http://stream.example/live.mp3", "http://rx.local:8074/status", None, ""):
+        assert mon.receiver_of(other) is None
+    room_a = {"name": "CQ-UK", "url": "ysf://a.example:42000/A"}
+    # one receiver does one thing: the last asked of it is what's kept; a room beside it is fine
+    assert [r["name"] for r in mon.clean_rooms([{"name": "2 m", "url": A}, room_a, {"name": "Ch 16", "url": B}])] == ["CQ-UK", "Ch 16"]
+    for never in ("http://rx.local:8074/audio?freq=95.0&mode=wfm", "http://rx.local:8074/audio?freq=145.5&squelch=off"):
+        with pytest.raises(ValueError, match="never goes quiet"):
+            mon.clean_rooms([{"name": "x", "url": never}])
+    with pytest.raises(ValueError, match="only a room, or a receiver"):
+        mon.clean_rooms([{"name": "x", "url": "http://stream.example/live.mp3"}])
+
+    class Stream:                                                              # the receiver's stream as radio.RadioStream gives it
+        def __init__(self, url):
+            self.url, self.blocks, self.title, self.ended, self.started, self.closed = url, [], "2 metres", None, False, False
+
+        def start(self):
+            self.started = True
+
+        def read(self, timeout=0.1):
+            return self.blocks.pop(0) if self.blocks else None
+
+        def close(self):
+            self.closed = True
+
+    monkeypatch.setattr(room, "LEVEL", 100)
+    rate = pcm.SAMPLE_RATE
+    rng = np.random.default_rng(3)
+    quiet = lambda s: [np.zeros((4410, pcm.CHANNELS), dtype=np.int16)] * round(s * 10)
+    voice = lambda s, rms=0.05: [np.repeat((rng.standard_normal(4410) * rms * 32768).astype(np.int16)[:, None], pcm.CHANNELS, axis=1) for _ in range(round(s * 10))]
+
+    def heard(w):
+        out = []
+        while (b := w.read(0)) is not None:
+            out.append(b)
+        return np.concatenate(out) if out else np.zeros((0, pcm.CHANNELS), dtype=np.int16)
+
+    w = mon.ReceiverWatch(A, open_stream=Stream)
+    w.start()
+    st = w._stream
+    assert st.started and st.url == A and w.read(0) is None and w.talker is None
+    st.blocks += quiet(0.5) + voice(0.2) + quiet(1.0)                           # a click: the squelch didn't stay open
+    assert len(heard(w)) == 0 and w.talker is None
+    st.title = "145.500 Calling"
+    st.blocks += voice(0.3)
+    assert len(heard(w)) == 0                                                   # (not long enough yet...)
+    st.blocks += voice(1.7)
+    out = heard(w)
+    assert len(out) == 2 * rate and w.talker == "145.500 Calling"               # ...then all of it, from its start, under the channel's name
+    level = float(np.sqrt(np.mean((out[rate:, 0].astype(float) / 32768) ** 2)))
+    assert level > 0.2 and out.shape[1] == pcm.CHANNELS                         # brought to the level rooms are
+    st.blocks += quiet(0.3)
+    assert len(heard(w)) == 0 and w.talker == "145.500 Calling"                 # a breath: still theirs
+    st.blocks += quiet(0.5)
+    assert len(heard(w)) == 0 and w.talker is None                              # over
+    st.ended = "the stream stopped"
+    assert w.ended == "the stream stopped"
+    w.close()
+    assert st.closed
+
+    # in the monitor: over the programme like a room; left alone while the radio plays that receiver itself
+    FakeRoom.opened = []
+    watches = []
+    now = [100.0]
+    m = mon.Monitor([{"name": "2 m: every channel", "url": A}, room_a], open_room=FakeRoom, clock=lambda: now[0],
+                    open_receiver=lambda url: watches.append(mon.ReceiverWatch(url, open_stream=Stream)) or watches[-1])
+    music = np.full((4410, pcm.CHANNELS), 10000, dtype=np.int16)
+
+    def play(seconds, playing=None):
+        out = []
+        for _ in range(round(seconds * 10)):
+            out.append(m.mix(music.copy(), playing))
+            now[0] += 0.1
+        return np.concatenate(out)
+
+    play(0.2)
+    assert len(watches) == 1 and watches[0]._stream.started and len(FakeRoom.opened) == 1
+    watches[0]._stream.title = "GB3XX"
+    watches[0]._stream.blocks += voice(2.0)
+    out = play(1.0)[:, 0].astype(int)
+    assert m.status()["talking"] == {"call": "GB3XX", "room": "2 m: every channel"} and abs(out[-4410:]).max() > 10000 * mon.DUCK + 2000
+    watches[0]._stream.blocks += quiet(1.0)
+    out = play(4.0)[:, 0]
+    assert out[-1] == 10000 and m.status()["talking"] is None
+    play(0.2, playing="http://rx.local:8074/audio?band=marine")                 # the radio is tuned to that receiver: it's theirs
+    assert watches[0]._stream.closed and len(watches) == 1
+    play(0.2, playing="http://stream.example/live.mp3")                         # ...and afterwards it's watched again
+    assert len(watches) == 2 and watches[1].url == A
+    m.close()
+
+
 def test_monitoring_from_the_web(tmp_path: Path, monkeypatch) -> None:
     FakeRoom.opened = []
     monkeypatch.setattr(room, "CALLSIGN", "M8ODJ")

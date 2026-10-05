@@ -1990,6 +1990,7 @@ const RXD = {
         if (changed && !document.querySelector(".win input:focus")) drawDesk();
       }
       if (tick % 3 === 0) R.st = await rxGet(R.origin, "/status");
+      if (tick % 25 === 0 || !R.me) R.me = await api("/api/rooms").catch(() => R.me || {});     // (what the radio monitors, and its levels)
       const d = await rxGet(R.origin, `/spectrum?since=${R.since}`);
       if (d.n < R.since) R.since = 0;
       const r = R.st?.receiving, ch = this.band(R)?.channels;
@@ -2044,17 +2045,36 @@ const RXD = {
     step(R, n) { const ch = this.chans(R), i = ch.findIndex(c => c.freq === this.tuned(R)); if (ch.length) this.hold(R, ch[Math.max(0, Math.min(ch.length - 1, (i < 0 ? 0 : i) + n))].freq); },
     setMode(R, m) { R.mode = m; const r = R.st?.receiving; if (r?.freq && r.mode !== m) this.tune(R, r.freq, m); else if (m === "wfm" || !r) { R.entering = true; drawDesk(); } else rigPaint(R); },
     enter(R, text) { this.tune(R, Math.round(parseFloat(text) * 1e6), R.mode); },
+    // Monitored: the radio stays on what it's playing and this receiver comes over it when a channel opens
+    // (playback/monitor.py). What's monitored is what the receiver is doing now: the band, or the one channel or frequency.
+    monitored(R) { return (R.me?.monitor?.rooms || []).find(r => { try { return new URL(r.url).origin === R.origin && new URL(r.url).pathname === "/audio"; } catch { return false; } }) || null; },
+    async monitor(R) {
+      const was = this.monitored(R), r = R.st?.receiving, band = this.band(R);
+      let what = was;
+      if (!was) {
+        if (!r) return toast("Press a band, or tune a frequency, first: what the receiver is doing is what's monitored.");
+        what = band && !R.st.hold ? { name: `${band.name}: every channel`, url: `${R.origin}/audio?band=${encodeURIComponent(band.id)}` } : this.station(R);
+        if (!what) return;
+      }
+      try {
+        R.me = { ...(R.me || {}), ...(await api("/api/rooms/monitor", { url: what.url, name: what.name, on: !was })) }; rigPaint(R);
+        toast(was ? `“${was.name}” is no longer monitored.` : `“${what.name}” is monitored: when a channel opens, what's playing dips and it comes through.`);
+      } catch (e) { rigOops(e); }
+    },
     foot(R, k) {
       const need = fn => () => this.band(R) ? fn() : toast("Press a band first: these work on a band's channels.");
       const d = R.dom;
-      return [el("div", { className: "rgrp" }, d.kscan = k("Scan", need(() => this.hold(R, null)), "Every channel: whoever speaks"), d.khold = k("Hold", need(() => this.hold(R, this.tuned(R))), "Stay on this channel"),
+      return [el("div", { className: "rgrp" }, d.kmon = k("Monitor", () => this.monitor(R), "Hear this over whatever is playing: the music dips when a channel opens (what the receiver is doing now is what's monitored)"),
+          k("Voice −", () => RXD.room.level(R, -5), "What's monitored a little quieter (rooms too)"), k("Voice +", () => RXD.room.level(R, 5), "What's monitored a little louder (rooms too)"),
+          k("Music −", () => RXD.room.music(R, -5), "When it speaks: what's playing drops further under it"), k("Music +", () => RXD.room.music(R, 5), "When it speaks: what's playing stays louder under it")),
+        el("div", { className: "rgrp" }, d.kscan = k("Scan", need(() => this.hold(R, null)), "Every channel: whoever speaks"), d.khold = k("Hold", need(() => this.hold(R, this.tuned(R))), "Stay on this channel"),
           k("Skip", need(async () => { const hz = this.tuned(R), c = this.band(R).channels.find(c => c.freq === hz); if (!c) return;
             try { await rxSay(R.origin, "/skip", { freq: hz, on: true }); R.bands = null; toast(`The band now skips ${c.name}. (Channels… has it back.)`); } catch (e) { rigOops(e); } }), "Leave this channel out of the band"),
           k("◀", need(() => this.step(R, -1)), "One channel down"), k("▶", need(() => this.step(R, 1)), "One channel up")),
         el("div", { className: "rgrp" }, k("Channels…", need(async () => { const id = `rxb:${R.origin}:${this.band(R).id}`; if (!O[id]) await loadFolder(mk({ id: "rxf:" + R.origin, kind: "folder", box: "rxbands", origin: R.origin, title: `${R.o.title}: bands`, kids: [], sym: "⌁", alt: true })); open(id); }), "The band's channels as stations: drag one onto a button"),
           k("Bands…", () => this.folder(R), "The bands as folders"), k("Find…", () => open(PANEL.findreceiver.id), "Other people's receivers on the internet"))];
     },
-    lamps(R, w) { R.dom.kscan?.classList.toggle("on", !!this.band(R) && !R.st.hold); R.dom.khold?.classList.toggle("on", !!R.st?.hold); },
+    lamps(R, w) { R.dom.kscan?.classList.toggle("on", !!this.band(R) && !R.st.hold); R.dom.khold?.classList.toggle("on", !!R.st?.hold); R.dom.kmon?.classList.toggle("on", !!this.monitored(R)); },
   },
 
   // ---- someone's KiwiSDR, through the radio: short wave, one frequency, tuned where it is

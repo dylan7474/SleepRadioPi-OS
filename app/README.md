@@ -1066,6 +1066,15 @@ The cards:
   in radioid.net's register (Pi-Star's copy of it, fetched once a week in the
   background and kept as a small file: `playback/dmr_ids.py`) and shows the
   callsign; a number it doesn't have stays a number.
+  A receiver of your own can be monitored too (the *Monitor* key in its
+  window): what it's doing just then -- a band, a held channel or one
+  frequency -- comes over the programme whenever a squelch opens, named by
+  its channel, at the level rooms are. A transmission has to last 0.4 s to
+  count (a click or a burst of noise doesn't dip the music), one receiver
+  is monitored for one thing at a time, broadcast FM or a receiver with its
+  squelch off can't be (they never go quiet), and while the radio is tuned
+  to that receiver itself the monitor leaves it alone and comes back to it
+  afterwards (`playback/monitor.py`, `ReceiverWatch`).
   *Music under a room* (0-100%, 10 to begin with) is how loud what's playing
   stays while a monitored room speaks: `POST /api/rooms/music {"level": 0-100}`,
   and the *Music −* / *Music +* keys in a room's window.
