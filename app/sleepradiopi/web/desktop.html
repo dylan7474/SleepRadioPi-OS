@@ -74,6 +74,10 @@
   .menubar > * { flex-shrink: 0; white-space: nowrap; }
   .menubar #nextLine { flex-shrink: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
   .proto { font-size: 11px; letter-spacing: .1em; text-transform: uppercase; color: var(--amber-deep); border: 1px solid #e9a23a77; border-radius: 99px; padding: 1px 8px; white-space: nowrap; }
+  .hear { font: inherit; font-size: 12px; color: var(--dim); background: none; border: 1px solid var(--line); border-radius: 99px; padding: 2px 10px; cursor: pointer; white-space: nowrap; }
+  .hear:hover { color: var(--ink); background: var(--hover); }
+  .hear.on { color: #fff; background: var(--red); border-color: var(--red); }
+  .hear.busy { opacity: .6; }
   .onair { font-size: 11px; letter-spacing: .14em; text-transform: uppercase; color: var(--red); white-space: nowrap; }
   .onair::before { content: "● "; }
   .clock { font-variant-numeric: tabular-nums; color: var(--ink); white-space: nowrap; }
@@ -548,6 +552,7 @@
   <a class="m classic" href="/?remote" id="classic" title="The phone remote (big keys), here">Phone remote</a>
   <span class="grow"></span>
   <button class="m" type="button" id="nextLine" title="The schedule" style="color:var(--ink);font-weight:600"></button>
+  <button class="hear" type="button" id="hearHere" title="Hear the radio in this browser instead: its own speaker goes quiet until you press this again">Listen here</button>
   <select class="themebtn" id="theme" title="Light or dark: or dark at night (the Night from / Day from times) and while the radio uses its Night buttons"><option value="radio">Follow the radio</option><option value="light">Light</option><option value="dark">Dark</option></select>
   <button class="wifi" type="button" id="wifiMenu" title="Wi-Fi"><span class="bars"><i class="on" style="height:4px"></i><i class="on" style="height:7px"></i><i class="on" style="height:10px"></i><i class="on" style="height:12px"></i></span><span>Wi-Fi</span></button>
   <span class="onair" id="onair" hidden>On air</span>
@@ -4604,6 +4609,55 @@ $("tidy").onclick = () => { const before = JSON.stringify(desk.map(p => [p.x, p.
   toast(JSON.stringify(desk.map(p => [p.x, p.y])) === before ? "Already tidy." : "Tidied the desktop."); };
 $("settingsMenu").onclick = () => { if (!radioBack) turnRadio(); toast("Every setting is on the back of the radio. Or click a part of it: the speakers, the knob, the buttons, its name."); };
 $("wifiMenu").onclick = () => open(PANEL.wifi.id);
+// Listen here (the menu bar): the radio is heard in this browser instead of from its own speaker, until it's pressed again.
+// The speaker is one listener and a browser another, so the show carries on for whichever is listening: the browser is
+// tuned in first, then the speaker let go; afterwards the speaker comes back and the radio stops making the stream if it
+// wasn't making one before.
+let hearing = null;                                   // { streamWas, playingWas } while this browser is the one listening
+function hearPaint(busy) {
+  const b = $("hearHere"); b.classList.toggle("on", !!hearing); b.classList.toggle("busy", !!busy);
+  b.textContent = busy ? "One moment…" : hearing ? "● Listening here" : "Listen here";
+  b.title = hearing ? "Back to the radio's own speaker" : "Hear the radio in this browser instead: its own speaker goes quiet until you press this again";
+}
+function hearAudio() { return $("listenHere") || document.body.appendChild(el("audio", { id: "listenHere" })); }
+async function hearStart() {
+  const st = await api("/api/status"), was = { streamWas: !!st.stream, playingWas: !!st.speaker?.playing };
+  if (!was.streamWas) await api("/api/stream", { enabled: true });
+  const a = hearAudio();
+  try {
+    a.src = "/stream"; await a.play();
+    await new Promise(done => { const t = setTimeout(done, 6000); a.addEventListener("playing", () => { clearTimeout(t); done(); }, { once: true }); });   // (heard here before it's quiet there)
+  } catch (e) {
+    a.removeAttribute("src"); a.load();
+    if (!was.streamWas) await api("/api/stream", { enabled: false }).catch(() => {});
+    throw new Error("this browser wouldn't play it");
+  }
+  await api("/api/speaker", { pause: true });
+  hearing = was;
+}
+async function hearStop(quiet) {
+  const was = hearing; hearing = null;
+  if (!was) return;
+  const a = hearAudio(); a.pause(); a.removeAttribute("src"); a.load();
+  if (was.playingWas) await api("/api/speaker", { pause: false });
+  if (!was.streamWas) await api("/api/stream", { enabled: false });
+}
+$("hearHere").onclick = async () => {
+  const on = !hearing;
+  hearPaint(true);
+  try {
+    await (on ? hearStart() : hearStop());
+    toast(on ? "The radio is playing here now, and its own speaker is quiet. Press it again to go back." : "Back on the radio's own speaker.", false, null, true);
+  } catch (e) { toast(e.message); }
+  hearPaint(false);
+};
+// (the page closed or left while listening here: the speaker isn't left quiet)
+addEventListener("pagehide", () => {
+  if (!hearing) return;
+  const post = (path, body) => fetch(path, { method: "POST", keepalive: true, headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }).catch(() => {});
+  if (hearing.playingWas) post("/api/speaker", { pause: false });
+  if (!hearing.streamWas) post("/api/stream", { enabled: false });
+});
 $("scheduleMenu").onclick = async () => { if (!PROGRAMMES.loaded) await loadProgrammes(); open(SCHEDULE.id); };
 $("nextLine").onclick = () => $("scheduleMenu").click();
 async function newBirthday() {
