@@ -38,6 +38,8 @@ def test_what_to_listen_to() -> None:
 def test_the_dongles_centre_keeps_clear_of_the_channels() -> None:
     half = rx.SAMPLE_RATE_MS * 1e6 * rx.USABLE / 2
     for band in rx.DEFAULT_BANDS.values():
+        if band["mode"] == "wfm":                                            # (one station at a time: nothing to fit in)
+            continue
         freqs = [c["freq"] for c in band["channels"]]
         centre = rx.centre_for(freqs)
         assert all(abs(f - centre) <= half for f in freqs)                   # everything is in what it hears well
@@ -120,9 +122,9 @@ def test_extra_bands_from_a_file(tmp_path: Path) -> None:
     f = tmp_path / "bands.json"
     f.write_text('{"pmr": {"name": "PMR446", "channels": [{"freq": 446006250}, {"freq": 446018750, "name": "Two", "priority": true}]}}')
     bands = rx.load_bands(f)
-    assert set(bands) == {"2m", "marine", "pmr"} and bands["pmr"]["channels"][0]["name"] == "446.0063"
+    assert set(bands) == {"2m", "marine", "fm", "pmr"} and bands["pmr"]["channels"][0]["name"] == "446.0063"
     assert bands["pmr"]["channels"][1] == {"freq": 446_018_750, "name": "Two", "priority": True}
-    assert set(rx.load_bands(tmp_path / "none.json")) == {"2m", "marine"}
+    assert set(rx.load_bands(tmp_path / "none.json")) == {"2m", "marine", "fm"}
 
 
 def test_a_band_of_your_own_from_a_stretch_of_spectrum(tmp_path: Path) -> None:
@@ -152,8 +154,8 @@ def test_a_band_of_your_own_from_a_stretch_of_spectrum(tmp_path: Path) -> None:
         r.remove_band("marine")
     r.remove_band("pmr-446-2")
     again = rx.Receiver(rx.DEFAULT_BANDS, bands_file=kept)             # remembered for the next start
-    assert set(again.bands) == {"2m", "marine", "pmr-446"} and again.bands["pmr-446"]["name"] == "PMR"
-    assert set(rx.DEFAULT_BANDS) == {"2m", "marine"}                   # (the built-in table isn't touched)
+    assert set(again.bands) == {"2m", "marine", "fm", "pmr-446"} and again.bands["pmr-446"]["name"] == "PMR"
+    assert set(rx.DEFAULT_BANDS) == {"2m", "marine", "fm"}                   # (the built-in table isn't touched)
     kept.write_text('{"bad": {"channels": [{"freq": 1}]}, "ok": {"channels": [{"freq": 433500000}]}}')
     assert set(rx.Receiver(rx.DEFAULT_BANDS, bands_file=kept).own) == {"ok"}
 
@@ -230,4 +232,52 @@ def test_a_channel_as_a_station_is_its_band_held_there(tmp_path: Path) -> None:
     r.skips.add(145_237_500)                                      # a skipped channel isn't in the band: on its own
     r.listen({"band": "2m", "hold": 145_237_500})
     assert asked[-1] == {"freq": 145_237_500, "mode": "nfm"}
+    r.proc = None
+
+
+def test_the_broadcast_band_is_one_station_at_a_time(tmp_path: Path) -> None:
+    bands = rx.DEFAULT_BANDS
+    fm = bands["fm"]
+    assert fm["mode"] == "wfm" and len(fm["channels"]) == 206
+    assert fm["channels"][0] == {"freq": 87_500_000, "name": "87.5 FM"} and fm["channels"][-1]["freq"] == 108_000_000
+    assert rx.parse_spec({"band": ["fm"]}, bands) == {"band": "fm"}
+    assert rx.parse_spec({"band": ["fm"], "hold": ["96.6"]}, bands) == {"band": "fm", "hold": 96_600_000}
+    with pytest.raises(ValueError, match="isn't a channel of Broadcast FM"):
+        rx.parse_spec({"band": ["fm"], "hold": ["145.5"]}, bands)
+    assert rx.spec_channels({"freq": 96_600_000, "mode": "wfm", "of": "fm"}, bands)[0] == "96.6 FM"
+
+    class Running:
+        def poll(self): return None
+        def terminate(self): pass
+        def wait(self, timeout=None): return 0
+    r = rx.Receiver(bands, skips_file=tmp_path / "skip.json")
+    asked = []
+    real = r.select
+    def select(spec):                              # (no dongle here: note what would be received, as select() leaves things)
+        if "band" in spec and r.bands[spec["band"]].get("mode") == "wfm":
+            return real(spec)                      # (the real one hands a broadcast band on to its station)
+        if spec == r.spec:
+            return
+        asked.append(spec)
+        for lis in r.listeners:
+            lis.dead = True
+        r.listeners = []
+        r.spec, r.name, r.proc, r.mixer, r.rate = spec, rx.spec_channels(spec, r.bands)[0], Running(), None, rx.WFM_RATE
+    r.select = select
+    a = r.listen({"band": "fm"})                                  # the band: somewhere to start
+    assert asked == [{"freq": rx.FM_START, "mode": "wfm", "of": "fm"}] and a.rate == rx.WFM_RATE
+    assert r.status()["receiving"] == {"freq": rx.FM_START, "mode": "wfm", "band": "fm"} and r.status()["name"] == "95.0 FM"
+    r.hold(96_600_000)                                            # another station: whoever is listening stays
+    assert asked[-1] == {"freq": 96_600_000, "mode": "wfm", "of": "fm"} and r.listeners == [a] and not a.dead
+    b = r.listen({"band": "fm"})                                  # someone else tunes in to the band: where it is now
+    assert len(asked) == 2 and r.listeners == [a, b]
+    r.listen({"band": "fm", "hold": 89_100_000})                  # ...or to one of its stations: it moves, they stay
+    assert asked[-1]["freq"] == 89_100_000 and len(r.listeners) == 3 and not a.dead and not b.dead
+    r.select({"band": "fm"})                                      # (asked for as a band by /select too: not 206 channels at once)
+    assert len(asked) == 3
+    for bad, why in ((None, "one station at a time"), (145_500_000, "isn't a channel of Broadcast FM")):
+        with pytest.raises(ValueError, match=why):
+            r.hold(bad)
+    r.listen({"freq": 95_000_000, "mode": "wfm"})                 # a frequency on its own is something else: they're let go
+    assert asked[-1] == {"freq": 95_000_000, "mode": "wfm"} and a.dead and "band" not in r.status()["receiving"]
     r.proc = None

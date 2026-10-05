@@ -231,7 +231,7 @@ Actions, Sleep timer and Radio folders open:
   RTL-SDR dongle on a spare Pi into a station the radio can tune in to: a
   whole band watched at once (2 m, marine VHF: whichever channel opens is
   what you hear, and its name is the "now playing" title), one frequency, or
-  broadcast FM. It's a separate small service, installed on that computer
+  broadcast FM (a band of its own beside those: one station at a time). It's a separate small service, installed on that computer
   with `receiver/install.sh`; the radio needs nothing new.
 - **Other people's receivers as stations.** Thousands of software radios are
   on the internet for anyone to tune, mostly radio amateurs' own. A station

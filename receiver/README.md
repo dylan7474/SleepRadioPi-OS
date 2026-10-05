@@ -10,6 +10,14 @@ or any internet radio player -- tunes in to it like any other station:
 | `http://RECEIVER:8074/audio?band=marine` | every marine VHF channel (the ship side) at once |
 | `http://RECEIVER:8074/audio?freq=145.5` | one frequency, narrow FM (`&mode=am` for AM, `&squelch=off` to hear the noise too) |
 | `http://RECEIVER:8074/audio?freq=95.0&mode=wfm` | broadcast FM |
+| `http://RECEIVER:8074/audio?band=fm` | the broadcast FM band, on the station it was last on (`&hold=96.6` for that one) |
+
+The broadcast band (87.5 to 108 MHz, every 100 kHz) is a band of another
+kind: it's twenty megahertz wide and each station wants the dongle to
+itself, so it's one station at a time, not a scanner. `POST /hold
+{"freq": 96.6}` moves it to another station while whoever is listening
+stays tuned in (on the radio's desktop: the band's key in the receiver's
+window, then ◀ ▶).
 
 Add one to the radio as a station (Stations, *Add a station*, or
 `POST /api/radio/stations`), and it goes on a button or into a programme like

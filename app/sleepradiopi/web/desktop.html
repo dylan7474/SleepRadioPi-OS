@@ -753,7 +753,8 @@ async function loadFolder(f) {
     const mine = st.receiving?.band === f.band, onAir = mine ? st.on_air?.freq : null;
     const heard = new Map((mine ? st.heard || [] : []).map(c => [c.freq, c.ago_s]));
     const all = `${f.origin}/audio?band=${encodeURIComponent(f.band)}`;
-    f.kids = [(O["st:" + all] || stationObj({ name: `${f.title}: every channel`, url: all, info: "The whole band at once: whichever channel opens" })).id,
+    f.kids = [(O["st:" + all] || stationObj(f.mode === "wfm" ? { name: f.title, url: all, info: "One station at a time: where it was last" }
+                                                            : { name: `${f.title}: every channel`, url: all, info: "The whole band at once: whichever channel opens" })).id,
       ...f.chans.map(c => {
         const o = stationObj({ name: c.name, url: `${f.origin}/audio?band=${encodeURIComponent(f.band)}&hold=${rxMhz(c.freq)}`, info: "" });   // (its band, held on it: Scan lets go)
         o.rxFreq = c.freq; o.rxSkip = !!c.skip;
@@ -2005,15 +2006,18 @@ const RXD = {
       const st = R.st, r = st?.receiving, band = this.band(R), tuned = this.tuned(R), mode = r?.mode || band?.mode || R.mode;
       let meter = 0;
       if (R.line && R.range && tuned) { const x = Math.max(1, Math.min(RIG_COLS - 2, rigX(R, tuned) / RIG_W * RIG_COLS | 0)); meter = (Math.max(R.line[x - 1], R.line[x], R.line[x + 1]) - R.floor) / 54; }
-      return { mode: { nfm: "FM", am: "AM", wfm: "WFM" }[mode] || "FM", modeOn: r ? mode : R.mode, sql: r?.squelch === false ? "SQL OFF" : "SQL AUTO",
-               scan: !r ? "" : !band ? "VFO" : st.hold ? "HOLD" : "SCAN", rx: !!st?.on_air, band: band ? band.name.toUpperCase() : r ? "ONE FREQUENCY" : "", bandOn: r?.band, meter,
+      return { mode: { nfm: "FM", am: "AM", wfm: "WFM" }[mode] || "FM", modeOn: r ? mode : R.mode, sql: mode === "wfm" ? "" : r?.squelch === false ? "SQL OFF" : "SQL AUTO",
+               scan: !r ? "" : !band ? "VFO" : band.mode === "wfm" ? "STATION" : st.hold ? "HOLD" : "SCAN", rx: !!st?.on_air, band: band ? band.name.toUpperCase() : r ? "ONE FREQUENCY" : "", bandOn: r?.band, meter,
                who: !r ? (R.wait > Date.now() ? "Tuning… about ten seconds" : "Press a band to listen on the radio")
-                 : st.on_air ? st.on_air.name : st.hold ? `${st.hold.name} · holding` : band ? `Scanning ${this.chans(R).length} channels` : "",
+                 : st.on_air ? st.on_air.name : st.hold ? `${st.hold.name} · holding` : band?.mode === "wfm" ? `${rxMhz(tuned)} MHz · ◀ ▶ to move` : band ? `Scanning ${this.chans(R).length} channels` : "",
                right: r && !rigOnRadio(R) ? "not on the radio" : st?.listeners > 1 ? `${st.listeners} listening` : "" };
     },
     bandKeys(R) {
       return Object.entries(R.bands || {}).map(([id, b]) => {
         const all = `${R.origin}/audio?band=${encodeURIComponent(id)}`;
+        if (b.mode === "wfm")                       // (a broadcast band: one station at a time, where it was last)
+          return { id, label: b.name.replace(/^Broadcast /, ""), title: `${b.name}: one station at a time (◀ ▶ step through them)`,
+                   go: () => rigListen(R, O["st:" + all] || stationObj({ name: b.name, url: all, info: "One station at a time: where it was last" })) };
         return { id, label: b.name.replace(/^2 metres$/, "2 m").replace(/ VHF$/, ""), title: `${b.name}: ${b.channels.length} channels at once`,
                  go: () => rigListen(R, O["st:" + all] || stationObj({ name: `${b.name}: every channel`, url: all, info: "The whole band at once: whichever channel opens" })) };
       }).concat([{ id: "+", label: "+ New", title: "A band of your own", go: () => this.folder(R, true) }]);
@@ -2053,6 +2057,7 @@ const RXD = {
       let what = was;
       if (!was) {
         if (!r) return toast("Press a band, or tune a frequency, first: what the receiver is doing is what's monitored.");
+        if (r.mode === "wfm") return toast("A broadcast station never goes quiet, so there would be nothing to wait for.");
         what = band && !R.st.hold ? { name: `${band.name}: every channel`, url: `${R.origin}/audio?band=${encodeURIComponent(band.id)}` } : this.station(R);
         if (!what) return;
       }
@@ -2063,18 +2068,19 @@ const RXD = {
     },
     foot(R, k) {
       const need = fn => () => this.band(R) ? fn() : toast("Press a band first: these work on a band's channels.");
+      const scans = fn => need(() => this.band(R).mode === "wfm" ? toast(`${this.band(R).name} is one station at a time: ◀ ▶ step through them.`) : fn());
       const d = R.dom;
       return [el("div", { className: "rgrp" }, d.kmon = k("Monitor", () => this.monitor(R), "Hear this over whatever is playing: the music dips when a channel opens (what the receiver is doing now is what's monitored)"),
           k("Voice −", () => RXD.room.level(R, -5), "What's monitored a little quieter (rooms too)"), k("Voice +", () => RXD.room.level(R, 5), "What's monitored a little louder (rooms too)"),
           k("Music −", () => RXD.room.music(R, -5), "When it speaks: what's playing drops further under it"), k("Music +", () => RXD.room.music(R, 5), "When it speaks: what's playing stays louder under it")),
-        el("div", { className: "rgrp" }, d.kscan = k("Scan", need(() => this.hold(R, null)), "Every channel: whoever speaks"), d.khold = k("Hold", need(() => this.hold(R, this.tuned(R))), "Stay on this channel"),
-          k("Skip", need(async () => { const hz = this.tuned(R), c = this.band(R).channels.find(c => c.freq === hz); if (!c) return;
+        el("div", { className: "rgrp" }, d.kscan = k("Scan", scans(() => this.hold(R, null)), "Every channel: whoever speaks"), d.khold = k("Hold", scans(() => this.hold(R, this.tuned(R))), "Stay on this channel"),
+          k("Skip", scans(async () => { const hz = this.tuned(R), c = this.band(R).channels.find(c => c.freq === hz); if (!c) return;
             try { await rxSay(R.origin, "/skip", { freq: hz, on: true }); R.bands = null; toast(`The band now skips ${c.name}. (Channels… has it back.)`); } catch (e) { rigOops(e); } }), "Leave this channel out of the band"),
           k("◀", need(() => this.step(R, -1)), "One channel down"), k("▶", need(() => this.step(R, 1)), "One channel up")),
         el("div", { className: "rgrp" }, k("Channels…", need(async () => { const id = `rxb:${R.origin}:${this.band(R).id}`; if (!O[id]) await loadFolder(mk({ id: "rxf:" + R.origin, kind: "folder", box: "rxbands", origin: R.origin, title: `${R.o.title}: bands`, kids: [], sym: "⌁", alt: true })); open(id); }), "The band's channels as stations: drag one onto a button"),
           k("Bands…", () => this.folder(R), "The bands as folders"), k("Find…", () => open(PANEL.findreceiver.id), "Other people's receivers on the internet"))];
     },
-    lamps(R, w) { R.dom.kscan?.classList.toggle("on", !!this.band(R) && !R.st.hold); R.dom.khold?.classList.toggle("on", !!R.st?.hold); R.dom.kmon?.classList.toggle("on", !!this.monitored(R)); },
+    lamps(R, w) { R.dom.kscan?.classList.toggle("on", !!this.band(R) && this.band(R).mode !== "wfm" && !R.st.hold); R.dom.khold?.classList.toggle("on", !!R.st?.hold); R.dom.kmon?.classList.toggle("on", !!this.monitored(R)); },
   },
 
   // ---- someone's KiwiSDR, through the radio: short wave, one frequency, tuned where it is

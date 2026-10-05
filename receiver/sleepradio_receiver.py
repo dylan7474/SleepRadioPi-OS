@@ -9,6 +9,8 @@ turns its dongle into something a Sleep Radio -- or any internet radio player
     http://RECEIVER:8074/audio?band=2m&hold=145.5   ...staying on one of them
     http://RECEIVER:8074/audio?freq=145.5       one frequency (narrow FM)
     http://RECEIVER:8074/audio?freq=95.0&mode=wfm   broadcast FM
+    http://RECEIVER:8074/audio?band=fm              the broadcast band: the station it was last on
+    http://RECEIVER:8074/audio?band=fm&hold=96.6    ...or that one
 
 A band is watched all at once (rtl_airband takes the whole 2.4 MHz the dongle
 hears apart into its channels, each with its own squelch), so it's a scanner
@@ -19,6 +21,11 @@ half a minute (a repeater's carrier, a stuck gateway) gives way to another
 that opens; one that's always open can be skipped (/skip), which is
 remembered. With nobody transmitting the
 stream is silence, so a player stays tuned in.
+
+The broadcast FM band is a band too, of another kind: it's twenty megahertz
+wide and each station wants the dongle to itself, so it's one station at a
+time (the one it's held on, moved with /hold, whoever is listening staying
+tuned in), not a scanner.
 
 2 metres and marine VHF are built in. Any other stretch of spectrum the
 dongle can hear at once (1.9 MHz) becomes a band by saying where it starts
@@ -119,9 +126,17 @@ def two_metre_channels(names: dict[int, str] | None = None, skip: tuple[int, ...
 NEAR_GUISBOROUGH = {145_212_500: "MB7ICC gateway", 145_237_500: "MB7IMB gateway", 145_312_500: "MB7ISQ gateway",
                     145_600_000: "GB7RW", 145_625_000: "GB3HG", 145_737_500: "GB3RT", 145_762_500: "GB3IR"}
 
+def broadcast_channels() -> list[dict]:
+    """Broadcast FM, 87.5-108 MHz every 100 kHz."""
+    return [{"freq": hz, "name": f"{hz / 1e6:.1f} FM"} for hz in range(87_500_000, 108_000_001, 100_000)]
+
+
+FM_START = 95_000_000        # where the broadcast band starts off, until it's been tuned
+
 DEFAULT_BANDS = {
     "2m": {"name": "2 metres", "mode": "nfm", "channels": two_metre_channels(NEAR_GUISBOROUGH, skip=(145_662_500,))},
     "marine": {"name": "Marine VHF", "mode": "nfm", "channels": marine_channels()},
+    "fm": {"name": "Broadcast FM", "mode": "wfm", "channels": broadcast_channels()},      # (one station at a time)
 }
 
 
@@ -254,6 +269,9 @@ def spec_channels(spec: dict, bands: dict, skips: set[int] = frozenset()) -> tup
         chans = [c for c in bands[spec["band"]]["channels"] if c["freq"] not in skips]
         return bands[spec["band"]]["name"], chans or bands[spec["band"]]["channels"]
     mhz = f"{spec['freq'] / 1e6:.4f}".rstrip("0").rstrip(".")
+    if spec.get("of"):                                # (a station of a broadcast band: by its name there)
+        named = [c for c in bands[spec["of"]]["channels"] if c["freq"] == spec["freq"]]
+        return (named[0]["name"] if named else f"{mhz} MHz"), [{"freq": spec["freq"], "name": f"{mhz} MHz"}]
     return f"{mhz} MHz", [{"freq": spec["freq"], "name": f"{mhz} MHz"}]
 
 
@@ -438,6 +456,7 @@ class Receiver:
         self.centre = 0                               # where the dongle's centre is (a band, or one frequency)
         self.spectrum: collections.deque = collections.deque(maxlen=SPECTRUM_ROWS)    # (number, spectrum_row)
         self.spectrum_n = 0
+        self.at: dict[str, int] = {}                  # a broadcast band -> the station it was last on
         self.spectrum_wanted = 0.0                    # when a waterfall last asked: nobody asking, nothing worked out
         threading.Thread(target=self._housekeeping, name="housekeeping", daemon=True).start()
 
@@ -446,6 +465,8 @@ class Receiver:
     def select(self, spec: dict) -> None:
         """Receive this (unless it already is)."""
         with self.lock:
+            if "band" in spec and self.bands[spec["band"]].get("mode") == "wfm":     # (a broadcast band: one station of it)
+                return self._station(spec["band"], spec.get("hold"))
             if spec == self.spec and self.proc is not None and self.proc.poll() is None:
                 return
             self._stop()
@@ -572,6 +593,10 @@ class Receiver:
     def hold(self, freq: int | None) -> None:
         """Listen to one channel of the band being received, whoever else speaks (None: all of them again)."""
         with self.lock:
+            if self.spec and self.spec.get("of") and self.proc is not None:      # a broadcast band: move to that station
+                if freq is None:
+                    raise ValueError(f"{self.bands[self.spec['of']]['name']} is one station at a time")
+                return self._station(self.spec["of"], int(freq))
             mixer = self.mixer
             if mixer is None or self.proc is None or not self.spec or self.spec.get("mode") == "wfm":
                 raise ValueError("nothing is being received to hold a channel of")
@@ -582,6 +607,23 @@ class Receiver:
             if not at:
                 raise ValueError(f"{_mhz(int(freq))} MHz isn't a channel of {self.name}")
             mixer.hold = at[0]
+
+    def _station(self, band: str, freq: int | None = None) -> None:
+        """One station of a broadcast band (the one it was last on, if none is asked for). Whoever is
+        listening to the band stays tuned in while it moves."""
+        chans = self.bands[band]["channels"]
+        if freq is None:
+            freq = self.at.get(band) or min((c["freq"] for c in chans), key=lambda hz: abs(hz - FM_START))
+        if not any(c["freq"] == freq for c in chans):
+            raise ValueError(f"{_mhz(freq)} MHz isn't a channel of {self.bands[band]['name']}")
+        self.at[band] = freq
+        spec = {"freq": freq, "mode": "wfm", "of": band}
+        staying = self.listeners if self.spec and self.spec.get("of") == band and spec != self.spec else None
+        self.select(spec)
+        if staying is not None:
+            for lis in staying:
+                lis.dead = False
+            self.listeners = staying
 
     def waterfall(self, since: int = 0) -> dict:
         """The spectra after number `since` (5 s of them are kept), for a waterfall."""
@@ -661,7 +703,9 @@ class Receiver:
 
     def listen(self, spec: dict | None) -> Listener:
         with self.lock:
-            if spec is not None and "band" in spec:
+            if spec is not None and "band" in spec and self.bands[spec["band"]].get("mode") == "wfm":
+                self._station(spec["band"], spec.get("hold"))     # (a broadcast band: one station of it)
+            elif spec is not None and "band" in spec:
                 hold = spec.get("hold")
                 if hold in self.skips:               # (skipped: the band doesn't receive it, so it's listened to on its own)
                     self.select({"freq": hold, "mode": self.bands[spec["band"]].get("mode", "nfm")})
@@ -696,7 +740,9 @@ class Receiver:
         now = time.monotonic()
         with self.lock:
             mixer, running = self.mixer, self.proc is not None and self.proc.poll() is None
-            out = {"receiving": self.spec, "name": self.name if self.spec else None, "running": running,
+            spec = self.spec                      # (a station of a broadcast band says which band)
+            receiving = {"freq": spec["freq"], "mode": "wfm", "band": spec["of"]} if spec and spec.get("of") else spec
+            out = {"receiving": receiving, "name": self.name if self.spec else None, "running": running,
                    "listeners": len(self.listeners), "title": self.title if self.spec else None, "error": self.error,
                    "rate": self.rate, "skipping": sorted(self.skips),
                    "bands": {k: {"name": b["name"], "channels": len(b["channels"])} for k, b in self.bands.items()}}
