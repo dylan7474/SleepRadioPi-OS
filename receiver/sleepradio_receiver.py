@@ -543,11 +543,9 @@ class Receiver:
         spec = self.spec
         if spec is None or self.proc is None:
             return
-        listeners = self.listeners
-        self.spec = None
+        listeners, self.listeners = self.listeners, []    # (out of select()'s way: it lets go of whoever it finds -- and
+        self.spec = None                                  # one marked let-go even for a moment has its stream closed)
         self.select(spec)
-        for lis in listeners:
-            lis.dead = False
         self.listeners = listeners
 
     def _keep_bands(self) -> None:
@@ -619,10 +617,10 @@ class Receiver:
         self.at[band] = freq
         spec = {"freq": freq, "mode": "wfm", "of": band}
         staying = self.listeners if self.spec and self.spec.get("of") == band and spec != self.spec else None
+        if staying is not None:
+            self.listeners = []                       # (out of select()'s way: it lets go of whoever it finds)
         self.select(spec)
         if staying is not None:
-            for lis in staying:
-                lis.dead = False
             self.listeners = staying
 
     def waterfall(self, since: int = 0) -> dict:

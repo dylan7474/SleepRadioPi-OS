@@ -267,8 +267,13 @@ def test_the_broadcast_band_is_one_station_at_a_time(tmp_path: Path) -> None:
     a = r.listen({"band": "fm"})                                  # the band: somewhere to start
     assert asked == [{"freq": rx.FM_START, "mode": "wfm", "of": "fm"}] and a.rate == rx.WFM_RATE
     assert r.status()["receiving"] == {"freq": rx.FM_START, "mode": "wfm", "band": "fm"} and r.status()["name"] == "95.0 FM"
+    seen = []                                                     # (never let go of, even for a moment: a stream closes on that)
+    def select(spec, inner=select):
+        seen.append(list(r.listeners))
+        return inner(spec)
+    r.select = select
     r.hold(96_600_000)                                            # another station: whoever is listening stays
-    assert asked[-1] == {"freq": 96_600_000, "mode": "wfm", "of": "fm"} and r.listeners == [a] and not a.dead
+    assert asked[-1] == {"freq": 96_600_000, "mode": "wfm", "of": "fm"} and r.listeners == [a] and not a.dead and seen[-1] == []
     b = r.listen({"band": "fm"})                                  # someone else tunes in to the band: where it is now
     assert len(asked) == 2 and r.listeners == [a, b]
     r.listen({"band": "fm", "hold": 89_100_000})                  # ...or to one of its stations: it moves, they stay
