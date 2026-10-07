@@ -984,6 +984,15 @@ The cards:
     band held on that channel: the rig looks the same as after a click on
     the scope, and *Scan* lets go); *Bands…* opens its bands as
     folders (*◂ Rig* comes back).
+  - *...or tunes one frequency like a rig*, in sideband and Morse. The modes
+    USB, LSB and CW, and the bands of that kind (12 m, CB, 10 m, 6 m, 2 m
+    SSB), put the receiver's own demodulator to work (`receiver/
+    sleepradio_tuner.py`): the scope becomes a quarter of a megahertz round
+    the frequency, a click lands on it as on an internet receiver (CW to
+    10 Hz, sideband to 100 Hz), ◀ ▶ and the wheel step by the step key
+    (10 Hz to 5 kHz; Shift with the wheel a tenth of it), and *Zoom − / +*
+    close in. It's moved where it is (`POST /tune` to the receiver), so the
+    radio stays tuned in while you turn the dial; the scan pauses meanwhile.
   - *A KiwiSDR* is short wave, one frequency at a time. The radio holds the
     one connection to it -- the sound and the waterfall -- so it takes one
     listener's place, and the rig tunes it where it is: band keys for the

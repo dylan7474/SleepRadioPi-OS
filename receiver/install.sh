@@ -23,7 +23,7 @@ HOST=${1:?usage: receiver/install.sh USER@HOST [--disable-openwebrx]}
 OWRX=${2:-}
 HERE=$(cd "$(dirname "$0")" && pwd)
 
-scp -q "$HERE/sleepradio_receiver.py" "$HERE/sleepradio-receiver.service" "$HERE/rtl_airband_spectrum.py" "$HOST:/tmp/"
+scp -q "$HERE/sleepradio_receiver.py" "$HERE/sleepradio_tuner.py" "$HERE/sleepradio-receiver.service" "$HERE/rtl_airband_spectrum.py" "$HOST:/tmp/"
 ssh "$HOST" OWRX="$OWRX" sh -s <<'REMOTE'
 set -eu
 # (built with the spectrum tap, for the waterfall: one built before that is built again)
@@ -45,11 +45,17 @@ if [ "$OWRX" = "--disable-openwebrx" ] && systemctl list-unit-files openwebrx.se
 	sudo systemctl disable --now openwebrx 2>/dev/null || true
 	echo "OpenWebRX stopped and disabled (not removed)"
 fi
+# (sideband and Morse are taken out of the dongle's signal with numpy, through rtl_tcp)
+if ! python3 -c "import numpy" 2>/dev/null || ! command -v rtl_tcp >/dev/null; then
+	sudo apt-get update -qq
+	sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq python3-numpy rtl-sdr
+fi
 sudo install -d /opt/sleepradio-receiver /etc/sleepradio-receiver
 sudo install -m 644 /tmp/sleepradio_receiver.py /opt/sleepradio-receiver/sleepradio_receiver.py
+sudo install -m 644 /tmp/sleepradio_tuner.py /opt/sleepradio-receiver/sleepradio_tuner.py
 [ -e /etc/sleepradio-receiver/options ] || echo 'OPTIONS=""' | sudo tee /etc/sleepradio-receiver/options >/dev/null
 sudo install -m 644 /tmp/sleepradio-receiver.service /etc/systemd/system/sleepradio-receiver.service
-rm -f /tmp/sleepradio_receiver.py /tmp/sleepradio-receiver.service /tmp/rtl_airband_spectrum.py
+rm -f /tmp/sleepradio_receiver.py /tmp/sleepradio_tuner.py /tmp/sleepradio-receiver.service /tmp/rtl_airband_spectrum.py
 sudo systemctl daemon-reload
 sudo systemctl enable -q sleepradio-receiver
 sudo systemctl restart sleepradio-receiver

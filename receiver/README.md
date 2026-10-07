@@ -11,6 +11,8 @@ or any internet radio player -- tunes in to it like any other station:
 | `http://RECEIVER:8074/audio?freq=145.5` | one frequency, narrow FM (`&mode=am` for AM, `&squelch=off` to hear the noise too) |
 | `http://RECEIVER:8074/audio?freq=95.0&mode=wfm` | broadcast FM |
 | `http://RECEIVER:8074/audio?band=fm` | the broadcast FM band, on the station it was last on (`&hold=96.6` for that one) |
+| `http://RECEIVER:8074/audio?freq=28.5&mode=usb` | one frequency tuned like a rig: `usb`, `lsb` (sideband speech) or `cw` (Morse) |
+| `http://RECEIVER:8074/audio?band=10m` | a band of that kind (12 m, CB, 10 m, 6 m, the sideband end of 2 m), where and how it was last |
 
 The broadcast band (87.5 to 108 MHz, every 100 kHz) is a band of another
 kind: it's twenty megahertz wide and each station wants the dongle to
@@ -18,6 +20,23 @@ itself, so it's one station at a time, not a scanner. `POST /hold
 {"freq": 96.6}` moves it to another station while whoever is listening
 stays tuned in (on the radio's desktop: the band's key in the receiver's
 window, then ◀ ▶).
+
+**Sideband and Morse** are a third kind: one frequency, tuned like a rig.
+Neither rtl_airband nor rtl_fm does them, so this part is the receiver's own
+(`sleepradio_tuner.py`, which needs numpy): a quarter of a megahertz of the
+dongle's raw signal comes from `rtl_tcp`, a spectrum of it is taken every
+8 ms (the waterfall, and the first filter), and the passband -- 2.4 kHz for
+speech, 400 Hz for Morse -- is cut out and put where the ear wants it, with a
+gain that follows the signal. `POST /tune {"freq": 28.495, "mode": "usb"}`
+(either or both) moves it while whoever is listening stays tuned in; within
+100 kHz of where the dongle sits that's instant, further and the dongle
+moves too. A frequency is the carrier's in sideband (what a rig's dial says)
+and the signal's own in Morse, which is heard as a 700 Hz tone. On the
+radio's desktop: the band's key in the receiver's window, then click the
+scope, ◀ ▶ and the wheel, as on an internet receiver; the CW key there reads
+the Morse. An RTL-SDR starts at 24 MHz, so of short wave that's 12 m, CB and
+10 m -- with an aerial for them; the rest wants an upconverter, which is next.
+While it's being tuned the dongle isn't scanning: one dongle does one thing.
 
 Add one to the radio as a station (Stations, *Add a station*, or
 `POST /api/radio/stations`), and it goes on a button or into a programme like
@@ -114,13 +133,14 @@ scope and waterfall, click to tune -- which is what `/spectrum`, `/hold`,
   `{"pmr": {"name": "PMR446", "channels": [{"freq": 446006250, "name": "Channel 1"}]}}`
   (add `"priority": true` to a channel). Its channels must fit in 1.9 MHz.
 
-The audio is a WAV stream (16-bit mono; 16 kHz, or 32 kHz for broadcast FM)
-with ICY titles.
+The audio is a WAV stream (16-bit mono; 16 kHz, 32 kHz for broadcast FM,
+12 kHz for sideband and Morse) with ICY titles.
 
 ## Notes
 
 - A Pi 2 keeps up with 48 channels at `fft_size = 512` (one core at about
-  90%); 1024 and 2048 drop samples on it.
+  90%); 1024 and 2048 drop samples on it. Sideband and Morse take about 40%
+  of one core.
 - The built-in 2 m band names the repeaters near Guisborough (the first
   radio's home); elsewhere, list your own in `bands.json` under `"2m"`.
 - Receive only. What you may listen to depends on where you are: in the UK,

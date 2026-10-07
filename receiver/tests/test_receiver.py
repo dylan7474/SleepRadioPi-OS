@@ -1,6 +1,7 @@
 """The receiver service's own logic (no dongle, no network)."""
 import json
 import struct
+import subprocess
 import sys
 from pathlib import Path
 
@@ -28,7 +29,7 @@ def test_what_to_listen_to() -> None:
     assert rx.parse_spec({"freq": ["145.5"]}, bands) == {"freq": 145_500_000, "mode": "nfm"}
     assert rx.parse_spec({"freq": ["156000000"], "squelch": ["off"]}, bands) == {"freq": 156_000_000, "mode": "nfm", "squelch": False}
     assert rx.parse_spec({"freq": "95.0", "mode": "WFM"}, bands) == {"freq": 95_000_000, "mode": "wfm"}
-    for bad in ({"band": ["70cm"]}, {}, {"freq": ["abc"]}, {"freq": ["5"]}, {"freq": ["145.5"], "mode": ["usb"]}):
+    for bad in ({"band": ["70cm"]}, {}, {"freq": ["abc"]}, {"freq": ["5"]}, {"freq": ["145.5"], "mode": ["ssb"]}):
         with pytest.raises(ValueError):
             rx.parse_spec(bad, bands)
     assert rx.spec_channels({"freq": 145_500_000, "mode": "nfm"}, bands) == ("145.5 MHz", [{"freq": 145_500_000, "name": "145.5 MHz"}])
@@ -38,7 +39,7 @@ def test_what_to_listen_to() -> None:
 def test_the_dongles_centre_keeps_clear_of_the_channels() -> None:
     half = rx.SAMPLE_RATE_MS * 1e6 * rx.USABLE / 2
     for band in rx.DEFAULT_BANDS.values():
-        if band["mode"] == "wfm":                                            # (one station at a time: nothing to fit in)
+        if band["mode"] == "wfm" or "range" in band:                         # (one station, or one frequency, at a time: nothing to fit in)
             continue
         freqs = [c["freq"] for c in band["channels"]]
         centre = rx.centre_for(freqs)
@@ -122,9 +123,9 @@ def test_extra_bands_from_a_file(tmp_path: Path) -> None:
     f = tmp_path / "bands.json"
     f.write_text('{"pmr": {"name": "PMR446", "channels": [{"freq": 446006250}, {"freq": 446018750, "name": "Two", "priority": true}]}}')
     bands = rx.load_bands(f)
-    assert set(bands) == {"2m", "marine", "fm", "pmr"} and bands["pmr"]["channels"][0]["name"] == "446.0063"
+    assert set(bands) == {*rx.DEFAULT_BANDS, "pmr"} and bands["pmr"]["channels"][0]["name"] == "446.0063"
     assert bands["pmr"]["channels"][1] == {"freq": 446_018_750, "name": "Two", "priority": True}
-    assert set(rx.load_bands(tmp_path / "none.json")) == {"2m", "marine", "fm"}
+    assert set(rx.load_bands(tmp_path / "none.json")) == set(rx.DEFAULT_BANDS)
 
 
 def test_a_band_of_your_own_from_a_stretch_of_spectrum(tmp_path: Path) -> None:
@@ -154,8 +155,8 @@ def test_a_band_of_your_own_from_a_stretch_of_spectrum(tmp_path: Path) -> None:
         r.remove_band("marine")
     r.remove_band("pmr-446-2")
     again = rx.Receiver(rx.DEFAULT_BANDS, bands_file=kept)             # remembered for the next start
-    assert set(again.bands) == {"2m", "marine", "fm", "pmr-446"} and again.bands["pmr-446"]["name"] == "PMR"
-    assert set(rx.DEFAULT_BANDS) == {"2m", "marine", "fm"}                   # (the built-in table isn't touched)
+    assert set(again.bands) == {*rx.DEFAULT_BANDS, "pmr-446"} and again.bands["pmr-446"]["name"] == "PMR"
+    assert "pmr-446" not in rx.DEFAULT_BANDS                              # (the built-in table isn't touched)
     kept.write_text('{"bad": {"channels": [{"freq": 1}]}, "ok": {"channels": [{"freq": 433500000}]}}')
     assert set(rx.Receiver(rx.DEFAULT_BANDS, bands_file=kept).own) == {"ok"}
 
@@ -286,3 +287,130 @@ def test_the_broadcast_band_is_one_station_at_a_time(tmp_path: Path) -> None:
     r.listen({"freq": 95_000_000, "mode": "wfm"})                 # a frequency on its own is something else: they're let go
     assert asked[-1] == {"freq": 95_000_000, "mode": "wfm"} and a.dead and "band" not in r.status()["receiving"]
     r.proc = None
+
+
+# --- sideband and Morse: one frequency, tuned like a rig (sleepradio_tuner.py) ---------------
+
+
+def _demod(mode: str, offset: float, tones: list[tuple[float, float]], secs: float = 1.5):
+    """What comes out for these tones (Hz from the dongle's centre, amplitude): (the strongest pitch, the audio's spectrum, its frequencies)."""
+    import numpy as np
+    import sleepradio_tuner as st
+    d = st.Demod()
+    d.set(offset, mode)
+    step = st.HOP * st.HOPS
+    n = int(secs * st.FS) // step * step
+    t = np.arange(n) / st.FS
+    x = sum(a * np.exp(2j * np.pi * f * t) for f, a in tones).astype(np.complex64)
+    a = np.concatenate([d.process(x[i:i + step])[0] for i in range(0, n, step)]).astype(float)[st.AUDIO_RATE // 2:]
+    S = np.abs(np.fft.rfft(a * np.hanning(len(a))))
+    f = np.fft.rfftfreq(len(a), 1 / st.AUDIO_RATE)
+    return float(f[np.argmax(S)]), S, f
+
+
+def test_sideband_and_morse_come_out_at_the_right_pitch():
+    import numpy as np
+    assert abs(_demod("usb", 30_000, [(31_000, 0.01)])[0] - 1000) < 3          # 1 kHz above the carrier: 1 kHz
+    assert abs(_demod("lsb", -41_300, [(-41_900, 0.01)])[0] - 600) < 3         # 600 Hz below it, in lower sideband: 600 Hz
+    assert abs(_demod("cw", 12_345, [(12_345, 0.01)])[0] - 700) < 3            # Morse on the frequency: the 700 Hz tone
+    assert abs(_demod("cw", 12_345, [(12_495, 0.01)])[0] - 850) < 3
+    # a station a hundred times stronger on the other sideband, and another 5 kHz off, make no difference
+    pitch, S, f = _demod("usb", 30_000, [(31_000, 0.001), (29_000, 0.1), (36_000, 0.1)])
+    assert abs(pitch - 1000) < 3 and np.max(S[np.abs(f - 1000) > 60]) < S[np.argmin(np.abs(f - 1000))] / 1000
+    # ...and a steady tone comes out steady: nothing at the joins between the pieces it's made in
+    pitch, S, f = _demod("usb", 30_000, [(31_234.5, 0.01)])
+    assert np.max(S[np.abs(f - pitch) > 60]) < np.max(S) / 3000
+
+
+def test_a_waterfall_row_is_the_band_lowest_frequency_first():
+    import numpy as np
+    import sleepradio_tuner as st
+    d = st.Demod()
+    step = st.HOP * st.HOPS
+    t = np.arange(step) / st.FS
+    row = st.spectrum_row(d.process((0.05 * np.exp(2j * np.pi * 64_000 * t)).astype(np.complex64))[1])
+    assert len(row) == st.SPECTRUM_BINS and abs(int(np.argmax(np.frombuffer(row, np.uint8))) - 768) <= 1      # a quarter of the way down from the top
+    assert st.centre_for(28_400_000) == 28_424_000
+
+
+def test_tuned_bands_and_their_addresses():
+    bands = rx.load_bands(None)
+    assert bands["10m"]["range"] == [28_000_000, 29_700_000] and bands["10m"]["start"] == 28_400_000 and bands["10m"]["channels"] == []
+    assert rx.parse_spec({"freq": ["28.5"], "mode": ["usb"]}, bands) == {"freq": 28_500_000, "mode": "usb"}
+    assert rx.parse_spec({"freq": ["28.025"], "mode": ["cw"], "squelch": ["off"]}, bands) == {"freq": 28_025_000, "mode": "cw"}
+    assert rx.parse_spec({"band": ["10m"], "hold": ["28.3"]}, bands) == {"band": "10m", "hold": 28_300_000}
+    for bad in ({"band": ["10m"], "hold": ["27.9"]}, {"freq": ["28.5"], "mode": ["ssb"]}):
+        try:
+            rx.parse_spec(bad, bands)
+            assert False, bad
+        except ValueError:
+            pass
+    assert rx.spec_channels({"freq": 28_500_000, "mode": "usb", "of": "10m"}, bands)[0] == "28.5000 MHz USB"
+    assert rx.spec_channels({"freq": 28_025_130, "mode": "cw"}, bands)[0] == "28.02513 MHz CW"
+
+
+class _FakeTuner:
+    """A Tuner with no dongle: it remembers what it was asked."""
+    made: list = []
+
+    def __init__(self, rtl_tcp, audio, row, **kw):
+        self.audio, self.row, self.kw, self.asked, self.centre, self.level_db, self.stopped = audio, row, kw, [], 0, -60.0, False
+        self.proc = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(30)"], stderr=subprocess.PIPE)
+        _FakeTuner.made.append(self)
+
+    def start(self, freq, mode):
+        self.tune(freq, mode, recentre=True)
+
+    def tune(self, freq, mode, recentre=False):
+        import sleepradio_tuner as st
+        if recentre or abs(freq - self.centre) > st.USABLE_HZ:
+            self.centre = st.centre_for(freq)
+        self.asked.append((freq, mode))
+
+    def stop(self):
+        self.stopped = True
+
+
+def test_a_tuned_band_is_moved_where_it_is_and_whoever_listens_stays(monkeypatch):
+    import sleepradio_tuner as st
+    _FakeTuner.made.clear()
+    monkeypatch.setattr(st, "Tuner", _FakeTuner)
+    r = rx.Receiver(rx.load_bands(None))
+    try:
+        lis = r.listen({"band": "10m"})
+        t = _FakeTuner.made[0]
+        assert lis.rate == st.AUDIO_RATE and t.asked == [(28_400_000, "usb")]
+        s = r.status()
+        assert s["receiving"] == {"freq": 28_400_000, "mode": "usb", "band": "10m"} and s["tunes"] and s["title"] == "28.4000 MHz USB"
+        t.audio(b"\x01\x00" * 10)                        # its audio reaches the listener
+        assert lis.chunks.get_nowait() == b"\x01\x00" * 10
+        t.row(b"\x05" * 1024)                            # (nobody has asked for a waterfall: not kept)
+        assert r.waterfall()["rows"] == [] and r.waterfall()["rate"] == st.FS and r.waterfall()["centre"] == 28_424_000
+        t.row(b"\x05" * 1024)
+        assert len(r.waterfall()["rows"]) == 1 and r.waterfall()["zero_db"] == st.ZERO_DB
+
+        r.tune(28_450_000)                               # along the band: the same dongle, the same listener
+        r.tune(mode="cw")
+        assert t.asked[1:] == [(28_450_000, "usb"), (28_450_000, "cw")] and len(_FakeTuner.made) == 1 and not lis.dead
+        assert r.status()["receiving"] == {"freq": 28_450_000, "mode": "cw", "band": "10m"} and r.listeners == [lis]
+        r.tune(29_900_000, "usb")                        # off the end of the band: still tuned, the band let go of
+        assert r.status()["receiving"] == {"freq": 29_900_000, "mode": "usb"} and r.waterfall()["centre"] == 29_924_000
+        for bad in ((10_000_000, None), (None, "nfm")):
+            try:
+                r.tune(*bad)
+                assert False, bad
+            except ValueError:
+                pass
+        r.rest()
+        assert t.stopped and r.tuner is None
+        lis2 = r.listen({"band": "10m"})                 # the band again: where and how it was last
+        assert _FakeTuner.made[1].asked == [(28_450_000, "cw")] and lis2.rate == st.AUDIO_RATE
+        try:
+            rx.Receiver(rx.load_bands(None)).tune(28_500_000)
+            assert False
+        except ValueError:
+            pass
+    finally:
+        r.rest()
+        for t in _FakeTuner.made:
+            t.proc.kill()

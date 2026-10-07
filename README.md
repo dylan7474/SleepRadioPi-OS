@@ -258,8 +258,11 @@ Actions, Sleep timer and Radio folders open:
   line are the signal's own: put the line on the signal and it's tuned,
   heard as a tone.
   Your own receiver hears a whole band at
-  once, so there's scan, hold and skip; an internet receiver is tuned where
-  it is, through the one connection the radio holds to it.
+  once, so there's scan, hold and skip -- and in sideband and Morse (USB,
+  LSB, CW: 12 m, CB, 10 m, 6 m and the weak-signal end of 2 m have keys) it
+  is one frequency tuned like a rig, with the same click, steps and zoom; an
+  internet receiver is tuned where it is, through the one connection the
+  radio holds to it.
 
   ![The rig: a receiver's window, with its waterfall and, under it, Morse being read off the air](docs/rig.jpg)
 - **Morse, read as text.** The *CW* key in a receiver's window has the radio
@@ -785,6 +788,10 @@ What's left to do (everything else described here is built and running):
   → Media library); still to do: syncing a whole desktop library in one go.
 - **A needle VU meter** — a physical meter driven from a PWM pin, with the
   Android app's ballistics; one meter first.
+- **All of short wave on your own receiver** — sideband and Morse are tuned
+  on the home receiver now, but an RTL-SDR starts at 24 MHz. Next: a second
+  dongle behind an upconverter (its offset a setting), so that 0 to 30 MHz
+  is tuned the same way while the first dongle goes on scanning VHF.
 - **Morse across the band** — the Morse reader reads one signal, the strongest
   in what's playing. Next: every Morse signal in a KiwiSDR's view read at
   once, each named by its callsign on the waterfall and in a list of who's

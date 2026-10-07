@@ -770,6 +770,7 @@ async function loadFolder(f) {
     try {
       const [bands, st] = await Promise.all([rxGet(origin, "/bands"), rxGet(origin, "/status")]);
       for (const [id, b] of Object.entries(bands)) {
+        if (b.range) continue;                       // (tuned like a rig: no channels to show)
         const key = `rxb:${origin}:${id}`, on = st.receiving?.band === id;
         kids.push(mk({ id: key, kind: "folder", box: "rxband", origin, band: id, mode: b.mode || "nfm", title: b.name, chans: b.channels, count: b.channels.length, own: !!b.own,
                        kids: O[key]?.kids || [], info: on ? (st.on_air ? `On air: ${st.on_air.name}` : "Listening now") : `${b.channels.length} channels`,
@@ -2156,10 +2157,11 @@ function rigAdpcm(bytes) {
 }
 
 const RXD = {
-  // ---- a receiver of your own: a whole band at once
+  // ---- a receiver of your own: a whole band at once -- or, in sideband and Morse, one frequency tuned like a rig
   own: {
-    modes: [["nfm", "FM", "Narrow FM"], ["am", "AM", "AM (airband)"], ["wfm", "WFM", "Broadcast FM"]],
-    unit: "MHz", example: R => R.mode === "wfm" ? "95.0" : "145.500",
+    modes: [["nfm", "FM", "Narrow FM"], ["am", "AM", "AM (airband)"], ["wfm", "WFM", "Broadcast FM"], ["usb", "USB", "Upper sideband (tuned like a rig)"], ["lsb", "LSB", "Lower sideband (tuned like a rig)"], ["cw", "CW", "Morse (tuned like a rig)"]],
+    unit: "MHz", example: R => R.mode === "wfm" ? "95.0" : OWN_TUNED.includes(R.mode) ? "28.500" : "145.500", steps: [10, 100, 1000, 5000],
+    tun(R) { return OWN_TUNED.includes(R.st?.receiving?.mode); },         // being tuned like a rig
     band(R) { const id = R.st?.receiving?.band; return id && R.bands?.[id] ? { id, ...R.bands[id] } : null; },
     chans(R) { return (this.band(R)?.channels || []).filter(c => !c.skip); },
     on(R) { return !!R.st?.receiving; },
@@ -2172,7 +2174,10 @@ const RXD = {
       const ch = this.chans(R);
       return ch.some(c => c.freq === R.last) ? R.last : (R.last = (ch.find(c => c.priority) || ch[0])?.freq || null);
     },
-    pass(R, hz) { const ch = this.band(R)?.channels, step = ch?.length > 1 ? ch[1].freq - ch[0].freq : 12500; return [hz - step / 2, hz + step / 2]; },
+    pass(R, hz) {
+      if (this.tun(R)) { const [a, b] = KIWI_PASS[R.st.receiving.mode]; return [hz + a, hz + b]; }
+      const ch = this.band(R)?.channels, step = ch?.length > 1 ? ch[1].freq - ch[0].freq : 12500; return [hz - step / 2, hz + step / 2];
+    },
     ticks(R) { return this.band(R)?.channels || []; },
     async poll(R, tick) {
       if (tick % 25 === 0 || !R.bands) {
@@ -2184,9 +2189,16 @@ const RXD = {
       if (tick % 25 === 0 || !R.me) R.me = await api("/api/rooms").catch(() => R.me || {});     // (what the radio monitors, and its levels)
       const d = await rxGet(R.origin, `/spectrum?since=${R.since}`);
       if (d.n < R.since) R.since = 0;
-      const r = R.st?.receiving, ch = this.band(R)?.channels;
+      const r = R.st?.receiving, ch = this.band(R)?.channels, tun = this.tun(R);
+      if (tun !== R.tuning) {                         // (its keys change with what it's doing)
+        R.tuning = tun;
+        if (tun && !R.zoomed) { R.zoomed = true; R.zoom = 4; }
+        if (!document.querySelector(".win input:focus")) drawDesk();
+      }
+      if (tun) this.follow(R, r.mode);
       let range = null;
-      if (d.running && ch?.length) { const f = ch.map(c => c.freq), lo = Math.min(...f), hi = Math.max(...f), pad = Math.max(25000, (hi - lo) * .04); range = [lo - pad, hi + pad]; }
+      if (d.running && tun) range = RXD.owrx.view(R, [Math.round(d.centre - d.rate * .45), Math.round(d.centre + d.rate * .45)], r.freq);
+      else if (d.running && ch?.length) { const f = ch.map(c => c.freq), lo = Math.min(...f), hi = Math.max(...f), pad = Math.max(25000, (hi - lo) * .04); range = [lo - pad, hi + pad]; }
       else if (d.running && r?.freq) range = [r.freq - 150000, r.freq + 150000];
       if (JSON.stringify(range) !== JSON.stringify(R.range)) rigClear(R, range);
       if (range) for (const [n, b64] of d.rows) { R.since = n; rigRow(R, rigBytes(b64), d.centre - d.rate / 2, d.centre + d.rate / 2, v => v / d.per_db + d.zero_db); }
@@ -2196,15 +2208,20 @@ const RXD = {
       const st = R.st, r = st?.receiving, band = this.band(R), tuned = this.tuned(R), mode = r?.mode || band?.mode || R.mode;
       let meter = 0;
       if (R.line && R.range && tuned) { const x = Math.max(1, Math.min(RIG_COLS - 2, rigX(R, tuned) / RIG_W * RIG_COLS | 0)); meter = (Math.max(R.line[x - 1], R.line[x], R.line[x + 1]) - R.floor) / 54; }
-      return { mode: { nfm: "FM", am: "AM", wfm: "WFM" }[mode] || "FM", modeOn: r ? mode : R.mode, sql: mode === "wfm" ? "" : r?.squelch === false ? "SQL OFF" : "SQL AUTO",
-               scan: !r ? "" : !band ? "VFO" : band.mode === "wfm" ? "STATION" : st.hold ? "HOLD" : "SCAN", rx: !!st?.on_air, band: band ? band.name.toUpperCase() : r ? "ONE FREQUENCY" : "", bandOn: r?.band, meter,
+      const tun = this.tun(R);
+      return { mode: { nfm: "FM", am: "AM", wfm: "WFM", usb: "USB", lsb: "LSB", cw: "CW" }[mode] || "FM", modeOn: r ? mode : R.mode, sql: mode === "wfm" || tun ? "" : r?.squelch === false ? "SQL OFF" : "SQL AUTO",
+               scan: !r ? "" : tun || !band ? "VFO" : band.mode === "wfm" ? "STATION" : st.hold ? "HOLD" : "SCAN", rx: !!st?.on_air, band: band ? band.name.toUpperCase() : r ? "ONE FREQUENCY" : "", bandOn: r?.band, meter,
                who: !r ? (R.wait > Date.now() ? "Tuning… about ten seconds" : "Press a band to listen on the radio")
+                 : tun ? "Click the scope, or ◀ ▶ and the wheel, to tune"
                  : st.on_air ? st.on_air.name : st.hold ? `${st.hold.name} · holding` : band?.mode === "wfm" ? `${rxMhz(tuned)} MHz · ◀ ▶ to move` : band ? `Scanning ${this.chans(R).length} channels` : "",
-               right: r && !rigOnRadio(R) ? "not on the radio" : st?.listeners > 1 ? `${st.listeners} listening` : "" };
+               right: r && !rigOnRadio(R) ? "not on the radio" : st?.listeners > 1 ? `${st.listeners} listening` : tun && (R.zoom || 1) > 1 ? `zoom ×${R.zoom}` : "" };
     },
     bandKeys(R) {
       return Object.entries(R.bands || {}).map(([id, b]) => {
         const all = `${R.origin}/audio?band=${encodeURIComponent(id)}`;
+        if (b.range)                                // (tuned like a rig: sideband and Morse, where it was last)
+          return { id, label: b.name.replace(/ metres$/, " m").replace(/ sideband$/, " SSB"), title: `${b.name}: ${rxMhz(b.range[0])}–${rxMhz(b.range[1])} MHz, tuned like a rig (sideband and Morse)`,
+                   go: () => rigListen(R, O["st:" + all] || stationObj({ name: b.name, url: all, info: "Tuned like a rig: where it was last" })) };
         if (b.mode === "wfm")                       // (a broadcast band: one station at a time, where it was last)
           return { id, label: b.name.replace(/^Broadcast /, ""), title: `${b.name}: one station at a time (◀ ▶ step through them)`,
                    go: () => rigListen(R, O["st:" + all] || stationObj({ name: b.name, url: all, info: "One station at a time: where it was last" })) };
@@ -2222,10 +2239,16 @@ const RXD = {
       if (!hz) return null;
       const c = band?.channels.find(c => c.freq === hz);
       if (c) return { name: c.name, url: `${R.origin}/audio?band=${encodeURIComponent(band.id)}&hold=${rxMhz(hz)}`, info: band.name };
+      if (this.tun(R)) return { name: `${+(hz / 1e6).toFixed(5)} MHz ${r.mode.toUpperCase()}`, url: `${R.origin}/audio?freq=${+(hz / 1e6).toFixed(6)}&mode=${r.mode}`, info: "Receiver" };
       return { name: `${rxMhz(hz)} MHz`, url: `${R.origin}/audio?freq=${rxMhz(hz)}&mode=${r?.mode || R.mode}`, info: "Receiver" };
     },
-    tune(R, hz, mode) {
+    async tune(R, hz, mode) {
       if (!(hz >= 24e6 && hz <= 1766e6)) return toast("A frequency in MHz, from 24 to 1766: 145.5");
+      if (OWN_TUNED.includes(mode) && this.tun(R) && rigOnRadio(R)) {      // being tuned, and listened to: moved where it is
+        try { R.st = await rxSay(R.origin, "/tune", { freq: hz, mode }); R.last = hz; rigDraw(R); rigPaint(R); } catch (e) { rigOops(e); }
+        return;
+      }
+      if (OWN_TUNED.includes(mode)) return rigListen(R, stationObj({ name: `${+(hz / 1e6).toFixed(5)} MHz ${mode.toUpperCase()}`, url: `${R.origin}/audio?freq=${+(hz / 1e6).toFixed(6)}&mode=${mode}`, info: "Receiver" }));
       rigListen(R, stationObj({ name: `${rxMhz(hz)} MHz`, url: `${R.origin}/audio?freq=${rxMhz(hz)}&mode=${mode}`, info: "Receiver" }));
     },
     async hold(R, hz) {                             // one channel of the band (null: all of them again)
@@ -2233,11 +2256,15 @@ const RXD = {
     },
     click(R, hz) {
       const ch = this.chans(R);
-      if (ch.length) this.hold(R, ch.reduce((a, c) => Math.abs(c.freq - hz) < Math.abs(a.freq - hz) ? c : a).freq);
+      if (this.tun(R)) { const mode = R.st.receiving.mode; this.tune(R, this.land(R, hz, mode), mode); }
+      else if (ch.length) this.hold(R, ch.reduce((a, c) => Math.abs(c.freq - hz) < Math.abs(a.freq - hz) ? c : a).freq);
       else this.tune(R, Math.round(hz / 6250) * 6250, R.st?.receiving?.mode || "nfm");
     },
-    step(R, n) { const ch = this.chans(R), i = ch.findIndex(c => c.freq === this.tuned(R)); if (ch.length) this.hold(R, ch[Math.max(0, Math.min(ch.length - 1, (i < 0 ? 0 : i) + n))].freq); },
-    setMode(R, m) { R.mode = m; const r = R.st?.receiving; if (r?.freq && r.mode !== m) this.tune(R, r.freq, m); else if (m === "wfm" || !r) { R.entering = true; drawDesk(); } else rigPaint(R); },
+    step(R, n, fine) {
+      if (this.tun(R)) { const hz = this.tuned(R), by = fine ? Math.max(10, R.step / 10) : R.step; return this.tune(R, Math.round(hz / by) * by + n * by, R.st.receiving.mode); }
+      const ch = this.chans(R), i = ch.findIndex(c => c.freq === this.tuned(R)); if (ch.length) this.hold(R, ch[Math.max(0, Math.min(ch.length - 1, (i < 0 ? 0 : i) + n))].freq); },
+    setMode(R, m) { R.mode = m; const r = R.st?.receiving; if (r?.freq && r.mode !== m) this.tune(R, r.freq, m); else if (m === "wfm" || !r || (OWN_TUNED.includes(m) && !r.freq)) { R.entering = true; drawDesk(); } else rigPaint(R); },
+    zoom(R, n) { if (!this.tun(R)) return; R.zoom = Math.max(1, Math.min(32, (R.zoom || 1) * (n > 0 ? 2 : .5))); R.view = null; rigPaint(R); },
     enter(R, text) { this.tune(R, Math.round(parseFloat(text) * 1e6), R.mode); },
     // Monitored: the radio stays on what it's playing and this receiver comes over it when a channel opens
     // (playback/monitor.py). What's monitored is what the receiver is doing now: the band, or the one channel or frequency.
@@ -2263,11 +2290,14 @@ const RXD = {
       return [el("div", { className: "rgrp" }, d.kmon = k("Monitor", () => this.monitor(R), "Hear this over whatever is playing: the music dips when a channel opens (what the receiver is doing now is what's monitored)"),
           k("Voice −", () => RXD.room.level(R, -5), "What's monitored a little quieter (rooms too)"), k("Voice +", () => RXD.room.level(R, 5), "What's monitored a little louder (rooms too)"),
           k("Music −", () => RXD.room.music(R, -5), "When it speaks: what's playing drops further under it"), k("Music +", () => RXD.room.music(R, 5), "When it speaks: what's playing stays louder under it")),
-        el("div", { className: "rgrp" }, d.kscan = k("Scan", scans(() => this.hold(R, null)), "Every channel: whoever speaks"), d.khold = k("Hold", scans(() => this.hold(R, this.tuned(R))), "Stay on this channel"),
+        this.tun(R) ? el("div", { className: "rgrp" }, k("◀", () => this.step(R, -1), "Down a step"), k("▶", () => this.step(R, 1), "Up a step"),
+            d.kstep = k(this.stepWord(R), () => { R.step = this.steps[(this.steps.indexOf(R.step) + 1) % this.steps.length]; d.kstep.textContent = this.stepWord(R); }, "How far ◀ ▶ and the mouse wheel move it (Shift with the wheel: a tenth of it)"),
+            k("Zoom −", () => this.zoom(R, -1), "See more of the band"), k("Zoom +", () => this.zoom(R, 1), "See less, closer"))
+        : el("div", { className: "rgrp" }, d.kscan = k("Scan", scans(() => this.hold(R, null)), "Every channel: whoever speaks"), d.khold = k("Hold", scans(() => this.hold(R, this.tuned(R))), "Stay on this channel"),
           k("Skip", scans(async () => { const hz = this.tuned(R), c = this.band(R).channels.find(c => c.freq === hz); if (!c) return;
             try { await rxSay(R.origin, "/skip", { freq: hz, on: true }); R.bands = null; toast(`The band now skips ${c.name}. (Channels… has it back.)`); } catch (e) { rigOops(e); } }), "Leave this channel out of the band"),
           k("◀", need(() => this.step(R, -1)), "One channel down"), k("▶", need(() => this.step(R, 1)), "One channel up")),
-        el("div", { className: "rgrp" }, k("Channels…", need(async () => { const id = `rxb:${R.origin}:${this.band(R).id}`; if (!O[id]) await loadFolder(mk({ id: "rxf:" + R.origin, kind: "folder", box: "rxbands", origin: R.origin, title: `${R.o.title}: bands`, kids: [], sym: "⌁", alt: true })); open(id); }), "The band's channels as stations: drag one onto a button"),
+        el("div", { className: "rgrp" }, k("Channels…", need(async () => { if (this.band(R).range) return toast(`${this.band(R).name} is tuned across: it has no channels.`); const id = `rxb:${R.origin}:${this.band(R).id}`; if (!O[id]) await loadFolder(mk({ id: "rxf:" + R.origin, kind: "folder", box: "rxbands", origin: R.origin, title: `${R.o.title}: bands`, kids: [], sym: "⌁", alt: true })); open(id); }), "The band's channels as stations: drag one onto a button"),
           k("Bands…", () => this.folder(R), "The bands as folders"), rigNrKey(R, k), rigCwKey(R, k), k("Find…", () => open(PANEL.findreceiver.id), "Other people's receivers on the internet"))];
     },
     lamps(R, w) { R.dom.kscan?.classList.toggle("on", !!this.band(R) && this.band(R).mode !== "wfm" && !R.st.hold); R.dom.khold?.classList.toggle("on", !!R.st?.hold); R.dom.kmon?.classList.toggle("on", !!this.monitored(R)); },
@@ -2360,6 +2390,8 @@ const RXD = {
 // ---- someone's OpenWebRX, through the radio: whatever bands its owner has set up (changing band moves
 // everyone listening to it, so the rig asks first), one frequency, tuned where it is. Its waterfall is the
 // whole band; Zoom looks closer at a part of it, here on the page.
+const OWN_TUNED = ["usb", "lsb", "cw"];              // a receiver of your own, tuned like a rig (its sleepradio_tuner.py)
+Object.assign(RXD.own, { land: RXD.kiwi.land, follow: RXD.kiwi.follow, stepWord: RXD.kiwi.stepWord });
 const OWRX_PASS = { nfm: [-4000, 4000], am: [-4000, 4000], usb: [300, 3000], lsb: [-3000, -300], cw: [-100, 100] };
 RXD.owrx = { ...RXD.kiwi,
   modes: [["nfm", "FM", "Narrow FM"], ["am", "AM", "AM"], ["usb", "USB", "Upper sideband"], ["lsb", "LSB", "Lower sideband"], ["cw", "CW", "Morse"]],
