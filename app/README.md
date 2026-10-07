@@ -1113,7 +1113,8 @@ The cards:
   sure it is, and its marks). The reading is done in a process of its own
   at low priority, on another core: tried as a thread of the radio's own
   process it took the processor from the sound, which stuttered on the
-  Zero 2 W (`audio/morse.py`).
+  Zero 2 W. There it takes about a quarter of one core in a pile-up, and
+  next to nothing when all is quiet (`audio/morse.py`).
   A receiver of your own can be monitored too (the *Monitor* key in its
   window): what it's doing just then -- a band, a held channel or one
   frequency -- comes over the programme whenever a squelch opens, named by

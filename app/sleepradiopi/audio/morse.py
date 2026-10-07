@@ -75,7 +75,7 @@ BAND = (250.0, 2800.0)       # where a tone is looked for in the audio, Hz
 TONE_OVER_DB = 12.0          # a tone: this far over the rest of the band
 QUIET_S = 1.3                # an over has ended when it's been quiet this long
 LONG_OVER_S = 6.0            # a longer over is read this far in, at a gap between words
-PAD_S = 1.0                  # read with this much either side
+PAD_S = 0.6                  # read with this much either side
 KEEP_S = 30.0                # audio kept
 STEP_S = 0.4                 # the sound is looked at this often
 MAX_PENDING = 600            # blocks fed and not yet taken, at most (half a minute)
@@ -85,18 +85,25 @@ TAPE_S = 8.0                 # of the envelope, for the page's tape
 TAPE_RATE = 50.0
 
 
+def _low_pass(z: np.ndarray, rate: float, cutoff: float, taps: int) -> np.ndarray:
+    k = np.arange(taps) - taps // 2
+    h = np.sinc(2 * cutoff / rate * k) * np.blackman(taps)
+    return np.convolve(z, h / h.sum(), "same")
+
+
 def envelope(x: np.ndarray, rate: float, pitch: float, half_width: float) -> tuple[np.ndarray, float]:
-    """|x| within pitch +/- half_width Hz, and its samples a second (about ENV_RATE)."""
+    """|x| within pitch +/- half_width Hz, and its samples a second (about ENV_RATE). Brought down in
+    stages -- a boxcar to about 2400 Hz, a short filter to about 600 -- so that the narrow filter, the
+    long one, has a quarter of the samples to do: this is most of what the reader costs when all is quiet."""
     z = x * np.exp(-2j * np.pi * pitch / rate * np.arange(len(x)))        # the tone -> 0 Hz
-    d1 = max(1, int(rate // (ENV_RATE * 4)))                               # boxcar down to about 2400 Hz
+    d1 = max(1, int(rate // (ENV_RATE * 4)))
     z = z[:len(z) // d1 * d1].reshape(-1, d1).mean(axis=1)
     r1 = rate / d1
-    taps = int(r1 / half_width * 2.5) | 1                                  # a windowed-sinc low pass
-    k = np.arange(taps) - taps // 2
-    h = np.sinc(2 * half_width / r1 * k) * np.blackman(taps)
-    z = np.convolve(z, h / h.sum(), "same")
     d2 = max(1, int(round(r1 / ENV_RATE)))
-    return np.abs(z[::d2]), r1 / d2
+    if d2 > 1:
+        z = _low_pass(z, r1, 0.33 * r1 / d2, 6 * d2 + 1)[::d2]             # (what would fold back is 60 dB down)
+    r2 = r1 / d2
+    return np.abs(_low_pass(z, r2, half_width, int(r2 / half_width * 2.5) | 1)), r2
 
 
 def refine_pitch(x: np.ndarray, rate: float, pitch: float, reach: float = 35.0) -> float:
@@ -155,22 +162,30 @@ def _viterbi(e: np.ndarray, lo: float, hi: np.ndarray, sigma: float, k: float, w
     fM = np.zeros(T + 1, bool)
     bG = np.zeros(T + 1, int)
     bI = np.zeros(T + 1, bool)
-    dm_all, dg_all = np.arange(4, DAH_MAX + 1), np.arange(3, GAP3_MAX + 1)
-    for t in range(1, T + 1):
-        stay = I[t - 1] + csp[t - 1]
-        enter = M[t - IDLE_MIN] + cs[t] - cs[t - IDLE_MIN] if t >= IDLE_MIN else INF
-        I[t], bI[t] = (enter, True) if enter < stay else (stay, False)
-        d = dm_all[:max(0, t - 3)]
-        if len(d):
-            g, i = G[t - d], I[t - d]
-            c = np.minimum(g, i) + cm[t] - cm[t - d] + pm[d]
-            j = int(np.argmin(c))
-            M[t], bM[t], fM[t] = c[j], d[j], i[j] < g[j]
-        d = dg_all[:max(0, t - 2)]
-        if len(d):
-            c = M[t - d] + cs[t] - cs[t - d] + pg[d]
-            j = int(np.argmin(c))
-            G[t], bG[t] = c[j], d[j]
+    dm, dg = np.arange(4, DAH_MAX + 1), np.arange(3, GAP3_MAX + 1)
+    pmd, pgd = pm[dm], pg[dg]
+    # Three steps of time at once: no mark is shorter than 4 samples and no gap than 3, so what the three
+    # need was all settled before the first of them. (A step at a time, this loop was the reader's cost.)
+    for t0 in range(1, T + 1, 3):
+        ts = np.arange(t0, min(t0 + 3, T + 1))
+        rows = np.arange(len(ts))
+        for t in ts:
+            stay = I[t - 1] + csp[t - 1]
+            enter = M[t - IDLE_MIN] + cs[t] - cs[t - IDLE_MIN] if t >= IDLE_MIN else INF
+            I[t], bI[t] = (enter, True) if enter < stay else (stay, False)
+        at = ts[:, None] - dm[None, :]
+        ok = at >= 0
+        at = np.where(ok, at, 0)
+        g, i = G[at], I[at]
+        c = np.where(ok, np.minimum(g, i) + cm[ts][:, None] - cm[at] + pmd[None, :], INF)
+        j = c.argmin(axis=1)
+        M[ts], bM[ts], fM[ts] = c[rows, j], dm[j], i[rows, j] < g[rows, j]
+        at = ts[:, None] - dg[None, :]
+        ok = at >= 0
+        at = np.where(ok, at, 0)
+        c = np.where(ok, M[at] + cs[ts][:, None] - cs[at] + pgd[None, :], INF)
+        j = c.argmin(axis=1)
+        G[ts], bG[ts] = c[rows, j], dg[j]
     segs, t = [], T
     state = int(np.argmin([M[T], G[T], I[T]]))
     while t > 0:
@@ -229,9 +244,43 @@ def _read(x, rate, pitch, wpm, half, noise, weights, again=1, filtered=None):
     return segs, cost, e, lo, sigma, step
 
 
+def quick_speed(x: np.ndarray, rate: float, pitch: float, noise: tuple[float, float]) -> float | None:
+    """Words a minute from the lengths of the marks and gaps of a plain threshold reading, when the signal
+    is clear enough for that to be trusted (most are): a fraction of the cost of the search."""
+    env, er = envelope(x, rate, pitch, 60.0)
+    lo = noise[0] * np.sqrt(60.0 / noise[1])
+    hi = float(np.percentile(env, 97))
+    if hi < lo * 8:                                                        # not strong enough to cut it by a threshold
+        return None
+    b = np.convolve(env, np.ones(3) / 3, "same") > lo + 0.4 * (hi - lo)
+    edges = np.flatnonzero(np.diff(b.astype(np.int8))) + 1
+    if len(edges) < 14:
+        return None
+    runs = np.diff(edges)                                                  # alternately marks and gaps
+    first_is_mark = bool(b[edges[0]])
+    marks, gaps = runs[0 if first_is_mark else 1::2].astype(float), runs[1 if first_is_mark else 0::2].astype(float)
+    marks, gaps = marks[marks >= 2], gaps[gaps >= 2]
+    if len(marks) < 6 or len(gaps) < 4:
+        return None
+    lm, lg = np.log(marks), np.log(gaps)
+    dits = np.geomspace(er * 1.2 / SPEEDS[-1] * 0.9, er * 1.2 / SPEEDS[0] * 1.1, 90)
+    ld = np.log(dits)[:, None]
+    cm = np.minimum(np.abs(lm - ld), np.abs(lm - ld - np.log(3)))
+    cg = np.minimum(np.minimum(np.abs(lg - ld), np.abs(lg - ld - np.log(3))), np.abs(lg - ld - np.log(7)))
+    cost = np.mean(np.minimum(cm, 0.7) ** 2, axis=1) + 0.5 * np.mean(np.minimum(cg, 0.7) ** 2, axis=1)
+    short = np.mean(np.abs(lm - ld) < np.abs(lm - ld - np.log(3)), axis=1)  # both dots and dashes, or the fit is a fluke
+    cost = cost + 0.15 * ((short < 0.15) | (short > 0.9))
+    j = int(np.argmin(cost))
+    return float(1.2 / (dits[j] / er)) if cost[j] < 0.05 else None
+
+
 def find_speed(x: np.ndarray, rate: float, pitch: float, noise: tuple[float, float]) -> float:
-    """Words a minute: the speed whose strict-timing reading beats silence by most (of the first 20 s)."""
+    """Words a minute: from the marks' lengths if the signal is clear, else the speed whose strict-timing
+    reading beats silence by most (of the first 20 s)."""
     x = x[:int(rate * 20)]
+    quick = quick_speed(x, rate, pitch, noise)
+    if quick is not None:
+        return quick
     best = (9e18, 20.0)
     filtered = envelope(x, rate, pitch, SEARCH_HALF)                       # (the same for every speed tried)
     for w in SPEEDS:
