@@ -77,6 +77,7 @@ QUIET_S = 1.3                # an over has ended when it's been quiet this long
 LONG_OVER_S = 6.0            # a longer over is read this far in, at a gap between words
 PAD_S = 1.0                  # read with this much either side
 KEEP_S = 30.0                # audio kept
+STEP_S = 0.4                 # the sound is looked at this often
 MAX_PENDING = 600            # blocks fed and not yet taken, at most (half a minute)
 DECIMATE = 6                 # of the speaker's rate: 7350 samples a second is plenty for a tone under 2.8 kHz
 RATE = pcm.SAMPLE_RATE / DECIMATE
@@ -412,6 +413,9 @@ class Reader:
         noise = (self._floor, noise[1])
         self._show(end, pitch, env[-int(er * TAPE_S):], er, noise[0])
         spans, now = overs(env, er, noise), len(x) / RATE
+        if not spans or now - spans[-1][1] > QUIET_S + PAD_S:    # quiet at the end: that much needn't be gone over again
+            keep = int(RATE * (QUIET_S + PAD_S))                  # (or every look would be at more of the same quiet)
+            self._done = max(self._done, min(end - keep, a + int(spans[-1][1] * RATE) + int(0.2 * RATE)) if spans else end - keep)
         for s0, s1 in spans:
             i0 = a + int(s0 * RATE)
             if a + int(s1 * RATE) <= self._done:
@@ -464,7 +468,7 @@ class Reader:
 
 
 def _serve(conn) -> None:
-    """The reading process: sound in (arrays at RATE; None to stop), what's been read out, four times a second."""
+    """The reading process: sound in (arrays at RATE; None to stop), what's been read out, every STEP_S."""
     try:
         os.nice(10)                                  # (the sound comes first)
     except OSError:
@@ -473,7 +477,7 @@ def _serve(conn) -> None:
     core.on = True
     try:
         while True:
-            if conn.poll(0.25):
+            if conn.poll(STEP_S):
                 while conn.poll():
                     sound = conn.recv()
                     if sound is None:
@@ -537,9 +541,9 @@ class Remote:
             return {"on": self.on, **self._tape, "tape_rate": TAPE_RATE, "overs": [o for o in self._overs if o["n"] > since]}
 
     def _carry(self, stop: threading.Event, conn, proc, inbox: Reader) -> None:
-        """Sound to the reading process and what it has read back, four times a second, until switched off."""
+        """Sound to the reading process and what it has read back, every STEP_S, until switched off."""
         try:
-            while not stop.wait(0.25):
+            while not stop.wait(STEP_S):
                 sound = inbox.drain()
                 if sound is not None:
                     conn.send(sound)
