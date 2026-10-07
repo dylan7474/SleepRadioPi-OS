@@ -1081,6 +1081,37 @@ The cards:
   is there at all -- as much hiss off as *strong*, with 1 to 2 dB more of
   the voice kept (measured with a clean voice in real band noise); about a
   sixth of one core on the Zero 2 W (`audio/denoise.py`).
+  *Morse, read as text* (the **CW** key in a receiver's window;
+  `POST /api/rx/morse {"on": true | false}`, off again at the next start):
+  the radio listens to what a receiver is playing -- as it came, before the
+  noise reduction -- for a keyed tone between 250 and 2800 Hz, and reads the
+  strongest, an over at a time. Real traffic comes in overs: a three-second
+  call, silence, then someone else at another speed and a slightly different
+  pitch; so each over is read on its own, with its own pitch and speed, when
+  it has been quiet for 1.3 s (a long one every six seconds or so, at a gap
+  between words), and the text arrives an over at a time. The tone is moved
+  to 0 Hz and low-passed to a width matched to the sender's speed (about
+  30 Hz at 22 words a minute: a station ten times as strong 150 Hz away
+  makes no difference, though its key clicks can add a stray dot while this
+  one is silent); the envelope is then cut into dots, dashes and gaps by the
+  sequence that fits it best under Morse's own timing (a Viterbi search over
+  segments), the signal's level taken again from the marks just read so
+  that fading is followed, and the speed (10 to 51 words a minute) is the
+  one whose strict-timing reading beats "nothing was sent" by most. Each
+  letter's confidence is how far its weakest mark stood above the noise. A
+  reading that doesn't stand clear of the noise, whose timing isn't
+  Morse's, or with too many runs of marks that are no letter (a
+  teleprinter's tone looks keyed too) is left unsaid. Measured with known
+  Morse mixed into real 30 m noise (strength against the noise in 2.5 kHz):
+  clean down to -6 dB, a shaky fist about 3% of letters wrong, about 15%
+  wrong at -9 dB, nothing said at -12 dB -- a good ear still goes a few dB
+  lower. Weak spots: a weak signal that is also fading fast, two stations
+  keying at once inside the one filter, and a shaky fist's short gap between
+  words run together. `GET /api/rx/morse?since=N` gives whether it's on, the
+  tone's pitch, the last eight seconds of envelope for the tape, and the
+  overs read after number N (each with its letters, when each began and how
+  sure it is, and its marks). The reading is done on a thread of its own,
+  never the one playing the sound (`audio/morse.py`).
   A receiver of your own can be monitored too (the *Monitor* key in its
   window): what it's doing just then -- a band, a held channel or one
   frequency -- comes over the programme whenever a squelch opens, named by

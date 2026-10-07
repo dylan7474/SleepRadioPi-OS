@@ -203,6 +203,16 @@
   .rig .rticks span:nth-child(n+6) { color: #f0604a; }
   .rig canvas { width: 100%; flex: 1; min-height: 120px; display: block; border: 1px solid #1e3445; cursor: crosshair; }
   .rig .rscale { display: flex; justify-content: space-between; font-size: 9.5px; color: #7f97a8; font-family: ui-monospace, Menlo, Consolas, monospace; }
+  .rig .rcw { display: grid; gap: 3px; min-width: 0; }
+  .rig .rcw h4 { display: flex; gap: 8px; align-items: baseline; }
+  .rig .rcw h4 span { letter-spacing: 0; text-transform: none; font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 9.5px; }
+  .rig .rcw canvas { flex: none; min-height: 0; height: 52px; cursor: default; background: #0a1118; }
+  .rig .rcopy { font-family: ui-monospace, "DejaVu Sans Mono", Menlo, Consolas, monospace; font-size: 16px; line-height: 1.4; height: 2.8em; overflow: hidden; display: flex; flex-direction: column; justify-content: flex-end; letter-spacing: .04em; overflow-wrap: anywhere; }
+  .rig .rcopy .c2 { opacity: .55; }
+  .rig .rcopy .c1 { opacity: .3; }
+  .rig .rcopy .call { color: #f0b045; font-weight: 700; }
+  .rig .rcopy .sep { color: #2a5f78; }
+  .rig .rcopy .rnone { color: #7f97a8; font-family: system-ui, sans-serif; font-size: 12px; letter-spacing: 0; }
   .rig .rfoot { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 5px 12px; align-items: center; }
   .rig .rfoot .rgrp { display: flex; gap: 5px; align-items: center; }
   .rig .rfoot .rk { padding: 6px 11px; }
@@ -1937,6 +1947,87 @@ function rigNrKey(R, k) {
       toast(to === "off" ? "Noise reduction off." : `${NR_SAYS[to]} (It takes a few seconds to learn the noise.)`, false, null, true);
     } catch (e) { rigOops(e); } }, "Noise reduction for receivers: off, 1, 2, 3 (for speech in hiss; not for music)");
 }
+// The Morse reader (audio/morse.py): the radio reads the strongest keyed tone in what a receiver is playing, an over at a
+// time. One reader, so one state for every rig window: the tape (the envelope, then the marks as read, a letter under
+// its own) and the text, fainter where a letter stood less clear of the noise.
+const CW = { since: 0, overs: [], st: null, got: 0, busy: false, asked: 0 };
+const CW_TAPE_S = 8, CW_W = 900, CW_H = 52;
+function rigCwKey(R, k) {
+  return R.dom.kcw = k("CW", async () => {
+    try {
+      S = { ...(S || {}), ...(await api("/api/rx/morse", { on: !S?.cw })) };
+      Object.assign(CW, { since: 0, overs: [], st: null });
+      rigPaint(R); cwDraw(R);
+      if (S.cw) toast("Morse reader on: the strongest Morse in what this receiver plays is read, a second or so after each over ends. The CW mode narrows it to the signal you're tuned to.", false, null, true);
+    } catch (e) { rigOops(e); } }, "Read Morse as text: the strongest keyed tone in what the receiver is playing");
+}
+async function cwPoll() {
+  if (!S?.cw || CW.busy || Date.now() - CW.asked < 600) return;
+  CW.busy = true; CW.asked = Date.now();
+  try {
+    const st = await api(`/api/rx/morse?since=${CW.since}`);
+    if (st.overs.length && st.overs[0].n <= CW.since) CW.overs = [];              // (the reader began again)
+    for (const o of st.overs) { CW.overs.push(o); CW.since = o.n; }
+    if (!st.overs.length && CW.overs.length && st.at < CW.overs[CW.overs.length - 1].t0) Object.assign(CW, { since: 0, overs: [] });
+    CW.overs = CW.overs.slice(-14); CW.st = st; CW.got = Date.now();
+    if (S.cw !== st.on) S = { ...S, cw: st.on };
+  } catch (e) { /* the next one will do */ }
+  CW.busy = false;
+}
+const CW_CALL = /^(?:[A-Z]{1,2}\d|\d[A-Z])\d?[A-Z]{1,4}(?:\/[A-Z0-9]{1,4})?$/;
+const cwClass = c => c[2] >= .66 ? "" : c[2] >= .33 ? "c2" : "c1";
+function cwDraw(R) {
+  const d = R.dom;
+  if (!d?.cw) return;
+  const on = !!S?.cw && !!d.kcw; d.cw.hidden = !on;         // (only where there's a CW key: not a room)
+  if (!on) return;
+  const st = CW.st, here = rigOnRadio(R), g = d.tape.getContext("2d");
+  d.cwsays.textContent = !here ? "" : st?.pitch ? `${st.pitch} Hz${st.wpm ? ` · ${Math.round(st.wpm)} wpm` : ""}` : "no keyed tone";
+  g.fillStyle = "#0a1118"; g.fillRect(0, 0, CW_W, CW_H);
+  g.strokeStyle = "#1e3445"; g.beginPath(); g.moveTo(0, 26.5); g.lineTo(CW_W, 26.5); g.stroke();
+  if (here && st) {
+    const now = st.at + Math.min(1.5, (Date.now() - CW.got) / 1000), x = t => CW_W - (now - t) * CW_W / CW_TAPE_S;
+    if (st.env.length) {                             // what's being sent now, not yet read: the envelope
+      g.beginPath(); g.moveTo(x(st.at - st.env.length / st.tape_rate), 25);
+      st.env.forEach((v, i) => g.lineTo(x(st.at - (st.env.length - 1 - i) / st.tape_rate), 25 - v / 255 * 20));
+      g.lineTo(x(st.at), 25); g.closePath(); g.fillStyle = "rgba(88,208,232,.3)"; g.fill();
+    }
+    g.font = "600 15px ui-monospace, Menlo, Consolas, monospace"; g.textAlign = "center";
+    for (const o of CW.overs) {
+      if (o.t1 < now - CW_TAPE_S - 1) continue;
+      g.fillStyle = "#f4f6f7";
+      for (const [a, b] of o.marks) g.fillRect(x(a), 7, Math.max(1, (b - a) * CW_W / CW_TAPE_S), 17);
+      const letters = o.chars.filter(c => c[0] !== " ");
+      o.chars.forEach((c, i) => {
+        if (c[0] === " ") return;
+        const until = o.chars[i + 1]?.[1] ?? o.t1 + .01, mine = o.marks.filter(m => m[0] >= c[1] - .005 && m[0] < until - .005);
+        if (!mine.length) return;
+        g.fillStyle = `rgba(244,246,247,${c[2] >= .66 ? 1 : c[2] >= .33 ? .55 : .3})`;
+        g.fillText(c[0] === "~" ? "_" : c[0], (x(mine[0][0]) + x(mine[mine.length - 1][1])) / 2, 45);
+      });
+    }
+  }
+  // the text: the overs as read, callsigns picked out, a doubtful letter fainter
+  const said = !here ? "Listen to this receiver, and the Morse in what it plays is read here." : !CW.overs.length ? "Listening for Morse…" : "";
+  const sig = said || CW.overs.map(o => o.n).join();
+  if (d.copy.dataset.sig === sig) return;
+  d.copy.dataset.sig = sig;
+  if (said) return d.copy.replaceChildren(el("span", { className: "rnone", textContent: said }));
+  const line = el("div");
+  CW.overs.forEach((o, n) => {
+    if (n) line.append(el("span", { className: "sep", textContent: " · " }));
+    let word = [];
+    const put = () => {
+      if (!word.length) return;
+      const call = CW_CALL.test(word.map(c => c[0]).join("")) && word.every(c => c[2] >= .66);
+      for (const c of word) line.append(el("span", { className: call ? "call" : cwClass(c), textContent: c[0] === "~" ? "_" : c[0] }));
+      word = [];
+    };
+    for (const c of o.chars) { if (c[0] === " ") { put(); line.append(" "); } else word.push(c); }
+    put();
+  });
+  d.copy.replaceChildren(line);
+}
 const rigOnRadio = R => !!S?.source?.url?.startsWith(R.origin);
 function rigListen(R, station) { R.wait = Date.now() + 14000; R.n = 0; play(station); rigPaint(R); rigDraw(R); }
 function rigClear(R, range) {                       // another band or view: a clean screen
@@ -2097,7 +2188,7 @@ const RXD = {
             try { await rxSay(R.origin, "/skip", { freq: hz, on: true }); R.bands = null; toast(`The band now skips ${c.name}. (Channels… has it back.)`); } catch (e) { rigOops(e); } }), "Leave this channel out of the band"),
           k("◀", need(() => this.step(R, -1)), "One channel down"), k("▶", need(() => this.step(R, 1)), "One channel up")),
         el("div", { className: "rgrp" }, k("Channels…", need(async () => { const id = `rxb:${R.origin}:${this.band(R).id}`; if (!O[id]) await loadFolder(mk({ id: "rxf:" + R.origin, kind: "folder", box: "rxbands", origin: R.origin, title: `${R.o.title}: bands`, kids: [], sym: "⌁", alt: true })); open(id); }), "The band's channels as stations: drag one onto a button"),
-          k("Bands…", () => this.folder(R), "The bands as folders"), rigNrKey(R, k), k("Find…", () => open(PANEL.findreceiver.id), "Other people's receivers on the internet"))];
+          k("Bands…", () => this.folder(R), "The bands as folders"), rigNrKey(R, k), rigCwKey(R, k), k("Find…", () => open(PANEL.findreceiver.id), "Other people's receivers on the internet"))];
     },
     lamps(R, w) { R.dom.kscan?.classList.toggle("on", !!this.band(R) && this.band(R).mode !== "wfm" && !R.st.hold); R.dom.khold?.classList.toggle("on", !!R.st?.hold); R.dom.kmon?.classList.toggle("on", !!this.monitored(R)); },
   },
@@ -2167,7 +2258,7 @@ const RXD = {
               if (have.some(o => o.url === st.url)) return toast("That one is already with your stations.");
               await api("/api/radio/stations", { stations: [...have, st] }); await loadFolder(STATIONS); toast(`Saved “${st.name}” with your stations.`); drawDesk();
             } catch (e) { rigOops(e); } }, "Keep this frequency as a station (drag it onto a button from Stations)"),
-          rigNrKey(R, k), k("Find…", () => open(PANEL.findreceiver.id), "Other people's receivers on the internet"))];
+          rigNrKey(R, k), rigCwKey(R, k), k("Find…", () => open(PANEL.findreceiver.id), "Other people's receivers on the internet"))];
     },
     stepWord(R) { return R.step >= 1000 ? `${R.step / 1000} kHz` : `${R.step} Hz`; },
     lamps() {},
@@ -2411,6 +2502,7 @@ function rigPaint(R) {                              // the words and lamps on th
   for (const [m, k] of Object.entries(d.modeKeys)) k.classList.toggle("on", m === w.modeOn);
   D.lamps(R, w);
   if (R.dom.knr) { const nr = S?.nr || "off"; R.dom.knr.classList.toggle("on", nr !== "off"); R.dom.knr.textContent = nr === "off" ? "NR" : `NR ${NR_STEPS.indexOf(nr)}`; }
+  if (R.dom.kcw) R.dom.kcw.classList.toggle("on", !!S?.cw);
   d.fill.style.width = Math.max(0, Math.min(100, w.meter * 100)) + "%"; d.fill.style.backgroundSize = d.fill.parentNode.clientWidth + "px 100%";
   const [lo, hi] = R.range || [0, 0], wide = hi - lo > 2e6;
   d.scale.replaceChildren(...[0, 1, 2, 3, 4].map(i => el("span", { textContent: R.range ? ((lo + (hi - lo) * i / 4) / 1e6).toFixed(wide ? 2 : 3) : "" })));
@@ -2424,7 +2516,8 @@ async function rigPoll() {
     try { await RXD[R.kind].poll(R, R.n++); R.down = null; }
     catch (e) { R.down = R.kind === "own" ? `${rxHost(R.origin)} isn't answering` : "The radio isn't answering"; }
     R.busy = false;
-    rigDraw(R); rigPaint(R);
+    if (R.dom?.kcw) await cwPoll();
+    rigDraw(R); rigPaint(R); cwDraw(R);
   }
 }
 function rigView(o, box, win) {
@@ -2464,10 +2557,13 @@ function rigView(o, box, win) {
     vfo,
     el("div", { className: "rmeter" }, el("span", { textContent: "S" }), el("div", { className: "rtrack" }, d.fill = el("div", { className: "rfill" })), el("span"),
        el("div", { className: "rticks" }, ...["1", "3", "5", "7", "9", "+20", "+40", "+60"].map(t => el("span", { textContent: t })))),
-    rigCanvas(R), d.scale = el("div", { className: "rscale" }));
+    rigCanvas(R), d.scale = el("div", { className: "rscale" }),
+    d.cw = el("div", { className: "rcw", hidden: true }, el("h4", {}, "Morse", d.cwsays = el("span")),
+              d.tape = el("canvas", { width: CW_W, height: CW_H }), d.copy = el("div", { className: "rcopy" })));
+  d.tape.setAttribute("aria-hidden", "true");
   const foot = el("div", { className: "rfoot" }, ...D.foot(R, k), el("span", { className: "rtip", textContent: D.tip || (R.kind !== "own" ? "Click the scope to tune · wheel for fine steps · drag the frequency onto a button · be a good guest" : "Click the scope to tune · drag the frequency onto a button") }));
   box.append(el("div", { className: "wbody" }, el("div", { className: "rig" }, bands, tft, modes, foot)));
-  rigDraw(R); setTimeout(() => rigPaint(R), 0);
+  rigDraw(R); setTimeout(() => { rigPaint(R); cwDraw(R); }, 0);
 }
 
 function folderView(o, box, win) {

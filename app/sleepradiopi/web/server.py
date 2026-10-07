@@ -230,6 +230,8 @@ def make_handler(station: Station, output: Mp3Output, speaker=None,
                 status["hear_held"] = bool(hear is not None and hear.on and hear.held)   # ...and it's paused there
                 from sleepradiopi.audio import denoise as denoise_mod
                 status["nr"] = denoise_mod.LEVEL          # receivers' noise reduction: off, light, strong or rig
+                from sleepradiopi.audio import morse as morse_mod
+                status["cw"] = morse_mod.reader.on        # ...and their Morse reader
                 status["version"] = updater_mod.this_version()
                 status["desktop"] = DESKTOP_TAG
                 self._send(json.dumps(status).encode(), "application/json")
@@ -358,6 +360,14 @@ def make_handler(station: Station, output: Mp3Output, speaker=None,
                     book = rooms_dir.shared()
                     found = book.search(parse_qs(urlparse(self.path).query).get("q", [""])[0][:200])
                     self._send(json.dumps({"results": found, "directory": book.status()}).encode(), "application/json")
+            elif path == "/api/rx/morse":
+                # The Morse reader (audio/morse.py): whether it's on, the tape, and the overs read since ?since=N.
+                from sleepradiopi.audio import morse as morse_mod
+                try:
+                    since = int(parse_qs(urlparse(self.path).query).get("since", ["0"])[0])
+                except ValueError:
+                    since = 0
+                self._send(json.dumps(morse_mod.reader.status(since)).encode(), "application/json")
             elif path == "/api/rx":
                 # The rig on the desktop: the receiver being listened to (a KiwiSDR), where it's tuned and
                 # its waterfall since row ?since=N. {"on": false} when the radio is playing something else.
@@ -632,6 +642,18 @@ def make_handler(station: Station, output: Mp3Output, speaker=None,
                 if config_file is not None:
                     save_setting(config_file, "noise_reduction", level)
                 self._send(json.dumps({"nr": level}).encode(), "application/json")
+            elif path == "/api/rx/morse":
+                # {"on": true | false}: the Morse reader for receivers (audio/morse.py). Off again at the next start.
+                from sleepradiopi.audio import morse as morse_mod
+                try:
+                    body = json.loads(self.rfile.read(int(self.headers.get("Content-Length", 0))) or b"{}")
+                    if not isinstance(body["on"], bool):
+                        raise ValueError
+                except (ValueError, TypeError, KeyError, AttributeError):
+                    self._error('send {"on": true | false}')
+                    return
+                morse_mod.reader.switch(body["on"])
+                self._send(json.dumps({"cw": morse_mod.reader.on}).encode(), "application/json")
             elif path == "/api/rooms/level":
                 # {"level": 25-150}: how loud rooms are, % (at once: also for one that's playing). Kept.
                 from sleepradiopi.playback import room as room_mod

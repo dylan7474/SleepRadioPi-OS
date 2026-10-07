@@ -256,6 +256,15 @@ Actions, Sleep timer and Radio folders open:
   it is, through the one connection the radio holds to it.
 
   ![The rig: a receiver's window, with its waterfall](docs/rig.jpg)
+- **Morse, read as text.** The *CW* key in a receiver's window has the radio
+  read the Morse in what that receiver is playing: a paper tape of the dots
+  and dashes with each letter under its own, and the text beside it,
+  callsigns picked out and a doubtful letter fainter. It reads the strongest
+  keyed tone it hears, an over at a time, a second or so after the sender
+  stops; the rig's CW mode narrows the receiver to the one you're tuned to.
+  A tight filter round the tone and a best-fit reading of the timing (not a
+  threshold) read a weak or shaky sender that a simple decoder loses; what
+  doesn't stand up as Morse is left unsaid. See `app/sleepradiopi/audio/morse.py`.
 - **Rooms: radio amateurs' digital voice.** Yaesu "System Fusion" radios
   talk across the internet through reflectors -- rooms like CQ-UK or America
   Link, the network a Pi-Star hotspot uses, with many of Yaesu's WIRES-X
@@ -765,6 +774,13 @@ What's left to do (everything else described here is built and running):
   → Media library); still to do: syncing a whole desktop library in one go.
 - **A needle VU meter** — a physical meter driven from a PWM pin, with the
   Android app's ballistics; one meter first.
+- **Morse across the band** — the Morse reader reads one signal, the strongest
+  in what's playing. Next: every Morse signal in a KiwiSDR's view read at
+  once, each named by its callsign on the waterfall and in a list of who's
+  been heard (the receiver's wide "IQ" mode gives about 10 kHz to read
+  from; the search at its heart has to be made several times faster for the
+  Zero 2 W first). After that, a Morse finder: sweep the Morse parts of
+  each band and say where the activity is.
 - **Music from any computer** — adding music needs a Linux PC today
   (`provision-media.sh`). The radio could make its music partition itself on
   first boot and take music uploaded from the web page, so that Windows and
