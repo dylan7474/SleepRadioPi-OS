@@ -1089,7 +1089,9 @@ The cards:
   *Morse, read as text* (the **CW** key in a receiver's window;
   `POST /api/rx/morse {"on": true | false}`, off again at the next start):
   the radio listens to what a receiver is playing -- as it came, before the
-  noise reduction -- for a keyed tone between 250 and 2800 Hz, and reads the
+  noise reduction (which is for the ears: its turning the level up and down
+  would blur the edges of the marks, and the reader's own filter is far
+  narrower) -- for a keyed tone between 250 and 2800 Hz, and reads the
   strongest, an over at a time. Real traffic comes in overs: a three-second
   call, silence, then someone else at another speed and a slightly different
   pitch; so each over is read on its own, with its own pitch and speed, when

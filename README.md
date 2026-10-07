@@ -251,7 +251,11 @@ Actions, Sleep timer and Radio folders open:
   opens as a radio amateur's rig: the frequency, an S meter, the band's
   spectrum over a live waterfall. Click the scope to tune, band keys down
   one side and modes down the other, and drag the frequency onto one of the
-  radio's buttons to keep it there. Your own receiver hears a whole band at
+  radio's buttons to keep it there. On an internet receiver ◀ ▶ and the
+  mouse wheel tune in steps from 10 Hz to 9 kHz (the step key; Shift with
+  the wheel is a tenth of it), and a click lands as finely as the mode
+  needs: on a Morse signal within 10 Hz, set so that it's heard as a tone.
+  Your own receiver hears a whole band at
   once, so there's scan, hold and skip; an internet receiver is tuned where
   it is, through the one connection the radio holds to it.
 
@@ -262,9 +266,11 @@ Actions, Sleep timer and Radio folders open:
   read: a line an over with its time, pitch and speed, coloured by sender so
   the two sides of a contact read apart, callsigns picked out (click one to
   copy it) and a doubtful letter fainter. The log scrolls back, and *Copy*
-  takes all of it. It reads the strongest
-  keyed tone it hears, an over at a time, a second or so after the sender
-  stops; the rig's CW mode narrows the receiver to the one you're tuned to.
+  takes all of it. It reads the strongest keyed tone it hears, an over at a
+  time, a second or so after the sender stops; the rig's CW mode narrows
+  the receiver to the one you're tuned to. The noise reduction (the *NR*
+  key) is for your ears only: the reader takes the sound before it, and has
+  a far narrower filter of its own.
   A tight filter round the tone and a best-fit reading of the timing (not a
   threshold) read a weak or shaky sender that a simple decoder loses; what
   doesn't stand up as Morse is left unsaid. See `app/sleepradiopi/audio/morse.py`.
