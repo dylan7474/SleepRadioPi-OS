@@ -1110,8 +1110,10 @@ The cards:
   words run together. `GET /api/rx/morse?since=N` gives whether it's on, the
   tone's pitch, the last eight seconds of envelope for the tape, and the
   overs read after number N (each with its letters, when each began and how
-  sure it is, and its marks). The reading is done on a thread of its own,
-  never the one playing the sound (`audio/morse.py`).
+  sure it is, and its marks). The reading is done in a process of its own
+  at low priority, on another core: tried as a thread of the radio's own
+  process it took the processor from the sound, which stuttered on the
+  Zero 2 W (`audio/morse.py`).
   A receiver of your own can be monitored too (the *Monitor* key in its
   window): what it's doing just then -- a band, a held channel or one
   frequency -- comes over the programme whenever a squelch opens, named by

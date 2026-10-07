@@ -143,15 +143,16 @@ def test_a_long_over_is_read_in_parts_at_gaps_between_words() -> None:
 
 
 def test_the_tape_and_the_switch() -> None:
-    r = morse.Reader()
+    r = morse.Remote()                               # as the radio uses it: the reading in a process of its own
     r.feed(_speaker(_hiss(1000)))                    # off: nothing is kept
     assert r.status() == {"on": False, "at": 0.0, "pitch": None, "wpm": None, "env": [], "tape_rate": morse.TAPE_RATE, "overs": []}
     r.switch(True)
     try:
-        assert r.on and r._thread.is_alive()
+        proc = r._proc
+        assert r.on and r._thread.is_alive() and proc.is_alive()
         sig = _keyed("TEST", 20, 600) * 5000
         r.feed(_speaker(np.concatenate((_hiss(int(RATE * 3)), sig + _hiss(len(sig))))))
-        for _ in range(60):                          # its own thread takes it in
+        for _ in range(100):                         # the other process takes it in and says what it read
             if r.status()["at"] > 5 and r.status()["overs"]:
                 break
             threading.Event().wait(0.1)
@@ -162,13 +163,23 @@ def test_the_tape_and_the_switch() -> None:
     finally:
         thread = r._thread
         r.switch(False)
-        thread.join(2)
-    assert not r.on and not thread.is_alive() and r.status()["on"] is False
+        thread.join(6)
+    assert not r.on and not thread.is_alive() and not proc.is_alive() and r.status()["on"] is False
     r.switch(True)                                   # on again: from nothing
     try:
         assert r.status()["overs"] == [] and r.status()["at"] == 0.0
     finally:
+        thread = r._thread
         r.switch(False)
+        thread.join(6)
+
+
+def test_a_reader_nobody_takes_from_keeps_only_so_much() -> None:
+    r = morse.Reader()
+    r.on = True
+    for _ in range(morse.MAX_PENDING + 50):
+        r.feed(_speaker(_hiss(400)))
+    assert len(r._pending) == morse.MAX_PENDING and len(r.drain()) == morse.MAX_PENDING * 400 and r.drain() is None
 
 
 def test_the_reader_from_the_web(tmp_path: Path) -> None:

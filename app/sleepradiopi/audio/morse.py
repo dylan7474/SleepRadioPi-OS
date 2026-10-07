@@ -33,16 +33,19 @@ noise in 2.5 kHz): clean down to -6 dB, shaky hand keying about 3% of
 letters wrong, about 15% wrong at -9 dB, and nothing said at -12 dB. A good
 ear still goes a few dB lower.
 
-`reader` is the one Reader: the station feeds it what a receiver plays
-(broadcast/station.py), the web side switches it and asks what it has read.
-The reading is done on a thread of its own, never the one playing the sound.
+`reader` is the one the radio uses: the station feeds it what a receiver
+plays (broadcast/station.py), the web side switches it and asks what it has
+read. The reading is done in a process of its own, at low priority: in the
+radio's own process it took the processor from the thread playing the sound
+(one Python process runs one thing at a time) and the sound stuttered.
 """
 
 from __future__ import annotations
 
 import logging
+import multiprocessing as mp
+import os
 import threading
-import time
 from collections import deque
 
 import numpy as np
@@ -74,6 +77,7 @@ QUIET_S = 1.3                # an over has ended when it's been quiet this long
 LONG_OVER_S = 6.0            # a longer over is read this far in, at a gap between words
 PAD_S = 1.0                  # read with this much either side
 KEEP_S = 30.0                # audio kept
+MAX_PENDING = 600            # blocks fed and not yet taken, at most (half a minute)
 DECIMATE = 6                 # of the speaker's rate: 7350 samples a second is plenty for a tone under 2.8 kHz
 RATE = pcm.SAMPLE_RATE / DECIMATE
 TAPE_S = 8.0                 # of the envelope, for the page's tape
@@ -326,7 +330,8 @@ def decode(x: np.ndarray, rate: float, pitch: float, noise: tuple[float, float],
 
 
 class Reader:
-    """Listens to what a receiver plays and reads the Morse in it, an over at a time, on its own thread."""
+    """Hears a receiver's sound and reads the Morse in it, an over at a time: feed() it blocks as they're
+    played (or take() sound already at RATE), step() it a few times a second, ask status() what it has read."""
 
     def __init__(self) -> None:
         self.on = False
@@ -336,8 +341,6 @@ class Reader:
         self._x = np.zeros(0, np.float32)            # the audio kept, at RATE
         self._x0 = 0                                 # ...and where it starts, in samples since switched on
         self._done = 0                               # read up to here
-        self._thread: threading.Thread | None = None
-        self._stop = threading.Event()
         self._n = 0
         self._overs: deque[dict] = deque(maxlen=40)
         self._tape: dict = {"at": 0.0, "pitch": None, "wpm": None, "env": []}
@@ -345,25 +348,7 @@ class Reader:
         self._going: tuple[float, float] | None = None   # (pitch, words a minute) of a long over part-read
         self._tone: tuple[int, float | None] = (-10**9, None)   # (when looked for, the pitch found)
 
-    # --- the switch, and the sound coming in -------------------------------------------------
-
-    def switch(self, on: bool) -> None:
-        on = bool(on)
-        with self._lock:
-            if on == self.on:
-                return
-            self.on = on
-            self._pending, self._left = [], np.zeros(0, np.float32)
-            if on:
-                self._x, self._x0, self._done, self._n = np.zeros(0, np.float32), 0, 0, 0
-                self._overs.clear()
-                self._floor, self._going, self._tone = None, None, (-10**9, None)
-                self._tape = {"at": 0.0, "pitch": None, "wpm": None, "env": []}
-                self._stop = threading.Event()
-                self._thread = threading.Thread(target=self._run, args=(self._stop,), name="morse-reader", daemon=True)
-                self._thread.start()
-            else:
-                self._stop.set()
+    # --- the sound coming in -----------------------------------------------------------------
 
     def feed(self, block: np.ndarray) -> None:
         """What's being played (a block at the speaker's rate): kept for the reading thread. Cheap."""
@@ -376,6 +361,18 @@ class Reader:
             self._left = mono[whole:]
             if whole:
                 self._pending.append(mono[:whole].reshape(-1, DECIMATE).mean(axis=1))
+                del self._pending[:-MAX_PENDING]     # (nobody taking it: the oldest goes)
+
+    def take(self, sound: np.ndarray) -> None:
+        """Sound already at RATE."""
+        with self._lock:
+            self._pending.append(np.asarray(sound, np.float32))
+
+    def drain(self) -> np.ndarray | None:
+        """What's been fed and not yet taken, at RATE (for a Reader that only passes it on)."""
+        with self._lock:
+            new, self._pending = self._pending, []
+        return np.concatenate(new) if new else None
 
     # --- what the page asks for --------------------------------------------------------------
 
@@ -386,14 +383,6 @@ class Reader:
             return {"on": self.on, **self._tape, "tape_rate": TAPE_RATE, "overs": [o for o in self._overs if o["n"] > since]}
 
     # --- the reading -------------------------------------------------------------------------
-
-    def _run(self, stop: threading.Event) -> None:
-        while not stop.wait(0.25):
-            try:
-                self.step()
-            except Exception:                        # (a reader that falls over mustn't take anything with it)
-                log.exception("morse: reading failed")
-                time.sleep(1.0)
 
     def step(self) -> None:
         """Take in the sound that's arrived, and read whatever over has ended in it."""
@@ -473,4 +462,108 @@ class Reader:
             self._tape = {"at": round(end / RATE, 3), "pitch": None if pitch is None else round(pitch), "wpm": self._tape.get("wpm"), "env": tape}
 
 
-reader = Reader()
+
+def _serve(conn) -> None:
+    """The reading process: sound in (arrays at RATE; None to stop), what's been read out, four times a second."""
+    try:
+        os.nice(10)                                  # (the sound comes first)
+    except OSError:
+        pass
+    core, seen = Reader(), 0
+    core.on = True
+    try:
+        while True:
+            if conn.poll(0.25):
+                while conn.poll():
+                    sound = conn.recv()
+                    if sound is None:
+                        return
+                    core.take(sound)
+            try:
+                core.step()
+            except Exception:                        # (a reading that falls over mustn't end the reader)
+                log.exception("morse: reading failed")
+            st = core.status(seen)
+            if st["overs"]:
+                seen = st["overs"][-1]["n"]
+            conn.send(st)
+    except (EOFError, OSError, KeyboardInterrupt):   # the radio has gone
+        return
+
+
+class Remote:
+    """The Reader as the radio uses it: the reading in a process of its own, so that it never takes the
+    processor from the sound. feed() and status() are cheap and never wait for it."""
+
+    def __init__(self) -> None:
+        self.on = False
+        self._lock = threading.Lock()
+        self._inbox = Reader()                       # (only to bring the sound down to RATE and hold it till it's sent)
+        self._stop = threading.Event()
+        self._thread: threading.Thread | None = None
+        self._proc = None
+        self._overs: deque[dict] = deque(maxlen=40)
+        self._tape: dict = {"at": 0.0, "pitch": None, "wpm": None, "env": []}
+
+    def switch(self, on: bool) -> None:
+        on = bool(on)
+        with self._lock:
+            if on == self.on:
+                return
+            self.on = self._inbox.on = on
+            if not on:
+                self._stop.set()
+                return
+            self._inbox = Reader()
+            self._inbox.on = True
+            self._overs.clear()
+            self._tape = {"at": 0.0, "pitch": None, "wpm": None, "env": []}
+            conn, child = mp.get_context("spawn").Pipe()
+            self._proc = mp.get_context("spawn").Process(target=_serve, args=(child,), name="morse-reader", daemon=True)
+            self._proc.start()
+            child.close()
+            self._stop = threading.Event()
+            self._thread = threading.Thread(target=self._carry, args=(self._stop, conn, self._proc, self._inbox), name="morse-reader", daemon=True)
+            self._thread.start()
+
+    def feed(self, block: np.ndarray) -> None:
+        """What's being played (a block at the speaker's rate). Cheap: it's only kept for the carrying thread."""
+        if self.on:
+            self._inbox.feed(block)
+
+    def status(self, since: int = 0) -> dict:
+        """As Reader.status(): {"on", "at", "pitch", "wpm", "env", "tape_rate", "overs": those after number since}."""
+        with self._lock:
+            return {"on": self.on, **self._tape, "tape_rate": TAPE_RATE, "overs": [o for o in self._overs if o["n"] > since]}
+
+    def _carry(self, stop: threading.Event, conn, proc, inbox: Reader) -> None:
+        """Sound to the reading process and what it has read back, four times a second, until switched off."""
+        try:
+            while not stop.wait(0.25):
+                sound = inbox.drain()
+                if sound is not None:
+                    conn.send(sound)
+                while conn.poll():
+                    st = conn.recv()
+                    with self._lock:
+                        if stop.is_set():
+                            break
+                        self._tape = {k: st[k] for k in ("at", "pitch", "wpm", "env")}
+                        self._overs.extend(st["overs"])
+        except (EOFError, OSError):
+            log.error("morse: the reading process has gone (exit code %s)", proc.exitcode)
+            with self._lock:
+                if not stop.is_set():
+                    self.on = inbox.on = False
+        finally:
+            try:
+                conn.send(None)
+            except OSError:
+                pass
+            proc.join(timeout=3)
+            if proc.is_alive():
+                proc.kill()
+            conn.close()
+
+
+reader = Remote()
