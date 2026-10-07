@@ -1963,13 +1963,13 @@ function rigNrKey(R, k) {
 // time. One reader, so one state for every rig window: the tape (the envelope, then the marks as read, a letter under
 // its own) and the text, fainter where a letter stood less clear of the noise. The text is a log: a line an over with
 // its time, pitch and speed, coloured by sender (a pitch and a speed), so the two sides of a contact read apart.
-const CW = { since: 0, overs: [], lines: [], voices: [], line: 0, hue: 0, st: null, got: 0, busy: false, asked: 0 };
+const CW = { since: 0, overs: [], lines: [], voices: [], line: 0, hue: 0, st: null, got: 0, busy: false, asked: 0, leads: [], lead: null, raf: 0 };
 const CW_TAPE_S = 16, CW_W = 900, CW_H = 60, CW_LINES = 120, CW_HUES = ["#58d0e8", "#5fd08a", "#e58fd0", "#b9a6ff", "#e8c9a0"];
 function rigCwKey(R, k) {
   return R.dom.kcw = k("CW", async () => {
     try {
       S = { ...(S || {}), ...(await api("/api/rx/morse", { on: !S?.cw })) };
-      Object.assign(CW, { since: 0, overs: [], lines: [], voices: [], st: null });
+      Object.assign(CW, { since: 0, overs: [], lines: [], voices: [], st: null, leads: [], lead: null });
       rigPaint(R); cwDraw(R);
       if (S.cw) toast("Morse reader on: the strongest Morse in what this receiver plays is read, a second or so after each over ends. The CW mode narrows it to the signal you're tuned to.", false, null, true);
     } catch (e) { rigOops(e); } }, "Read Morse as text: the strongest keyed tone in what the receiver is playing");
@@ -1983,6 +1983,9 @@ async function cwPoll() {
     for (const o of st.overs) { CW.overs.push(o); CW.since = o.n; cwLog(o, st); }
     if (!st.overs.length && CW.overs.length && st.at < CW.overs[CW.overs.length - 1].t0) Object.assign(CW, { since: 0, overs: [] });
     CW.overs = CW.overs.slice(-30); CW.st = st; CW.got = Date.now();
+    const lead = st.at - CW.got / 1000;
+    CW.leads = [...(CW.leads.some(l => l - lead > 8) ? [] : CW.leads), lead].slice(-12);    // (a reader begun again: its clock too)
+    if (!CW.raf) CW.raf = requestAnimationFrame(cwRoll);
     if (S.cw !== st.on) S = { ...S, cw: st.on };
   } catch (e) { /* the next one will do */ }
   CW.busy = false;
@@ -2033,21 +2036,20 @@ async function cwCopy(text, what) {                 // (the radio's page is plai
   let ok = false; try { ok = document.execCommand("copy"); } catch (e) { /* said below */ }
   t.remove(); toast(ok ? `Copied ${what}.` : "This browser wouldn't copy it.");
 }
-function cwDraw(R) {
-  const d = R.dom;
-  if (!d?.cw) return;
-  const on = !!S?.cw && !!d.kcw; d.cw.hidden = !on;         // (only where there's a CW key: not a room)
-  if (!on) return;
-  const st = CW.st, here = rigOnRadio(R), g = d.tape.getContext("2d");
-  d.cwsays.textContent = !here ? "" : st?.pitch ? `${st.pitch} Hz${st.wpm ? ` · ${Math.round(st.wpm)} wpm` : ""}` : "no keyed tone";
-  // being sent now: a tone there in the last second, its text to come when the over ends
-  const going = here && !!st?.pitch && st.env.slice(-st.tape_rate).some(v => v > 128);
-  d.cwnow.classList.toggle("on", going);
-  if (going) d.cwnow.textContent = `Being sent at ${st.pitch} Hz: the text follows when the sender stops`;
+// The tape's clock. The reader says how far through the sound it has got ("at"), but in steps, late by however busy
+// it is, and asked for at uneven moments: drawn from that the tape jumped back and forth. So it runs off the page's
+// own clock, set against the furthest the reader has been of late and eased there, and is drawn between the answers.
+function cwNow() {
+  const goal = Math.max(...CW.leads);
+  CW.lead = CW.lead == null || Math.abs(goal - CW.lead) > 8 ? goal : CW.lead + (goal - CW.lead) * .03;
+  return Date.now() / 1000 + CW.lead;
+}
+function cwTape(R) {
+  const d = R.dom, st = CW.st, here = rigOnRadio(R), g = d.tape.getContext("2d");
   g.fillStyle = "#0a1118"; g.fillRect(0, 0, CW_W, CW_H);
   g.strokeStyle = "#1e3445"; g.beginPath(); g.moveTo(0, 30.5); g.lineTo(CW_W, 30.5); g.stroke();
   if (here && st) {
-    const now = st.at + Math.min(1.5, (Date.now() - CW.got) / 1000), x = t => CW_W - (now - t) * CW_W / CW_TAPE_S;
+    const now = cwNow(), x = t => CW_W - (now - t) * CW_W / CW_TAPE_S;
     if (st.env.length) {                             // what's being sent now, not yet read: the envelope
       g.beginPath(); g.moveTo(x(st.at - st.env.length / st.tape_rate), 29);
       st.env.forEach((v, i) => g.lineTo(x(st.at - (st.env.length - 1 - i) / st.tape_rate), 29 - v / 255 * 22));
@@ -2067,6 +2069,26 @@ function cwDraw(R) {
       });
     }
   }
+}
+function cwRoll() {                                 // the tape moving, while there's a window showing one
+  CW.raf = 0;
+  if (!S?.cw || document.hidden) return;
+  let any = false;
+  for (const win of W) { const R = O[win.id]?.kind === "rx" && O[win.id].rig; if (R?.dom?.tape?.isConnected && !R.dom.cw.hidden) { cwTape(R); any = true; } }
+  if (any) CW.raf = requestAnimationFrame(cwRoll);
+}
+function cwDraw(R) {
+  const d = R.dom;
+  if (!d?.cw) return;
+  const on = !!S?.cw && !!d.kcw; d.cw.hidden = !on;         // (only where there's a CW key: not a room)
+  if (!on) return;
+  const st = CW.st, here = rigOnRadio(R);
+  d.cwsays.textContent = !here ? "" : st?.pitch ? `${st.pitch} Hz${st.wpm ? ` · ${Math.round(st.wpm)} wpm` : ""}` : "no keyed tone";
+  // being sent now: a tone there in the last second, its text to come when the over ends
+  const going = here && !!st?.pitch && st.env.slice(-st.tape_rate).some(v => v > 128);
+  d.cwnow.classList.toggle("on", going);
+  if (going) d.cwnow.textContent = `Being sent at ${st.pitch} Hz: the text follows when the sender stops`;
+  cwTape(R);
   // the log: only the lines that changed are made again (a selection in an older one stays), and it keeps to the
   // newest unless it has been scrolled back
   const box = d.copy, said = !here ? "Listen to this receiver, and the Morse in what it plays is read here." : !CW.lines.length ? "Listening for Morse…" : "";
