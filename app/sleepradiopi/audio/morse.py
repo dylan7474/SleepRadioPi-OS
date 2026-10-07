@@ -45,6 +45,7 @@ from __future__ import annotations
 import logging
 import multiprocessing as mp
 import os
+import re
 import threading
 from collections import deque
 
@@ -60,6 +61,17 @@ MORSE = {".-": "A", "-...": "B", "-.-.": "C", "-..": "D", ".": "E", "..-.": "F",
          "...--": "3", "....-": "4", ".....": "5", "-....": "6", "--...": "7", "---..": "8", "----.": "9", "-..-.": "/",
          "..--..": "?", "-...-": "=", ".-.-.": "+", ".-.-.-": ".", "--..--": ","}
 UNREAD = "~"                 # a run of marks that is no letter
+# Where one word ends and the next begins. Morse's own rule is a gap of seven dits against three between letters,
+# but hands differ: one runs words together at four, another leaves five inside a callsign. So the line is drawn
+# from the sender's own letter gaps, and what's sent all the time on the air settles the gaps that are near it.
+WORD_GAP = 5.0               # a gap this many dits long is between words, until the sender's own gaps are known...
+WORD_GAP_FROM = 8            # ...which takes this many gaps: then it's WORD_GAP_OVER times the usual gap between letters
+WORD_GAP_OVER, WORD_GAP_RANGE = 1.55, (4.0, 6.5)
+WORD_NEAR = 1.4              # a word gap under this many times the line may yet be inside a callsign
+WORD_SPLIT_MIN = 3.3         # run-together words are parted only at a gap at least this long, dits
+VOCAB = frozenset("CQ DE KN BK AR SK RR TU TNX TKS FER UR RST QSO QTH QRZ QRM QRN QSB QSL QRS QRT QRP QSY NAME OP HR IS ES 73 88 "
+                  "5NN 599 GM GA GE GN OM DR PSE HW CPY TEST UP DX WX RIG ANT PWR GL GD FB VY MY BEST CU AGN CUAGN HI K R".split())
+CALLSIGN = re.compile(r"(?:[A-Z]{1,2}\d|\d[A-Z])\d?[A-Z]{1,4}(?:/[A-Z0-9]{1,4})?")
 
 ENV_RATE = 600.0             # the envelope's samples a second, after the filter
 U = 8                        # ...and then per dit, for the search
@@ -317,7 +329,64 @@ def overs(env: np.ndarray, er: float, noise: tuple[float, float], quiet_s: float
     return [(a / er, b / er) for a, b in out if (b - a) / er > 0.25]
 
 
-def decode(x: np.ndarray, rate: float, pitch: float, noise: tuple[float, float], wpm: float | None = None) -> dict:
+def word_gaps(letters: list[str], gaps: list[float], known: frozenset[str] = frozenset()) -> list[bool]:
+    """Which gaps between letters are gaps between words. gaps[i] (dits) is the one after letters[i]; known:
+    callsigns read whole not long ago."""
+    line = WORD_GAP
+    if len(gaps) >= WORD_GAP_FROM:                   # the sender's own letter gaps: the shorter two thirds of them all
+        usual = float(np.median(np.sort(gaps)[:max(3, len(gaps) * 2 // 3)]))
+        line = float(np.clip(WORD_GAP_OVER * usual, *WORD_GAP_RANGE))
+    space = [g >= line for g in gaps]
+
+    def words() -> list[tuple[int, int]]:            # (first letter, one past the last) of each
+        cuts = [0] + [i + 1 for i, sp in enumerate(space) if sp] + [len(letters)]
+        return list(zip(cuts[:-1], cuts[1:]))
+
+    said = lambda a, b: "".join(letters[a:b])        # noqa: E731
+    # words run together ("CQCQDE", "TNXFER", "73ES"): parted where the pieces are all what's sent on the air
+    # (a callsign among them at most) and the gaps parted at are the longest in the run
+    for a, b in words():
+        run = said(a, b)
+        if b - a < 4 or run in VOCAB or CALLSIGN.fullmatch(run) or UNREAD in run:
+            continue
+        best: list[int] | None = None
+
+        def part(at: int, cuts: list[int], calls: int) -> None:
+            nonlocal best
+            if at == b:
+                if cuts and (best is None or len(cuts) < len(best)):
+                    inner = [gaps[i] for i in range(a, b - 1) if i + 1 not in cuts]
+                    least = min(gaps[c - 1] for c in cuts)
+                    if least >= WORD_SPLIT_MIN and (not inner or least > max(inner)):
+                        best = cuts
+                return
+            for end in range(at + 2, b + 1):         # (pieces of two letters or more)
+                piece = said(at, end)
+                call = piece not in VOCAB and bool(CALLSIGN.fullmatch(piece))
+                if piece in VOCAB or (call and not calls):
+                    part(end, cuts + [end] if end < b else cuts, calls + call)
+
+        part(a, [], 0)
+        for c in best or []:
+            space[c - 1] = True
+    # ...and a gap only just a word's that falls inside a callsign ("DL2 OE", "GW4I MC") isn't one: where the
+    # callsign has been read whole lately, or it parts no more than the letters after the figure from the rest
+    heard = known | {w for w in (said(a, b) for a, b in words()) if len(w) >= 4 and CALLSIGN.fullmatch(w)}
+    joined = True
+    while joined:                                    # (again after each: a callsign in three pieces)
+        joined, ws = False, words()
+        for (a, m), (_, b) in zip(ws[:-1], ws[1:]):
+            left, right = said(a, m), said(m, b)
+            if gaps[m - 1] >= WORD_NEAR * line or left in VOCAB or right in VOCAB or not CALLSIGN.fullmatch(left + right):
+                continue
+            if left + right in heard or (left[-1].isdigit() and right.isalpha()):
+                space[m - 1], joined = False, True
+                break
+    return space
+
+
+def decode(x: np.ndarray, rate: float, pitch: float, noise: tuple[float, float], wpm: float | None = None,
+           known: frozenset[str] = frozenset()) -> dict:
     """Read one over. -> {"text", "wpm", "pitch", "quality" (0-1), "chars": [(char, time_s, confidence)],
     "marks": [(start_s, end_s)]}; text "" if there's nothing that stands up as Morse."""
     pitch = refine_pitch(x, rate, pitch)
@@ -336,15 +405,16 @@ def decode(x: np.ndarray, rate: float, pitch: float, noise: tuple[float, float],
         if abs(unit - 1) < 0.06:
             break
         w, unit = float(np.clip(w / unit, found * 0.75, found * 1.33)), 1.0
-    chars, sym, start, conf, zs, misfit = [], "", 0, [], [], []
+    letters, gaps, sym, start, conf, zs, misfit = [], [], "", 0, [], [], []    # gaps: (dits, from when) after each letter
 
-    def flush(space_at: int | None) -> None:
+    def flush(gap: tuple[float, int]) -> None:
         nonlocal sym, conf
         if sym:
             ch = MORSE.get(sym)
-            chars.append((ch or UNREAD, start * step, float(np.clip((min(conf) - 2.5) / 4.0, 0, 1)) if ch else 0.0))
-        if space_at is not None and chars and chars[-1][0] != " ":
-            chars.append((" ", space_at * step, 1.0))
+            letters.append((ch or UNREAD, start * step, float(np.clip((min(conf) - 2.5) / 4.0, 0, 1)) if ch else 0.0))
+            gaps.append(gap)
+        elif gaps:                                   # (a gap and then quiet: the one gap)
+            gaps[-1] = (gaps[-1][0] + gap[0], gaps[-1][1])
         sym, conf = "", []
 
     for k, a, b in segs:
@@ -357,17 +427,19 @@ def decode(x: np.ndarray, rate: float, pitch: float, noise: tuple[float, float],
             conf.append(z)
             misfit.append(abs(np.log((b - a) / (U if k == "dit" else 3 * U))))
             if len(sym) > 7:
-                flush(None)
+                flush((0.0, b))
         elif k == "gap1":
             misfit.append(abs(np.log((b - a) / U)))
-        elif k == "gap3":
-            misfit.append(abs(np.log((b - a) / (3 * U))))
-            flush(None)
         else:
-            flush(a)
-    flush(None)
-    while chars and chars[-1][0] == " ":
-        chars.pop()
+            if k == "gap3":
+                misfit.append(abs(np.log((b - a) / (3 * U))))
+            flush(((b - a) / U, a))
+    flush((0.0, 0))
+    chars = []
+    for c, gap, space in zip(letters, gaps, word_gaps([c[0] for c in letters], [g[0] for g in gaps[:-1]], known) + [False]):
+        chars.append(c)
+        if space:
+            chars.append((" ", gap[1] * step, 1.0))
     letters = [c for c in chars if c[0] != " "]
     out.update(wpm=w / unit, z=float(np.median(zs)), misfit=float(np.mean(misfit)),
                quality=float(np.mean([c[2] for c in letters])) if letters else 0.0)
@@ -393,6 +465,7 @@ class Reader:
         self._done = 0                               # read up to here
         self._n = 0
         self._overs: deque[dict] = deque(maxlen=40)
+        self._calls: deque[str] = deque(maxlen=40)   # callsigns read whole of late: one sent again in two pieces is that one
         self._tape: dict = {"at": 0.0, "pitch": None, "wpm": None, "env": []}
         self._floor: float | None = None             # the noise, remembered: an over with no quiet in it is read against this
         self._going: tuple[float, float] | None = None   # (pitch, words a minute) of a long over part-read
@@ -478,7 +551,7 @@ class Reader:
             lead = 0 if carried else min(i0 - a, int(PAD_S * RATE))      # (quiet before it, to read it against)
             j1 = min(len(x), int((s1 + PAD_S) * RATE)) if ended else len(x)
             seg = x[i0 - a - lead:j1]
-            r = decode(seg, RATE, pitch, noise, wpm=self._going[1] if carried else None)
+            r = decode(seg, RATE, pitch, noise, wpm=self._going[1] if carried else None, known=frozenset(self._calls))
             t0 = (i0 - lead) / RATE                  # the segment's start, in seconds since switched on
             chars, marks = r["chars"], r["marks"]
             if ended:
@@ -499,6 +572,9 @@ class Reader:
                         "pitch": round(r["pitch"]), "wpm": round(r["wpm"], 1), "quality": round(r["quality"], 2),
                         "chars": [[c, round(t0 + at, 3), round(conf, 2)] for c, at, conf in chars],
                         "marks": [[round(t0 + m0, 3), round(t0 + m1, 3)] for m0, m1 in marks]}
+                for word in "".join(c[0] for c in chars).split():
+                    if len(word) >= 4 and CALLSIGN.fullmatch(word) and word not in self._calls:
+                        self._calls.append(word)
                 with self._lock:
                     self._overs.append(over)
                     self._tape["wpm"] = over["wpm"]

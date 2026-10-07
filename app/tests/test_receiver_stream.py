@@ -201,6 +201,10 @@ def test_kiwisdr_for_the_rig_its_waterfall_its_meter_and_tuning_where_it_is() ->
     assert [n for n, _ in s.rig()["rows"]] == [3] and s.rig()["hi"] - s.rig()["lo"] == 234_375
     s.tune(freq=14_205_000)                        # (the mode stays)
     assert ws.sent[-1] == "SET mod=usb low_cut=300 high_cut=2700 freq=14205.000"
+    s.tune(freq=14_030_250, mode="cw")             # Morse: the frequency is the signal's, the receiver set below it
+    assert ws.sent[-1] == "SET mod=cw low_cut=300 high_cut=700 freq=14029.750" and s.rig()["freq"] == 14_030_250
+    assert (rx.dial("kiwi", 7_030_000, "cw"), rx.dial("owrx", 7_030_000, "cw"), rx.dial("kiwi", 7_150_000, "lsb")) == (7_029_500, 7_029_200, 7_150_000)
+    s.tune(freq=14_205_000, mode="usb")
     for bad, why in (({"mode": "wfm"}, "modes"), ({"freq": 99_000_000}, "30 MHz")):
         try:
             s.tune(**bad)

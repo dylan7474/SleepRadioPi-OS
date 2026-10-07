@@ -12,7 +12,8 @@ A station whose address is a receiver's own link is played this way:
     http://HOST:8073/?f=7150.00lsb                 KiwiSDR (kHz, then the mode)
 
 These are the links the receivers' own pages make, so one copied from the
-browser's address bar works as it is.
+browser's address bar works as it is. In Morse (cw) the frequency is the
+signal's own, as a KiwiSDR's page has it: see dial().
 
 ReceiverStream looks like radio.RadioStream to the station: start(), read(),
 buffered_s, ended, title, close(). The audio (12 kHz mono from both kinds)
@@ -68,6 +69,16 @@ WF_ZOOM = 6                 # its zoom to begin with: 30 MHz / 2**6 = 469 kHz ac
 WF_SPEED = 3                # (of 4: about 13 rows a second)
 KIWI_PASSBAND = {"am": (-4900, 4900), "amn": (-2500, 2500), "sam": (-4900, 4900), "usb": (300, 2700), "lsb": (-2700, -300),
                  "cw": (300, 700), "cwn": (470, 530), "nbfm": (-6000, 6000)}
+
+
+
+def dial(kind: str, freq: int, mode: str) -> int:
+    """The frequency to give the receiver for one of ours. They're the same but in Morse: there a frequency is
+    the signal's own (as on a KiwiSDR's page, and on any rig), and the receiver is set the middle of its filter
+    below that, so that the signal is heard as a tone and not at zero beat."""
+    lo, hi = (KIWI_PASSBAND if kind == "kiwi" else OWRX_PASSBAND).get(mode, (0, 0))
+    return freq - (lo + hi) // 2 if mode in ("cw", "cwn") else freq
+
 
 # --- which receiver, tuned where -----------------------------------------------------------
 
@@ -318,7 +329,7 @@ class ReceiverStream:
             if ws is None:
                 raise ValueError("the receiver isn't connected yet")
             lo, hi = KIWI_PASSBAND[mode]
-            ws.send(f"SET mod={mode} low_cut={lo} high_cut={hi} freq={freq / 1000:.3f}")
+            ws.send(f"SET mod={mode} low_cut={lo} high_cut={hi} freq={dial('kiwi', freq, mode) / 1000:.3f}")
             spec["freq"], spec["mode"] = freq, mode
             self.title = said(spec) + (f" · {self.name[:60]}" if self.name else "")
         if zoom is not None or centre is not None:
@@ -481,7 +492,7 @@ class ReceiverStream:
             lo, hi = OWRX_PASSBAND[spec["mode"]]
             ws.send(json.dumps({"type": "dspcontrol", "action": "start"}))
             ws.send(json.dumps({"type": "dspcontrol", "params": {
-                "low_cut": lo, "high_cut": hi, "offset_freq": spec["freq"] - cfg["center_freq"], "mod": spec["mode"],
+                "low_cut": lo, "high_cut": hi, "offset_freq": dial("owrx", spec["freq"], spec["mode"]) - cfg["center_freq"], "mod": spec["mode"],
                 "squelch_level": spec.get("sql", -150), "secondary_mod": False}}))
             self.title = said(spec) + (f" · {name[:60]}" if name else "")
 
@@ -613,7 +624,7 @@ class ReceiverStream:
                     lo, hi = KIWI_PASSBAND[spec["mode"]]
                     for c in (f"SET AR OK in={int(round(rate))} out=44100", "SET squelch=0 max=0", "SET genattn=0", "SET gen=0 mix=-1",
                               "SET ident_user=SleepRadio",
-                              f"SET mod={spec['mode']} low_cut={lo} high_cut={hi} freq={spec['freq'] / 1000:.3f}",
+                              f"SET mod={spec['mode']} low_cut={lo} high_cut={hi} freq={dial('kiwi', spec['freq'], spec['mode']) / 1000:.3f}",
                               "SET agc=1 hang=0 thresh=-100 slope=6 decay=1000 manGain=50", "SET compression=0", "SET keepalive"):
                         ws.send(c)
                     started, resample = True, Resampler(rate)

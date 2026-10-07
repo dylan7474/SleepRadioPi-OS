@@ -209,3 +209,36 @@ def test_the_reader_from_the_web(tmp_path: Path) -> None:
         morse.reader.switch(False)
         httpd.shutdown()
         httpd.server_close()
+
+
+def _words(text: str, gaps: dict[int, float] | None = None, known: frozenset[str] = frozenset()) -> str:
+    """text with its spaces as 7-dit gaps and 3 between letters, but for gaps {letter index: dits}; as word_gaps reads it."""
+    letters, sizes = [], []
+    for ch in text:
+        if ch == " ":
+            sizes[-1] = 7.0
+        else:
+            letters.append(ch)
+            sizes.append(3.0)
+    for i, g in (gaps or {}).items():
+        sizes[i] = g
+    space = morse.word_gaps(letters, sizes[:-1], known)
+    return "".join(ch + (" " if sp else "") for ch, sp in zip(letters, space + [False]))
+
+
+def test_word_gaps_follow_the_sender_and_what_is_sent_on_the_air():
+    assert _words("CQ CQ DE G4ABC K") == "CQ CQ DE G4ABC K"
+    # a hand that leaves long gaps between letters: its word gaps are longer still
+    slow = "CQ DE DL2OE DL2OE K"
+    assert _words(slow, {i: 4.2 for i in (0, 2, 4, 5, 6, 7, 9, 10, 11, 12)} | {6: 5.6, 11: 5.4}) == slow
+    # words run together are parted where the pieces are all everyday Morse, at the longest gaps in the run
+    assert _words("CQCQDE G4ABC", {1: 4.0, 3: 4.0}) == "CQ CQ DE G4ABC"
+    assert _words("TNXFER QSO", {2: 3.9}) == "TNX FER QSO"
+    assert _words("BEST", {1: 4.0}) == "BEST"
+    # a gap only just a word's, inside a callsign: after the figure, or a callsign read whole not long ago
+    assert _words("DE DL2 OE K", {4: 5.4}) == "DE DL2OE K"
+    assert _words("GW4I MC", {3: 5.5}) == "GW4I MC"
+    assert _words("GW4I MC", {3: 5.5}, frozenset({"GW4IMC"})) == "GW4IMC"
+    assert _words("CQ DE GW4IMC GW4IM C K", {14: 5.5}) == "CQ DE GW4IMC GW4IMC K"
+    assert _words("G4ABC K", {4: 5.5}, frozenset({"G4ABCK"})) == "G4ABC K"          # (K is a word of its own)
+    assert _words("ST 73 ES", {1: 5.8}) == "ST 73 ES"

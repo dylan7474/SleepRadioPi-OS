@@ -254,7 +254,9 @@ Actions, Sleep timer and Radio folders open:
   radio's buttons to keep it there. On an internet receiver ◀ ▶ and the
   mouse wheel tune in steps from 10 Hz to 9 kHz (the step key; Shift with
   the wheel is a tenth of it), and a click lands as finely as the mode
-  needs: on a Morse signal within 10 Hz, set so that it's heard as a tone.
+  needs: on a Morse signal within 10 Hz. In CW the frequency and the red
+  line are the signal's own: put the line on the signal and it's tuned,
+  heard as a tone.
   Your own receiver hears a whole band at
   once, so there's scan, hold and skip; an internet receiver is tuned where
   it is, through the one connection the radio holds to it.

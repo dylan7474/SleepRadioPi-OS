@@ -991,9 +991,12 @@ The cards:
     FM, a click on the scope, ◀ ▶ and the mouse wheel in steps of 10 Hz to
     9 kHz (the step key; Shift with the wheel moves a tenth of it), *Zoom − /
     +*, and *Save* to keep the frequency as a station. A click lands as
-    finely as the mode needs: in CW within 10 Hz, with the signal put in the
-    middle of the filter so it's heard as a tone; in LSB / USB on the nearest
-    100 Hz; AM on its channel. Choosing CW drops the step to 100 Hz, and
+    finely as the mode needs: in CW within 10 Hz; in LSB / USB on the nearest
+    100 Hz; AM on its channel. In CW the frequency shown, the red line on
+    the scope and a saved station's frequency are all the signal's own, as
+    on a KiwiSDR's own page: the radio sets the receiver the middle of its
+    filter below that (500 Hz on a KiwiSDR, 800 Hz on an OpenWebRX), so the
+    signal is heard as a tone. Put the line on the signal and it's tuned. Choosing CW drops the step to 100 Hz, and
     leaving it puts a kHz back. The
     meter is the receiver's own reading in dBm. Some KiwiSDRs have fewer
     waterfalls than listeners: then the scope says so and the sound carries
@@ -1113,8 +1116,13 @@ The cards:
   clean down to -6 dB, a shaky fist about 3% of letters wrong, about 15%
   wrong at -9 dB, nothing said at -12 dB -- a good ear still goes a few dB
   lower. Weak spots: a weak signal that is also fading fast, two stations
-  keying at once inside the one filter, and a shaky fist's short gap between
-  words run together. `GET /api/rx/morse?since=N` gives whether it's on, the
+  keying at once inside the one filter, and a hand whose gaps between words are no longer than those
+  between its letters. Where a word ends is judged from the sender's own
+  letter gaps, not a fixed seven dits against three (the line is 1.55 times
+  the usual letter gap, once eight gaps have been heard), and the gaps near
+  the line are settled by what's sent on the air all the time: "CQCQDE"
+  and "73ES" are parted, and a callsign sent in two pieces ("DL2 OE", or
+  "GW4I MC" when GW4IMC has been read whole lately) is put together. `GET /api/rx/morse?since=N` gives whether it's on, the
   tone's pitch, the last eight seconds of envelope for the tape, and the
   overs read after number N (each with its letters, when each began and how
   sure it is, and its marks). The page keeps the log itself (the last 120
