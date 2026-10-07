@@ -258,8 +258,11 @@ Actions, Sleep timer and Radio folders open:
   ![The rig: a receiver's window, with its waterfall](docs/rig.jpg)
 - **Morse, read as text.** The *CW* key in a receiver's window has the radio
   read the Morse in what that receiver is playing: a paper tape of the dots
-  and dashes with each letter under its own, and the text beside it,
-  callsigns picked out and a doubtful letter fainter. It reads the strongest
+  and dashes with each letter under its own, and under it a log of what was
+  read: a line an over with its time, pitch and speed, coloured by sender so
+  the two sides of a contact read apart, callsigns picked out (click one to
+  copy it) and a doubtful letter fainter. The log scrolls back, and *Copy*
+  takes all of it. It reads the strongest
   keyed tone it hears, an over at a time, a second or so after the sender
   stops; the rig's CW mode narrows the receiver to the one you're tuned to.
   A tight filter round the tone and a best-fit reading of the timing (not a

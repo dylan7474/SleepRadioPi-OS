@@ -1115,7 +1115,11 @@ The cards:
   words run together. `GET /api/rx/morse?since=N` gives whether it's on, the
   tone's pitch, the last eight seconds of envelope for the tape, and the
   overs read after number N (each with its letters, when each began and how
-  sure it is, and its marks). The reading is done in a process of its own
+  sure it is, and its marks). The page keeps the log itself (the last 120
+  lines, gone when the page is closed): an over a line, a long over's parts
+  joined on one, a sender told from another by pitch (within 40 Hz) and
+  speed (within 15%), the tape sixteen seconds long so the letters land
+  under their marks while they're still in view. The reading is done in a process of its own
   at low priority, on another core: tried as a thread of the radio's own
   process it took the processor from the sound, which stuttered on the
   Zero 2 W. There it takes about a quarter of one core in a pile-up, and
