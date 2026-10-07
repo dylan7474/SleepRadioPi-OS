@@ -259,7 +259,7 @@ Actions, Sleep timer and Radio folders open:
   once, so there's scan, hold and skip; an internet receiver is tuned where
   it is, through the one connection the radio holds to it.
 
-  ![The rig: a receiver's window, with its waterfall](docs/rig.jpg)
+  ![The rig: a receiver's window, with its waterfall and, under it, Morse being read off the air](docs/rig.jpg)
 - **Morse, read as text.** The *CW* key in a receiver's window has the radio
   read the Morse in what that receiver is playing: a paper tape of the dots
   and dashes with each letter under its own, and under it a log of what was

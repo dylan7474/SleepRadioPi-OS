@@ -184,7 +184,7 @@
   .rig .rk { font-family: var(--display); font-size: 11.5px; font-weight: 600; letter-spacing: .03em; color: #e9e7e1; background: linear-gradient(180deg, #55585c, #3e4145); border: 1px solid #17181a; border-radius: 5px; padding: 6px 4px; cursor: pointer; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .rig .rk.on { background: #f0b045; color: #231703; }
   .rig .rk:focus-visible { outline: 2px solid #58d0e8; outline-offset: 1px; }
-  .rig .tft { background: #05090d; color: #f4f6f7; border-radius: 6px; border: 2px solid #17181a; padding: 7px 9px; display: flex; flex-direction: column; gap: 5px; min-width: 0; min-height: 0; }
+  .rig .tft { background: #05090d; color: #f4f6f7; border-radius: 6px; border: 2px solid #17181a; padding: 7px 9px; display: flex; flex-direction: column; gap: 5px; min-width: 0; min-height: 0; overflow: hidden; }
   .rig .rtags { display: flex; flex-wrap: wrap; gap: 5px 7px; align-items: center; font-family: var(--display); font-size: 10.5px; letter-spacing: .08em; }
   .rig .rtag { border: 1px solid #58d0e8; color: #58d0e8; border-radius: 3px; padding: 0 6px; font-weight: 600; }
   .rig .rtag.fill { background: #58d0e8; color: #05090d; }
@@ -203,7 +203,8 @@
   .rig .rticks span:nth-child(n+6) { color: #f0604a; }
   .rig canvas { width: 100%; flex: 1; min-height: 120px; display: block; border: 1px solid #1e3445; cursor: crosshair; }
   .rig .rscale { display: flex; justify-content: space-between; font-size: 9.5px; color: #7f97a8; font-family: ui-monospace, Menlo, Consolas, monospace; }
-  .rig .rcw { display: grid; gap: 3px; min-width: 0; }
+  .rig .rcw { display: flex; flex-direction: column; gap: 3px; min-width: 0; min-height: 0; flex: 0 1 auto; }
+  .rig .rcw[hidden] { display: none; }
   .rig .rcw h4 { display: flex; gap: 8px; align-items: center; }
   .rig .rcw h4 span { letter-spacing: 0; text-transform: none; font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 9.5px; }
   .rig .rcw h4 .rkey { margin-left: auto; font-family: system-ui, sans-serif; }
@@ -212,7 +213,7 @@
   .rig .rcw h4 button:hover { background: #2a5f78; }
   .rig .rcw canvas { flex: none; min-height: 0; height: 60px; cursor: default; background: #0a1118; }
   /* the log: a line an over, the newest at the bottom, the older ones scrolled back to */
-  .rig .rcopy { font-family: ui-monospace, "DejaVu Sans Mono", Menlo, Consolas, monospace; font-size: 14px; line-height: 1.45; height: 7.25em; overflow-y: auto; background: #0a1118; border: 1px solid #1e3445; padding: 2px 6px; box-sizing: content-box; scrollbar-width: thin; scrollbar-color: #2a5f78 transparent; }
+  .rig .rcopy { font-family: ui-monospace, "DejaVu Sans Mono", Menlo, Consolas, monospace; font-size: 14px; line-height: 1.45; flex: 0 1 7.25em; min-height: 2.9em; overflow-y: auto; background: #0a1118; border: 1px solid #1e3445; padding: 2px 6px; box-sizing: content-box; scrollbar-width: thin; scrollbar-color: #2a5f78 transparent; }
   .rig .rline { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 12px; border-left: 3px solid var(--hue); padding-left: 6px; margin: 1px 0; }
   .rig .rline .rwho { white-space: pre; font-size: 11px; color: var(--hue); opacity: .85; line-height: 1.85; }
   .rig .rline .rtext { letter-spacing: .04em; overflow-wrap: anywhere; color: #f4f6f7; }
@@ -221,7 +222,7 @@
   .rig .rcopy .call { color: #f0b045; font-weight: 700; cursor: copy; }
   .rig .rcopy .call:hover { text-decoration: underline; }
   .rig .rcopy .rnone { color: #7f97a8; font-family: system-ui, sans-serif; font-size: 12px; letter-spacing: 0; }
-  .rig .rnow { height: 16px; font: 11px/16px system-ui, sans-serif; color: #58d0e8; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; opacity: 0; transition: opacity .25s; }
+  .rig .rnow { flex: none; height: 16px; font: 11px/16px system-ui, sans-serif; color: #58d0e8; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; opacity: 0; transition: opacity .25s; }
   .rig .rnow.on { opacity: 1; }
   .rig .rnow::before { content: "● "; animation: rnow 1s steps(2) infinite; }
   @keyframes rnow { 50% { opacity: .25; } }
@@ -1752,7 +1753,7 @@ async function open(id) {
   if (had) { had.z = ++zTop; drawDesk(); if (o.loaded) refreshOpen(); return; }
   const d = $("desk"), n = W.length;
   const rig = o.kind === "rx", big = o.kind === "programme" || o.kind === "schedule", page = (o.kind === "panel" && (o.page || UI[o.key])) || ["note", "person", "voice", "list"].includes(o.kind), wide = ["album", "playlist", "podcast", "button"].includes(o.kind);
-  const w = Math.min(d.clientWidth - 40, rig ? 800 : big ? 780 : page ? 560 : wide ? 480 : 560), h = Math.min(d.clientHeight - 40, rig ? 560 : big ? 460 : page ? 620 : 420);
+  const w = Math.min(d.clientWidth - 40, rig ? 800 : big ? 780 : page ? 560 : wide ? 480 : 560), h = Math.min(d.clientHeight - 40, rig ? 620 : big ? 460 : page ? 620 : 420);
   const win = { id, x: Math.max(8, Math.min(250 + n * 28, d.clientWidth - w - 10)), y: Math.max(8, Math.min(24 + n * 26, d.clientHeight - h - 10)), w, h, z: ++zTop, blk: 0, loading: false };
   const mine = geom[id] || (rig ? null : geom["kind:" + o.kind]);   // the size (and place) you gave it, or its kind, last time
   if (mine) {
