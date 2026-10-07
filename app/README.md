@@ -989,7 +989,12 @@ The cards:
     listener's place, and the rig tunes it where it is: band keys for the
     amateur bands (160 m to 10 m) and the broadcast ones, LSB / USB / AM / CW /
     FM, a click on the scope, ◀ ▶ and the mouse wheel in steps of 10 Hz to
-    9 kHz, *Zoom − / +*, and *Save* to keep the frequency as a station. The
+    9 kHz (the step key; Shift with the wheel moves a tenth of it), *Zoom − /
+    +*, and *Save* to keep the frequency as a station. A click lands as
+    finely as the mode needs: in CW within 10 Hz, with the signal put in the
+    middle of the filter so it's heard as a tone; in LSB / USB on the nearest
+    100 Hz; AM on its channel. Choosing CW drops the step to 100 Hz, and
+    leaving it puts a kHz back. The
     meter is the receiver's own reading in dBm. Some KiwiSDRs have fewer
     waterfalls than listeners: then the scope says so and the sound carries
     on. `GET /api/rx?since=N` and `POST /api/rx/tune {"base", "freq", "mode",
@@ -998,8 +1003,8 @@ The cards:
     works the same way, through the radio's one connection. Its band keys are
     whatever bands its owner has set up; **changing band moves everyone who
     is listening to that receiver**, so the rig asks first. Within a band:
-    FM / AM / USB / LSB / CW, a click on the scope, ◀ ▶ and the wheel, a typed
-    frequency (MHz). Narrow FM gets an automatic squelch, worked out again
+    FM / AM / USB / LSB / CW, a click on the scope, ◀ ▶ and the wheel (steps
+    from 10 Hz, fine tuning as on a KiwiSDR), a typed frequency (MHz). Narrow FM gets an automatic squelch, worked out again
     after each retune (a couple of seconds of quiet); the other modes are
     left open. Its waterfall is the whole band -- often several MHz -- so
     *Zoom +* looks closer at the part round where you're tuned (on the page:
