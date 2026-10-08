@@ -414,3 +414,75 @@ def test_a_tuned_band_is_moved_where_it_is_and_whoever_listens_stays(monkeypatch
         r.rest()
         for t in _FakeTuner.made:
             t.proc.kill()
+
+
+# --- short wave: an upconverter in front of the dongle, and AM tuned like a rig -----------------
+
+
+def test_am_is_the_programme_on_the_carrier():
+    import numpy as np
+    import sleepradio_tuner as st
+    d = st.Demod()
+    d.set(-24_000.0, "am")                               # (the carrier is 24 kHz below the dongle's centre)
+    step = st.HOP * st.HOPS
+    t = np.arange(step * 48) / st.FS
+    iq = (0.1 * (1 + 0.5 * np.cos(2 * np.pi * 1000 * t)) * np.exp(2j * np.pi * (-24_000) * t)      # a 1 kHz tone on it...
+          + 0.1 * np.exp(2j * np.pi * (-14_000) * t)).astype(np.complex64)                         # ...and a station 10 kHz up
+    out = np.concatenate([d.process(iq[i:i + step])[0] for i in range(0, len(iq), step)]).astype(np.float64)
+    out = out[len(out) // 2:]
+    spec = np.abs(np.fft.rfft(out * np.hanning(len(out))))
+    freqs = np.fft.rfftfreq(len(out), 1 / st.AUDIO_RATE)
+    assert abs(freqs[int(np.argmax(spec))] - 1000) < 5
+    rest = spec[(np.abs(freqs - 1000) > 100) & (freqs > 50)]            # (below 50 Hz: the carrier, still being let go of)
+    assert rest.max() < spec.max() / 100                                 # nothing of the other station
+
+
+def test_an_upconverter_makes_it_a_short_wave_receiver(monkeypatch):
+    import sleepradio_tuner as st
+    assert rx.rig({"freq": 9_410_000, "mode": "am"}) and rx.rig({"freq": 50_200_000, "mode": "am", "of": "6m"})
+    assert not rx.rig({"freq": 118_500_000, "mode": "am"}) and not rx.rig({"band": "2m"}) and rx.rig({"freq": 7_100_000, "mode": "lsb"})
+    limits = rx.limits_for(125_000_000)
+    assert limits == (100_000, 60_000_000) and rx.limits_for() == (rx.MIN_HZ, rx.MAX_HZ)
+    assert rx.parse_spec({"freq": ["0.909"], "mode": ["am"], "squelch": ["off"]}, rx.HF_BANDS, limits) == {"freq": 909_000, "mode": "am"}
+    for bad, lim in (({"freq": ["7.1"], "mode": ["lsb"]}, (rx.MIN_HZ, rx.MAX_HZ)), ({"freq": ["145.5"]}, limits)):
+        try:
+            rx.parse_spec(bad, rx.HF_BANDS, lim)
+            assert False, bad
+        except ValueError as e:
+            assert "tunes from" in str(e)
+    assert rx.spec_channels({"freq": 9_410_000, "mode": "am"}, rx.HF_BANDS)[0] == "9.4100 MHz AM"
+    for b in rx.HF_BANDS.values():
+        assert limits[0] <= b["range"][0] <= b["start"] <= b["range"][1] <= limits[1] and b["mode"] in rx.RIG_MODES
+    conf = rx.airband_conf([{"freq": 27_781_250, "name": "CB"}], shift_hz=125_001_290)      # a channel is sent up there too
+    assert "freq = 152.782540;" in conf
+    t = st.Tuner("rtl_tcp", None, None, shift_hz=125_000_000, trim_hz=1290)
+    said = []
+    monkeypatch.setattr(t, "_say", lambda command, value: said.append((command, value)))
+    t.tune(7_100_000, "lsb", recentre=True)              # the dongle is sent to the frequency, the oscillator and the trim
+    assert t.centre == 7_124_000 and said == [(0x01, 132_125_290)]
+
+    _FakeTuner.made.clear()
+    monkeypatch.setattr(st, "Tuner", _FakeTuner)
+    r = rx.Receiver(rx.HF_BANDS, shift_hz=125_000_000, trim_hz=1290)
+    try:
+        lis = r.listen({"band": "31m"})                  # a broadcast band: AM, tuned across
+        t = _FakeTuner.made[0]
+        assert t.kw["shift_hz"] == 125_000_000 and t.kw["trim_hz"] == 1290 and t.asked == [(9_650_000, "am")]
+        s = r.status()
+        assert s["receiving"] == {"freq": 9_650_000, "mode": "am", "band": "31m"} and s["tunes"] and s["title"] == "9.6500 MHz AM"
+        assert s["tunable"] == [100_000, 60_000_000] and s["upconverter"] == 125_000_000
+        r.tune(9_410_000)
+        r.tune(7_100_000, "lsb")                         # out of the band, and into sideband: the same dongle, the same listener
+        assert t.asked[1:] == [(9_410_000, "am"), (7_100_000, "lsb")] and len(_FakeTuner.made) == 1 and r.listeners == [lis]
+        r.listen({"freq": 6_050_000, "mode": "am"})      # an AM station by its frequency is tuned where it is too
+        assert t.asked[-1] == (6_050_000, "am") and len(_FakeTuner.made) == 1
+        try:
+            r.tune(145_500_000)
+            assert False
+        except ValueError:
+            pass
+    finally:
+        r.rest()
+        for t in _FakeTuner.made:
+            t.proc.kill()
+    assert "tunable" in rx.Receiver(rx.DEFAULT_BANDS).status() and "upconverter" not in rx.Receiver(rx.DEFAULT_BANDS).status()

@@ -13,6 +13,7 @@ turns its dongle into something a Sleep Radio -- or any internet radio player
     http://RECEIVER:8074/audio?band=fm&hold=96.6    ...or that one
     http://RECEIVER:8074/audio?freq=28.5&mode=usb   one frequency, tuned like a rig: usb, lsb or cw (Morse)
     http://RECEIVER:8074/audio?band=10m             ...or a band of that kind, where it was last
+    http://RECEIVER:8074/audio?freq=9.41&mode=am    a short-wave broadcast station (with an upconverter)
 
 A band is watched all at once (rtl_airband takes the whole 2.4 MHz the dongle
 hears apart into its channels, each with its own squelch), so it's a scanner
@@ -38,7 +39,15 @@ Sideband speech and Morse are a third kind (sleepradio_tuner.py: ours, since
 neither of the programs above does them): one frequency, tuned like a rig,
 moved with /tune while whoever is listening stays tuned in, with a waterfall
 of the quarter megahertz round it. 12 m, CB, 10 m, 6 m and the weak-signal
-end of 2 m are built in as bands of this kind.
+end of 2 m are built in as bands of this kind. AM below 30 MHz is tuned this
+way too (a broadcast station, not a channel with a squelch).
+
+An RTL-SDR starts at 24 MHz. With an upconverter between the aerial and the
+dongle (--upconverter 125: a Ham It Up's oscillator, in MHz) the receiver is a
+short-wave one instead: every frequency is still the real one, the dongle is
+sent to that much above it, and the built-in bands are the amateur ones from
+160 m to 10 m and the broadcast ones from medium wave to 16 m. --trim takes
+off what the oscillator and the dongle are out by between them, in Hz.
 
 The audio is a WAV stream (16-bit mono) with ICY titles. /status says what
 it's doing as JSON; /bands lists the bands. One dongle does one thing at a
@@ -93,6 +102,8 @@ HIGHPASS_HZ = 300            # narrow FM: below the speech (takes out CTCSS tone
 IDLE_S = 60.0                # no listener this long: the dongle rests
 MAX_CHANNELS = 64            # in one band (48 use most of one of a Pi 2's cores)
 MIN_HZ, MAX_HZ = 24_000_000, 1_766_000_000      # what an RTL-SDR tunes
+UP_MIN_HZ, UP_MAX_HZ = 100_000, 60_000_000      # ...and what an upconverter in front of it brings
+SHORT_WAVE_HZ = 30_000_000   # AM below this is a broadcast station, tuned like a rig; above it, a channel with a squelch
 GAIN_DB = 40.0
 VOLUME = 1.0
 
@@ -142,7 +153,24 @@ def broadcast_channels() -> list[dict]:
 
 FM_START = 95_000_000        # where the broadcast band starts off, until it's been tuned
 TUNE_MODES = ("usb", "lsb", "cw")       # one frequency, tuned like a rig (sleepradio_tuner.py)
+RIG_MODES = (*TUNE_MODES, "am")         # ...as AM is on short wave
 TUNE_RATE = 12_000           # ...and its audio
+
+
+def rig(spec: dict | None) -> bool:
+    """Is this tuned like a rig? Sideband and Morse always; AM in a tuned band, or anywhere on short wave."""
+    if not spec:
+        return False
+    return spec.get("mode") in TUNE_MODES or (spec.get("mode") == "am" and (bool(spec.get("of")) or spec.get("freq", MAX_HZ) < SHORT_WAVE_HZ))
+
+
+def limits_for(shift_hz: int = 0) -> tuple[int, int]:
+    """What can be tuned: an RTL-SDR's own reach, or an upconverter's."""
+    return (UP_MIN_HZ, UP_MAX_HZ) if shift_hz else (MIN_HZ, MAX_HZ)
+
+
+def _reach(limits: tuple[int, int]) -> str:
+    return f"this receiver tunes from {limits[0] / 1e6:g} to {limits[1] / 1e6:g} MHz"
 
 
 def tuned_band(name: str, lo: float, hi: float, start: float, mode: str = "usb") -> dict:
@@ -168,6 +196,29 @@ DEFAULT_BANDS = {
     "2m-ssb": tuned_band("2 m sideband", 144.0, 144.4, 144.3),
 }
 
+# With an upconverter: short wave. The amateur bands and the broadcast ones, in the order they come.
+HF_BANDS = {
+    "mw": tuned_band("Medium wave", 0.531, 1.602, 0.909, "am"),
+    "160m": tuned_band("160 metres", 1.81, 2.0, 1.9, "lsb"),
+    "80m": tuned_band("80 metres", 3.5, 3.8, 3.7, "lsb"),
+    "60m": tuned_band("60 metres", 5.2585, 5.4065, 5.3985),
+    "49m": tuned_band("49 m broadcast", 5.9, 6.2, 6.05, "am"),
+    "40m": tuned_band("40 metres", 7.0, 7.2, 7.1, "lsb"),
+    "41m": tuned_band("41 m broadcast", 7.2, 7.45, 7.3, "am"),
+    "31m": tuned_band("31 m broadcast", 9.4, 9.9, 9.65, "am"),
+    "30m": tuned_band("30 metres", 10.1, 10.15, 10.12, "cw"),
+    "25m": tuned_band("25 m broadcast", 11.6, 12.1, 11.85, "am"),
+    "22m": tuned_band("22 m broadcast", 13.57, 13.87, 13.7, "am"),
+    "20m": tuned_band("20 metres", 14.0, 14.35, 14.2),
+    "19m": tuned_band("19 m broadcast", 15.1, 15.8, 15.4, "am"),
+    "16m": tuned_band("16 m broadcast", 17.48, 17.9, 17.7, "am"),
+    "17m": tuned_band("17 metres", 18.068, 18.168, 18.13),
+    "15m": tuned_band("15 metres", 21.0, 21.45, 21.25),
+    "12m": DEFAULT_BANDS["12m"],
+    "cb": DEFAULT_BANDS["cb"],
+    "10m": DEFAULT_BANDS["10m"],
+}
+
 
 def load_skips(path: Path | None) -> set[int]:
     try:
@@ -180,7 +231,7 @@ def _mhz(hz: int) -> str:
     return f"{hz / 1e6:.4f}".rstrip("0").rstrip(".")
 
 
-def make_band(body: dict) -> dict:
+def make_band(body: dict, limits: tuple[int, int] = (MIN_HZ, MAX_HZ)) -> dict:
     """A band from what was asked for -> {"name", "mode", "channels"}; ValueError says what's wrong.
 
     Either its channels one by one ({"channels": [{"freq", "name"?, "priority"?}]}) or a stretch
@@ -218,8 +269,8 @@ def make_band(body: dict) -> dict:
     chans = sorted(once.values(), key=lambda c: c["freq"])
     if not chans or len(chans) > MAX_CHANNELS:
         raise ValueError(f"a band has 1 to {MAX_CHANNELS} channels")
-    if not all(MIN_HZ <= c["freq"] <= MAX_HZ for c in chans):
-        raise ValueError("an RTL-SDR tunes from 24 to 1766 MHz")
+    if not all(limits[0] <= c["freq"] <= limits[1] for c in chans):
+        raise ValueError(_reach(limits))
     centre_for([c["freq"] for c in chans])               # (too wide for one dongle: it says so)
     return {"name": name, "mode": mode, "channels": chans}
 
@@ -228,7 +279,7 @@ def band_id(name: str) -> str:
     return "".join(ch if ch.isalnum() else "-" for ch in name.lower()).strip("-")[:30] or "band"
 
 
-def load_bands(path: Path | None, into: dict | None = None) -> dict:
+def load_bands(path: Path | None, into: dict | None = None, limits: tuple[int, int] = (MIN_HZ, MAX_HZ)) -> dict:
     """The built-in bands, with a JSON file's on top ({"id": {"name", "mode", "channels": [{"freq", "name"}]}});
     one in the file that can't be used is left out."""
     bands = {k: dict(v) for k, v in DEFAULT_BANDS.items()} if into is None else into
@@ -240,7 +291,7 @@ def load_bands(path: Path | None, into: dict | None = None) -> dict:
             return bands
         for key, band in found.items():
             try:
-                bands[str(key)] = make_band({"name": band.get("name") or key, "mode": band.get("mode"), "channels": band["channels"]})
+                bands[str(key)] = make_band({"name": band.get("name") or key, "mode": band.get("mode"), "channels": band["channels"]}, limits)
             except (ValueError, KeyError, TypeError, AttributeError) as e:
                 log.warning("band %s in %s left out: %s", key, path, e)
     return bands
@@ -249,7 +300,7 @@ def load_bands(path: Path | None, into: dict | None = None) -> dict:
 # --- what to listen to -----------------------------------------------------------------
 
 
-def parse_spec(query: dict, bands: dict) -> dict:
+def parse_spec(query: dict, bands: dict, limits: tuple[int, int] = (MIN_HZ, MAX_HZ)) -> dict:
     """?band=2m[&hold=145.5] | ?freq=145.5[&mode=nfm|am|wfm|usb|lsb|cw][&squelch=off] -> a spec; ValueError says
     what's wrong. freq and hold are in MHz (145.5) or Hz (145500000). hold: the band, staying on that
     one of its channels (the whole band is still received: letting go of it is instant)."""
@@ -278,13 +329,13 @@ def parse_spec(query: dict, bands: dict) -> dict:
     except (TypeError, ValueError):
         raise ValueError("freq is a number: 145.5 (MHz) or 145500000 (Hz)") from None
     hz = _hz(f)
-    if not MIN_HZ <= hz <= MAX_HZ:
-        raise ValueError("an RTL-SDR tunes from 24 to 1766 MHz")
+    if not limits[0] <= hz <= limits[1]:
+        raise ValueError(_reach(limits))
     mode = (one("mode") or "nfm").lower()
     if mode not in ("nfm", "am", "wfm", *TUNE_MODES):
         raise ValueError("mode is nfm, am, wfm, usb, lsb or cw")
     spec = {"freq": hz, "mode": mode}
-    if mode in ("nfm", "am") and str(one("squelch") or "").lower() in ("off", "0", "false", "no"):
+    if mode in ("nfm", "am") and not rig(spec) and str(one("squelch") or "").lower() in ("off", "0", "false", "no"):
         spec["squelch"] = False
     return spec
 
@@ -295,7 +346,7 @@ def spec_channels(spec: dict, bands: dict, skips: set[int] = frozenset()) -> tup
         chans = [c for c in bands[spec["band"]]["channels"] if c["freq"] not in skips]
         return bands[spec["band"]]["name"], chans or bands[spec["band"]]["channels"]
     mhz = f"{spec['freq'] / 1e6:.4f}".rstrip("0").rstrip(".")
-    if spec.get("mode") in TUNE_MODES:                # (tuned like a rig: the frequency in full, and how)
+    if rig(spec):                                     # (tuned like a rig: the frequency in full, and how)
         said = f"{spec['freq'] / 1e6:.{5 if spec['freq'] % 100 else 4}f} MHz {spec['mode'].upper()}"     # (to 10 Hz where it's tuned that finely)
         return said, [{"freq": spec["freq"], "name": said}]
     if spec.get("of"):                                # (a station of a broadcast band: by its name there)
@@ -321,16 +372,17 @@ def centre_for(freqs: list[int], rate_hz: float = SAMPLE_RATE_MS * 1e6) -> int:
 
 
 def airband_conf(channels: list[dict], mode: str = "nfm", squelch: bool = True, gain: float = GAIN_DB,
-                 ppm: int = 0, device: int = 0, udp_base: int = UDP_BASE) -> str:
+                 ppm: int = 0, device: int = 0, udp_base: int = UDP_BASE, shift_hz: int = 0) -> str:
     """rtl_airband's configuration: every channel at once, each one's audio to
-    its own UDP port on this machine, sent only while its squelch is open."""
-    centre = centre_for([c["freq"] for c in channels])
+    its own UDP port on this machine, sent only while its squelch is open.
+    shift_hz: what an upconverter adds to every frequency."""
+    centre = centre_for([c["freq"] for c in channels]) + shift_hz
     rows = []
     for i, c in enumerate(channels):
         sq = "" if squelch else " squelch_threshold = -100;"
         if mode == "nfm":
             sq += f" highpass = {HIGHPASS_HZ};"
-        rows.append(f'    {{ freq = {c["freq"] / 1e6:.6f}; modulation = "{mode}";{sq} outputs: ({{ type = "udp_stream"; '
+        rows.append(f'    {{ freq = {(c["freq"] + shift_hz) / 1e6:.6f}; modulation = "{mode}";{sq} outputs: ({{ type = "udp_stream"; '
                     f'dest_address = "127.0.0.1"; dest_port = {udp_base + i}; continuous = false; }}); }}')
     return (f"fft_size = {FFT_SIZE};\ndevices: ({{\n  type = \"rtlsdr\"; index = {device}; gain = {gain:.1f}; correction = {ppm};\n"
             f"  centerfreq = {centre / 1e6:.6f}; sample_rate = {SAMPLE_RATE_MS}; mode = \"multichannel\";\n  channels: (\n"
@@ -460,10 +512,13 @@ class Listener:
 
 class Receiver:
     def __init__(self, bands: dict, airband: str | None = None, rtl_fm: str | None = None, gain: float = GAIN_DB,
-                 ppm: int = 0, device: int = 0, skips_file: Path | None = None, bands_file: Path | None = None) -> None:
+                 ppm: int = 0, device: int = 0, skips_file: Path | None = None, bands_file: Path | None = None,
+                 shift_hz: int = 0, trim_hz: int = 0) -> None:
         self.bands = dict(bands)
+        self.shift_hz, self.trim_hz = shift_hz, trim_hz     # an upconverter's oscillator, and what it and the dongle are out by
+        self.limits = limits_for(shift_hz)
         self.bands_file = bands_file                  # the bands made from the web side (POST /bands), kept here
-        self.own = load_bands(bands_file, into={})
+        self.own = load_bands(bands_file, into={}, limits=self.limits)
         self.bands.update({k: b for k, b in self.own.items() if k not in bands})
         self.skips_file = skips_file
         self.skips = load_skips(skips_file)          # frequencies left out of the bands (always open, or of no interest)
@@ -505,7 +560,7 @@ class Receiver:
                 return self._tuned(spec["band"], spec.get("hold"))
             if spec == self.spec and self.proc is not None and self.proc.poll() is None:
                 return
-            if spec.get("mode") in TUNE_MODES and self.tuner is not None and self.proc is not None and self.proc.poll() is None:
+            if rig(spec) and self.tuner is not None and self.proc is not None and self.proc.poll() is None:
                 return self._retune(spec)             # (already being tuned: moved where it is, whoever listens staying)
             self._stop()
             name, channels = spec_channels(spec, self.bands, self.skips)
@@ -516,18 +571,18 @@ class Receiver:
             self.listeners = []
             self.idle_since = self.started = time.monotonic()
             self.rate_hz, self.zero_db, self.per_db = int(SAMPLE_RATE_MS * 1e6), -40.0, 2.5
-            if spec.get("mode") in TUNE_MODES:
+            if rig(spec):
                 try:
                     import sleepradio_tuner as st
                 except ImportError as e:
                     self.spec = None
-                    raise ValueError(f"sideband and Morse need numpy on the receiver (sudo apt install python3-numpy): {e}") from None
+                    raise ValueError(f"sideband, Morse and short-wave AM need numpy on the receiver (sudo apt install python3-numpy): {e}") from None
                 self.rate, self.mixer, self.title = st.AUDIO_RATE, None, name
                 self.rate_hz, self.zero_db, self.per_db = st.FS, st.ZERO_DB, st.PER_DB
                 self.spectrum.clear()
                 gen = self.gen
                 self.tuner = st.Tuner(self.rtl_tcp, audio=lambda pcm: self._send(gen, pcm), row=lambda row: self._spectrum_row(gen, row),
-                                      device=self.device, gain=self.gain, ppm=self.ppm)
+                                      device=self.device, gain=self.gain, ppm=self.ppm, shift_hz=self.shift_hz, trim_hz=self.trim_hz)
                 try:
                     self.tuner.start(spec["freq"], spec["mode"])
                 except ValueError:
@@ -538,13 +593,14 @@ class Receiver:
             elif spec.get("mode") == "wfm":
                 self.rate, self.mixer, self.title = WFM_RATE, None, name
                 # (said in full: this rtl_fm's "wbfm" alone gives 170 kHz audio, not 32 kHz)
-                cmd = [self.rtl_fm, "-d", str(self.device), "-M", "wbfm", "-f", str(spec["freq"]), "-s", "170k",
+                cmd = [self.rtl_fm, "-d", str(self.device), "-M", "wbfm", "-f", str(spec["freq"] + self.shift_hz + self.trim_hz), "-s", "170k",
                        "-r", str(WFM_RATE), "-E", "deemp", "-E", "dc", "-g", f"{self.gain:.1f}", "-p", str(self.ppm), "-"]
                 self.proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
                 threading.Thread(target=self._wfm_run, args=(self.proc, self.gen), name="wfm", daemon=True).start()
             else:
                 mode = spec.get("mode") or self.bands[spec["band"]].get("mode", "nfm")
-                conf = airband_conf(channels, mode, spec.get("squelch", True), self.gain, self.ppm, self.device)
+                conf = airband_conf(channels, mode, spec.get("squelch", True), self.gain, self.ppm, self.device,
+                                    shift_hz=self.shift_hz + self.trim_hz)
                 self.centre = centre_for([c["freq"] for c in channels])
                 self.spectrum.clear()
                 path = Path(tempfile.gettempdir()) / "sleepradio-receiver.conf"
@@ -585,17 +641,17 @@ class Receiver:
             self.at[spec["of"]], self.at_mode[spec["of"]] = spec["freq"], spec["mode"]
 
     def tune(self, freq: int | None = None, mode: str | None = None) -> None:
-        """Move what's being tuned (sideband or Morse) to another frequency, or another of those modes."""
+        """Move what's being tuned (sideband, Morse or AM) to another frequency, or another of those modes."""
         with self.lock:
             spec = self.spec
             if self.tuner is None or not spec or self.proc is None or self.proc.poll() is not None:
                 raise ValueError("nothing is being tuned: listen to a band of that kind (or ?freq=MHZ&mode=usb) first")
             mode = (mode or spec["mode"]).lower()
-            if mode not in TUNE_MODES:
-                raise ValueError("mode is usb, lsb or cw")
+            if mode not in RIG_MODES:
+                raise ValueError("mode is usb, lsb, cw or am")
             freq = spec["freq"] if freq is None else int(freq)
-            if not MIN_HZ <= freq <= MAX_HZ:
-                raise ValueError("an RTL-SDR tunes from 24 to 1766 MHz")
+            if not self.limits[0] <= freq <= self.limits[1]:
+                raise ValueError(_reach(self.limits))
             new = {"freq": freq, "mode": mode}
             of = spec.get("of")
             if of and self.bands[of]["range"][0] <= freq <= self.bands[of]["range"][1]:
@@ -661,7 +717,7 @@ class Receiver:
 
     def set_band(self, body: dict) -> str:
         """Make a band (or, with the "id" of one made here, change it); its id. ValueError says why not."""
-        band = make_band(body)
+        band = make_band(body, self.limits)
         with self.lock:
             key = str(body.get("id") or "")
             if key and key not in self.own:
@@ -851,7 +907,8 @@ class Receiver:
             receiving = {"freq": spec["freq"], "mode": spec["mode"], "band": spec["of"]} if spec and spec.get("of") else spec
             out = {"receiving": receiving, "name": self.name if self.spec else None, "running": running,
                    "listeners": len(self.listeners), "title": self.title if self.spec else None, "error": self.error,
-                   "rate": self.rate, "skipping": sorted(self.skips),
+                   "rate": self.rate, "skipping": sorted(self.skips), "tunable": list(self.limits),
+                   **({"upconverter": self.shift_hz} if self.shift_hz else {}),
                    "bands": {k: {"name": b["name"], "channels": len(b["channels"])} for k, b in self.bands.items()}}
             if running and self.tuner is not None:    # (tuned like a rig: /tune moves it; the passband's strength, dB of full scale)
                 out["tunes"], out["level_db"] = True, round(self.tuner.level_db, 1)
@@ -908,7 +965,7 @@ def make_handler(receiver: Receiver):
             if url.path != "/audio":
                 return self._json({"error": "not found"}, 404)
             try:
-                spec = parse_spec(query, receiver.bands) if query else None
+                spec = parse_spec(query, receiver.bands, receiver.limits) if query else None
                 lis = receiver.listen(spec)
             except ValueError as e:
                 return self._json({"error": str(e)}, 400)
@@ -962,7 +1019,7 @@ def make_handler(receiver: Receiver):
                 body = json.loads(self.rfile.read(int(self.headers.get("Content-Length") or 0)) or b"{}")
                 if path == "/skip":                   # {"freq": Hz, "on": true | false}
                     receiver.skip(int(body["freq"]), body.get("on", True) is not False)
-                elif path == "/tune":                 # {"freq": Hz or MHz, "mode": "usb" | "lsb" | "cw"}: either or both
+                elif path == "/tune":                 # {"freq": Hz or MHz, "mode": "usb" | "lsb" | "cw" | "am"}: either or both
                     receiver.tune(None if body.get("freq") is None else _hz(body["freq"]), body.get("mode"))
                 elif path == "/hold":                 # {"freq": Hz} or {"freq": null}
                     receiver.hold(None if body.get("freq") is None else _hz(body["freq"]))
@@ -972,7 +1029,7 @@ def make_handler(receiver: Receiver):
                     else:
                         return self._json({"id": receiver.set_band(body), **receiver.status()})
                 else:
-                    receiver.select(parse_spec({k: str(v) for k, v in body.items()}, receiver.bands))
+                    receiver.select(parse_spec({k: str(v) for k, v in body.items()}, receiver.bands, receiver.limits))
             except (ValueError, TypeError, AttributeError, KeyError) as e:
                 return self._json({"error": str(e)}, 400)
             self._json(receiver.status())
@@ -988,13 +1045,22 @@ def main(argv=None) -> int:
                     help="the dongle's frequency error in parts per million (kal or rtl_test -p measures it): a cheap "
                          "dongle can be 50 ppm out, which at 145 MHz is 7 kHz -- most of a channel")
     ap.add_argument("--device", type=int, default=0)
+    ap.add_argument("--upconverter", type=float, default=0.0, metavar="MHZ",
+                    help="an upconverter is between the aerial and the dongle, with its oscillator at this many MHz "
+                         "(a Ham It Up: 125): the receiver is then a short-wave one, 0.1 to 60 MHz")
+    ap.add_argument("--trim", type=int, default=0, metavar="HZ",
+                    help="what the upconverter and the dongle are out by between them: how far above its real "
+                         "frequency a station of known frequency is found (below: a minus)")
     ap.add_argument("--airband", help="path to rtl_airband")
     ap.add_argument("--state", type=Path, default=Path("/var/lib/sleepradio-receiver"),
                     help="where the skipped channels and the bands made from the web side are kept")
     args = ap.parse_args(argv)
     logging.basicConfig(level=logging.INFO, format="%(message)s")
-    receiver = Receiver(load_bands(args.bands), airband=args.airband, gain=args.gain, ppm=args.ppm, device=args.device,
-                        skips_file=args.state / "skip.json", bands_file=args.state / "bands.json")
+    shift = int(round(args.upconverter * 1e6))
+    builtin = {k: dict(v) for k, v in (HF_BANDS if shift else DEFAULT_BANDS).items()}
+    receiver = Receiver(load_bands(args.bands, into=builtin, limits=limits_for(shift)), airband=args.airband, gain=args.gain,
+                        ppm=args.ppm, device=args.device, skips_file=args.state / "skip.json", bands_file=args.state / "bands.json",
+                        shift_hz=shift, trim_hz=args.trim)
     httpd = ThreadingHTTPServer(("", args.port), make_handler(receiver))
     httpd.daemon_threads = True
     log.info("Sleep Radio receiver on port %d: bands %s", args.port, ", ".join(receiver.bands))

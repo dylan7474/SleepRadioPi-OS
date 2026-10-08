@@ -232,7 +232,10 @@ Actions, Sleep timer and Radio folders open:
   whole band watched at once (2 m, marine VHF: whichever channel opens is
   what you hear, and its name is the "now playing" title), one frequency, or
   broadcast FM (a band of its own beside those: one station at a time). It's a separate small service, installed on that computer
-  with `receiver/install.sh`; the radio needs nothing new.
+  with `receiver/install.sh`; the radio needs nothing new. With an
+  upconverter in front of the dongle it's a short-wave receiver instead: the
+  amateur bands from 160 m to 10 m in sideband and Morse, and the broadcast
+  bands from medium wave to 16 m in AM, each tuned like a rig.
 - **Other people's receivers as stations.** Thousands of software radios are
   on the internet for anyone to tune, mostly radio amateurs' own. A station
   whose address is a receiver's own link plays it, with no browser: an
@@ -788,10 +791,11 @@ What's left to do (everything else described here is built and running):
   → Media library); still to do: syncing a whole desktop library in one go.
 - **A needle VU meter** — a physical meter driven from a PWM pin, with the
   Android app's ballistics; one meter first.
-- **All of short wave on your own receiver** — sideband and Morse are tuned
-  on the home receiver now, but an RTL-SDR starts at 24 MHz. Next: a second
-  dongle behind an upconverter (its offset a setting), so that 0 to 30 MHz
-  is tuned the same way while the first dongle goes on scanning VHF.
+- **VHF and short wave from one computer** — a receiver behind an
+  upconverter tunes 0.1 to 60 MHz now, but it's one dongle to a receiver, so
+  short wave and VHF at once need two computers. Next: both dongles on one
+  (told apart by serial number, a receiver each). Also: setting the trim by
+  itself from a broadcast station's carrier, as the dongle warms up.
 - **Morse across the band** — the Morse reader reads one signal, the strongest
   in what's playing. Next: every Morse signal in a KiwiSDR's view read at
   once, each named by its callsign on the waterfall and in a list of who's

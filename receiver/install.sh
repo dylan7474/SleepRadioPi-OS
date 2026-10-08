@@ -50,6 +50,15 @@ if ! python3 -c "import numpy" 2>/dev/null || ! command -v rtl_tcp >/dev/null; t
 	sudo apt-get update -qq
 	sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq python3-numpy rtl-sdr
 fi
+# (the dongle is the service's to open: Debian 12's own rule gives it only to whoever is logged in, and the
+# kernel's television driver would otherwise take it at every start)
+RULE='SUBSYSTEM=="usb", ATTRS{idVendor}=="0bda", ATTRS{idProduct}=="283[28]", GROUP="plugdev", MODE="0660"'
+if [ "$(cat /etc/udev/rules.d/61-sleepradio-receiver.rules 2>/dev/null)" != "$RULE" ]; then
+	echo "$RULE" | sudo tee /etc/udev/rules.d/61-sleepradio-receiver.rules >/dev/null
+	echo "blacklist dvb_usb_rtl28xxu" | sudo tee /etc/modprobe.d/sleepradio-receiver.conf >/dev/null
+	sudo udevadm control --reload-rules && sudo udevadm trigger --subsystem-match=usb --attr-match=idVendor=0bda
+	sudo modprobe -r dvb_usb_rtl28xxu 2>/dev/null || true
+fi
 sudo install -d /opt/sleepradio-receiver /etc/sleepradio-receiver
 sudo install -m 644 /tmp/sleepradio_receiver.py /opt/sleepradio-receiver/sleepradio_receiver.py
 sudo install -m 644 /tmp/sleepradio_tuner.py /opt/sleepradio-receiver/sleepradio_tuner.py

@@ -13,6 +13,7 @@ or any internet radio player -- tunes in to it like any other station:
 | `http://RECEIVER:8074/audio?band=fm` | the broadcast FM band, on the station it was last on (`&hold=96.6` for that one) |
 | `http://RECEIVER:8074/audio?freq=28.5&mode=usb` | one frequency tuned like a rig: `usb`, `lsb` (sideband speech) or `cw` (Morse) |
 | `http://RECEIVER:8074/audio?band=10m` | a band of that kind (12 m, CB, 10 m, 6 m, the sideband end of 2 m), where and how it was last |
+| `http://RECEIVER:8074/audio?freq=9.41&mode=am` | a short-wave broadcast station, tuned the same way ([with an upconverter](#short-wave-an-upconverter)) |
 
 The broadcast band (87.5 to 108 MHz, every 100 kHz) is a band of another
 kind: it's twenty megahertz wide and each station wants the dongle to
@@ -89,6 +90,39 @@ OPTIONS="--ppm 55 --gain 29"
 
 then `sudo systemctl restart sleepradio-receiver`. (`kal` or `rtl_test -p`
 measures the error; OpenWebRX keeps it as the dongle's "ppm".)
+
+### Short wave: an upconverter
+
+An RTL-SDR starts at 24 MHz. An upconverter between the aerial and the dongle
+(a NooElec Ham It Up, say, switched to *upconvert* and given its 5 V) adds its
+oscillator's frequency to everything, so 7.1 MHz reaches the dongle at
+132.1 MHz. Say so, and the receiver is a short-wave one:
+
+```
+OPTIONS="--upconverter 125 --trim 1100 --gain 29.7"
+```
+
+- `--upconverter` is the oscillator in MHz (a Ham It Up's is 125). Every
+  frequency asked for and shown is still the real one, 0.1 to 60 MHz, and the
+  built-in bands become the amateur ones from 160 m to 10 m (with CB) and the
+  broadcast ones from medium wave to 16 m. A band of your own, watched all at
+  once, works there too (CB's FM channels, say).
+- `--trim` is what the oscillator and the dongle are out by between them, in
+  Hz. To measure it, listen in upper sideband 1 kHz below a broadcast
+  station's frequency (`?freq=9.449&mode=usb` for one on 9.450): its carrier
+  is a steady tone, and however far that is above 1000 Hz is what to add to
+  the trim. Sideband wants it within a hundred hertz or so; AM doesn't care.
+  A dongle without a temperature-compensated crystal moves by a few hundred
+  hertz as it warms up, so measure it after half an hour's listening.
+
+**AM below 30 MHz is tuned like a rig** (a broadcast station with the
+waterfall round it, 9 kHz wide, no squelch), on any receiver; above it AM is
+still a channel with a squelch, as airband wants. `/status` says what can be
+tuned (`"tunable": [lowest, highest]` in Hz) and, with one, the
+`"upconverter"`.
+
+One dongle per receiver: for VHF and short wave at once that's two dongles,
+on two computers for now.
 
 ## What else it answers
 

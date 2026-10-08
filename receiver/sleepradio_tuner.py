@@ -1,4 +1,4 @@
-"""Sleep Radio receiver: one frequency, tuned like a rig -- sideband speech and Morse.
+"""Sleep Radio receiver: one frequency, tuned like a rig -- sideband speech, Morse and short-wave AM.
 
 rtl_airband (the scanner) and rtl_fm only do FM and AM, so this part is our own: the
 dongle's raw signal (a quarter of a megahertz of it, from rtl_tcp, which can be retuned
@@ -10,12 +10,16 @@ while it runs) is taken apart here.
     second (the windows overlap by half and add up to one, so there's no join to hear).
   - There the passband is moved to the middle, cut out by a sharp filter (2.4 kHz for
     speech, 400 Hz for Morse), and moved to where the ear wants it: speech back to its
-    300-2700 Hz, upper or lower sideband the right way up, Morse to a 700 Hz tone.
+    300-2700 Hz, upper or lower sideband the right way up, Morse to a 700 Hz tone. AM (a
+    broadcast station on short or medium wave: 9 kHz of it) is the strength of what's
+    left, less its steady part, which is the carrier.
   - A gain that follows the signal (fast down, slow up) brings a weak station and a
     strong one to the same loudness.
 
-A frequency is the carrier's for sideband (what a rig's dial says) and the signal's own
-for Morse. Needs numpy (python3-numpy); a Raspberry Pi 2 gives it about a third of a core.
+A frequency is the carrier's for sideband and AM (what a rig's dial says) and the signal's
+own for Morse. Short wave reaches an RTL-SDR through an upconverter, which adds its own
+oscillator's frequency to everything (shift_hz); what that and the dongle are out by
+between them, measured on a station of known frequency, is taken off again (trim_hz). Needs numpy (python3-numpy); a Raspberry Pi 2 gives it about a third of a core.
 """
 
 from __future__ import annotations
@@ -37,7 +41,7 @@ HOP = N // 2
 M = 192                      # the bins kept: FS * M / N = 12 kHz
 AUDIO_RATE = FS * M // N     # 12 000
 BIN = FS / N
-PASS = {"usb": (300.0, 2700.0), "lsb": (-2700.0, -300.0), "cw": (-200.0, 200.0)}     # about the frequency tuned, Hz
+PASS = {"usb": (300.0, 2700.0), "lsb": (-2700.0, -300.0), "cw": (-200.0, 200.0), "am": (-4500.0, 4500.0)}     # about the frequency tuned, Hz
 MODES = tuple(PASS)
 CW_PITCH = 700.0             # Morse is heard at this pitch
 TAPS = 193                   # the passband's filter, at 12 kHz: about 150 Hz from passed to stopped
@@ -71,6 +75,7 @@ class Demod:
         self._n = 0                                      # samples of audio made: the oscillators' clock
         self._gain = 1.0
         self._env = 0.0
+        self._carrier = 0.0                              # AM: the steady part of the signal's strength
         self.level_db = -120.0                           # the passband's strength, dB of full scale
         self.set(0.0, "usb")
 
@@ -107,7 +112,12 @@ class Demod:
         self._hist = zz[len(zz) - (TAPS - 1):]
         z = np.convolve(zz, self._h, "valid")            # ...cut out...
         self.level_db = float(10 * np.log10(np.mean(z.real ** 2 + z.imag ** 2) + 1e-12))
-        a = (z * np.exp(2j * np.pi * self._out * t)).real    # ...and to where the ear wants it
+        if self.mode == "am":                            # ...and its strength, less the carrier, is the programme
+            env = np.abs(z)
+            was, self._carrier = self._carrier, self._carrier + 0.2 * (float(env.mean()) - self._carrier)
+            a = env - np.linspace(was, self._carrier, len(env), endpoint=False)
+        else:
+            a = (z * np.exp(2j * np.pi * self._out * t)).real    # ...and to where the ear wants it
         return self._agc(a), power
 
     def _agc(self, a: np.ndarray) -> np.ndarray:
@@ -135,9 +145,9 @@ class Tuner:
     with 16-bit audio at AUDIO_RATE, row(bytes) with each waterfall row (about fifteen a second)."""
 
     def __init__(self, rtl_tcp: str, audio, row, device: int = 0, gain: float = 40.0, ppm: int = 0, port: int = PORT,
-                 shift_hz: int = 0) -> None:
+                 shift_hz: int = 0, trim_hz: int = 0) -> None:
         self.rtl_tcp, self.device, self.gain, self.ppm, self.port = rtl_tcp, device, gain, ppm, port
-        self.shift_hz = shift_hz                         # what an upconverter adds to every frequency
+        self.shift_hz = shift_hz + trim_hz               # what an upconverter adds to every frequency, and what it's out by
         self._audio, self._row = audio, row
         self.proc: subprocess.Popen | None = None
         self.centre = 0
