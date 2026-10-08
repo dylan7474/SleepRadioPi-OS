@@ -99,7 +99,7 @@ oscillator's frequency to everything, so 7.1 MHz reaches the dongle at
 132.1 MHz. Say so, and the receiver is a short-wave one:
 
 ```
-OPTIONS="--upconverter 125 --trim 1100 --gain 29.7"
+OPTIONS="--upconverter 125 --ppm 62 --trim 75 --gain 19.7"
 ```
 
 - `--upconverter` is the oscillator in MHz (a Ham It Up's is 125). Every
@@ -107,13 +107,25 @@ OPTIONS="--upconverter 125 --trim 1100 --gain 29.7"
   built-in bands become the amateur ones from 160 m to 10 m (with CB) and the
   broadcast ones from medium wave to 16 m. A band of your own, watched all at
   once, works there too (CB's FM channels, say).
-- `--trim` is what the oscillator and the dongle are out by between them, in
-  Hz. To measure it, listen in upper sideband 1 kHz below a broadcast
-  station's frequency (`?freq=9.449&mode=usb` for one on 9.450): its carrier
-  is a steady tone, and however far that is above 1000 Hz is what to add to
-  the trim. Sideband wants it within a hundred hertz or so; AM doesn't care.
-  A dongle without a temperature-compensated crystal moves by a few hundred
-  hertz as it warms up, so measure it after half an hour's listening.
+- `--ppm` matters more than ever: the dongle is working at 125 to 155 MHz,
+  where a cheap one's 60 parts per million is 8 to 10 kHz. Get it roughly
+  right first. Broadcast stations can't tell you by themselves: they're every
+  5 kHz, so one that's 10 kHz out looks exactly on a channel (the first
+  set-up of this was 10 kHz out for an evening that way). Use something whose
+  frequency is known outright: FT8 is always there on 14.074 MHz by day and
+  7.074 by night, a busy 3 kHz of warbling that starts and stops every
+  15 seconds; if it's found at 14.065 instead, everything is 9 kHz low, and
+  at 139 MHz that's 65 ppm.
+- `--trim` is the last few hundred hertz, what the oscillator and the dongle
+  are still out by between them. To measure it, listen in upper sideband
+  1 kHz below a broadcast station's frequency (`?freq=9.459&mode=usb` for one
+  on 9.460): its carrier is a steady tone, and however far that is above
+  1000 Hz is what to add to the trim. Sideband wants it within a hundred
+  hertz or so; AM doesn't care. A dongle without a temperature-compensated
+  crystal moves by a few hundred hertz as it warms up, so measure it after
+  half an hour's listening.
+- `--gain`: a long aerial brings megawatt broadcast stations, and the dongle
+  has eight bits. If the strongest are clipping, turn it down.
 
 **AM below 30 MHz is tuned like a rig** (a broadcast station with the
 waterfall round it, 9 kHz wide, no squelch), on any receiver; above it AM is
