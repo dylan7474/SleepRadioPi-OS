@@ -12,6 +12,8 @@ DynamicUser=yes
 StateDirectory=sleepradio-receiver
 SupplementaryGroups=plugdev
 Restart=always
+# (rtl_tcp, with a listener still connected, doesn't go when asked: it isn't waited for)
+TimeoutStopSec=5
 RestartSec=3
 ProtectSystem=strict
 ProtectHome=yes
