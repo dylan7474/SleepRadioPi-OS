@@ -269,7 +269,7 @@ Most of these are set from the web page; the rest are in the config file.
 | Key | Default | |
 |---|---|---|
 | `hardware` | `"box"` | Which radio this is: `"box"` (four buttons) or `"cathedral"` (the Phonosphere: six-way selector, back button, VU needle and grille light). See *Two radios*. |
-| `station_name` | `null` | The radio's name as the DJ says it and the page shows it; `null` = the hardware's own ("Sleep Radio", "Phonosphere"). |
+| `station_name` | `null` | The radio's name as the DJ says it and the page shows it; `null` = the hardware's own ("Sleep Radio", "Phonosphere"). A named radio is called that on the network too ("Carisbrooke" → `carisbrooke.local`); with `null` it's `sleepradiopi.local`. |
 | `glow_day`, `glow_night`, `meter_trim_db` | `60`, `15`, `0` | The cathedral's grille light by day and night set (0–100 %), and where normal music sits on the meter (-12 to 12 dB). |
 | `speaker_enabled` | `false` | Play through the sound card from start-up (the appliance turns it on). Off by default so a desktop test run doesn't play out loud. |
 | `speaker_device` | `"default"` | ALSA device. |

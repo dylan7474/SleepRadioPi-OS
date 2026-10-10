@@ -1,13 +1,14 @@
 #!/bin/sh
 # Power the Pi off, or restart it, when the station asks: the web page's Shut
 # down / Restart buttons make the station (user radio, not root) create $REQ
-# or $BOOT. Started by init: see the respawn line in /etc/inittab.
+# or $BOOT. Also its new name on the network, when the radio is renamed ($NAME). Started by init: see the respawn line in /etc/inittab.
 # /run/sleepradiopi is made by sleepradiopi-station and only radio and root
 # can write to it.
 
 REQ=/run/sleepradiopi/poweroff
 BOOT=/run/sleepradiopi/reboot
 BACK=/run/sleepradiopi/rollback      # the service menu: go back to the previous version
+NAME=/run/sleepradiopi/hostname      # the radio has been renamed: see radio-hostname
 
 while sleep 1; do
 	if [ -e $REQ ]; then
@@ -15,6 +16,10 @@ while sleep 1; do
 		logger -t sleepradiopi "shutdown requested from the web page"
 		poweroff
 		exit 0
+	fi
+	if [ -e $NAME ]; then
+		rm -f $NAME
+		radio-hostname >/dev/null
 	fi
 	if [ -e $BACK ]; then
 		rm -f $BACK

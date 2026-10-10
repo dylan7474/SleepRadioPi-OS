@@ -3179,6 +3179,9 @@ function range(id, min, max, step, value, show, onset) {
   r.onchange = () => onset(+r.value);
   return [r, out];
 }
+// A radio's name as its address on the network ("Dad's Radio" -> dads-radio): as brand.hostname_for
+const hostFor = (name, fallback) => (name || "").normalize("NFKD").replace(/[^\x00-\x7f]/g, "").toLowerCase().replace(/'/g, "")
+  .replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 63).replace(/-+$/, "") || fallback;
 const srow = (label, control, extra) => el("div", { className: "srow" }, el("label", { textContent: label }), control, extra || el("span"));
 const grp = (title, ...rows) => el("div", { className: "grp" }, title ? el("h3", { textContent: title }) : null, ...rows);
 const help = t => el("p", { className: "shelp", textContent: t });
@@ -3393,9 +3396,9 @@ const UI = {
       const name = el("input", { type: "text", value: id.station_name, placeholder: id.default_names[id.hardware], id: "radio-name" });
       const pw = el("input", { type: "password", placeholder: auth.protected ? "A new password" : "Choose a password", id: "radio-pw" });
       return [
-        grp("This radio", srow("Name", name, sbtn("Save", () => ask(`Call the radio “${name.value || id.default_names[id.hardware]}”? It restarts to take the new name up.`, "Rename and restart", () => act(() => api("/api/identity", { hardware: id.hardware, station_name: name.value.trim() }))), "primary")),
+        grp("This radio", srow("Name", name, sbtn("Save", () => ask(`Call the radio “${name.value || id.default_names[id.hardware]}”? It restarts to take the new name up, and its address becomes ${hostFor(name.value, id.default_host)}.local.`, "Rename and restart", () => act(() => api("/api/identity", { hardware: id.hardware, station_name: name.value.trim() }))), "primary")),
           srow("Case", seg([["box", "Box"], ["cathedral", "Cathedral"]], id.hardware, v => ask(`Set this radio up as the ${v}? It restarts.`, "Change and restart", () => act(() => api("/api/identity", { hardware: v, station_name: id.station_name }))))),
-          help("The name is what the DJ says and what the pages are called.")),
+          help(`The name is what the DJ says, what the pages are called and the radio's address on your network: this one is ${id.host}.local. A radio with no name of its own is ${id.default_host}.local, so name each one if you have several.`)),
         grp("Password", help(auth.protected ? "The page asks for a password, once per browser." : "Off: anyone on your Wi-Fi can use the page."),
           line(pw, sbtn(auth.protected ? "Change it" : "Set it", () => pw.value && act(() => api("/api/password", { password: pw.value })), "primary"),
                auth.protected ? sbtn("Remove the password", () => act(() => api("/api/password", { password: null }))) : null)),

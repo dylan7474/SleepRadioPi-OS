@@ -581,6 +581,14 @@ holds no keys. Each radio makes its own ssh host key on its first boot, in
 moving to 1.0.4, your ssh client will warn that the host key has changed:
 `ssh-keygen -R sleepradiopi.local` clears it.
 
+Every radio starts as `sleepradiopi` on the network. Name one on its page
+(Settings → This radio) and that becomes its network name too: "Carisbrooke"
+is http://carisbrooke.local, "Dad's Radio" http://dads-radio.local. So with
+several radios in the house, name each, one at a time as you set them up.
+The station keeps the name in `/data/radio/hostname`; root's `radio-hostname`
+sets it at start-up (`S01hostname`) and when it changes. Give
+`scripts/update.sh` the radio's name or address.
+
 Other targets are passed through to Buildroot: `make menuconfig`,
 `make savedefconfig`, `make linux-menuconfig`, `make <pkg>-rebuild`, ...
 

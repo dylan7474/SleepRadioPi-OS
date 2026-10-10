@@ -190,11 +190,16 @@ class Announcer:
         self.hotspot = hotspot
         self.render, self.play = render, play
         self.voice_ready, self.get_addresses = voice_ready, get_addresses
-        self.host = host or socket.gethostname()
+        self._host = host
         self.plain = plain
         self._lock = threading.Lock()
         self._cache: tuple[str, np.ndarray] | None = None
         self._busy = threading.Lock()   # one announcement at a time
+
+    @property
+    def host(self) -> str:
+        # Looked up when it's said: a renamed radio takes its new name a moment after start-up.
+        return self._host or socket.gethostname()
 
     def text(self) -> str:
         return announcement(self.get_addresses(), self.host, self.hotspot())

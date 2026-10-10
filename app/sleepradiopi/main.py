@@ -580,6 +580,7 @@ def main() -> None:
         monitor = monitor_mod.Monitor()
     from sleepradiopi.config import brand
     brand.set_name(brand.name_for(asdict(settings)))   # "Sleep Radio", "Phonosphere", or station_name
+    brand.apply_hostname(brand.hostname_for(asdict(settings)))   # ...and on the network: carisbrooke.local
 
     cfg = asdict(settings)
     cfg["music_folder"] = Path(settings.music_folder or MEDIA / "music").expanduser()

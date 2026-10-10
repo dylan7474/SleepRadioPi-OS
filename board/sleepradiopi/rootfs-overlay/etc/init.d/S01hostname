@@ -1,0 +1,16 @@
+#!/bin/sh
+#
+# The radio's name on the network: sleepradiopi, or the name it was given on
+# its page (kept on /data, so it's set here before the network starts). See
+# /usr/sbin/radio-hostname.
+#
+
+case "$1" in
+	start)
+		printf "Hostname: "
+		radio-hostname >/dev/null
+		hostname
+		;;
+	stop) ;;
+	*) echo "Usage: $0 {start|stop}"; exit 1 ;;
+esac

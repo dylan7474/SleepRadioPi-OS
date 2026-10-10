@@ -988,6 +988,7 @@ def make_handler(station: Station, output: Mp3Output, speaker=None,
                 saved = {}
             return {"hardware": saved.get("hardware", "box"), "station_name": saved.get("station_name") or "",
                     "name": brand.name, "default_names": {"box": brand.DEFAULT, **brand.BY_HARDWARE},
+                    "host": brand.hostname_for(saved), "default_host": brand.DEFAULT_HOST,
                     "can_restart": bool(os.environ.get(RESTART_ENV))}
 
         def _set_identity(self) -> None:

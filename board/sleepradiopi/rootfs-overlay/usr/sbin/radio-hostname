@@ -1,0 +1,28 @@
+#!/bin/sh
+# Give the radio its name on the network. Every radio starts as the image's
+# own (sleepradiopi); one that's been named on its page (Settings, This
+# radio) is called that instead, so several can share a house:
+# "Carisbrooke" is carisbrooke.local.
+#
+# The station (user radio) works the name out and keeps it in $FILE. This
+# runs as root: at start-up (S01hostname), and when the station asks because
+# the name has changed (power-request-watch). Only letters, digits and
+# hyphens are taken from the file; an empty one means the image's name.
+
+FILE=/data/radio/hostname
+
+name=
+[ -r $FILE ] && name=$(head -n 1 $FILE | tr 'A-Z' 'a-z' | tr -cd 'a-z0-9-' |
+	sed 's/^-*//' | cut -c1-63 | sed 's/-*$//')
+[ -n "$name" ] || name=$(cat /etc/hostname)
+[ "$(hostname)" = "$name" ] && exit 0
+
+hostname "$name" || exit 1
+logger -t sleepradiopi "network name: $name" 2>/dev/null
+# mDNS (name.local) announces the name it started with: start it again.
+if avahi-daemon -c 2>/dev/null; then
+	avahi-daemon -k
+	sleep 1
+	avahi-daemon -D
+fi
+echo "$name"

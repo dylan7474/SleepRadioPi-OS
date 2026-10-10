@@ -30,6 +30,38 @@ def test_the_radios_name() -> None:
     assert brand.name_for({"hardware": "cathedral", "station_name": "  Dad's   Radio "}) == "Dad's Radio"
     assert brand.hotspot_ssid("Phonosphere") == "Phonosphere-Setup"
     assert brand.hotspot_ssid("Sleep Radio") == "SleepRadio-Setup"
+
+
+def test_a_named_radio_has_its_name_on_the_network(tmp_path: Path) -> None:
+    from sleepradiopi.config import brand
+    # every new radio is sleepradiopi, whatever its case; a name of your own changes it
+    assert brand.hostname_for({}) == "sleepradiopi"
+    assert brand.hostname_for({"hardware": "cathedral"}) == "sleepradiopi"
+    assert brand.hostname_for({"station_name": "   "}) == "sleepradiopi"
+    assert brand.hostname_for({"station_name": "Carisbrooke"}) == "carisbrooke"
+    assert brand.hostname_for({"station_name": "  Dad's   Radio "}) == "dads-radio"
+    assert brand.hostname_for({"station_name": "Café Nº 5!"}) == "cafe-no-5"
+    assert brand.hostname_for({"station_name": "--Front_Room--"}) == "front-room"
+    assert brand.hostname_for({"station_name": "!!!"}) == "sleepradiopi"
+    assert brand.hostname_for({"station_name": "夜"}) == "sleepradiopi"
+    long = brand.hostname_for({"station_name": "a" * 30 + " " + "b" * 40})
+    assert len(long) <= 63 and not long.endswith("-")
+
+    # on a PC (nowhere to ask) nothing happens
+    file, request = tmp_path / "data" / "hostname", tmp_path / "run" / "hostname"
+    file.parent.mkdir()
+    assert brand.apply_hostname("carisbrooke", file, request, current="sleepradiopi") is False
+    assert not file.exists()
+    # on the radio: the name is kept for start-up, and asked for when the system has another
+    request.parent.mkdir()
+    assert brand.apply_hostname("carisbrooke", file, request, current="sleepradiopi") is True
+    assert file.read_text() == "carisbrooke\n" and request.exists()
+    request.unlink()
+    assert brand.apply_hostname("carisbrooke", file, request, current="carisbrooke") is False
+    assert not request.exists() and [p.name for p in file.parent.iterdir()] == ["hostname"]
+    # un-named again: back to sleepradiopi
+    assert brand.apply_hostname("sleepradiopi", file, request, current="carisbrooke") is True
+    assert file.read_text() == "sleepradiopi\n"
     old = brand.name
     try:
         brand.set_name("Phonosphere")
