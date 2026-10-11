@@ -292,6 +292,14 @@ Actions, Sleep timer and Radio folders open:
   the radio's own readers (no outside program), tried on signals off the
   air; neither says anything of noise or a plain whistle. See
   `app/sleepradiopi/audio/psk.py`, `rtty.py` and `keyboard.py`.
+- **Where to listen.** *Modes…* in a receiver's window opens a table: a
+  band a row, a mode a column (FT8, FT4, PSK31, teleprinter, Morse), each
+  square a key that takes the receiver to that mode's place on that band
+  and switches its reader on; and the German weather service's teleprinter
+  broadcasts. *Survey* goes round them by itself -- a whole slot on each
+  band's FT8 frequency, or everything -- and writes on the keys what was
+  there: "24 · 3,174 km" is twenty-four stations, the farthest that far.
+  A picture of which bands are open, in about four minutes.
 - **FT8 and FT4, read as text.** The *FT8* and *FT4* keys in a receiver's
   window take it to the mode's frequency on the band it's on and list every
   message heard, each time a slot ends (15 seconds for FT8, 7.5 for FT4):
@@ -834,8 +842,11 @@ What's left to do (everything else described here is built and running):
 - **FT8 and FT4: more from the list** — the list of who's been heard is
   lost at a restart: keep it (on the data partition, sparingly). A map of
   the squares heard. A line picked out when it names your own callsign.
-  The other bands watched in turn, a few minutes each, for a picture of
-  what's open.
+- **The survey, by the radio itself** — *Where to listen*'s survey is run
+  by the page: close the page and it stops. Run by the radio it could go
+  round on the hour and keep a day's picture of each band; and amateur
+  teleprinters and Morse, which have no one frequency, need a finder that
+  sweeps their part of each band.
 - **PSK31 and RTTY: more of them** — the PSK31 reader does plain PSK31
   (BPSK); the faster and four-phase kinds (PSK63, QPSK31) are left. The
   RTTY reader reads one signal, the strongest: in a contest there are a

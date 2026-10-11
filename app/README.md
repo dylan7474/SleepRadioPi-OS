@@ -1200,7 +1200,24 @@ The cards:
   is (the German weather service: 10.1008 MHz, so 10.0993 in USB).
   On the Zero 2 W's kind of processor (measured on a Pi 3): a fifth of
   one core with six PSK31 signals being read, a tenth for a teleprinter
-  signal, and next to nothing when there's nothing there. The decoding is ft8_lib's `decode_ft8` (MIT, built into the image:
+  signal, and next to nothing when there's nothing there.
+  *Where to listen* (the **Modes…** key in a receiver's window): a window
+  with each mode's usual place on each band the receiver reaches, as keys
+  -- FT8, FT4 and PSK31 on their frequencies, teleprinters and Morse at the
+  bottom of where they gather, and the German weather service's five
+  teleprinter frequencies (tuned 1.5 kHz under each in upper sideband, so
+  that both tones are heard). A key takes the receiver there, switches the
+  reader for that mode on and brings up the receiver's window. *Survey*
+  (FT8 on every band, or everything) takes the receiver round them: on FT8
+  and FT4 it waits for one whole slot that began after it arrived and
+  counts the messages, with the farthest of them if the radio knows its
+  locator; on PSK31 and the weather teleprinters it listens a quarter of a
+  minute and counts the signals being read. What it found is written on
+  the keys and kept in the browser, a receiver at a time; the receiver and
+  the readers are put back as they were. It's the page that runs it (close
+  the page and it stops), the radio plays each place as it goes, and
+  amateur teleprinters and Morse aren't surveyed: they have no one
+  frequency. An OpenWebRX is tuned by hand, so its keys only say where. The decoding is ft8_lib's `decode_ft8` (MIT, built into the image:
   `package/ft8-lib`), run at low priority on each slot: about half a second
   of one core on the Zero 2 W's processor. The sound a receiver sends is
   late, more so across the internet, so a slot is cut a second after the
