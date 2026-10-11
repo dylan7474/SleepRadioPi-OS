@@ -39,6 +39,7 @@ class Settings:
     podcasts: list = field(default_factory=list)  # the shows followed: [{"feed_url", "title", "author"}]
     radio_stations: list | None = None    # internet radio: [{"name", "url", "info"?}]; None = the starter set
     callsign: str | None = None           # the owner's amateur radio callsign: what a room is joined under (playback/room.py)
+    locator: str | None = None            # the radio's place as a locator ("IO94"): how far an FT8 station is (audio/ft8.py)
     room_level: int = 100                 # how loud rooms are, % (25-150): a voice, not levelled like music (playback/room.py)
     noise_reduction: str = "off"          # receivers: the hiss under a voice turned down -- off, light, strong or rig (audio/denoise.py)
     monitor_music: int = 10               # how loud the programme stays under a monitored room, % of itself (0-100) (playback/monitor.py)

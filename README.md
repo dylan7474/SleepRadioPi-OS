@@ -287,7 +287,9 @@ Actions, Sleep timer and Radio folders open:
   message heard, each time a slot ends (15 seconds for FT8, 7.5 for FT4):
   who's calling CQ, who's answering whom, how strong, and from which
   locator square. On a busy band that's twenty or so stations a slot, from
-  a few hundred to several thousand miles away. The decoding is ft8_lib's
+  a few hundred to several thousand miles away. Tell the radio its own
+  locator and each line says how far the station is and which way; *Heard*
+  lists who's been heard on the band, the farthest first. The decoding is ft8_lib's
   (MIT), built into the image; receive only -- nothing is sent, on the air
   or to any website. See `app/sleepradiopi/audio/ft8.py`.
 - **Rooms: radio amateurs' digital voice.** Yaesu "System Fusion" radios
@@ -819,12 +821,11 @@ What's left to do (everything else described here is built and running):
   from; the search at its heart has to be made several times faster for the
   Zero 2 W first). After that, a Morse finder: sweep the Morse parts of
   each band and say where the activity is.
-- **FT8 and FT4: how far, and who's been heard** — the FT8 and FT4 keys in
-  a receiver's window list every message heard, a slot at a time
-  (`app/sleepradiopi/audio/ft8.py`, with ft8_lib's decoder in the image).
-  Next: how far away and in what direction each station is (from the
-  locator in its message, and your own), and a log of who's been heard on
-  each band.
+- **FT8 and FT4: more from the list** — the list of who's been heard is
+  lost at a restart: keep it (on the data partition, sparingly). A map of
+  the squares heard. A line picked out when it names your own callsign.
+  The other bands watched in turn, a few minutes each, for a picture of
+  what's open.
 - **PSK31 and RTTY, read as text** — the other two keyboard modes heard all
   over the amateur bands, read off a receiver's sound as Morse, FT8 and FT4
   are: PSK31 (a warble 31 Hz wide, many of them side by side around 14.070

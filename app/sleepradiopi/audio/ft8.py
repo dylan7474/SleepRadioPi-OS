@@ -26,6 +26,15 @@ arrives anything up to two and a half seconds after it was sent. A radio
 whose clock is seconds out reads nothing: the time comes from the network
 (and the clock chip between times).
 
+Who and how far: most messages name the station sending them, and a first
+call gives its locator (JO31: a square of 1 degree by 2, about 70 miles by
+70 here). With the radio's own locator known (HOME: Settings keep it), each
+is given a distance and a bearing from the middle of its square, and the
+reader keeps a list of who has been heard on each band: when first and
+last, how strong at best, how often. A station's later messages carry no
+locator; they get the one it gave before. The list is in memory only: a
+restart begins it again.
+
 Receive only: nothing is sent, here or anywhere.
 
 `reader` is the one the radio uses: the station feeds it, the web side
@@ -65,6 +74,10 @@ KEEP_S = 2 * max(MODES.values()) + 5
 STEP_S = 0.25
 DECODE_TIMEOUT_S = 12.0      # (a slot's reading that takes longer than this is given up)
 DECODER = "decode_ft8"       # ft8_lib's; SLEEPRADIO_FT8_DECODER names another
+HEARD_MOST = 600             # stations kept in the list of who's been heard (the longest unheard go first)
+HOME: str | None = None      # the radio's own locator ("IO94" or "IO94kn"): main.py sets it from the settings
+GRID = re.compile(r"^[A-R]{2}\d{2}$")
+CALL = re.compile(r"^(?:[A-Z0-9]{1,4}/)?(?:[A-Z]{1,2}\d|\d[A-Z])\d{0,2}[A-Z]{1,4}(?:/[A-Z0-9]{1,4})?$")
 LINE = re.compile(r"^\d{6}\s+([+-]?\d+(?:\.\d+)?)\s+([+-]?\d+(?:\.\d+)?)\s+(\d+)\s+~\s+(\S.*?)\s*$")
 
 
@@ -105,6 +118,50 @@ def parse(out: str) -> list[dict]:
     return sorted(found, key=lambda d: -d["snr"])
 
 
+def clean_locator(text) -> str:
+    """A locator as typed -> "IO94" or "IO94kn" ("" for none). ValueError says what one looks like."""
+    t = "".join(str(text or "").split())
+    if not t:
+        return ""
+    if not re.fullmatch(r"[A-Ra-r]{2}\d{2}(?:[A-Xa-x]{2})?", t):
+        raise ValueError("a locator is two letters and two figures, with two more letters if you like: IO94 or IO94kn")
+    return t[:4].upper() + t[4:].lower()
+
+
+def locate(locator: str) -> tuple[float, float]:
+    """The middle of a locator's square -> (latitude, longitude), degrees north and east."""
+    t = locator.upper()
+    lon = (ord(t[0]) - 65) * 20 - 180 + int(t[2]) * 2
+    lat = (ord(t[1]) - 65) * 10 - 90 + int(t[3])
+    if len(t) >= 6:
+        return lat + (ord(t[5]) - 65 + 0.5) / 24, lon + (ord(t[4]) - 65 + 0.5) / 12
+    return lat + 0.5, lon + 1.0
+
+
+def path(home: str, there: str) -> tuple[int, int]:
+    """From one locator to another, the short way round -> (km, the bearing to set off on: degrees from north)."""
+    (lat1, lon1), (lat2, lon2) = (tuple(math.radians(v) for v in locate(x)) for x in (home, there))
+    d = lon2 - lon1
+    a = math.sin((lat2 - lat1) / 2) ** 2 + math.cos(lat1) * math.cos(lat2) * math.sin(d / 2) ** 2
+    km = 2 * 6371.0 * math.asin(min(1.0, math.sqrt(a)))
+    deg = math.degrees(math.atan2(math.sin(d) * math.cos(lat2), math.cos(lat1) * math.sin(lat2) - math.sin(lat1) * math.cos(lat2) * math.cos(d)))
+    return round(km), round(deg) % 360
+
+
+def who(text: str) -> tuple[str | None, str | None, bool]:
+    """A message -> (the station sending it, the locator it gives, whether it's a CQ). "CQ DX K1ABC FN42",
+    "K1ABC W9XYZ EN37", "K1ABC W9XYZ R-11": the sender is the second call, or the one after CQ and whatever
+    it's calling for. A call the decoder only has a hash of (<...>) is nobody."""
+    words = text.split()
+    cq = bool(words) and words[0] == "CQ"
+    rest = [w.strip("<>") for w in (words[1:] if words else [])]
+    if cq and len(rest) > 1 and not CALL.match(rest[0]):         # (CQ DX, CQ POTA, CQ 123: what it's calling for)
+        rest = rest[1:]
+    call = rest[0] if rest and CALL.match(rest[0]) and not GRID.match(rest[0]) else None
+    grid = rest[-1] if len(rest) > 1 and GRID.match(rest[-1]) and rest[-1] != "RR73" else None
+    return call, grid if call else None, cq
+
+
 def run_decoder(samples: np.ndarray, mode: str) -> list[dict]:
     """A slot of sound at OUT_RATE -> the messages in it. RuntimeError says why not."""
     program = decoder_path()
@@ -135,6 +192,8 @@ class Reader:
     def __init__(self, clock: Callable[[], float] = time.time, decode: Callable[[np.ndarray, str], list[dict]] = run_decoder) -> None:
         self.on = False
         self.mode = "ft8"
+        self.band: str | None = None                 # what the page says the receiver is on ("40 m"): the heard list is kept by it
+        self._heard: dict[tuple[str | None, str], dict] = {}     # (band, call) -> who's been heard
         self._clock, self._decode = clock, decode
         self._lock = threading.Lock()
         self._left = np.zeros(0, np.float32)         # (samples waiting to make up a whole DECIMATE)
@@ -172,11 +231,24 @@ class Reader:
     # --- what the page asks for --------------------------------------------------------------
 
     def status(self, since: int = 0) -> dict:
-        """{"on", "mode", "can" (there's a decoder), "slot" (s), "slots" (read so far), "last": {"t", "heard" | "error"},
-        "messages": [{"n", "t" (the slot's start, by the clock), "snr", "dt", "hz", "text"}] after number since}"""
+        """{"on", "mode", "band", "home" (the radio's locator), "can" (there's a decoder), "slot" (s), "slots" (read so
+        far), "last": {"t", "heard" | "error"}, "messages": [{"n", "t" (the slot's start, by the clock), "snr", "dt",
+        "hz", "text", "call"?, "grid"?, "km"?, "deg"?}] after number since}"""
         with self._lock:
-            return {"on": self.on, "mode": self.mode, "can": decoder_path() is not None, "slot": MODES[self.mode],
-                    "slots": self._slots, "last": self._last, "messages": [m for m in self._messages if m["n"] > since]}
+            return {"on": self.on, "mode": self.mode, "band": self.band, "home": HOME, "can": decoder_path() is not None,
+                    "slot": MODES[self.mode], "slots": self._slots, "last": self._last,
+                    "messages": [_far(m) for m in self._messages if m["n"] > since]}
+
+    def heard(self) -> dict:
+        """{"band", "home", "heard": [{"band", "call", "grid"?, "km"?, "deg"?, "snr" (the best), "first", "last" (by the
+        clock), "count", "cq" (it was calling CQ when last heard)}], the latest heard first}"""
+        with self._lock:
+            return {"band": self.band, "home": HOME, "heard": [_far(h) for h in sorted(self._heard.values(), key=lambda h: -h["last"])]}
+
+    def forget(self) -> None:
+        """The heard list emptied."""
+        with self._lock:
+            self._heard.clear()
 
     # --- the reading -------------------------------------------------------------------------
 
@@ -216,7 +288,22 @@ class Reader:
             self._last = {"t": t0, "heard": len(found)}
             for m in found:
                 self._n += 1
+                call, grid, cq = who(m["text"])
+                if call:
+                    h = self._heard.setdefault((self.band, call), {"band": self.band, "call": call, "snr": m["snr"], "first": t0, "count": 0})
+                    h.update(snr=max(h["snr"], m["snr"]), last=t0, count=h["count"] + 1, cq=cq, **({"grid": grid} if grid else {}))
+                    m = {**m, "call": call, **({"grid": h["grid"]} if "grid" in h else {})}
                 self._messages.append({"n": self._n, "t": t0, **m})
+            for key in sorted(self._heard, key=lambda k: self._heard[k]["last"])[:max(0, len(self._heard) - HEARD_MOST)]:
+                del self._heard[key]
+
+
+def _far(d: dict) -> dict:
+    """A message or a station heard, with how far and which way if its locator and the radio's are known."""
+    if HOME and d.get("grid"):
+        km, deg = path(HOME, d["grid"])
+        return {**d, "km": km, "deg": deg}
+    return d
 
 
 class Live(Reader):
@@ -227,12 +314,16 @@ class Live(Reader):
         self._switching = threading.Lock()
         self._stop = threading.Event()
 
-    def switch(self, on: bool, mode: str | None = None) -> None:
-        """On or off, FT8 or FT4. On (or another mode) starts from nothing. ValueError: no such mode."""
+    def switch(self, on: bool, mode: str | None = None, band: str | None = None) -> None:
+        """On or off, FT8 or FT4, and the band the receiver is on if the page says. On (or another mode) starts
+        from nothing, but for who's been heard. ValueError: no such mode."""
         on, mode = bool(on), (mode or self.mode)
         if mode not in MODES:
             raise ValueError("mode is ft8 or ft4")
         with self._switching:
+            if band is not None:
+                with self._lock:
+                    self.band = " ".join(str(band).split())[:8] or None
             if on == self.on and mode == self.mode:
                 return
             self._stop.set()

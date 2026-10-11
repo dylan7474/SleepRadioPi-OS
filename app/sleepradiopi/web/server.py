@@ -378,6 +378,10 @@ def make_handler(station: Station, output: Mp3Output, speaker=None,
                 except ValueError:
                     since = 0
                 self._send(json.dumps(ft8_mod.reader.status(since)).encode(), "application/json")
+            elif path == "/api/rx/ft8/heard":
+                # Who the FT8 / FT4 reader has heard, a band at a time, the latest first (since the radio started).
+                from sleepradiopi.audio import ft8 as ft8_mod
+                self._send(json.dumps(ft8_mod.reader.heard()).encode(), "application/json")
             elif path == "/api/rx":
                 # The rig on the desktop: the receiver being listened to (a KiwiSDR), where it's tuned and
                 # its waterfall since row ?since=N. {"on": false} when the radio is playing something else.
@@ -665,12 +669,13 @@ def make_handler(station: Station, output: Mp3Output, speaker=None,
                 morse_mod.reader.switch(body["on"])
                 self._send(json.dumps({"cw": morse_mod.reader.on}).encode(), "application/json")
             elif path == "/api/rx/ft8":
-                # {"on": true | false, "mode"?: "ft8" | "ft4"}: the FT8 / FT4 reader for receivers (audio/ft8.py).
+                # {"on": true | false, "mode"?: "ft8" | "ft4", "band"?: "40 m"}: the FT8 / FT4 reader for receivers
+                # (audio/ft8.py); band is what the page says the receiver is on, for the list of who's been heard.
                 # Off again at the next start.
                 from sleepradiopi.audio import ft8 as ft8_mod
                 try:
                     body = json.loads(self.rfile.read(int(self.headers.get("Content-Length", 0))) or b"{}")
-                    if not isinstance(body["on"], bool) or body.get("mode", "ft8") not in ft8_mod.MODES:
+                    if not isinstance(body["on"], bool) or body.get("mode", "ft8") not in ft8_mod.MODES or not isinstance(body.get("band", ""), str):
                         raise ValueError
                 except (ValueError, TypeError, KeyError, AttributeError):
                     self._error('send {"on": true | false, "mode": "ft8" | "ft4"}')
@@ -678,8 +683,27 @@ def make_handler(station: Station, output: Mp3Output, speaker=None,
                 if body["on"] and ft8_mod.decoder_path() is None:
                     self._error("this radio has no FT8 decoder")
                     return
-                ft8_mod.reader.switch(body["on"], body.get("mode"))
+                ft8_mod.reader.switch(body["on"], body.get("mode"), body.get("band"))
                 self._send(json.dumps({"ft8": ft8_mod.reader.mode if ft8_mod.reader.on else None}).encode(), "application/json")
+            elif path == "/api/rx/ft8/heard":
+                # {"clear": true}: the list of who's been heard emptied.
+                from sleepradiopi.audio import ft8 as ft8_mod
+                self._body()
+                ft8_mod.reader.forget()
+                self._send(json.dumps(ft8_mod.reader.heard()).encode(), "application/json")
+            elif path == "/api/rx/locator":
+                # {"locator": "IO94"} ("" clears it): where the radio is, for how far an FT8 station is. Kept.
+                from sleepradiopi.audio import ft8 as ft8_mod
+                try:
+                    body = json.loads(self.rfile.read(int(self.headers.get("Content-Length", 0))) or b"{}")
+                    home = ft8_mod.clean_locator(body.get("locator"))
+                except (ValueError, TypeError, AttributeError) as e:
+                    self._error(str(e) if isinstance(e, ValueError) and "locator" in str(e) else 'send {"locator": "IO94"}')
+                    return
+                ft8_mod.HOME = home or None
+                if config_file is not None:
+                    save_setting(config_file, "locator", home or None)
+                self._send(json.dumps({"home": home or None}).encode(), "application/json")
             elif path == "/api/rooms/level":
                 # {"level": 25-150}: how loud rooms are, % (at once: also for one that's playing). Kept.
                 from sleepradiopi.playback import room as room_mod

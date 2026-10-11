@@ -565,6 +565,8 @@ def main() -> None:
     settings = load(args.config)
     from sleepradiopi.playback import room as room_mod
     room_mod.CALLSIGN = settings.callsign
+    from sleepradiopi.audio import ft8 as ft8_mod
+    ft8_mod.HOME = settings.locator                  # (how far an FT8 station is: audio/ft8.py)
     room_mod.LEVEL = settings.room_level
     from sleepradiopi.audio import denoise as denoise_mod
     try:

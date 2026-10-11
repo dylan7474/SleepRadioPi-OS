@@ -173,6 +173,61 @@ def test_the_switch(monkeypatch) -> None:
     assert not r.on and r.mode == "ft8"
 
 
+def test_locators_and_how_far() -> None:
+    assert ft8.clean_locator(" io94 ") == "IO94" and ft8.clean_locator("io94KN") == "IO94kn" and ft8.clean_locator("") == "" and ft8.clean_locator(None) == ""
+    for bad in ("IO9", "SS94", "IO94k", "IO94zz", "London"):
+        with pytest.raises(ValueError):
+            ft8.clean_locator(bad)
+    assert ft8.locate("IO94") == (54.5, -1.0) and ft8.locate("JJ00") == (0.5, 1.0)
+    lat, lon = ft8.locate("IO94kn")
+    assert abs(lat - 54.5625) < 1e-6 and abs(lon + 1.125) < 1e-6
+    km, deg = ft8.path("IO94", "FN42")               # the north-east of England to Boston: about 5100 km, a little north of west
+    assert 5000 < km < 5200 and 280 < deg < 295
+    km, deg = ft8.path("IO94", "PM95")               # ...to Tokyo: over the top
+    assert 9200 < km < 9500 and 25 < deg < 40
+    assert ft8.path("IO94", "IO94") == (0, 0)
+    assert ft8.path("IO94", "IO84")[1] == 270 or abs(ft8.path("IO94", "IO84")[1] - 270) <= 2      # the next square west
+
+
+def test_who_sent_it() -> None:
+    assert ft8.who("CQ K1ABC FN42") == ("K1ABC", "FN42", True)
+    assert ft8.who("CQ DX K1ABC FN42") == ("K1ABC", "FN42", True) and ft8.who("CQ POTA EA2WX/P IN83") == ("EA2WX/P", "IN83", True)
+    assert ft8.who("CQ IQ9SZ/7") == ("IQ9SZ/7", None, True)
+    assert ft8.who("K1ABC W9XYZ EN37") == ("W9XYZ", "EN37", False)
+    assert ft8.who("K1ABC W9XYZ R-11") == ("W9XYZ", None, False) and ft8.who("K1ABC W9XYZ RR73") == ("W9XYZ", None, False)
+    assert ft8.who("<...> DA125RH 73") == ("DA125RH", None, False) and ft8.who("K1ABC <...> -05") == (None, None, False)
+    assert ft8.who("<K1ABC> <W9XYZ> R-05") == ("W9XYZ", None, False)
+    assert ft8.who("TNX BOB 73 GL") == (None, None, False) and ft8.who("") == (None, None, False)
+
+
+def test_who_has_been_heard(monkeypatch) -> None:
+    said = [[{"snr": 3.0, "dt": 0.5, "hz": 1000, "text": "CQ K1ABC FN42"}, {"snr": -5.0, "dt": 0.4, "hz": 1500, "text": "G4XYZ JA1VSL PM95"}],
+            [{"snr": 7.0, "dt": 0.5, "hz": 1000, "text": "G4XYZ K1ABC -12"}, {"snr": 1.0, "dt": 0.5, "hz": 700, "text": "TNX BOB 73 GL"}]]
+    clock = Clock(T0 - 1.0)
+    r = ft8.Reader(clock=clock, decode=lambda samples, mode: [dict(m) for m in said.pop(0)])
+    r.on, r.band = True, "20 m"
+    r.step()
+    monkeypatch.setattr(ft8, "HOME", None)
+    _play(r, clock, np.zeros(int(34.0 * pcm.SAMPLE_RATE)))
+    got = r.status()["messages"]
+    assert [(m.get("call"), m.get("grid"), "km" in m) for m in got] == [("K1ABC", "FN42", False), ("JA1VSL", "PM95", False), ("K1ABC", "FN42", False), (None, None, False)]
+    monkeypatch.setattr(ft8, "HOME", "IO94")         # the radio's locator known: how far and which way (a later message: by the locator given before)
+    got, st = r.status()["messages"], r.status()
+    assert st["home"] == "IO94" and st["band"] == "20 m"
+    assert 5000 < got[2]["km"] < 5200 and 280 < got[2]["deg"] < 295 and "km" not in got[3]
+    h = r.heard()
+    assert h["band"] == "20 m" and [x["call"] for x in h["heard"]] == ["K1ABC", "JA1VSL"]          # the latest heard first
+    k = h["heard"][0]
+    assert (k["band"], k["grid"], k["snr"], k["first"], k["last"], k["count"], k["cq"]) == ("20 m", "FN42", 7.0, T0, T0 + 15.0, 2, False)
+    assert 5000 < k["km"] < 5200 and 9200 < h["heard"][1]["km"] < 9500
+    r.band = "40 m"                                  # another band: the same station again is another line
+    r._decode = lambda samples, mode: [{"snr": 0.0, "dt": 0.5, "hz": 900, "text": "CQ K1ABC FN42"}]
+    _play(r, clock, np.zeros(int(15.0 * pcm.SAMPLE_RATE)))
+    assert [(x["band"], x["call"], x["count"]) for x in r.heard()["heard"]] == [("40 m", "K1ABC", 1), ("20 m", "K1ABC", 2), ("20 m", "JA1VSL", 1)]
+    r.forget()
+    assert r.heard()["heard"] == []
+
+
 def test_no_decoder_no_reading(monkeypatch, tmp_path: Path) -> None:
     monkeypatch.setenv("SLEEPRADIO_FT8_DECODER", str(tmp_path / "not-there"))
     assert ft8.decoder_path() is None and ft8.Reader().status()["can"] is False
@@ -209,7 +264,7 @@ def test_a_real_message_through_the_real_decoder(tmp_path: Path) -> None:
 
 def test_the_reader_from_the_web(tmp_path: Path, monkeypatch) -> None:
     conf = tmp_path / "config.toml"
-    conf.write_text("")
+    conf.write_text("{}")
     httpd = ThreadingHTTPServer(("127.0.0.1", 0), make_handler(None, None, None, conf))
     threading.Thread(target=httpd.serve_forever, daemon=True).start()
     base = f"http://127.0.0.1:{httpd.server_address[1]}"
@@ -226,6 +281,7 @@ def test_the_reader_from_the_web(tmp_path: Path, monkeypatch) -> None:
             return e.code, json.loads(e.read() or b"{}")
 
     try:
+        monkeypatch.setattr(ft8, "HOME", None)
         monkeypatch.setenv("SLEEPRADIO_FT8_DECODER", str(tmp_path / "not-there"))
         assert call("/api/rx/ft8")[1]["can"] is False
         assert call("/api/rx/ft8", {"on": True})[0] == 400 and not ft8.reader.on       # no decoder: it says so
@@ -238,8 +294,18 @@ def test_the_reader_from_the_web(tmp_path: Path, monkeypatch) -> None:
             assert call("/api/rx/ft8", bad)[0] == 400 and ft8.reader.mode == "ft4"
         code, st = call("/api/rx/ft8?since=3")
         assert code == 200 and st["on"] is True and st["mode"] == "ft4" and st["slot"] == 7.5
+        assert call("/api/rx/ft8", {"on": True, "mode": "ft4", "band": "40 m"})[0] == 200 and call("/api/rx/ft8")[1]["band"] == "40 m"      # the band alone: nothing begun again
+        assert call("/api/rx/ft8", {"on": True, "band": 40})[0] == 400
         assert call("/api/rx/ft8", {"on": False}) == (200, {"ft8": None}) and not ft8.reader.on
+        assert call("/api/rx/ft8/heard")[1] == {"band": "40 m", "home": None, "heard": []}
+        assert call("/api/rx/ft8/heard", {"clear": True})[1]["heard"] == []
+        assert call("/api/rx/locator", {"locator": "io94kn"}) == (200, {"home": "IO94kn"}) and ft8.HOME == "IO94kn"
+        assert json.loads(conf.read_text())["locator"] == "IO94kn" and call("/api/rx/ft8")[1]["home"] == "IO94kn"
+        code, err = call("/api/rx/locator", {"locator": "Guisborough"})
+        assert code == 400 and "IO94" in err["error"] and ft8.HOME == "IO94kn"
+        assert call("/api/rx/locator", {"locator": ""}) == (200, {"home": None}) and ft8.HOME is None
     finally:
         ft8.reader.switch(False)
+        ft8.reader.band, ft8.HOME = None, None
         httpd.shutdown()
         httpd.server_close()

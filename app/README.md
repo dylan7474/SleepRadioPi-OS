@@ -1155,7 +1155,19 @@ The cards:
   rough guide, not the figure other programs give) and where in the sound,
   the calls picked out (a click copies one), a CQ in green, and a bar
   showing how far through the slot it is. The page keeps the last 300
-  lines, gone when the page is closed. The decoding is ft8_lib's `decode_ft8` (MIT, built into the image:
+  lines, gone when the page is closed.
+  *How far, and who's been heard:* give the radio its own locator (the
+  *Your locator…* key in the list's heading: IO94, or IO94kn; `POST
+  /api/rx/locator {"locator": "IO94"}`, kept in the settings) and each line
+  ends with how far away the station is and which way (1,408 km ESE), from
+  the middle of the locator square it gave -- a station's later messages
+  carry no locator, so they get the one it gave before. *Heard* turns the
+  list into who has been heard on the band the receiver is on, the farthest
+  first: when last, the strongest it's been, how many times, its locator
+  and distance (`GET /api/rx/ft8/heard`; the page tells the reader the band
+  with the switch). The radio keeps that list itself, up to 600 stations
+  across the bands, so it grows with the page closed -- but in memory only:
+  a restart, or *Clear* in Heard, begins it again. The decoding is ft8_lib's `decode_ft8` (MIT, built into the image:
   `package/ft8-lib`), run at low priority on each slot: about half a second
   of one core on the Zero 2 W's processor. The sound a receiver sends is
   late, more so across the internet, so a slot is cut a second after the
