@@ -1217,7 +1217,28 @@ The cards:
   the readers are put back as they were. It's the page that runs it (close
   the page and it stops), the radio plays each place as it goes, and
   amateur teleprinters and Morse aren't surveyed: they have no one
-  frequency. An OpenWebRX is tuned by hand, so its keys only say where. The decoding is ft8_lib's `decode_ft8` (MIT, built into the image:
+  frequency. An OpenWebRX is tuned by hand, so its keys only say where.
+  *One reader at a time:* Morse, FT8 / FT4 and PSK31 / RTTY each have
+  their own place on a band, so switching one on switches the others off
+  (each of those calls answers with all three: `{"cw", "ft8",
+  "keyboard"}`).
+  *Calibrate* (the key in a short-wave receiver of your own's window;
+  `POST /api/rx/calibrate {"base": "http://the-receiver:8074"}`, then `GET
+  /api/rx/calibrate` until it's done; with `"ppm"` and `"trim"` it sets
+  those instead, which is how it's undone): the radio takes the receiver
+  round the short-wave broadcast bands (`playback/calibrate.py`). In each
+  it finds the strongest carriers in the receiver's own waterfall, tunes 1
+  kHz under each one's place on the 5 kHz raster in upper sideband, and
+  measures the carrier as a tone: 1000 Hz when the receiver is right. The
+  German weather service's teleprinters are measured too (the middle of
+  their two tones). The errors lie on a line against frequency: its slope
+  is what the dongle's parts-per-million setting is out by, and what's left
+  is the trim; a station that doesn't fit the line (not every carrier is a
+  broadcast station on its raster) is left out. With fewer than four
+  stations, or all within 4 MHz, only the trim is moved; with fewer than
+  two that agree, nothing, and it says so. The receiver keeps what's set
+  (its `POST /calibrate`). About a minute and a half; the receiver is put
+  back where it was; if the radio is playing it, the round is heard. The decoding is ft8_lib's `decode_ft8` (MIT, built into the image:
   `package/ft8-lib`), run at low priority on each slot: about half a second
   of one core on the Zero 2 W's processor. The sound a receiver sends is
   late, by how much depending on how it comes: half a second from a

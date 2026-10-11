@@ -100,6 +100,7 @@ HANG_S = 2.0                 # stay with a channel this long after it closes, fo
 HOG_S = 30.0                 # a channel open this long without a break gives way to another that opens
 HIGHPASS_HZ = 300            # narrow FM: below the speech (takes out CTCSS tones, a hum otherwise)
 IDLE_S = 60.0                # no listener this long: the dongle rests
+PPM_MOST, TRIM_MOST_HZ = 200, 50_000        # what a calibration from the web side may set
 MAX_CHANNELS = 64            # in one band (48 use most of one of a Pi 2's cores)
 MIN_HZ, MAX_HZ = 24_000_000, 1_766_000_000      # what an RTL-SDR tunes
 UP_MIN_HZ, UP_MAX_HZ = 100_000, 60_000_000      # ...and what an upconverter in front of it brings
@@ -513,9 +514,10 @@ class Listener:
 class Receiver:
     def __init__(self, bands: dict, airband: str | None = None, rtl_fm: str | None = None, gain: float = GAIN_DB,
                  ppm: int = 0, device: int = 0, skips_file: Path | None = None, bands_file: Path | None = None,
-                 shift_hz: int = 0, trim_hz: int = 0) -> None:
+                 shift_hz: int = 0, trim_hz: int = 0, calibration_file: Path | None = None) -> None:
         self.bands = dict(bands)
         self.shift_hz, self.trim_hz = shift_hz, trim_hz     # an upconverter's oscillator, and what it and the dongle are out by
+        self.calibration_file = calibration_file      # the ppm and trim set from the web side (POST /calibrate), kept here
         self.limits = limits_for(shift_hz)
         self.bands_file = bands_file                  # the bands made from the web side (POST /bands), kept here
         self.own = load_bands(bands_file, into={}, limits=self.limits)
@@ -529,6 +531,11 @@ class Receiver:
         self.rate_hz = int(SAMPLE_RATE_MS * 1e6)      # how much the dongle is hearing (the waterfall's width)
         self.zero_db, self.per_db = -40.0, 2.5        # ...and what its rows' bytes mean
         self.gain, self.ppm, self.device = gain, ppm, device
+        try:                                          # (what was set from the web side stands, over what it was started with)
+            kept = json.loads(calibration_file.read_text()) if calibration_file is not None and calibration_file.exists() else {}
+            self.ppm, self.trim_hz = int(kept.get("ppm", self.ppm)), int(kept.get("trim", self.trim_hz))
+        except (OSError, ValueError, TypeError, AttributeError) as e:
+            log.warning("couldn't read the calibration kept: %s", e)
         self.lock = threading.RLock()
         self.spec: dict | None = None
         self.name = ""
@@ -696,6 +703,32 @@ class Receiver:
             spec = self.spec
             if spec and "band" in spec and any(c["freq"] == int(freq) for c in self.bands[spec["band"]]["channels"]):
                 self._again()                         # the band is restarted without it
+
+    def calibrate(self, ppm: int, trim: int) -> None:
+        """Set the dongle's error (parts per million) and what's left over (Hz): kept, and what's being received
+        is started afresh with them. ValueError says what they may be."""
+        if isinstance(ppm, bool) or isinstance(trim, bool) or not isinstance(ppm, int) or not isinstance(trim, int):
+            raise ValueError("ppm and trim are whole numbers")
+        if abs(ppm) > PPM_MOST or abs(trim) > TRIM_MOST_HZ:
+            raise ValueError(f"ppm is within {PPM_MOST} either way, trim within {TRIM_MOST_HZ} Hz")
+        with self.lock:
+            if (ppm, trim) == (self.ppm, self.trim_hz):
+                return
+            log.info("calibration: ppm %d -> %d, trim %d -> %d Hz", self.ppm, ppm, self.trim_hz, trim)
+            self.ppm, self.trim_hz = ppm, trim
+            if self.calibration_file is not None:
+                try:
+                    self.calibration_file.parent.mkdir(parents=True, exist_ok=True)
+                    self.calibration_file.write_text(json.dumps({"ppm": ppm, "trim": trim}))
+                except OSError as e:
+                    log.warning("couldn't keep the calibration: %s", e)
+            spec = self.spec
+            if spec is not None and self.proc is not None:
+                listeners, self.listeners = self.listeners, []    # (as _again(), but stopped first: a tuner still
+                self._stop()                                      # running would only be moved, as it is)
+                self.spec = None
+                self.select(spec)
+                self.listeners = listeners
 
     def _again(self) -> None:
         """What's being received has changed under it: start it afresh; whoever is listening stays."""
@@ -908,7 +941,7 @@ class Receiver:
             out = {"receiving": receiving, "name": self.name if self.spec else None, "running": running,
                    "listeners": len(self.listeners), "title": self.title if self.spec else None, "error": self.error,
                    "rate": self.rate, "skipping": sorted(self.skips), "tunable": list(self.limits),
-                   **({"upconverter": self.shift_hz} if self.shift_hz else {}),
+                   **({"upconverter": self.shift_hz} if self.shift_hz else {}), "ppm": self.ppm, "trim": self.trim_hz,
                    "bands": {k: {"name": b["name"], "channels": len(b["channels"])} for k, b in self.bands.items()}}
             if running and self.tuner is not None:    # (tuned like a rig: /tune moves it; the passband's strength, dB of full scale)
                 out["tunes"], out["level_db"] = True, round(self.tuner.level_db, 1)
@@ -1013,7 +1046,7 @@ def make_handler(receiver: Receiver):
 
         def do_POST(self) -> None:
             path = urlparse(self.path).path
-            if path not in ("/select", "/skip", "/bands", "/hold", "/tune"):
+            if path not in ("/select", "/skip", "/bands", "/hold", "/tune", "/calibrate"):
                 return self._json({"error": "not found"}, 404)
             try:
                 body = json.loads(self.rfile.read(int(self.headers.get("Content-Length") or 0)) or b"{}")
@@ -1021,6 +1054,8 @@ def make_handler(receiver: Receiver):
                     receiver.skip(int(body["freq"]), body.get("on", True) is not False)
                 elif path == "/tune":                 # {"freq": Hz or MHz, "mode": "usb" | "lsb" | "cw" | "am"}: either or both
                     receiver.tune(None if body.get("freq") is None else _hz(body["freq"]), body.get("mode"))
+                elif path == "/calibrate":            # {"ppm": parts per million, "trim": Hz}: kept; reception starts afresh
+                    receiver.calibrate(body["ppm"], body["trim"])
                 elif path == "/hold":                 # {"freq": Hz} or {"freq": null}
                     receiver.hold(None if body.get("freq") is None else _hz(body["freq"]))
                 elif path == "/bands":                # a new band, a change to one ("id"), or {"id", "remove": true}
@@ -1050,7 +1085,9 @@ def main(argv=None) -> int:
                          "(a Ham It Up: 125): the receiver is then a short-wave one, 0.1 to 60 MHz")
     ap.add_argument("--trim", type=int, default=0, metavar="HZ",
                     help="what the upconverter and the dongle are out by between them: how far above its real "
-                         "frequency a station of known frequency is found (below: a minus)")
+                         "frequency a station of known frequency is found (below: a minus). Once ppm and trim have "
+                         "been set from the web side (POST /calibrate: the radio's Calibrate key) those are kept "
+                         "in the state directory (calibration.json) and used instead of what's given here")
     ap.add_argument("--airband", help="path to rtl_airband")
     ap.add_argument("--state", type=Path, default=Path("/var/lib/sleepradio-receiver"),
                     help="where the skipped channels and the bands made from the web side are kept")
@@ -1060,7 +1097,7 @@ def main(argv=None) -> int:
     builtin = {k: dict(v) for k, v in (HF_BANDS if shift else DEFAULT_BANDS).items()}
     receiver = Receiver(load_bands(args.bands, into=builtin, limits=limits_for(shift)), airband=args.airband, gain=args.gain,
                         ppm=args.ppm, device=args.device, skips_file=args.state / "skip.json", bands_file=args.state / "bands.json",
-                        shift_hz=shift, trim_hz=args.trim)
+                        shift_hz=shift, trim_hz=args.trim, calibration_file=args.state / "calibration.json")
     httpd = ThreadingHTTPServer(("", args.port), make_handler(receiver))
     httpd.daemon_threads = True
     log.info("Sleep Radio receiver on port %d: bands %s", args.port, ", ".join(receiver.bands))

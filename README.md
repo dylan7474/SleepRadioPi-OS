@@ -300,6 +300,15 @@ Actions, Sleep timer and Radio folders open:
   band's FT8 frequency, or everything -- and writes on the keys what was
   there: "24 · 3,174 km" is twenty-four stations, the farthest that far.
   A picture of which bands are open, in about five minutes.
+- **Calibrate.** A cheap dongle behind an upconverter is a few hundred Hz
+  out on short wave, by a different amount on every band, and drifts as it
+  warms. *Calibrate* in a short-wave receiver's window takes it round the
+  broadcast bands, measures a dozen stations whose frequencies are known
+  (they keep to a 5 kHz raster) and the German weather service's
+  teleprinters, and sets the dongle's two corrections. The receiver itself
+  now also allows for the steps its tuner chip moves in, which were up to
+  140 Hz of that. On the author's: from 83 Hz out at 6 MHz to within a few
+  Hz from 7 to 14 MHz, checked against someone else's receiver.
 - **FT8 and FT4, read as text.** The *FT8* and *FT4* keys in a receiver's
   window take it to the mode's frequency on the band it's on and list every
   message heard, each time a slot ends (15 seconds for FT8, 7.5 for FT4):
@@ -830,8 +839,13 @@ What's left to do (everything else described here is built and running):
 - **VHF and short wave from one computer** — a receiver behind an
   upconverter tunes 0.1 to 60 MHz now, but it's one dongle to a receiver, so
   short wave and VHF at once need two computers. Next: both dongles on one
-  (told apart by serial number, a receiver each). Also: setting the trim by
-  itself from a broadcast station's carrier, as the dongle warms up.
+  (told apart by serial number, a receiver each). Also: *Calibrate* run by
+  the radio itself now and then, as the dongle warms up (it's a key today).
+- **A dongle inside the radio** — the bigger radios (a Pi 3 inside) have
+  the room and the processor for an RTL-SDR of their own: one with a
+  temperature-compensated crystal (a Nooelec NESDR SMArt v5), so that it
+  stays on frequency without calibrating, as a receiver that's simply
+  there in Receivers with no second computer.
 - **Morse across the band** — the Morse reader reads one signal, the strongest
   in what's playing. Next: every Morse signal in a KiwiSDR's view read at
   once, each named by its callsign on the waterfall and in a list of who's

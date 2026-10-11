@@ -199,12 +199,12 @@ def test_the_reader_from_the_web(tmp_path: Path) -> None:
 
     try:
         assert call("/api/rx/morse")[1]["on"] is False
-        assert call("/api/rx/morse", {"on": True}) == (200, {"cw": True}) and morse.reader.on
+        assert call("/api/rx/morse", {"on": True}) == (200, {"cw": True, "ft8": None, "keyboard": None}) and morse.reader.on
         for bad in ({"on": "yes"}, {"on": 1}, {}):
             assert call("/api/rx/morse", bad)[0] == 400 and morse.reader.on
         code, st = call("/api/rx/morse?since=3")
         assert code == 200 and st["on"] is True and st["overs"] == [] and st["tape_rate"] == morse.TAPE_RATE
-        assert call("/api/rx/morse", {"on": False}) == (200, {"cw": False}) and not morse.reader.on
+        assert call("/api/rx/morse", {"on": False}) == (200, {"cw": False, "ft8": None, "keyboard": None}) and not morse.reader.on
     finally:
         morse.reader.switch(False)
         httpd.shutdown()

@@ -2000,7 +2000,7 @@ function rigCwKey(R, k) {
     try {
       S = { ...(S || {}), ...(await api("/api/rx/morse", { on: !S?.cw })) };
       Object.assign(CW, { since: 0, overs: [], lines: [], voices: [], st: null, leads: [], lead: null });
-      rigPaint(R); cwDraw(R);
+      rigPaint(R); cwDraw(R); ftDraw(R); kbDraw(R);     // (one reader at a time: the radio has switched the others off)
       if (S.cw) toast("Morse reader on: the strongest Morse in what this receiver plays is read, a second or so after each over ends. The CW mode narrows it to the signal you're tuned to.", false, null, true);
     } catch (e) { rigOops(e); } }, "Read Morse as text: the strongest keyed tone in what the receiver is playing");
 }
@@ -2163,7 +2163,7 @@ function rigFtKeys(R, k) {
       const to = on && D.ftGo ? ftWhere(R, mode) : null;
       S = { ...(S || {}), ...(await api("/api/rx/ft8", { on, mode, ...(to ? { band: to.band } : {}) })) };
       Object.assign(FT, { since: 0, lines: [], st: null, band: to?.band || null });
-      rigPaint(R); ftDraw(R);
+      rigPaint(R); cwDraw(R); ftDraw(R); kbDraw(R);
       if (!on) return;
       const sideband = (D.on(R) ? R.st.mode || R.st.receiving?.mode : null) === "usb";
       if (!to) return toast(D.ftGo ? `${FT_NAMES[mode]} reader on, but this receiver doesn't reach a band it's used on.`
@@ -2281,7 +2281,7 @@ function rigKbKeys(R, k) {
     try {
       S = { ...(S || {}), ...(await api("/api/rx/keyboard", { on, mode })) };
       Object.assign(KB, { since: 0, lines: [], voices: [], st: null });
-      rigPaint(R); kbDraw(R);
+      rigPaint(R); cwDraw(R); ftDraw(R); kbDraw(R);
       if (!on) return;
       if (mode === "rtty") return toast("Teleprinter reader on: tune so that a signal's two tones are both in what you hear. Amateurs use the top of each band's data part (14.080 to 14.100 MHz); the German weather service is on 10.1008 MHz all day (tune 10.0993 USB).", false, null, true);
       const to = D.ftGo && ftWhere(R, mode, KB_PSK), sideband = (D.on(R) ? R.st.mode || R.st.receiving?.mode : null) === "usb";
@@ -2346,6 +2346,28 @@ function kbDraw(R) {
     changed = true;
   }
   if (changed && stick) box.scrollTop = box.scrollHeight;
+}
+// Calibrate (playback/calibrate.py): a short-wave receiver of your own put on frequency. The radio takes it round the
+// broadcast bands, measures stations of known frequency, and sets the dongle's ppm and trim on the receiver.
+const CAL = { busy: false };
+function rigCalKey(R, k) {
+  return k("Calibrate", () => {
+    if (CAL.busy) return toast("A receiver is being calibrated: it takes a minute and a half.");
+    if (!R.st?.upconverter) return toast("Calibrate is for a short-wave receiver (one behind an upconverter): the stations it goes by are on short wave.");
+    ask(`Put ${R.o.title} on frequency? It's taken round the short-wave broadcast bands for about a minute and a half${rigOnRadio(R) ? " -- you'll hear it go --" : ""} and then put back. Best in the evening, when those bands are full.`, "Calibrate", async () => {
+      CAL.busy = true;
+      try {
+        let st = await api("/api/rx/calibrate", { base: R.origin });
+        while (st.running) { toast(st.step + (st.points?.length ? ` ${st.points.length} station${st.points.length === 1 ? "" : "s"} measured.` : ""), true, null, true); await new Promise(ok => setTimeout(ok, 1500)); st = await api("/api/rx/calibrate"); }
+        const r = st.result;
+        if (!r) toast(`Not calibrated: ${st.error || "it stopped"}.`, false, null, true);
+        else if (r.ppm === r.before.ppm && r.trim === r.before.trim) toast(`Already on frequency: within ${Math.round(r.was)} Hz on ${r.used.length} stations. Nothing was changed.`, false, null, true);
+        else toast(`On frequency: it was up to ${Math.round(r.was)} Hz out, and is now within about ${Math.round(r.now ?? r.left)} Hz (${r.used.length} stations, from ${(r.used[0][0] / 1e6).toFixed(1)} to ${(r.used[r.used.length - 1][0] / 1e6).toFixed(1)} MHz).`, false,
+          () => api("/api/rx/calibrate", { base: R.origin, ppm: r.before.ppm, trim: r.before.trim }), true);
+      } catch (e) { rigOops(e); }
+      CAL.busy = false;
+    });
+  }, "Put this receiver on frequency: the dongle's error measured on broadcast stations, and set");
 }
 // Where to listen (the Modes… key): each mode's usual place on each band, as keys that take the receiver there and
 // switch the right reader on; and a survey, which goes round them, listens a slot or a few seconds on each, and writes
@@ -2635,7 +2657,7 @@ const RXD = {
             try { await rxSay(R.origin, "/skip", { freq: hz, on: true }); R.bands = null; toast(`The band now skips ${c.name}. (Channels… has it back.)`); } catch (e) { rigOops(e); } }), "Leave this channel out of the band"),
           k("◀", need(() => this.step(R, -1)), "One channel down"), k("▶", need(() => this.step(R, 1)), "One channel up")),
         el("div", { className: "rgrp" }, k("Channels…", need(async () => { if (this.band(R).range) return toast(`${this.band(R).name} is tuned across: it has no channels.`); const id = `rxb:${R.origin}:${this.band(R).id}`; if (!O[id]) await loadFolder(mk({ id: "rxf:" + R.origin, kind: "folder", box: "rxbands", origin: R.origin, title: `${R.o.title}: bands`, kids: [], sym: "⌁", alt: true })); open(id); }), "The band's channels as stations: drag one onto a button"),
-          k("Bands…", () => this.folder(R), "The bands as folders"), rigNrKey(R, k), rigCwKey(R, k), ...rigFtKeys(R, k), ...rigKbKeys(R, k), k("Modes…", () => { MODES.rx = R.o.id; open(PANEL.modes.id); drawDesk(); }, "Where to listen: FT8, FT4, PSK31, teleprinter and Morse band by band, and a survey of what's there now"), k("Find…", () => open(PANEL.findreceiver.id), "Other people's receivers on the internet"))];
+          k("Bands…", () => this.folder(R), "The bands as folders"), rigCalKey(R, k), rigNrKey(R, k), rigCwKey(R, k), ...rigFtKeys(R, k), ...rigKbKeys(R, k), k("Modes…", () => { MODES.rx = R.o.id; open(PANEL.modes.id); drawDesk(); }, "Where to listen: FT8, FT4, PSK31, teleprinter and Morse band by band, and a survey of what's there now"), k("Find…", () => open(PANEL.findreceiver.id), "Other people's receivers on the internet"))];
     },
     lamps(R, w) { R.dom.kscan?.classList.toggle("on", !!this.band(R) && this.band(R).mode !== "wfm" && !R.st.hold); R.dom.khold?.classList.toggle("on", !!R.st?.hold); R.dom.kmon?.classList.toggle("on", !!this.monitored(R)); },
   },

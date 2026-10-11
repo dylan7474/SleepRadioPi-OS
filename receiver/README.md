@@ -124,6 +124,22 @@ OPTIONS="--upconverter 125 --ppm 62 --trim 75 --gain 19.7"
   hertz or so; AM doesn't care. A dongle without a temperature-compensated
   crystal moves by a few hundred hertz as it warms up, so measure it after
   half an hour's listening.
+- **Or let the radio do both:** once the ppm is roughly right (within a
+  couple of kHz), the *Calibrate* key in this receiver's window on the
+  radio's desktop measures a dozen broadcast stations across the bands,
+  works out the ppm and the trim, and sets them here (`POST /calibrate
+  {"ppm": 59, "trim": -897}`; `/status` says what they are). What's set that
+  way is kept in the state directory (`calibration.json`) and stands over
+  what's in `options` from then on.
+- **The tuner chip's steps** are allowed for. An R820T doesn't go exactly
+  where it's asked: its oscillator moves in steps of 55 Hz at these
+  frequencies, and the driver drops the odd part-kHz first, so the dongle
+  lands anything up to 150 Hz off, a different amount for every place it's
+  sent. One broadcast carrier listened to from seven places of the dongle's
+  centre read 136 Hz apart. The receiver works out where the chip really
+  went (the driver's own sums: `r820t_off` in `sleepradio_tuner.py`) and
+  takes that off where the signal is picked out: the same carrier then read
+  15 Hz apart. Other tuner chips are left as they are.
 - `--gain`: a long aerial brings megawatt broadcast stations, and the dongle
   has eight bits. If the strongest are clipping, turn it down.
 

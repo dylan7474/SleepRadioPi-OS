@@ -135,6 +135,59 @@ def spectrum_row(power: np.ndarray) -> bytes:
     return np.clip((10 * np.log10(p + 1e-14) - ZERO_DB) * PER_DB, 0, 255).astype(np.uint8).tobytes()
 
 
+R820T, R820T_XTAL_HZ = 5, 28_800_000      # rtl_tcp's number for the tuner chip; its crystal
+
+
+def r820t_if(rate: int) -> int:
+    """Where an R820T puts the signal for the dongle to take it from, Hz: it depends on how wide a filter the
+    sample rate asks for (the driver's r82xx_set_bandwidth; 2.125 MHz at the 256 kHz used here)."""
+    table = (1_700_000, 1_600_000, 1_550_000, 1_450_000, 1_200_000, 900_000, 700_000, 550_000, 450_000, 350_000)
+    hp1, hp2 = 350_000, 380_000
+    if rate > 6_000_000:
+        return 4_570_000
+    if rate > table[0] + hp1 + hp2:
+        return 3_570_000
+    bw, at, real = rate, 2_300_000, 0
+    if bw > table[0] + hp1:
+        bw, at, real = bw - hp2, at + hp2, real + hp2
+    if bw > table[0]:
+        bw, at, real = bw - hp1, at + hp1, real + hp1
+    i = next((k for k, t in enumerate(table) if bw > t), len(table)) - 1
+    return at - (real + table[i]) // 2
+
+
+R820T_IF_HZ = r820t_if(FS)
+
+
+def r820t_off(freq: int, ppm: int = 0) -> float:
+    """How far from `freq` (Hz) an R820T dongle really goes when it's asked for it: the chip's oscillator moves in
+    steps (55 Hz at 140 MHz, where an upconverter puts short wave; coarser higher up), and the driver (librtlsdr's
+    r82xx_set_pll, followed here sum for sum) first drops what's under a kHz of the oscillator's own frequency. So
+    two frequencies a few kHz apart could be 140 Hz apart in their errors: one broadcast carrier heard from seven
+    places of the dongle's centre read 136 Hz apart, and 15 Hz apart with this taken off. Known, it's taken off
+    again where the signal is picked out."""
+    xtal = int(R820T_XTAL_HZ * (1.0 + ppm / 1e6))       # (the driver's crystal, with the correction it was given)
+    lo = int(freq) + R820T_IF_HZ
+    lo_khz, xtal_khz = (lo + 500) // 1000, (xtal + 500) // 1000
+    mix_div = 2
+    while mix_div <= 64 and not 1_770_000 <= lo_khz * mix_div < 3_540_000:
+        mix_div <<= 1
+    if mix_div > 64:
+        return 0.0                                   # (out of the chip's reach: the driver gives up too)
+    vco = lo * mix_div
+    nint = vco // (2 * xtal)
+    fra = (vco - 2 * xtal * nint) // 1000            # the part of a step, in kHz: what's under a kHz is dropped
+    n_sdm, sdm = 2, 0
+    while fra > 1:
+        if fra > 2 * xtal_khz // n_sdm:
+            sdm += 32768 // (n_sdm // 2)
+            fra -= 2 * xtal_khz // n_sdm
+            if n_sdm >= 0x8000:
+                break
+        n_sdm <<= 1
+    return 2 * xtal * (nint + sdm / 65536) / mix_div - lo
+
+
 def centre_for(freq: int) -> int:
     """Where the dongle's centre goes to hear freq: a little above it, on a whole kHz."""
     return (int(freq) + OFF_CENTRE_HZ) // 1000 * 1000
@@ -157,6 +210,8 @@ class Tuner:
         self._demod = Demod()
         self._skip_until = 0.0
         self._stopped = threading.Event()
+        self.chip = 0                                    # the tuner chip, as rtl_tcp names it (R820T: its steps are allowed for)
+        self.off = 0.0                                   # how far from where it was asked the dongle's centre really is
 
     @property
     def level_db(self) -> float:
@@ -181,6 +236,18 @@ class Tuner:
                     raise ValueError("the dongle didn't start (is something else using it?)") from None
                 time.sleep(0.2)
         self._sock.settimeout(5.0)
+        got = b""
+        try:                                             # (rtl_tcp's greeting: "RTL0", the tuner chip, its gains)
+            while len(got) < 12:
+                more = self._sock.recv(12 - len(got))
+                if not more:
+                    break
+                got += more
+        except OSError:
+            pass
+        if len(got) < 12:
+            raise ValueError("the dongle didn't start (is something else using it?)")
+        self.chip = struct.unpack(">4sII", got)[1] if got[:4] == b"RTL0" else 0
         self.tune(freq, mode, recentre=True)
         threading.Thread(target=self._run, args=(self._sock,), name="tuner", daemon=True).start()
 
@@ -191,7 +258,8 @@ class Tuner:
                 self._say(0x01, self.centre + self.shift_hz)
                 self._skip_until = time.monotonic() + SETTLE_S
             self.freq, self.mode = int(freq), mode
-            self._demod.set(freq - self.centre, mode)
+            self.off = r820t_off(self.centre + self.shift_hz, self.ppm) if self.chip == R820T else 0.0
+            self._demod.set(freq - self.centre - self.off, mode)
 
     def stop(self) -> None:
         self._stopped.set()
@@ -205,12 +273,6 @@ class Tuner:
     def _run(self, sock: socket.socket) -> None:
         want, buf = 2 * HOP * HOPS, b""
         try:
-            got = b""
-            while len(got) < 12:                         # (rtl_tcp's greeting: "RTL0", the tuner, its gains)
-                more = sock.recv(12 - len(got))
-                if not more:
-                    return
-                got += more
             while not self._stopped.is_set():
                 more = sock.recv(65536)
                 if not more:

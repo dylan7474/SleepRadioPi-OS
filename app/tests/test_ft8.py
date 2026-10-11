@@ -322,15 +322,15 @@ def test_the_reader_from_the_web(tmp_path: Path, monkeypatch) -> None:
         monkeypatch.setenv("SLEEPRADIO_FT8_DECODER", str(decoder))
         st = call("/api/rx/ft8")[1]
         assert st["on"] is False and st["can"] is True and st["messages"] == []
-        assert call("/api/rx/ft8", {"on": True}) == (200, {"ft8": "ft8"}) and ft8.reader.on
-        assert call("/api/rx/ft8", {"on": True, "mode": "ft4"}) == (200, {"ft8": "ft4"}) and ft8.reader.mode == "ft4"
+        assert call("/api/rx/ft8", {"on": True}) == (200, {"cw": False, "ft8": "ft8", "keyboard": None}) and ft8.reader.on
+        assert call("/api/rx/ft8", {"on": True, "mode": "ft4"})[1]["ft8"] == "ft4" and ft8.reader.mode == "ft4"
         for bad in ({"on": "yes"}, {"on": True, "mode": "rtty"}, {}):
             assert call("/api/rx/ft8", bad)[0] == 400 and ft8.reader.mode == "ft4"
         code, st = call("/api/rx/ft8?since=3")
         assert code == 200 and st["on"] is True and st["mode"] == "ft4" and st["slot"] == 7.5
         assert call("/api/rx/ft8", {"on": True, "mode": "ft4", "band": "40 m"})[0] == 200 and call("/api/rx/ft8")[1]["band"] == "40 m"      # the band alone: nothing begun again
         assert call("/api/rx/ft8", {"on": True, "band": 40})[0] == 400
-        assert call("/api/rx/ft8", {"on": False}) == (200, {"ft8": None}) and not ft8.reader.on
+        assert call("/api/rx/ft8", {"on": False})[1]["ft8"] is None and not ft8.reader.on
         assert call("/api/rx/ft8/heard")[1] == {"band": "40 m", "home": None, "heard": []}
         assert call("/api/rx/ft8/heard", {"clear": True})[1]["heard"] == []
         assert call("/api/rx/locator", {"locator": "io94kn"}) == (200, {"home": "IO94kn"}) and ft8.HOME == "IO94kn"

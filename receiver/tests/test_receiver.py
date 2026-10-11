@@ -486,3 +486,53 @@ def test_an_upconverter_makes_it_a_short_wave_receiver(monkeypatch):
         for t in _FakeTuner.made:
             t.proc.kill()
     assert "tunable" in rx.Receiver(rx.DEFAULT_BANDS).status() and "upconverter" not in rx.Receiver(rx.DEFAULT_BANDS).status()
+
+
+def test_the_calibration_is_set_from_the_web_side_and_kept(monkeypatch, tmp_path: Path):
+    import sleepradio_tuner as st
+    _FakeTuner.made.clear()
+    monkeypatch.setattr(st, "Tuner", _FakeTuner)
+    kept = tmp_path / "state" / "calibration.json"
+    r = rx.Receiver(rx.HF_BANDS, ppm=62, shift_hz=125_000_000, trim_hz=1290, calibration_file=kept)
+    try:
+        lis = r.listen({"freq": 7_074_000, "mode": "usb"})
+        st0 = r.status()
+        assert (st0["ppm"], st0["trim"], st0["upconverter"]) == (62, 1290, 125_000_000) and _FakeTuner.made[0].kw["ppm"] == 62
+        r.calibrate(67, 218)                             # what's being received starts afresh with them; whoever listens stays
+        assert len(_FakeTuner.made) == 2 and (_FakeTuner.made[1].kw["ppm"], _FakeTuner.made[1].kw["trim_hz"]) == (67, 218)
+        assert _FakeTuner.made[1].asked == [(7_074_000, "usb")] and r.listeners == [lis] and not lis.dead
+        assert json.loads(kept.read_text()) == {"ppm": 67, "trim": 218} and (r.status()["ppm"], r.status()["trim"]) == (67, 218)
+        r.calibrate(67, 218)                             # as it is: nothing started again
+        assert len(_FakeTuner.made) == 2
+        for bad in ((1.5, 0), (0, "x"), (500, 0), (0, 10 ** 6), (True, 0)):
+            with pytest.raises(ValueError):
+                r.calibrate(*bad)
+        assert (r.ppm, r.trim_hz) == (67, 218)
+    finally:
+        r.rest()
+    again = rx.Receiver(rx.HF_BANDS, ppm=62, shift_hz=125_000_000, trim_hz=1290, calibration_file=kept)
+    assert (again.ppm, again.trim_hz) == (67, 218)      # ...over what it was started with
+    kept.write_text("not json")
+    assert rx.Receiver(rx.HF_BANDS, ppm=62, trim_hz=1290, calibration_file=kept).ppm == 62
+
+
+def test_an_r820t_dongle_goes_in_steps_and_they_are_allowed_for(monkeypatch):
+    import sleepradio_tuner as st
+    assert st.R820T_IF_HZ == 2_125_000 and st.r820t_if(2_400_000) == 2_300_000 + 350_000 + 380_000 - (350_000 + 380_000 + 1_700_000) // 2
+    offs = [st.r820t_off(125_000_000 + f, 67) for f in range(7_000_000, 18_000_000, 7_000)]
+    assert -160 < min(offs) < -80 and 80 < max(offs) < 160 and len({round(o) for o in offs}) > 50      # tens of Hz, different all over
+    for f, ppm in ((138_774_218, 67), (132_098_000, 0), (145_500_000, -30)):
+        # where it really goes is a whole number of the oscillator's steps (65536 to twice the crystal, shared out by the divider: 16 here)
+        xtal, lo = int(st.R820T_XTAL_HZ * (1 + ppm / 1e6)), f + st.R820T_IF_HZ + st.r820t_off(f, ppm)
+        steps = lo * 16 / (2 * xtal) * 65536
+        assert abs(steps - round(steps)) < 1e-3
+    assert st.r820t_off(3_000_000_000) == 0.0            # (out of the chip's reach)
+    t = st.Tuner("rtl_tcp", None, None, ppm=67, shift_hz=125_000_000, trim_hz=218)
+    monkeypatch.setattr(t, "_say", lambda command, value: None)
+    seen = []
+    monkeypatch.setattr(t._demod, "set", lambda offset, mode: seen.append(offset))
+    t.tune(13_724_000, "usb", recentre=True)             # another chip (or not known yet): picked out where it was asked for
+    t.chip = st.R820T
+    t.tune(13_724_000, "usb", recentre=True)             # an R820T: where it really is
+    off = st.r820t_off(t.centre + 125_000_218, 67)
+    assert seen[0] == 13_724_000 - t.centre and abs(seen[1] - (seen[0] - off)) < 1e-6 and abs(off) > 1 and t.off == off

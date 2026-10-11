@@ -380,6 +380,10 @@ def make_handler(station: Station, output: Mp3Output, speaker=None,
                 except ValueError:
                     since = 0
                 self._send(json.dumps(ft8_mod.reader.status(since)).encode(), "application/json")
+            elif path == "/api/rx/calibrate":
+                # A receiver of your own being put on frequency (playback/calibrate.py): how far it has got, what it found.
+                from sleepradiopi.playback import calibrate as calibrate_mod
+                self._send(json.dumps(calibrate_mod.job.status()).encode(), "application/json")
             elif path == "/api/rx/keyboard":
                 # The PSK31 / RTTY reader (audio/keyboard.py): whether it's on, what it's reading now, and the
                 # pieces of text read since ?since=N.
@@ -678,7 +682,7 @@ def make_handler(station: Station, output: Mp3Output, speaker=None,
                     self._error('send {"on": true | false}')
                     return
                 morse_mod.reader.switch(body["on"])
-                self._send(json.dumps({"cw": morse_mod.reader.on}).encode(), "application/json")
+                self._send(json.dumps(self._one_reader("cw" if body["on"] else None)).encode(), "application/json")
             elif path == "/api/rx/ft8":
                 # {"on": true | false, "mode"?: "ft8" | "ft4", "band"?: "40 m"}: the FT8 / FT4 reader for receivers
                 # (audio/ft8.py); band is what the page says the receiver is on, for the list of who's been heard.
@@ -695,7 +699,7 @@ def make_handler(station: Station, output: Mp3Output, speaker=None,
                     self._error("this radio has no FT8 decoder")
                     return
                 ft8_mod.reader.switch(body["on"], body.get("mode"), body.get("band"))
-                self._send(json.dumps({"ft8": ft8_mod.reader.mode if ft8_mod.reader.on else None}).encode(), "application/json")
+                self._send(json.dumps(self._one_reader("ft8" if body["on"] else None)).encode(), "application/json")
             elif path == "/api/rx/ft8/heard":
                 # {"clear": true}: the list of who's been heard emptied.
                 from sleepradiopi.audio import ft8 as ft8_mod
@@ -714,7 +718,27 @@ def make_handler(station: Station, output: Mp3Output, speaker=None,
                     self._error('send {"on": true | false, "mode": "psk31" | "rtty"}')
                     return
                 keyboard_mod.reader.switch(body["on"], body.get("mode"))
-                self._send(json.dumps({"keyboard": keyboard_mod.reader.mode if keyboard_mod.reader.on else None}).encode(), "application/json")
+                self._send(json.dumps(self._one_reader("keyboard" if body["on"] else None)).encode(), "application/json")
+            elif path == "/api/rx/calibrate":
+                # {"base": "http://192.168.50.154:8074"}: put that receiver of your own on frequency, from stations of
+                # known frequency (it's taken round the broadcast bands for a minute and a half: playback/calibrate.py).
+                # With "ppm" and "trim": set it to those instead (to undo one).
+                from sleepradiopi.playback import calibrate as calibrate_mod
+                try:
+                    body = self._body()
+                    base = str(body["base"]).rstrip("/")
+                    if not base.startswith(("http://", "https://")) or any(c.isspace() for c in base):
+                        raise ValueError("base is the receiver's address: http://192.168.50.154:8074")
+                    if "ppm" in body or "trim" in body:
+                        if isinstance(body.get("ppm"), bool) or isinstance(body.get("trim"), bool) or not isinstance(body.get("ppm"), int) or not isinstance(body.get("trim"), int):
+                            raise ValueError("ppm and trim are whole numbers")
+                        self._send(json.dumps(calibrate_mod.job.set(base, body["ppm"], body["trim"])).encode(), "application/json")
+                        return
+                    calibrate_mod.job.start(base)
+                except (ValueError, TypeError, KeyError, AttributeError, OSError) as e:
+                    self._error(str(e) if isinstance(e, ValueError) else 'send {"base": "http://the receiver"}' if not isinstance(e, OSError) else f"the receiver isn't answering ({e})")
+                    return
+                self._send(json.dumps(calibrate_mod.job.status()).encode(), "application/json")
             elif path == "/api/rx/locator":
                 # {"locator": "IO94"} ("" clears it): where the radio is, for how far an FT8 station is. Kept.
                 from sleepradiopi.audio import ft8 as ft8_mod
@@ -1129,6 +1153,20 @@ def make_handler(station: Station, output: Mp3Output, speaker=None,
                     log.exception("message preview failed")
             threading.Thread(target=run, name="message-preview", daemon=True).start()
             self._send(json.dumps({"ok": True, "text": words}).encode(), "application/json")
+
+        def _one_reader(self, on: str | None) -> dict:
+            """The readers for receivers, one at a time: each mode has its own place on a band, so with one switched
+            on ("cw", "ft8" or "keyboard") the others go off. -> {"cw", "ft8", "keyboard"}: which is on, and how."""
+            from sleepradiopi.audio import ft8 as ft8_mod, keyboard as keyboard_mod, morse as morse_mod
+            if on is not None:
+                if on != "cw":
+                    morse_mod.reader.switch(False)
+                if on != "ft8":
+                    ft8_mod.reader.switch(False)
+                if on != "keyboard":
+                    keyboard_mod.reader.switch(False)
+            return {"cw": morse_mod.reader.on, "ft8": ft8_mod.reader.mode if ft8_mod.reader.on else None,
+                    "keyboard": keyboard_mod.reader.mode if keyboard_mod.reader.on else None}
 
         def _body(self):
             return json.loads(self.rfile.read(int(self.headers.get("Content-Length", 0))) or b"{}")

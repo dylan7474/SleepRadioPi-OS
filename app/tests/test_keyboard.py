@@ -10,7 +10,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from sleepradiopi.audio import keyboard, pcm, psk, rtty
+from sleepradiopi.audio import ft8, keyboard, morse, pcm, psk, rtty
 from sleepradiopi.web.server import make_handler
 
 RATE = keyboard.RATE
@@ -144,7 +144,7 @@ def test_the_switch_and_the_process_of_its_own() -> None:
     assert not r.on
 
 
-def test_the_reader_from_the_web(tmp_path: Path) -> None:
+def test_the_reader_from_the_web(tmp_path: Path, monkeypatch) -> None:
     conf = tmp_path / "config.toml"
     conf.write_text("{}")
     httpd = ThreadingHTTPServer(("127.0.0.1", 0), make_handler(None, None, None, conf))
@@ -161,14 +161,24 @@ def test_the_reader_from_the_web(tmp_path: Path) -> None:
 
     try:
         assert call("/api/rx/keyboard")[1]["on"] is False
-        assert call("/api/rx/keyboard", {"on": True}) == (200, {"keyboard": "psk31"}) and keyboard.reader.on
-        assert call("/api/rx/keyboard", {"on": True, "mode": "rtty"}) == (200, {"keyboard": "rtty"}) and keyboard.reader.mode == "rtty"
+        assert call("/api/rx/keyboard", {"on": True}) == (200, {"cw": False, "ft8": None, "keyboard": "psk31"}) and keyboard.reader.on
+        assert call("/api/rx/keyboard", {"on": True, "mode": "rtty"})[1]["keyboard"] == "rtty" and keyboard.reader.mode == "rtty"
         for bad in ({"on": "yes"}, {"on": True, "mode": "ft8"}, {}):
             assert call("/api/rx/keyboard", bad)[0] == 400 and keyboard.reader.mode == "rtty"
         code, st = call("/api/rx/keyboard?since=3")
         assert code == 200 and st["on"] is True and st["mode"] == "rtty" and st["pieces"] == [] and st["signals"] == []
-        assert call("/api/rx/keyboard", {"on": False}) == (200, {"keyboard": None}) and not keyboard.reader.on
+        # one reader at a time: each mode has its own place on a band
+        decoder = tmp_path / "decode_ft8"
+        decoder.write_text("#!/bin/sh\n")
+        decoder.chmod(0o755)
+        monkeypatch.setenv("SLEEPRADIO_FT8_DECODER", str(decoder))
+        assert call("/api/rx/ft8", {"on": True, "mode": "ft8"}) == (200, {"cw": False, "ft8": "ft8", "keyboard": None}) and not keyboard.reader.on
+        assert call("/api/rx/morse", {"on": True}) == (200, {"cw": True, "ft8": None, "keyboard": None}) and not ft8.reader.on
+        assert call("/api/rx/keyboard", {"on": True, "mode": "psk31"}) == (200, {"cw": False, "ft8": None, "keyboard": "psk31"}) and not morse.reader.on
+        assert call("/api/rx/keyboard", {"on": False})[1]["keyboard"] is None and not keyboard.reader.on
     finally:
         keyboard.reader.switch(False)
+        ft8.reader.switch(False)
+        morse.reader.switch(False)
         httpd.shutdown()
         httpd.server_close()
