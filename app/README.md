@@ -1233,8 +1233,10 @@ The cards:
   German weather service's teleprinters are measured too (the middle of
   their two tones). The errors lie on a line against frequency: its slope
   is what the dongle's parts-per-million setting is out by, and what's left
-  is the trim; a station that doesn't fit the line (not every carrier is a
-  broadcast station on its raster) is left out. With fewer than four
+  is the trim. Not every transmitter is where it should be (some are 30
+  or 40 Hz out, the odd one hundreds), so the line is the one most of them
+  agree on -- the middle slope, the middle of what's left -- and a station
+  well off it is left out. With fewer than four
   stations, or all within 4 MHz, only the trim is moved; with fewer than
   two that agree, nothing, and it says so. The receiver keeps what's set
   (its `POST /calibrate`). About a minute and a half; the receiver is put

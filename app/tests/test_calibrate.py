@@ -66,12 +66,16 @@ def test_what_the_measurements_ask_for() -> None:
               (11_650_000, -11.7), (11_725_000, -11.4), (11_875_000, -12.0), (13_760_000, -14.7), (13_830_000, 3.0), (15_200_000, -2.9),
               (15_550_000, -2.7), (17_715_000, 19.0), (15_240_000, -463.2)]
     r = calibrate.fit(points, 67, 218, SHIFT)
-    assert (r["ppm"], r["trim"]) == (59, -897) and 7.0 < r["slope"] < 8.2
-    assert r["left_out"] == [(15_240_000, -463.2)] and len(r["used"]) == 14 and r["was"] == 82.6 and r["left"] < 20      # (a station off its frequency)
+    assert r["ppm"] == 59 and abs(r["trim"] + 897) <= 10 and 7.0 < r["slope"] < 8.2
+    assert (15_240_000, -463.2) in r["left_out"] and len(r["used"]) >= 12 and r["was"] == 82.6 and r["left"] < 25      # (a station off its frequency)
+    # a few sloppy transmitters, 40 Hz out one way, don't draw it after them (the average did: 40 Hz out on FT8)
+    sloppy = points[:-1] + [(7_300_000, -50.8 + 45.0), (9_500_000, -31.0 + 40.0), (11_900_000, -12.0 + 50.0), (13_600_000, -8.0 + 42.0)]
+    s = calibrate.fit(sloppy, 67, 218, SHIFT)
+    assert s["ppm"] == 59 and abs(s["trim"] - r["trim"]) <= 8
     # the same stations with that set: nothing more to do
     after = [(f, e - 8e-6 * (SHIFT + f) + 1115) for f, e in points[:-1]]
     again = calibrate.fit(after, 59, -897, SHIFT)
-    assert again["ppm"] == 59 and abs(again["trim"] + 897) <= 3
+    assert again["ppm"] == 59 and abs(again["trim"] + 897) <= 10
     # few stations, or all in one band: the slope can't be told, so only the trim is moved
     few = calibrate.fit([(9_460_000, 120.0), (9_665_000, 131.0), (9_710_000, 126.0)], 67, 218, SHIFT)
     assert (few["ppm"], few["trim"], few["slope"]) == (67, 218 + 126, None)

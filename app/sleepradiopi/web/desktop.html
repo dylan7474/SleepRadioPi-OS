@@ -2362,7 +2362,7 @@ function rigCalKey(R, k) {
         const r = st.result;
         if (!r) toast(`Not calibrated: ${st.error || "it stopped"}.`, false, null, true);
         else if (r.ppm === r.before.ppm && r.trim === r.before.trim) toast(`Already on frequency: within ${Math.round(r.was)} Hz on ${r.used.length} stations. Nothing was changed.`, false, null, true);
-        else toast(`On frequency: it was up to ${Math.round(r.was)} Hz out, and is now within about ${Math.round(r.now ?? r.left)} Hz (${r.used.length} stations, from ${(r.used[0][0] / 1e6).toFixed(1)} to ${(r.used[r.used.length - 1][0] / 1e6).toFixed(1)} MHz).`, false,
+        else toast(`On frequency: it was up to ${Math.round(r.was)} Hz out, and is now about ${Math.round(r.now ?? r.left)} Hz out on a typical one (${r.used.length} stations, from ${(r.used[0][0] / 1e6).toFixed(1)} to ${(r.used[r.used.length - 1][0] / 1e6).toFixed(1)} MHz).`, false,
           () => api("/api/rx/calibrate", { base: R.origin, ppm: r.before.ppm, trim: r.before.trim }), true);
       } catch (e) { rigOops(e); }
       CAL.busy = false;

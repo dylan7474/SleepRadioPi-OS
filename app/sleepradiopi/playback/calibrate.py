@@ -20,8 +20,12 @@ The errors lie on a line against frequency. Its slope is what the dongle's
 parts-per-million setting is out by; what's left when that's put right is
 the trim. Both are given to the receiver (its POST /calibrate), which keeps
 them. With too few stations heard, or all in one band, only the trim is
-moved -- or nothing, and it says so. A station that doesn't fit the line
-(a carrier that wasn't a broadcast station) is left out.
+moved -- or nothing, and it says so. Not every transmitter is where it
+should be (two of fourteen were 440 Hz out one evening, others 30 or 40),
+so the line is the one most of them agree on -- the middle slope, the
+middle of what's left -- and a station well off it is left out. Taking the
+average instead put the receiver 40 Hz out, as FT8 against someone else's
+receiver showed.
 
 The receiver hears one thing at a time, so it's taken round for a minute
 and a half and then put back; if the radio is playing it, that's heard.
@@ -55,7 +59,7 @@ PER_BAND = 2                 # carriers measured in each band
 TONE_OVER_DB = 20.0          # the carrier as a tone in the sound: this far over the rest
 TONE_REACH_HZ = 700.0        # ...and no further than this from where it should be (so the error can be this much)
 SETTLE_S, LISTEN_S, WATERFALL_S = 0.9, 1.6, 2.2
-OUTLIER_HZ = 60.0            # a station this far off the line through the others is left out
+OUTLIER_MIN_HZ = 25.0        # a station off the line the others make by this, and by three times what they usually are, is left out
 LINE_FROM, LINE_SPAN_HZ = 4, 4_000_000      # stations, and how far apart the furthest must be, for the slope to be believed
 PPM_MOST = 200
 
@@ -130,17 +134,28 @@ def fit(points: list[tuple[int, float]], ppm: int, trim: int, shift_hz: int) -> 
             raise ValueError("too few stations of known frequency were heard to go by: try in the evening, when the broadcast bands are full")
         f, e = np.array([p[0] for p in used], float), np.array([p[1] for p in used], float)
         line = len(used) >= LINE_FROM and f.max() - f.min() >= LINE_SPAN_HZ
-        slope, level = np.polyfit(f, e, 1) if line else (0.0, float(np.median(e)))
+        # The line most of them agree on, not the one that splits the difference with a station that's out: the
+        # middle one of the slopes between every two of them well apart, then the middle of what's left.
+        if line:
+            i, j = np.triu_indices(len(f), 1)
+            apart = f[j] - f[i] >= LINE_SPAN_HZ / 4
+            slope = float(np.median((e[j] - e[i])[apart] / (f[j] - f[i])[apart]))
+        else:
+            slope = 0.0
+        level = float(np.median(e - slope * f))
         off = np.abs(e - (slope * f + level))
+        allow = max(OUTLIER_MIN_HZ, 3.0 * float(np.median(off)))      # (a transmitter is a few Hz from its frequency; some aren't)
         worst = int(np.argmax(off))
-        if off[worst] <= OUTLIER_HZ:
+        if off[worst] <= allow:
             break
         out.append(used.pop(worst))
+    if len(used) < LINE_FROM and e.max() - e.min() > 2 * OUTLIER_MIN_HZ:
+        raise ValueError("the few stations heard don't agree with each other: try in the evening, when the broadcast bands are full")
     step = -int(round(slope * 1e6)) if line else 0   # (the setting is in whole parts per million)
     if abs(ppm + step) > PPM_MOST:
         raise ValueError("the stations heard ask for more correction than a dongle can need: nothing was changed")
     after = e + step * 1e-6 * (shift_hz + f)         # what each would read with that set...
-    move = int(round(float(np.mean(after))))         # ...and what's left is the trim's
+    move = int(round(float(np.median(after))))       # ...and what's left is the trim's (the middle of them, again)
     return {"ppm": ppm + step, "trim": trim + move, "slope": round(float(slope * 1e6), 2) if line else None,
             "used": [(int(a), round(float(b), 1)) for a, b in zip(f, e)], "left_out": [(int(a), round(float(b), 1)) for a, b in out],
             "was": round(float(np.abs(e).max()), 1), "left": round(float(np.abs(after - move).max()), 1)}
@@ -290,9 +305,9 @@ class Job:
                 self._post(base + "/calibrate", {"ppm": result["ppm"], "trim": result["trim"]})
                 time.sleep(2.5)                      # (it starts afresh)
                 check = [p[0] for p in result["used"]]
-                check = [check[i] for i in sorted({0, len(check) // 2, len(check) - 1})]
-                now = [e for e in (measure(hz) for hz in check) if e is not None]
-                result["now"] = round(max(abs(e) for e in now), 1) if now else None
+                check = [check[i] for i in sorted({0, len(check) // 4, len(check) // 2, 3 * len(check) // 4, len(check) - 1})]
+                now = [abs(e) for e in (measure(hz) for hz in check) if e is not None]
+                result["now"] = round(float(np.median(now)), 1) if now else None      # (the middle one: any one station can be out)
             else:
                 result["now"] = result["was"]
             result.update(before={"ppm": ppm, "trim": trim})
