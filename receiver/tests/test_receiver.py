@@ -536,3 +536,19 @@ def test_an_r820t_dongle_goes_in_steps_and_they_are_allowed_for(monkeypatch):
     t.tune(13_724_000, "usb", recentre=True)             # an R820T: where it really is
     off = st.r820t_off(t.centre + 125_000_218, 67)
     assert seen[0] == 13_724_000 - t.centre and abs(seen[1] - (seen[0] - off)) < 1e-6 and abs(off) > 1 and t.off == off
+
+
+def test_two_dongles_on_one_computer_each_by_its_serial_and_its_own_ports(monkeypatch):
+    import sleepradio_tuner as st
+    assert not rx.by_serial(0) and not rx.by_serial("1") and rx.by_serial("SRHF0001") and rx.by_serial("00000001")
+    assert 'index = 0;' in rx.airband_conf([{"freq": 145_500_000, "name": "x"}]) and 'serial = "SRVHF001";' in rx.airband_conf([{"freq": 145_500_000, "name": "x"}], device="SRVHF001")
+    assert "dest_port = 47200;" in rx.airband_conf([{"freq": 145_500_000, "name": "x"}], udp_base=47_200)
+    _FakeTuner.made.clear()
+    monkeypatch.setattr(st, "Tuner", _FakeTuner)
+    first, second = rx.Receiver(rx.DEFAULT_BANDS), rx.Receiver(rx.HF_BANDS, device="SRHF0001", shift_hz=125_000_000, nth=1)
+    assert (first.udp_base, first.tcp_port, second.udp_base, second.tcp_port) == (47_000, 47_100, 47_200, 47_101)
+    try:
+        second.listen({"freq": 7_074_000, "mode": "usb"})
+        assert _FakeTuner.made[0].kw["device"] == "SRHF0001" and _FakeTuner.made[0].kw["port"] == 47_101
+    finally:
+        second.rest()

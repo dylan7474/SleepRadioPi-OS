@@ -836,11 +836,8 @@ What's left to do (everything else described here is built and running):
   → Media library); still to do: syncing a whole desktop library in one go.
 - **A needle VU meter** — a physical meter driven from a PWM pin, with the
   Android app's ballistics; one meter first.
-- **VHF and short wave from one computer** — a receiver behind an
-  upconverter tunes 0.1 to 60 MHz now, but it's one dongle to a receiver, so
-  short wave and VHF at once need two computers. Next: both dongles on one
-  (told apart by serial number, a receiver each). Also: *Calibrate* run by
-  the radio itself now and then, as the dongle warms up (it's a key today).
+- **Calibrate, by itself** — a dongle drifts a hundred Hz or so as it
+  warms: *Calibrate* run by the radio now and then (it's a key today).
 - **A dongle inside the radio** — the bigger radios (a Pi 3 inside) have
   the room and the processor for an RTL-SDR of their own: one with a
   temperature-compensated crystal (a Nooelec NESDR SMArt v5), so that it

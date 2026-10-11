@@ -93,6 +93,7 @@ CHUNK_BYTES = 4000           # one packet of 16-bit audio = the ICY interval
 SAMPLE_RATE_MS = 2.4         # what the dongle is asked for (MS/s)
 USABLE = 0.8                 # of that, the part away from the filter's edges
 FFT_SIZE = 512               # a Pi 2 keeps up with 512 (1024 and 2048 overflowed)
+TUNER_PORT = 47_100          # rtl_tcp's, on this machine only, when a frequency is tuned like a rig (sleepradio_tuner.py)
 UDP_BASE = 47_000            # rtl_airband sends channel i's audio to this + i
 SPECTRUM_PORT = UDP_BASE - 1 # ...and, built with rtl_airband_spectrum.py, its spectrum to this, ten times a second
 SPECTRUM_ROWS = 50           # how many of those are kept for whoever draws a waterfall (5 s)
@@ -372,8 +373,16 @@ def centre_for(freqs: list[int], rate_hz: float = SAMPLE_RATE_MS * 1e6) -> int:
     return min((abs(c - mid), c) for gap, c in spots if gap >= want)[1]
 
 
+def by_serial(device) -> bool:
+    """Is this a dongle's serial number (SRHF0001), not its place in the list (0, 1)? With two dongles on one
+    computer the list's order is whichever was found first, so each receiver names its own by serial. (A serial
+    that is all figures would be taken for a place by rtl_tcp and rtl_fm: give the dongle one with letters,
+    `rtl_eeprom -s SRHF0001`, with only it plugged in.)"""
+    return not (str(device).isdigit() and len(str(device)) <= 2)
+
+
 def airband_conf(channels: list[dict], mode: str = "nfm", squelch: bool = True, gain: float = GAIN_DB,
-                 ppm: int = 0, device: int = 0, udp_base: int = UDP_BASE, shift_hz: int = 0) -> str:
+                 ppm: int = 0, device: int | str = 0, udp_base: int = UDP_BASE, shift_hz: int = 0) -> str:
     """rtl_airband's configuration: every channel at once, each one's audio to
     its own UDP port on this machine, sent only while its squelch is open.
     shift_hz: what an upconverter adds to every frequency."""
@@ -385,7 +394,8 @@ def airband_conf(channels: list[dict], mode: str = "nfm", squelch: bool = True, 
             sq += f" highpass = {HIGHPASS_HZ};"
         rows.append(f'    {{ freq = {(c["freq"] + shift_hz) / 1e6:.6f}; modulation = "{mode}";{sq} outputs: ({{ type = "udp_stream"; '
                     f'dest_address = "127.0.0.1"; dest_port = {udp_base + i}; continuous = false; }}); }}')
-    return (f"fft_size = {FFT_SIZE};\ndevices: ({{\n  type = \"rtlsdr\"; index = {device}; gain = {gain:.1f}; correction = {ppm};\n"
+    which = f'serial = "{device}"' if by_serial(device) else f"index = {device}"
+    return (f"fft_size = {FFT_SIZE};\ndevices: ({{\n  type = \"rtlsdr\"; {which}; gain = {gain:.1f}; correction = {ppm};\n"
             f"  centerfreq = {centre / 1e6:.6f}; sample_rate = {SAMPLE_RATE_MS}; mode = \"multichannel\";\n  channels: (\n"
             + ",\n".join(rows) + "\n  );\n});\n")
 
@@ -513,11 +523,13 @@ class Listener:
 
 class Receiver:
     def __init__(self, bands: dict, airband: str | None = None, rtl_fm: str | None = None, gain: float = GAIN_DB,
-                 ppm: int = 0, device: int = 0, skips_file: Path | None = None, bands_file: Path | None = None,
-                 shift_hz: int = 0, trim_hz: int = 0, calibration_file: Path | None = None) -> None:
+                 ppm: int = 0, device: int | str = 0, skips_file: Path | None = None, bands_file: Path | None = None,
+                 shift_hz: int = 0, trim_hz: int = 0, calibration_file: Path | None = None, nth: int = 0) -> None:
         self.bands = dict(bands)
         self.shift_hz, self.trim_hz = shift_hz, trim_hz     # an upconverter's oscillator, and what it and the dongle are out by
         self.calibration_file = calibration_file      # the ppm and trim set from the web side (POST /calibrate), kept here
+        # (a second receiver on the same computer, for a second dongle: its own ports for what it runs underneath)
+        self.udp_base, self.tcp_port = UDP_BASE + 200 * nth, TUNER_PORT + nth
         self.limits = limits_for(shift_hz)
         self.bands_file = bands_file                  # the bands made from the web side (POST /bands), kept here
         self.own = load_bands(bands_file, into={}, limits=self.limits)
@@ -589,7 +601,8 @@ class Receiver:
                 self.spectrum.clear()
                 gen = self.gen
                 self.tuner = st.Tuner(self.rtl_tcp, audio=lambda pcm: self._send(gen, pcm), row=lambda row: self._spectrum_row(gen, row),
-                                      device=self.device, gain=self.gain, ppm=self.ppm, shift_hz=self.shift_hz, trim_hz=self.trim_hz)
+                                      device=self.device, gain=self.gain, ppm=self.ppm, shift_hz=self.shift_hz, trim_hz=self.trim_hz,
+                                      port=self.tcp_port)
                 try:
                     self.tuner.start(spec["freq"], spec["mode"])
                 except ValueError:
@@ -607,24 +620,24 @@ class Receiver:
             else:
                 mode = spec.get("mode") or self.bands[spec["band"]].get("mode", "nfm")
                 conf = airband_conf(channels, mode, spec.get("squelch", True), self.gain, self.ppm, self.device,
-                                    shift_hz=self.shift_hz + self.trim_hz)
+                                    udp_base=self.udp_base, shift_hz=self.shift_hz + self.trim_hz)
                 self.centre = centre_for([c["freq"] for c in channels])
                 self.spectrum.clear()
-                path = Path(tempfile.gettempdir()) / "sleepradio-receiver.conf"
+                path = Path(tempfile.gettempdir()) / f"sleepradio-receiver-{self.tcp_port}.conf"
                 path.write_text(conf)
                 self.rate, self.mixer, self.title = RATE, Mixer(channels), name
                 socks = []
                 for i in range(len(channels)):
                     s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
                     s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-                    s.bind(("127.0.0.1", UDP_BASE + i))
+                    s.bind(("127.0.0.1", self.udp_base + i))
                     socks.append(s)
                 s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)       # (the spectrum: the last of them)
                 s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-                s.bind(("127.0.0.1", SPECTRUM_PORT))
+                s.bind(("127.0.0.1", self.udp_base - 1))
                 socks.append(s)
                 self.proc = subprocess.Popen([self.airband, "-F", "-e", "-c", str(path)], stdout=subprocess.DEVNULL,
-                                             stderr=subprocess.PIPE, env={**os.environ, "SPECTRUM_UDP_PORT": str(SPECTRUM_PORT)})
+                                             stderr=subprocess.PIPE, env={**os.environ, "SPECTRUM_UDP_PORT": str(self.udp_base - 1)})
                 threading.Thread(target=self._airband_run, args=(self.proc, socks, self.mixer, self.gen), name="airband",
                                  daemon=True).start()
             threading.Thread(target=self._stderr_run, args=(self.proc,), name="engine-log", daemon=True).start()
@@ -1079,7 +1092,9 @@ def main(argv=None) -> int:
     ap.add_argument("--ppm", type=int, default=0,
                     help="the dongle's frequency error in parts per million (kal or rtl_test -p measures it): a cheap "
                          "dongle can be 50 ppm out, which at 145 MHz is 7 kHz -- most of a channel")
-    ap.add_argument("--device", type=int, default=0)
+    ap.add_argument("--device", default="0",
+                    help="which dongle: its place in the list (0), or -- with two on one computer, a receiver each -- its "
+                         "serial number (rtl_eeprom shows and sets it; one with letters in it: SRHF0001)")
     ap.add_argument("--upconverter", type=float, default=0.0, metavar="MHZ",
                     help="an upconverter is between the aerial and the dongle, with its oscillator at this many MHz "
                          "(a Ham It Up: 125): the receiver is then a short-wave one, 0.1 to 60 MHz")
@@ -1097,7 +1112,8 @@ def main(argv=None) -> int:
     builtin = {k: dict(v) for k, v in (HF_BANDS if shift else DEFAULT_BANDS).items()}
     receiver = Receiver(load_bands(args.bands, into=builtin, limits=limits_for(shift)), airband=args.airband, gain=args.gain,
                         ppm=args.ppm, device=args.device, skips_file=args.state / "skip.json", bands_file=args.state / "bands.json",
-                        shift_hz=shift, trim_hz=args.trim, calibration_file=args.state / "calibration.json")
+                        shift_hz=shift, trim_hz=args.trim, calibration_file=args.state / "calibration.json",
+                        nth=(args.port - PORT) % 40)
     httpd = ThreadingHTTPServer(("", args.port), make_handler(receiver))
     httpd.daemon_threads = True
     log.info("Sleep Radio receiver on port %d: bands %s", args.port, ", ".join(receiver.bands))

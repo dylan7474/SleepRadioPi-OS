@@ -1,0 +1,28 @@
+[Unit]
+Description=Sleep Radio receiver "%i" (one of several RTL-SDR dongles on this computer, each a radio station)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+# One of these for each dongle when a computer has more than one: `systemctl enable --now sleepradio-receiver@hf`.
+# This dongle's settings are OPTIONS in /etc/sleepradio-receiver/NAME.options, which must say which dongle it is and
+# give it a port of its own:
+#   OPTIONS="--port 8075 --device SRHF0001 --upconverter 125 --ppm 63 --gain 19.7"
+# (the serial number: `rtl_eeprom -s SRHF0001` with only that dongle plugged in, then unplug it and plug it in again).
+EnvironmentFile=-/etc/sleepradio-receiver/%i.options
+ExecStart=/usr/bin/python3 -u /opt/sleepradio-receiver/sleepradio_receiver.py --airband /usr/local/bin/rtl_airband --state %S/sleepradio-receiver-%i $OPTIONS
+# Its own throwaway user, with the group the rtl-sdr package gives the dongle to.
+DynamicUser=yes
+StateDirectory=sleepradio-receiver-%i
+SupplementaryGroups=plugdev
+Restart=always
+# (rtl_tcp with a listener connected takes no notice of being asked to stop)
+TimeoutStopSec=5
+RestartSec=3
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+NoNewPrivileges=yes
+
+[Install]
+WantedBy=multi-user.target

@@ -143,6 +143,32 @@ OPTIONS="--upconverter 125 --ppm 62 --trim 75 --gain 19.7"
 - `--gain`: a long aerial brings megawatt broadcast stations, and the dongle
   has eight bits. If the strongest are clipping, turn it down.
 
+**Two dongles on one computer** (short wave and VHF from the one Pi, a
+receiver each). Each dongle needs a serial number of its own, with letters
+in it (one that is all figures is taken for a place in the list): with only
+that dongle plugged in, `rtl_eeprom -s SRHF0001`, then unplug it and plug it
+in again. The first receiver is the usual service, told which dongle is
+its own:
+
+```
+/etc/sleepradio-receiver/options:     OPTIONS="--ppm 55 --gain 29 --device SRVHF001"
+```
+
+and each further one is `sleepradio-receiver@NAME`
+(`sleepradio-receiver@.service`, to `/etc/systemd/system/`), with its
+settings in `/etc/sleepradio-receiver/NAME.options` -- its dongle, and a
+port of its own:
+
+```
+/etc/sleepradio-receiver/hf.options:  OPTIONS="--port 8075 --device SRHF0001 --upconverter 125 --ppm 63 --gain 19.7"
+sudo systemctl enable --now sleepradio-receiver@hf
+```
+
+On the radio they are two receivers, `http://the-pi:8074` and
+`http://the-pi:8075`, each with its own bands, skips and calibration. Two
+dongles and an upconverter draw more than a Pi 2's USB ports give by
+default: `max_usb_current=1` in `config.txt`, and a 2 A supply.
+
 **AM below 30 MHz is tuned like a rig** (a broadcast station with the
 waterfall round it, 9 kHz wide, no squelch), on any receiver; above it AM is
 still a channel with a squelch, as airband wants. `/status` says what can be
