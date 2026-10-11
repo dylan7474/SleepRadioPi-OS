@@ -1297,8 +1297,11 @@ The cards:
   So the broadcast stations are the second choice now. *The first is FT8
   against a KiwiSDR:* if one is among the radio's stations (the first of
   them is used) and the radio can read FT8, each band's FT8 frequency from
-  80 to 15 m is listened to for one 15-second slot (the same one) on the
-  receiver and on the KiwiSDR at once (the KiwiSDR's sound isn't played), both are decoded,
+  80 to 15 m is listened to a 15-second slot at a time (the same slot) on
+  the receiver and on the KiwiSDR at once -- one slot if that finds three
+  stations in common or the KiwiSDR hears next to nothing (a closed band),
+  up to four where the KiwiSDR hears plenty and the receiver little, as on
+  a poor aerial at night -- (the KiwiSDR's sound isn't played), both are decoded,
   and for every station heard by both in the same slot the difference
   between where its message is in ours and in the KiwiSDR's is the error
   there -- to a Hz or two, the KiwiSDR being on frequency by GPS. Three

@@ -74,7 +74,9 @@ SETTLE_S, LISTEN_S, WATERFALL_S = 0.9, 1.6, 2.2
 OUTLIER_MIN_HZ = 25.0        # a station off the line the others make by this, and by three times what they usually are, is left out
 LINE_FROM, LINE_SPAN_HZ = 4, 4_000_000      # stations, and how far apart the furthest must be, for the slope to be believed
 FT8_HZ = (3_573_000, 7_074_000, 10_136_000, 14_074_000, 18_100_000, 21_074_000)     # where FT8 is, a band each
-FT8_LISTEN_S = 20.5          # a second before a slot begins to 4.5 s after it ends: the whole of it, however late the sound is
+FT8_AFTER_S = 4.5            # listened on after a slot ends, for however late the sound is
+FT8_LISTEN_S = 1.0 + 15.0 + FT8_AFTER_S      # a second before a slot begins to that long after it ends
+FT8_SLOTS_MOST = 4           # slots listened to on a band the KiwiSDR hears plenty on and we hear little
 FT8_CUTS_S = (0.5, 2.0, 3.5)         # how late a slot is cut, each tried (see audio/ft8.py)
 FT8_COMMON = 3               # stations heard by both on a band, for it to count...
 FT8_LINE_FROM = 3            # bands for the slope to be believed: each is good to a Hz or two, so fewer than of stations
@@ -246,7 +248,7 @@ class _Sound:
                     break
                 with self._lock:
                     self._buf += b
-                    del self._buf[:-AUDIO_RATE * 2 * 45]
+                    del self._buf[:-AUDIO_RATE * 2 * 90]
         except (OSError, ValueError):
             pass
         self._closed = True
@@ -325,32 +327,45 @@ class Job:
             other = self._kiwi(f"{kiwi.rstrip('/')}/?f={hz / 1000:.2f}usb")
             theirs: list[np.ndarray] = []
             began = 0.0
+            a: dict = {}
+            b: dict = {}
+            both: list[float] = []
             other.start()
             try:
-                # One slot, the same one for both: from a second before the next begins by the clock to a few after it
-                # ends, for however late each receiver's sound is. (Half a minute from wherever it happened to be
+                # A slot at a time, the same one for both: from a second before it begins by the clock to a few after
+                # it ends, for however late each receiver's sound is. (Half a minute from wherever it happened to be
                 # gave each a whole slot, but not always the same one: a busy band came back with nothing in common.)
                 now = time.time()
-                time.sleep(max(SETTLE_S, (np.ceil((now + SETTLE_S + 1.0) / 15.0) * 15.0 - 1.0) - now))
+                first = float(np.ceil((now + SETTLE_S + 1.0) / 15.0) * 15.0)
+                time.sleep(max(SETTLE_S, first - 1.0 - now))
                 sound.mark()                         # ours from now (it's read as it comes, by a thread of its own)...
-                until = time.monotonic() + FT8_LISTEN_S
-                while time.monotonic() < until and not getattr(other, "ended", None):
-                    block = other.read(0.5)          # ...and the KiwiSDR's, a block at a time, here
-                    if block is not None:
-                        if not theirs:
-                            began = time.time() - len(block) / pcm.SAMPLE_RATE
-                        theirs.append(block)
-                ours, ours_began = sound.since_mark(), sound.began
+                for k in range(FT8_SLOTS_MOST):
+                    until = first + 15.0 * (k + 1) + FT8_AFTER_S
+                    while time.time() < until and not getattr(other, "ended", None):
+                        block = other.read(0.5)      # ...and the KiwiSDR's, a block at a time, here
+                        if block is not None:
+                            if not theirs:
+                                began = time.time() - len(block) / pcm.SAMPLE_RATE
+                            theirs.append(block)
+                    if not theirs:
+                        break                        # (the KiwiSDR didn't answer, or is full: the next band may do)
+                    ours, ours_began = sound.since_mark(), sound.began
+                    mono = np.concatenate(theirs).astype(np.float32)
+                    mono = mono.mean(axis=1) if mono.ndim == 2 else mono
+                    mono = ft8.to_decoder_rate(mono[:len(mono) // ft8.DECIMATE * ft8.DECIMATE].reshape(-1, ft8.DECIMATE).mean(axis=1)).astype(np.float32)
+                    t0 = first + 15.0 * k - 1.0      # this slot's stretch of each, cut out of all that's come
+                    cut = lambda x, x0: (x[max(0, int((t0 - x0) * AUDIO_RATE)):max(0, int((t0 + FT8_LISTEN_S - x0) * AUDIO_RATE))], max(t0, x0))
+                    heard = messages(*cut(mono, began), self._decode)
+                    a.update(messages(*cut(ours, ours_began), self._decode))
+                    b.update(heard)
+                    both = [a[key] - b[key] for key in a if key in b]
+                    # Enough in common: on to the next band. A band the KiwiSDR hears next to nothing on is closed.
+                    # Otherwise it's our receiver that hears few (a poor aerial, a noisy night): another slot, and
+                    # another, up to FT8_SLOTS_MOST -- one slot gave no band at all one night, where four gave two.
+                    if len(both) >= FT8_COMMON or (k == 0 and len(heard) < FT8_COMMON):
+                        break
             finally:
                 other.close()
-            if not theirs:
-                continue                             # (the KiwiSDR didn't answer, or is full: the next band may do)
-            mono = np.concatenate(theirs).astype(np.float32)
-            mono = mono.mean(axis=1) if mono.ndim == 2 else mono
-            mono = mono[:len(mono) // ft8.DECIMATE * ft8.DECIMATE].reshape(-1, ft8.DECIMATE).mean(axis=1)
-            a = messages(ours, ours_began, self._decode)
-            b = messages(ft8.to_decoder_rate(mono).astype(np.float32), began, self._decode)
-            both = [a[k] - b[k] for k in a if k in b]
             # (three stations heard by both; or two, on a poor night, that say the same)
             if len(both) >= FT8_COMMON or (len(both) == 2 and abs(both[0] - both[1]) <= FT8_TWO_AGREE_HZ):
                 points.append((hz, round(float(np.median(both)), 1)))

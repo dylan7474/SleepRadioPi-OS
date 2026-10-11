@@ -175,23 +175,26 @@ def test_a_receiver_already_on_frequency_is_left_alone_and_too_little_heard_says
     assert "short-wave receiver" in _run(vhf, monkeypatch)["error"]
 
 
-def _ft8_run(rx: _Receiver, monkeypatch, open_bands=(7_074_000, 10_136_000, 14_074_000, 18_100_000)) -> dict:
+def _ft8_run(rx: _Receiver, monkeypatch, open_bands=(7_074_000, 10_136_000, 14_074_000, 18_100_000), ours_hears=5) -> dict:
     """A calibration with a KiwiSDR to compare FT8 with. Each receiver's "sound" is only a number saying whose it is
-    and which band (1000s: ours, 2000s: the KiwiSDR's); the "decoder" gives both the same five stations on a band
-    that's open, ours moved by the receiver's error there."""
+    (1000s: ours, 2000s: the KiwiSDR's), which 15 s slot of the clock it is (the tens) and which band (the units).
+    The "decoder" gives the KiwiSDR five stations on a band that's open; ours the same ones moved by the receiver's
+    error there -- all five, or only `ours_hears` of them, a different one each slot."""
     clock = [1_800_000_000.0]
     monkeypatch.setattr(calibrate.time, "sleep", lambda s: clock.__setitem__(0, clock[0] + s))
     monkeypatch.setattr(calibrate.time, "time", lambda: clock[0])
     monkeypatch.setattr(calibrate.time, "monotonic", lambda: clock[0])
     monkeypatch.setattr(calibrate.ft8, "decoder_path", lambda: "/usr/bin/decode_ft8")
     carriers_sound = rx.sound("x")
+    slot = lambda t: (np.floor(np.asarray(t) / 15.0) % 10).astype(int)
 
     class Sound:
         def mark(self) -> None:
             self.began = clock[0]
 
         def since_mark(self) -> np.ndarray:
-            return np.full(int((clock[0] - self.began) * RATE), 1000 + calibrate.FT8_HZ.index(rx.spec["freq"]), np.float32)
+            t = self.began + np.arange(int((clock[0] - self.began) * RATE)) / RATE
+            return (1000 + 10 * slot(t) + calibrate.FT8_HZ.index(rx.spec["freq"])).astype(np.float32)
 
         def take(self, seconds: float, settle: float = 0.0) -> np.ndarray:
             return carriers_sound.take(seconds)      # (the broadcast stations, as in the tests above)
@@ -201,31 +204,35 @@ def _ft8_run(rx: _Receiver, monkeypatch, open_bands=(7_074_000, 10_136_000, 14_0
 
     class Kiwi:
         def __init__(self, url: str) -> None:
-            self.code, self.ended = 2000 + calibrate.FT8_HZ.index(int(round(float(url.split("?f=")[1][:-3]) * 1000))), None
+            self.band, self.ended = calibrate.FT8_HZ.index(int(round(float(url.split("?f=")[1][:-3]) * 1000))), None
 
         def start(self) -> None:
             pass
 
         def read(self, timeout: float = 0.1) -> np.ndarray:
+            t = clock[0] + np.arange(22_050) / 44_100
             clock[0] += 0.5
-            return np.full((22_050, 2), self.code, np.float32)
+            return np.repeat((2000 + 10 * slot(t) + self.band).astype(np.float32)[:, None], 2, axis=1)
 
         def close(self) -> None:
             pass
 
     def decode(samples: np.ndarray, mode: str) -> list[dict]:
         code = int(round(float(np.median(samples))))
-        hz = calibrate.FT8_HZ[code % 1000] if code >= 1000 else 0
+        hz = calibrate.FT8_HZ[code % 10] if code >= 1000 else 0
         if hz not in open_bands:
             return []
-        return [{"snr": 5.0, "dt": 0.5, "hz": 600 + 300 * k + (rx.error(hz) if code < 2000 else 0.0), "text": f"CQ K{k}ABC FN42"} for k in range(5)]
+        ours, n = code < 2000, (code // 10) % 10
+        said = [{"snr": 5.0, "dt": 0.5, "hz": 600 + 300 * k + (rx.error(hz) if ours else 0.0), "text": f"CQ K{k}ABC FN42"} for k in range(5)]
+        return said if not ours or ours_hears >= 5 else [said[(n + j) % 5] for j in range(ours_hears)]
 
     job = calibrate.Job(get=rx.get, post=rx.post, sound=lambda url: Sound(), kiwi=Kiwi, decode=decode)
     if not rx.spec:
         rx.spec = {"freq": 7_300_000, "mode": "usb"}
+    t0 = clock[0]
     job.start("http://receiver:8075", "http://kiwi:8073/")
     job._thread.join(timeout=60)
-    return job.status()
+    return {**job.status(), "took": clock[0] - t0}
 
 
 def test_ft8_against_a_kiwisdr_is_the_yardstick(monkeypatch) -> None:
@@ -236,6 +243,16 @@ def test_ft8_against_a_kiwisdr_is_the_yardstick(monkeypatch) -> None:
     assert rx.ppm == r["ppm"] == 59 and all(abs(rx.error(hz)) < 4 for hz in (7_074_000, 14_074_000, 18_100_000)) and r["now"] < 4
     assert not any(p[0] == "tune" and p[1]["freq"] in (7_264_000, 9_459_000) for p in rx.posts)       # (no round of the broadcast bands)
     assert rx.posts[-1] == ("tune", {"freq": 3_580_000, "mode": "usb"})
+
+
+def test_a_receiver_that_hears_little_is_listened_to_for_longer(monkeypatch) -> None:
+    """One slot on each band found no band at all one night on a long wire, where a minute of each found two."""
+    rx = _Receiver(ppm_out=7.6, hz_out=-130.0, tuned={"freq": 3_580_000, "mode": "usb"})
+    st = _ft8_run(rx, monkeypatch, ours_hears=1)     # one station a slot, a different one each time: a station only counts in the slot both heard it
+    r = st["result"]
+    assert r["by"] == "ft8" and len(r["used"]) == 4 and rx.ppm == 59 and all(abs(rx.error(hz)) < 4 for hz in (7_074_000, 14_074_000))
+    quick = _ft8_run(_Receiver(ppm_out=7.6, hz_out=-130.0, tuned={"freq": 3_580_000, "mode": "usb"}), monkeypatch)
+    assert st["took"] > quick["took"] + 4 * 25 and quick["took"] < 6 * 40      # ...and a good receiver, and the closed bands, aren't kept waiting
 
 
 def test_with_too_few_bands_open_its_the_broadcast_stations(monkeypatch) -> None:
