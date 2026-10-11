@@ -1251,8 +1251,10 @@ The cards:
   and for every station heard by both in the same slot the difference
   between where its message is in ours and in the KiwiSDR's is the error
   there -- to a Hz or two, the KiwiSDR being on frequency by GPS. Three
-  stations in common make a band count; two bands are enough for the trim,
-  four across 4 MHz for the ppm as well. About three minutes. With no
+  stations in common make a band count (or two that agree within 10 Hz);
+  two bands are enough for the trim, four across 4 MHz for the ppm as
+  well; and if only one band is open to both and the broadcast stations
+  won't do either, that one band moves the trim. About three minutes. With no
   KiwiSDR saved, or fewer than two bands open to both, it's the broadcast
   stations after all. (What the "stations" above 13 MHz that stood 440 Hz
   low turned out to be: not stations. A KiwiSDR heard no carrier on any of

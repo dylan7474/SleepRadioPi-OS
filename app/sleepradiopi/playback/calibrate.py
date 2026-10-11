@@ -76,7 +76,8 @@ LINE_FROM, LINE_SPAN_HZ = 4, 4_000_000      # stations, and how far apart the fu
 FT8_HZ = (3_573_000, 7_074_000, 10_136_000, 14_074_000, 18_100_000, 21_074_000)     # where FT8 is, a band each
 FT8_LISTEN_S = 20.5          # a second before a slot begins to 4.5 s after it ends: the whole of it, however late the sound is
 FT8_CUTS_S = (0.5, 2.0, 3.5)         # how late a slot is cut, each tried (see audio/ft8.py)
-FT8_COMMON = 3               # stations heard by both on a band, for it to count
+FT8_COMMON = 3               # stations heard by both on a band, for it to count...
+FT8_TWO_AGREE_HZ = 10.0      # ...or two, if they're within this of each other
 PPM_MOST = 200
 STEP_MOST = 20               # parts per million changed at one go: more than that isn't drift, it's the stations misleading
 AGREE_HZ = 40.0              # ...and those gone by must come within this of the line: one evening half of them stood 440 Hz
@@ -349,7 +350,8 @@ class Job:
             a = messages(ours, ours_began, self._decode)
             b = messages(ft8.to_decoder_rate(mono).astype(np.float32), began, self._decode)
             both = [a[k] - b[k] for k in a if k in b]
-            if len(both) >= FT8_COMMON:
+            # (three stations heard by both; or two, on a poor night, that say the same)
+            if len(both) >= FT8_COMMON or (len(both) == 2 and abs(both[0] - both[1]) <= FT8_TWO_AGREE_HZ):
                 points.append((hz, round(float(np.median(both)), 1)))
                 self._say(points=[list(p) for p in points])
         return points
@@ -412,9 +414,19 @@ class Job:
                     except ValueError as e:          # (too few bands open, or they disagree: the other way, then)
                         log.info("calibrate: FT8 against the KiwiSDR wouldn't do (%s): broadcast stations instead", e)
             if result is None:
+                one = points[0] if len(points) == 1 else None      # (FT8 on a single band: enough for the trim, if it comes to it)
                 points = self._by_stations(base, sound, go, lo, hi)
                 self._say(step="Working it out…", points=[list(p) for p in points])
-                result = fit(points, ppm, trim, shift)
+                try:
+                    result = fit(points, ppm, trim, shift)
+                except ValueError:
+                    if one is None:
+                        raise
+                    # the broadcast stations wouldn't do, but one band of FT8 against the KiwiSDR is a truer word
+                    # than any of them: the trim is moved by that, the ppm left
+                    by, move = "ft8", int(round(one[1]))
+                    result = {"ppm": ppm, "trim": trim + move, "slope": None, "used": [(int(one[0]), one[1])], "left_out": [],
+                              "was": round(abs(one[1]), 1), "left": round(abs(one[1] - move), 1)}
             result["by"] = by
             if (result["ppm"], result["trim"]) != (ppm, trim):
                 self._say(step="Setting the receiver…")

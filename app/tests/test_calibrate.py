@@ -244,6 +244,14 @@ def test_with_too_few_bands_open_its_the_broadcast_stations(monkeypatch) -> None
     assert st["result"]["by"] == "stations" and any(p[0] == "tune" and p[1]["freq"] == 9_459_000 for p in rx.posts)
 
 
+def test_one_band_of_ft8_is_better_than_stations_that_wont_do(monkeypatch) -> None:
+    rx = _Receiver(ppm_out=0.0, hz_out=36.0)         # 36 Hz out everywhere; and no broadcast station to be heard but one
+    rx.STATIONS, rx.OFF_AIR = (9_460_000,), 0
+    st = _ft8_run(rx, monkeypatch, open_bands=(7_074_000,))
+    r = st["result"]
+    assert r["by"] == "ft8" and r["used"] == [[7_074_000, 36.0]] and (rx.ppm, rx.trim) == (67, 218 + 36) and abs(rx.error(14_074_000)) < 1
+
+
 def test_calibrating_from_the_web(tmp_path: Path, monkeypatch) -> None:
     conf = tmp_path / "config.toml"
     conf.write_text("{}")
