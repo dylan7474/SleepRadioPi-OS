@@ -355,7 +355,7 @@ def test_the_reader_from_the_web(tmp_path: Path, monkeypatch) -> None:
         monkeypatch.setenv("SLEEPRADIO_FT8_DECODER", str(decoder))
         st = call("/api/rx/ft8")[1]
         assert st["on"] is False and st["can"] is True and st["messages"] == []
-        assert call("/api/rx/ft8", {"on": True}) == (200, {"cw": False, "ft8": "ft8", "keyboard": None}) and ft8.reader.on
+        assert call("/api/rx/ft8", {"on": True}) == (200, {"cw": False, "ft8": "ft8", "keyboard": None, "pictures": None}) and ft8.reader.on
         assert call("/api/rx/ft8", {"on": True, "mode": "ft4"})[1]["ft8"] == "ft4" and ft8.reader.mode == "ft4"
         for bad in ({"on": "yes"}, {"on": True, "mode": "rtty"}, {}):
             assert call("/api/rx/ft8", bad)[0] == 400 and ft8.reader.mode == "ft4"

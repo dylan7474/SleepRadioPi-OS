@@ -236,6 +236,8 @@ def make_handler(station: Station, output: Mp3Output, speaker=None,
                 status["ft8"] = ft8_mod.reader.mode if ft8_mod.reader.on else None    # ...and their FT8 / FT4 one
                 from sleepradiopi.audio import keyboard as keyboard_mod
                 status["keyboard"] = keyboard_mod.reader.mode if keyboard_mod.reader.on else None    # ...and their PSK31 / RTTY one
+                from sleepradiopi.audio import pictures as pictures_mod
+                status["pictures"] = pictures_mod.reader.mode if pictures_mod.reader.on else None    # ...and the one for SSTV and weather fax
                 status["version"] = updater_mod.this_version()
                 status["desktop"] = DESKTOP_TAG
                 self._send(json.dumps(status).encode(), "application/json")
@@ -380,6 +382,21 @@ def make_handler(station: Station, output: Mp3Output, speaker=None,
                 except ValueError:
                     since = 0
                 self._send(json.dumps(ft8_mod.reader.status(since)).encode(), "application/json")
+            elif path == "/api/rx/pictures":
+                # The SSTV / weather fax reader (audio/pictures.py): whether it's on, what it's doing, the pictures it has.
+                from sleepradiopi.audio import pictures as pictures_mod
+                self._send(json.dumps(pictures_mod.reader.status()).encode(), "application/json")
+            elif path.startswith("/api/rx/pictures/") and path.endswith(".png"):
+                # One of those pictures, as far as it has been read, as a PNG file.
+                from sleepradiopi.audio import pictures as pictures_mod
+                try:
+                    picture = pictures_mod.reader.picture(int(path[len("/api/rx/pictures/"):-4]))
+                except ValueError:
+                    picture = None
+                if picture is None:
+                    self._error("no such picture")
+                    return
+                self._send(pictures_mod.png(picture), "image/png")
             elif path == "/api/rx/name":
                 # The names given to receivers on the desktop.
                 self._send(json.dumps({"receiver_names": self._receiver_names()}).encode(), "application/json")
@@ -746,6 +763,24 @@ def make_handler(station: Station, output: Mp3Output, speaker=None,
                     self._error(str(e) if isinstance(e, ValueError) else 'send {"base": "http://the receiver"}' if not isinstance(e, OSError) else f"the receiver isn't answering ({e})")
                     return
                 self._send(json.dumps(calibrate_mod.job.status()).encode(), "application/json")
+            elif path == "/api/rx/pictures":
+                # {"on": true | false, "mode"?: "sstv" | "fax"}: the reader for SSTV pictures and weather charts
+                # (audio/pictures.py); off again at the next start. Or {"begin": true}: read a chart from now, without
+                # waiting for its start tone; {"end": true}: the picture being read is finished here.
+                from sleepradiopi.audio import pictures as pictures_mod
+                try:
+                    body = self._body()
+                    if body.get("begin") is True or body.get("end") is True:
+                        pictures_mod.reader.order("begin" if body.get("begin") is True else "end")
+                        self._send(json.dumps(pictures_mod.reader.status()).encode(), "application/json")
+                        return
+                    if not isinstance(body["on"], bool) or body.get("mode", "sstv") not in pictures_mod.MODES:
+                        raise ValueError
+                except (ValueError, TypeError, KeyError, AttributeError):
+                    self._error('send {"on": true | false, "mode": "sstv" | "fax"}, {"begin": true} or {"end": true}')
+                    return
+                pictures_mod.reader.switch(body["on"], body.get("mode"))
+                self._send(json.dumps(self._one_reader("pictures" if body["on"] else None)).encode(), "application/json")
             elif path == "/api/rx/name":
                 # {"base": "http://192.168.50.4:8075", "name": "Short wave"} ("" for its own again): what a receiver is
                 # called on the desktop -- two on one computer are otherwise only told apart by their ports. Kept.
@@ -1182,8 +1217,9 @@ def make_handler(station: Station, output: Mp3Output, speaker=None,
 
         def _one_reader(self, on: str | None) -> dict:
             """The readers for receivers, one at a time: each mode has its own place on a band, so with one switched
-            on ("cw", "ft8" or "keyboard") the others go off. -> {"cw", "ft8", "keyboard"}: which is on, and how."""
-            from sleepradiopi.audio import ft8 as ft8_mod, keyboard as keyboard_mod, morse as morse_mod
+            on ("cw", "ft8", "keyboard" or "pictures") the others go off. -> {"cw", "ft8", "keyboard", "pictures"}:
+            which is on, and how."""
+            from sleepradiopi.audio import ft8 as ft8_mod, keyboard as keyboard_mod, morse as morse_mod, pictures as pictures_mod
             if on is not None:
                 if on != "cw":
                     morse_mod.reader.switch(False)
@@ -1191,8 +1227,11 @@ def make_handler(station: Station, output: Mp3Output, speaker=None,
                     ft8_mod.reader.switch(False)
                 if on != "keyboard":
                     keyboard_mod.reader.switch(False)
+                if on != "pictures":
+                    pictures_mod.reader.switch(False)
             return {"cw": morse_mod.reader.on, "ft8": ft8_mod.reader.mode if ft8_mod.reader.on else None,
-                    "keyboard": keyboard_mod.reader.mode if keyboard_mod.reader.on else None}
+                    "keyboard": keyboard_mod.reader.mode if keyboard_mod.reader.on else None,
+                    "pictures": pictures_mod.reader.mode if pictures_mod.reader.on else None}
 
         def _body(self):
             return json.loads(self.rfile.read(int(self.headers.get("Content-Length", 0))) or b"{}")

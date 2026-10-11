@@ -237,6 +237,14 @@
   /* PSK31 / RTTY: the same log, a line a signal, growing as it's typed */
   .rig .rkb .rcopy { flex-basis: 9em; }
   .rig .rkb .rtext { white-space: pre-wrap; letter-spacing: 0; }
+  /* SSTV / weather fax: the picture as it comes, and the last few under it */
+  .rig .rpic .rshow { flex: 0 1 17em; min-height: 6em; overflow: auto; background: #0a1118; border: 1px solid #1e3445; display: flex; align-items: flex-start; justify-content: center; }
+  .rig .rpic .rshow img { display: block; width: 100%; max-width: 640px; height: auto; min-height: 0; flex: none; border: 0; cursor: default; }
+  .rig .rpic .rshow .rnone { padding: 8px; }
+  .rig .rpic .rthumbs { flex: none; display: flex; gap: 5px; overflow-x: auto; min-height: 0; }
+  .rig .rpic .rthumbs a { flex: none; border: 1px solid #1e3445; line-height: 0; }
+  .rig .rpic .rthumbs a.on { border-color: #f0b045; }
+  .rig .rpic .rthumbs img { height: 34px; width: auto; max-width: 90px; min-height: 0; flex: none; display: block; border: 0; cursor: pointer; object-fit: cover; }
   .rig .rnow { flex: none; height: 16px; font: 11px/16px system-ui, sans-serif; color: #58d0e8; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; opacity: 0; transition: opacity .25s; }
   .rig .rnow.on { opacity: 1; }
   .rig .rnow::before { content: "● "; animation: rnow 1s steps(2) infinite; }
@@ -457,7 +465,7 @@
               box-shadow: 0 1px 0 #ffffff80 inset, 0 1px 2px var(--shadow); position: relative; }
   .set h3 { margin: 0 0 2px; font: 700 9.5px var(--display); letter-spacing: .2em; text-transform: uppercase; color: var(--engrave); }
   /* Where to listen: a band a row, a mode a column; a key says where and, after a survey, what was heard there */
-  .mgrid { display: grid; grid-template-columns: auto repeat(6, minmax(0, 1fr)); gap: 4px 5px; align-items: stretch; }
+  .mgrid { display: grid; grid-template-columns: auto repeat(7, minmax(0, 1fr)); gap: 4px 5px; align-items: stretch; }
   .mgrid > b, .mgrid > span { font: 700 9.5px var(--display); letter-spacing: .12em; text-transform: uppercase; color: var(--engrave); align-self: center; }
   .mgrid > b { text-align: center; }
   .mgrid button { border: 1px solid var(--key-line); background: var(--key); color: var(--key-ink); border-radius: 7px; padding: 3px 4px; font-size: 11.5px; line-height: 1.25;
@@ -2003,7 +2011,7 @@ function rigCwKey(R, k) {
     try {
       S = { ...(S || {}), ...(await api("/api/rx/morse", { on: !S?.cw })) };
       Object.assign(CW, { since: 0, overs: [], lines: [], voices: [], st: null, leads: [], lead: null });
-      rigPaint(R); cwDraw(R); ftDraw(R); kbDraw(R);     // (one reader at a time: the radio has switched the others off)
+      rigPaint(R); cwDraw(R); ftDraw(R); kbDraw(R); picDraw(R);     // (one reader at a time: the radio has switched the others off)
       if (S.cw) toast("Morse reader on: the strongest Morse in what this receiver plays is read, a second or so after each over ends. The CW mode narrows it to the signal you're tuned to.", false, null, true);
     } catch (e) { rigOops(e); } }, "Read Morse as text: the strongest keyed tone in what the receiver is playing");
 }
@@ -2168,7 +2176,7 @@ function rigFtKeys(R, k) {
       const to = on && D.ftGo ? ftWhere(R, mode) : null;
       S = { ...(S || {}), ...(await api("/api/rx/ft8", { on, mode, ...(to ? { band: to.band } : {}) })) };
       Object.assign(FT, { since: 0, lines: [], st: null, band: to?.band || null });
-      rigPaint(R); cwDraw(R); ftDraw(R); kbDraw(R);
+      rigPaint(R); cwDraw(R); ftDraw(R); kbDraw(R); picDraw(R);
       if (!on) return;
       const sideband = (D.on(R) ? R.st.mode || R.st.receiving?.mode : null) === "usb";
       if (!to) return toast(D.ftGo ? `${FT_NAMES[mode]} reader on, but this receiver doesn't reach a band it's used on.`
@@ -2290,7 +2298,7 @@ function rigKbKeys(R, k) {
     try {
       S = { ...(S || {}), ...(await api("/api/rx/keyboard", { on, mode })) };
       Object.assign(KB, { since: 0, lines: [], voices: [], st: null });
-      rigPaint(R); cwDraw(R); ftDraw(R); kbDraw(R);
+      rigPaint(R); cwDraw(R); ftDraw(R); kbDraw(R); picDraw(R);
       if (!on) return;
       if (mode === "rtty") return toast("Teleprinter reader on: tune so that a signal's two tones are both in what you hear. Amateurs use the top of each band's data part (14.080 to 14.100 MHz); the German weather service is on 10.1008 MHz all day (tune 10.0993 USB).", false, null, true);
       const to = D.ftGo && ftWhere(R, mode, KB_PSK), sideband = (D.on(R) ? R.st.mode || R.st.receiving?.mode : null) === "usb";
@@ -2356,6 +2364,74 @@ function kbDraw(R) {
   }
   if (changed && stick) box.scrollTop = box.scrollHeight;
 }
+// The picture reader (audio/pictures.py): SSTV pictures and weather charts, drawn as they're read. The radio keeps the
+// last few; the page shows the one coming (asked for again as it grows) and the others small, each a link to itself.
+const PIC = { st: null, busy: false, asked: 0, show: null };
+const PIC_NAMES = { sstv: "SSTV", fax: "Weather fax" }, PIC_KEYS = { sstv: "SSTV", fax: "Fax" };
+// where SSTV is, a band: [band, kHz, the sideband used there]
+const PIC_SSTV = [["80 m", 3730, "lsb"], ["40 m", 7171, "lsb"], ["20 m", 14230, "usb"], ["15 m", 21340, "usb"], ["10 m", 28680, "usb"]];
+// the weather services' fax broadcasts: [who, kHz]. Tuned 1.9 kHz under each in upper sideband, black is 1500 Hz and white 2300
+const PIC_FAX = [["Hamburg 3.855", 3855], ["Hamburg 7.880", 7880], ["Hamburg 13.8825", 13882.5], ["Northwood 2.6185", 2618.5], ["Northwood 4.610", 4610], ["Northwood 8.040", 8040], ["Northwood 11.0865", 11086.5]];
+function rigPicKeys(R, k) {
+  const key = mode => R.dom["k" + mode] = k(PIC_KEYS[mode], async () => {
+    const D = RXD[R.kind], on = S?.pictures !== mode;
+    try {
+      S = { ...(S || {}), ...(await api("/api/rx/pictures", { on, mode })) };
+      PIC.st = null; PIC.show = null;
+      rigPaint(R); cwDraw(R); ftDraw(R); kbDraw(R); picDraw(R);
+      if (!on) return;
+      if (mode === "fax") return toast("Weather fax reader on: a chart is read from its start tone. Modes… has the weather services' frequencies; if a chart is already under way there, Start now begins it from where it is.", false, null, true);
+      const [lo, hi] = D.reach(R), near = D.tuned(R) || 14230000;
+      const to = D.modeGo && PIC_SSTV.map(([band, khz, tune]) => ({ band, hz: khz * 1000, tune })).filter(f => f.hz >= lo && f.hz <= hi).reduce((a, f) => !a || Math.abs(f.hz - near) < Math.abs(a.hz - near) ? f : a, null);
+      if (!to) return toast("SSTV reader on: a picture is read when its header is heard. On 20 m they're on 14.230 MHz, upper sideband.", false, null, true);
+      await D.modeGo(R, to.hz, to.tune);
+      toast(`SSTV reader on, ${to.band}: a picture is drawn as it's sent, from the moment its header is heard (they take one to two minutes).`, false, null, true);
+    } catch (e) { rigOops(e); } }, mode === "sstv" ? "Read slow-scan television: go to the band's SSTV frequency and draw each picture as it's sent" : "Read weather fax: charts from the weather services, drawn as they're sent");
+  return [key("sstv"), key("fax")];
+}
+async function picPoll() {
+  if (!S?.pictures || PIC.busy || Date.now() - PIC.asked < 1500) return;
+  PIC.busy = true; PIC.asked = Date.now();
+  try {
+    const st = await api("/api/rx/pictures");
+    PIC.st = st;
+    if (S.pictures !== (st.on ? st.mode : null)) S = { ...S, pictures: st.on ? st.mode : null };
+  } catch (e) { /* the next one will do */ }
+  PIC.busy = false;
+}
+const picSrc = p => `/api/rx/pictures/${p.n}.png?lines=${p.lines}`;
+function picDraw(R) {
+  const d = R.dom;
+  if (!d?.pic) return;
+  const mode = S?.pictures, on = !!mode && !!d.ksstv; d.pic.hidden = !on;       // (only where there are the keys: not a room)
+  if (!on) return;
+  const st = PIC.st, here = rigOnRadio(R), pics = st?.pictures || [], coming = pics.find(p => !p.done);
+  const shown = pics.find(p => p.n === PIC.show) || coming || pics[pics.length - 1];
+  d.picname.textContent = PIC_NAMES[mode];
+  d.picsays.textContent = !here ? "" : coming ? `${coming.name} · line ${coming.lines}${coming.h ? ` of ${coming.h}` : ""}`
+    : st?.state === "announced" ? "a chart's start tone: it begins when the lines do" : mode === "fax" ? "listening for a chart's start tone" : "listening for a picture's header";
+  d.picbegin.hidden = mode !== "fax" || !!coming; d.picend.hidden = !coming;
+  const src = shown && shown.lines ? picSrc(shown) : "";
+  if (d.picshow.dataset.src !== src || d.picshow.dataset.here !== String(here)) {
+    d.picshow.dataset.src = src; d.picshow.dataset.here = String(here);
+    if (!src) d.picshow.replaceChildren(el("span", { className: "rnone", textContent: !here ? `Listen to this receiver, and ${mode === "fax" ? "the charts" : "the pictures"} in what it plays are drawn here.` : mode === "fax" ? "No chart yet. They come at set times through the day: half an hour's wait is usual." : "No picture yet. Someone has to send one: weekends and evenings are best." }));
+    else {
+      const stick = d.picshow.scrollHeight - d.picshow.scrollTop - d.picshow.clientHeight < 12, img = el("img", { src, alt: `${shown.name}, ${shown.lines} lines` });
+      img.onload = () => { d.picshow.replaceChildren(img); if (stick && shown === coming) d.picshow.scrollTop = d.picshow.scrollHeight; };      // (drawn when it has come: no blink)
+      if (!d.picshow.querySelector("img")) d.picshow.replaceChildren(img);
+    }
+  }
+  const sig = pics.map(p => `${p.n}:${p.done ? p.lines : 0}:${p === shown}`).join();
+  if (d.picthumbs.dataset.sig !== sig) {
+    d.picthumbs.dataset.sig = sig;
+    d.picthumbs.replaceChildren(...pics.filter(p => p.lines).map(p => {
+      const a = el("a", { href: `/api/rx/pictures/${p.n}.png`, target: "_blank", download: `${p.name.replace(/\s+/g, "-").toLowerCase()}-${new Date(p.t * 1000).toISOString().slice(0, 16).replace(/[-:T]/g, "")}.png`,
+                          className: p === shown ? "on" : "", title: `${p.name}, ${new Date(p.t * 1000).toLocaleTimeString("en-GB")}: click to look at it, again to save it` }, el("img", { src: picSrc(p), alt: p.name }));
+      a.onclick = e => { if (PIC.show !== p.n && p !== shown) { e.preventDefault(); PIC.show = p.n; picDraw(R); } };
+      return a;
+    }));
+  }
+}
 // Name…: a receiver called what you like ("Short wave", "VHF"), in Receivers, on its window and wherever it's
 // mentioned. Two receivers on one computer are otherwise only told apart by their ports. Typed where the key was.
 function rigNameKey(R, k) {
@@ -2406,7 +2482,7 @@ function rigCalKey(R, k) {
 // switch the right reader on; and a survey, which goes round them, listens a slot or a few seconds on each, and writes
 // on the keys what it heard. What a survey found is kept in this browser, a receiver at a time.
 const MODES = { rx: null, run: null, found: (() => { try { return JSON.parse(localStorage.getItem("srd.modes")) || {}; } catch (e) { return {}; } })() };
-const MODE_COLS = [["ft8", "FT8"], ["ft4", "FT4"], ["wspr", "WSPR"], ["psk31", "PSK31"], ["rtty", "Teleprinter"], ["cw", "Morse"]];
+const MODE_COLS = [["ft8", "FT8"], ["ft4", "FT4"], ["wspr", "WSPR"], ["psk31", "PSK31"], ["rtty", "Teleprinter"], ["cw", "Morse"], ["sstv", "SSTV"]];
 // [band, kHz]: where teleprinters gather (the bottom of it; they spread up from there), and where Morse does
 const MODE_RTTY = [["80 m", 3590], ["40 m", 7040], ["30 m", 10140], ["20 m", 14085], ["17 m", 18105], ["15 m", 21085], ["12 m", 24925], ["10 m", 28085]];
 const MODE_CW = [["160 m", 1830], ["80 m", 3530], ["40 m", 7020], ["30 m", 10115], ["20 m", 14030], ["17 m", 18080], ["15 m", 21030], ["12 m", 24900], ["10 m", 28030]];
@@ -2418,7 +2494,9 @@ function modePlaces(R) {                            // every place this receiver
   const [lo, hi] = RXD[R.kind].reach(R), out = [];
   const add = (mode, list, tune = "usb") => { for (const [band, khz] of list) if (khz * 1000 >= lo && khz * 1000 <= hi) out.push({ mode, band, hz: khz * 1000, tune, key: `${mode}:${band}` }); };
   add("ft8", FT_FREQS.ft8); add("ft4", FT_FREQS.ft4); add("wspr", FT_FREQS.wspr); add("psk31", KB_PSK); add("rtty", MODE_RTTY); add("cw", MODE_CW, "cw");
+  for (const [band, khz, tune] of PIC_SSTV) if (khz * 1000 >= lo && khz * 1000 <= hi) out.push({ mode: "sstv", band, hz: khz * 1000, tune, key: `sstv:${band}` });
   for (const [name, khz] of MODE_WEATHER) if (khz * 1000 >= lo && khz * 1000 <= hi) out.push({ mode: "rtty", band: name, hz: (khz - 1.5) * 1000, tune: "usb", key: `wx:${khz}`, weather: true });
+  for (const [name, khz] of PIC_FAX) if (khz * 1000 >= lo && khz * 1000 <= hi) out.push({ mode: "fax", band: name, hz: (khz - 1.9) * 1000, tune: "usb", key: `fax:${khz}`, fax: true });
   return out;
 }
 async function modeGo(R, p) {                       // the receiver there, and the reader for it on
@@ -2427,6 +2505,9 @@ async function modeGo(R, p) {                       // the receiver there, and t
   if (FT_NAMES[p.mode]) {
     S = { ...(S || {}), ...(await api("/api/rx/ft8", { on: true, mode: p.mode, band: p.band })) };
     Object.assign(FT, { since: 0, lines: [], st: null, band: p.band });
+  } else if (PIC_NAMES[p.mode]) {
+    S = { ...(S || {}), ...(await api("/api/rx/pictures", { on: true, mode: p.mode })) };
+    PIC.st = null; PIC.show = null;
   } else if (p.mode === "cw") {
     if (!S?.cw) { S = { ...(S || {}), ...(await api("/api/rx/morse", { on: true })) }; Object.assign(CW, { since: 0, overs: [], lines: [], voices: [], st: null, leads: [], lead: null }); }
   } else {
@@ -2489,9 +2570,9 @@ async function modeSurvey(R, modes) {
 const modeAge = at => { const m = Math.round((Date.now() - at) / 60000); return m < 1 ? "just now" : m < 60 ? `${m} min ago` : m < 1440 ? `${Math.round(m / 60)} h ago` : `${Math.round(m / 1440)} d ago`; };
 function modeKey(R, p) {
   const f = MODES.found[R.origin]?.[p.key], what = FT_NAMES[p.mode] ? "heard" : p.mode === "psk31" ? "signal" + (f?.n === 1 ? "" : "s") : "there";
-  const b = el("button", { type: "button", className: (f?.n ? "heard" : "") + (MODES.run?.at === p.key ? " now" : "") }, p.weather ? p.band.replace(" MHz", "") : (p.hz / 1e6).toFixed(p.hz % 1000 ? 4 : 3),
+  const b = el("button", { type: "button", className: (f?.n ? "heard" : "") + (MODES.run?.at === p.key ? " now" : "") }, p.weather ? p.band.replace(" MHz", "") : p.fax ? p.band : (p.hz / 1e6).toFixed(p.hz % 1000 ? 4 : 3),
                el("small", { textContent: MODES.run?.at === p.key ? "listening…" : !f ? "\u00a0" : !f.n ? "nothing" : p.weather ? "there" : f.km ? `${f.n} · ${f.km.toLocaleString("en-GB")} km` : `${f.n} ${what}` }));
-  b.title = `${p.weather ? "The German weather service's teleprinter on " + p.band : p.band + " " + (MODE_COLS.find(c => c[0] === p.mode) || [0, p.mode])[1]}: go there and read it`
+  b.title = `${p.weather ? "The German weather service's teleprinter on " + p.band : p.fax ? "Weather fax from " + p.band + " MHz" : p.band + " " + (MODE_COLS.find(c => c[0] === p.mode) || [0, p.mode])[1]}: go there and read it`
     + (f ? ` · surveyed ${modeAge(f.at)}: ${!f.n ? "nothing heard" : p.weather ? "it was there" : `${f.n} ${what}${f.km ? `, the farthest ${f.km.toLocaleString("en-GB")} km away` : ""}`}` : "");
   b.onclick = async () => { if (MODES.run) return toast("A survey is running: stop it first."); try { await modeGo(R, p); open(R.o.id); } catch (e) { rigOops(e); } };
   return b;
@@ -2690,7 +2771,7 @@ const RXD = {
             try { await rxSay(R.origin, "/skip", { freq: hz, on: true }); R.bands = null; toast(`The band now skips ${c.name}. (Channels… has it back.)`); } catch (e) { rigOops(e); } }), "Leave this channel out of the band"),
           k("◀", need(() => this.step(R, -1)), "One channel down"), k("▶", need(() => this.step(R, 1)), "One channel up")),
         el("div", { className: "rgrp" }, k("Channels…", need(async () => { if (this.band(R).range) return toast(`${this.band(R).name} is tuned across: it has no channels.`); const id = `rxb:${R.origin}:${this.band(R).id}`; if (!O[id]) await loadFolder(mk({ id: "rxf:" + R.origin, kind: "folder", box: "rxbands", origin: R.origin, title: `${R.o.title}: bands`, kids: [], sym: "⌁", alt: true })); open(id); }), "The band's channels as stations: drag one onto a button"),
-          k("Bands…", () => this.folder(R), "The bands as folders"), rigNameKey(R, k), rigCalKey(R, k), rigNrKey(R, k), rigCwKey(R, k), ...rigFtKeys(R, k), ...rigKbKeys(R, k), k("Modes…", () => { MODES.rx = R.o.id; open(PANEL.modes.id); drawDesk(); }, "Where to listen: FT8, FT4, WSPR, PSK31, teleprinter and Morse band by band, and a survey of what's there now"), k("Find…", () => open(PANEL.findreceiver.id), "Other people's receivers on the internet"))];
+          k("Bands…", () => this.folder(R), "The bands as folders"), rigNameKey(R, k), rigCalKey(R, k), rigNrKey(R, k), rigCwKey(R, k), ...rigFtKeys(R, k), ...rigKbKeys(R, k), ...rigPicKeys(R, k), k("Modes…", () => { MODES.rx = R.o.id; open(PANEL.modes.id); drawDesk(); }, "Where to listen: FT8, FT4, WSPR, PSK31, teleprinter, Morse, SSTV and weather fax band by band, and a survey of what's there now"), k("Find…", () => open(PANEL.findreceiver.id), "Other people's receivers on the internet"))];
     },
     lamps(R, w) { R.dom.kscan?.classList.toggle("on", !!this.band(R) && this.band(R).mode !== "wfm" && !R.st.hold); R.dom.khold?.classList.toggle("on", !!R.st?.hold); R.dom.kmon?.classList.toggle("on", !!this.monitored(R)); },
   },
@@ -2776,7 +2857,7 @@ const RXD = {
               if (have.some(o => o.url === st.url)) return toast("That one is already with your stations.");
               await api("/api/radio/stations", { stations: [...have, st] }); await loadFolder(STATIONS); toast(`Saved “${st.name}” with your stations.`); drawDesk();
             } catch (e) { rigOops(e); } }, "Keep this frequency as a station (drag it onto a button from Stations)"),
-          rigNameKey(R, k), rigNrKey(R, k), rigCwKey(R, k), ...rigFtKeys(R, k), ...rigKbKeys(R, k), k("Modes…", () => { MODES.rx = R.o.id; open(PANEL.modes.id); drawDesk(); }, "Where to listen: FT8, FT4, WSPR, PSK31, teleprinter and Morse band by band, and a survey of what's there now"), k("Find…", () => open(PANEL.findreceiver.id), "Other people's receivers on the internet"))];
+          rigNameKey(R, k), rigNrKey(R, k), rigCwKey(R, k), ...rigFtKeys(R, k), ...rigKbKeys(R, k), ...rigPicKeys(R, k), k("Modes…", () => { MODES.rx = R.o.id; open(PANEL.modes.id); drawDesk(); }, "Where to listen: FT8, FT4, WSPR, PSK31, teleprinter, Morse, SSTV and weather fax band by band, and a survey of what's there now"), k("Find…", () => open(PANEL.findreceiver.id), "Other people's receivers on the internet"))];
     },
     stepWord(R) { return R.step >= 1000 ? `${R.step / 1000} kHz` : `${R.step} Hz`; },
     lamps() {},
@@ -3028,6 +3109,7 @@ function rigPaint(R) {                              // the words and lamps on th
   if (R.dom.kcw) R.dom.kcw.classList.toggle("on", !!S?.cw);
   for (const m of ["ft8", "ft4", "wspr"]) R.dom["k" + m]?.classList.toggle("on", S?.ft8 === m);
   for (const m of ["psk31", "rtty"]) R.dom["k" + m]?.classList.toggle("on", S?.keyboard === m);
+  for (const m of ["sstv", "fax"]) R.dom["k" + m]?.classList.toggle("on", S?.pictures === m);
   d.fill.style.width = Math.max(0, Math.min(100, w.meter * 100)) + "%"; d.fill.style.backgroundSize = d.fill.parentNode.clientWidth + "px 100%";
   const [lo, hi] = R.range || [0, 0], wide = hi - lo > 2e6;
   d.scale.replaceChildren(...[0, 1, 2, 3, 4].map(i => el("span", { textContent: R.range ? ((lo + (hi - lo) * i / 4) / 1e6).toFixed(wide ? 2 : 3) : "" })));
@@ -3044,7 +3126,8 @@ async function rigPoll() {
     if (R.dom?.kcw) await cwPoll();
     if (R.dom?.kft8) await ftPoll();
     if (R.dom?.kpsk31) await kbPoll();
-    rigDraw(R); rigPaint(R); cwDraw(R); ftDraw(R); kbDraw(R);
+    if (R.dom?.ksstv) await picPoll();
+    rigDraw(R); rigPaint(R); cwDraw(R); ftDraw(R); kbDraw(R); picDraw(R);
   }
 }
 function rigView(o, box, win) {
@@ -3109,12 +3192,17 @@ function rigView(o, box, win) {
               el("h4", { title: "A line: when it began, where in the sound the signal is, and what it's sending" }, d.kbname = el("b"), d.kbsays = el("span"),
                  cwKey("Copy", "Copy everything read so far", () => KB.lines.length ? cwCopy(KB.lines.map(l => `${kbWho(l)}  ${l.text}`).join("\n"), "the text read so far") : toast("Nothing read yet.")),
                  cwKey("Clear", "Empty the list", () => { KB.lines = []; kbDraw(R); })),
-              d.kbcopy = el("div", { className: "rcopy" })));
+              d.kbcopy = el("div", { className: "rcopy" })),
+    d.pic = el("div", { className: "rcw rft rpic", hidden: true },
+              el("h4", { title: "The picture being read, as far as it has come; under it the last few (the radio keeps six, until it restarts)" }, d.picname = el("b"), d.picsays = el("span"),
+                 d.picbegin = cwKey("Start now", "A chart already under way: read it from here, without waiting for the next one's start tone (its lines will begin wherever they happen to)", async () => { try { await api("/api/rx/pictures", { begin: true }); PIC.asked = 0; } catch (e) { rigOops(e); } }),
+                 d.picend = cwKey("End", "Finish the picture being read here, and keep it", async () => { try { await api("/api/rx/pictures", { end: true }); PIC.asked = 0; } catch (e) { rigOops(e); } })),
+              d.picshow = el("div", { className: "rshow" }), d.picthumbs = el("div", { className: "rthumbs" })));
   d.copy.onclick = d.ftcopy.onclick = e => { const c = e.target.closest(".call"); if (c) { const call = c.textContent.replace(/^<|>$/g, ""); cwCopy(call, call); } };
   d.tape.setAttribute("aria-hidden", "true");
   const foot = el("div", { className: "rfoot" }, ...D.foot(R, k), el("span", { className: "rtip", textContent: D.tip || (R.kind !== "own" ? "Click the scope to tune · wheel to step, Shift for fine · drag the frequency onto a button · be a good guest" : "Click the scope to tune · drag the frequency onto a button") }));
   box.append(el("div", { className: "wbody" }, el("div", { className: "rig" }, bands, tft, modes, foot)));
-  rigDraw(R); setTimeout(() => { rigPaint(R); cwDraw(R); ftDraw(R); kbDraw(R); }, 0);
+  rigDraw(R); setTimeout(() => { rigPaint(R); cwDraw(R); ftDraw(R); kbDraw(R); picDraw(R); }, 0);
 }
 
 function folderView(o, box, win) {
@@ -3152,7 +3240,7 @@ function folderView(o, box, win) {
   else if (o.box === "stations") tools.append(T("Find a station", () => open(PANEL.findstation.id)), T("Find a receiver", () => open(PANEL.findreceiver.id)), T("Find a room", () => open(PANEL.findroom.id)), el("span", { className: "note", textContent: "Drag a station onto a button to keep it there" }));
   else if (o.box === "podcasts") tools.append(T("Follow a podcast", () => open(PANEL.findpodcast.id)), el("span", { className: "note", textContent: "Open a show for its episodes" }));
   else if (o.box === "lists") tools.append(T("New theme", () => open(PANEL.newlist.id)), el("span", { className: "note", textContent: "Double-click a theme to change it · drag one onto the radio to play it" }));
-  else if (o.box === "receiver") tools.append(T("Find a receiver", () => open(PANEL.findreceiver.id)), T("Find a room", () => open(PANEL.findroom.id)), el("span", { className: "note", textContent: "Each opens as a rig · they're the receivers your saved stations use" }));
+  else if (o.box === "receiver") tools.append(T("Find a receiver", () => open(PANEL.findreceiver.id)), T("Find a room", () => open(PANEL.findroom.id)), el("span", { className: "note", textContent: "Each opens as a rig · they're the receivers your saved stations use · Name… in a rig's window gives it a name of your own" }));
   else if (o.box === "rxbands" || o.box === "rxband") {
     const origin = o.origin;
     tools.append(T("Tune…", () => { win.naming = !win.naming; win.banding = false; drawDesk(); }));
@@ -4082,7 +4170,7 @@ const UI = {
       const bands = MODE_BANDS.filter(b => places.some(p => p.band === b));
       const grid = el("div", { className: "mgrid" }, el("span"), ...MODE_COLS.map(c => el("b", { textContent: c[1] })));
       for (const band of bands) { grid.append(el("span", { textContent: band })); for (const [mode] of MODE_COLS) { const p = at([mode, band]); grid.append(p ? modeKey(R, p) : el("i", { textContent: "·" })); } }
-      const weather = places.filter(p => p.weather), surveyed = Object.values(MODES.found[R.origin] || {}).reduce((a, f) => Math.max(a, f.at), 0);
+      const weather = places.filter(p => p.weather), faxes = places.filter(p => p.fax), surveyed = Object.values(MODES.found[R.origin] || {}).reduce((a, f) => Math.max(a, f.at), 0);
       const go = modes => () => modeSurvey(R, modes), secs = modes => places.filter(p => modes.includes(p.mode) && (p.mode !== "rtty" || p.weather)).reduce((a, p) => a + ({ ft8: 32, ft4: 22 }[p.mode] || 17), 0);
       const mins = modes => { const m = Math.round(secs(modes) / 60); return `about ${m} minute${m === 1 ? "" : "s"}`; };
       return [
@@ -4090,6 +4178,8 @@ const UI = {
           help("A key takes the receiver there and switches the reader for that mode on. Frequencies are in MHz; all in upper sideband but Morse. A teleprinter key is the bottom of where they gather: tune up from it. WSPR is beacons of a watt or less, two minutes at a time: the list shows where each is and how far.")),
         weather.length ? grp("Teleprinter broadcasts", el("div", { className: "mgrid", style: "grid-template-columns:repeat(5, minmax(0, 1fr))" }, ...weather.map(p => modeKey(R, p))),
           help("The German weather service: shipping forecasts and weather reports, most of the day and night. Each key is tuned 1.5 kHz under the frequency it's known by, so that both tones are heard.")) : null,
+        faxes.length ? grp("Weather fax", el("div", { className: "mgrid", style: "grid-template-columns:repeat(4, minmax(0, 1fr))" }, ...faxes.map(p => modeKey(R, p))),
+          help("Weather charts from the German service (Hamburg) and the British (Northwood), sent through the day and night: a key goes there and reads the next chart from its start tone. Start now, in the receiver's window, begins one that's already under way.")) : null,
         grp("Survey: what's there now",
           run ? line(sbtn("Stop", () => { run.stop = true; drawDesk(); }, "danger"), el("span", { className: "note", textContent: `Listening: ${run.i} of ${run.of}…` }))
               : line(sbtn("FT8 on every band", go(["ft8"]), "primary"), sbtn("Everything", go(["ft8", "ft4", "psk31", "rtty"]))),
@@ -4267,7 +4357,7 @@ const SUMS = {
   lists: d => `${d.profiles.length} theme${d.profiles.length === 1 ? "" : "s"} · ${d.artists.length} artists to choose from`,
   findstation: () => "From the internet radio directory",
   findreceiver: () => "Other people's receivers on the internet",
-  modes: () => { const R = O[MODES.rx]?.rig; return R ? `${R.o.title}: FT8, FT4, WSPR, PSK31, teleprinter and Morse, band by band` : "FT8, FT4, WSPR, PSK31, teleprinter and Morse, band by band"; },
+  modes: () => { const R = O[MODES.rx]?.rig; return R ? `${R.o.title}: FT8, FT4, WSPR, PSK31, teleprinter, Morse, SSTV and weather fax, band by band` : "FT8, FT4, WSPR, PSK31, teleprinter, Morse, SSTV and weather fax, band by band"; },
   findroom: () => "Radio amateurs' digital voice rooms",
   findpodcast: () => "From Apple's podcast directory",
 };

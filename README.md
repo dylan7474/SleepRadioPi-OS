@@ -288,6 +288,15 @@ Actions, Sleep timer and Radio folders open:
   the power it's sending: "200 mW, 1,408 km" says a good deal about the
   band. The decoder is K9AN and K1JT's wsprd, from WSJT-X (GPL), built into
   the image. See `app/sleepradiopi/audio/ft8.py`.
+- **Pictures: SSTV and weather fax.** The *SSTV* key draws slow-scan
+  television pictures in a receiver's window as they're sent, line by line
+  (the amateur bands' picture mode: 14.230 MHz; the space station uses it
+  too); *Fax* does the same for the weather services' charts -- isobars,
+  fronts and coastlines from Hamburg and Northwood, round the clock. The
+  last six stay to look at and save. The radio's own reader again, tried
+  on a made-up test card in seven SSTV modes and on a real chart from
+  Northwood on 4.610 MHz. See `app/sleepradiopi/audio/sstv.py` and
+  `pictures.py`.
 - **PSK31 and RTTY, read as text.** The *PSK* and *RTTY* keys in a
   receiver's window read the two keyboard modes as they're typed. PSK31:
   every signal in what the receiver hears at once, a line each (the key
@@ -299,7 +308,7 @@ Actions, Sleep timer and Radio folders open:
   air; neither says anything of noise or a plain whistle. See
   `app/sleepradiopi/audio/psk.py`, `rtty.py` and `keyboard.py`.
 - **Where to listen.** *Modes…* in a receiver's window opens a table: a
-  band a row, a mode a column (FT8, FT4, WSPR, PSK31, teleprinter, Morse), each
+  band a row, a mode a column (FT8, FT4, WSPR, PSK31, teleprinter, Morse, SSTV), each
   square a key that takes the receiver to that mode's place on that band
   and switches its reader on; and the German weather service's teleprinter
   broadcasts. *Survey* goes round them by itself -- a whole slot on each
@@ -876,6 +885,12 @@ What's left to do (everything else described here is built and running):
   round on the hour and keep a day's picture of each band; and amateur
   teleprinters and Morse, which have no one frequency, need a finder that
   sweeps their part of each band.
+- **Pictures: more of them** — an SSTV picture is only read from its
+  header: one joined late could be started from its line syncs (their
+  spacing says the mode). A chart begun by hand has its lines start
+  wherever they happen to: a way to slide it straight. Speckle from a weak
+  signal could be cleaned. Pictures kept on the card, not only in memory.
+  Hellschreiber, the same idea for text.
 - **PSK31 and RTTY: more of them** — the PSK31 reader does plain PSK31
   (BPSK); the faster and four-phase kinds (PSK63, QPSK31) are left. The
   RTTY reader reads one signal, the strongest: in a contest there are a

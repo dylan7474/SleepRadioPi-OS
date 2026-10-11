@@ -1242,6 +1242,33 @@ The cards:
   called in Receivers, on its window, and in what's said about it. A
   receiver of your own is otherwise its address, and two on one computer
   differ only in the port.
+  *Pictures: SSTV and weather fax* (the **SSTV** and **Fax** keys in a
+  receiver's window; `POST /api/rx/pictures {"on": true | false, "mode":
+  "sstv" | "fax"}`, `{"begin": true}` to read a chart from now, `{"end":
+  true}` to finish the one being read; `GET /api/rx/pictures` for what
+  it's doing and the pictures kept, `GET /api/rx/pictures/N.png` for one of
+  them as far as it has come). Both send a picture as a tone whose pitch
+  is the brightness, 1500 Hz black to 2300 Hz white, a line at a time. The
+  pitch is followed by moving 1900 Hz to nothing, low-passing, and taking
+  how fast the phase turns; a dot is the mean pitch over its share of the
+  line (`audio/sstv.py`).
+  SSTV: a picture's header (1900 Hz, then eight bits at 1100 and 1300 Hz)
+  names its mode -- Martin M1 and M2, Scottie S1, S2 and DX, Robot 36, and
+  PD 50, 90, 120, 160 and 180 are read -- and the lines are laid out by
+  the clock from there, each nudged a quarter of the way to where its
+  1200 Hz sync pulse really is, so a transmitter with a clock that's out
+  doesn't give a slanted picture. The picture grows on the page as it's
+  sent. One joined after its header isn't read (not yet).
+  Weather fax: 120 lines a minute, 1024 dots kept to a line. A chart is
+  waited for by its 300 Hz start tone; the phasing lines after it (white,
+  with a black bar at the edge) say where a line begins; the 450 Hz tone
+  ends it. *Start now* reads one already under way, its lines beginning
+  wherever they happen to. The weather services' frequencies are keys in
+  *Where to listen* (tuned 1.9 kHz under each in upper sideband, so black
+  is 1500 Hz and white 2300).
+  The reading is in a process of its own (`audio/pictures.py`), which
+  passes back each new line; the last six pictures are kept in memory and
+  made into PNG files when the page asks. Nothing is written to the card.
   *One reader at a time:* Morse, FT8 / FT4 and PSK31 / RTTY each have
   their own place on a band, so switching one on switches the others off
   (each of those calls answers with all three: `{"cw", "ft8",

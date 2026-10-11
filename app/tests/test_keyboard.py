@@ -161,7 +161,7 @@ def test_the_reader_from_the_web(tmp_path: Path, monkeypatch) -> None:
 
     try:
         assert call("/api/rx/keyboard")[1]["on"] is False
-        assert call("/api/rx/keyboard", {"on": True}) == (200, {"cw": False, "ft8": None, "keyboard": "psk31"}) and keyboard.reader.on
+        assert call("/api/rx/keyboard", {"on": True}) == (200, {"cw": False, "ft8": None, "keyboard": "psk31", "pictures": None}) and keyboard.reader.on
         assert call("/api/rx/keyboard", {"on": True, "mode": "rtty"})[1]["keyboard"] == "rtty" and keyboard.reader.mode == "rtty"
         for bad in ({"on": "yes"}, {"on": True, "mode": "ft8"}, {}):
             assert call("/api/rx/keyboard", bad)[0] == 400 and keyboard.reader.mode == "rtty"
@@ -172,9 +172,9 @@ def test_the_reader_from_the_web(tmp_path: Path, monkeypatch) -> None:
         decoder.write_text("#!/bin/sh\n")
         decoder.chmod(0o755)
         monkeypatch.setenv("SLEEPRADIO_FT8_DECODER", str(decoder))
-        assert call("/api/rx/ft8", {"on": True, "mode": "ft8"}) == (200, {"cw": False, "ft8": "ft8", "keyboard": None}) and not keyboard.reader.on
-        assert call("/api/rx/morse", {"on": True}) == (200, {"cw": True, "ft8": None, "keyboard": None}) and not ft8.reader.on
-        assert call("/api/rx/keyboard", {"on": True, "mode": "psk31"}) == (200, {"cw": False, "ft8": None, "keyboard": "psk31"}) and not morse.reader.on
+        assert call("/api/rx/ft8", {"on": True, "mode": "ft8"}) == (200, {"cw": False, "ft8": "ft8", "keyboard": None, "pictures": None}) and not keyboard.reader.on
+        assert call("/api/rx/morse", {"on": True}) == (200, {"cw": True, "ft8": None, "keyboard": None, "pictures": None}) and not ft8.reader.on
+        assert call("/api/rx/keyboard", {"on": True, "mode": "psk31"}) == (200, {"cw": False, "ft8": None, "keyboard": "psk31", "pictures": None}) and not morse.reader.on
         assert call("/api/rx/keyboard", {"on": False})[1]["keyboard"] is None and not keyboard.reader.on
     finally:
         keyboard.reader.switch(False)
