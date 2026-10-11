@@ -1143,6 +1143,29 @@ The cards:
   process it took the processor from the sound, which stuttered on the
   Zero 2 W. There it takes about a quarter of one core in a pile-up, and
   next to nothing when all is quiet (`audio/morse.py`).
+  *FT8 and FT4, read as text* (the **FT8** and **FT4** keys in a
+  receiver's window; `POST /api/rx/ft8 {"on": true | false, "mode": "ft8" |
+  "ft4"}`, off again at the next start): a key takes the receiver to the
+  mode's frequency on the band it's on, in upper sideband (14.074 MHz for
+  FT8 on 20 m, 14.080 for FT4; 20 m if it was nowhere yet; an OpenWebRX is
+  tuned by hand), and the radio cuts what it plays into the mode's slots by
+  the clock -- 15 seconds for FT8, 7.5 for FT4 -- and reads each one when
+  it has ended: some dozens of messages a slot on a busy band, each a line
+  under the waterfall with its slot's time (UTC), how strong it was (a
+  rough guide, not the figure other programs give) and where in the sound,
+  the calls picked out (a click copies one), a CQ in green, and a bar
+  showing how far through the slot it is. The page keeps the last 300
+  lines, gone when the page is closed. The decoding is ft8_lib's `decode_ft8` (MIT, built into the image:
+  `package/ft8-lib`), run at low priority on each slot: about half a second
+  of one core on the Zero 2 W's processor. The sound a receiver sends is
+  late, more so across the internet, so a slot is cut a second after the
+  clock's: that reads sound up to two and a half seconds late as well as
+  sound on time (measured on 20 m). The radio's clock has to be right to a
+  second or so, which it is with the network's time. `GET
+  /api/rx/ft8?since=N` gives whether it's on, the mode, whether this radio
+  has the decoder, the slots read, and the messages after number N (each
+  with its slot's time, strength, and pitch). Receive only: nothing is
+  sent, on the air or to any website (`audio/ft8.py`).
   A receiver of your own can be monitored too (the *Monitor* key in its
   window): what it's doing just then -- a band, a held channel or one
   frequency -- comes over the programme whenever a squelch opens, named by

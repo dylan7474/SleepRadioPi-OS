@@ -232,6 +232,8 @@ def make_handler(station: Station, output: Mp3Output, speaker=None,
                 status["nr"] = denoise_mod.LEVEL          # receivers' noise reduction: off, light, strong or rig
                 from sleepradiopi.audio import morse as morse_mod
                 status["cw"] = morse_mod.reader.on        # ...and their Morse reader
+                from sleepradiopi.audio import ft8 as ft8_mod
+                status["ft8"] = ft8_mod.reader.mode if ft8_mod.reader.on else None    # ...and their FT8 / FT4 one
                 status["version"] = updater_mod.this_version()
                 status["desktop"] = DESKTOP_TAG
                 self._send(json.dumps(status).encode(), "application/json")
@@ -368,6 +370,14 @@ def make_handler(station: Station, output: Mp3Output, speaker=None,
                 except ValueError:
                     since = 0
                 self._send(json.dumps(morse_mod.reader.status(since)).encode(), "application/json")
+            elif path == "/api/rx/ft8":
+                # The FT8 / FT4 reader (audio/ft8.py): whether it's on, and the messages read since ?since=N.
+                from sleepradiopi.audio import ft8 as ft8_mod
+                try:
+                    since = int(parse_qs(urlparse(self.path).query).get("since", ["0"])[0])
+                except ValueError:
+                    since = 0
+                self._send(json.dumps(ft8_mod.reader.status(since)).encode(), "application/json")
             elif path == "/api/rx":
                 # The rig on the desktop: the receiver being listened to (a KiwiSDR), where it's tuned and
                 # its waterfall since row ?since=N. {"on": false} when the radio is playing something else.
@@ -654,6 +664,22 @@ def make_handler(station: Station, output: Mp3Output, speaker=None,
                     return
                 morse_mod.reader.switch(body["on"])
                 self._send(json.dumps({"cw": morse_mod.reader.on}).encode(), "application/json")
+            elif path == "/api/rx/ft8":
+                # {"on": true | false, "mode"?: "ft8" | "ft4"}: the FT8 / FT4 reader for receivers (audio/ft8.py).
+                # Off again at the next start.
+                from sleepradiopi.audio import ft8 as ft8_mod
+                try:
+                    body = json.loads(self.rfile.read(int(self.headers.get("Content-Length", 0))) or b"{}")
+                    if not isinstance(body["on"], bool) or body.get("mode", "ft8") not in ft8_mod.MODES:
+                        raise ValueError
+                except (ValueError, TypeError, KeyError, AttributeError):
+                    self._error('send {"on": true | false, "mode": "ft8" | "ft4"}')
+                    return
+                if body["on"] and ft8_mod.decoder_path() is None:
+                    self._error("this radio has no FT8 decoder")
+                    return
+                ft8_mod.reader.switch(body["on"], body.get("mode"))
+                self._send(json.dumps({"ft8": ft8_mod.reader.mode if ft8_mod.reader.on else None}).encode(), "application/json")
             elif path == "/api/rooms/level":
                 # {"level": 25-150}: how loud rooms are, % (at once: also for one that's playing). Kept.
                 from sleepradiopi.playback import room as room_mod

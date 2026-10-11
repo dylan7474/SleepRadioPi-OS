@@ -222,6 +222,12 @@
   .rig .rcopy .call { color: #f0b045; font-weight: 700; cursor: copy; }
   .rig .rcopy .call:hover { text-decoration: underline; }
   .rig .rcopy .rnone { color: #7f97a8; font-family: system-ui, sans-serif; font-size: 12px; letter-spacing: 0; }
+  /* FT8 / FT4: the same log, a line a message, a slot's messages together; the bar is how far through the slot it is */
+  .rig .rft .rcopy { flex-basis: 12.5em; font-size: 13px; }
+  .rig .rft .rline.first { margin-top: 5px; }
+  .rig .rft .rline.cq .rtext { color: #5fd08a; }
+  .rig .rftbar { flex: none; height: 3px; background: #1e3445; overflow: hidden; }
+  .rig .rftbar i { display: block; height: 100%; width: 0; background: #58d0e8; }
   .rig .rnow { flex: none; height: 16px; font: 11px/16px system-ui, sans-serif; color: #58d0e8; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; opacity: 0; transition: opacity .25s; }
   .rig .rnow.on { opacity: 1; }
   .rig .rnow::before { content: "● "; animation: rnow 1s steps(2) infinite; }
@@ -2109,6 +2115,86 @@ function cwDraw(R) {
   }
   if (changed && stick) box.scrollTop = box.scrollHeight;
 }
+// The FT8 / FT4 reader (audio/ft8.py): the radio cuts what a receiver plays into the mode's slots by the clock and reads
+// each one when it has ended. One reader, so one list for every rig window: a line a message, with its slot's time (UTC,
+// as the bands keep it), how strong it was and where in the sound. The keys go to the band's usual frequency first.
+const FT = { since: 0, lines: [], st: null, busy: false, asked: 0 };
+const FT_LINES = 300, FT_NAMES = { ft8: "FT8", ft4: "FT4" };
+// where each mode is used, a band: [band, dial frequency in kHz] (upper sideband on every one)
+const FT_FREQS = {
+  ft8: [["160 m", 1840], ["80 m", 3573], ["60 m", 5357], ["40 m", 7074], ["30 m", 10136], ["20 m", 14074], ["17 m", 18100], ["15 m", 21074], ["12 m", 24915], ["10 m", 28074], ["6 m", 50313], ["2 m", 144174]],
+  ft4: [["80 m", 3575], ["40 m", 7047.5], ["30 m", 10140], ["20 m", 14080], ["17 m", 18104], ["15 m", 21140], ["12 m", 24919], ["10 m", 28180], ["6 m", 50318], ["2 m", 144170]] };
+// the mode's frequency to go to: the band's the receiver is on (the nearest), 20 m if it's nowhere yet; only where it reaches
+function ftWhere(R, mode) {
+  const [lo, hi] = RXD[R.kind].reach(R), near = RXD[R.kind].tuned(R) || 14074000;
+  return FT_FREQS[mode].map(([band, khz]) => ({ band, hz: khz * 1000 })).filter(f => f.hz >= lo && f.hz <= hi)
+    .reduce((a, f) => !a || Math.abs(f.hz - near) < Math.abs(a.hz - near) ? f : a, null);
+}
+const ftBand = (mode, hz) => FT_FREQS[mode].find(([, khz]) => Math.abs(khz * 1000 - hz) <= 500)?.[0];
+function rigFtKeys(R, k) {
+  const key = mode => R.dom["k" + mode] = k(FT_NAMES[mode], async () => {
+    const D = RXD[R.kind], on = S?.ft8 !== mode;
+    try {
+      S = { ...(S || {}), ...(await api("/api/rx/ft8", { on, mode })) };
+      Object.assign(FT, { since: 0, lines: [], st: null });
+      rigPaint(R); ftDraw(R);
+      if (!on) return;
+      const to = D.ftGo && ftWhere(R, mode), sideband = (D.on(R) ? R.st.mode || R.st.receiving?.mode : null) === "usb";
+      if (!to) return toast(D.ftGo ? `${FT_NAMES[mode]} reader on, but this receiver doesn't reach a band it's used on.`
+        : `${FT_NAMES[mode]} reader on. Tune this receiver to a band's ${FT_NAMES[mode]} frequency in USB: on 20 m that's ${FT_FREQS[mode].find(f => f[0] === "20 m")[1] / 1000} MHz.`, false, null, true);
+      if (!(sideband && Math.abs((D.tuned(R) || 0) - to.hz) < 5 && rigOnRadio(R))) await D.ftGo(R, to.hz);
+      toast(`${FT_NAMES[mode]} reader on, ${to.band}: every message heard is listed when its ${mode === "ft8" ? "15" : "7.5"}-second slot ends. For another band: press its key, then this one off and on.`, false, null, true);
+    } catch (e) { rigOops(e); } }, `Read ${FT_NAMES[mode]} as text: go to the band's ${FT_NAMES[mode]} frequency and list every message heard`);
+  return [key("ft8"), key("ft4")];
+}
+async function ftPoll() {
+  if (!S?.ft8 || FT.busy || Date.now() - FT.asked < 1000) return;
+  FT.busy = true; FT.asked = Date.now();
+  try {
+    const st = await api(`/api/rx/ft8?since=${FT.since}`);
+    if (st.messages.length && st.messages[0].n <= FT.since) FT.lines = [];        // (the reader began again)
+    for (const m of st.messages) { FT.lines.push(m); FT.since = m.n; }
+    FT.lines = FT.lines.slice(-FT_LINES); FT.st = st;
+    if (S.ft8 !== (st.on ? st.mode : null)) S = { ...S, ft8: st.on ? st.mode : null };
+  } catch (e) { /* the next one will do */ }
+  FT.busy = false;
+}
+const ftUtc = t => new Date(t * 1000).toISOString().slice(11, 19);
+const ftWho = m => `${ftUtc(m.t)} ${((m.snr >= 0 ? "+" : "−") + Math.abs(Math.round(m.snr))).padStart(3)} dB ${String(m.hz).padStart(4)} Hz`;
+function ftRow(m, first) {
+  const text = el("span", { className: "rtext" }), cq = /^CQ(\s|$)/.test(m.text);
+  const row = el("div", { className: "rline" + (cq ? " cq" : "") + (first ? " first" : "") }, el("span", { className: "rwho", textContent: ftWho(m) }), text);
+  row.style.setProperty("--hue", cq ? "#5fd08a" : "#58d0e8");
+  m.text.split(" ").forEach((w, i) => {
+    if (i) text.append(" ");
+    const call = w.replace(/^<|>$/g, "");
+    if (CW_CALL.test(call) && !/^[A-R]{2}\d\d$/.test(call)) text.append(el("span", { className: "call", textContent: w, title: "Click to copy this callsign" }));
+    else text.append(w);
+  });
+  return row;
+}
+function ftDraw(R) {
+  const d = R.dom;
+  if (!d?.ft) return;
+  const mode = S?.ft8, on = !!mode && !!d.kft8; d.ft.hidden = !on;      // (only where there are the keys: not a room)
+  if (!on) return;
+  const st = FT.st, here = rigOnRadio(R), D = RXD[R.kind], hz = D.tuned(R), sideband = (D.on(R) ? R.st.mode || R.st.receiving?.mode : null) === "usb";
+  const slot = mode === "ft4" ? 7.5 : 15;
+  d.ftname.textContent = FT_NAMES[mode];
+  d.ftsays.textContent = !here ? "" : [ftBand(mode, hz) || "not on a frequency it's used on", sideband ? "" : "not in USB",
+    st?.last?.error ? st.last.error : st?.last ? `${st.last.heard} heard in the slot at ${ftUtc(st.last.t)}` : "the first list comes when a whole slot has been heard"].filter(Boolean).join(" · ");
+  d.ftbar.style.width = here ? (Date.now() / 1000 % slot) / slot * 100 + "%" : "0";
+  const box = d.ftcopy, said = !here ? `Listen to this receiver, and the ${FT_NAMES[mode]} in what it plays is listed here.` : !FT.lines.length ? `Listening for ${FT_NAMES[mode]}…` : "";
+  if (said) { if (box.dataset.said !== said) { box.dataset.said = said; box.dataset.n = ""; box.replaceChildren(el("span", { className: "rnone", textContent: said })); } return; }
+  if (box.dataset.said) { box.dataset.said = ""; box.replaceChildren(); }
+  const stick = box.scrollHeight - box.scrollTop - box.clientHeight < 8, from = +box.dataset.n || 0, fresh = FT.lines.filter(m => m.n > from);
+  if (!fresh.length) return;
+  let last = from ? FT.lines[FT.lines.indexOf(fresh[0]) - 1]?.t : null;
+  for (const m of fresh) { box.append(ftRow(m, last != null && m.t !== last)); last = m.t; }
+  while (box.children.length > FT_LINES) box.firstChild.remove();
+  box.dataset.n = fresh[fresh.length - 1].n;
+  if (stick) box.scrollTop = box.scrollHeight;
+}
 const rigOnRadio = R => !!S?.source?.url?.startsWith(R.origin);
 function rigListen(R, station) { R.wait = Date.now() + 14000; R.n = 0; play(station); rigPaint(R); rigDraw(R); }
 function rigClear(R, range) {                       // another band or view: a clean screen
@@ -2165,6 +2251,8 @@ const RXD = {
     band(R) { const id = R.st?.receiving?.band; return id && R.bands?.[id] ? { id, ...R.bands[id] } : null; },
     chans(R) { return (this.band(R)?.channels || []).filter(c => !c.skip); },
     on(R) { return !!R.st?.receiving; },
+    reach(R) { return R.st?.tunable || [24e6, 1766e6]; },
+    ftGo(R, hz) { return this.tune(R, hz, "usb"); },
     tuned(R) {                                      // the held channel, who has the air, or who last had it
       const st = R.st, r = st?.receiving;
       if (!r) return R.last;
@@ -2300,7 +2388,7 @@ const RXD = {
             try { await rxSay(R.origin, "/skip", { freq: hz, on: true }); R.bands = null; toast(`The band now skips ${c.name}. (Channels… has it back.)`); } catch (e) { rigOops(e); } }), "Leave this channel out of the band"),
           k("◀", need(() => this.step(R, -1)), "One channel down"), k("▶", need(() => this.step(R, 1)), "One channel up")),
         el("div", { className: "rgrp" }, k("Channels…", need(async () => { if (this.band(R).range) return toast(`${this.band(R).name} is tuned across: it has no channels.`); const id = `rxb:${R.origin}:${this.band(R).id}`; if (!O[id]) await loadFolder(mk({ id: "rxf:" + R.origin, kind: "folder", box: "rxbands", origin: R.origin, title: `${R.o.title}: bands`, kids: [], sym: "⌁", alt: true })); open(id); }), "The band's channels as stations: drag one onto a button"),
-          k("Bands…", () => this.folder(R), "The bands as folders"), rigNrKey(R, k), rigCwKey(R, k), k("Find…", () => open(PANEL.findreceiver.id), "Other people's receivers on the internet"))];
+          k("Bands…", () => this.folder(R), "The bands as folders"), rigNrKey(R, k), rigCwKey(R, k), ...rigFtKeys(R, k), k("Find…", () => open(PANEL.findreceiver.id), "Other people's receivers on the internet"))];
     },
     lamps(R, w) { R.dom.kscan?.classList.toggle("on", !!this.band(R) && this.band(R).mode !== "wfm" && !R.st.hold); R.dom.khold?.classList.toggle("on", !!R.st?.hold); R.dom.kmon?.classList.toggle("on", !!this.monitored(R)); },
   },
@@ -2313,6 +2401,8 @@ const RXD = {
     label(R, hz, mode) { return `${+(hz / 1000).toFixed(2)} kHz ${mode.toUpperCase()} · ${R.o.title}`.slice(0, 60); },
     station(R) { const hz = this.tuned(R), mode = this.on(R) ? R.st.mode : R.mode; return hz ? { name: this.label(R, hz, mode), url: this.link(R, hz, mode), info: `${this.word} · ${R.o.title}` } : null; },
     on(R) { return !!R.st?.on && R.st.base === R.origin && !R.st.ended; },
+    reach() { return [10e3, 30e6]; },
+    ftGo(R, hz) { return this.say(R, { freq: hz, mode: "usb" }); },
     tuned(R) { return this.on(R) ? (R.last = R.st.freq) : R.last; },
     pass(R, hz) { const [a, b] = KIWI_PASS[this.on(R) ? R.st.mode : R.mode] || [-2700, 2700]; return [hz + a, hz + b]; },
     ticks() { return []; },
@@ -2383,7 +2473,7 @@ const RXD = {
               if (have.some(o => o.url === st.url)) return toast("That one is already with your stations.");
               await api("/api/radio/stations", { stations: [...have, st] }); await loadFolder(STATIONS); toast(`Saved “${st.name}” with your stations.`); drawDesk();
             } catch (e) { rigOops(e); } }, "Keep this frequency as a station (drag it onto a button from Stations)"),
-          rigNrKey(R, k), rigCwKey(R, k), k("Find…", () => open(PANEL.findreceiver.id), "Other people's receivers on the internet"))];
+          rigNrKey(R, k), rigCwKey(R, k), ...rigFtKeys(R, k), k("Find…", () => open(PANEL.findreceiver.id), "Other people's receivers on the internet"))];
     },
     stepWord(R) { return R.step >= 1000 ? `${R.step / 1000} kHz` : `${R.step} Hz`; },
     lamps() {},
@@ -2397,6 +2487,7 @@ const OWN_TUNED = ["usb", "lsb", "cw"];              // a receiver of your own, 
 Object.assign(RXD.own, { land: RXD.kiwi.land, follow: RXD.kiwi.follow, stepWord: RXD.kiwi.stepWord });
 const OWRX_PASS = { nfm: [-4000, 4000], am: [-4000, 4000], usb: [300, 3000], lsb: [-3000, -300], cw: [-100, 100] };
 RXD.owrx = { ...RXD.kiwi,
+  ftGo: null,                                       // (its bands are its owner's: it's tuned by hand)
   modes: [["nfm", "FM", "Narrow FM"], ["am", "AM", "AM"], ["usb", "USB", "Upper sideband"], ["lsb", "LSB", "Lower sideband"], ["cw", "CW", "Morse"]],
   unit: "MHz", example: () => "145.500", steps: [10, 100, 1000, 5000, 6250, 12500, 25000], word: "OpenWebRX",
   link(R, hz, mode) { return `${R.origin}#freq=${Math.round(hz)},mod=${mode}`; },
@@ -2632,6 +2723,7 @@ function rigPaint(R) {                              // the words and lamps on th
   D.lamps(R, w);
   if (R.dom.knr) { const nr = S?.nr || "off"; R.dom.knr.classList.toggle("on", nr !== "off"); R.dom.knr.textContent = nr === "off" ? "NR" : `NR ${NR_STEPS.indexOf(nr)}`; }
   if (R.dom.kcw) R.dom.kcw.classList.toggle("on", !!S?.cw);
+  for (const m of ["ft8", "ft4"]) R.dom["k" + m]?.classList.toggle("on", S?.ft8 === m);
   d.fill.style.width = Math.max(0, Math.min(100, w.meter * 100)) + "%"; d.fill.style.backgroundSize = d.fill.parentNode.clientWidth + "px 100%";
   const [lo, hi] = R.range || [0, 0], wide = hi - lo > 2e6;
   d.scale.replaceChildren(...[0, 1, 2, 3, 4].map(i => el("span", { textContent: R.range ? ((lo + (hi - lo) * i / 4) / 1e6).toFixed(wide ? 2 : 3) : "" })));
@@ -2646,7 +2738,8 @@ async function rigPoll() {
     catch (e) { R.down = R.kind === "own" ? `${rxHost(R.origin)} isn't answering` : "The radio isn't answering"; }
     R.busy = false;
     if (R.dom?.kcw) await cwPoll();
-    rigDraw(R); rigPaint(R); cwDraw(R);
+    if (R.dom?.kft8) await ftPoll();
+    rigDraw(R); rigPaint(R); cwDraw(R); ftDraw(R);
   }
 }
 function rigView(o, box, win) {
@@ -2693,12 +2786,18 @@ function rigView(o, box, win) {
               el("h4", {}, "Morse", d.cwsays = el("span"), key,
                  cwKey("Copy", "Copy everything read so far", () => CW.lines.length ? cwCopy(CW.lines.map(l => `${cwWho(l)}  ${cwPlain(l)}`).join("\n"), "the Morse read so far") : toast("Nothing read yet.")),
                  cwKey("Clear", "Empty the list", () => { CW.lines = []; cwDraw(R); })),
-              d.tape = el("canvas", { width: CW_W, height: CW_H }), d.cwnow = el("div", { className: "rnow" }), d.copy = el("div", { className: "rcopy" })));
-  d.copy.onclick = e => { const c = e.target.closest(".call"); if (c) cwCopy(c.textContent, c.textContent); };
+              d.tape = el("canvas", { width: CW_W, height: CW_H }), d.cwnow = el("div", { className: "rnow" }), d.copy = el("div", { className: "rcopy" })),
+    d.ft = el("div", { className: "rcw rft", hidden: true },
+              el("h4", {}, d.ftname = el("b"), d.ftsays = el("span"),
+                 el("span", { className: "rkey", title: "The slot's time (UTC), how strong (a rough guide: not the figure other programs give), and where in the sound", textContent: "time · strength · pitch" }),
+                 cwKey("Copy", "Copy everything listed", () => FT.lines.length ? cwCopy(FT.lines.map(m => `${ftWho(m)}  ${m.text}`).join("\n"), "the messages listed") : toast("Nothing heard yet.")),
+                 cwKey("Clear", "Empty the list", () => { FT.lines = []; d.ftcopy.replaceChildren(); d.ftcopy.dataset.n = d.ftcopy.dataset.said = ""; ftDraw(R); })),
+              el("div", { className: "rftbar" }, d.ftbar = el("i")), d.ftcopy = el("div", { className: "rcopy" })));
+  d.copy.onclick = d.ftcopy.onclick = e => { const c = e.target.closest(".call"); if (c) { const call = c.textContent.replace(/^<|>$/g, ""); cwCopy(call, call); } };
   d.tape.setAttribute("aria-hidden", "true");
   const foot = el("div", { className: "rfoot" }, ...D.foot(R, k), el("span", { className: "rtip", textContent: D.tip || (R.kind !== "own" ? "Click the scope to tune · wheel to step, Shift for fine · drag the frequency onto a button · be a good guest" : "Click the scope to tune · drag the frequency onto a button") }));
   box.append(el("div", { className: "wbody" }, el("div", { className: "rig" }, bands, tft, modes, foot)));
-  rigDraw(R); setTimeout(() => { rigPaint(R); cwDraw(R); }, 0);
+  rigDraw(R); setTimeout(() => { rigPaint(R); cwDraw(R); ftDraw(R); }, 0);
 }
 
 function folderView(o, box, win) {

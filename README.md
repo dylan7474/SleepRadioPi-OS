@@ -282,6 +282,14 @@ Actions, Sleep timer and Radio folders open:
   A tight filter round the tone and a best-fit reading of the timing (not a
   threshold) read a weak or shaky sender that a simple decoder loses; what
   doesn't stand up as Morse is left unsaid. See `app/sleepradiopi/audio/morse.py`.
+- **FT8 and FT4, read as text.** The *FT8* and *FT4* keys in a receiver's
+  window take it to the mode's frequency on the band it's on and list every
+  message heard, each time a slot ends (15 seconds for FT8, 7.5 for FT4):
+  who's calling CQ, who's answering whom, how strong, and from which
+  locator square. On a busy band that's twenty or so stations a slot, from
+  a few hundred to several thousand miles away. The decoding is ft8_lib's
+  (MIT), built into the image; receive only -- nothing is sent, on the air
+  or to any website. See `app/sleepradiopi/audio/ft8.py`.
 - **Rooms: radio amateurs' digital voice.** Yaesu "System Fusion" radios
   talk across the internet through reflectors -- rooms like CQ-UK or America
   Link, the network a Pi-Star hotspot uses, with many of Yaesu's WIRES-X
@@ -811,6 +819,19 @@ What's left to do (everything else described here is built and running):
   from; the search at its heart has to be made several times faster for the
   Zero 2 W first). After that, a Morse finder: sweep the Morse parts of
   each band and say where the activity is.
+- **FT8 and FT4: how far, and who's been heard** — the FT8 and FT4 keys in
+  a receiver's window list every message heard, a slot at a time
+  (`app/sleepradiopi/audio/ft8.py`, with ft8_lib's decoder in the image).
+  Next: how far away and in what direction each station is (from the
+  locator in its message, and your own), and a log of who's been heard on
+  each band.
+- **PSK31 and RTTY, read as text** — the other two keyboard modes heard all
+  over the amateur bands, read off a receiver's sound as Morse, FT8 and FT4
+  are: PSK31 (a warble 31 Hz wide, many of them side by side around 14.070
+  MHz; the whole passband could be read at once, a line a station) and RTTY
+  (two tones 170 Hz apart at 45.45 baud, the contest mode; also the weather
+  and shipping broadcasts at 50 baud, 450 Hz apart). A key each in a
+  receiver's window, and the text in the same kind of log.
 - **Music from any computer** — adding music needs a Linux PC today
   (`provision-media.sh`). The radio could make its music partition itself on
   first boot and take music uploaded from the web page, so that Windows and

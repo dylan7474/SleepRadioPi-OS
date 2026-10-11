@@ -1,0 +1,8 @@
+config BR2_PACKAGE_FT8_LIB
+	bool "ft8-lib"
+	help
+	  The FT8 / FT4 decoder the radio reads the amateur bands'
+	  weak-signal messages with: ft8_lib's decode_ft8 program
+	  (a WAV file in, the messages out). Plain C, no dependencies.
+
+	  https://github.com/kgoba/ft8_lib

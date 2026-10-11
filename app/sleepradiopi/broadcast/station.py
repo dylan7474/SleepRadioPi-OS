@@ -38,7 +38,7 @@ from typing import Protocol
 
 import numpy as np
 
-from sleepradiopi.audio import denoise, morse, pcm
+from sleepradiopi.audio import denoise, ft8, morse, pcm
 from sleepradiopi.config.clock import clock_trusted
 from sleepradiopi.playback import radio as radio_mod
 from sleepradiopi.playback.audiobooks import KEPT, BookLibrary, KeptLibrary, Positions
@@ -877,6 +877,7 @@ class Station:
                     on_air.title = self.radio_title or name
                     if cleaner is not None:
                         morse.reader.feed(block)     # (the Morse reader hears it as it came, if that's on: audio/morse.py)
+                        ft8.reader.feed(block)       # (...and the FT8 one: audio/ft8.py)
                         block = cleaner.process(block)
                     # (a room's speech comes at its own level: it isn't levelled like a stream -- playback/room.py)
                     self._write(block if getattr(stream, "levelled", False) else leveller.process(block))
