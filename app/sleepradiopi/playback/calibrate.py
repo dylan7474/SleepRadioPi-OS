@@ -74,7 +74,7 @@ SETTLE_S, LISTEN_S, WATERFALL_S = 0.9, 1.6, 2.2
 OUTLIER_MIN_HZ = 25.0        # a station off the line the others make by this, and by three times what they usually are, is left out
 LINE_FROM, LINE_SPAN_HZ = 4, 4_000_000      # stations, and how far apart the furthest must be, for the slope to be believed
 FT8_HZ = (3_573_000, 7_074_000, 10_136_000, 14_074_000, 18_100_000, 21_074_000)     # where FT8 is, a band each
-FT8_LISTEN_S = 34.0          # long enough for one whole 15 s slot, however late either receiver's sound is
+FT8_LISTEN_S = 20.5          # a second before a slot begins to 4.5 s after it ends: the whole of it, however late the sound is
 FT8_CUTS_S = (0.5, 2.0, 3.5)         # how late a slot is cut, each tried (see audio/ft8.py)
 FT8_COMMON = 3               # stations heard by both on a band, for it to count
 PPM_MOST = 200
@@ -325,7 +325,11 @@ class Job:
             began = 0.0
             other.start()
             try:
-                time.sleep(SETTLE_S)
+                # One slot, the same one for both: from a second before the next begins by the clock to a few after it
+                # ends, for however late each receiver's sound is. (Half a minute from wherever it happened to be
+                # gave each a whole slot, but not always the same one: a busy band came back with nothing in common.)
+                now = time.time()
+                time.sleep(max(SETTLE_S, (np.ceil((now + SETTLE_S + 1.0) / 15.0) * 15.0 - 1.0) - now))
                 sound.mark()                         # ours from now (it's read as it comes, by a thread of its own)...
                 until = time.monotonic() + FT8_LISTEN_S
                 while time.monotonic() < until and not getattr(other, "ended", None):

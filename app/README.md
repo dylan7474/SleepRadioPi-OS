@@ -1246,15 +1246,19 @@ The cards:
   So the broadcast stations are the second choice now. *The first is FT8
   against a KiwiSDR:* if one is among the radio's stations (the first of
   them is used) and the radio can read FT8, each band's FT8 frequency from
-  80 to 15 m is listened to for 34 seconds on the receiver and on the
-  KiwiSDR at once (the KiwiSDR's sound isn't played), both are decoded,
+  80 to 15 m is listened to for one 15-second slot (the same one) on the
+  receiver and on the KiwiSDR at once (the KiwiSDR's sound isn't played), both are decoded,
   and for every station heard by both in the same slot the difference
   between where its message is in ours and in the KiwiSDR's is the error
   there -- to a Hz or two, the KiwiSDR being on frequency by GPS. Three
   stations in common make a band count; two bands are enough for the trim,
-  four across 4 MHz for the ppm as well. About four minutes. With no
+  four across 4 MHz for the ppm as well. About three minutes. With no
   KiwiSDR saved, or fewer than two bands open to both, it's the broadcast
-  stations after all. The receiver keeps what's set
+  stations after all. (What the "stations" above 13 MHz that stood 440 Hz
+  low turned out to be: not stations. A KiwiSDR heard no carrier on any of
+  those frequencies. They were made in the receiver itself, by strong
+  signals on a long wire at night, which is why their error went with
+  their frequency and why they came and went by the hour.) The receiver keeps what's set
   (its `POST /calibrate`). About a minute and a half; the receiver is put
   back where it was; if the radio is playing it, the round is heard. The decoding is ft8_lib's `decode_ft8` (MIT, built into the image:
   `package/ft8-lib`), run at low priority on each slot: about half a second
