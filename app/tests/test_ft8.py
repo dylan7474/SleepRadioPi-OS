@@ -165,7 +165,8 @@ def test_a_reader_thats_off_keeps_nothing() -> None:
     for _ in range(600):                             # a minute fed and never read: only so much is kept
         clock.at += BLOCK_S
         r.feed(_speaker(_tone(BLOCK_S, 1000.0)))
-    assert len(r._x) == int(ft8.KEEP_S * ft8.RATE)
+    keep = (ft8.KEEP_SLOTS * 15.0 + ft8.KEEP_MORE_S) * ft8.RATE
+    assert keep <= len(r._x) < keep + BLOCK_S * ft8.RATE + 1
     clock.at += 30.0                                 # the receiver stops, and starts again: what was kept is from another time
     r.feed(_speaker(_tone(BLOCK_S, 1000.0)))
     assert len(r._x) == int(BLOCK_S * ft8.RATE)
@@ -261,6 +262,38 @@ def test_who_has_been_heard(monkeypatch) -> None:
     assert r.heard()["heard"] == []
 
 
+def test_what_wsprd_prints_is_read() -> None:
+    out = ("slot -19 -0.2   0.001523  3  G4HSB IO94 23 \nslot -24 -0.1   0.001555  3  OK1BF JO70 23 \n"
+           "slot -25 -1.5   0.001600  0  <...> KM56VO 37 \nslot -21  0.4   0.001440 -1  PJ4/K1ABC 30 \nslot -20  0.4   0.001470  0  <G0ABC> IO91wm 27 \n<DecodeFinished>\n")
+    spots = ft8.parse_wspr(out)
+    assert [s["text"] for s in spots] == ["G4HSB IO94 23", "<G0ABC> IO91wm 27", "PJ4/K1ABC 30", "OK1BF JO70 23", "<...> KM56VO 37"]      # strongest first
+    by = {s["text"].split()[0]: s for s in spots}
+    assert by["G4HSB"] == {"snr": -19.0, "dt": -0.2, "hz": 1523, "drift": 3, "text": "G4HSB IO94 23", "call": "G4HSB", "grid": "IO94", "dbm": 23}
+    assert by["<G0ABC>"]["call"] == "G0ABC" and by["<G0ABC>"]["grid"] == "IO91wm"                 # (the longer locator, with its call known again)
+    assert "grid" not in by["PJ4/K1ABC"] and by["PJ4/K1ABC"]["dbm"] == 30 and "call" not in by["<...>"] and by["<...>"]["dbm"] == 37
+    assert ft8.parse_wspr("") == [] and ft8.parse_wspr("<DecodeFinished>\n") == []
+
+
+def test_wspr_a_two_minute_slot_at_a_time(monkeypatch) -> None:
+    spot = {"snr": -19.0, "dt": -0.2, "hz": 1523, "drift": 3, "text": "G4HSB IO94 23", "call": "G4HSB", "grid": "IO94", "dbm": 23}
+    r, clock, given = _reader([spot], at=T0 - 1.0, late=None)
+    r.mode = "wspr"
+    assert T0 % 120 == 0
+    x = np.zeros(int((1.0 + 120.0 + 118.0) * pcm.SAMPLE_RATE), np.float32)
+    a = int((1.0 + 10.0) * pcm.SAMPLE_RATE)
+    x[a:a + 2 * pcm.SAMPLE_RATE] = _tone(2.0, 1500.0)
+    _play(r, clock, x)
+    assert [m for _, m in given] == ["wspr", "wspr"] and len(given[0][0]) == int(114.0 * ft8.OUT_RATE)     # cut once each, 114 s of the 120
+    loud = np.where(np.abs(given[0][0].astype(float)) > 2000)[0] / ft8.OUT_RATE
+    assert abs(loud[0] - (10.0 - ft8.WSPR_LATE_S)) < 0.15                    # two seconds late, whatever is read
+    st = r.status()
+    assert st["slot"] == 120.0 and st["slots"] == 2 and [(m["t"], m["call"], m["grid"], m["dbm"]) for m in st["messages"]] == [(T0, "G4HSB", "IO94", 23), (T0 + 120.0, "G4HSB", "IO94", 23)]
+    monkeypatch.setattr(ft8, "HOME", "IO94kn")
+    h = r.heard()["heard"]
+    assert [(x["call"], x["count"], x["grid"]) for x in h] == [("G4HSB", 2, "IO94")] and h[0]["km"] < 40 and "km" in r.status()["messages"][0]
+    assert len(r._x) <= (ft8.KEEP_SLOTS * 120.0 + ft8.KEEP_MORE_S) * ft8.RATE + 1500      # (the sound kept is for the mode: four minutes of it)
+
+
 def test_no_decoder_no_reading(monkeypatch, tmp_path: Path) -> None:
     monkeypatch.setenv("SLEEPRADIO_FT8_DECODER", str(tmp_path / "not-there"))
     assert ft8.decoder_path() is None and ft8.Reader().status()["can"] is False
@@ -328,6 +361,11 @@ def test_the_reader_from_the_web(tmp_path: Path, monkeypatch) -> None:
             assert call("/api/rx/ft8", bad)[0] == 400 and ft8.reader.mode == "ft4"
         code, st = call("/api/rx/ft8?since=3")
         assert code == 200 and st["on"] is True and st["mode"] == "ft4" and st["slot"] == 7.5
+        monkeypatch.setenv("SLEEPRADIO_WSPR_DECODER", str(tmp_path / "not-there"))
+        assert call("/api/rx/ft8", {"on": True, "mode": "wspr"})[0] == 400 and call("/api/rx/ft8")[1]["can_wspr"] is False      # no wsprd: it says so
+        monkeypatch.setenv("SLEEPRADIO_WSPR_DECODER", str(decoder))
+        assert call("/api/rx/ft8", {"on": True, "mode": "wspr"})[1]["ft8"] == "wspr" and call("/api/rx/ft8")[1]["slot"] == 120.0
+        assert call("/api/rx/ft8", {"on": True, "mode": "ft4"})[1]["ft8"] == "ft4"
         assert call("/api/rx/ft8", {"on": True, "mode": "ft4", "band": "40 m"})[0] == 200 and call("/api/rx/ft8")[1]["band"] == "40 m"      # the band alone: nothing begun again
         assert call("/api/rx/ft8", {"on": True, "band": 40})[0] == 400
         assert call("/api/rx/ft8", {"on": False})[1]["ft8"] is None and not ft8.reader.on

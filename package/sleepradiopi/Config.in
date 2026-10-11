@@ -10,6 +10,7 @@ config BR2_PACKAGE_SLEEPRADIOPI
 	select BR2_PACKAGE_FFMPEG
 	select BR2_PACKAGE_FFMPEG_FFMPEG
 	select BR2_PACKAGE_FT8_LIB # receivers: FT8 and FT4 read as text
+	select BR2_PACKAGE_WSPRD # ...and WSPR
 	help
 	  The SleepRadioPi Broadcast Radio station (pure Python).
 	  Voices, music and settings live outside the root filesystem.

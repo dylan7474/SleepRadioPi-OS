@@ -693,10 +693,10 @@ def make_handler(station: Station, output: Mp3Output, speaker=None,
                     if not isinstance(body["on"], bool) or body.get("mode", "ft8") not in ft8_mod.MODES or not isinstance(body.get("band", ""), str):
                         raise ValueError
                 except (ValueError, TypeError, KeyError, AttributeError):
-                    self._error('send {"on": true | false, "mode": "ft8" | "ft4"}')
+                    self._error('send {"on": true | false, "mode": "ft8" | "ft4" | "wspr"}')
                     return
-                if body["on"] and ft8_mod.decoder_path() is None:
-                    self._error("this radio has no FT8 decoder")
+                if body["on"] and not ft8_mod.can(body.get("mode") or ft8_mod.reader.mode):
+                    self._error("this radio has no WSPR decoder" if (body.get("mode") or ft8_mod.reader.mode) == "wspr" else "this radio has no FT8 decoder")
                     return
                 ft8_mod.reader.switch(body["on"], body.get("mode"), body.get("band"))
                 self._send(json.dumps(self._one_reader("ft8" if body["on"] else None)).encode(), "application/json")

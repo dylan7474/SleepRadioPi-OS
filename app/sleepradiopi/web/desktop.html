@@ -457,7 +457,7 @@
               box-shadow: 0 1px 0 #ffffff80 inset, 0 1px 2px var(--shadow); position: relative; }
   .set h3 { margin: 0 0 2px; font: 700 9.5px var(--display); letter-spacing: .2em; text-transform: uppercase; color: var(--engrave); }
   /* Where to listen: a band a row, a mode a column; a key says where and, after a survey, what was heard there */
-  .mgrid { display: grid; grid-template-columns: auto repeat(5, minmax(0, 1fr)); gap: 4px 5px; align-items: stretch; }
+  .mgrid { display: grid; grid-template-columns: auto repeat(6, minmax(0, 1fr)); gap: 4px 5px; align-items: stretch; }
   .mgrid > b, .mgrid > span { font: 700 9.5px var(--display); letter-spacing: .12em; text-transform: uppercase; color: var(--engrave); align-self: center; }
   .mgrid > b { text-align: center; }
   .mgrid button { border: 1px solid var(--key-line); background: var(--key); color: var(--key-ink); border-radius: 7px; padding: 3px 4px; font-size: 11.5px; line-height: 1.25;
@@ -2144,11 +2144,13 @@ function cwDraw(R) {
 const FT = { since: 0, lines: [], st: null, busy: false, asked: 0, view: "list", heard: [], heardAt: 0, band: null };
 const FT_WINDS = ["N", "NNE", "NE", "ENE", "E", "ESE", "SE", "SSE", "S", "SSW", "SW", "WSW", "W", "WNW", "NW", "NNW"];
 const ftFar = x => x.km == null ? "" : `${x.km.toLocaleString("en-GB")} km ${FT_WINDS[Math.round(x.deg / 22.5) % 16]}`;
-const FT_LINES = 300, FT_NAMES = { ft8: "FT8", ft4: "FT4" };
+// WSPR is the same reader's third mode: beacons of a watt or less, two minutes each, a line for each one heard.
+const FT_LINES = 300, FT_NAMES = { ft8: "FT8", ft4: "FT4", wspr: "WSPR" }, FT_SLOT = { ft8: 15, ft4: 7.5, wspr: 120 };
 // where each mode is used, a band: [band, dial frequency in kHz] (upper sideband on every one)
 const FT_FREQS = {
   ft8: [["160 m", 1840], ["80 m", 3573], ["60 m", 5357], ["40 m", 7074], ["30 m", 10136], ["20 m", 14074], ["17 m", 18100], ["15 m", 21074], ["12 m", 24915], ["10 m", 28074], ["6 m", 50313], ["2 m", 144174]],
-  ft4: [["80 m", 3575], ["40 m", 7047.5], ["30 m", 10140], ["20 m", 14080], ["17 m", 18104], ["15 m", 21140], ["12 m", 24919], ["10 m", 28180], ["6 m", 50318], ["2 m", 144170]] };
+  ft4: [["80 m", 3575], ["40 m", 7047.5], ["30 m", 10140], ["20 m", 14080], ["17 m", 18104], ["15 m", 21140], ["12 m", 24919], ["10 m", 28180], ["6 m", 50318], ["2 m", 144170]],
+  wspr: [["160 m", 1836.6], ["80 m", 3568.6], ["60 m", 5287.2], ["40 m", 7038.6], ["30 m", 10138.7], ["20 m", 14095.6], ["17 m", 18104.6], ["15 m", 21094.6], ["12 m", 24924.6], ["10 m", 28124.6], ["6 m", 50293], ["2 m", 144489]] };
 // the mode's frequency to go to: the band's the receiver is on (the nearest), 20 m if it's nowhere yet; only where it reaches
 function ftWhere(R, mode, freqs = FT_FREQS[mode]) {
   const [lo, hi] = RXD[R.kind].reach(R), near = RXD[R.kind].tuned(R) || 14074000;
@@ -2169,9 +2171,11 @@ function rigFtKeys(R, k) {
       if (!to) return toast(D.ftGo ? `${FT_NAMES[mode]} reader on, but this receiver doesn't reach a band it's used on.`
         : `${FT_NAMES[mode]} reader on. Tune this receiver to a band's ${FT_NAMES[mode]} frequency in USB: on 20 m that's ${FT_FREQS[mode].find(f => f[0] === "20 m")[1] / 1000} MHz.`, false, null, true);
       if (!(sideband && Math.abs((D.tuned(R) || 0) - to.hz) < 5 && rigOnRadio(R))) await D.ftGo(R, to.hz);
-      toast(`${FT_NAMES[mode]} reader on, ${to.band}: every message heard is listed when its ${mode === "ft8" ? "15" : "7.5"}-second slot ends. For another band: press its key, then this one off and on.`, false, null, true);
-    } catch (e) { rigOops(e); } }, `Read ${FT_NAMES[mode]} as text: go to the band's ${FT_NAMES[mode]} frequency and list every message heard`);
-  return [key("ft8"), key("ft4")];
+      toast(mode === "wspr" ? `WSPR reader on, ${to.band}: every beacon heard is listed when its two-minute slot ends (they start on the even minute, so the first list is two to four minutes away). For another band: press its key, then this one off and on.`
+        : `${FT_NAMES[mode]} reader on, ${to.band}: every message heard is listed when its ${mode === "ft8" ? "15" : "7.5"}-second slot ends. For another band: press its key, then this one off and on.`, false, null, true);
+    } catch (e) { rigOops(e); } }, mode === "wspr" ? "Read WSPR: go to the band's WSPR frequency and list every beacon heard, with where it is and its power"
+      : `Read ${FT_NAMES[mode]} as text: go to the band's ${FT_NAMES[mode]} frequency and list every message heard`);
+  return [key("ft8"), key("ft4"), key("wspr")];
 }
 async function ftPoll() {
   if (!S?.ft8 || FT.busy || Date.now() - FT.asked < 1000) return;
@@ -2187,18 +2191,20 @@ async function ftPoll() {
   FT.busy = false;
 }
 const ftUtc = t => new Date(t * 1000).toISOString().slice(11, 19);
+const ftPower = dbm => { const w = Math.pow(10, dbm / 10) / 1000; return w >= 1 ? `${+w.toPrecision(2)} W` : `${+(w * 1000).toPrecision(2)} mW`; };
 const ftWho = m => `${ftUtc(m.t)} ${((m.snr >= 0 ? "+" : "−") + Math.abs(Math.round(m.snr))).padStart(3)} dB ${String(m.hz).padStart(4)} Hz`;
 function ftRow(m, first) {
   const text = el("span", { className: "rtext" }), cq = /^CQ(\s|$)/.test(m.text);
   const row = el("div", { className: "rline" + (cq ? " cq" : "") + (first ? " first" : "") }, el("span", { className: "rwho", textContent: ftWho(m) }), text,
                  el("span", { className: "rfar", textContent: ftFar(m), title: m.km == null ? "" : `${m.call} in ${m.grid}: ${m.deg}° from here` }));
   row.style.setProperty("--hue", cq ? "#5fd08a" : "#58d0e8");
-  m.text.split(" ").forEach((w, i) => {
+  (m.dbm == null ? m.text.split(" ") : m.text.split(" ").slice(0, -1)).forEach((w, i) => {
     if (i) text.append(" ");
     const call = w.replace(/^<|>$/g, "");
     if (CW_CALL.test(call) && !/^[A-R]{2}\d\d$/.test(call)) text.append(el("span", { className: "call", textContent: w, title: "Click to copy this callsign" }));
     else text.append(w);
   });
+  if (m.dbm != null) text.append(el("span", { style: "opacity:.6", textContent: "  " + ftPower(m.dbm), title: `What it says it's sending: ${m.dbm} dBm${m.drift ? ` · drifting ${m.drift} Hz a minute` : ""}` }));   // (WSPR)
   return row;
 }
 const ftHeardWho = h => `${ftUtc(h.last)} ${((h.snr >= 0 ? "+" : "−") + Math.abs(Math.round(h.snr))).padStart(3)} dB ${("×" + h.count).padStart(4)}`;
@@ -2239,14 +2245,14 @@ function ftDraw(R) {
   const mode = S?.ft8, on = !!mode && !!d.kft8; d.ft.hidden = !on;      // (only where there are the keys: not a room)
   if (!on) return;
   const st = FT.st, here = rigOnRadio(R), D = RXD[R.kind], hz = D.tuned(R), sideband = (D.on(R) ? R.st.mode || R.st.receiving?.mode : null) === "usb";
-  const slot = mode === "ft4" ? 7.5 : 15;
+  const slot = FT_SLOT[mode] || 15;
   const band = ftBand(mode, hz), heard = FT.view === "heard", list = heard ? ftHeardList() : [];
   // (the reader is told the band the receiver is on, when that changes: its heard list is kept by it)
   if (here && band && st && st.band !== band && FT.band !== band) { FT.band = band; api("/api/rx/ft8", { on: true, mode, band }).catch(() => {}); }
   d.ftname.textContent = FT_NAMES[mode];
   d.ftsays.textContent = !here ? "" : [band || "not on a frequency it's used on", sideband ? "" : "not in USB",
     heard ? `${list.length} heard${list[0]?.km != null ? `, farthest ${list[0].call} ${list[0].km.toLocaleString("en-GB")} km` : ""}`
-    : st?.last?.error ? st.last.error : st?.last ? `${st.last.heard} heard at ${ftUtc(st.last.t)}` : "the first list comes after one whole slot"].filter(Boolean).join(" · ");
+    : st?.last?.error ? st.last.error : st?.last ? `${st.last.heard} heard at ${ftUtc(st.last.t)}` : mode === "wspr" ? "the first list comes after one whole two-minute slot" : "the first list comes after one whole slot"].filter(Boolean).join(" · ");
   d.ftbar.style.width = here ? (Date.now() / 1000 % slot) / slot * 100 + "%" : "0";
   d.ftheard.classList.toggle("on", heard);
   if (d.ftloc.isConnected) { d.ftloc.textContent = st?.home ? `From ${st.home}` : "Your locator…"; d.ftloc.hidden = !st; }
@@ -2374,7 +2380,7 @@ function rigCalKey(R, k) {
 // switch the right reader on; and a survey, which goes round them, listens a slot or a few seconds on each, and writes
 // on the keys what it heard. What a survey found is kept in this browser, a receiver at a time.
 const MODES = { rx: null, run: null, found: (() => { try { return JSON.parse(localStorage.getItem("srd.modes")) || {}; } catch (e) { return {}; } })() };
-const MODE_COLS = [["ft8", "FT8"], ["ft4", "FT4"], ["psk31", "PSK31"], ["rtty", "Teleprinter"], ["cw", "Morse"]];
+const MODE_COLS = [["ft8", "FT8"], ["ft4", "FT4"], ["wspr", "WSPR"], ["psk31", "PSK31"], ["rtty", "Teleprinter"], ["cw", "Morse"]];
 // [band, kHz]: where teleprinters gather (the bottom of it; they spread up from there), and where Morse does
 const MODE_RTTY = [["80 m", 3590], ["40 m", 7040], ["30 m", 10140], ["20 m", 14085], ["17 m", 18105], ["15 m", 21085], ["12 m", 24925], ["10 m", 28085]];
 const MODE_CW = [["160 m", 1830], ["80 m", 3530], ["40 m", 7020], ["30 m", 10115], ["20 m", 14030], ["17 m", 18080], ["15 m", 21030], ["12 m", 24900], ["10 m", 28030]];
@@ -2385,14 +2391,14 @@ const MODE_BANDS = ["160 m", "80 m", "60 m", "40 m", "30 m", "20 m", "17 m", "15
 function modePlaces(R) {                            // every place this receiver reaches: [{mode, band, hz, tune (the receiver's mode), key}]
   const [lo, hi] = RXD[R.kind].reach(R), out = [];
   const add = (mode, list, tune = "usb") => { for (const [band, khz] of list) if (khz * 1000 >= lo && khz * 1000 <= hi) out.push({ mode, band, hz: khz * 1000, tune, key: `${mode}:${band}` }); };
-  add("ft8", FT_FREQS.ft8); add("ft4", FT_FREQS.ft4); add("psk31", KB_PSK); add("rtty", MODE_RTTY); add("cw", MODE_CW, "cw");
+  add("ft8", FT_FREQS.ft8); add("ft4", FT_FREQS.ft4); add("wspr", FT_FREQS.wspr); add("psk31", KB_PSK); add("rtty", MODE_RTTY); add("cw", MODE_CW, "cw");
   for (const [name, khz] of MODE_WEATHER) if (khz * 1000 >= lo && khz * 1000 <= hi) out.push({ mode: "rtty", band: name, hz: (khz - 1.5) * 1000, tune: "usb", key: `wx:${khz}`, weather: true });
   return out;
 }
 async function modeGo(R, p) {                       // the receiver there, and the reader for it on
   const D = RXD[R.kind];
   if (!D.modeGo) return toast(`An ${D.word} is tuned by hand: ${(p.hz / 1e6).toFixed(4)} MHz, ${p.tune.toUpperCase()}.`);
-  if (p.mode === "ft8" || p.mode === "ft4") {
+  if (FT_NAMES[p.mode]) {
     S = { ...(S || {}), ...(await api("/api/rx/ft8", { on: true, mode: p.mode, band: p.band })) };
     Object.assign(FT, { since: 0, lines: [], st: null, band: p.band });
   } else if (p.mode === "cw") {
@@ -2409,8 +2415,8 @@ async function modeHear(R, p, run) {
   await modeGo(R, p);
   await modeSleep(2500, run);                       // (the receiver moving, the radio taking it up)
   const began = Date.now() / 1000;
-  if (p.mode === "ft8" || p.mode === "ft4") {
-    const slot = p.mode === "ft8" ? 15 : 7.5, until = Date.now() + (2 * slot + 12) * 1000;     // (the radio may be finding how late the sound is: 7 s more)
+  if (FT_NAMES[p.mode]) {
+    const slot = FT_SLOT[p.mode], until = Date.now() + (2 * slot + 12) * 1000;     // (the radio may be finding how late the sound is: 7 s more)
     while (!run.stop && Date.now() < until) {       // one whole slot that began after we got here
       await modeSleep(1500, run);
       const st = await api("/api/rx/ft8").catch(() => null);
@@ -2456,7 +2462,7 @@ async function modeSurvey(R, modes) {
 }
 const modeAge = at => { const m = Math.round((Date.now() - at) / 60000); return m < 1 ? "just now" : m < 60 ? `${m} min ago` : m < 1440 ? `${Math.round(m / 60)} h ago` : `${Math.round(m / 1440)} d ago`; };
 function modeKey(R, p) {
-  const f = MODES.found[R.origin]?.[p.key], what = p.mode === "ft8" || p.mode === "ft4" ? "heard" : p.mode === "psk31" ? "signal" + (f?.n === 1 ? "" : "s") : "there";
+  const f = MODES.found[R.origin]?.[p.key], what = FT_NAMES[p.mode] ? "heard" : p.mode === "psk31" ? "signal" + (f?.n === 1 ? "" : "s") : "there";
   const b = el("button", { type: "button", className: (f?.n ? "heard" : "") + (MODES.run?.at === p.key ? " now" : "") }, p.weather ? p.band.replace(" MHz", "") : (p.hz / 1e6).toFixed(p.hz % 1000 ? 4 : 3),
                el("small", { textContent: MODES.run?.at === p.key ? "listening…" : !f ? "\u00a0" : !f.n ? "nothing" : p.weather ? "there" : f.km ? `${f.n} · ${f.km.toLocaleString("en-GB")} km` : `${f.n} ${what}` }));
   b.title = `${p.weather ? "The German weather service's teleprinter on " + p.band : p.band + " " + (MODE_COLS.find(c => c[0] === p.mode) || [0, p.mode])[1]}: go there and read it`
@@ -2658,7 +2664,7 @@ const RXD = {
             try { await rxSay(R.origin, "/skip", { freq: hz, on: true }); R.bands = null; toast(`The band now skips ${c.name}. (Channels… has it back.)`); } catch (e) { rigOops(e); } }), "Leave this channel out of the band"),
           k("◀", need(() => this.step(R, -1)), "One channel down"), k("▶", need(() => this.step(R, 1)), "One channel up")),
         el("div", { className: "rgrp" }, k("Channels…", need(async () => { if (this.band(R).range) return toast(`${this.band(R).name} is tuned across: it has no channels.`); const id = `rxb:${R.origin}:${this.band(R).id}`; if (!O[id]) await loadFolder(mk({ id: "rxf:" + R.origin, kind: "folder", box: "rxbands", origin: R.origin, title: `${R.o.title}: bands`, kids: [], sym: "⌁", alt: true })); open(id); }), "The band's channels as stations: drag one onto a button"),
-          k("Bands…", () => this.folder(R), "The bands as folders"), rigCalKey(R, k), rigNrKey(R, k), rigCwKey(R, k), ...rigFtKeys(R, k), ...rigKbKeys(R, k), k("Modes…", () => { MODES.rx = R.o.id; open(PANEL.modes.id); drawDesk(); }, "Where to listen: FT8, FT4, PSK31, teleprinter and Morse band by band, and a survey of what's there now"), k("Find…", () => open(PANEL.findreceiver.id), "Other people's receivers on the internet"))];
+          k("Bands…", () => this.folder(R), "The bands as folders"), rigCalKey(R, k), rigNrKey(R, k), rigCwKey(R, k), ...rigFtKeys(R, k), ...rigKbKeys(R, k), k("Modes…", () => { MODES.rx = R.o.id; open(PANEL.modes.id); drawDesk(); }, "Where to listen: FT8, FT4, WSPR, PSK31, teleprinter and Morse band by band, and a survey of what's there now"), k("Find…", () => open(PANEL.findreceiver.id), "Other people's receivers on the internet"))];
     },
     lamps(R, w) { R.dom.kscan?.classList.toggle("on", !!this.band(R) && this.band(R).mode !== "wfm" && !R.st.hold); R.dom.khold?.classList.toggle("on", !!R.st?.hold); R.dom.kmon?.classList.toggle("on", !!this.monitored(R)); },
   },
@@ -2744,7 +2750,7 @@ const RXD = {
               if (have.some(o => o.url === st.url)) return toast("That one is already with your stations.");
               await api("/api/radio/stations", { stations: [...have, st] }); await loadFolder(STATIONS); toast(`Saved “${st.name}” with your stations.`); drawDesk();
             } catch (e) { rigOops(e); } }, "Keep this frequency as a station (drag it onto a button from Stations)"),
-          rigNrKey(R, k), rigCwKey(R, k), ...rigFtKeys(R, k), ...rigKbKeys(R, k), k("Modes…", () => { MODES.rx = R.o.id; open(PANEL.modes.id); drawDesk(); }, "Where to listen: FT8, FT4, PSK31, teleprinter and Morse band by band, and a survey of what's there now"), k("Find…", () => open(PANEL.findreceiver.id), "Other people's receivers on the internet"))];
+          rigNrKey(R, k), rigCwKey(R, k), ...rigFtKeys(R, k), ...rigKbKeys(R, k), k("Modes…", () => { MODES.rx = R.o.id; open(PANEL.modes.id); drawDesk(); }, "Where to listen: FT8, FT4, WSPR, PSK31, teleprinter and Morse band by band, and a survey of what's there now"), k("Find…", () => open(PANEL.findreceiver.id), "Other people's receivers on the internet"))];
     },
     stepWord(R) { return R.step >= 1000 ? `${R.step / 1000} kHz` : `${R.step} Hz`; },
     lamps() {},
@@ -2994,7 +3000,7 @@ function rigPaint(R) {                              // the words and lamps on th
   D.lamps(R, w);
   if (R.dom.knr) { const nr = S?.nr || "off"; R.dom.knr.classList.toggle("on", nr !== "off"); R.dom.knr.textContent = nr === "off" ? "NR" : `NR ${NR_STEPS.indexOf(nr)}`; }
   if (R.dom.kcw) R.dom.kcw.classList.toggle("on", !!S?.cw);
-  for (const m of ["ft8", "ft4"]) R.dom["k" + m]?.classList.toggle("on", S?.ft8 === m);
+  for (const m of ["ft8", "ft4", "wspr"]) R.dom["k" + m]?.classList.toggle("on", S?.ft8 === m);
   for (const m of ["psk31", "rtty"]) R.dom["k" + m]?.classList.toggle("on", S?.keyboard === m);
   d.fill.style.width = Math.max(0, Math.min(100, w.meter * 100)) + "%"; d.fill.style.backgroundSize = d.fill.parentNode.clientWidth + "px 100%";
   const [lo, hi] = R.range || [0, 0], wide = hi - lo > 2e6;
@@ -4055,7 +4061,7 @@ const UI = {
       const mins = modes => { const m = Math.round(secs(modes) / 60); return `about ${m} minute${m === 1 ? "" : "s"}`; };
       return [
         grp(`Where to listen on ${R.o.title}`, bands.length ? grid : help("This receiver doesn't reach the bands these are used on."),
-          help("A key takes the receiver there and switches the reader for that mode on. Frequencies are in MHz; all in upper sideband but Morse. A teleprinter key is the bottom of where they gather: tune up from it.")),
+          help("A key takes the receiver there and switches the reader for that mode on. Frequencies are in MHz; all in upper sideband but Morse. A teleprinter key is the bottom of where they gather: tune up from it. WSPR is beacons of a watt or less, two minutes at a time: the list shows where each is and how far.")),
         weather.length ? grp("Teleprinter broadcasts", el("div", { className: "mgrid", style: "grid-template-columns:repeat(5, minmax(0, 1fr))" }, ...weather.map(p => modeKey(R, p))),
           help("The German weather service: shipping forecasts and weather reports, most of the day and night. Each key is tuned 1.5 kHz under the frequency it's known by, so that both tones are heard.")) : null,
         grp("Survey: what's there now",
@@ -4235,7 +4241,7 @@ const SUMS = {
   lists: d => `${d.profiles.length} theme${d.profiles.length === 1 ? "" : "s"} · ${d.artists.length} artists to choose from`,
   findstation: () => "From the internet radio directory",
   findreceiver: () => "Other people's receivers on the internet",
-  modes: () => { const R = O[MODES.rx]?.rig; return R ? `${R.o.title}: FT8, FT4, PSK31, teleprinter and Morse, band by band` : "FT8, FT4, PSK31, teleprinter and Morse, band by band"; },
+  modes: () => { const R = O[MODES.rx]?.rig; return R ? `${R.o.title}: FT8, FT4, WSPR, PSK31, teleprinter and Morse, band by band` : "FT8, FT4, WSPR, PSK31, teleprinter and Morse, band by band"; },
   findroom: () => "Radio amateurs' digital voice rooms",
   findpodcast: () => "From Apple's podcast directory",
 };

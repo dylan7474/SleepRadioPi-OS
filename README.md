@@ -282,6 +282,12 @@ Actions, Sleep timer and Radio folders open:
   A tight filter round the tone and a best-fit reading of the timing (not a
   threshold) read a weak or shaky sender that a simple decoder loses; what
   doesn't stand up as Morse is left unsaid. See `app/sleepradiopi/audio/morse.py`.
+- **WSPR.** The *WSPR* key beside FT8 and FT4 listens for the amateur
+  bands' two-minute propagation beacons -- a watt or less, often a fifth of
+  one -- and lists each one heard with its locator, how far away it is and
+  the power it's sending: "200 mW, 1,408 km" says a good deal about the
+  band. The decoder is K9AN and K1JT's wsprd, from WSJT-X (GPL), built into
+  the image. See `app/sleepradiopi/audio/ft8.py`.
 - **PSK31 and RTTY, read as text.** The *PSK* and *RTTY* keys in a
   receiver's window read the two keyboard modes as they're typed. PSK31:
   every signal in what the receiver hears at once, a line each (the key
@@ -293,7 +299,7 @@ Actions, Sleep timer and Radio folders open:
   air; neither says anything of noise or a plain whistle. See
   `app/sleepradiopi/audio/psk.py`, `rtty.py` and `keyboard.py`.
 - **Where to listen.** *Modes…* in a receiver's window opens a table: a
-  band a row, a mode a column (FT8, FT4, PSK31, teleprinter, Morse), each
+  band a row, a mode a column (FT8, FT4, WSPR, PSK31, teleprinter, Morse), each
   square a key that takes the receiver to that mode's place on that band
   and switches its reader on; and the German weather service's teleprinter
   broadcasts. *Survey* goes round them by itself -- a whole slot on each

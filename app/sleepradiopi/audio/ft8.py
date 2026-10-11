@@ -46,6 +46,14 @@ last, how strong at best, how often. A station's later messages carry no
 locator; they get the one it gave before. The list is in memory only: a
 restart begins it again.
 
+WSPR is read the same way, by the same reader: beacons of a watt or less,
+each sending its call, locator and power over two minutes, starting on the
+even minute, in a 200 Hz slice of each band. Its decoder is wsprd (K9AN and
+K1JT's, from WSJT-X: GPL; the last version that is all C, in the image as
+/usr/bin/wsprd), which takes anything from four seconds early to four late
+in its stride, so a slot is simply cut two seconds on. A slot takes it one
+to seven seconds on the Zero 2 W.
+
 Receive only: nothing is sent, here or anywhere.
 
 `reader` is the one the radio uses: the station feeds it, the web side
@@ -72,7 +80,9 @@ from sleepradiopi.audio import pcm
 
 log = logging.getLogger(__name__)
 
-MODES = {"ft8": 15.0, "ft4": 7.5}    # a slot, in seconds
+MODES = {"ft8": 15.0, "ft4": 7.5, "wspr": 120.0}      # a slot, in seconds
+USED_S = {"wspr": 114.0}             # ...and how much of one the decoder is given, where that's less
+WSPR_LATE_S = 2.0                    # WSPR: a slot is cut this late, and that's that (see the top)
 OUT_RATE = 12_000                    # what the decoder takes
 DECIMATE = 3                         # of the speaker's rate: 14700 samples a second holds a receiver's 3 kHz with room to spare
 RATE = pcm.SAMPLE_RATE / DECIMATE
@@ -84,10 +94,14 @@ WAIT_S = 0.3                 # ...and looked at this long after it has all come
 GAP_S = 1.0                  # sound this far from when it was due: the receiver stopped and started
 FOLLOW = 0.05                # (how fast the clock is followed, a block)
 ENOUGH = 0.9                 # of a slot's sound, for it to be worth reading
-KEEP_S = 2 * max(MODES.values()) + 5
+KEEP_SLOTS, KEEP_MORE_S = 2, 10.0    # the sound kept: this many of the mode's slots and a bit
 STEP_S = 0.25
 DECODE_TIMEOUT_S = 12.0      # (a slot's reading that takes longer than this is given up)
+WSPR_TIMEOUT_S = 100.0
 DECODER = "decode_ft8"       # ft8_lib's; SLEEPRADIO_FT8_DECODER names another
+WSPR_DECODER = "wsprd"       # WSJT-X's; SLEEPRADIO_WSPR_DECODER names another
+WSPR_LINE = re.compile(r"^\S+\s+(-?\d+)\s+(-?\d+\.\d+)\s+(\d+\.\d+)\s+(-?\d+)\s+(\S.*?)\s*$")
+WSPR_GRID = re.compile(r"^[A-R]{2}\d{2}(?:[A-Xa-x]{2})?$")
 HEARD_MOST = 600             # stations kept in the list of who's been heard (the longest unheard go first)
 HOME: str | None = None      # the radio's own locator ("IO94" or "IO94kn"): main.py sets it from the settings
 GRID = re.compile(r"^[A-R]{2}\d{2}$")
@@ -101,6 +115,19 @@ def decoder_path() -> str | None:
     if named:
         return named if os.access(named, os.X_OK) else None
     return shutil.which(DECODER)
+
+
+def wspr_decoder_path() -> str | None:
+    """wsprd, or None: this radio can't read WSPR."""
+    named = os.environ.get("SLEEPRADIO_WSPR_DECODER")
+    if named:
+        return named if os.access(named, os.X_OK) else None
+    return shutil.which(WSPR_DECODER)
+
+
+def can(mode: str) -> bool:
+    """Is there a decoder here for this mode?"""
+    return (wspr_decoder_path() if mode == "wspr" else decoder_path()) is not None
 
 
 def _taps(rate: float, cutoff: float, n: int = 63) -> np.ndarray:
@@ -176,8 +203,58 @@ def who(text: str) -> tuple[str | None, str | None, bool]:
     return call, grid if call else None, cq
 
 
+def parse_wspr(out: str) -> list[dict]:
+    """What wsprd prints -> [{"snr", "dt", "hz" (in the sound), "drift" (Hz a minute), "text", "call"?, "grid"?,
+    "dbm"? (the power it says it's sending)}], strongest first. A spot is "K1ABC FN42 37"; a call with a prefix
+    comes without its locator ("PJ4/K1ABC 37") and then again as "<PJ4/K1ABC> FK52ud 37"."""
+    found = []
+    for line in out.splitlines():
+        m = WSPR_LINE.match(line)
+        if not m or "DecodeFinished" in line:
+            continue
+        text = " ".join(m.group(5).split())
+        words = text.split()
+        spot = {"snr": float(m.group(1)), "dt": float(m.group(2)), "hz": int(round(float(m.group(3)) * 1e6)),      # (no dial given: MHz of the sound)
+                "drift": int(m.group(4)), "text": text}
+        call = words[0].strip("<>") if words else ""
+        if call and call != "...":
+            spot["call"] = call
+            if len(words) == 3 and WSPR_GRID.match(words[1]):
+                spot["grid"] = words[1][:4].upper() + words[1][4:].lower()
+        if words and re.fullmatch(r"-?\d+", words[-1]):
+            spot["dbm"] = int(words[-1])
+        found.append(spot)
+    return sorted(found, key=lambda d: -d["snr"])
+
+
+def _run_wspr(samples: np.ndarray) -> list[dict]:
+    program = wspr_decoder_path()
+    if program is None:
+        raise RuntimeError("no WSPR decoder on this radio")
+    kept = os.path.join(tempfile.gettempdir(), "sleepradio-wspr")      # (it keeps the calls it has learnt here, and its FFT plans)
+    os.makedirs(kept, exist_ok=True)
+    with tempfile.TemporaryDirectory(prefix="wspr-") as tmp:
+        path = os.path.join(tmp, "slot.wav")
+        with wave.open(path, "wb") as w:
+            w.setnchannels(1)
+            w.setsampwidth(2)
+            w.setframerate(OUT_RATE)
+            w.writeframes(samples.astype("<i2").tobytes())
+        cmd = [program, "-a", kept, path]
+        nice = shutil.which("nice")
+        try:
+            done = subprocess.run([nice, "-n", "10", *cmd] if nice else cmd, capture_output=True, text=True, timeout=WSPR_TIMEOUT_S, cwd=tmp)
+        except subprocess.TimeoutExpired:
+            raise RuntimeError("the decoder took too long") from None
+        except OSError as e:
+            raise RuntimeError(f"the decoder wouldn't start: {e}") from None
+    return parse_wspr(done.stdout)
+
+
 def run_decoder(samples: np.ndarray, mode: str) -> list[dict]:
     """A slot of sound at OUT_RATE -> the messages in it. RuntimeError says why not."""
+    if mode == "wspr":
+        return _run_wspr(samples)
     program = decoder_path()
     if program is None:
         raise RuntimeError("no decoder on this radio")
@@ -211,7 +288,8 @@ class Reader:
         self._clock, self._decode = clock, decode
         self._lock = threading.Lock()
         self._left = np.zeros(0, np.float32)         # (samples waiting to make up a whole DECIMATE)
-        self._x = np.zeros(0, np.float32)            # the sound kept, at RATE
+        self._pieces: deque[np.ndarray] = deque()    # the sound kept, at RATE: as it came, put together when a slot is read
+        self._kept = 0                               # ...how many samples that is
         self._end = 0.0                              # ...and when its last sample came, by the clock
         self._next: float | None = None              # the start of the next slot to read
         self._late: float | None = None              # how late the sound is, so where a slot is cut; None: not known, each tried
@@ -238,13 +316,28 @@ class Reader:
                 # When it came: by the count of samples since the last, drawn gently to the clock (blocks come in
                 # fits and starts; the samples don't). A gap is a new start: what was kept is from another time.
                 due = self._end + whole / pcm.SAMPLE_RATE
-                if len(self._x) and abs(now - due) < GAP_S:
+                if self._kept and abs(now - due) < GAP_S:
                     self._end = due + FOLLOW * (now - due)
                 else:
-                    if len(self._x):                 # (...and its delay may be another)
+                    if self._kept:                   # (...and its delay may be another)
                         self._late, self._empty = None, 0
-                    self._x, self._end = np.zeros(0, np.float32), now
-                self._x = np.concatenate((self._x, mono[:whole].reshape(-1, DECIMATE).mean(axis=1)))[-int(KEEP_S * RATE):]
+                    self._forget_sound()
+                    self._end = now
+                piece = mono[:whole].reshape(-1, DECIMATE).mean(axis=1)
+                self._pieces.append(piece)
+                self._kept += len(piece)
+                keep = int((KEEP_SLOTS * MODES[self.mode] + KEEP_MORE_S) * RATE)
+                while self._kept - len(self._pieces[0]) >= keep:       # (the oldest goes, a piece at a time)
+                    self._kept -= len(self._pieces.popleft())
+
+    def _forget_sound(self) -> None:
+        self._pieces.clear()
+        self._kept = 0
+
+    @property
+    def _x(self) -> np.ndarray:
+        """The sound kept, in one piece."""
+        return np.concatenate(self._pieces) if self._pieces else np.zeros(0, np.float32)
 
     # --- what the page asks for --------------------------------------------------------------
 
@@ -253,7 +346,7 @@ class Reader:
         far), "late" (s the sound is behind the clock, once known), "last": {"t", "heard" | "error"}, "messages": [{"n", "t" (the slot's start, by the clock), "snr", "dt",
         "hz", "text", "call"?, "grid"?, "km"?, "deg"?}] after number since}"""
         with self._lock:
-            return {"on": self.on, "mode": self.mode, "band": self.band, "home": HOME, "can": decoder_path() is not None,
+            return {"on": self.on, "mode": self.mode, "band": self.band, "home": HOME, "can": decoder_path() is not None, "can_wspr": wspr_decoder_path() is not None,
                     "slot": MODES[self.mode], "slots": self._slots, "late": None if self._late is None else round(self._late, 2), "last": self._last,
                     "messages": [_far(m) for m in self._messages if m["n"] > since]}
 
@@ -277,8 +370,9 @@ class Reader:
         if self._next is None:                       # (just switched on: from the next slot to begin)
             self._next = math.ceil(now / slot) * slot
         t0 = self._next
-        cuts = (self._late,) if self._late is not None else SEARCH_LATE_S
-        if now < t0 + cuts[-1] + slot + WAIT_S:
+        used = USED_S.get(self.mode, slot)
+        cuts = (WSPR_LATE_S,) if self.mode == "wspr" else (self._late,) if self._late is not None else SEARCH_LATE_S
+        if now < t0 + cuts[-1] + used + WAIT_S:
             return
         self._next = t0 + slot
         if now > t0 + cuts[-1] + 2 * slot:           # (the radio was held up: that one's gone, on from now)
@@ -290,9 +384,9 @@ class Reader:
         try:
             for late in cuts:
                 a = len(x) - int(round((end - (t0 + late)) * RATE))     # where the slot begins in what's kept
-                b = a + int(slot * RATE)
+                b = a + int(used * RATE)
                 got = x[max(a, 0):max(min(b, len(x)), 0)]
-                if len(got) < ENOUGH * slot * RATE:  # (nothing playing for part of it)
+                if len(got) < ENOUGH * used * RATE:  # (nothing playing for part of it)
                     continue
                 if a < 0:
                     got = np.concatenate((np.zeros(-a, np.float32), got))
@@ -307,7 +401,9 @@ class Reader:
             return
         if not heard_any:
             return
-        if found:                                    # the cut moved to where the messages say it should be
+        if self.mode == "wspr":
+            pass                                     # (its cut stays put)
+        elif found:                                  # the cut moved to where the messages say it should be
             off = float(np.median([m["dt"] for m in found])) - ON_TIME_DT
             self._late, self._empty = min(LATE_MAX_S, max(0.0, cut + off)), 0
         else:
@@ -321,7 +417,7 @@ class Reader:
             self._last = {"t": t0, "heard": len(found)}
             for m in found:
                 self._n += 1
-                call, grid, cq = who(m["text"])
+                call, grid, cq = (m.get("call"), m.get("grid"), False) if self.mode == "wspr" else who(m["text"])
                 if call:
                     h = self._heard.setdefault((self.band, call), {"band": self.band, "call": call, "snr": m["snr"], "first": t0, "count": 0})
                     h.update(snr=max(h["snr"], m["snr"]), last=t0, count=h["count"] + 1, cq=cq, **({"grid": grid} if grid else {}))
@@ -348,11 +444,11 @@ class Live(Reader):
         self._stop = threading.Event()
 
     def switch(self, on: bool, mode: str | None = None, band: str | None = None) -> None:
-        """On or off, FT8 or FT4, and the band the receiver is on if the page says. On (or another mode) starts
+        """On or off, FT8, FT4 or WSPR, and the band the receiver is on if the page says. On (or another mode) starts
         from nothing, but for who's been heard. ValueError: no such mode."""
         on, mode = bool(on), (mode or self.mode)
         if mode not in MODES:
-            raise ValueError("mode is ft8 or ft4")
+            raise ValueError("mode is ft8, ft4 or wspr")
         with self._switching:
             if band is not None:
                 with self._lock:
@@ -362,7 +458,8 @@ class Live(Reader):
             self._stop.set()
             with self._lock:
                 self.on, self.mode = on, mode
-                self._left, self._x = np.zeros(0, np.float32), np.zeros(0, np.float32)
+                self._left = np.zeros(0, np.float32)
+                self._forget_sound()
                 self._next, self._last = None, None
                 self._late, self._empty = None, 0
                 self._turn += 1

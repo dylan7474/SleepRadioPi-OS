@@ -1,0 +1,10 @@
+config BR2_PACKAGE_WSPRD
+	bool "wsprd"
+	select BR2_PACKAGE_FFTW
+	select BR2_PACKAGE_FFTW_SINGLE
+	help
+	  The WSPR decoder the radio reads the amateur bands' two-minute
+	  propagation beacons with: K9AN and K1JT's wsprd, from WSJT-X
+	  (a WAV file in, the spots out). The last version that is all C.
+
+	  https://sourceforge.net/projects/wsjt/

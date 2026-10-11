@@ -1168,6 +1168,23 @@ The cards:
   with the switch). The radio keeps that list itself, up to 600 stations
   across the bands, so it grows with the page closed -- but in memory only:
   a restart, or *Clear* in Heard, begins it again.
+  *WSPR* (the **WSPR** key; the same reader and the same calls, with
+  `"mode": "wspr"`): beacons of a watt or less, each sending its call,
+  locator and power over 110 seconds from the even minute, within 200 Hz
+  of 1500 Hz in the sound on each band's WSPR frequency (14.0956 MHz on 20
+  m, 7.0386 on 40 m). A slot is two minutes, of which the decoder is given
+  114 seconds, cut two seconds late -- it takes sound anything from four
+  seconds early to four late, so there is no finding of the delay as for
+  FT8. The decoder is wsprd as it was in WSJT-X 1.9.1, the last version
+  that is all C (`package/wsprd`, with FFTW; later ones add a second
+  decoder in Fortran, which the image's toolchain hasn't got); a slot takes
+  it one to seven seconds on the Zero 2 W, and what it reads off the air
+  there matches the present version's. It keeps the calls it has learnt
+  and its FFT plans in the temporary directory, until the radio restarts.
+  A line is the slot's time, strength, where in the sound, the call and
+  locator, the power as watts, and how far and which way; Heard lists the
+  beacons heard on the band. In *Where to listen* WSPR has a column of its
+  own; the survey leaves it out (two minutes a band).
   *PSK31 and RTTY, read as text* (the **PSK** and **RTTY** keys in a
   receiver's window; `POST /api/rx/keyboard {"on": true | false, "mode":
   "psk31" | "rtty"}`, off again at the next start; `GET
