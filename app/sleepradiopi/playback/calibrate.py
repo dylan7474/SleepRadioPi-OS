@@ -62,6 +62,9 @@ SETTLE_S, LISTEN_S, WATERFALL_S = 0.9, 1.6, 2.2
 OUTLIER_MIN_HZ = 25.0        # a station off the line the others make by this, and by three times what they usually are, is left out
 LINE_FROM, LINE_SPAN_HZ = 4, 4_000_000      # stations, and how far apart the furthest must be, for the slope to be believed
 PPM_MOST = 200
+STEP_MOST = 20               # parts per million changed at one go: more than that isn't drift, it's the stations misleading
+AGREE_HZ = 40.0              # ...and those gone by must come within this of the line: one evening half of them stood 440 Hz
+                             # below the other half, the line went through both, and the receiver was left 400 Hz out
 
 
 def carriers(rows: list[bytes], centre: int, rate: int, per_db: float, lo: int, hi: int, most: int = PER_BAND) -> list[int]:
@@ -152,10 +155,13 @@ def fit(points: list[tuple[int, float]], ppm: int, trim: int, shift_hz: int) -> 
     if len(used) < LINE_FROM and e.max() - e.min() > 2 * OUTLIER_MIN_HZ:
         raise ValueError("the few stations heard don't agree with each other: try in the evening, when the broadcast bands are full")
     step = -int(round(slope * 1e6)) if line else 0   # (the setting is in whole parts per million)
-    if abs(ppm + step) > PPM_MOST:
-        raise ValueError("the stations heard ask for more correction than a dongle can need: nothing was changed")
+    if abs(ppm + step) > PPM_MOST or abs(step) > STEP_MOST:
+        raise ValueError(f"the stations heard ask for the dongle's setting to change by {abs(step)} parts per million, more than one drifts: "
+                         "nothing was changed (if it's a new dongle, set its ppm roughly first)")
     after = e + step * 1e-6 * (shift_hz + f)         # what each would read with that set...
     move = int(round(float(np.median(after))))       # ...and what's left is the trim's (the middle of them, again)
+    if float(np.abs(after - move).max()) > AGREE_HZ:
+        raise ValueError("the stations heard don't agree with each other well enough to go by (some may not be what they seem): nothing was changed")
     return {"ppm": ppm + step, "trim": trim + move, "slope": round(float(slope * 1e6), 2) if line else None,
             "used": [(int(a), round(float(b), 1)) for a, b in zip(f, e)], "left_out": [(int(a), round(float(b), 1)) for a, b in out],
             "was": round(float(np.abs(e).max()), 1), "left": round(float(np.abs(after - move).max()), 1)}

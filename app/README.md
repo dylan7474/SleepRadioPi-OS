@@ -1238,7 +1238,13 @@ The cards:
   agree on -- the middle slope, the middle of what's left -- and a station
   well off it is left out. With fewer than four
   stations, or all within 4 MHz, only the trim is moved; with fewer than
-  two that agree, nothing, and it says so. The receiver keeps what's set
+  two that agree, nothing, and it says so. Nothing is changed either if
+  those gone by don't come within 40 Hz of the line, or if they ask for
+  more than 20 parts per million at one go: one evening every station
+  above 15 MHz stood 440 Hz below the rest (why isn't known yet), a line
+  went through both lots, and the receiver was left 400 Hz out. FT8 heard
+  on this receiver and on someone else's at the same moment is the better
+  yardstick, to half a Hz: that isn't in the radio yet. The receiver keeps what's set
   (its `POST /calibrate`). About a minute and a half; the receiver is put
   back where it was; if the radio is playing it, the round is heard. The decoding is ft8_lib's `decode_ft8` (MIT, built into the image:
   `package/ft8-lib`), run at low priority on each slot: about half a second

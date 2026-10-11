@@ -139,7 +139,10 @@ OPTIONS="--upconverter 125 --ppm 62 --trim 75 --gain 19.7"
   centre read 136 Hz apart. The receiver works out where the chip really
   went (the driver's own sums: `r820t_off` in `sleepradio_tuner.py`) and
   takes that off where the signal is picked out: the same carrier then read
-  15 Hz apart. Other tuner chips are left as they are.
+  15 Hz apart. The driver changed how it does this at librtlsdr 2.0 (it
+  takes the nearest step: 27 Hz either way at most), so the receiver looks
+  at which library is installed and follows that one's sums; with one it
+  doesn't know, and with other tuner chips, nothing is taken off.
 - `--gain`: a long aerial brings megawatt broadcast stations, and the dongle
   has eight bits. If the strongest are clipping, turn it down.
 

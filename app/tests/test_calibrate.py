@@ -82,6 +82,12 @@ def test_what_the_measurements_ask_for() -> None:
     for none in ([], [(9_460_000, 120.0)], [(9_460_000, 120.0), (9_710_000, -300.0)]):
         with pytest.raises(ValueError):
             calibrate.fit(none, 67, 218, SHIFT)
+    # as heard one evening: the stations above 15 MHz all 440 Hz below the rest. A line through both asked for 47 ppm
+    # and left the receiver 400 Hz out; now nothing is changed
+    split = [(7_265_000, 260.6), (7_340_000, 253.5), (7_646_000, 286.9), (9_500_000, 274.1), (9_585_000, 273.3), (9_730_000, 275.1),
+             (15_210_000, -129.7), (15_240_000, -130.6), (15_720_000, -140.5), (17_520_000, -182.2), (17_700_000, -182.7), (17_760_000, -187.3)]
+    with pytest.raises(ValueError):
+        calibrate.fit(split, 64, -338, SHIFT)
     with pytest.raises(ValueError):                  # (more than a dongle can be out: something else is wrong)
         calibrate.fit([(f, (f - 6e6) * 300e-6) for f in range(6_000_000, 18_000_000, 2_000_000)], 0, 0, SHIFT)
 

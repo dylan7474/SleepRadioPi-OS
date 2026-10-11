@@ -836,8 +836,12 @@ What's left to do (everything else described here is built and running):
   → Media library); still to do: syncing a whole desktop library in one go.
 - **A needle VU meter** — a physical meter driven from a PWM pin, with the
   Android app's ballistics; one meter first.
-- **Calibrate, by itself** — a dongle drifts a hundred Hz or so as it
-  warms: *Calibrate* run by the radio now and then (it's a key today).
+- **Calibrate, by a better yardstick and by itself** — broadcast stations
+  misled it one evening (half of them 440 Hz from the others; it now
+  changes nothing when they disagree). FT8 heard on the receiver and on a
+  KiwiSDR at the same moment gives the error to half a Hz on every band:
+  the radio could do that itself. And a dongle drifts a hundred Hz or so as
+  it warms, so run by the radio now and then (it's a key today).
 - **A dongle inside the radio** — the bigger radios (a Pi 3 inside) have
   the room and the processor for an RTL-SDR of their own: one with a
   temperature-compensated crystal (a Nooelec NESDR SMArt v5), so that it

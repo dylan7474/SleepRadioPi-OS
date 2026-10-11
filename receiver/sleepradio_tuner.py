@@ -159,8 +159,25 @@ def r820t_if(rate: int) -> int:
 R820T_IF_HZ = r820t_if(FS)
 
 
-def r820t_off(freq: int, ppm: int = 0) -> float:
-    """How far from `freq` (Hz) an R820T dongle really goes when it's asked for it: the chip's oscillator moves in
+def driver() -> int:
+    """Which librtlsdr is on this computer: 0 for the 0.6 line, 2 for 2.0 and after, -1 if it can't be told (they
+    set the R820T's oscillator by different sums: r820t_off). From the library's file name, librtlsdr.so.2.0.1."""
+    import glob
+    import re
+    found = []
+    for pattern in ("/usr/lib/*/librtlsdr.so.*", "/usr/lib/librtlsdr.so.*", "/usr/local/lib/librtlsdr.so.*", "/usr/lib64/librtlsdr.so.*"):
+        for path in glob.glob(pattern):
+            m = re.search(r"\.so\.(\d+)\.(\d+)", path)
+            if m:
+                found.append(int(m.group(1)))
+    return (2 if max(found) >= 2 else 0) if found else -1
+
+
+def r820t_off(freq: int, ppm: int = 0, driver: int = 0) -> float:
+    """How far from `freq` (Hz) an R820T dongle really goes when it's asked for it. `driver`: which librtlsdr
+    (driver()). The chip's oscillator moves in steps, and from 2.0 on the driver takes the nearest: 27 Hz either
+    way at most, at 140 MHz. Measured on one carrier from seven places of the dongle's centre: 124 Hz apart, 17
+    with this taken off. Before 2.0 it did worse, as follows. The chip's oscillator moves in
     steps (55 Hz at 140 MHz, where an upconverter puts short wave; coarser higher up), and the driver (librtlsdr's
     r82xx_set_pll, followed here sum for sum) first drops what's under a kHz of the oscillator's own frequency. So
     two frequencies a few kHz apart could be 140 Hz apart in their errors: one broadcast carrier heard from seven
@@ -172,9 +189,11 @@ def r820t_off(freq: int, ppm: int = 0) -> float:
     mix_div = 2
     while mix_div <= 64 and not 1_770_000 <= lo_khz * mix_div < 3_540_000:
         mix_div <<= 1
-    if mix_div > 64:
-        return 0.0                                   # (out of the chip's reach: the driver gives up too)
+    if mix_div > 64 or driver < 0:
+        return 0.0                                   # (out of the chip's reach: the driver gives up too; or a driver not known)
     vco = lo * mix_div
+    if driver >= 2:                                  # the nearest step: 65536 of them to twice the crystal
+        return 2 * xtal * ((xtal + 65536 * vco) // (2 * xtal)) / 65536 / mix_div - lo
     nint = vco // (2 * xtal)
     fra = (vco - 2 * xtal * nint) // 1000            # the part of a step, in kHz: what's under a kHz is dropped
     n_sdm, sdm = 2, 0
@@ -211,6 +230,7 @@ class Tuner:
         self._skip_until = 0.0
         self._stopped = threading.Event()
         self.chip = 0                                    # the tuner chip, as rtl_tcp names it (R820T: its steps are allowed for)
+        self.driver = driver()                           # ...by the sums of the librtlsdr that's here
         self.off = 0.0                                   # how far from where it was asked the dongle's centre really is
 
     @property
@@ -258,7 +278,7 @@ class Tuner:
                 self._say(0x01, self.centre + self.shift_hz)
                 self._skip_until = time.monotonic() + SETTLE_S
             self.freq, self.mode = int(freq), mode
-            self.off = r820t_off(self.centre + self.shift_hz, self.ppm) if self.chip == R820T else 0.0
+            self.off = r820t_off(self.centre + self.shift_hz, self.ppm, self.driver) if self.chip == R820T else 0.0
             self._demod.set(freq - self.centre - self.off, mode)
 
     def stop(self) -> None:

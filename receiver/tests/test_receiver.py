@@ -534,6 +534,9 @@ def test_an_r820t_dongle_goes_in_steps_and_they_are_allowed_for(monkeypatch):
     t.tune(13_724_000, "usb", recentre=True)             # another chip (or not known yet): picked out where it was asked for
     t.chip = st.R820T
     t.tune(13_724_000, "usb", recentre=True)             # an R820T: where it really is
+    t.driver = 0
+    t.tune(13_724_000, "usb", recentre=True)
+    seen[1:] = seen[2:]
     off = st.r820t_off(t.centre + 125_000_218, 67)
     assert seen[0] == 13_724_000 - t.centre and abs(seen[1] - (seen[0] - off)) < 1e-6 and abs(off) > 1 and t.off == off
 
@@ -552,3 +555,11 @@ def test_two_dongles_on_one_computer_each_by_its_serial_and_its_own_ports(monkey
         assert _FakeTuner.made[0].kw["device"] == "SRHF0001" and _FakeTuner.made[0].kw["port"] == 47_101
     finally:
         second.rest()
+
+
+def test_a_newer_driver_takes_the_nearest_step():
+    import sleepradio_tuner as st
+    offs = [st.r820t_off(125_000_000 + f, 64, driver=2) for f in range(7_000_000, 18_000_000, 7_000)]
+    assert -28 < min(offs) < -20 and 20 < max(offs) < 28           # half a step either way, 55 Hz a step at these frequencies
+    assert abs(float(sum(offs)) / len(offs)) < 2 and st.r820t_off(138_774_218, 64, driver=-1) == 0.0      # (a driver not known: left alone)
+    assert st.driver() in (-1, 0, 2)
