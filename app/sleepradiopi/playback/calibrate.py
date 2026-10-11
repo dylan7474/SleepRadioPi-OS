@@ -77,6 +77,7 @@ FT8_HZ = (3_573_000, 7_074_000, 10_136_000, 14_074_000, 18_100_000, 21_074_000) 
 FT8_LISTEN_S = 20.5          # a second before a slot begins to 4.5 s after it ends: the whole of it, however late the sound is
 FT8_CUTS_S = (0.5, 2.0, 3.5)         # how late a slot is cut, each tried (see audio/ft8.py)
 FT8_COMMON = 3               # stations heard by both on a band, for it to count...
+FT8_LINE_FROM = 3            # bands for the slope to be believed: each is good to a Hz or two, so fewer than of stations
 FT8_TWO_AGREE_HZ = 10.0      # ...or two, if they're within this of each other
 PPM_MOST = 200
 STEP_MOST = 20               # parts per million changed at one go: more than that isn't drift, it's the stations misleading
@@ -142,7 +143,7 @@ def weather(x: np.ndarray, rate: float = AUDIO_RATE) -> float | None:
     return (middle(found[0]) + middle(found[0] + 450.0)) / 2
 
 
-def fit(points: list[tuple[int, float]], ppm: int, trim: int, shift_hz: int) -> dict:
+def fit(points: list[tuple[int, float]], ppm: int, trim: int, shift_hz: int, line_from: int = LINE_FROM) -> dict:
     """What the measurements ask for. points: [(the station's frequency Hz, how far above where it should be its
     tone was, Hz)]; ppm, trim, shift_hz: the receiver's settings they were taken with (shift: its upconverter).
     -> {"ppm", "trim" (to set), "slope" (ppm found, None if only the trim could be told), "used": [(Hz, error)],
@@ -153,7 +154,7 @@ def fit(points: list[tuple[int, float]], ppm: int, trim: int, shift_hz: int) -> 
         if len(used) < 2:
             raise ValueError("too few stations of known frequency were heard to go by: try in the evening, when the broadcast bands are full")
         f, e = np.array([p[0] for p in used], float), np.array([p[1] for p in used], float)
-        line = len(used) >= LINE_FROM and f.max() - f.min() >= LINE_SPAN_HZ
+        line = len(used) >= line_from and f.max() - f.min() >= LINE_SPAN_HZ
         # The line most of them agree on, not the one that splits the difference with a station that's out: the
         # middle one of the slopes between every two of them well apart, then the middle of what's left.
         if line:
@@ -169,7 +170,7 @@ def fit(points: list[tuple[int, float]], ppm: int, trim: int, shift_hz: int) -> 
         if off[worst] <= allow:
             break
         out.append(used.pop(worst))
-    if len(used) < LINE_FROM and e.max() - e.min() > 2 * OUTLIER_MIN_HZ:
+    if len(used) < line_from and e.max() - e.min() > 2 * OUTLIER_MIN_HZ:
         raise ValueError("the few stations heard don't agree with each other: try in the evening, when the broadcast bands are full")
     step = -int(round(slope * 1e6)) if line else 0   # (the setting is in whole parts per million)
     if abs(ppm + step) > PPM_MOST or abs(step) > STEP_MOST:
@@ -410,7 +411,7 @@ class Job:
                 points = self._by_ft8(base, kiwi, sound, go, lo, hi)
                 if len(points) >= 2:
                     try:
-                        result, by = fit(points, ppm, trim, shift), "ft8"
+                        result, by = fit(points, ppm, trim, shift, line_from=FT8_LINE_FROM), "ft8"
                     except ValueError as e:          # (too few bands open, or they disagree: the other way, then)
                         log.info("calibrate: FT8 against the KiwiSDR wouldn't do (%s): broadcast stations instead", e)
             if result is None:
