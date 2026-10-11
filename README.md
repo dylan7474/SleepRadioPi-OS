@@ -847,6 +847,11 @@ What's left to do (everything else described here is built and running):
   Android app's ballistics; one meter first.
 - **Calibrate, by itself** — a dongle drifts a hundred Hz or so as it
   warms: *Calibrate* run by the radio now and then (it's a key today).
+- **Reporting what's heard** — PSK Reporter (pskreporter.info) collects
+  who heard whom from receivers all over the world and maps it: the radio
+  could send it the FT8, FT4 and WSPR stations it hears (and WSPR spots to
+  wsprnet.org). It gives your callsign and locator to a public website, so
+  it would be a switch that is off until you turn it on.
 - **Receivers with names** — a receiver of your own is known by its
   address ("192.168.50.4:8075"), and two on one computer are hard to tell
   apart: let them be named ("Short wave", "VHF"), in Receivers and
