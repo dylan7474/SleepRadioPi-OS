@@ -1242,9 +1242,19 @@ The cards:
   those gone by don't come within 40 Hz of the line, or if they ask for
   more than 20 parts per million at one go: one evening every station
   above 15 MHz stood 440 Hz below the rest (why isn't known yet), a line
-  went through both lots, and the receiver was left 400 Hz out. FT8 heard
-  on this receiver and on someone else's at the same moment is the better
-  yardstick, to half a Hz: that isn't in the radio yet. The receiver keeps what's set
+  went through both lots, and the receiver was left 400 Hz out.
+  So the broadcast stations are the second choice now. *The first is FT8
+  against a KiwiSDR:* if one is among the radio's stations (the first of
+  them is used) and the radio can read FT8, each band's FT8 frequency from
+  80 to 15 m is listened to for 34 seconds on the receiver and on the
+  KiwiSDR at once (the KiwiSDR's sound isn't played), both are decoded,
+  and for every station heard by both in the same slot the difference
+  between where its message is in ours and in the KiwiSDR's is the error
+  there -- to a Hz or two, the KiwiSDR being on frequency by GPS. Three
+  stations in common make a band count; two bands are enough for the trim,
+  four across 4 MHz for the ppm as well. About four minutes. With no
+  KiwiSDR saved, or fewer than two bands open to both, it's the broadcast
+  stations after all. The receiver keeps what's set
   (its `POST /calibrate`). About a minute and a half; the receiver is put
   back where it was; if the radio is playing it, the round is heard. The decoding is ft8_lib's `decode_ft8` (MIT, built into the image:
   `package/ft8-lib`), run at low priority on each slot: about half a second

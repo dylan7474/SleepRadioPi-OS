@@ -305,7 +305,10 @@ Actions, Sleep timer and Radio folders open:
   warms. *Calibrate* in a short-wave receiver's window takes it round the
   broadcast bands, measures a dozen stations whose frequencies are known
   (they keep to a 5 kHz raster) and the German weather service's
-  teleprinters, and sets the dongle's two corrections. The receiver itself
+  teleprinters, and sets the dongle's two corrections. Better still, with a
+  KiwiSDR among your stations it compares FT8 heard on both at the same
+  moment, band by band: the same station's message, a Hz or two apart or
+  a hundred. The receiver itself
   now also allows for the steps its tuner chip moves in, which were up to
   140 Hz of that. On the author's: from 83 Hz out at 6 MHz to within a few
   Hz from 7 to 14 MHz, checked against someone else's receiver.
@@ -836,12 +839,8 @@ What's left to do (everything else described here is built and running):
   → Media library); still to do: syncing a whole desktop library in one go.
 - **A needle VU meter** — a physical meter driven from a PWM pin, with the
   Android app's ballistics; one meter first.
-- **Calibrate, by a better yardstick and by itself** — broadcast stations
-  misled it one evening (half of them 440 Hz from the others; it now
-  changes nothing when they disagree). FT8 heard on the receiver and on a
-  KiwiSDR at the same moment gives the error to half a Hz on every band:
-  the radio could do that itself. And a dongle drifts a hundred Hz or so as
-  it warms, so run by the radio now and then (it's a key today).
+- **Calibrate, by itself** — a dongle drifts a hundred Hz or so as it
+  warms: *Calibrate* run by the radio now and then (it's a key today).
 - **A dongle inside the radio** — the bigger radios (a Pi 3 inside) have
   the room and the processor for an RTL-SDR of their own: one with a
   temperature-compensated crystal (a Nooelec NESDR SMArt v5), so that it

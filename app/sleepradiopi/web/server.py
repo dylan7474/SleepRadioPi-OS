@@ -720,8 +720,9 @@ def make_handler(station: Station, output: Mp3Output, speaker=None,
                 keyboard_mod.reader.switch(body["on"], body.get("mode"))
                 self._send(json.dumps(self._one_reader("keyboard" if body["on"] else None)).encode(), "application/json")
             elif path == "/api/rx/calibrate":
-                # {"base": "http://192.168.50.154:8074"}: put that receiver of your own on frequency, from stations of
-                # known frequency (it's taken round the broadcast bands for a minute and a half: playback/calibrate.py).
+                # {"base": "http://192.168.50.154:8074"}: put that receiver of your own on frequency: by FT8 heard on it and
+                # on a KiwiSDR among the stations at the same moment, or failing that from broadcast stations
+                # (it's taken round the bands for a few minutes: playback/calibrate.py).
                 # With "ppm" and "trim": set it to those instead (to undo one).
                 from sleepradiopi.playback import calibrate as calibrate_mod
                 try:
@@ -734,7 +735,10 @@ def make_handler(station: Station, output: Mp3Output, speaker=None,
                             raise ValueError("ppm and trim are whole numbers")
                         self._send(json.dumps(calibrate_mod.job.set(base, body["ppm"], body["trim"])).encode(), "application/json")
                         return
-                    calibrate_mod.job.start(base)
+                    # (a KiwiSDR among the stations, if there is one: FT8 heard on both at once is the better yardstick)
+                    from sleepradiopi.playback import receiver as receiver_mod
+                    kiwis = [spec["base"] for spec in (receiver_mod.parse(str(st.get("url", ""))) for st in self._radio_stations()) if spec and spec["kind"] == "kiwi"]
+                    calibrate_mod.job.start(base, kiwis[0] if kiwis else None)
                 except (ValueError, TypeError, KeyError, AttributeError, OSError) as e:
                     self._error(str(e) if isinstance(e, ValueError) else 'send {"base": "http://the receiver"}' if not isinstance(e, OSError) else f"the receiver isn't answering ({e})")
                     return

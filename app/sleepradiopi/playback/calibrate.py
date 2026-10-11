@@ -27,8 +27,20 @@ middle of what's left -- and a station well off it is left out. Taking the
 average instead put the receiver 40 Hz out, as FT8 against someone else's
 receiver showed.
 
-The receiver hears one thing at a time, so it's taken round for a minute
-and a half and then put back; if the radio is playing it, that's heard.
+A better yardstick, when there is one: FT8, heard on this receiver and
+on a KiwiSDR at the same moment. A KiwiSDR keeps time and frequency by GPS,
+and the same station's message is in both receivers' sound: where it is in
+ours, less where it is in the KiwiSDR's, is our error there, to a Hz or
+two, on every band that's open. One evening the broadcast stations above 15
+MHz all stood 440 Hz below the rest and misled the line; three bands of FT8
+gave the same answer to half a Hz. So if the radio has a KiwiSDR among its
+stations and can read FT8, that is how it's done: each band's FT8 frequency
+for half a minute, both receivers at once (the KiwiSDR's sound isn't
+played). The broadcast stations are the fallback, when no KiwiSDR is saved
+or too few bands have stations heard by both.
+
+The receiver hears one thing at a time, so it's taken round for a few
+minutes and then put back; if the radio is playing it, that's heard.
 """
 from __future__ import annotations
 
@@ -43,7 +55,7 @@ from typing import Callable
 
 import numpy as np
 
-from sleepradiopi.audio import rtty
+from sleepradiopi.audio import ft8, pcm, rtty
 from sleepradiopi.audio.psk import spectrum
 
 log = logging.getLogger(__name__)
@@ -61,6 +73,10 @@ TONE_REACH_HZ = 700.0        # ...and no further than this from where it should 
 SETTLE_S, LISTEN_S, WATERFALL_S = 0.9, 1.6, 2.2
 OUTLIER_MIN_HZ = 25.0        # a station off the line the others make by this, and by three times what they usually are, is left out
 LINE_FROM, LINE_SPAN_HZ = 4, 4_000_000      # stations, and how far apart the furthest must be, for the slope to be believed
+FT8_HZ = (3_573_000, 7_074_000, 10_136_000, 14_074_000, 18_100_000, 21_074_000)     # where FT8 is, a band each
+FT8_LISTEN_S = 34.0          # long enough for one whole 15 s slot, however late either receiver's sound is
+FT8_CUTS_S = (0.5, 2.0, 3.5)         # how late a slot is cut, each tried (see audio/ft8.py)
+FT8_COMMON = 3               # stations heard by both on a band, for it to count
 PPM_MOST = 200
 STEP_MOST = 20               # parts per million changed at one go: more than that isn't drift, it's the stations misleading
 AGREE_HZ = 40.0              # ...and those gone by must come within this of the line: one evening half of them stood 440 Hz
@@ -167,6 +183,30 @@ def fit(points: list[tuple[int, float]], ppm: int, trim: int, shift_hz: int) -> 
             "was": round(float(np.abs(e).max()), 1), "left": round(float(np.abs(after - move).max()), 1)}
 
 
+def messages(x: np.ndarray, t0: float, decode: Callable) -> dict[str, float]:
+    """The FT8 in sound at 12 kHz that began at t0 by the clock -> {(slot, message): where in the sound, Hz}: every
+    whole slot in it, cut each of a few ways late, the way that reads most."""
+    best: dict = {}
+    for late in FT8_CUTS_S:
+        t, got = np.ceil((t0 - late) / 15.0) * 15.0 + late, {}
+        while t + 15.0 <= t0 + len(x) / AUDIO_RATE:
+            i = int((t - t0) * AUDIO_RATE)
+            try:
+                for m in decode(x[i:i + 15 * AUDIO_RATE].astype(np.int16), "ft8"):
+                    got[(int(round(t - late)), m["text"])] = float(m["hz"])
+            except RuntimeError:
+                pass
+            t += 15.0
+        if len(got) > len(best):
+            best = got
+    return best
+
+
+def _kiwi(url: str):
+    from sleepradiopi.playback.receiver import ReceiverStream
+    return ReceiverStream(url)
+
+
 def _get(url: str, timeout: float = 8.0) -> dict:
     with urllib.request.urlopen(url, timeout=timeout) as r:
         return json.loads(r.read())
@@ -204,15 +244,24 @@ class _Sound:
                     break
                 with self._lock:
                     self._buf += b
-                    del self._buf[:-AUDIO_RATE * 2 * 20]
+                    del self._buf[:-AUDIO_RATE * 2 * 45]
         except (OSError, ValueError):
             pass
         self._closed = True
 
-    def take(self, seconds: float, settle: float = SETTLE_S) -> np.ndarray:
-        time.sleep(settle)
+    def mark(self) -> None:
+        """From now: since_mark() is what has come since."""
         with self._lock:
             self._buf.clear()
+        self.began = time.time()                     # (when it began, by the clock)
+
+    def since_mark(self) -> np.ndarray:
+        with self._lock:
+            return np.frombuffer(bytes(self._buf[:len(self._buf) // 2 * 2]), "<i2").astype(np.float32)
+
+    def take(self, seconds: float, settle: float = SETTLE_S) -> np.ndarray:
+        time.sleep(settle)
+        self.mark()
         until = time.monotonic() + seconds + 6
         while time.monotonic() < until and not self._closed:
             with self._lock:
@@ -232,8 +281,10 @@ class _Sound:
 class Job:
     """One calibration of one receiver, in a thread of its own: start(base), then status() until it's done."""
 
-    def __init__(self, get: Callable = _get, post: Callable = _post, sound: Callable = _Sound) -> None:
-        self._get, self._post, self._sound = get, post, sound
+    def __init__(self, get: Callable = _get, post: Callable = _post, sound: Callable = _Sound, kiwi: Callable = _kiwi,
+                 decode: Callable | None = None) -> None:
+        self._get, self._post, self._sound, self._kiwi = get, post, sound, kiwi
+        self._decode = decode or ft8.run_decoder
         self._lock = threading.Lock()
         self._state: dict = {"running": False}
         self._thread: threading.Thread | None = None
@@ -244,13 +295,14 @@ class Job:
         with self._lock:
             return json.loads(json.dumps(self._state))
 
-    def start(self, base: str) -> None:
-        """ValueError if one is running."""
+    def start(self, base: str, kiwi: str | None = None) -> None:
+        """kiwi: a KiwiSDR's address to compare FT8 with ("http://host:8073/"), if the radio has one saved.
+        ValueError if one is running."""
         with self._lock:
             if self._state.get("running"):
                 raise ValueError("a calibration is already running")
             self._state = {"running": True, "base": base, "step": "Asking the receiver…", "points": []}
-            self._thread = threading.Thread(target=self._run, args=(base,), name="calibrate", daemon=True)
+            self._thread = threading.Thread(target=self._run, args=(base, kiwi), name="calibrate", daemon=True)
             self._thread.start()
 
     def set(self, base: str, ppm: int, trim: int) -> dict:
@@ -262,7 +314,79 @@ class Job:
         with self._lock:
             self._state.update(kw)
 
-    def _run(self, base: str) -> None:
+    def _by_ft8(self, base: str, kiwi: str, sound, go: Callable, lo: int, hi: int) -> list[tuple[int, float]]:
+        """Each band's FT8 on this receiver and on the KiwiSDR at once -> [(Hz, how far above the KiwiSDR's ours is)]."""
+        points: list[tuple[int, float]] = []
+        for hz in (f for f in FT8_HZ if lo <= f <= hi):
+            self._say(step=f"Comparing FT8 with the KiwiSDR on {hz / 1e6:.3f} MHz ({len(points)} band{'' if len(points) == 1 else 's'} done)…")
+            go(hz)
+            other = self._kiwi(f"{kiwi.rstrip('/')}/?f={hz / 1000:.2f}usb")
+            theirs: list[np.ndarray] = []
+            began = 0.0
+            other.start()
+            try:
+                time.sleep(SETTLE_S)
+                sound.mark()                         # ours from now (it's read as it comes, by a thread of its own)...
+                until = time.monotonic() + FT8_LISTEN_S
+                while time.monotonic() < until and not getattr(other, "ended", None):
+                    block = other.read(0.5)          # ...and the KiwiSDR's, a block at a time, here
+                    if block is not None:
+                        if not theirs:
+                            began = time.time() - len(block) / pcm.SAMPLE_RATE
+                        theirs.append(block)
+                ours, ours_began = sound.since_mark(), sound.began
+            finally:
+                other.close()
+            if not theirs:
+                continue                             # (the KiwiSDR didn't answer, or is full: the next band may do)
+            mono = np.concatenate(theirs).astype(np.float32)
+            mono = mono.mean(axis=1) if mono.ndim == 2 else mono
+            mono = mono[:len(mono) // ft8.DECIMATE * ft8.DECIMATE].reshape(-1, ft8.DECIMATE).mean(axis=1)
+            a = messages(ours, ours_began, self._decode)
+            b = messages(ft8.to_decoder_rate(mono).astype(np.float32), began, self._decode)
+            both = [a[k] - b[k] for k in a if k in b]
+            if len(both) >= FT8_COMMON:
+                points.append((hz, round(float(np.median(both)), 1)))
+                self._say(points=[list(p) for p in points])
+        return points
+
+    @staticmethod
+    def _carrier(sound, go: Callable, hz: int) -> float | None:
+        """How far above where it should be a broadcast station's carrier is heard, or None if it isn't."""
+        go(hz - 1000)
+        t = tone(sound.take(LISTEN_S))
+        return None if t is None else t - 1000.0
+
+    def _by_stations(self, base: str, sound, go: Callable, lo: int, hi: int) -> list[tuple[int, float]]:
+        """Broadcast carriers and the weather teleprinters -> [(Hz, how far above where it should be)]."""
+        points: list[tuple[int, float]] = []
+        measure = lambda hz: self._carrier(sound, go, hz)
+        bands = [b for b in BROADCAST if b[0] >= lo and b[1] <= hi]
+        for k, (b0, b1) in enumerate(bands):
+            self._say(step=f"Looking for broadcast stations: {b0 / 1e6:.1f} to {b1 / 1e6:.1f} MHz ({k + 1} of {len(bands)})…")
+            found: list[int] = []
+            for centre in ([(b0 + b1) // 2] if b1 - b0 <= 260_000 else [b0 + (b1 - b0) // 4, b1 - (b1 - b0) // 4]):
+                go(centre)
+                since = self._get(base + "/spectrum?since=0").get("n", 0)       # (asking is what starts them being kept)
+                time.sleep(WATERFALL_S)
+                w = self._get(base + f"/spectrum?since={since}")
+                rows = [b64decode(r[1]) for r in w.get("rows", [])]
+                found += [hz for hz in carriers(rows, int(w.get("centre", centre)), int(w.get("rate", 256_000)), float(w.get("per_db", 2.5)), b0, b1) if hz not in found]
+            for hz in found[:PER_BAND + 1]:
+                err = measure(hz)
+                if err is not None:
+                    points.append((hz, round(err, 1)))
+                    self._say(points=[list(p) for p in points])
+        for hz in (w for w in WEATHER_HZ if lo <= w <= hi):
+            self._say(step=f"Listening for the weather teleprinter on {hz / 1e6:.4f} MHz…")
+            go(hz - 1500)
+            mid = weather(sound.take(3.0))
+            if mid is not None:
+                points.append((hz, round(mid - 1500.0, 1)))
+                self._say(points=[list(p) for p in points])
+        return points
+
+    def _run(self, base: str, kiwi: str | None = None) -> None:
         sound = None
         try:
             st = self._get(base + "/status")
@@ -275,45 +399,30 @@ class Job:
             # (someone listening and tuning it: joined as it is, then moved; nobody: started)
             sound = self._sound(base + ("/audio" if before else "/audio?freq=7.3&mode=usb"))
             go = lambda hz: self._post(base + "/tune", {"freq": int(hz), "mode": "usb"})
-            points: list[tuple[int, float]] = []
-
-            def measure(hz: int) -> float | None:
-                go(hz - 1000)
-                return (lambda t: None if t is None else t - 1000.0)(tone(sound.take(LISTEN_S)))
-
-            bands = [b for b in BROADCAST if b[0] >= lo and b[1] <= hi]
-            for k, (b0, b1) in enumerate(bands):
-                self._say(step=f"Looking for broadcast stations: {b0 / 1e6:.1f} to {b1 / 1e6:.1f} MHz ({k + 1} of {len(bands)})…")
-                found: list[int] = []
-                for centre in ([(b0 + b1) // 2] if b1 - b0 <= 260_000 else [b0 + (b1 - b0) // 4, b1 - (b1 - b0) // 4]):
-                    go(centre)
-                    since = self._get(base + "/spectrum?since=0").get("n", 0)       # (asking is what starts them being kept)
-                    time.sleep(WATERFALL_S)
-                    w = self._get(base + f"/spectrum?since={since}")
-                    rows = [b64decode(r[1]) for r in w.get("rows", [])]
-                    found += [hz for hz in carriers(rows, int(w.get("centre", centre)), int(w.get("rate", 256_000)), float(w.get("per_db", 2.5)), b0, b1) if hz not in found]
-                for hz in found[:PER_BAND + 1]:
-                    err = measure(hz)
-                    if err is not None:
-                        points.append((hz, round(err, 1)))
-                        self._say(points=[list(p) for p in points])
-            for hz in (w for w in WEATHER_HZ if lo <= w <= hi):
-                self._say(step=f"Listening for the weather teleprinter on {hz / 1e6:.4f} MHz…")
-                go(hz - 1500)
-                mid = weather(sound.take(3.0))
-                if mid is not None:
-                    points.append((hz, round(mid - 1500.0, 1)))
-                    self._say(points=[list(p) for p in points])
-            self._say(step="Working it out…")
-            result = fit(points, ppm, trim, shift)
+            points, by, result = [], "stations", None
+            if kiwi and ft8.decoder_path() is not None:
+                points = self._by_ft8(base, kiwi, sound, go, lo, hi)
+                if len(points) >= 2:
+                    try:
+                        result, by = fit(points, ppm, trim, shift), "ft8"
+                    except ValueError as e:          # (too few bands open, or they disagree: the other way, then)
+                        log.info("calibrate: FT8 against the KiwiSDR wouldn't do (%s): broadcast stations instead", e)
+            if result is None:
+                points = self._by_stations(base, sound, go, lo, hi)
+                self._say(step="Working it out…", points=[list(p) for p in points])
+                result = fit(points, ppm, trim, shift)
+            result["by"] = by
             if (result["ppm"], result["trim"]) != (ppm, trim):
                 self._say(step="Setting the receiver…")
                 self._post(base + "/calibrate", {"ppm": result["ppm"], "trim": result["trim"]})
                 time.sleep(2.5)                      # (it starts afresh)
-                check = [p[0] for p in result["used"]]
-                check = [check[i] for i in sorted({0, len(check) // 4, len(check) // 2, 3 * len(check) // 4, len(check) - 1})]
-                now = [abs(e) for e in (measure(hz) for hz in check) if e is not None]
-                result["now"] = round(float(np.median(now)), 1) if now else None      # (the middle one: any one station can be out)
+                if by == "ft8":                      # (FT8 bands agree to a Hz or two: what the sums leave is what's left)
+                    result["now"] = result["left"]
+                else:
+                    check = [p[0] for p in result["used"]]
+                    check = [check[i] for i in sorted({0, len(check) // 4, len(check) // 2, 3 * len(check) // 4, len(check) - 1})]
+                    now = [abs(e) for e in (self._carrier(sound, go, hz) for hz in check) if e is not None]
+                    result["now"] = round(float(np.median(now)), 1) if now else None      # (the middle one: any one station can be out)
             else:
                 result["now"] = result["was"]
             result.update(before={"ppm": ppm, "trim": trim})

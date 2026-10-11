@@ -2354,15 +2354,16 @@ function rigCalKey(R, k) {
   return k("Calibrate", () => {
     if (CAL.busy) return toast("A receiver is being calibrated: it takes a minute and a half.");
     if (!R.st?.upconverter) return toast("Calibrate is for a short-wave receiver (one behind an upconverter): the stations it goes by are on short wave.");
-    ask(`Put ${R.o.title} on frequency? It's taken round the short-wave broadcast bands for about a minute and a half${rigOnRadio(R) ? " -- you'll hear it go --" : ""} and then put back. Best in the evening, when those bands are full.`, "Calibrate", async () => {
+    ask(`Put ${R.o.title} on frequency? It's taken round the bands for a few minutes${rigOnRadio(R) ? " -- you'll hear it go --" : ""} and then put back: FT8 on each band is compared with a KiwiSDR among your stations (about four minutes), or without one, broadcast stations are measured (a minute and a half; best in the evening).`, "Calibrate", async () => {
       CAL.busy = true;
       try {
         let st = await api("/api/rx/calibrate", { base: R.origin });
-        while (st.running) { toast(st.step + (st.points?.length ? ` ${st.points.length} station${st.points.length === 1 ? "" : "s"} measured.` : ""), true, null, true); await new Promise(ok => setTimeout(ok, 1500)); st = await api("/api/rx/calibrate"); }
+        while (st.running) { toast(st.step + (st.points?.length && !/FT8/.test(st.step) ? ` ${st.points.length} station${st.points.length === 1 ? "" : "s"} measured.` : ""), true, null, true); await new Promise(ok => setTimeout(ok, 1500)); st = await api("/api/rx/calibrate"); }
         const r = st.result;
-        if (!r) toast(`Not calibrated: ${st.error || "it stopped"}.`, false, null, true);
-        else if (r.ppm === r.before.ppm && r.trim === r.before.trim) toast(`Already on frequency: within ${Math.round(r.was)} Hz on ${r.used.length} stations. Nothing was changed.`, false, null, true);
-        else toast(`On frequency: it was up to ${Math.round(r.was)} Hz out, and is now about ${Math.round(r.now ?? r.left)} Hz out on a typical one (${r.used.length} stations, from ${(r.used[0][0] / 1e6).toFixed(1)} to ${(r.used[r.used.length - 1][0] / 1e6).toFixed(1)} MHz).`, false,
+        if (!r) { CAL.busy = false; return toast(`Not calibrated: ${st.error || "it stopped"}.`, false, null, true); }
+        const by = r.by === "ft8" ? `FT8 against a KiwiSDR on ${r.used.length} bands` : `${r.used.length} broadcast stations`, span = `${(r.used[0][0] / 1e6).toFixed(1)} to ${(r.used[r.used.length - 1][0] / 1e6).toFixed(1)} MHz`;
+        if (r.ppm === r.before.ppm && r.trim === r.before.trim) toast(`Already on frequency: within ${Math.round(r.was)} Hz, by ${by} (${span}). Nothing was changed.`, false, null, true);
+        else toast(`On frequency: it was up to ${Math.round(r.was)} Hz out, and should now be within about ${Math.max(1, Math.round(r.now ?? r.left))} Hz, by ${by} (${span}).`, false,
           () => api("/api/rx/calibrate", { base: R.origin, ppm: r.before.ppm, trim: r.before.trim }), true);
       } catch (e) { rigOops(e); }
       CAL.busy = false;
