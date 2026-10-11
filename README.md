@@ -267,7 +267,7 @@ Actions, Sleep timer and Radio folders open:
   internet receiver is tuned where it is, through the one connection the
   radio holds to it.
 
-  ![The rig: a receiver's window, with its waterfall and, under it, Morse being read off the air](docs/rig.jpg)
+  ![The rig: a short-wave receiver's window on 40 m, with its waterfall and, under it, FT8 messages being read off the air; along the bottom the keys for calibrating it, noise reduction, the Morse, FT8, FT4, PSK31 and teleprinter readers, and where to listen](docs/rig.jpg)
 - **Morse, read as text.** The *CW* key in a receiver's window has the radio
   read the Morse in what that receiver is playing: a paper tape of the dots
   and dashes with each letter under its own, and under it a log of what was
