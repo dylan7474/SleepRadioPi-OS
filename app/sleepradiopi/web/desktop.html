@@ -2234,9 +2234,11 @@ function ftHeardRow(h) {
 }
 async function ftLocator(R) {                       // the radio's own locator, typed where its key was
   const d = R.dom, f = el("input", { type: "text", id: "ft-locator", maxLength: 6, placeholder: "IO94", value: FT.st?.home || "", title: "Your locator: IO94 or IO94kn. Enter keeps it, Escape leaves it" });
+  let over = false;
   const done = async keep => {
-    if (!f.isConnected) return;
-    f.replaceWith(d.ftloc);
+    if (over) return;                                // (once only: see rigNameKey)
+    over = true;
+    if (f.isConnected) f.replaceWith(d.ftloc);
     if (!keep || f.value.trim().toUpperCase() === (FT.st?.home || "").toUpperCase()) return;
     try {
       const r = await api("/api/rx/locator", { locator: f.value });
@@ -2438,9 +2440,13 @@ function rigNameKey(R, k) {
   const key = k("Name…", () => {
     const f = el("input", { type: "text", id: "rx-name", maxLength: 30, placeholder: "Short wave", value: RX_NAMES[R.origin] || "", className: "rentry",
                             style: "width:11em;font-size:12px;padding:3px 6px", title: "A name for this receiver. Enter keeps it; empty, it has its own again; Escape leaves it" });
+    let over = false;
     const done = async keep => {
-      if (!f.isConnected) return;
-      f.replaceWith(key);
+      // (once only: taking the box away while the cursor is in it makes the browser say the cursor has left it,
+      // which came back in here and took it away first -- and then Enter's own taking-away failed, and nothing was kept)
+      if (over) return;
+      over = true;
+      if (f.isConnected) f.replaceWith(key);
       const name = f.value.trim().replace(/\s+/g, " ");
       if (!keep || name === (RX_NAMES[R.origin] || "")) return;
       try {
