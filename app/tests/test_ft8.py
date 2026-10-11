@@ -18,6 +18,7 @@ from sleepradiopi.web.server import make_handler
 
 T0 = 1_800_000_000.0                                 # a moment that begins a slot, FT8's and FT4's
 BLOCK_S = 0.1
+LATE = 1.0                                           # how late the sound is taken to be, where a test says it's known
 
 
 class Clock:
@@ -48,8 +49,9 @@ def _play(r: ft8.Reader, clock: Clock, x: np.ndarray, late: float = 0.0) -> None
         r.step()
 
 
-def _reader(found=None, at: float = T0 - 1.0):
-    """A Reader on a clock of ours, with a decoder that keeps what it was given. -> (reader, clock, given)"""
+def _reader(found=None, at: float = T0 - 1.0, late: float | None = LATE):
+    """A Reader on a clock of ours, with a decoder that keeps what it was given, and the sound's delay known (None:
+    to be found). -> (reader, clock, given)"""
     clock, given = Clock(at), []
 
     def decode(samples: np.ndarray, mode: str) -> list[dict]:
@@ -59,6 +61,7 @@ def _reader(found=None, at: float = T0 - 1.0):
     r = ft8.Reader(clock=clock, decode=decode)
     r.on = True                                      # (no thread: stepped here)
     r.step()
+    r._late = late
     return r, clock, given
 
 
@@ -95,7 +98,7 @@ def test_a_slot_is_cut_where_the_clock_says(mode: str) -> None:
     first, second = given[0][0].astype(float), given[1][0].astype(float)
     assert len(first) == len(second) == int(slot * ft8.OUT_RATE)
     loud = np.where(np.abs(first) > 2000)[0] / ft8.OUT_RATE
-    assert abs(loud[0] - (3.0 - ft8.CUT_LATE_S)) < 0.15 and abs(loud[-1] - (5.0 - ft8.CUT_LATE_S)) < 0.15
+    assert abs(loud[0] - (3.0 - LATE)) < 0.15 and abs(loud[-1] - (5.0 - LATE)) < 0.15
     assert np.abs(second).max() < 100                # (the next slot: none of it)
     st = r.status()
     assert st["slots"] == 2 and st["last"] == {"t": T0 + slot, "heard": 1} and st["slot"] == slot and st["mode"] == mode
@@ -103,26 +106,54 @@ def test_a_slot_is_cut_where_the_clock_says(mode: str) -> None:
     assert [m["n"] for m in r.status(since=1)["messages"]] == [2]
 
 
-def test_sound_that_comes_late_is_cut_the_same() -> None:
+@pytest.mark.parametrize("late", [0.4, 3.6, 6.0])
+def test_how_late_the_sound_is_is_found_and_followed(late: float) -> None:
+    """A receiver the radio tunes itself is half a second behind; one played through its buffer was 3.6 s behind on
+    the radio, and with the cut a second on nothing of a full band was read."""
+    clock, given = Clock(T0 - 1.0), []
+
+    def decode(samples: np.ndarray, mode: str) -> list[dict]:
+        # as the decoder is: it reads a message that begins from a second and a half before to two seconds after
+        # where it should (half a second in), and says where it began. The "message" is a tone from 3 s into each slot.
+        given.append(samples)
+        loud = np.where(np.abs(samples.astype(float)) > 2000)[0]
+        dt = (loud[0] / ft8.OUT_RATE - 3.0 + ft8.ON_TIME_DT) if len(loud) else None
+        return [{"snr": 3.0, "dt": round(dt, 2), "hz": 1000, "text": "CQ K1ABC FN42"}] if dt is not None and -1.0 <= dt <= 2.5 else []
+
+    r = ft8.Reader(clock=clock, decode=decode)
+    r.on = True
+    r.step()
+    x = np.zeros(int((1.0 + 4 * 15.0 + 9.0) * pcm.SAMPLE_RATE))
+    for k in range(4):
+        a = int((1.0 + 15.0 * k + 3.0) * pcm.SAMPLE_RATE)
+        x[a:a + 2 * pcm.SAMPLE_RATE] = _tone(2.0, 1000.0)
+    _play(r, clock, x, late=late)
+    st = r.status()
+    assert [m["t"] for m in st["messages"]] == [T0, T0 + 15.0, T0 + 30.0, T0 + 45.0]      # every slot read, each once
+    assert abs(st["late"] - late) < 0.2 and all(abs(m["dt"] - ft8.ON_TIME_DT) < 0.2 for m in st["messages"][1:])
+    assert 1 + 3 <= len(given) <= len(ft8.SEARCH_LATE_S) + 3     # the first slot cut each way there was the sound for, then one cut a slot
+
+
+def test_a_band_gone_quiet_then_another_delay() -> None:
     r, clock, given = _reader()
-    x = np.zeros(int((1.0 + 15.0 + 5.0) * pcm.SAMPLE_RATE))
-    a = int((1.0 + 3.0) * pcm.SAMPLE_RATE)
-    x[a:a + 2 * pcm.SAMPLE_RATE] = _tone(2.0, 1000.0)
-    _play(r, clock, x, late=2.0)                     # (a receiver across the internet)
-    loud = np.where(np.abs(given[0][0].astype(float)) > 2000)[0] / ft8.OUT_RATE
-    assert abs(loud[0] - (3.0 + 2.0 - ft8.CUT_LATE_S)) < 0.15       # later in the slot by as much: the decoder allows for it
+    r._decode = lambda samples, mode: given.append(samples) or []
+    _play(r, clock, np.zeros(int((1.0 + ft8.LOST_AFTER * 15.0 + 3.0) * pcm.SAMPLE_RATE)))
+    assert len(given) == ft8.LOST_AFTER and r.status()["late"] is None       # nothing in that many slots: every cut tried again
+    _play(r, clock, np.zeros(int(23.0 * pcm.SAMPLE_RATE)))
+    assert len(given) == ft8.LOST_AFTER + len(ft8.SEARCH_LATE_S)
 
 
 def test_a_slot_with_nothing_playing_is_left() -> None:
     r, clock, given = _reader()
     _play(r, clock, np.zeros(int(6.0 * pcm.SAMPLE_RATE)))            # the receiver stops 5 s into the slot...
-    clock.at = T0 + 15.0 + ft8.CUT_LATE_S + ft8.WAIT_S + 0.1
+    clock.at = T0 + 15.0 + LATE + ft8.WAIT_S + 0.1
     r.step()
     assert given == [] and r.status()["slots"] == 0
     clock.at = T0 + 200.0                            # ...and starts again much later: from the slot then, not the ones gone
     r.step()
-    _play(r, clock, np.zeros(int(32.0 * pcm.SAMPLE_RATE)))
-    assert len(given) == 1 and r.status()["last"]["t"] == T0 + 210.0
+    _play(r, clock, np.zeros(int(34.0 * pcm.SAMPLE_RATE)))
+    assert r.status()["last"]["t"] == T0 + 210.0 and r.status()["slots"] == 2      # (what there was most of the sound for, and the next)
+    assert len(given) > 2                            # (a new start: its delay looked for, each slot cut more than one way)
 
 
 def test_a_reader_thats_off_keeps_nothing() -> None:
@@ -149,6 +180,7 @@ def test_a_decoder_that_fails_is_said() -> None:
     r = ft8.Reader(clock=clock, decode=decode)
     r.on = True
     r.step()
+    r._late = LATE
     _play(r, clock, np.zeros(int(18.0 * pcm.SAMPLE_RATE)))
     st = r.status()
     assert st["last"] == {"t": T0, "error": "the decoder took too long"} and st["slots"] == 0 and st["messages"] == []
@@ -207,6 +239,7 @@ def test_who_has_been_heard(monkeypatch) -> None:
     r = ft8.Reader(clock=clock, decode=lambda samples, mode: [dict(m) for m in said.pop(0)])
     r.on, r.band = True, "20 m"
     r.step()
+    r._late = LATE
     monkeypatch.setattr(ft8, "HOME", None)
     _play(r, clock, np.zeros(int(34.0 * pcm.SAMPLE_RATE)))
     got = r.status()["messages"]
@@ -251,15 +284,16 @@ def test_a_real_message_through_the_real_decoder(tmp_path: Path) -> None:
     n = int(len(sent) * pcm.SAMPLE_RATE / ft8.OUT_RATE)                  # as the radio plays a receiver: at the speaker's rate
     played = np.interp(np.arange(n) * ft8.OUT_RATE / pcm.SAMPLE_RATE, np.arange(len(sent)), sent)
     played = played + np.random.default_rng(1).normal(0, 300.0, n)
-    for late in (0.0, 2.0):
+    for late in (0.0, 2.0, 4.5):                     # (however late it comes, within reason: found)
         clock = Clock(T0 - 1.0)
         r = ft8.Reader(clock=clock)
         r.on = True
         r.step()
-        _play(r, clock, np.concatenate((np.zeros(pcm.SAMPLE_RATE), played, np.zeros(3 * pcm.SAMPLE_RATE))), late=late)
-        got = r.status()["messages"]
+        _play(r, clock, np.concatenate((np.zeros(pcm.SAMPLE_RATE), played, np.zeros(9 * pcm.SAMPLE_RATE))), late=late)
+        got, st = r.status()["messages"], r.status()
         assert [m["text"] for m in got] == ["CQ K1ABC FN42"], late
-        assert abs(got[0]["hz"] - 1200) <= 4 and got[0]["t"] == T0
+        # (the generator puts its message in the middle of the 15 s, 1.2 s in: 0.7 s later than one sent on the air)
+        assert abs(got[0]["hz"] - 1200) <= 4 and got[0]["t"] == T0 and abs(st["late"] - late - 0.7) < 0.4, (late, st["late"])
 
 
 def test_the_reader_from_the_web(tmp_path: Path, monkeypatch) -> None:

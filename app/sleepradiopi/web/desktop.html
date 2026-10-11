@@ -2387,7 +2387,7 @@ async function modeHear(R, p, run) {
   await modeSleep(2500, run);                       // (the receiver moving, the radio taking it up)
   const began = Date.now() / 1000;
   if (p.mode === "ft8" || p.mode === "ft4") {
-    const slot = p.mode === "ft8" ? 15 : 7.5, until = Date.now() + (2 * slot + 6) * 1000;
+    const slot = p.mode === "ft8" ? 15 : 7.5, until = Date.now() + (2 * slot + 12) * 1000;     // (the radio may be finding how late the sound is: 7 s more)
     while (!run.stop && Date.now() < until) {       // one whole slot that began after we got here
       await modeSleep(1500, run);
       const st = await api("/api/rx/ft8").catch(() => null);
@@ -4028,7 +4028,7 @@ const UI = {
       const grid = el("div", { className: "mgrid" }, el("span"), ...MODE_COLS.map(c => el("b", { textContent: c[1] })));
       for (const band of bands) { grid.append(el("span", { textContent: band })); for (const [mode] of MODE_COLS) { const p = at([mode, band]); grid.append(p ? modeKey(R, p) : el("i", { textContent: "·" })); } }
       const weather = places.filter(p => p.weather), surveyed = Object.values(MODES.found[R.origin] || {}).reduce((a, f) => Math.max(a, f.at), 0);
-      const go = modes => () => modeSurvey(R, modes), secs = modes => places.filter(p => modes.includes(p.mode) && (p.mode !== "rtty" || p.weather)).reduce((a, p) => a + ({ ft8: 27, ft4: 17 }[p.mode] || 17), 0);
+      const go = modes => () => modeSurvey(R, modes), secs = modes => places.filter(p => modes.includes(p.mode) && (p.mode !== "rtty" || p.weather)).reduce((a, p) => a + ({ ft8: 32, ft4: 22 }[p.mode] || 17), 0);
       const mins = modes => { const m = Math.round(secs(modes) / 60); return `about ${m} minute${m === 1 ? "" : "s"}`; };
       return [
         grp(`Where to listen on ${R.o.title}`, bands.length ? grid : help("This receiver doesn't reach the bands these are used on."),

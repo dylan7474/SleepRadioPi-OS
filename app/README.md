@@ -1220,10 +1220,16 @@ The cards:
   frequency. An OpenWebRX is tuned by hand, so its keys only say where. The decoding is ft8_lib's `decode_ft8` (MIT, built into the image:
   `package/ft8-lib`), run at low priority on each slot: about half a second
   of one core on the Zero 2 W's processor. The sound a receiver sends is
-  late, more so across the internet, so a slot is cut a second after the
-  clock's: that reads sound up to two and a half seconds late as well as
-  sound on time (measured on 20 m). The radio's clock has to be right to a
-  second or so, which it is with the network's time. `GET
+  late, by how much depending on how it comes: half a second from a
+  receiver the radio tunes itself, three or four from one played through
+  the radio's buffer -- and the decoder only reads a slot cut within a
+  second or two of right. So until something is read each slot is cut four
+  ways (1, 3, 5 and 7 seconds late) and the cut that reads most is taken;
+  after that the cut follows what each message says of how far into the
+  slot it began, and one decoding a slot is enough. A few slots with
+  nothing, or a stream begun again, and it looks all four ways again. The
+  radio's clock should be right to a second or so, which it is with the
+  network's time (an error is only more delay to this). `GET
   /api/rx/ft8?since=N` gives whether it's on, the mode, whether this radio
   has the decoder, the slots read, and the messages after number N (each
   with its slot's time, strength, and pitch). Receive only: nothing is

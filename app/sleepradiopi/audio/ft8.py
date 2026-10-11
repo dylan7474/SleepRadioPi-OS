@@ -18,13 +18,24 @@ How it's read:
     process of its own at low priority, so it never takes the processor from
     the thread playing the sound; a slot takes it a fraction of a second.
 
-The clock matters and the sound is late: a slot is cut where the clock says,
-a second on (CUT_LATE_S). Measured on 20 m against the same sound cut at
-other moments: the decoder reads as much with the cut anywhere from a second
-and a half early to two seconds late, so a second on takes sound that
-arrives anything up to two and a half seconds after it was sent. A radio
-whose clock is seconds out reads nothing: the time comes from the network
-(and the clock chip between times).
+The clock matters and the sound is late, by how much depending on how it
+comes: a receiver the radio tunes itself is half a second behind, a stream
+played through the radio's buffer three or four (on the radio a receiver
+of the owner's own was 3.6 s late, and a cut a second on read nothing of a
+band full of signals). The decoder reads as much with the cut anywhere
+from a second and a half early to two seconds late (measured on 20 m), so:
+
+  * Until something is read, a slot is cut several ways -- 1, 3, 5 and 7
+    seconds late -- and the cut that reads most is the one.
+  * Each message says how far into its slot's sound it began (half a
+    second, when the cut is right). From then on the cut follows that, and
+    one decoding a slot is enough.
+  * A few slots with nothing read and it looks all ways again: the stream
+    may have begun again with another delay.
+
+A radio whose clock is seconds out is only another delay to this, within
+those seven seconds; the time comes from the network (and the clock chip
+between times).
 
 Who and how far: most messages name the station sending them, and a first
 call gives its locator (JO31: a square of 1 degree by 2, about 70 miles by
@@ -65,7 +76,10 @@ MODES = {"ft8": 15.0, "ft4": 7.5}    # a slot, in seconds
 OUT_RATE = 12_000                    # what the decoder takes
 DECIMATE = 3                         # of the speaker's rate: 14700 samples a second holds a receiver's 3 kHz with room to spare
 RATE = pcm.SAMPLE_RATE / DECIMATE
-CUT_LATE_S = 1.0             # a slot is cut this long after the clock's (see the top)
+SEARCH_LATE_S = (1.0, 3.0, 5.0, 7.0)     # how late a slot is cut, each tried, until something is read (see the top)
+ON_TIME_DT = 0.5             # how far into its slot's sound a message begins when the cut is right
+LATE_MAX_S = 9.0
+LOST_AFTER = 4               # slots with nothing read before every cut is tried again
 WAIT_S = 0.3                 # ...and looked at this long after it has all come
 GAP_S = 1.0                  # sound this far from when it was due: the receiver stopped and started
 FOLLOW = 0.05                # (how fast the clock is followed, a block)
@@ -200,6 +214,8 @@ class Reader:
         self._x = np.zeros(0, np.float32)            # the sound kept, at RATE
         self._end = 0.0                              # ...and when its last sample came, by the clock
         self._next: float | None = None              # the start of the next slot to read
+        self._late: float | None = None              # how late the sound is, so where a slot is cut; None: not known, each tried
+        self._empty = 0                              # slots in a row with nothing read
         self._n = 0
         self._messages: deque[dict] = deque(maxlen=400)
         self._slots = 0
@@ -225,6 +241,8 @@ class Reader:
                 if len(self._x) and abs(now - due) < GAP_S:
                     self._end = due + FOLLOW * (now - due)
                 else:
+                    if len(self._x):                 # (...and its delay may be another)
+                        self._late, self._empty = None, 0
                     self._x, self._end = np.zeros(0, np.float32), now
                 self._x = np.concatenate((self._x, mono[:whole].reshape(-1, DECIMATE).mean(axis=1)))[-int(KEEP_S * RATE):]
 
@@ -232,11 +250,11 @@ class Reader:
 
     def status(self, since: int = 0) -> dict:
         """{"on", "mode", "band", "home" (the radio's locator), "can" (there's a decoder), "slot" (s), "slots" (read so
-        far), "last": {"t", "heard" | "error"}, "messages": [{"n", "t" (the slot's start, by the clock), "snr", "dt",
+        far), "late" (s the sound is behind the clock, once known), "last": {"t", "heard" | "error"}, "messages": [{"n", "t" (the slot's start, by the clock), "snr", "dt",
         "hz", "text", "call"?, "grid"?, "km"?, "deg"?}] after number since}"""
         with self._lock:
             return {"on": self.on, "mode": self.mode, "band": self.band, "home": HOME, "can": decoder_path() is not None,
-                    "slot": MODES[self.mode], "slots": self._slots, "last": self._last,
+                    "slot": MODES[self.mode], "slots": self._slots, "late": None if self._late is None else round(self._late, 2), "last": self._last,
                     "messages": [_far(m) for m in self._messages if m["n"] > since]}
 
     def heard(self) -> dict:
@@ -259,28 +277,43 @@ class Reader:
         if self._next is None:                       # (just switched on: from the next slot to begin)
             self._next = math.ceil(now / slot) * slot
         t0 = self._next
-        if now < t0 + CUT_LATE_S + slot + WAIT_S:
+        cuts = (self._late,) if self._late is not None else SEARCH_LATE_S
+        if now < t0 + cuts[-1] + slot + WAIT_S:
             return
         self._next = t0 + slot
-        if now > t0 + CUT_LATE_S + 2 * slot:         # (the radio was held up: that one's gone, on from now)
+        if now > t0 + cuts[-1] + 2 * slot:           # (the radio was held up: that one's gone, on from now)
             self._next = math.ceil(now / slot) * slot - slot
             return
         with self._lock:
             x, end, turn = self._x, self._end, self._turn
-        a = len(x) - int(round((end - (t0 + CUT_LATE_S)) * RATE))     # where the slot begins in what's kept
-        b = a + int(slot * RATE)
-        got = x[max(a, 0):max(min(b, len(x)), 0)]
-        if len(got) < ENOUGH * slot * RATE:          # (nothing playing for part of it)
-            return
-        if a < 0:
-            got = np.concatenate((np.zeros(-a, np.float32), got))
+        found, cut, heard_any = [], None, False
         try:
-            found = self._decode(to_decoder_rate(got), self.mode)
+            for late in cuts:
+                a = len(x) - int(round((end - (t0 + late)) * RATE))     # where the slot begins in what's kept
+                b = a + int(slot * RATE)
+                got = x[max(a, 0):max(min(b, len(x)), 0)]
+                if len(got) < ENOUGH * slot * RATE:  # (nothing playing for part of it)
+                    continue
+                if a < 0:
+                    got = np.concatenate((np.zeros(-a, np.float32), got))
+                heard_any = True
+                read = self._decode(to_decoder_rate(got), self.mode)
+                if cut is None or len(read) > len(found):
+                    found, cut = read, late
         except RuntimeError as e:
             with self._lock:
                 if turn == self._turn:
                     self._last = {"t": t0, "error": str(e)}
             return
+        if not heard_any:
+            return
+        if found:                                    # the cut moved to where the messages say it should be
+            off = float(np.median([m["dt"] for m in found])) - ON_TIME_DT
+            self._late, self._empty = min(LATE_MAX_S, max(0.0, cut + off)), 0
+        else:
+            self._empty += 1
+            if self._empty >= LOST_AFTER:
+                self._late = None
         with self._lock:
             if turn != self._turn:
                 return
@@ -331,6 +364,7 @@ class Live(Reader):
                 self.on, self.mode = on, mode
                 self._left, self._x = np.zeros(0, np.float32), np.zeros(0, np.float32)
                 self._next, self._last = None, None
+                self._late, self._empty = None, 0
                 self._turn += 1
                 if on:
                     self._messages.clear()

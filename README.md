@@ -299,7 +299,7 @@ Actions, Sleep timer and Radio folders open:
   broadcasts. *Survey* goes round them by itself -- a whole slot on each
   band's FT8 frequency, or everything -- and writes on the keys what was
   there: "24 · 3,174 km" is twenty-four stations, the farthest that far.
-  A picture of which bands are open, in about four minutes.
+  A picture of which bands are open, in about five minutes.
 - **FT8 and FT4, read as text.** The *FT8* and *FT4* keys in a receiver's
   window take it to the mode's frequency on the band it's on and list every
   message heard, each time a slot ends (15 seconds for FT8, 7.5 for FT4):
