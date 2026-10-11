@@ -282,6 +282,16 @@ Actions, Sleep timer and Radio folders open:
   A tight filter round the tone and a best-fit reading of the timing (not a
   threshold) read a weak or shaky sender that a simple decoder loses; what
   doesn't stand up as Morse is left unsaid. See `app/sleepradiopi/audio/morse.py`.
+- **PSK31 and RTTY, read as text.** The *PSK* and *RTTY* keys in a
+  receiver's window read the two keyboard modes as they're typed. PSK31:
+  every signal in what the receiver hears at once, a line each (the key
+  goes to the band's PSK31 frequency, 14.070 MHz on 20 m). RTTY, the radio
+  teleprinter: the strongest pair of tones there, at whatever speed and
+  spacing it has -- an amateur contest at 45 baud, or the German weather
+  service's shipping bulletins on 10.1008 MHz, which run all day. Both are
+  the radio's own readers (no outside program), tried on signals off the
+  air; neither says anything of noise or a plain whistle. See
+  `app/sleepradiopi/audio/psk.py`, `rtty.py` and `keyboard.py`.
 - **FT8 and FT4, read as text.** The *FT8* and *FT4* keys in a receiver's
   window take it to the mode's frequency on the band it's on and list every
   message heard, each time a slot ends (15 seconds for FT8, 7.5 for FT4):
@@ -826,13 +836,11 @@ What's left to do (everything else described here is built and running):
   the squares heard. A line picked out when it names your own callsign.
   The other bands watched in turn, a few minutes each, for a picture of
   what's open.
-- **PSK31 and RTTY, read as text** — the other two keyboard modes heard all
-  over the amateur bands, read off a receiver's sound as Morse, FT8 and FT4
-  are: PSK31 (a warble 31 Hz wide, many of them side by side around 14.070
-  MHz; the whole passband could be read at once, a line a station) and RTTY
-  (two tones 170 Hz apart at 45.45 baud, the contest mode; also the weather
-  and shipping broadcasts at 50 baud, 450 Hz apart). A key each in a
-  receiver's window, and the text in the same kind of log.
+- **PSK31 and RTTY: more of them** — the PSK31 reader does plain PSK31
+  (BPSK); the faster and four-phase kinds (PSK63, QPSK31) are left. The
+  RTTY reader reads one signal, the strongest: in a contest there are a
+  dozen side by side, which could be read at once as PSK31 is. Both could
+  pick out callsigns as the FT8 list does.
 - **Music from any computer** — adding music needs a Linux PC today
   (`provision-media.sh`). The radio could make its music partition itself on
   first boot and take music uploaded from the web page, so that Windows and

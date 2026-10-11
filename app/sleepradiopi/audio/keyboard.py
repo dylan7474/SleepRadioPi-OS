@@ -1,0 +1,296 @@
+"""PSK31 and RTTY followed over time: what's typed on the air, as it's typed.
+
+audio/psk.py and audio/rtty.py each read a stretch of sound. This is the
+part that keeps listening: the last few seconds are read again every second
+or two, and what's new since the last look is passed on.
+
+  * PSK31: every signal in what the receiver hears, at once (up to
+    PSK_MOST). Each is a track, known by its pitch; a track nothing has come
+    from for a while is dropped, and a new one has to say a few letters
+    before it's believed.
+  * RTTY: one signal, the strongest pair of tones. Once it frames, its
+    tones, speed and sense are kept (so reading on costs a sixth of
+    finding), and looked for afresh when it has said nothing for a while.
+
+What's read comes out in pieces: {"n", "hz", "t0", "t1" (seconds of sound
+since switched on), "text"}; the page puts a signal's pieces together on a
+line (web/desktop.html: the PSK and RTTY keys).
+
+`reader` is the one the radio uses: the station feeds it what a receiver
+plays (broadcast/station.py), the web side switches it and asks what it has
+read. As with Morse, the reading is done in a process of its own at low
+priority, so it never takes the processor from the thread playing the sound.
+"""
+from __future__ import annotations
+
+import logging
+import multiprocessing as mp
+import os
+import threading
+from collections import deque
+
+import numpy as np
+
+from sleepradiopi.audio import pcm, psk, rtty
+
+log = logging.getLogger(__name__)
+
+MODES = {"psk31": "PSK31", "rtty": "RTTY"}
+DECIMATE = 6                 # of the speaker's rate: 7350 samples a second, as the Morse reader has it
+RATE = pcm.SAMPLE_RATE / DECIMATE
+WINDOW_S = 8.0               # the stretch read each time
+MARGIN_S = 1.0               # ...but for its last second: read next time, with what follows it
+AGAIN_S = 0.05               # a letter this soon after the last one passed on is that one, read again a shade later
+KEEP_S = 12.0                # audio kept
+STEP_S = 1.5                 # the sound is looked at this often
+MAX_PENDING = 600            # blocks fed and not yet taken, at most (half a minute)
+PSK_MOST = 6                 # PSK31 signals read at once
+PSK_SAME_HZ = 10.0           # a signal within this of a track is that track
+PSK_FIRST = 4                # letters a new signal must say at once to be believed
+TRACK_S = 20.0               # a track nothing has come from for this long is dropped
+RTTY_LOST_S = 12.0           # an RTTY signal that has said nothing for this long is looked for afresh
+
+
+class Reader:
+    """Hears a receiver's sound and reads the PSK31 or RTTY in it: feed() it blocks as they're played (or
+    take() sound already at RATE), step() it every STEP_S, ask status() what it has read."""
+
+    def __init__(self, mode: str = "psk31") -> None:
+        self.on = False
+        self.mode = mode
+        self._lock = threading.Lock()
+        self._pending: list[np.ndarray] = []
+        self._left = np.zeros(0, np.float32)         # (samples waiting to make up a whole DECIMATE)
+        self._x = np.zeros(0, np.float32)            # the audio kept, at RATE
+        self._x0 = 0                                 # ...and where it starts, in samples since switched on
+        self._n = 0
+        self._pieces: deque[dict] = deque(maxlen=200)
+        self._tracks: list[dict] = []                # PSK31: {"hz", "done" (s read up to), "last" (s something came), "eye"}
+        self._rtty: dict | None = None               # RTTY: {"low", "shift", "baud", "mark_high", "done", "last", "figs"}
+        self._at = 0.0
+        self._signals: list[dict] = []               # what's being read now, for the page
+
+    # --- the sound coming in (as the Morse reader takes it) ------------------------------------
+
+    def feed(self, block: np.ndarray) -> None:
+        """What's being played (a block at the speaker's rate): kept for the reading thread. Cheap."""
+        if not self.on:
+            return
+        mono = block.mean(axis=1, dtype=np.float32) if block.ndim == 2 else block.astype(np.float32)
+        with self._lock:
+            mono = np.concatenate((self._left, mono)) if len(self._left) else mono
+            whole = len(mono) // DECIMATE * DECIMATE
+            self._left = mono[whole:]
+            if whole:
+                self._pending.append(mono[:whole].reshape(-1, DECIMATE).mean(axis=1))
+                del self._pending[:-MAX_PENDING]     # (nobody taking it: the oldest goes)
+
+    def take(self, sound: np.ndarray) -> None:
+        """Sound already at RATE."""
+        with self._lock:
+            self._pending.append(np.asarray(sound, np.float32))
+
+    def drain(self) -> np.ndarray | None:
+        """What's been fed and not yet taken, at RATE (for a Reader that only passes it on)."""
+        with self._lock:
+            new, self._pending = self._pending, []
+        return np.concatenate(new) if new else None
+
+    # --- what the page asks for --------------------------------------------------------------
+
+    def status(self, since: int = 0) -> dict:
+        """{"on", "mode", "at" (s of sound heard), "signals": [{"hz", ...}] (being read now), "pieces": [{"n", "hz",
+        "t0", "t1", "text"}] after number since}"""
+        with self._lock:
+            return {"on": self.on, "mode": self.mode, "at": round(self._at, 2), "signals": list(self._signals),
+                    "pieces": [p for p in self._pieces if p["n"] > since]}
+
+    # --- the reading -------------------------------------------------------------------------
+
+    def step(self) -> None:
+        """Take in the sound that's arrived, and pass on what's new in it."""
+        with self._lock:
+            new, self._pending = self._pending, []
+        if new:
+            self._x = np.concatenate([self._x, *new])
+            over = len(self._x) - int(KEEP_S * RATE)
+            if over > 0:
+                self._x, self._x0 = self._x[over:], self._x0 + over
+        x = self._x[-int(WINDOW_S * RATE):]
+        if len(x) < RATE * 3:
+            return
+        t0 = (self._x0 + len(self._x) - len(x)) / RATE           # when x begins, s since switched on
+        end = t0 + len(x) / RATE
+        pieces, signals = (self._psk if self.mode == "psk31" else self._teleprinter)(x, t0, end)
+        with self._lock:
+            self._at, self._signals = end, signals
+            for p in pieces:
+                self._n += 1
+                self._pieces.append({"n": self._n, **p})
+
+    def _psk(self, x: np.ndarray, t0: float, end: float) -> tuple[list[dict], list[dict]]:
+        upto = end - MARGIN_S
+        self._tracks = [t for t in self._tracks if end - t["last"] < TRACK_S]
+        pitches = [(t["hz"], t) for t in self._tracks]
+        for hz, _ in psk.find(x, RATE, most=PSK_MOST * 2):
+            if all(abs(hz - p) > psk.APART * 0.75 for p, _ in pitches) and len(pitches) < PSK_MOST * 2:
+                pitches.append((hz, None))
+        pieces, seen = [], []
+        for hz, track in pitches:
+            r = psk.read(x, RATE, hz)
+            if any(abs(r["pitch"] - s) < PSK_SAME_HZ for s in seen):      # (two finds of the one signal)
+                continue
+            if track is None:
+                track = next((t for t in self._tracks if abs(t["hz"] - r["pitch"]) < PSK_SAME_HZ), None)
+            done = track["done"] if track else t0
+            chars = [(c, t0 + when) for c, when, _ in r["chars"] if done + AGAIN_S < t0 + when <= upto]
+            if track is None:
+                if len(chars) < PSK_FIRST or len(self._tracks) >= PSK_MOST:
+                    continue
+                track = {"hz": r["pitch"], "done": t0, "last": end, "eye": r["eye"]}
+                self._tracks.append(track)
+            seen.append(r["pitch"])
+            if r["chars"]:
+                track.update(hz=r["pitch"], eye=r["eye"])
+            if chars:
+                track.update(done=chars[-1][1], last=end)
+                pieces.append({"hz": round(track["hz"]), "t0": round(chars[0][1], 2), "t1": round(chars[-1][1], 2), "text": "".join(c for c, _ in chars)})
+            track["done"] = max(track["done"], t0)   # (what has gone from the window is done with)
+        return pieces, [{"hz": round(t["hz"]), "eye": round(t["eye"], 2)} for t in sorted(self._tracks, key=lambda t: t["hz"])]
+
+    def _teleprinter(self, x: np.ndarray, t0: float, end: float) -> tuple[list[dict], list[dict]]:
+        upto = end - MARGIN_S
+        s = self._rtty
+        if s is not None and end - s["last"] > RTTY_LOST_S:
+            s = self._rtty = None
+        if s is None:
+            found = rtty.find(x, RATE)
+            if found is None:
+                return [], []
+            r = rtty.read(x, RATE, found[0], found[1])
+            if not r["codes"]:
+                return [], []
+            s = self._rtty = {"low": found[0], "shift": found[1], "baud": r["baud"], "mark_high": r["mark_high"], "done": t0, "last": end, "figs": False}
+        else:
+            r = rtty.read(x, RATE, s["low"], s["shift"], s["baud"], s["mark_high"])
+        codes = [(c, t0 + when, sure) for c, when, sure in r["codes"] if s["done"] + AGAIN_S < t0 + when <= upto]
+        pieces = []
+        if codes:
+            chars, s["figs"] = rtty.text(codes, s["figs"])
+            s.update(done=codes[-1][1], last=end)
+            said = "".join(c for c, _, _ in chars).replace("\r", "")
+            if said:
+                pieces.append({"hz": round(s["low"] + s["shift"] / 2), "t0": round(codes[0][1], 2), "t1": round(codes[-1][1], 2), "text": said})
+        s["done"] = max(s["done"], t0)
+        return pieces, [{"hz": round(s["low"] + s["shift"] / 2), "shift": round(s["shift"]), "baud": s["baud"], "mark_high": s["mark_high"], "framed": round(r["framed"], 2)}]
+
+
+def _serve(conn, mode: str) -> None:
+    """The reading process: sound in (arrays at RATE; None to stop), what's been read out, every STEP_S."""
+    try:
+        os.nice(10)                                  # (the sound comes first)
+    except OSError:
+        pass
+    core, seen = Reader(mode), 0
+    core.on = True
+    try:
+        while True:
+            if conn.poll(STEP_S):
+                while conn.poll():
+                    sound = conn.recv()
+                    if sound is None:
+                        return
+                    core.take(sound)
+            try:
+                core.step()
+            except Exception:                        # (a reading that falls over mustn't end the reader)
+                log.exception("keyboard: reading failed")
+            st = core.status(seen)
+            if st["pieces"]:
+                seen = st["pieces"][-1]["n"]
+            conn.send(st)
+    except (EOFError, OSError, KeyboardInterrupt):   # the radio has gone
+        return
+
+
+class Remote:
+    """The Reader as the radio uses it: the reading in a process of its own. feed() and status() are cheap
+    and never wait for it."""
+
+    def __init__(self) -> None:
+        self.on = False
+        self.mode = "psk31"
+        self._lock = threading.Lock()
+        self._inbox = Reader()                       # (only to bring the sound down to RATE and hold it till it's sent)
+        self._stop = threading.Event()
+        self._pieces: deque[dict] = deque(maxlen=200)
+        self._n = 0                                  # (numbered here: they go on across a switch, so the page can tell a new start)
+        self._now: dict = {"at": 0.0, "signals": []}
+
+    def switch(self, on: bool, mode: str | None = None) -> None:
+        """On or off, PSK31 or RTTY. On (or the other mode) starts from nothing. ValueError: no such mode."""
+        on, mode = bool(on), (mode or self.mode)
+        if mode not in MODES:
+            raise ValueError("mode is psk31 or rtty")
+        with self._lock:
+            if on == self.on and mode == self.mode:
+                return
+            self._stop.set()
+            self.on, self.mode = on, mode
+            self._inbox.on = False
+            self._pieces.clear()
+            self._now = {"at": 0.0, "signals": []}
+            if not on:
+                return
+            self._inbox = Reader(mode)
+            self._inbox.on = True
+            conn, child = mp.get_context("spawn").Pipe()
+            proc = mp.get_context("spawn").Process(target=_serve, args=(child, mode), name="keyboard-reader", daemon=True)
+            proc.start()
+            child.close()
+            self._stop = threading.Event()
+            threading.Thread(target=self._carry, args=(self._stop, conn, proc, self._inbox), name="keyboard-reader", daemon=True).start()
+
+    def feed(self, block: np.ndarray) -> None:
+        """What's being played (a block at the speaker's rate). Cheap: it's only kept for the carrying thread."""
+        if self.on:
+            self._inbox.feed(block)
+
+    def status(self, since: int = 0) -> dict:
+        """As Reader.status(): {"on", "mode", "at", "signals", "pieces": those after number since}."""
+        with self._lock:
+            return {"on": self.on, "mode": self.mode, **self._now, "pieces": [p for p in self._pieces if p["n"] > since]}
+
+    def _carry(self, stop: threading.Event, conn, proc, inbox: Reader) -> None:
+        """Sound to the reading process and what it has read back, until switched off."""
+        try:
+            while not stop.wait(0.4):
+                sound = inbox.drain()
+                if sound is not None:
+                    conn.send(sound)
+                while conn.poll():
+                    st = conn.recv()
+                    with self._lock:
+                        if stop.is_set():
+                            break
+                        self._now = {"at": st["at"], "signals": st["signals"]}
+                        for p in st["pieces"]:
+                            self._n += 1
+                            self._pieces.append({**p, "n": self._n})
+        except (EOFError, OSError):
+            log.error("keyboard: the reading process has gone (exit code %s)", proc.exitcode)
+            with self._lock:
+                if not stop.is_set():
+                    self.on = inbox.on = False
+        finally:
+            try:
+                conn.send(None)
+            except OSError:
+                pass
+            proc.join(timeout=3)
+            if proc.is_alive():
+                proc.kill()
+            conn.close()
+
+
+reader = Remote()

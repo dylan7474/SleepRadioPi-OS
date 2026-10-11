@@ -1167,7 +1167,40 @@ The cards:
   and distance (`GET /api/rx/ft8/heard`; the page tells the reader the band
   with the switch). The radio keeps that list itself, up to 600 stations
   across the bands, so it grows with the page closed -- but in memory only:
-  a restart, or *Clear* in Heard, begins it again. The decoding is ft8_lib's `decode_ft8` (MIT, built into the image:
+  a restart, or *Clear* in Heard, begins it again.
+  *PSK31 and RTTY, read as text* (the **PSK** and **RTTY** keys in a
+  receiver's window; `POST /api/rx/keyboard {"on": true | false, "mode":
+  "psk31" | "rtty"}`, off again at the next start; `GET
+  /api/rx/keyboard?since=N` gives what's being read now and the pieces of
+  text after number N): the last eight seconds of what a receiver plays are
+  read again every second and a half, in a process of its own at low
+  priority as the Morse reader's is, and what's new is passed on.
+  PSK31 (`audio/psk.py`): a signal is a hump 60 Hz wide in the spectrum;
+  each (up to six at once) is brought to 0 Hz, filtered to its own 31 Hz,
+  looked at once a symbol where its strength is greatest, and a turn of
+  phase or none since the symbol before is a 0 or a 1 -- Varicode, letters
+  parted by "00". What's left of a pitch error is measured from the same
+  comparison squared. A letter is only said while the comparisons land
+  cleanly (the "eye", over a second); a steady whistle, on pitch or half
+  the symbol rate off it, has a perfect eye and is told apart by never
+  turning, or never dipping when it "turns". Clean down to about -9 dB
+  against the noise in 2.5 kHz. The PSK key goes to the band's PSK31
+  frequency in upper sideband.
+  RTTY (`audio/rtty.py`): two humps 170, 450 or 850 Hz apart with a dip
+  between; which tone is there, moment by moment, against a line half way
+  between the two tones' own strengths of late (one often fades more than
+  the other); then framed as a teleprinter does it, a start bit, five bits
+  in their middles, a stop bit. Speed (45.45, 50 or 75 baud) and which
+  tone is mark are whatever frames best, kept once found. Letters and
+  figures by the shifts, as American machines and amateur programs have
+  the figures, but for "=" (the weather broadcasts end every report with
+  it). A character is only said where nearly all those around it have
+  their stop bits: noise frames about half the time. Clean down to about
+  -3 dB. The RTTY key doesn't tune: a teleprinter signal is wherever it
+  is (the German weather service: 10.1008 MHz, so 10.0993 in USB).
+  On the Zero 2 W's kind of processor (measured on a Pi 3): a fifth of
+  one core with six PSK31 signals being read, a tenth for a teleprinter
+  signal, and next to nothing when there's nothing there. The decoding is ft8_lib's `decode_ft8` (MIT, built into the image:
   `package/ft8-lib`), run at low priority on each slot: about half a second
   of one core on the Zero 2 W's processor. The sound a receiver sends is
   late, more so across the internet, so a slot is cut a second after the

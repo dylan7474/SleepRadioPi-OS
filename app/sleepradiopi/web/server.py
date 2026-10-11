@@ -234,6 +234,8 @@ def make_handler(station: Station, output: Mp3Output, speaker=None,
                 status["cw"] = morse_mod.reader.on        # ...and their Morse reader
                 from sleepradiopi.audio import ft8 as ft8_mod
                 status["ft8"] = ft8_mod.reader.mode if ft8_mod.reader.on else None    # ...and their FT8 / FT4 one
+                from sleepradiopi.audio import keyboard as keyboard_mod
+                status["keyboard"] = keyboard_mod.reader.mode if keyboard_mod.reader.on else None    # ...and their PSK31 / RTTY one
                 status["version"] = updater_mod.this_version()
                 status["desktop"] = DESKTOP_TAG
                 self._send(json.dumps(status).encode(), "application/json")
@@ -378,6 +380,15 @@ def make_handler(station: Station, output: Mp3Output, speaker=None,
                 except ValueError:
                     since = 0
                 self._send(json.dumps(ft8_mod.reader.status(since)).encode(), "application/json")
+            elif path == "/api/rx/keyboard":
+                # The PSK31 / RTTY reader (audio/keyboard.py): whether it's on, what it's reading now, and the
+                # pieces of text read since ?since=N.
+                from sleepradiopi.audio import keyboard as keyboard_mod
+                try:
+                    since = int(parse_qs(urlparse(self.path).query).get("since", ["0"])[0])
+                except ValueError:
+                    since = 0
+                self._send(json.dumps(keyboard_mod.reader.status(since)).encode(), "application/json")
             elif path == "/api/rx/ft8/heard":
                 # Who the FT8 / FT4 reader has heard, a band at a time, the latest first (since the radio started).
                 from sleepradiopi.audio import ft8 as ft8_mod
@@ -691,6 +702,19 @@ def make_handler(station: Station, output: Mp3Output, speaker=None,
                 self._body()
                 ft8_mod.reader.forget()
                 self._send(json.dumps(ft8_mod.reader.heard()).encode(), "application/json")
+            elif path == "/api/rx/keyboard":
+                # {"on": true | false, "mode"?: "psk31" | "rtty"}: the PSK31 / RTTY reader for receivers
+                # (audio/keyboard.py). Off again at the next start.
+                from sleepradiopi.audio import keyboard as keyboard_mod
+                try:
+                    body = json.loads(self.rfile.read(int(self.headers.get("Content-Length", 0))) or b"{}")
+                    if not isinstance(body["on"], bool) or body.get("mode", "psk31") not in keyboard_mod.MODES:
+                        raise ValueError
+                except (ValueError, TypeError, KeyError, AttributeError):
+                    self._error('send {"on": true | false, "mode": "psk31" | "rtty"}')
+                    return
+                keyboard_mod.reader.switch(body["on"], body.get("mode"))
+                self._send(json.dumps({"keyboard": keyboard_mod.reader.mode if keyboard_mod.reader.on else None}).encode(), "application/json")
             elif path == "/api/rx/locator":
                 # {"locator": "IO94"} ("" clears it): where the radio is, for how far an FT8 station is. Kept.
                 from sleepradiopi.audio import ft8 as ft8_mod

@@ -234,6 +234,9 @@
   .rig .rcw h4 input { font: 600 10px ui-monospace, Menlo, Consolas, monospace; width: 6.5em; color: #f4f6f7; background: #0a1118; border: 1px solid #58d0e8; border-radius: 4px; padding: 2px 6px; text-transform: uppercase; }
   .rig .rftbar { flex: none; height: 3px; background: #1e3445; overflow: hidden; }
   .rig .rftbar i { display: block; height: 100%; width: 0; background: #58d0e8; }
+  /* PSK31 / RTTY: the same log, a line a signal, growing as it's typed */
+  .rig .rkb .rcopy { flex-basis: 9em; }
+  .rig .rkb .rtext { white-space: pre-wrap; letter-spacing: 0; }
   .rig .rnow { flex: none; height: 16px; font: 11px/16px system-ui, sans-serif; color: #58d0e8; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; opacity: 0; transition: opacity .25s; }
   .rig .rnow.on { opacity: 1; }
   .rig .rnow::before { content: "● "; animation: rnow 1s steps(2) infinite; }
@@ -2135,9 +2138,9 @@ const FT_FREQS = {
   ft8: [["160 m", 1840], ["80 m", 3573], ["60 m", 5357], ["40 m", 7074], ["30 m", 10136], ["20 m", 14074], ["17 m", 18100], ["15 m", 21074], ["12 m", 24915], ["10 m", 28074], ["6 m", 50313], ["2 m", 144174]],
   ft4: [["80 m", 3575], ["40 m", 7047.5], ["30 m", 10140], ["20 m", 14080], ["17 m", 18104], ["15 m", 21140], ["12 m", 24919], ["10 m", 28180], ["6 m", 50318], ["2 m", 144170]] };
 // the mode's frequency to go to: the band's the receiver is on (the nearest), 20 m if it's nowhere yet; only where it reaches
-function ftWhere(R, mode) {
+function ftWhere(R, mode, freqs = FT_FREQS[mode]) {
   const [lo, hi] = RXD[R.kind].reach(R), near = RXD[R.kind].tuned(R) || 14074000;
-  return FT_FREQS[mode].map(([band, khz]) => ({ band, hz: khz * 1000 })).filter(f => f.hz >= lo && f.hz <= hi)
+  return freqs.map(([band, khz]) => ({ band, hz: khz * 1000 })).filter(f => f.hz >= lo && f.hz <= hi)
     .reduce((a, f) => !a || Math.abs(f.hz - near) < Math.abs(a.hz - near) ? f : a, null);
 }
 const ftBand = (mode, hz) => FT_FREQS[mode].find(([, khz]) => Math.abs(khz * 1000 - hz) <= 500)?.[0];
@@ -2251,6 +2254,86 @@ function ftDraw(R) {
   while (box.children.length > FT_LINES) box.firstChild.remove();
   box.dataset.n = fresh[fresh.length - 1].n;
   if (stick) box.scrollTop = box.scrollHeight;
+}
+// The PSK31 / RTTY reader (audio/keyboard.py): what's typed on the air, as it's typed. PSK31: every signal in what the
+// receiver hears at once, a line each, told apart by pitch. RTTY: the one teleprinter signal there, at whatever speed
+// and shift it has. The radio sends pieces of text; the page puts a signal's pieces on its line, and starts a new
+// line where the sender did.
+const KB = { since: 0, lines: [], line: 0, hue: 0, voices: [], st: null, busy: false, asked: 0 };
+const KB_NAMES = { psk31: "PSK31", rtty: "RTTY" }, KB_KEYS = { psk31: "PSK", rtty: "RTTY" }, KB_LINES = 150, KB_SAME_HZ = 12;
+// where PSK31 is used, a band: [band, dial frequency in kHz] (upper sideband; the signals are 1 to 2 kHz up from it)
+const KB_PSK = [["160 m", 1838], ["80 m", 3580], ["40 m", 7040], ["30 m", 10142], ["20 m", 14070], ["17 m", 18100], ["15 m", 21070], ["12 m", 24920], ["10 m", 28120]];
+function rigKbKeys(R, k) {
+  const key = mode => R.dom["k" + mode] = k(KB_KEYS[mode], async () => {
+    const D = RXD[R.kind], on = S?.keyboard !== mode;
+    try {
+      S = { ...(S || {}), ...(await api("/api/rx/keyboard", { on, mode })) };
+      Object.assign(KB, { since: 0, lines: [], voices: [], st: null });
+      rigPaint(R); kbDraw(R);
+      if (!on) return;
+      if (mode === "rtty") return toast("Teleprinter reader on: tune so that a signal's two tones are both in what you hear. Amateurs use the top of each band's data part (14.080 to 14.100 MHz); the German weather service is on 10.1008 MHz all day (tune 10.0993 USB).", false, null, true);
+      const to = D.ftGo && ftWhere(R, mode, KB_PSK), sideband = (D.on(R) ? R.st.mode || R.st.receiving?.mode : null) === "usb";
+      if (!to) return toast("PSK31 reader on. Tune this receiver to a band's PSK31 frequency in USB: on 20 m that's 14.070 MHz.", false, null, true);
+      if (!(sideband && Math.abs((D.tuned(R) || 0) - to.hz) < 5 && rigOnRadio(R))) await D.ftGo(R, to.hz);
+      toast(`PSK31 reader on, ${to.band}: every signal in what the receiver hears is read at once, a line each.`, false, null, true);
+    } catch (e) { rigOops(e); } }, mode === "psk31" ? "Read PSK31 as text: go to the band's PSK31 frequency and read every signal there at once" : "Read RTTY (radio teleprinter) as text: the strongest pair of tones in what the receiver is playing");
+  return [key("psk31"), key("rtty")];
+}
+// a piece of text from the reader -> the log: on its signal's line, a new line where the sender began one
+function kbLog(p, st) {
+  const when = Date.now() - Math.max(0, st.at - p.t1) * 1000;
+  let v = KB.voices.find(v => Math.abs(v.hz - p.hz) <= KB_SAME_HZ);
+  if (!v) { KB.voices.push(v = { hue: KB.hue++ % CW_HUES.length }); KB.voices = KB.voices.slice(-CW_HUES.length); }
+  v.hz = p.hz;
+  p.text.replace(/\r\n?/g, "\n").split("\n").forEach((part, i) => {
+    let l = KB.lines.findLast(l => Math.abs(l.hz - p.hz) <= KB_SAME_HZ);
+    if (i || !l || p.t0 - l.t1 > 20 || l.text.length > 240) { if (!part && i) return void (l && (l.closed = true)); KB.lines.push(l = { id: ++KB.line, hz: p.hz, when, hue: v.hue, text: "", t1: p.t1 }); }
+    else if (l.closed) { KB.lines.push(l = { id: ++KB.line, hz: p.hz, when, hue: v.hue, text: "", t1: p.t1 }); }
+    l.text += part; l.t1 = p.t1; l.hz = p.hz;
+  });
+  KB.lines = KB.lines.filter(l => l.text.trim() || l === KB.lines[KB.lines.length - 1]).slice(-KB_LINES);
+}
+async function kbPoll() {
+  if (!S?.keyboard || KB.busy || Date.now() - KB.asked < 1000) return;
+  KB.busy = true; KB.asked = Date.now();
+  try {
+    const st = await api(`/api/rx/keyboard?since=${KB.since}`);
+    for (const p of st.pieces) { KB.since = p.n; kbLog(p, st); }
+    KB.st = st;
+    if (S.keyboard !== (st.on ? st.mode : null)) S = { ...S, keyboard: st.on ? st.mode : null };
+  } catch (e) { /* the next one will do */ }
+  KB.busy = false;
+}
+const kbWho = l => `${new Date(l.when).toLocaleTimeString("en-GB")} ${String(l.hz).padStart(4)} Hz`;
+function kbRow(l) {
+  const row = el("div", { className: "rline" }, el("span", { className: "rwho", textContent: kbWho(l) }), el("span", { className: "rtext", textContent: l.text }));
+  row.style.setProperty("--hue", CW_HUES[l.hue]);
+  return row;
+}
+function kbDraw(R) {
+  const d = R.dom;
+  if (!d?.kb) return;
+  const mode = S?.keyboard, on = !!mode && !!d.kpsk31; d.kb.hidden = !on;      // (only where there are the keys: not a room)
+  if (!on) return;
+  const st = KB.st, here = rigOnRadio(R), sig = st?.signals || [];
+  d.kbname.textContent = KB_NAMES[mode];
+  d.kbsays.textContent = !here ? "" : mode === "rtty"
+    ? (sig[0] ? `${sig[0].baud} baud · ${sig[0].shift} Hz apart, about ${sig[0].hz} Hz · ${Math.round(sig[0].framed * 100)}% framed` : "no teleprinter signal")
+    : (sig.length ? `${sig.length} signal${sig.length === 1 ? "" : "s"}: ${sig.map(s => s.hz).join(", ")} Hz` : "no PSK31 signal");
+  const box = d.kbcopy, said = !here ? `Listen to this receiver, and the ${KB_NAMES[mode]} in what it plays is read here.` : !KB.lines.length ? `Listening for ${KB_NAMES[mode]}…` : "";
+  if (said) { if (box.dataset.said !== said) { box.dataset.said = said; box.replaceChildren(el("span", { className: "rnone", textContent: said })); } return; }
+  if (box.dataset.said) { box.dataset.said = ""; box.replaceChildren(); }
+  const stick = box.scrollHeight - box.scrollTop - box.clientHeight < 8, have = new Map([...box.children].map(c => [c.dataset.id, c]));
+  let changed = false;
+  for (const [id, row] of have) if (!KB.lines.some(l => String(l.id) === id)) { row.remove(); changed = true; }
+  for (const l of KB.lines) {
+    const sg = String(l.text.length), row = have.get(String(l.id));
+    if (row?.dataset.sig === sg) continue;
+    const made = kbRow(l); made.dataset.id = l.id; made.dataset.sig = sg;
+    if (row) row.replaceWith(made); else box.append(made);
+    changed = true;
+  }
+  if (changed && stick) box.scrollTop = box.scrollHeight;
 }
 const rigOnRadio = R => !!S?.source?.url?.startsWith(R.origin);
 function rigListen(R, station) { R.wait = Date.now() + 14000; R.n = 0; play(station); rigPaint(R); rigDraw(R); }
@@ -2445,7 +2528,7 @@ const RXD = {
             try { await rxSay(R.origin, "/skip", { freq: hz, on: true }); R.bands = null; toast(`The band now skips ${c.name}. (Channels… has it back.)`); } catch (e) { rigOops(e); } }), "Leave this channel out of the band"),
           k("◀", need(() => this.step(R, -1)), "One channel down"), k("▶", need(() => this.step(R, 1)), "One channel up")),
         el("div", { className: "rgrp" }, k("Channels…", need(async () => { if (this.band(R).range) return toast(`${this.band(R).name} is tuned across: it has no channels.`); const id = `rxb:${R.origin}:${this.band(R).id}`; if (!O[id]) await loadFolder(mk({ id: "rxf:" + R.origin, kind: "folder", box: "rxbands", origin: R.origin, title: `${R.o.title}: bands`, kids: [], sym: "⌁", alt: true })); open(id); }), "The band's channels as stations: drag one onto a button"),
-          k("Bands…", () => this.folder(R), "The bands as folders"), rigNrKey(R, k), rigCwKey(R, k), ...rigFtKeys(R, k), k("Find…", () => open(PANEL.findreceiver.id), "Other people's receivers on the internet"))];
+          k("Bands…", () => this.folder(R), "The bands as folders"), rigNrKey(R, k), rigCwKey(R, k), ...rigFtKeys(R, k), ...rigKbKeys(R, k), k("Find…", () => open(PANEL.findreceiver.id), "Other people's receivers on the internet"))];
     },
     lamps(R, w) { R.dom.kscan?.classList.toggle("on", !!this.band(R) && this.band(R).mode !== "wfm" && !R.st.hold); R.dom.khold?.classList.toggle("on", !!R.st?.hold); R.dom.kmon?.classList.toggle("on", !!this.monitored(R)); },
   },
@@ -2530,7 +2613,7 @@ const RXD = {
               if (have.some(o => o.url === st.url)) return toast("That one is already with your stations.");
               await api("/api/radio/stations", { stations: [...have, st] }); await loadFolder(STATIONS); toast(`Saved “${st.name}” with your stations.`); drawDesk();
             } catch (e) { rigOops(e); } }, "Keep this frequency as a station (drag it onto a button from Stations)"),
-          rigNrKey(R, k), rigCwKey(R, k), ...rigFtKeys(R, k), k("Find…", () => open(PANEL.findreceiver.id), "Other people's receivers on the internet"))];
+          rigNrKey(R, k), rigCwKey(R, k), ...rigFtKeys(R, k), ...rigKbKeys(R, k), k("Find…", () => open(PANEL.findreceiver.id), "Other people's receivers on the internet"))];
     },
     stepWord(R) { return R.step >= 1000 ? `${R.step / 1000} kHz` : `${R.step} Hz`; },
     lamps() {},
@@ -2781,6 +2864,7 @@ function rigPaint(R) {                              // the words and lamps on th
   if (R.dom.knr) { const nr = S?.nr || "off"; R.dom.knr.classList.toggle("on", nr !== "off"); R.dom.knr.textContent = nr === "off" ? "NR" : `NR ${NR_STEPS.indexOf(nr)}`; }
   if (R.dom.kcw) R.dom.kcw.classList.toggle("on", !!S?.cw);
   for (const m of ["ft8", "ft4"]) R.dom["k" + m]?.classList.toggle("on", S?.ft8 === m);
+  for (const m of ["psk31", "rtty"]) R.dom["k" + m]?.classList.toggle("on", S?.keyboard === m);
   d.fill.style.width = Math.max(0, Math.min(100, w.meter * 100)) + "%"; d.fill.style.backgroundSize = d.fill.parentNode.clientWidth + "px 100%";
   const [lo, hi] = R.range || [0, 0], wide = hi - lo > 2e6;
   d.scale.replaceChildren(...[0, 1, 2, 3, 4].map(i => el("span", { textContent: R.range ? ((lo + (hi - lo) * i / 4) / 1e6).toFixed(wide ? 2 : 3) : "" })));
@@ -2796,7 +2880,8 @@ async function rigPoll() {
     R.busy = false;
     if (R.dom?.kcw) await cwPoll();
     if (R.dom?.kft8) await ftPoll();
-    rigDraw(R); rigPaint(R); cwDraw(R); ftDraw(R);
+    if (R.dom?.kpsk31) await kbPoll();
+    rigDraw(R); rigPaint(R); cwDraw(R); ftDraw(R); kbDraw(R);
   }
 }
 function rigView(o, box, win) {
@@ -2856,12 +2941,17 @@ function rigView(o, box, win) {
                    if (FT.view === "heard") { try { await api("/api/rx/ft8/heard", { clear: true }); FT.heard = []; } catch (e) { return rigOops(e); } }
                    else FT.lines = [];
                    d.ftcopy.replaceChildren(); Object.assign(d.ftcopy.dataset, { n: "", said: "", sig: "" }); ftDraw(R); })),
-              el("div", { className: "rftbar" }, d.ftbar = el("i")), d.ftcopy = el("div", { className: "rcopy" })));
+              el("div", { className: "rftbar" }, d.ftbar = el("i")), d.ftcopy = el("div", { className: "rcopy" })),
+    d.kb = el("div", { className: "rcw rft rkb", hidden: true },
+              el("h4", { title: "A line: when it began, where in the sound the signal is, and what it's sending" }, d.kbname = el("b"), d.kbsays = el("span"),
+                 cwKey("Copy", "Copy everything read so far", () => KB.lines.length ? cwCopy(KB.lines.map(l => `${kbWho(l)}  ${l.text}`).join("\n"), "the text read so far") : toast("Nothing read yet.")),
+                 cwKey("Clear", "Empty the list", () => { KB.lines = []; kbDraw(R); })),
+              d.kbcopy = el("div", { className: "rcopy" })));
   d.copy.onclick = d.ftcopy.onclick = e => { const c = e.target.closest(".call"); if (c) { const call = c.textContent.replace(/^<|>$/g, ""); cwCopy(call, call); } };
   d.tape.setAttribute("aria-hidden", "true");
   const foot = el("div", { className: "rfoot" }, ...D.foot(R, k), el("span", { className: "rtip", textContent: D.tip || (R.kind !== "own" ? "Click the scope to tune · wheel to step, Shift for fine · drag the frequency onto a button · be a good guest" : "Click the scope to tune · drag the frequency onto a button") }));
   box.append(el("div", { className: "wbody" }, el("div", { className: "rig" }, bands, tft, modes, foot)));
-  rigDraw(R); setTimeout(() => { rigPaint(R); cwDraw(R); ftDraw(R); }, 0);
+  rigDraw(R); setTimeout(() => { rigPaint(R); cwDraw(R); ftDraw(R); kbDraw(R); }, 0);
 }
 
 function folderView(o, box, win) {
