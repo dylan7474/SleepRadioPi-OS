@@ -1235,6 +1235,13 @@ The cards:
   the page and it stops), the radio plays each place as it goes, and
   amateur teleprinters and Morse aren't surveyed: they have no one
   frequency. An OpenWebRX is tuned by hand, so its keys only say where.
+  *A name of your own* (the **Name…** key in a receiver's window; `POST
+  /api/rx/name {"base": "http://192.168.50.4:8075", "name": "Short
+  wave"}`, an empty name for its own again; kept in the settings as
+  `receiver_names`, and given with `/api/radio`): what the receiver is
+  called in Receivers, on its window, and in what's said about it. A
+  receiver of your own is otherwise its address, and two on one computer
+  differ only in the port.
   *One reader at a time:* Morse, FT8 / FT4 and PSK31 / RTTY each have
   their own place on a band, so switching one on switches the others off
   (each of those calls answers with all three: `{"cw", "ft8",

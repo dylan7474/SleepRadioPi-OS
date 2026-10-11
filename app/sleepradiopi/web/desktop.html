@@ -242,8 +242,8 @@
   .rig .rnow::before { content: "● "; animation: rnow 1s steps(2) infinite; }
   @keyframes rnow { 50% { opacity: .25; } }
   .rig .rfoot { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 5px 12px; align-items: center; }
-  .rig .rfoot .rgrp { display: flex; gap: 5px; align-items: center; }
-  .rig .rfoot .rk { padding: 6px 11px; }
+  .rig .rfoot .rgrp { display: flex; flex-wrap: wrap; gap: 5px; align-items: center; min-width: 0; }      /* (a long row of keys folds, not runs off the window) */
+  .rig .rfoot .rk { padding: 6px 9px; }
   .rig .rfoot .rtip { color: #7f97a8; font-size: 11px; margin-left: auto; }
   @media (prefers-reduced-motion: reduce) { .rig .rfill { transition: none; } }
   .grid { display: flex; flex-wrap: wrap; gap: 4px 2px; padding: 12px; align-content: flex-start; min-height: 100%; }
@@ -665,6 +665,7 @@ const rxNice = r => (r.name.split(/\s-\s|\|/).map(p => p.trim()).find(p => p && 
 const RX_WORD = { kiwi: "KiwiSDR · short wave", owrx: "OpenWebRX", room: "Room · digital voice" };
 const rxRoom = url => /^(ysf|fcs):\/\/[^/]+/i.test(url || "") ? url : null;
 const rxHost = origin => origin.replace(/^https?:\/\//, "").replace(/\/$/, "");
+let RX_NAMES = {};                                  // the names you've given receivers: {address: name} (the radio keeps them)
 const rxObj = (rx, origin, title, info) => mk({ id: "rx:" + origin, kind: "rx", rx, origin, title, name: title, info, sym: "⌁" });
 const rxOrigin = url => { const m = /^(https?:\/\/[^/]+)\/audio\?(?:.*&)?(?:band|freq)=/.exec(url || ""); return m && m[1]; };
 const rxOrigins = stations => [...new Set(stations.map(x => rxOrigin(x.url)).filter(Boolean))];
@@ -778,15 +779,17 @@ async function loadFolder(f) {
     f.kids = d.stations.map(s => stationObj(s).id);
   } else if (f.box === "receiver") {                // every receiver a saved station points at
     const d = await api("/api/radio"), own = rxOrigins(d.stations), kiwis = [...new Set(d.stations.map(x => rxKiwi(x.url)).filter(Boolean))];
-    const kids = own.map(origin => rxObj("own", origin, own.length === 1 ? "Home receiver" : rxHost(origin), `Your own · ${rxHost(origin)}`).id);
+    RX_NAMES = d.receiver_names || {};
+    const kids = own.map(origin => rxObj("own", origin, RX_NAMES[origin] || (own.length === 1 ? "Home receiver" : rxHost(origin)), `Your own · ${rxHost(origin)}`).id);
     const owrxs = [...new Set(d.stations.map(x => rxOwrx(x.url)).filter(Boolean))];
     for (const [kind, base] of [...kiwis.map(b => ["kiwi", b]), ...owrxs.map(b => ["owrx", b])]) {
-      let title = O["rx:" + base]?.named;
+      let title = RX_NAMES[base] || O["rx:" + base]?.named;
+      if (!RX_NAMES[base] && O["rx:" + base]?.yours) title = null;       // (your name for it taken off again: its own, afresh)
       if (!title) try {                              // (its name, from the directory of receivers the radio keeps)
         const r = (await api(`/api/receivers/search?q=${encodeURIComponent(rxHost(base).split(/[:/]/)[0])}&kind=${kind}`)).results.find(r => r.url === base);
         title = r && rxNice(r);
       } catch {}
-      const o = rxObj(kind, base, (title || rxHost(base)).slice(0, 30), RX_WORD[kind]); o.named = title;
+      const o = rxObj(kind, base, (title || rxHost(base)).slice(0, 30), RX_WORD[kind]); o.named = title; o.yours = !!RX_NAMES[base];
       kids.push(o.id);
     }
     for (const st of d.stations.filter(x => rxRoom(x.url))) kids.push(rxObj("room", st.url, st.name.slice(0, 30), RX_WORD.room).id);
@@ -2353,6 +2356,29 @@ function kbDraw(R) {
   }
   if (changed && stick) box.scrollTop = box.scrollHeight;
 }
+// Name…: a receiver called what you like ("Short wave", "VHF"), in Receivers, on its window and wherever it's
+// mentioned. Two receivers on one computer are otherwise only told apart by their ports. Typed where the key was.
+function rigNameKey(R, k) {
+  const key = k("Name…", () => {
+    const f = el("input", { type: "text", id: "rx-name", maxLength: 30, placeholder: "Short wave", value: RX_NAMES[R.origin] || "", className: "rentry",
+                            style: "width:11em;font-size:12px;padding:3px 6px", title: "A name for this receiver. Enter keeps it; empty, it has its own again; Escape leaves it" });
+    const done = async keep => {
+      if (!f.isConnected) return;
+      f.replaceWith(key);
+      const name = f.value.trim().replace(/\s+/g, " ");
+      if (!keep || name === (RX_NAMES[R.origin] || "")) return;
+      try {
+        RX_NAMES = (await api("/api/rx/name", { base: R.origin, name })).receiver_names;
+        await loadFolder(O["box:receiver"]);        // (its name everywhere, from the list as the radio now has it)
+        toast(name ? `This receiver is “${name}” now.` : "It has its own name again."); drawDesk();
+      } catch (e) { rigOops(e); }
+    };
+    f.onkeydown = e => { if (e.key === "Enter") done(true); else if (e.key === "Escape") done(false); e.stopPropagation(); };
+    f.onblur = () => done(false);
+    key.replaceWith(f); f.focus(); f.select();
+  }, "Give this receiver a name of your own");
+  return key;
+}
 // Calibrate (playback/calibrate.py): a short-wave receiver of your own put on frequency. The radio takes it round the
 // broadcast bands, measures stations of known frequency, and sets the dongle's ppm and trim on the receiver.
 const CAL = { busy: false };
@@ -2664,7 +2690,7 @@ const RXD = {
             try { await rxSay(R.origin, "/skip", { freq: hz, on: true }); R.bands = null; toast(`The band now skips ${c.name}. (Channels… has it back.)`); } catch (e) { rigOops(e); } }), "Leave this channel out of the band"),
           k("◀", need(() => this.step(R, -1)), "One channel down"), k("▶", need(() => this.step(R, 1)), "One channel up")),
         el("div", { className: "rgrp" }, k("Channels…", need(async () => { if (this.band(R).range) return toast(`${this.band(R).name} is tuned across: it has no channels.`); const id = `rxb:${R.origin}:${this.band(R).id}`; if (!O[id]) await loadFolder(mk({ id: "rxf:" + R.origin, kind: "folder", box: "rxbands", origin: R.origin, title: `${R.o.title}: bands`, kids: [], sym: "⌁", alt: true })); open(id); }), "The band's channels as stations: drag one onto a button"),
-          k("Bands…", () => this.folder(R), "The bands as folders"), rigCalKey(R, k), rigNrKey(R, k), rigCwKey(R, k), ...rigFtKeys(R, k), ...rigKbKeys(R, k), k("Modes…", () => { MODES.rx = R.o.id; open(PANEL.modes.id); drawDesk(); }, "Where to listen: FT8, FT4, WSPR, PSK31, teleprinter and Morse band by band, and a survey of what's there now"), k("Find…", () => open(PANEL.findreceiver.id), "Other people's receivers on the internet"))];
+          k("Bands…", () => this.folder(R), "The bands as folders"), rigNameKey(R, k), rigCalKey(R, k), rigNrKey(R, k), rigCwKey(R, k), ...rigFtKeys(R, k), ...rigKbKeys(R, k), k("Modes…", () => { MODES.rx = R.o.id; open(PANEL.modes.id); drawDesk(); }, "Where to listen: FT8, FT4, WSPR, PSK31, teleprinter and Morse band by band, and a survey of what's there now"), k("Find…", () => open(PANEL.findreceiver.id), "Other people's receivers on the internet"))];
     },
     lamps(R, w) { R.dom.kscan?.classList.toggle("on", !!this.band(R) && this.band(R).mode !== "wfm" && !R.st.hold); R.dom.khold?.classList.toggle("on", !!R.st?.hold); R.dom.kmon?.classList.toggle("on", !!this.monitored(R)); },
   },
@@ -2750,7 +2776,7 @@ const RXD = {
               if (have.some(o => o.url === st.url)) return toast("That one is already with your stations.");
               await api("/api/radio/stations", { stations: [...have, st] }); await loadFolder(STATIONS); toast(`Saved “${st.name}” with your stations.`); drawDesk();
             } catch (e) { rigOops(e); } }, "Keep this frequency as a station (drag it onto a button from Stations)"),
-          rigNrKey(R, k), rigCwKey(R, k), ...rigFtKeys(R, k), ...rigKbKeys(R, k), k("Modes…", () => { MODES.rx = R.o.id; open(PANEL.modes.id); drawDesk(); }, "Where to listen: FT8, FT4, WSPR, PSK31, teleprinter and Morse band by band, and a survey of what's there now"), k("Find…", () => open(PANEL.findreceiver.id), "Other people's receivers on the internet"))];
+          rigNameKey(R, k), rigNrKey(R, k), rigCwKey(R, k), ...rigFtKeys(R, k), ...rigKbKeys(R, k), k("Modes…", () => { MODES.rx = R.o.id; open(PANEL.modes.id); drawDesk(); }, "Where to listen: FT8, FT4, WSPR, PSK31, teleprinter and Morse band by band, and a survey of what's there now"), k("Find…", () => open(PANEL.findreceiver.id), "Other people's receivers on the internet"))];
     },
     stepWord(R) { return R.step >= 1000 ? `${R.step / 1000} kHz` : `${R.step} Hz`; },
     lamps() {},

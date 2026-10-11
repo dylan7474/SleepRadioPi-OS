@@ -380,6 +380,9 @@ def make_handler(station: Station, output: Mp3Output, speaker=None,
                 except ValueError:
                     since = 0
                 self._send(json.dumps(ft8_mod.reader.status(since)).encode(), "application/json")
+            elif path == "/api/rx/name":
+                # The names given to receivers on the desktop.
+                self._send(json.dumps({"receiver_names": self._receiver_names()}).encode(), "application/json")
             elif path == "/api/rx/calibrate":
                 # A receiver of your own being put on frequency (playback/calibrate.py): how far it has got, what it found.
                 from sleepradiopi.playback import calibrate as calibrate_mod
@@ -743,6 +746,25 @@ def make_handler(station: Station, output: Mp3Output, speaker=None,
                     self._error(str(e) if isinstance(e, ValueError) else 'send {"base": "http://the receiver"}' if not isinstance(e, OSError) else f"the receiver isn't answering ({e})")
                     return
                 self._send(json.dumps(calibrate_mod.job.status()).encode(), "application/json")
+            elif path == "/api/rx/name":
+                # {"base": "http://192.168.50.4:8075", "name": "Short wave"} ("" for its own again): what a receiver is
+                # called on the desktop -- two on one computer are otherwise only told apart by their ports. Kept.
+                try:
+                    body = self._body()
+                    base, name = str(body["base"]).strip(), " ".join(str(body.get("name") or "").split())[:30]
+                    if not base or len(base) > 300 or any(c.isspace() for c in base):
+                        raise ValueError("base is the receiver's address, as the desktop has it")
+                except (ValueError, TypeError, KeyError, AttributeError) as e:
+                    self._error(str(e) if isinstance(e, ValueError) and "base" in str(e) else 'send {"base": "http://the receiver", "name": "Short wave"}')
+                    return
+                names = self._receiver_names()
+                if name:
+                    names[base] = name
+                else:
+                    names.pop(base, None)
+                if config_file is not None:
+                    save_setting(config_file, "receiver_names", names)
+                self._send(json.dumps({"receiver_names": names}).encode(), "application/json")
             elif path == "/api/rx/locator":
                 # {"locator": "IO94"} ("" clears it): where the radio is, for how far an FT8 station is. Kept.
                 from sleepradiopi.audio import ft8 as ft8_mod
@@ -1427,6 +1449,11 @@ def make_handler(station: Station, output: Mp3Output, speaker=None,
                                    "up_next_source": station.next_source_status(),
                                    "requests": station.requests()}).encode(), "application/json")
 
+        def _receiver_names(self) -> dict:
+            """The names given to receivers on the desktop: {its address as the desktop has it: name}."""
+            names = load_settings(config_file).receiver_names if config_file is not None else {}
+            return {str(k): str(v) for k, v in names.items()} if isinstance(names, dict) else {}
+
         def _radio_stations(self) -> list[dict]:
             saved = load_settings(config_file).radio_stations if config_file is not None else None
             if saved is None:
@@ -1439,7 +1466,7 @@ def make_handler(station: Station, output: Mp3Output, speaker=None,
         def _radio_state(self) -> dict:
             st = station.status()
             return {"stations": self._radio_stations(), "source": st.get("source"),
-                    "source_error": st.get("source_error"),
+                    "source_error": st.get("source_error"), "receiver_names": self._receiver_names(),
                     "directory": directory.status() if directory is not None else None}
 
         def _radio(self, action: str) -> None:

@@ -306,6 +306,10 @@ Actions, Sleep timer and Radio folders open:
   band's FT8 frequency, or everything -- and writes on the keys what was
   there: "24 · 3,174 km" is twenty-four stations, the farthest that far.
   A picture of which bands are open, in about five minutes.
+- **Receivers with names.** *Name…* in a receiver's window calls it what
+  you like -- "Short wave", "VHF" -- in Receivers, on its window and
+  wherever it's mentioned: two dongles on one computer are otherwise told
+  apart only by their port numbers.
 - **Calibrate.** A cheap dongle behind an upconverter is a few hundred Hz
   out on short wave, by a different amount on every band, and drifts as it
   warms. *Calibrate* in a short-wave receiver's window takes it round the
@@ -852,10 +856,6 @@ What's left to do (everything else described here is built and running):
   could send it the FT8, FT4 and WSPR stations it hears (and WSPR spots to
   wsprnet.org). It gives your callsign and locator to a public website, so
   it would be a switch that is off until you turn it on.
-- **Receivers with names** — a receiver of your own is known by its
-  address ("192.168.50.4:8075"), and two on one computer are hard to tell
-  apart: let them be named ("Short wave", "VHF"), in Receivers and
-  wherever one is mentioned.
 - **A dongle inside the radio** — the bigger radios (a Pi 3 inside) have
   the room and the processor for an RTL-SDR of their own: one with a
   temperature-compensated crystal (a Nooelec NESDR SMArt v5), so that it

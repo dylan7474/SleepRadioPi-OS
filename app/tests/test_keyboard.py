@@ -182,3 +182,34 @@ def test_the_reader_from_the_web(tmp_path: Path, monkeypatch) -> None:
         morse.reader.switch(False)
         httpd.shutdown()
         httpd.server_close()
+
+
+def test_receivers_are_given_names(tmp_path: Path) -> None:
+    conf = tmp_path / "config.toml"
+    conf.write_text("{}")
+    httpd = ThreadingHTTPServer(("127.0.0.1", 0), make_handler(None, None, None, conf))
+    threading.Thread(target=httpd.serve_forever, daemon=True).start()
+    base = f"http://127.0.0.1:{httpd.server_address[1]}"
+
+    def call(path, body=None):
+        req = urllib.request.Request(base + path, data=None if body is None else json.dumps(body).encode(), method="POST" if body is not None else "GET")
+        try:
+            with urllib.request.urlopen(req, timeout=5) as r:
+                return r.status, json.loads(r.read())
+        except urllib.error.HTTPError as e:
+            return e.code, json.loads(e.read() or b"{}")
+
+    try:
+        assert call("/api/rx/name") == (200, {"receiver_names": {}})
+        hf, vhf = "http://192.168.50.4:8075", "http://192.168.50.4:8074"       # two on one computer: only the port to tell them by
+        assert call("/api/rx/name", {"base": hf, "name": "  Short   wave "}) == (200, {"receiver_names": {hf: "Short wave"}})
+        assert call("/api/rx/name", {"base": vhf, "name": "VHF"})[1]["receiver_names"] == {hf: "Short wave", vhf: "VHF"}
+        assert json.loads(conf.read_text())["receiver_names"] == {hf: "Short wave", vhf: "VHF"}          # kept
+        assert call("/api/rx/name", {"base": hf, "name": "x" * 50})[1]["receiver_names"][hf] == "x" * 30
+        assert call("/api/rx/name", {"base": hf, "name": ""})[1]["receiver_names"] == {vhf: "VHF"}      # its own name again
+        for bad in ({}, {"name": "VHF"}, {"base": "", "name": "VHF"}, {"base": "http://a b", "name": "VHF"}):
+            assert call("/api/rx/name", bad)[0] == 400
+        assert call("/api/rx/name")[1] == {"receiver_names": {vhf: "VHF"}}
+    finally:
+        httpd.shutdown()
+        httpd.server_close()
