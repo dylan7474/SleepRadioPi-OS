@@ -471,7 +471,8 @@ can't add the music yet.
 1. **Download** `sdcard.img.xz` from the
    [latest release](https://github.com/dylan7474/SleepRadioPi-OS/releases/latest).
 2. **Flash it** with [Raspberry Pi Imager](https://www.raspberrypi.com/software/):
-   - Device: Raspberry Pi Zero 2 W.
+   - Device: Raspberry Pi Zero 2 W (a Pi 3 Model B or B+ starts from the
+     same image, from v1.9.7).
    - OS: *Use custom*, then pick the downloaded `sdcard.img.xz`. You don't need
      to unpack it.
    - Storage: your card.
@@ -896,14 +897,17 @@ the music across. A card that has never been near one is given its partition
 6 by the radio itself (`app/sleepradiopi/mediapart.py`, from `S00data`): at
 the first start it writes the partition table -- the same bytes `sfdisk`
 writes on the PC -- and restarts once; at the second it formats the
-partition it made and gives it its folders, and music is then put on from the
-web page. It touches only a card laid out exactly as the image leaves it,
+partition it made, gives it its folders and the radio its first settings
+(where the music is, and that there's a speaker: what the PC script writes
+as a starter config), and music is then put on from the web page. It touches only a card laid out exactly as the image leaves it,
 with room after the settings; a card that already has a partition 6 never
 gets as far as being looked at, and only the partition it made itself (a
 note in `/data` says where it begins and how big it is), with no filesystem
 on it, is ever formatted. So a card flashed again over its old music gets
-its music back rather than a blank partition. **Tried on card images only so
-far, not yet on a real card in a radio.**
+its music back rather than a blank partition. First tried on a real card
+in a Pi 3 Model B with v1.9.6: the partition was made and formatted as it
+should be, and the test showed up the first settings as missing (added in
+v1.9.7).
 
 ## Layout
 
