@@ -338,7 +338,11 @@ Actions, Sleep timer and Radio folders open:
   locator square. On a busy band that's twenty or so stations a slot, from
   a few hundred to several thousand miles away. Tell the radio its own
   locator and each line says how far the station is and which way; *Heard*
-  lists who's been heard on the band, the farthest first. The decoding is ft8_lib's
+  lists who's been heard on the band, the farthest first, and *Map* draws
+  their locator squares on a map of the world, the brighter the more
+  lately heard. The radio keeps the list over a restart (written to the
+  card a quarter of an hour apart at most). A message that names your own
+  callsign (the one kept for the rooms) is picked out in amber. The decoding is ft8_lib's
   (MIT), built into the image; receive only -- nothing is sent, on the air
   or to any website. See `app/sleepradiopi/audio/ft8.py`.
 - **Rooms: radio amateurs' digital voice.** Yaesu "System Fusion" radios
@@ -852,8 +856,6 @@ anything else starts.
 
 What's left to do (everything else described here is built and running):
 
-- **Wire the knob and the RTC** — check the knob's direction, step and long
-  press on the real switch, and the RTC keeping time with no network.
 - **Library tools** — adding and deleting music is on the web page (Settings
   → Media library); still to do: syncing a whole desktop library in one go.
 - **A needle VU meter** — a physical meter driven from a PWM pin, with the
@@ -877,9 +879,6 @@ What's left to do (everything else described here is built and running):
   from; the search at its heart has to be made several times faster for the
   Zero 2 W first). After that, a Morse finder: sweep the Morse parts of
   each band and say where the activity is.
-- **FT8 and FT4: more from the list** — the list of who's been heard is
-  lost at a restart: keep it (on the data partition, sparingly). A map of
-  the squares heard. A line picked out when it names your own callsign.
 - **The survey, by the radio itself** — *Where to listen*'s survey is run
   by the page: close the page and it stops. Run by the radio it could go
   round on the hour and keep a day's picture of each band; and amateur

@@ -35,6 +35,10 @@ Third-party components (planned)
     (statically linked inside sherpa-onnx's native library; also the source of
      the espeak-ng-data phoneme files installed at runtime)
 
+* Natural Earth ......... public domain     https://www.naturalearthdata.com
+    (the 1:110m land outlines, rounded to half a degree, in
+     sleepradiopi/web/land.json: the coastlines on the map of who's been heard)
+
 Other planned dependencies (python-vlc / libVLC, mutagen, numpy, sounddevice,
 gpiozero, a small LCD driver library) are permissively licensed (LGPL/MIT/BSD
 family) and do not change the overall GPL-3.0-or-later status, which is

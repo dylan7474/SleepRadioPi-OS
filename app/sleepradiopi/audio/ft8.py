@@ -43,8 +43,13 @@ call gives its locator (JO31: a square of 1 degree by 2, about 70 miles by
 is given a distance and a bearing from the middle of its square, and the
 reader keeps a list of who has been heard on each band: when first and
 last, how strong at best, how often. A station's later messages carry no
-locator; they get the one it gave before. The list is in memory only: a
-restart begins it again.
+locator; they get the one it gave before. The list is kept on the card
+(keep_in() says where), sparingly: a quarter of an hour apart at most, when
+it has changed, and when the reader is switched off; so a restart loses a
+few minutes of it at worst.
+
+A message that names the radio's owner (the callsign kept for the rooms:
+playback/room.py) is marked as theirs: somebody calling or answering them.
 
 WSPR is read the same way, by the same reader: beacons of a watt or less,
 each sending its call, locator and power over two minutes, starting on the
@@ -61,6 +66,7 @@ switches it and asks what it has read.
 """
 from __future__ import annotations
 
+import json
 import logging
 import math
 import os
@@ -72,11 +78,13 @@ import threading
 import time
 import wave
 from collections import deque
+from pathlib import Path
 from typing import Callable
 
 import numpy as np
 
 from sleepradiopi.audio import pcm
+from sleepradiopi.config.atomic import write_atomic
 
 log = logging.getLogger(__name__)
 
@@ -102,7 +110,8 @@ DECODER = "decode_ft8"       # ft8_lib's; SLEEPRADIO_FT8_DECODER names another
 WSPR_DECODER = "wsprd"       # WSJT-X's; SLEEPRADIO_WSPR_DECODER names another
 WSPR_LINE = re.compile(r"^\S+\s+(-?\d+)\s+(-?\d+\.\d+)\s+(\d+\.\d+)\s+(-?\d+)\s+(\S.*?)\s*$")
 WSPR_GRID = re.compile(r"^[A-R]{2}\d{2}(?:[A-Xa-x]{2})?$")
-HEARD_MOST = 600             # stations kept in the list of who's been heard (the longest unheard go first)
+HEARD_MOST = 1500            # stations kept in the list of who's been heard (the longest unheard go first)
+KEEP_EVERY_S = 900.0         # the list goes to the card this often at most, and only when it has changed
 HOME: str | None = None      # the radio's own locator ("IO94" or "IO94kn"): main.py sets it from the settings
 GRID = re.compile(r"^[A-R]{2}\d{2}$")
 CALL = re.compile(r"^(?:[A-Z0-9]{1,4}/)?(?:[A-Z]{1,2}\d|\d[A-Z])\d{0,2}[A-Z]{1,4}(?:/[A-Z0-9]{1,4})?$")
@@ -299,6 +308,9 @@ class Reader:
         self._slots = 0
         self._last: dict | None = None               # the slot last looked at: {"t", "heard" | "error"}
         self._turn = 0                               # (which switching-on this is: a slot read for the last one is dropped)
+        self._file: Path | None = None               # where the heard list is kept (keep_in())
+        self._changed = False                        # ...whether it has changed since it was last written
+        self._saved = 0.0                            # ...and when that was, by the clock
 
     # --- the sound coming in -----------------------------------------------------------------
 
@@ -344,11 +356,13 @@ class Reader:
     def status(self, since: int = 0) -> dict:
         """{"on", "mode", "band", "home" (the radio's locator), "can" (there's a decoder), "slot" (s), "slots" (read so
         far), "late" (s the sound is behind the clock, once known), "last": {"t", "heard" | "error"}, "messages": [{"n", "t" (the slot's start, by the clock), "snr", "dt",
-        "hz", "text", "call"?, "grid"?, "km"?, "deg"?}] after number since}"""
+        "hz", "text", "call"?, "grid"?, "km"?, "deg"?, "me"? (it names the owner's callsign)}] after number since,
+        "call": the owner's callsign}"""
         with self._lock:
-            return {"on": self.on, "mode": self.mode, "band": self.band, "home": HOME, "can": decoder_path() is not None, "can_wspr": wspr_decoder_path() is not None,
+            own = own_call()
+            return {"on": self.on, "mode": self.mode, "band": self.band, "home": HOME, "call": own, "can": decoder_path() is not None, "can_wspr": wspr_decoder_path() is not None,
                     "slot": MODES[self.mode], "slots": self._slots, "late": None if self._late is None else round(self._late, 2), "last": self._last,
-                    "messages": [_far(m) for m in self._messages if m["n"] > since]}
+                    "messages": [_mine(_far(m), own) for m in self._messages if m["n"] > since]}
 
     def heard(self) -> dict:
         """{"band", "home", "heard": [{"band", "call", "grid"?, "km"?, "deg"?, "snr" (the best), "first", "last" (by the
@@ -357,9 +371,50 @@ class Reader:
             return {"band": self.band, "home": HOME, "heard": [_far(h) for h in sorted(self._heard.values(), key=lambda h: -h["last"])]}
 
     def forget(self) -> None:
-        """The heard list emptied."""
+        """The heard list emptied, on the card too."""
         with self._lock:
             self._heard.clear()
+            self._changed = True
+        self.save()
+
+    # --- the heard list, kept ----------------------------------------------------------------
+
+    def keep_in(self, file: Path | None) -> None:
+        """Where the heard list is kept from now on, and what's there read back in. A file that can't be read
+        is left alone until the list is next written."""
+        self._file = file
+        if file is None:
+            return
+        try:
+            kept = json.loads(file.read_text())["heard"]
+            heard = {}
+            for h in kept:
+                band, call = h.get("band"), h["call"]
+                if not isinstance(call, str) or not (band is None or isinstance(band, str)):
+                    raise ValueError("a station with no call or a strange band")
+                for k in ("snr", "first", "last", "count"):
+                    h[k] = float(h[k]) if k != "count" else int(h[k])
+                heard[(band, call)] = h
+        except FileNotFoundError:
+            return
+        except (OSError, ValueError, KeyError, TypeError, AttributeError) as e:
+            log.warning("ft8: the heard list in %s can't be read (%s): beginning again", file, e)
+            return
+        with self._lock:
+            self._heard = {**heard, **self._heard}
+            self._changed = False
+
+    def save(self) -> None:
+        """The heard list written to the card, if it has changed and there's somewhere to keep it."""
+        with self._lock:
+            if self._file is None or not self._changed:
+                return
+            text = json.dumps({"heard": list(self._heard.values())}, separators=(",", ":"))
+            self._changed, self._saved = False, self._clock()
+        try:
+            write_atomic(self._file, text)
+        except OSError as e:
+            log.warning("ft8: the heard list wasn't kept (%s)", e)
 
     # --- the reading -------------------------------------------------------------------------
 
@@ -422,6 +477,7 @@ class Reader:
                     h = self._heard.setdefault((self.band, call), {"band": self.band, "call": call, "snr": m["snr"], "first": t0, "count": 0})
                     h.update(snr=max(h["snr"], m["snr"]), last=t0, count=h["count"] + 1, cq=cq, **({"grid": grid} if grid else {}))
                     m = {**m, "call": call, **({"grid": h["grid"]} if "grid" in h else {})}
+                    self._changed = True
                 self._messages.append({"n": self._n, "t": t0, **m})
             for key in sorted(self._heard, key=lambda k: self._heard[k]["last"])[:max(0, len(self._heard) - HEARD_MOST)]:
                 del self._heard[key]
@@ -433,6 +489,19 @@ def _far(d: dict) -> dict:
         km, deg = path(HOME, d["grid"])
         return {**d, "km": km, "deg": deg}
     return d
+
+
+def own_call() -> str | None:
+    """The owner's callsign (the one kept for the rooms), or None."""
+    from sleepradiopi.playback import room
+    return room.CALLSIGN or None
+
+
+def _mine(m: dict, own: str | None) -> dict:
+    """A message, marked "me" if it names the owner's callsign (with or without a /P or a prefix)."""
+    if own and any(own in w.strip("<>").split("/") for w in m["text"].upper().split()):
+        return {**m, "me": True}
+    return m
 
 
 class Live(Reader):
@@ -466,6 +535,8 @@ class Live(Reader):
                 if on:
                     self._messages.clear()
                     self._slots = 0
+            if not on:
+                self.save()
             if on:
                 self._stop = stop = threading.Event()
                 threading.Thread(target=self._run, args=(stop,), name="ft8-reader", daemon=True).start()
@@ -474,6 +545,8 @@ class Live(Reader):
         while not stop.wait(STEP_S):
             try:
                 self.step()
+                if self._changed and self._clock() - self._saved >= KEEP_EVERY_S:
+                    self.save()
             except Exception:                        # (a reading that falls over mustn't end the reader)
                 log.exception("ft8: reading failed")
 

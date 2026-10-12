@@ -45,6 +45,8 @@ DESKTOP = (Path(__file__).parent / "desktop.html").read_bytes()   # the new desk
 DESKTOP_TAG = hashlib.sha1(DESKTOP).hexdigest()[:12]   # an open desktop page that sees this change reloads itself
 # The speaker analyser (also on GitHub Pages): served here too, for tuning with no internet.
 ANALYSER = (Path(__file__).parent / "analyser" / "index.html").read_bytes()
+# The world's coastlines, for the map of who's been heard (Natural Earth's 110 m land, public domain, to half a degree)
+LAND = (Path(__file__).parent / "land.json").read_bytes()
 KEY_HELD_MAX_S = 30  # a page's button held longer than this is let go (a lost "up")
 IDLE_CLOSE_S = 30  # close a stream connection that has had no audio for this long
 MAX_SETTINGS_BYTES = 512 * 1024   # room for a long list of internet radio stations
@@ -208,6 +210,8 @@ def make_handler(station: Station, output: Mp3Output, speaker=None,
                 self.end_headers()
             elif path == "/desktop":
                 self._send(DESKTOP, "text/html; charset=utf-8")
+            elif path == "/desktop/land.json":
+                self._send(LAND, "application/json")
             elif path == "/analyser":
                 self.send_response(301)
                 self.send_header("Location", "/analyser/")

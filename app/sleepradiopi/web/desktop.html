@@ -226,6 +226,10 @@
   .rig .rft .rcopy { flex-basis: 12.5em; font-size: 13px; }
   .rig .rft .rline.first { margin-top: 5px; }
   .rig .rft .rline.cq .rtext { color: #5fd08a; }
+  .rig .rft .rline.me { background: rgba(240, 176, 69, .2); }
+  .rig .rft .rline.me .rtext { color: #ffdc8f; font-weight: 700; }
+  .rig .rft .rcopy[data-view="map"] { flex: 0 1 232px; min-height: 110px; padding: 0; overflow: hidden; }
+  .rig .rft .rcopy canvas.rmap { display: block; cursor: crosshair; }
   .rig .rft .rline { grid-template-columns: auto minmax(0, 1fr) auto; }
   .rig .rft .rfar { font-size: 11px; line-height: 1.85; color: #9fb4c2; white-space: pre; }
   .rig .rft h4 > span { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -2151,8 +2155,9 @@ function cwDraw(R) {
 // each one when it has ended. One reader, so one list for every rig window: a line a message, with its slot's time (UTC,
 // as the bands keep it), how strong it was and where in the sound. The keys go to the band's usual frequency first.
 // Each line says how far and which way, once the radio knows its own locator (the key in the list's heading keeps it);
-// Heard turns the list into who has been heard on the band, the farthest first.
-const FT = { since: 0, lines: [], st: null, busy: false, asked: 0, view: "list", heard: [], heardAt: 0, band: null };
+// Heard turns the list into who has been heard on the band, the farthest first; Map draws their squares on the world.
+// A message naming the owner's callsign (the one kept for the rooms) is picked out.
+const FT = { since: 0, lines: [], st: null, busy: false, asked: 0, view: "list", heard: [], heardAt: 0, band: null, land: null, landAsked: false, map: null };
 const FT_WINDS = ["N", "NNE", "NE", "ENE", "E", "ESE", "SE", "SSE", "S", "SSW", "SW", "WSW", "W", "WNW", "NW", "NNW"];
 const ftFar = x => x.km == null ? "" : `${x.km.toLocaleString("en-GB")} km ${FT_WINDS[Math.round(x.deg / 22.5) % 16]}`;
 // WSPR is the same reader's third mode: beacons of a watt or less, two minutes each, a line for each one heard.
@@ -2196,7 +2201,7 @@ async function ftPoll() {
     if (st.messages.length && st.messages[0].n <= FT.since) FT.lines = [];        // (the reader began again)
     for (const m of st.messages) { FT.lines.push(m); FT.since = m.n; }
     FT.lines = FT.lines.slice(-FT_LINES); FT.st = st;
-    if (FT.view === "heard" && Date.now() - FT.heardAt > 3000) { FT.heardAt = Date.now(); FT.heard = (await api("/api/rx/ft8/heard")).heard; }
+    if (FT.view !== "list" && Date.now() - FT.heardAt > 3000) { FT.heardAt = Date.now(); FT.heard = (await api("/api/rx/ft8/heard")).heard; }
     if (S.ft8 !== (st.on ? st.mode : null)) S = { ...S, ft8: st.on ? st.mode : null };
   } catch (e) { /* the next one will do */ }
   FT.busy = false;
@@ -2206,9 +2211,9 @@ const ftPower = dbm => { const w = Math.pow(10, dbm / 10) / 1000; return w >= 1 
 const ftWho = m => `${ftUtc(m.t)} ${((m.snr >= 0 ? "+" : "−") + Math.abs(Math.round(m.snr))).padStart(3)} dB ${String(m.hz).padStart(4)} Hz`;
 function ftRow(m, first) {
   const text = el("span", { className: "rtext" }), cq = /^CQ(\s|$)/.test(m.text);
-  const row = el("div", { className: "rline" + (cq ? " cq" : "") + (first ? " first" : "") }, el("span", { className: "rwho", textContent: ftWho(m) }), text,
+  const row = el("div", { className: "rline" + (cq ? " cq" : "") + (first ? " first" : "") + (m.me ? " me" : ""), title: m.me ? "This one names your callsign" : "" }, el("span", { className: "rwho", textContent: ftWho(m) }), text,
                  el("span", { className: "rfar", textContent: ftFar(m), title: m.km == null ? "" : `${m.call} in ${m.grid}: ${m.deg}° from here` }));
-  row.style.setProperty("--hue", cq ? "#5fd08a" : "#58d0e8");
+  row.style.setProperty("--hue", m.me ? "#f0b045" : cq ? "#5fd08a" : "#58d0e8");
   (m.dbm == null ? m.text.split(" ") : m.text.split(" ").slice(0, -1)).forEach((w, i) => {
     if (i) text.append(" ");
     const call = w.replace(/^<|>$/g, "");
@@ -2231,6 +2236,75 @@ function ftHeardRow(h) {
                  el("span", { className: "rfar", textContent: ftFar(h), title: h.km == null ? "" : `${h.deg}° from here` }));
   row.style.setProperty("--hue", h.cq ? "#5fd08a" : "#58d0e8");
   return row;
+}
+// The map: every locator square heard on the band the receiver is on (2 degrees by 1) as a tile on the world, the
+// brighter the more lately heard, the radio's own square ringed. It shows as much of the world as the squares take.
+// The coastlines come once from the radio (/desktop/land.json: outlines in half degrees, [lon, lat, lon, lat...]).
+const ftSquareAt = g => ({ lon: (g.charCodeAt(0) - 65) * 20 - 180 + +g[2] * 2, lat: (g.charCodeAt(1) - 65) * 10 - 90 + +g[3] });
+function ftSquares() {
+  const band = FT.st?.band, sq = new Map();
+  for (const h of FT.heard) {
+    if (!h.grid || (band && h.band !== band)) continue;
+    const g = h.grid.slice(0, 4).toUpperCase();
+    if (!sq.has(g)) sq.set(g, { grid: g, calls: [], last: 0, ...ftSquareAt(g) });
+    const s = sq.get(g); s.calls.push(h.call); s.last = Math.max(s.last, h.last);
+  }
+  return sq;
+}
+// what of the world to show in w by h: {lon0 (the left edge), lat1 (the top), sx, sy (pixels a degree)}
+function ftMapView(sq, home, w, h) {
+  const world = { lon0: -180, lat1: 90, sx: w / 360, sy: h / 180 };
+  const pts = [...sq.values()].flatMap(s => [[s.lon, s.lat], [s.lon + 2, s.lat + 1]]).concat(home ? [[home.lon, home.lat], [home.lon + 2, home.lat + 1]] : []);
+  if (!pts.length) return world;
+  let lo = Math.min(...pts.map(p => p[0])), hi = Math.max(...pts.map(p => p[0])), la = Math.min(...pts.map(p => p[1])), lb = Math.max(...pts.map(p => p[1]));
+  let lonSpan = Math.max(50, (hi - lo) * 1.2), latSpan = Math.max(25, (lb - la) * 1.2);
+  const midLon = (lo + hi) / 2, midLat = (la + lb) / 2, k = Math.max(.35, Math.cos(midLat * Math.PI / 180));     // (a degree east is this much of a degree north, there)
+  const sy = Math.min(h / latSpan, w / (lonSpan * k));
+  latSpan = h / sy; lonSpan = w / (sy * k);
+  if (lonSpan >= 360 || latSpan >= 180) return world;
+  return { lon0: Math.max(-180, Math.min(180 - lonSpan, midLon - lonSpan / 2)), lat1: Math.min(90, Math.max(-90 + latSpan, midLat + latSpan / 2)), sx: sy * k, sy };
+}
+function ftMapDraw(R) {
+  const box = R.dom.ftcopy;
+  let c = box.querySelector("canvas.rmap");
+  if (!c) {
+    c = el("canvas", { className: "rmap" });
+    const at = e => { const m = FT.map; if (!m) return null; const r = c.getBoundingClientRect(), lon = m.v.lon0 + (e.clientX - r.left) / m.v.sx, lat = m.v.lat1 - (e.clientY - r.top) / m.v.sy;
+      if (lon < -180 || lon >= 180 || lat < -90 || lat >= 90) return null;
+      const g = String.fromCharCode(65 + Math.floor((lon + 180) / 20), 65 + Math.floor((lat + 90) / 10)) + Math.floor(((lon + 180) % 20) / 2) + Math.floor((lat + 90) % 10);
+      return { g, s: m.sq.get(g) }; };
+    c.onmousemove = e => { const a = at(e); c.title = !a ? "" : a.s ? `${a.g}: ${a.s.calls.join(", ")}` : a.g; };
+    c.onclick = e => { const a = at(e); if (a?.s) toast(`${a.g}: ${a.s.calls.join(", ")} (last heard ${ftUtc(a.s.last)} UTC)`, false, null, true); };
+    box.replaceChildren(c); Object.assign(box.dataset, { n: "", said: "", sig: "" });
+  }
+  if (!FT.land && !FT.landAsked) { FT.landAsked = true; api("/desktop/land.json").then(l => { FT.land = l; if (R.dom?.ftcopy?.isConnected) ftDraw(R); }).catch(() => { FT.landAsked = false; }); }
+  const w = Math.max(200, box.clientWidth), h = Math.max(100, box.clientHeight), sq = ftSquares(), home = FT.st?.home ? ftSquareAt(FT.st.home.toUpperCase()) : null;      // (as big as the window leaves it)
+  const sig = [w, h, !!FT.land, FT.st?.home, ...[...sq.values()].map(s => `${s.grid}:${s.last}:${s.calls.length}`)].join();
+  if (c.dataset.sig === sig) return sq;
+  c.dataset.sig = sig;
+  const dpr = window.devicePixelRatio || 1; c.width = w * dpr; c.height = h * dpr; c.style.width = w + "px"; c.style.height = h + "px";
+  const g = c.getContext("2d"), v = ftMapView(sq, home, w, h), X = lon => (lon - v.lon0) * v.sx, Y = lat => (v.lat1 - lat) * v.sy;
+  FT.map = { v, sq };
+  g.setTransform(dpr, 0, 0, dpr, 0, 0);
+  g.fillStyle = "#0a1118"; g.fillRect(0, 0, w, h);
+  if (FT.land) {
+    g.fillStyle = "#1c2f3d"; g.strokeStyle = "#35566c"; g.lineWidth = 1; g.beginPath();
+    for (const p of FT.land) { for (let i = 0; i < p.length; i += 2) g[i ? "lineTo" : "moveTo"](X(p[i] / 2), Y(p[i + 1] / 2)); g.closePath(); }
+    g.fill(); g.stroke();
+  }
+  g.strokeStyle = "rgba(127, 151, 168, .22)"; g.fillStyle = "rgba(127, 151, 168, .5)"; g.font = "10px system-ui, sans-serif"; g.beginPath();     // the fields: 20 degrees by 10, each with its two letters
+  for (let lon = -180; lon <= 180; lon += 20) { g.moveTo(X(lon), 0); g.lineTo(X(lon), h); }
+  for (let lat = -90; lat <= 90; lat += 10) { g.moveTo(0, Y(lat)); g.lineTo(w, Y(lat)); }
+  g.stroke();
+  if (v.sx * 20 > 34) for (let i = 0; i < 18; i++) for (let j = 0; j < 18; j++) g.fillText(String.fromCharCode(65 + i, 65 + j), X(i * 20 - 180) + 3, Y(j * 10 - 90) - 3);
+  const now = Date.now() / 1000;
+  for (const s of sq.values()) {
+    const age = now - s.last;
+    g.fillStyle = `rgba(240, 176, 69, ${age < 900 ? 1 : age < 3600 ? .75 : age < 86400 ? .5 : .32})`;
+    g.fillRect(X(s.lon) + .5, Y(s.lat + 1) + .5, Math.max(4, v.sx * 2 - 1), Math.max(3, v.sy - 1));
+  }
+  if (home) { g.strokeStyle = "#5fd08a"; g.lineWidth = 2; g.strokeRect(X(home.lon) - 1, Y(home.lat + 1) - 1, Math.max(4, v.sx * 2 + 2), Math.max(4, v.sy + 2)); }
+  return sq;
 }
 async function ftLocator(R) {                       // the radio's own locator, typed where its key was
   const d = R.dom, f = el("input", { type: "text", id: "ft-locator", maxLength: 6, placeholder: "IO94", value: FT.st?.home || "", title: "Your locator: IO94 or IO94kn. Enter keeps it, Escape leaves it" });
@@ -2259,17 +2333,19 @@ function ftDraw(R) {
   if (!on) return;
   const st = FT.st, here = rigOnRadio(R), D = RXD[R.kind], hz = D.tuned(R), sideband = (D.on(R) ? R.st.mode || R.st.receiving?.mode : null) === "usb";
   const slot = FT_SLOT[mode] || 15;
-  const band = ftBand(mode, hz), heard = FT.view === "heard", list = heard ? ftHeardList() : [];
+  const band = ftBand(mode, hz), heard = FT.view === "heard", map = FT.view === "map", list = heard ? ftHeardList() : [], view = FT.view === "list" ? "" : FT.view;
   // (the reader is told the band the receiver is on, when that changes: its heard list is kept by it)
   if (here && band && st && st.band !== band && FT.band !== band) { FT.band = band; api("/api/rx/ft8", { on: true, mode, band }).catch(() => {}); }
   d.ftname.textContent = FT_NAMES[mode];
   d.ftsays.textContent = !here ? "" : [band || "not on a frequency it's used on", sideband ? "" : "not in USB",
-    heard ? `${list.length} heard${list[0]?.km != null ? `, farthest ${list[0].call} ${list[0].km.toLocaleString("en-GB")} km` : ""}`
+    map ? (n => `${n} square${n === 1 ? "" : "s"} heard`)(ftSquares().size)
+    : heard ? `${list.length} heard${list[0]?.km != null ? `, farthest ${list[0].call} ${list[0].km.toLocaleString("en-GB")} km` : ""}`
     : st?.last?.error ? st.last.error : st?.last ? `${st.last.heard} heard at ${ftUtc(st.last.t)}` : mode === "wspr" ? "the first list comes after one whole two-minute slot" : "the first list comes after one whole slot"].filter(Boolean).join(" · ");
   d.ftbar.style.width = here ? (Date.now() / 1000 % slot) / slot * 100 + "%" : "0";
-  d.ftheard.classList.toggle("on", heard);
+  d.ftheard.classList.toggle("on", heard); d.ftmap.classList.toggle("on", map);
   if (d.ftloc.isConnected) { d.ftloc.textContent = st?.home ? `From ${st.home}` : "Your locator…"; d.ftloc.hidden = !st; }
-  if (heard !== (d.ftcopy.dataset.view === "heard")) { d.ftcopy.replaceChildren(); Object.assign(d.ftcopy.dataset, { view: heard ? "heard" : "", n: "", said: "", sig: "" }); }
+  if ((d.ftcopy.dataset.view || "") !== view) { d.ftcopy.replaceChildren(); Object.assign(d.ftcopy.dataset, { view, n: "", said: "", sig: "" }); }
+  if (map && here) { ftMapDraw(R); return; }
   if (heard && here && list.length) {
     const sig = list.map(h => `${h.call}:${h.last}:${h.km}`).join();
     if (d.ftcopy.dataset.sig !== sig) { const top = d.ftcopy.scrollTop; d.ftcopy.replaceChildren(...list.map(ftHeardRow)); Object.assign(d.ftcopy.dataset, { sig, said: "" }); d.ftcopy.scrollTop = top; }
@@ -3185,12 +3261,14 @@ function rigView(o, box, win) {
               el("h4", { title: "A line: the slot's time (UTC), how strong (a rough guide: not the figure other programs give), where in the sound, the message, how far and which way. In Heard: when last, the strongest, how many times" },
                  d.ftname = el("b"), d.ftsays = el("span"),
                  d.ftloc = cwKey("Your locator…", "Where the radio is, as a locator (IO94): each station then shows how far away it is and which way", () => ftLocator(R)),
-                 d.ftheard = cwKey("Heard", "Who has been heard on this band since the radio started, the farthest first (press again for the messages)", () => { FT.view = FT.view === "heard" ? "list" : "heard"; FT.heardAt = 0; ftPoll().then(() => ftDraw(R)); ftDraw(R); }),
+                 d.ftheard = cwKey("Heard", "Who has been heard on this band, the farthest first: the radio keeps the list, a restart or not (press again for the messages)", () => { FT.view = FT.view === "heard" ? "list" : "heard"; FT.heardAt = 0; ftPoll().then(() => ftDraw(R)); ftDraw(R); }),
+                 d.ftmap = cwKey("Map", "The locator squares heard on this band, on a map of the world: the brighter the more lately heard, yours ringed in green. Point at a square for who is in it (press again for the messages)", () => { FT.view = FT.view === "map" ? "list" : "map"; FT.heardAt = 0; ftPoll().then(() => ftDraw(R)); ftDraw(R); }),
                  cwKey("Copy", "Copy everything listed", () => {
+                   if (FT.view === "map") { const sq = [...ftSquares().values()].sort((a, b) => a.grid < b.grid ? -1 : 1); return sq.length ? cwCopy(sq.map(q => `${q.grid}  ${q.calls.join(" ")}`).join("\n"), "the squares heard") : toast("Nothing heard yet."); }
                    const lines = FT.view === "heard" ? ftHeardList().map(h => `${ftHeardWho(h)}  ${ftHeardSays(h)}  ${ftFar(h)}`.trimEnd()) : FT.lines.map(m => `${ftWho(m)}  ${m.text}${m.km == null ? "" : "  " + ftFar(m)}`);
                    lines.length ? cwCopy(lines.join("\n"), FT.view === "heard" ? "who's been heard" : "the messages listed") : toast("Nothing heard yet."); }),
-                 cwKey("Clear", "Empty the list (in Heard: forget who's been heard, on every band)", async () => {
-                   if (FT.view === "heard") { try { await api("/api/rx/ft8/heard", { clear: true }); FT.heard = []; } catch (e) { return rigOops(e); } }
+                 cwKey("Clear", "Empty the list (in Heard and Map: forget who's been heard, on every band)", async () => {
+                   if (FT.view !== "list") { try { await api("/api/rx/ft8/heard", { clear: true }); FT.heard = []; } catch (e) { return rigOops(e); } }
                    else FT.lines = [];
                    d.ftcopy.replaceChildren(); Object.assign(d.ftcopy.dataset, { n: "", said: "", sig: "" }); ftDraw(R); })),
               el("div", { className: "rftbar" }, d.ftbar = el("i")), d.ftcopy = el("div", { className: "rcopy" })),

@@ -1165,9 +1165,16 @@ The cards:
   list into who has been heard on the band the receiver is on, the farthest
   first: when last, the strongest it's been, how many times, its locator
   and distance (`GET /api/rx/ft8/heard`; the page tells the reader the band
-  with the switch). The radio keeps that list itself, up to 600 stations
-  across the bands, so it grows with the page closed -- but in memory only:
-  a restart, or *Clear* in Heard, begins it again.
+  with the switch). The radio keeps that list itself, up to 1,500 stations
+  across the bands, so it grows with the page closed, and over a restart:
+  it's written to `~/.local/state/sleepradiopi/heard.json` when it has
+  changed, a quarter of an hour apart at most, and when the reader is
+  switched off (*Clear* in Heard empties it there too). *Map* draws the
+  locator squares heard on the band on a map of the world, the brighter
+  the more lately heard, the radio's own square ringed (the coastlines are
+  `GET /desktop/land.json`: Natural Earth's, public domain). A message that
+  names the owner's callsign (the rooms' one) comes with `"me": true` and
+  is shown in amber.
   *WSPR* (the **WSPR** key; the same reader and the same calls, with
   `"mode": "wspr"`): beacons of a watt or less, each sending its call,
   locator and power over 110 seconds from the even minute, within 200 Hz

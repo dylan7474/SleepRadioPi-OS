@@ -262,6 +262,83 @@ def test_who_has_been_heard(monkeypatch) -> None:
     assert r.heard()["heard"] == []
 
 
+def test_the_heard_list_is_kept_over_a_restart(tmp_path: Path, monkeypatch) -> None:
+    file = tmp_path / "state" / "heard.json"
+    clock = Clock(T0 - 1.0)
+    r = ft8.Reader(clock=clock, decode=lambda samples, mode: [{"snr": 3.0, "dt": 0.5, "hz": 1000, "text": "CQ K1ABC FN42"}])
+    r.keep_in(file)                                  # nothing there yet: nothing read, nothing written
+    assert r.heard()["heard"] == [] and not file.exists()
+    r.on, r.band = True, "20 m"
+    r.step()
+    r._late = LATE
+    _play(r, clock, np.zeros(int(19.0 * pcm.SAMPLE_RATE)))
+    r.save()
+    assert [h["call"] for h in json.loads(file.read_text())["heard"]] == ["K1ABC"]
+    before = file.stat().st_mtime_ns
+    r.save()                                         # nothing new: the card is left alone
+    assert file.stat().st_mtime_ns == before
+    again = ft8.Reader(clock=clock)                  # the radio started again
+    again.keep_in(file)
+    monkeypatch.setattr(ft8, "HOME", "IO94")
+    k = again.heard()["heard"][0]
+    assert (k["band"], k["call"], k["grid"], k["snr"], k["first"], k["count"]) == ("20 m", "K1ABC", "FN42", 3.0, T0, 1) and 5000 < k["km"] < 5200
+    again.on, again.band = True, "20 m"              # ...and heard again: the same line goes on counting
+    again._decode = lambda samples, mode: [{"snr": 9.0, "dt": 0.5, "hz": 1000, "text": "G4XYZ K1ABC 73"}]
+    again.step()
+    again._late = LATE
+    _play(again, clock, np.zeros(int(34.0 * pcm.SAMPLE_RATE)))         # (the slot after the one it began in)
+    k = again.heard()["heard"][0]
+    assert (k["count"], k["snr"], k["grid"], k["first"]) == (2, 9.0, "FN42", T0) and k["last"] > T0
+    again.forget()                                   # emptied: on the card too
+    assert json.loads(file.read_text()) == {"heard": []}
+    file.write_text("{ not json")                    # a file that can't be read: begun again, and said
+    broken = ft8.Reader(clock=clock)
+    broken.keep_in(file)
+    assert broken.heard()["heard"] == []
+
+
+def test_the_live_reader_keeps_the_list_sparingly(tmp_path: Path) -> None:
+    file = tmp_path / "heard.json"
+    clock = Clock(T0)
+    r = ft8.Live(clock=clock, decode=lambda samples, mode: [])
+    r.keep_in(file)
+    r._heard[("20 m", "K1ABC")] = {"band": "20 m", "call": "K1ABC", "snr": 1.0, "first": T0, "last": T0, "count": 1}
+    r._changed, r._saved = True, T0 - 60.0           # written a minute ago: not again yet
+    stop = threading.Event()
+    t = threading.Thread(target=r._run, args=(stop,), daemon=True)
+    t.start()
+    try:
+        threading.Event().wait(3 * ft8.STEP_S)
+        assert not file.exists()
+        clock.at = T0 + ft8.KEEP_EVERY_S             # a quarter of an hour on: now
+        for _ in range(40):
+            if file.exists():
+                break
+            threading.Event().wait(0.05)
+        assert json.loads(file.read_text())["heard"][0]["call"] == "K1ABC"
+    finally:
+        stop.set()
+        t.join(2)
+    r._heard[("20 m", "G4XYZ")] = {"band": "20 m", "call": "G4XYZ", "snr": 1.0, "first": T0, "last": T0, "count": 1}
+    r._changed, r.on = True, True                    # switched off: what's new is kept at once
+    r.switch(False)
+    assert len(json.loads(file.read_text())["heard"]) == 2
+
+
+def test_a_message_that_names_the_owner_is_marked(monkeypatch) -> None:
+    from sleepradiopi.playback import room
+    said = [{"snr": 3.0, "dt": 0.5, "hz": 1000, "text": "M8ODJ K1ABC FN42"}, {"snr": 1.0, "dt": 0.5, "hz": 1200, "text": "CQ G4XYZ IO91"},
+            {"snr": 0.0, "dt": 0.5, "hz": 1400, "text": "<M8ODJ/P> DL1ABC R-10"}, {"snr": -2.0, "dt": 0.5, "hz": 1600, "text": "M8ODJX F5ABC JN18"}]
+    r, clock, _ = _reader(said)
+    _play(r, clock, np.zeros(int(19.0 * pcm.SAMPLE_RATE)))
+    monkeypatch.setattr(room, "CALLSIGN", None)
+    st = r.status()
+    assert st["call"] is None and not any("me" in m for m in st["messages"])
+    monkeypatch.setattr(room, "CALLSIGN", "M8ODJ")
+    st = r.status()
+    assert st["call"] == "M8ODJ" and [m.get("me", False) for m in st["messages"]] == [True, False, True, False]
+
+
 def test_what_wsprd_prints_is_read() -> None:
     out = ("slot -19 -0.2   0.001523  3  G4HSB IO94 23 \nslot -24 -0.1   0.001555  3  OK1BF JO70 23 \n"
            "slot -25 -1.5   0.001600  0  <...> KM56VO 37 \nslot -21  0.4   0.001440 -1  PJ4/K1ABC 30 \nslot -20  0.4   0.001470  0  <G0ABC> IO91wm 27 \n<DecodeFinished>\n")
@@ -370,6 +447,10 @@ def test_the_reader_from_the_web(tmp_path: Path, monkeypatch) -> None:
         assert call("/api/rx/ft8", {"on": True, "band": 40})[0] == 400
         assert call("/api/rx/ft8", {"on": False})[1]["ft8"] is None and not ft8.reader.on
         assert call("/api/rx/ft8/heard")[1] == {"band": "40 m", "home": None, "heard": []}
+        with urllib.request.urlopen(base + "/desktop/land.json", timeout=5) as r:       # the map's coastlines: outlines of [lon, lat...] in half degrees
+            land = json.loads(r.read())
+        assert len(land) > 20 and all(len(p) >= 8 and len(p) % 2 == 0 and all(isinstance(v, int) for v in p) for p in land)
+        assert all(-360 <= p[i] <= 360 and -180 <= p[i + 1] <= 180 for p in land for i in range(0, len(p), 2))
         assert call("/api/rx/ft8/heard", {"clear": True})[1]["heard"] == []
         assert call("/api/rx/locator", {"locator": "io94kn"}) == (200, {"home": "IO94kn"}) and ft8.HOME == "IO94kn"
         assert json.loads(conf.read_text())["locator"] == "IO94kn" and call("/api/rx/ft8")[1]["home"] == "IO94kn"

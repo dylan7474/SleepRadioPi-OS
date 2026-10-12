@@ -567,6 +567,7 @@ def main() -> None:
     room_mod.CALLSIGN = settings.callsign
     from sleepradiopi.audio import ft8 as ft8_mod
     ft8_mod.HOME = settings.locator                  # (how far an FT8 station is: audio/ft8.py)
+    ft8_mod.reader.keep_in(Path.home() / ".local" / "state" / "sleepradiopi" / "heard.json")     # who's been heard, kept over a restart
     room_mod.LEVEL = settings.room_level
     from sleepradiopi.audio import denoise as denoise_mod
     try:
