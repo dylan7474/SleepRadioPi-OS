@@ -1251,10 +1251,27 @@ The cards:
   locator; on PSK31 and the weather teleprinters it listens a quarter of a
   minute and counts the signals being read. What it found is written on
   the keys and kept in the browser, a receiver at a time; the receiver and
-  the readers are put back as they were. It's the page that runs it (close
-  the page and it stops), the radio plays each place as it goes, and
-  amateur teleprinters and Morse aren't surveyed: they have no one
-  frequency. An OpenWebRX is tuned by hand, so its keys only say where.
+  the readers are put back as they were. For an internet receiver it's
+  the page that runs it (close the page and it stops) and the radio plays
+  each place as it goes. Amateur teleprinters and Morse aren't surveyed:
+  they have no one frequency. An OpenWebRX is tuned by hand, so its keys
+  only say where.
+  *The survey, by the radio* (a receiver of your own; `POST /api/rx/survey
+  {"base", "places": [{"key", "mode": "ft8" | "ft4" | "wspr" | "psk31" |
+  "weather", "band", "hz"}]}`, `{"stop": true}`, `GET /api/rx/survey?base=`;
+  `playback/survey.py`): the radio reads the receiver's own `/audio` (as
+  Calibrate does), tunes it to each place, and listens: one whole slot by
+  the clock for FT8, FT4 and WSPR, read by the reader's decoders; a few
+  seconds for PSK31 (the signals that stand out) and the weather
+  teleprinters (their two tones). Nothing goes through the speaker, and
+  the page needn't stay open. What's found is kept in
+  `~/.local/state/sleepradiopi/survey.json` (written once a round): for
+  each place the latest and each finding of the last day (`"day": [[t,
+  n]]`), which the key draws as bars. *By itself* (`{"base", "itself": 0 |
+  1 | 2 | 3 | 6, "places"}`, the setting `survey_itself`): on the hour,
+  that many hours apart, while the radio isn't playing that receiver. A
+  survey and a calibration never run together, and nothing is reported to
+  PSK Reporter from a receiver being taken round.
   *A name of your own* (the **Name…** key in a receiver's window; `POST
   /api/rx/name {"base": "http://192.168.50.4:8075", "name": "Short
   wave"}`, an empty name for its own again; kept in the settings as

@@ -418,6 +418,13 @@ def make_handler(station: Station, output: Mp3Output, speaker=None,
                 except ValueError:
                     since = 0
                 self._send(json.dumps(keyboard_mod.reader.status(since)).encode(), "application/json")
+            elif path == "/api/rx/survey":
+                # The survey run by the radio (playback/survey.py): how far a round has got; with ?base=, what's been
+                # found on that receiver; "itself": the receivers surveyed on the hour.
+                from sleepradiopi.playback import survey as survey_mod
+                base = parse_qs(urlparse(self.path).query).get("base", [""])[0].rstrip("/")
+                self._send(json.dumps({**survey_mod.job.status(), "found": survey_mod.job.found(base) if base else {},
+                                       "itself": survey_mod.rounds.status()}).encode(), "application/json")
             elif path == "/api/rx/report":
                 # Reporting what's heard to PSK Reporter and WSPRnet (audio/report.py): whether it's on, and how it's doing.
                 from sleepradiopi.audio import ft8 as ft8_mod, report as report_mod
@@ -739,6 +746,36 @@ def make_handler(station: Station, output: Mp3Output, speaker=None,
                     ft8_mod.reader.playing = lambda: (station.source or {}).get("url")
                 ft8_mod.reader.switch(body["on"], body.get("mode"), body.get("band"), None if dial is None else int(dial), own)
                 self._send(json.dumps(self._one_reader("ft8" if body["on"] else None)).encode(), "application/json")
+            elif path == "/api/rx/survey":
+                # {"base", "places": [{"key", "mode", "band", "hz"}]}: take that receiver of your own round those places
+                # now and write down what's on each (playback/survey.py). {"stop": true}: the round stopped.
+                # {"base", "itself": 0 | 1 | 2 | 3 | 6, "places"?}: surveyed by the radio itself, that many hours apart
+                # (0: not), round those places. Kept. {"base", "forget": true}: what was found there forgotten.
+                from sleepradiopi.playback import survey as survey_mod
+                try:
+                    body = self._body()
+                    if body.get("stop") is True:
+                        survey_mod.job.stop()
+                    else:
+                        base = survey_mod.clean_base(body["base"])
+                        if body.get("forget") is True:
+                            survey_mod.job.forget(base)
+                        elif "itself" in body:
+                            plan = {b: h for b, h in survey_mod.rounds.plan.items() if b != base}
+                            if body["itself"] != 0:
+                                plan[base] = {"every_h": body["itself"], "places": body.get("places")}
+                            plan = survey_mod.clean_plan(plan)
+                            survey_mod.rounds.set_plan(plan)
+                            if config_file is not None:
+                                save_setting(config_file, "survey_itself", plan)
+                        else:
+                            survey_mod.job.start(base, survey_mod.clean_places(body.get("places")))
+                except (ValueError, TypeError, KeyError, AttributeError) as e:
+                    self._error(str(e) if isinstance(e, ValueError) else 'send {"base": "http://the receiver", "places": [...]}')
+                    return
+                base = str(body.get("base") or "").rstrip("/")
+                self._send(json.dumps({**survey_mod.job.status(), "found": survey_mod.job.found(base) if base else {},
+                                       "itself": survey_mod.rounds.status()}).encode(), "application/json")
             elif path == "/api/rx/report":
                 # {"on": true | false}: what's heard on a receiver of your own reported to PSK Reporter (FT8, FT4) and
                 # WSPRnet (WSPR), as heard by your callsign at your locator. Both must be set. Kept.

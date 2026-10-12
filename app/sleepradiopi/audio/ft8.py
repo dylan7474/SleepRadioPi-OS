@@ -384,7 +384,8 @@ class Reader:
         if self.report is None or not self.own or not self.dial or self.playing is None:
             return False
         from sleepradiopi.playback import calibrate   # (a receiver being calibrated is taken round the bands: not where the page said)
-        if calibrate.job.status().get("running"):
+        from sleepradiopi.playback import survey      # (...nor one being surveyed)
+        if calibrate.job.status().get("running") or survey.job.status().get("running"):
             return False
         return (self.playing() or "").startswith(self.own)
 

@@ -478,6 +478,9 @@
   .mgrid button small { display: block; font-size: 10px; color: var(--dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .mgrid button.heard { background: linear-gradient(180deg, #f7c86d, var(--amber)); border-color: var(--amber-deep); color: var(--amber-ink); font-weight: 700; }
   .mgrid button.heard small { color: var(--amber-ink); }
+  .mgrid button .day { display: flex; align-items: flex-end; gap: 1px; height: 7px; margin-top: 1px; }      /* a band's day: a bar a survey, the taller the busier */
+  .mgrid button .day i { flex: 1 1 0; min-width: 1px; background: currentColor; opacity: .55; border-radius: 1px 1px 0 0; }
+  .mgrid button .day i.none { opacity: .18; }
   .mgrid button.now { outline: 2px solid var(--amber-deep); outline-offset: 1px; }
   .mgrid i { align-self: center; text-align: center; color: var(--dim); font-style: normal; }
   .srow { display: grid; grid-template-columns: 128px minmax(0, 1fr) auto; gap: 12px; align-items: center; min-height: 30px; }
@@ -2594,8 +2597,32 @@ function rigCalKey(R, k) {
 }
 // Where to listen (the Modes… key): each mode's usual place on each band, as keys that take the receiver there and
 // switch the right reader on; and a survey, which goes round them, listens a slot or a few seconds on each, and writes
-// on the keys what it heard. What a survey found is kept in this browser, a receiver at a time.
-const MODES = { rx: null, run: null, found: (() => { try { return JSON.parse(localStorage.getItem("srd.modes")) || {}; } catch (e) { return {}; } })() };
+// on the keys what it heard. A receiver of your own is surveyed by the radio itself (playback/survey.py): not through
+// the speaker, with this page closed if you like, and on the hour by itself if you choose; the radio keeps what it
+// found, and each key shows the band's last day. An internet receiver is taken round by this page, through the radio,
+// and what that found is kept in this browser.
+const modeOwn = R => R.kind === "own";
+const modeRun = R => modeOwn(R) ? (MODES.srv?.running && MODES.srv.base === R.origin ? MODES.srv : null) : MODES.run;
+const modePlace = p => ({ key: p.key, mode: p.weather ? "weather" : p.mode, band: p.band, hz: Math.round(p.hz) });
+async function modePoll(R, now) {                   // how the radio's survey is doing, and what it has found
+  if (!modeOwn(R) || MODES.polling || (!now && Date.now() - MODES.polled < 2000)) return;
+  MODES.polling = true; MODES.polled = Date.now();
+  try {
+    const sig = () => JSON.stringify([MODES.srv?.running, MODES.srv?.at, MODES.srv?.error, MODES.srv?.itself, MODES.found[R.origin]]), was = sig();
+    const st = await api("/api/rx/survey?base=" + encodeURIComponent(R.origin));
+    if (MODES.srv?.running && !st.running && st.base === R.origin) toast(st.error ? `The survey stopped: ${st.error}.` : st.stopped ? "Survey stopped." : "Survey done: the keys say what was heard.");
+    MODES.srv = st; MODES.found[R.origin] = Object.fromEntries(Object.entries(st.found).map(([k, f]) => [k, { ...f, at: f.t * 1000 }]));
+    if (sig() !== was) drawDesk();
+  } catch (e) { /* the next one will do */ }
+  MODES.polling = false;
+  if (MODES.srv?.running && W.some(w => w.id === PANEL.modes.id)) setTimeout(() => modePoll(R), 2000);
+}
+async function modeSurveyRadio(R, modes) {          // the radio's own survey of a receiver of yours, begun
+  const places = modePlaces(R).filter(p => modes.includes(p.mode) && (p.mode !== "rtty" || p.weather)).map(modePlace);
+  if (!places.length) return toast("This receiver doesn't reach any of them.");
+  try { MODES.srv = await api("/api/rx/survey", { base: R.origin, places }); drawDesk(); modePoll(R, true); } catch (e) { rigOops(e); }
+}
+const MODES = { rx: null, run: null, srv: null, polling: false, polled: 0, found: (() => { try { return JSON.parse(localStorage.getItem("srd.modes")) || {}; } catch (e) { return {}; } })() };
 const MODE_COLS = [["ft8", "FT8"], ["ft4", "FT4"], ["wspr", "WSPR"], ["psk31", "PSK31"], ["rtty", "Teleprinter"], ["cw", "Morse"], ["sstv", "SSTV"]];
 // [band, kHz]: where teleprinters gather (the bottom of it; they spread up from there), and where Morse does
 const MODE_RTTY = [["80 m", 3590], ["40 m", 7040], ["30 m", 10140], ["20 m", 14085], ["17 m", 18105], ["15 m", 21085], ["12 m", 24925], ["10 m", 28085]];
@@ -2683,12 +2710,15 @@ async function modeSurvey(R, modes) {
 }
 const modeAge = at => { const m = Math.round((Date.now() - at) / 60000); return m < 1 ? "just now" : m < 60 ? `${m} min ago` : m < 1440 ? `${Math.round(m / 60)} h ago` : `${Math.round(m / 1440)} d ago`; };
 function modeKey(R, p) {
-  const f = MODES.found[R.origin]?.[p.key], what = FT_NAMES[p.mode] ? "heard" : p.mode === "psk31" ? "signal" + (f?.n === 1 ? "" : "s") : "there";
-  const b = el("button", { type: "button", className: (f?.n ? "heard" : "") + (MODES.run?.at === p.key ? " now" : "") }, p.weather ? p.band.replace(" MHz", "") : p.fax ? p.band : (p.hz / 1e6).toFixed(p.hz % 1000 ? 4 : 3),
-               el("small", { textContent: MODES.run?.at === p.key ? "listening…" : !f ? "\u00a0" : !f.n ? "nothing" : p.weather ? "there" : f.km ? `${f.n} · ${f.km.toLocaleString("en-GB")} km` : `${f.n} ${what}` }));
+  const f = MODES.found[R.origin]?.[p.key], what = FT_NAMES[p.mode] ? "heard" : p.mode === "psk31" ? "signal" + (f?.n === 1 ? "" : "s") : "there", now = modeRun(R)?.at === p.key;
+  const b = el("button", { type: "button", className: (f?.n ? "heard" : "") + (now ? " now" : "") }, p.weather ? p.band.replace(" MHz", "") : p.fax ? p.band : (p.hz / 1e6).toFixed(p.hz % 1000 ? 4 : 3),
+               el("small", { textContent: now ? "listening…" : !f ? "\u00a0" : !f.n ? "nothing" : p.weather ? "there" : f.km ? `${f.n} · ${f.km.toLocaleString("en-GB")} km` : `${f.n} ${what}` }));
+  const day = f?.day?.length > 1 ? f.day : null, most = day ? Math.max(1, ...day.map(d => d[1])) : 1;       // (the radio's surveys of the last day)
+  if (day) b.append(el("span", { className: "day" }, ...day.map(([, n]) => el("i", { className: n ? "" : "none", style: `height:${n ? Math.max(25, n / most * 100) : 12}%` }))));
   b.title = `${p.weather ? "The German weather service's teleprinter on " + p.band : p.fax ? "Weather fax from " + p.band + " MHz" : p.band + " " + (MODE_COLS.find(c => c[0] === p.mode) || [0, p.mode])[1]}: go there and read it`
-    + (f ? ` · surveyed ${modeAge(f.at)}: ${!f.n ? "nothing heard" : p.weather ? "it was there" : `${f.n} ${what}${f.km ? `, the farthest ${f.km.toLocaleString("en-GB")} km away` : ""}`}` : "");
-  b.onclick = async () => { if (MODES.run) return toast("A survey is running: stop it first."); try { await modeGo(R, p); open(R.o.id); } catch (e) { rigOops(e); } };
+    + (f ? ` · surveyed ${modeAge(f.at)}: ${!f.n ? "nothing heard" : p.weather ? "it was there" : `${f.n} ${what}${f.km ? `, the farthest ${f.km.toLocaleString("en-GB")} km away` : ""}`}` : "")
+    + (day ? ` · its last day: ${day.map(([t, n]) => `${new Date(t * 1000).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" })} ${n}`).join(", ")}` : "");
+  b.onclick = async () => { if (modeRun(R)) return toast("A survey is running: stop it first."); try { await modeGo(R, p); open(R.o.id); } catch (e) { rigOops(e); } };
   return b;
 }
 const rigOnRadio = R => !!S?.source?.url?.startsWith(R.origin);
@@ -4283,12 +4313,13 @@ const UI = {
     build: (d, act, win) => {
       const R = O[MODES.rx]?.rig;
       if (!R) return [grp("Where to listen", help("Open a receiver's window (Receivers) and press Modes… there: this shows where that receiver can go."))];
-      const places = modePlaces(R), run = MODES.run, at = p => places.find(q => q.mode === p[0] && q.band === p[1]);
+      const own = modeOwn(R), places = modePlaces(R), run = modeRun(R), at = p => places.find(q => q.mode === p[0] && q.band === p[1]);
+      modePoll(R);                                 // (the radio's own survey, if this is a receiver of yours: how it's doing, what it found)
       const bands = MODE_BANDS.filter(b => places.some(p => p.band === b));
       const grid = el("div", { className: "mgrid" }, el("span"), ...MODE_COLS.map(c => el("b", { textContent: c[1] })));
       for (const band of bands) { grid.append(el("span", { textContent: band })); for (const [mode] of MODE_COLS) { const p = at([mode, band]); grid.append(p ? modeKey(R, p) : el("i", { textContent: "·" })); } }
       const weather = places.filter(p => p.weather), faxes = places.filter(p => p.fax), surveyed = Object.values(MODES.found[R.origin] || {}).reduce((a, f) => Math.max(a, f.at), 0);
-      const go = modes => () => modeSurvey(R, modes), secs = modes => places.filter(p => modes.includes(p.mode) && (p.mode !== "rtty" || p.weather)).reduce((a, p) => a + ({ ft8: 32, ft4: 22 }[p.mode] || 17), 0);
+      const go = modes => () => own ? modeSurveyRadio(R, modes) : modeSurvey(R, modes), secs = modes => places.filter(p => modes.includes(p.mode) && (p.mode !== "rtty" || p.weather)).reduce((a, p) => a + ({ ft8: 32, ft4: 22 }[p.mode] || 17), 0);
       const mins = modes => { const m = Math.round(secs(modes) / 60); return `about ${m} minute${m === 1 ? "" : "s"}`; };
       return [
         grp(`Where to listen on ${R.o.title}`, bands.length ? grid : help("This receiver doesn't reach the bands these are used on."),
@@ -4298,9 +4329,19 @@ const UI = {
         faxes.length ? grp("Weather fax", el("div", { className: "mgrid", style: "grid-template-columns:repeat(4, minmax(0, 1fr))" }, ...faxes.map(p => modeKey(R, p))),
           help("Weather charts from the German service (Hamburg) and the British (Northwood), sent through the day and night: a key goes there and reads the next chart from its start tone. Start now, in the receiver's window, begins one that's already under way.")) : null,
         grp("Survey: what's there now",
-          run ? line(sbtn("Stop", () => { run.stop = true; drawDesk(); }, "danger"), el("span", { className: "note", textContent: `Listening: ${run.i} of ${run.of}…` }))
-              : line(sbtn("FT8 on every band", go(["ft8"]), "primary"), sbtn("Everything", go(["ft8", "ft4", "psk31", "rtty"]))),
-          help(run ? "The receiver is being taken round the bands; it goes back where it was at the end."
+          run ? line(sbtn("Stop", own ? async () => { try { await api("/api/rx/survey", { stop: true }); modePoll(R, true); } catch (e) { rigOops(e); } } : () => { run.stop = true; drawDesk(); }, "danger"),
+                     el("span", { className: "note", textContent: `Listening: ${run.i} of ${run.of}…${own && run.why === "itself" ? " (the radio began this one itself)" : ""}` }))
+              : line(sbtn("FT8 on every band", go(["ft8"]), "primary"), sbtn("Everything", go(["ft8", "ft4", "psk31", "rtty"])),
+                     ...(own ? [(() => {             // by itself: FT8 on every band, on the hour, while the radio isn't playing this receiver
+                       const every = MODES.srv?.itself?.plan?.[R.origin]?.every_h || 0;
+                       const s = el("select", { id: "survey-itself", title: "The radio can survey this receiver by itself: FT8 on every band, on the hour, whenever it isn't playing this receiver. Each key then shows the band's last day" },
+                         ...[[0, "By itself: never"], [1, "By itself: every hour"], [2, "By itself: every 2 hours"], [3, "By itself: every 3 hours"], [6, "By itself: every 6 hours"]].map(([value, textContent]) => el("option", { value, textContent })));
+                       s.value = every;
+                       s.onchange = async () => { try { MODES.srv = await api("/api/rx/survey", { base: R.origin, itself: +s.value, places: modePlaces(R).filter(p => p.mode === "ft8").map(modePlace) });
+                         toast(+s.value ? `The radio will survey FT8 on every band ${+s.value === 1 ? "every hour" : `every ${s.value} hours`}, when it isn't playing this receiver.` : "The radio surveys this receiver only when you ask."); drawDesk(); } catch (e) { rigOops(e); drawDesk(); } };
+                       return s; })()] : [])),
+          help(run ? (own ? "The radio is taking the receiver round the bands by itself: you can close this page. It goes back where it was at the end." : "The receiver is being taken round the bands; it goes back where it was at the end.")
+            : own ? `The radio takes the receiver to each place in turn and listens: a whole slot for FT8 and FT4, a few seconds for PSK31 and the weather teleprinters. FT8 alone takes ${mins(["ft8"])}, everything ${mins(["ft8", "ft4", "psk31", "rtty"])}. It's the radio's doing, so this page can be closed; it listens to the receiver directly, so nothing is heard unless the radio is playing this receiver (then you hear it go round). The receiver goes back where it was. Amateur teleprinters and Morse aren't surveyed: they have no one frequency.${surveyed ? ` Last surveyed ${modeAge(surveyed)}.` : ""}`
             : `The receiver is taken to each place in turn and listened to: a whole slot for FT8 and FT4, a quarter of a minute for PSK31 and the weather teleprinters. FT8 alone takes ${mins(["ft8"])}, everything ${mins(["ft8", "ft4", "psk31", "rtty"])}. The radio plays each as it goes, and the receiver goes back where it was. Amateur teleprinters and Morse aren't surveyed: they have no one frequency.${surveyed ? ` Last surveyed ${modeAge(surveyed)}.` : ""}`)),
       ];
     },

@@ -42,6 +42,7 @@ class Settings:
     receiver_names: dict = field(default_factory=dict)   # names given to receivers on the desktop: {"http://192.168.50.4:8075": "Short wave"}
     locator: str | None = None            # the radio's place as a locator ("IO94"): how far an FT8 station is (audio/ft8.py)
     calibrate_itself: dict = field(default_factory=dict)   # receivers of your own the radio calibrates by itself: {"http://192.168.50.4:8075": "night" | "listening"} (playback/calibrate.py)
+    survey_itself: dict = field(default_factory=dict)      # receivers of your own the radio surveys by itself: {"http://192.168.50.4:8075": {"every_h": 3, "places": [...]}} (playback/survey.py)
     report_heard: bool = False            # FT8, FT4 and WSPR heard on a receiver of your own reported to PSK Reporter and WSPRnet, under your callsign (audio/report.py)
     room_level: int = 100                 # how loud rooms are, % (25-150): a voice, not levelled like music (playback/room.py)
     noise_reduction: str = "off"          # receivers: the hiss under a voice turned down -- off, light, strong or rig (audio/denoise.py)

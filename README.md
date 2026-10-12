@@ -314,7 +314,14 @@ Actions, Sleep timer and Radio folders open:
   broadcasts. *Survey* goes round them by itself -- a whole slot on each
   band's FT8 frequency, or everything -- and writes on the keys what was
   there: "24 · 3,174 km" is twenty-four stations, the farthest that far.
-  A picture of which bands are open, in about five minutes.
+  A picture of which bands are open, in about five minutes. A receiver of
+  your own is surveyed by the radio itself: it listens to the receiver
+  directly, not through the speaker, so the page can be closed and nothing
+  is heard unless the radio is playing that receiver. It can also go round
+  by itself on the hour (every hour, or every 2, 3 or 6), whenever it isn't
+  playing that receiver; the radio keeps what it finds, and each key then
+  shows the band's last day as a row of small bars -- when it opened, when
+  it was busiest.
 - **Receivers with names.** *Name…* in a receiver's window calls it what
   you like -- "Short wave", "VHF" -- in Receivers, on its window and
   wherever it's mentioned: two dongles on one computer are otherwise told
@@ -887,11 +894,10 @@ What's left to do (everything else described here is built and running):
   from; the search at its heart has to be made several times faster for the
   Zero 2 W first). After that, a Morse finder: sweep the Morse parts of
   each band and say where the activity is.
-- **The survey, by the radio itself** — *Where to listen*'s survey is run
-  by the page: close the page and it stops. Run by the radio it could go
-  round on the hour and keep a day's picture of each band; and amateur
-  teleprinters and Morse, which have no one frequency, need a finder that
-  sweeps their part of each band.
+- **A finder for teleprinters and Morse** — the survey leaves amateur
+  teleprinters and Morse out: they have no one frequency. They need a
+  finder that sweeps their part of each band and says where the activity
+  is.
 - **Pictures: more of them** — an SSTV picture is only read from its
   header: one joined late could be started from its line syncs (their
   spacing says the mode). A chart begun by hand has its lines start

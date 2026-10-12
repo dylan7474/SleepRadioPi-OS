@@ -831,6 +831,16 @@ def main() -> None:
     except ValueError as e:
         log.warning("calibrate: the saved plan can't be used (%s)", e)
     calibrate_mod.keeper.start()
+    # The survey, by the radio: what it found is kept, and the receivers chosen are gone round on the hour (playback/survey.py)
+    from sleepradiopi.playback import survey as survey_mod
+    survey_mod.job._sound = lambda url: calibrate_mod._Sound(url, keep_s=135.0)      # (a WSPR slot is two minutes)
+    survey_mod.job.keep_in(Path.home() / ".local" / "state" / "sleepradiopi" / "survey.json")
+    survey_mod.rounds.playing = lambda: (station.source or {}).get("url")
+    try:
+        survey_mod.rounds.set_plan(survey_mod.clean_plan(settings.survey_itself))
+    except ValueError as e:
+        log.warning("survey: the saved plan can't be used (%s)", e)
+    survey_mod.rounds.start()
     serve(station, stream, args.port or settings.http_port, control, args.config, announcer, jobs, updates,
           presets, directory, media, lamps)
 

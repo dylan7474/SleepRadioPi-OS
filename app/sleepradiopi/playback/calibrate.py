@@ -247,7 +247,8 @@ def _post(url: str, body: dict, timeout: float = 15.0) -> dict:
 class _Sound:
     """A receiver's audio stream, read as it comes: take(seconds) is the next that many, from now."""
 
-    def __init__(self, url: str) -> None:
+    def __init__(self, url: str, keep_s: float = 90.0) -> None:
+        self._keep = int(AUDIO_RATE * keep_s) * 2    # (bytes of the latest sound kept)
         self._r = urllib.request.urlopen(url, timeout=10)
         self._r.read(44)                             # (the WAV header)
         self._lock = threading.Lock()
@@ -263,7 +264,7 @@ class _Sound:
                     break
                 with self._lock:
                     self._buf += b
-                    del self._buf[:-AUDIO_RATE * 2 * 90]
+                    del self._buf[:-self._keep]
         except (OSError, ValueError):
             pass
         self._closed = True
@@ -320,6 +321,9 @@ class Job:
         with self._lock:
             if self._state.get("running"):
                 raise ValueError("a calibration is already running")
+            from sleepradiopi.playback import survey   # (one thing at a time: a receiver being surveyed is being taken round the bands)
+            if survey.job.status().get("running"):
+                raise ValueError("a survey is running: a receiver can't be calibrated until that's done")
             self._state = {"running": True, "base": base, "step": "Asking the receiver…", "points": []}
             self._thread = threading.Thread(target=self._run, args=(base, kiwi), name="calibrate", daemon=True)
             self._thread.start()
@@ -568,6 +572,9 @@ class Keeper:
             else:
                 self._since.pop(base, None)
         if st.get("running"):                        # (one begun by hand: wait)
+            return
+        from sleepradiopi.playback import survey      # (...or a survey has the receiver)
+        if survey.job.status().get("running"):
             return
         t = self._localtime(now)
         night = time.strftime("%Y-%m-%d", t)
