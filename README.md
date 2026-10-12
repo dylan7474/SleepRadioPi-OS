@@ -464,9 +464,8 @@ phone's mic. It suggests the bass / mid / treble and low cut, and
 
 ## Put it on a card
 
-You need a microSD card (16 GB or more, depending on your music) and, for
-now, a **Linux PC** to add the music. Windows and Mac can flash the card, but
-can't add the music yet.
+You need a microSD card (16 GB or more, depending on your music) and any
+computer: Windows, Mac or Linux. Nothing here needs a command line.
 
 1. **Download** `sdcard.img.xz` from the
    [latest release](https://github.com/dylan7474/SleepRadioPi-OS/releases/latest).
@@ -476,45 +475,68 @@ can't add the music yet.
    - OS: *Use custom*, then pick the downloaded `sdcard.img.xz`. You don't need
      to unpack it.
    - Storage: your card.
-   - When it offers OS customisation, choose **No**. Those settings are for
-     Raspberry Pi OS and don't apply here.
+   - When it offers OS customisation, choose **No**. Those settings (Wi-Fi,
+     user name) are for Raspberry Pi OS: this radio doesn't read them, and
+     your Wi-Fi goes in at step 5.
 
    [balenaEtcher](https://etcher.balena.io/) works just as well. On Linux you
    can also use
    `xz -dc sdcard.img.xz | sudo dd of=/dev/sdX bs=4M conv=fsync status=progress`.
-3. **Add your music.** Run this on a Linux PC, with the card in the reader
-   and not mounted; `/dev/sdX` is the card:
-
-   ```sh
-   git clone https://github.com/dylan7474/SleepRadioPi-OS
-   cd SleepRadioPi-OS
-   sudo scripts/provision-media.sh /dev/sdX --music ~/Music --stereo   # or --mono
-   ```
-
-   The first run adds a music partition that fills the rest of the card; run
-   it again later to sync changes. Folders of albums are fine, and
-   `--jingles <folder>` adds station jingles (mp3). Details are in
-   [Building](#building).
-4. **Optional, before you eject the card:** the boot partition (FAT, readable
+3. **Optional, before you eject the card:** the boot partition (FAT, readable
    on any computer) can hold two files:
-   - `wpa_supplicant.conf`: your Wi-Fi, so you can skip step 6. Copy
+   - `wpa_supplicant.conf`: your Wi-Fi, so you can skip step 5. Copy
      [the example](board/sleepradiopi/wpa_supplicant.conf.example) and fill in
      your network's name and password.
    - `authorized_keys`: your ssh public key(s), one per line, if you want to
      log in (see [Using the Pi](#using-the-pi)).
-5. **Put the card in the Pi and power on.** The first start takes a little
-   longer.
-6. **Connect it to your Wi-Fi.** With no network it knows, the radio makes its
-   own within half a minute of power-on, plays two rising pairs of notes
+4. **Put the card in the Pi and power on.** The first start takes a minute or
+   two longer than later ones: the radio makes room for your music in the
+   rest of the card and restarts itself once while it does (see
+   [Card layout](#card-layout)). Leave it plugged in.
+5. **Connect it to your Wi-Fi.** With no network it knows, the radio makes its
+   own within half a minute of starting, plays two rising pairs of notes
    and says how to join it (in a plain voice: the DJ's comes later):
-   **SleepRadio-Setup**, password **sleepradio**. Join it on your phone, open
-   http://192.168.4.1 if the phone doesn't offer to, pick your Wi-Fi from the
-   list and type its password. Two pips mean it's joining; three rising
-   notes mean it's on, and it says its address. Two falling notes mean it couldn't: its own network
-   comes back within a minute, so join that again and check the password.
-7. **The first time it's online**, it downloads the standard DJ voice (67 MB,
-   a few minutes), and the show starts. Open **http://sleepradiopi.local** to
-   control it, or hold the knob for 3 seconds and it reads out its address.
+   **SleepRadio-Setup**, password **sleepradio**. Join it on your phone or
+   computer and open **http://192.168.4.1**: a phone usually offers to, but a
+   computer may show a page that never loads instead (its own check for
+   internet), so type the address yourself, with `http://` in front. Pick
+   your Wi-Fi from the list and type its password. Two pips mean it's
+   joining; three rising notes mean it's on, and it says its address. Two
+   falling notes mean it couldn't: its own network comes back within a
+   minute, so join that again and check the password. The Zero 2 W and the
+   Pi 3 Model B only do 2.4 GHz Wi-Fi; a Pi 3 can use a network cable
+   instead and skip this step.
+6. **The first time it's online**, it downloads the standard DJ voice (67 MB,
+   a few minutes). Open **http://sleepradiopi.local** to control it, or hold
+   the knob for 3 seconds and it reads out its address.
+7. **Add your music**, from the same computer, on the radio's page: open
+   **Music** and use *Upload…*, *Upload a folder…* (an album, or an artist's
+   folder of albums), or ***Sync a folder…*** -- choose your whole music
+   folder and the radio is brought up to date with it, now and whenever you
+   do it again. Folders of albums are fine; jingles go in a station's
+   folder in **Jingles**, with *Upload…*. Over a Zero's Wi-Fi a big library
+   takes hours the first time (leave the page open); after that only
+   what's new is sent.
+
+**One speaker or two:** a new radio takes it that it has two. For one, open
+Settings → Speakers and choose mono.
+
+**A quicker way for a big library, with a Linux PC and a card reader:**
+`scripts/provision-media.sh` copies the music straight onto the card, in
+minutes where Wi-Fi takes hours. With the card in the reader and not
+mounted (`/dev/sdX` is the card):
+
+```sh
+git clone https://github.com/dylan7474/SleepRadioPi-OS
+cd SleepRadioPi-OS
+sudo scripts/provision-media.sh /dev/sdX --music ~/Music --stereo   # or --mono
+```
+
+It can be run on a freshly flashed card, before step 4 (it adds the music
+partition itself, and the radio then leaves the card as it finds it), or
+on one the radio has already set up; run it again later to sync changes.
+`--jingles <folder>` adds station jingles (mp3). Details are in
+[Building](#building).
 
 Later versions install from the web page (Settings → Updates), and your
 music and settings stay put.
@@ -951,12 +973,6 @@ What's left to do (everything else described here is built and running):
   bands by day; and the DJ saying it, at the top of the hour.
 - **QPSK31** — the PSK reader does PSK31 and PSK63 (both BPSK); the
   four-phase kind, with its error correction, is left. It's seldom heard.
-- **Music from any computer** — adding music needed a Linux PC
-  (`provision-media.sh`). The radio now makes its music partition itself at
-  its first start (see *Card layout*), so that Windows and Mac users can
-  put music on from the web page; it's written and tested on card images,
-  and has still to be tried on a real card before the set-up steps above
-  are changed to say so.
 - **A laser-cut wood cathedral** — a real-wood version of the cathedral case:
   - the face and fretwork cut from walnut-veneered plywood, the sides and
     back from plywood or MDF;
