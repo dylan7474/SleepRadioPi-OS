@@ -39,6 +39,7 @@ def test_config_files() -> None:
     assert "ssid=SleepRadio-Setup" in h and "wpa_passphrase=sleepradio" in h and "wpa=2" in h
     d = wifi.dnsmasq_conf()
     assert "dhcp-range=192.168.4.10,192.168.4.100" in d and "address=/#/192.168.4.1" in d
+    assert "dhcp-option=114,http://192.168.4.1/\n" in d          # (the set-up page's address, for a computer that asks where the sign-in page is)
 
 
 def test_card_networks(tmp_path: Path) -> None:

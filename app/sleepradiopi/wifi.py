@@ -163,6 +163,9 @@ def dnsmasq_conf() -> str:
     return (f"interface={IFACE}\nbind-interfaces\nno-resolv\nno-hosts\n"
             f"dhcp-range={base}.10,{base}.100,255.255.255.0,1h\n"
             f"dhcp-option=3,{HOTSPOT_IP}\ndhcp-option=6,{HOTSPOT_IP}\n"
+            # (where the set-up page is, said outright: a computer that checks for internet at an https address --
+            # a Linux desktop's went to https://ping.archlinux.org/... -- gets no answer there and never finds the page)
+            f"dhcp-option=114,http://{HOTSPOT_IP}/\n"
             f"address=/#/{HOTSPOT_IP}\n")         # every name -> the radio: phones open its page
 
 
