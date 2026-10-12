@@ -315,9 +315,10 @@ class Job:
         with self._lock:
             return json.loads(json.dumps(self._state))
 
-    def start(self, base: str, kiwi: str | None = None) -> None:
+    def start(self, base: str, kiwi: str | None = None, unasked: bool = False) -> None:
         """kiwi: a KiwiSDR's address to compare FT8 with ("http://host:8073/"), if the radio has one saved.
-        ValueError if one is running."""
+        unasked: begun by the radio itself while it isn't playing the receiver, so a receiver somebody else is
+        listening to (another radio in the house) is left alone. ValueError if one is running."""
         with self._lock:
             if self._state.get("running"):
                 raise ValueError("a calibration is already running")
@@ -325,7 +326,7 @@ class Job:
             if survey.job.status().get("running"):
                 raise ValueError("a survey is running: a receiver can't be calibrated until that's done")
             self._state = {"running": True, "base": base, "step": "Asking the receiver…", "points": []}
-            self._thread = threading.Thread(target=self._run, args=(base, kiwi), name="calibrate", daemon=True)
+            self._thread = threading.Thread(target=self._run, args=(base, kiwi, unasked), name="calibrate", daemon=True)
             self._thread.start()
 
     def set(self, base: str, ppm: int, trim: int) -> dict:
@@ -427,10 +428,12 @@ class Job:
                 self._say(points=[list(p) for p in points])
         return points
 
-    def _run(self, base: str, kiwi: str | None = None) -> None:
+    def _run(self, base: str, kiwi: str | None = None, unasked: bool = False) -> None:
         sound = None
         try:
             st = self._get(base + "/status")
+            if unasked and st.get("listeners"):
+                raise ValueError("somebody is listening to it: left alone this time")
             shift = int(st.get("upconverter") or 0)
             if not shift or "ppm" not in st:
                 raise ValueError("this is for a short-wave receiver of your own with the newer receiver software" if shift else
@@ -586,7 +589,7 @@ class Keeper:
             if not due:
                 continue
             try:
-                self.job.start(base, self.kiwi())
+                self.job.start(base, self.kiwi(), way == "night")
             except ValueError:
                 return
             with self._lock:

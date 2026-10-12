@@ -286,9 +286,10 @@ class _Job:
     def status(self) -> dict:
         return dict(self.state)
 
-    def start(self, base: str, kiwi: str | None = None) -> None:
+    def start(self, base: str, kiwi: str | None = None, unasked: bool = False) -> None:
         if self.state.get("running"):
             raise ValueError("a calibration is already running")
+        self.unasked = unasked
         self.started.append((base, kiwi))
         self.state = {"running": True, "base": base}
 
@@ -316,7 +317,7 @@ def test_by_itself_at_night_when_nobody_is_listening() -> None:
     on[0] = "http://stream.example/radio4"           # gone on to something else
     at[0] += 600
     k.tick()
-    assert job.started == [(rx, "http://kiwi:8073/")]
+    assert job.started == [(rx, "http://kiwi:8073/")] and job.unasked is True       # (at night nobody asked: a receiver with a listener is left)
     k.tick()                                         # (still going: nothing more)
     job.done(result={"ppm": 60, "trim": -170, "before": {"ppm": 60, "trim": -166}, "was": 6.0, "now": 2.0, "by": "ft8"})
     k.tick()
@@ -349,7 +350,7 @@ def test_by_itself_while_listening_once_its_warm_and_then_now_and_again() -> Non
     assert job.started == []                         # not warm yet
     at[0] += 120
     k.tick()
-    assert len(job.started) == 1
+    assert len(job.started) == 1 and job.unasked is False       # (the listener is the radio itself)
     job.done(result={"ppm": 60, "trim": -150, "before": {"ppm": 60, "trim": -166}, "was": 16.0, "now": 2.0, "by": "ft8"})
     k.tick()
     at[0] += calibrate.AGAIN_S - 300

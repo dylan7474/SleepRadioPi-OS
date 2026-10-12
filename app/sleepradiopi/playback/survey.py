@@ -28,7 +28,9 @@ when it was busiest.
 By itself: the Rounds does a receiver's survey on the hour, every so many
 hours, for the receivers the owner has chosen, with the places they chose
 -- but only while the radio isn't playing that receiver (nobody hears it
-go) and nothing else has it (a calibration).
+go), nothing else has it (a calibration), and nobody else is listening to
+it: another radio in the house may be, and a round begun by itself leaves
+a receiver with a listener alone.
 
 One thing at a time: a survey and a calibration never run together.
 """
@@ -189,7 +191,7 @@ class Job:
                 raise ValueError("a receiver is being calibrated: a survey can't run until that's done")
             self._stop = threading.Event()
             self._state = {"running": True, "base": base, "at": None, "i": 0, "of": len(places), "why": why}
-            self._thread = threading.Thread(target=self._run, args=(base, list(places), self._stop), name="survey", daemon=True)
+            self._thread = threading.Thread(target=self._run, args=(base, list(places), self._stop, why), name="survey", daemon=True)
             self._thread.start()
 
     def stop(self) -> None:
@@ -228,13 +230,15 @@ class Job:
             return {"n": len(psk.find(x, AUDIO_RATE)) if len(x) >= AUDIO_RATE else 0}
         return {"n": 1 if len(x) >= AUDIO_RATE and calibrate.weather(x) is not None else 0}
 
-    def _run(self, base: str, places: list[dict], stop: threading.Event) -> None:
-        sound, done, before = None, 0, None
+    def _run(self, base: str, places: list[dict], stop: threading.Event, why: str = "asked") -> None:
+        sound, done, before, moved = None, 0, None, False
         try:
             st = self._get(base + "/status")
             if not st.get("tunable"):                # (a receiver that's tuned like a rig says how far it reaches)
                 raise ValueError("this receiver isn't one the radio can tune: a survey can't move it")
             before = st.get("receiving") if st.get("tunes") else None      # (it says "tunes" only while someone is tuning it)
+            if why == "itself" and st.get("listeners"):      # (another radio, or a browser: not ours to take away unasked)
+                raise ValueError("somebody is listening to it: left alone this time")
             lo, hi = st["tunable"]
             first = next((p for p in places if lo <= p["hz"] <= hi), None)
             if first is None:
@@ -248,6 +252,7 @@ class Job:
                     self._state.update(at=place["key"], i=i + 1)
                 if not lo <= place["hz"] <= hi:
                     continue
+                moved = True
                 self._post(base + "/tune", {"freq": place["hz"], "mode": "usb"})
                 heard = self._listen(place, sound, stop)
                 if heard is None:
@@ -265,7 +270,7 @@ class Job:
             with self._lock:
                 self._state.update(running=False, at=None, done=done, error=str(e) if isinstance(e, ValueError) else f"the receiver isn't answering ({e})")
         finally:
-            if before:                               # back where it was
+            if before and moved:                     # back where it was
                 try:
                     self._post(base + "/tune", {"freq": before["freq"], "mode": before["mode"]})
                 except (ValueError, OSError, KeyError, TypeError):

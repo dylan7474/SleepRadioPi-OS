@@ -153,6 +153,22 @@ def test_a_round_can_be_stopped_and_a_receiver_that_wont_do_is_said() -> None:
     assert "isn't answering" in job.status()["error"]
 
 
+def test_a_round_begun_by_itself_leaves_a_receiver_somebody_is_listening_to() -> None:
+    radio = _Radio(receiving={"freq": 7_100_000, "mode": "lsb"})
+    job = _job(radio)
+    job._get = lambda url: {**radio.get(url), "listeners": 1}             # another radio in the house, say
+    job.start(RX, survey.clean_places(PLACES[:1]), "itself")
+    job._thread.join(30)
+    assert "listening" in job.status()["error"] and radio.tuned == [] and job.found(RX) == {}
+    job.start(RX, survey.clean_places(PLACES[:1]))                         # asked for: it's the owner's to take
+    job._thread.join(30)
+    assert job.status()["done"] == 1 and radio.tuned[0] == (7_074_000, "usb")
+    busy = calibrate.Job(get=lambda url: {"upconverter": 125, "ppm": 60, "trim": 0, "listeners": 2}, post=lambda url, body: {})
+    busy.start(RX, None, True)                                             # ...and the same for a calibration nobody asked for
+    busy._thread.join(30)
+    assert "listening" in busy.status()["error"]
+
+
 def test_a_survey_and_a_calibration_never_run_together(monkeypatch) -> None:
     class Busy:
         def status(self) -> dict:

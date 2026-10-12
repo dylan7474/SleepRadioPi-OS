@@ -1269,7 +1269,9 @@ The cards:
   each place the latest and each finding of the last day (`"day": [[t,
   n]]`), which the key draws as bars. *By itself* (`{"base", "itself": 0 |
   1 | 2 | 3 | 6, "places"}`, the setting `survey_itself`): on the hour,
-  that many hours apart, while the radio isn't playing that receiver. A
+  that many hours apart, while the radio isn't playing that receiver and
+  nobody else is listening to it (another radio in the house: a round or a
+  night's calibration nobody asked for leaves such a receiver alone). A
   survey and a calibration never run together, and nothing is reported to
   PSK Reporter from a receiver being taken round.
   *A name of your own* (the **Name…** key in a receiver's window; `POST
