@@ -188,7 +188,7 @@ def clean_base(base) -> str:
 
 def slot_heard(x: np.ndarray, began: float, t0: float, mode: str, decode: Callable) -> dict:
     """The slot that began at t0 by the clock, in sound at 12 kHz that began at `began` -> {"n": stations heard,
-    "km"?: the farthest}: cut each of a few ways late, the way that reads most."""
+    "km"?: the farthest, "to"?: how many in each part of the world ({"EU": 9, "NA": 3})}: cut each of a few ways late, the way that reads most."""
     used = ft8.USED_S.get(mode, ft8.MODES[mode])
     best: list[dict] = []
     for late in CUTS_S[mode]:
@@ -203,12 +203,16 @@ def slot_heard(x: np.ndarray, began: float, t0: float, mode: str, decode: Callab
             continue
         if len(read) > len(best):
             best = read
-    far = 0
+    far, grids = 0, []
     for m in best:
         call, grid = (m.get("call"), m.get("grid")) if mode == "wspr" else ft8.who(m["text"])[:2]
-        if call and grid and ft8.HOME:
-            far = max(far, ft8.path(ft8.HOME, grid)[0])
-    return {"n": len(best), **({"km": far} if far else {})}
+        if call and grid:
+            grids.append(grid)
+            if ft8.HOME:
+                far = max(far, ft8.path(ft8.HOME, grid)[0])
+    from sleepradiopi.playback import conditions     # (which parts of the world they're in: what the band is open to)
+    to = conditions.regions(grids)
+    return {"n": len(best), **({"km": far} if far else {}), **({"to": to} if to else {})}
 
 
 class Job:
@@ -237,6 +241,7 @@ class Job:
             kept = json.loads(file.read_text())["found"]
             found = {str(base): {str(key): {"n": int(f["n"]), "t": float(f["t"]), **({"km": int(f["km"])} if f.get("km") else {}),
                                             **({"where": [dict(a) for a in f["where"]]} if isinstance(f.get("where"), list) else {}),
+                                            **({"to": {str(r): int(n) for r, n in f["to"].items()}} if isinstance(f.get("to"), dict) else {}),
                                             "day": [[float(t), int(n)] for t, n in f.get("day", [])][-DAY_MOST:]}
                                  for key, f in places.items()} for base, places in kept.items()}
         except FileNotFoundError:

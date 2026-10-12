@@ -429,6 +429,14 @@ def make_handler(station: Station, output: Mp3Output, speaker=None,
                 except ValueError:
                     since = 0
                 self._send(json.dumps(keyboard_mod.reader.status(since)).encode(), "application/json")
+            elif path == "/api/rx/conditions":
+                # How the bands are (playback/conditions.py): from that receiver's survey (?base=) and who the FT8
+                # reader has heard in the last hour, a band at a time and in a sentence; and the sun's figures from NOAA.
+                from sleepradiopi.audio import ft8 as ft8_mod
+                from sleepradiopi.playback import conditions as conditions_mod, survey as survey_mod
+                base = parse_qs(urlparse(self.path).query).get("base", [""])[0].rstrip("/")
+                out = conditions_mod.summary(survey_mod.job.found(base) if base else {}, ft8_mod.reader.heard()["heard"], time.time())
+                self._send(json.dumps({**out, "sun": conditions_mod.sun.status(), "home": ft8_mod.HOME}).encode(), "application/json")
             elif path == "/api/rx/survey":
                 # The survey run by the radio (playback/survey.py): how far a round has got; with ?base=, what's been
                 # found on that receiver; "itself": the receivers surveyed on the hour.

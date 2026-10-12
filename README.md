@@ -342,6 +342,19 @@ Actions, Sleep timer and Radio folders open:
   how many it found ("3 found") and goes to the strongest; pointing at it
   lists where each is, with a Morse signal's speed. On 40 m one afternoon:
   four Morse contacts, at 15 to 29 words a minute.
+- **How the bands are.** At the top of *Where to listen*, in plain words,
+  from what the radio has itself heard: "20 m is good: open to Europe and
+  North America, 16 stations, the farthest 5,516 km. 40 m is fair: open,
+  but only round about. Nothing on 12 m and 10 m." It's made from the
+  survey's count of FT8 stations on each band -- how many, how far, and
+  which parts of the world they're in -- and from who's been heard in the
+  last hour on the band you're listening to; it says when a band has
+  opened or closed since the last look, and with the survey set to go by
+  itself it keeps itself up to date. Under it, what the sun is doing, from
+  NOAA when there's internet: the solar flux, the K index, and any radio
+  blackout or geomagnetic storm, each with what it means for the bands.
+  It's how the bands are *here*, with this aerial, not a forecast. See
+  `app/sleepradiopi/playback/conditions.py`.
 - **Receivers with names.** *Name…* in a receiver's window calls it what
   you like -- "Short wave", "VHF" -- in Receivers, on its window and
   wherever it's mentioned: two dongles on one computer are otherwise told
@@ -926,16 +939,12 @@ What's left to do (everything else described here is built and running):
   been heard (the receiver's wide "IQ" mode gives about 10 kHz to read
   from; the search at its heart has to be made several times faster for the
   Zero 2 W first).
-- **Band conditions** — the radio already gathers a good deal of what
-  says how the bands are: the survey's count of stations and the farthest
-  of them, band by band, hour by hour; who's been heard and from where;
-  how strong the weather service's teleprinters are. Put together it could
-  say it plainly -- "20 m is open to North America, 40 m is local only" --
-  and show how today compares with the last few days. From outside it
-  could add what the sun is doing (the solar flux, the K index and
-  sunspot number that NOAA publishes, and any warning of a flare or a
-  storm), and, once *Report* is on, where your own receiver's reports
-  put you among others'. And the DJ could say it, at the top of the hour.
+- **Band conditions: more of it** — *How the bands are* says it from the
+  last survey and the last hour's listening. Still to do: how today
+  compares with the last few days (only a day of each band is kept);
+  where your own receiver's reports put you among others', once *Report*
+  is on; the weather teleprinters' strength as a yardstick for the lower
+  bands by day; and the DJ saying it, at the top of the hour.
 - **QPSK31** — the PSK reader does PSK31 and PSK63 (both BPSK); the
   four-phase kind, with its error correction, is left. It's seldom heard.
 - **Music from any computer** — adding music needed a Linux PC

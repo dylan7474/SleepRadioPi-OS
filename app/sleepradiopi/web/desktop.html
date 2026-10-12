@@ -2639,6 +2639,7 @@ async function modePoll(R, now) {                   // how the radio's survey is
   try {
     const sig = () => JSON.stringify([MODES.srv?.running, MODES.srv?.at, MODES.srv?.error, MODES.srv?.itself, MODES.found[R.origin]]), was = sig();
     const st = await api("/api/rx/survey?base=" + encodeURIComponent(R.origin));
+    if (MODES.srv?.running && !st.running && st.base === R.origin) condPoll(R, true);
     if (MODES.srv?.running && !st.running && st.base === R.origin) toast(st.error ? `The survey stopped: ${st.error}.` : st.stopped ? "Survey stopped." : "Survey done: the keys say what was heard.");
     MODES.srv = st; MODES.found[R.origin] = Object.fromEntries(Object.entries(st.found).map(([k, f]) => [k, { ...f, at: f.t * 1000 }]));
     if (sig() !== was) drawDesk();
@@ -2651,7 +2652,19 @@ async function modeSurveyRadio(R, modes, sweep) {   // the radio's own survey of
   if (!places.length) return toast("This receiver doesn't reach any of them.");
   try { MODES.srv = await api("/api/rx/survey", { base: R.origin, places }); drawDesk(); modePoll(R, true); } catch (e) { rigOops(e); }
 }
-const MODES = { rx: null, run: null, srv: null, polling: false, polled: 0, found: (() => { try { return JSON.parse(localStorage.getItem("srd.modes")) || {}; } catch (e) { return {}; } })() };
+// Conditions: how the bands are, in sentences, from this receiver's survey and who's been heard (playback/conditions.py),
+// with the sun's figures from NOAA. Asked for when the window opens and every so often while it's open.
+async function condPoll(R, now) {
+  if (MODES.condBusy || (!now && Date.now() - MODES.condAt < 30000 && MODES.condFor === R.origin)) return;
+  MODES.condBusy = true; MODES.condAt = Date.now();
+  try {
+    const was = JSON.stringify(MODES.cond);
+    MODES.cond = await api("/api/rx/conditions" + (modeOwn(R) ? "?base=" + encodeURIComponent(R.origin) : "")); MODES.condFor = R.origin;
+    if (JSON.stringify(MODES.cond) !== was) drawDesk();
+  } catch (e) { /* the next one will do */ }
+  MODES.condBusy = false;
+}
+const MODES = { rx: null, run: null, srv: null, polling: false, polled: 0, cond: null, condAt: 0, condFor: null, condBusy: false, found: (() => { try { return JSON.parse(localStorage.getItem("srd.modes")) || {}; } catch (e) { return {}; } })() };
 const MODE_COLS = [["ft8", "FT8"], ["ft4", "FT4"], ["wspr", "WSPR"], ["psk31", "PSK31"], ["rtty", "Teleprinter"], ["cw", "Morse"], ["sstv", "SSTV"]];
 // [band, kHz]: where teleprinters gather (the bottom of it; they spread up from there), and where Morse does
 const MODE_RTTY = [["80 m", 3590], ["40 m", 7040], ["30 m", 10140], ["20 m", 14085], ["17 m", 18105], ["15 m", 21085], ["12 m", 24925], ["10 m", 28085]];
@@ -4402,6 +4415,15 @@ const UI = {
       if (!R) return [grp("Where to listen", help("Open a receiver's window (Receivers) and press Modes… there: this shows where that receiver can go."))];
       const own = modeOwn(R), places = modePlaces(R), run = modeRun(R), at = p => places.find(q => q.mode === p[0] && q.band === p[1]);
       modePoll(R);                                 // (the radio's own survey, if this is a receiver of yours: how it's doing, what it found)
+      condPoll(R);
+      const cond = MODES.condFor === R.origin ? MODES.cond : null;
+      const condAge = t => { const m = Math.round((Date.now() / 1000 - t) / 60); return m < 2 ? "just now" : m < 90 ? `${m} minutes ago` : `${Math.round(m / 60)} hours ago`; };
+      const condGrp = !cond ? null : grp("How the bands are",
+        el("p", { id: "cond-says", style: "font-weight:700;margin:2px 0 6px", textContent: cond.says }),
+        ...cond.bands.filter(b => b.n).map(b => el("p", { className: "note", style: "margin:2px 0", textContent: b.says + (b.by === "heard" ? " (from who's been heard)" : ""), title: `As of ${condAge(b.t)}` })),
+        cond.sun ? el("p", { className: "note", id: "cond-sun", style: "margin:6px 0 0", textContent: "The sun: " + cond.sun.says, title: `From NOAA's Space Weather Prediction Center, ${condAge(cond.sun.t)}` }) : null,
+        help(cond.bands.length ? `What this receiver has itself heard${cond.t ? `, the latest ${condAge(cond.t)}` : ""}: it's how the bands are here, with this aerial. ${own ? "A survey of FT8 on every band brings it up to date; set By itself, below, and it keeps itself so." : "Read FT8 on a band for a while and that band is said here."}`
+          : own ? "Press FT8 on every band, below: a few minutes later this says which bands are open, and to where. Set By itself and it stays up to date." : "Read FT8 on a band for a while and how that band is is said here. A receiver of your own can be surveyed band by band."));
       const bands = MODE_BANDS.filter(b => places.some(p => p.band === b));
       const grid = el("div", { className: "mgrid" }, el("span"), ...MODE_COLS.map(c => el("b", { textContent: c[1] })));
       for (const band of bands) { grid.append(el("span", { textContent: band })); for (const [mode] of MODE_COLS) { const p = at([mode, band]); grid.append(p ? modeKey(R, p) : el("i", { textContent: "·" })); } }
@@ -4410,6 +4432,7 @@ const UI = {
       const secs = (modes, sweep) => places.filter(p => own && modeSweep(p) ? sweep : modes.includes(p.mode) && (p.mode !== "rtty" || p.weather)).reduce((a, p) => a + (own && modeSweep(p) ? 20 : { ft8: 32, ft4: 22 }[p.mode] || 17), 0);
       const mins = (modes, sweep) => { const m = Math.round(secs(modes, sweep) / 60); return `about ${m} minute${m === 1 ? "" : "s"}`; };
       return [
+        condGrp,
         grp(`Where to listen on ${R.o.title}`, bands.length ? grid : help("This receiver doesn't reach the bands these are used on."),
           help("A key takes the receiver there and switches the reader for that mode on. Frequencies are in MHz; all in upper sideband but Morse. A teleprinter key is the bottom of where they gather: tune up from it. WSPR is beacons of a watt or less, two minutes at a time: the list shows where each is and how far.")),
         weather.length ? grp("Teleprinter broadcasts", el("div", { className: "mgrid", style: "grid-template-columns:repeat(5, minmax(0, 1fr))" }, ...weather.map(p => modeKey(R, p))),

@@ -843,6 +843,8 @@ def main() -> None:
     except ValueError as e:
         log.warning("survey: the saved plan can't be used (%s)", e)
     survey_mod.rounds.start()
+    from sleepradiopi.playback import conditions as conditions_mod
+    conditions_mod.sun.keep_in(Path.home() / ".cache" / "sleepradiopi" / "sun.json")      # NOAA's figures for the sun, as last had
     serve(station, stream, args.port or settings.http_port, control, args.config, announcer, jobs, updates,
           presets, directory, media, lamps)
 

@@ -1309,6 +1309,24 @@ The cards:
   night's calibration nobody asked for leaves such a receiver alone). A
   survey and a calibration never run together, and nothing is reported to
   PSK Reporter from a receiver being taken round.
+  *How the bands are* (`GET /api/rx/conditions?base=`;
+  `playback/conditions.py`): `summary()` takes a receiver's survey (its
+  FT8 places no more than two hours old) and who the FT8 reader has heard
+  in the last hour, and says each band: good (15 stations or more in one
+  slot), fair (5), poor, or nothing heard; open to which parts of the
+  world (the survey now keeps `"to": {"EU": 10, "NA": 5}` with each
+  place: `conditions.region()` puts a locator in Europe, North or South
+  America, Africa, Asia or Australia and the Pacific; a part with one
+  station in ten, or two, is named); "only round about" when nobody is
+  past 1,500 km; and "busier", "quieter", "has opened" or "has closed"
+  against the survey before. Then one sentence for the lot. A band the
+  survey hasn't covered lately is said from the heard list instead ("10
+  stations in the last hour"). `"sun"` is NOAA's Space Weather Prediction
+  Center's figures (`conditions.Sun`: the planetary K index, the 10.7 cm
+  flux and the R / S / G scales, fetched in a thread of its own when
+  asked and more than three hours old, kept in
+  `~/.cache/sleepradiopi/sun.json`, not said once twelve hours old), with
+  what they mean in words. With no internet there's simply no sun line.
   *The finder* (places of mode `"rtty"` or `"cw"`, with `"lo"` and `"hi"`:
   a stretch of band, 150 kHz at most; the page's `MODE_SWEEP` has each
   band's): the receiver is put in the middle of the stretch and its
