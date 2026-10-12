@@ -8,11 +8,17 @@
 #   /media  p6, ext4 -- music, voices, jingles. Read-only; written only on
 #           a PC (scripts/provision-media.sh) or after `media-rw`.
 #
-# A card without p6 (not provisioned yet) still boots; /media stays empty.
+# A card without p6 (flashed from a release, never on a PC since) is given
+# one at its first start: the radio makes it, restarts once, formats it,
+# and music is then put on from the web page (sleepradiopi/mediapart.py: it
+# only ever touches a card laid out exactly as the image leaves it, and
+# only formats the partition it made itself). A card that has a p6 never
+# gets as far as asking.
 #
 
 DATA=/dev/mmcblk0p5
 MEDIA=/dev/mmcblk0p6
+NOTE=/data/media-partition.json
 
 start() {
 	# -p repairs what's safe to repair unattended; after a power cut this
@@ -27,6 +33,18 @@ start() {
 		clock-restore
 	else
 		echo "S00data: could not mount $DATA" >&2
+	fi
+
+	# No music partition, or one part made: the next step of making it.
+	if { [ ! -b $MEDIA ] && [ ! -e $NOTE ]; } || grep -qs '"state": "ma' $NOTE; then
+		python3 -m sleepradiopi.mediapart 2>&1 | logger -t media-partition
+		if grep -qs '"state": "made"' $NOTE && [ ! -b $MEDIA ]; then
+			echo "S00data: the music partition is made: restarting to find it" >&2
+			sync
+			umount /data 2>/dev/null
+			reboot
+			exit 0
+		fi
 	fi
 
 	if [ -b $MEDIA ]; then
