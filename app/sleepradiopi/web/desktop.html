@@ -252,6 +252,10 @@
   .rig .rpic .rthumbs img { height: 34px; width: auto; max-width: 90px; min-height: 0; flex: none; display: block; border: 0; cursor: pointer; object-fit: cover; }
   .rig .rnow { flex: none; height: 16px; font: 11px/16px system-ui, sans-serif; color: #58d0e8; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; opacity: 0; transition: opacity .25s; }
   .rig .rnow.on { opacity: 1; }
+  .rig .rheard { flex: none; display: flex; gap: 4px; align-items: center; overflow: hidden; white-space: nowrap; }
+  .rig .rheard b { font: 600 9.5px var(--display); letter-spacing: .06em; text-transform: uppercase; color: #7f97a8; }
+  .rig .rheard button { flex: none; font: 600 11px ui-monospace, Menlo, Consolas, monospace; color: #f0b045; background: #0a1118; border: 1px solid #1e3445; border-radius: 4px; padding: 1px 6px; cursor: pointer; }
+  .rig .rheard button:hover { border-color: #f0b045; }
   .rig .rnow::before { content: "● "; animation: rnow 1s steps(2) infinite; }
   @keyframes rnow { 50% { opacity: .25; } }
   .rig .rfoot { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 5px 12px; align-items: center; }
@@ -2013,24 +2017,24 @@ function rigNrKey(R, k) {
 // time. One reader, so one state for every rig window: the tape (the envelope, then the marks as read, a letter under
 // its own) and the text, fainter where a letter stood less clear of the noise. The text is a log: a line an over with
 // its time, pitch and speed, coloured by sender (a pitch and a speed), so the two sides of a contact read apart.
-const CW = { since: 0, overs: [], lines: [], voices: [], line: 0, hue: 0, st: null, got: 0, busy: false, asked: 0, leads: [], lead: null, raf: 0 };
+const CW = { since: 0, overs: [], lines: [], voices: [], heard: [], line: 0, hue: 0, st: null, got: 0, busy: false, asked: 0, leads: [], lead: null, raf: 0 };
 const CW_TAPE_S = 16, CW_W = 900, CW_H = 60, CW_LINES = 120, CW_HUES = ["#58d0e8", "#5fd08a", "#e58fd0", "#b9a6ff", "#e8c9a0"];
 function rigCwKey(R, k) {
   return R.dom.kcw = k("CW", async () => {
     try {
       S = { ...(S || {}), ...(await api("/api/rx/morse", { on: !S?.cw })) };
-      Object.assign(CW, { since: 0, overs: [], lines: [], voices: [], st: null, leads: [], lead: null });
+      Object.assign(CW, { since: 0, overs: [], lines: [], voices: [], heard: [], st: null, leads: [], lead: null });
       rigPaint(R); cwDraw(R); ftDraw(R); kbDraw(R); picDraw(R);     // (one reader at a time: the radio has switched the others off)
-      if (S.cw) toast("Morse reader on: the strongest Morse in what this receiver plays is read, a second or so after each over ends. The CW mode narrows it to the signal you're tuned to.", false, null, true);
-    } catch (e) { rigOops(e); } }, "Read Morse as text: the strongest keyed tone in what the receiver is playing");
+      if (S.cw) toast("Morse reader on: every Morse signal in what this receiver plays is read (up to four at once), a second or so after each over ends. In upper sideband that's a couple of kHz of band; the CW mode narrows it to the signal you're tuned to.", false, null, true);
+    } catch (e) { rigOops(e); } }, "Read Morse as text: every keyed tone in what the receiver is playing, up to four at once");
 }
-async function cwPoll() {
+async function cwPoll(R) {
   if (!S?.cw || CW.busy || Date.now() - CW.asked < 600) return;
   CW.busy = true; CW.asked = Date.now();
   try {
     const st = await api(`/api/rx/morse?since=${CW.since}`);
     if (st.overs.length && st.overs[0].n <= CW.since) CW.overs = [];              // (the reader began again)
-    for (const o of st.overs) { CW.overs.push(o); CW.since = o.n; cwLog(o, st); }
+    for (const o of st.overs) { CW.overs.push(o); CW.since = o.n; cwLog(o, st, R); }
     if (!st.overs.length && CW.overs.length && st.at < CW.overs[CW.overs.length - 1].t0) Object.assign(CW, { since: 0, overs: [] });
     CW.overs = CW.overs.slice(-30); CW.st = st; CW.got = Date.now();
     const lead = st.at - CW.got / 1000;
@@ -2043,7 +2047,30 @@ async function cwPoll() {
 const CW_CALL = /^(?:[A-Z]{1,2}\d|\d[A-Z])\d?[A-Z]{1,4}(?:\/[A-Z0-9]{1,4})?$/;
 const cwClass = c => c[2] >= .66 ? "" : c[2] >= .33 ? "c2" : "c1";
 // an over as read -> the log. A long over comes in parts: the same sender carrying on stays on its line.
-function cwLog(o, st) {
+// Where a tone heard at this pitch is on the air, Hz: in a sideband the pitch is how far it is from the dial; in CW
+// the dial is the signal's own frequency when it's heard at the receiver's Morse pitch.
+const CW_PITCH = { kiwi: 500, owrx: 800, own: 700 };
+function cwHz(R, pitch) {
+  if (!R || !rigOnRadio(R)) return null;
+  const D = RXD[R.kind], hz = D.tuned(R), mode = D.on(R) ? R.st.mode || R.st.receiving?.mode : null;
+  return !hz ? null : mode === "usb" ? hz + pitch : mode === "lsb" ? hz - pitch : mode === "cw" ? hz + pitch - (CW_PITCH[R.kind] || 700) : null;
+}
+// who's been heard: each callsign read cleanly, with where it was, the newest first
+function cwHeard(o, st, hz) {
+  const when = Date.now() - Math.max(0, st.at - o.t1) * 1000;
+  let word = [];
+  for (const c of [...o.chars, [" ", 0, 1]]) {
+    if (c[0] !== " ") { word.push(c); continue; }
+    const call = word.map(x => x[0]).join(""), sure = word.every(x => x[2] >= .66);
+    word = [];
+    if (call.length < 4 || !sure || !CW_CALL.test(call)) continue;
+    const was = CW.heard.find(h => h.call === call);
+    CW.heard = [{ call, hz: hz ?? was?.hz ?? null, pitch: o.pitch, wpm: o.wpm, when, n: (was?.n || 0) + 1 }, ...CW.heard.filter(h => h !== was)].slice(0, 40);
+  }
+}
+function cwLog(o, st, R) {
+  const hz = cwHz(R, o.pitch);
+  cwHeard(o, st, hz);
   const last = CW.lines[CW.lines.length - 1], near = (a, b) => Math.abs(a.pitch - b.pitch) <= 40 && Math.abs(a.wpm - b.wpm) <= b.wpm * .15;
   if (last && near(last, o) && o.t0 >= last.t1 - .5 && o.t0 - last.t1 < 2) {
     last.chars.push([" ", o.t0, 1], ...o.chars); Object.assign(last, { t1: o.t1, n1: o.n, wpm: o.wpm });
@@ -2052,10 +2079,10 @@ function cwLog(o, st) {
   let v = CW.voices.find(v => near(v, o));
   if (!v) { CW.voices.push(v = { hue: CW.hue++ % CW_HUES.length }); CW.voices = CW.voices.slice(-CW_HUES.length); }
   Object.assign(v, { pitch: o.pitch, wpm: o.wpm });
-  CW.lines.push({ id: ++CW.line, when: Date.now() - Math.max(0, st.at - o.t1) * 1000, pitch: o.pitch, wpm: o.wpm, t1: o.t1, n1: o.n, hue: v.hue, chars: [...o.chars] });
+  CW.lines.push({ id: ++CW.line, when: Date.now() - Math.max(0, st.at - o.t1) * 1000, pitch: o.pitch, hz, wpm: o.wpm, t1: o.t1, n1: o.n, hue: v.hue, chars: [...o.chars] });
   CW.lines = CW.lines.slice(-CW_LINES);
 }
-const cwWho = l => `${new Date(l.when).toLocaleTimeString("en-GB")}  ${String(l.pitch).padStart(4)} Hz  ${String(Math.round(l.wpm)).padStart(2)} wpm`;
+const cwWho = l => `${new Date(l.when).toLocaleTimeString("en-GB")}  ${l.hz ? (l.hz / 1e6).toFixed(4) : String(l.pitch).padStart(4) + " Hz"}  ${String(Math.round(l.wpm)).padStart(2)} wpm`;
 // a line's words: [[char, at, confidence]] -> [[...]], a run nothing could be made of as one "…"
 function cwWords(l) {
   const words = []; let word = [];
@@ -2127,13 +2154,32 @@ function cwRoll() {                                 // the tape moving, while th
   for (const win of W) { const R = O[win.id]?.kind === "rx" && O[win.id].rig; if (R?.dom?.tape?.isConnected && !R.dom.cw.hidden) { cwTape(R); any = true; } }
   if (any) CW.raf = requestAnimationFrame(cwRoll);
 }
+// to a station that was heard: in CW the dial is its own frequency; in a sideband it's put where it sounds at 700 Hz
+function cwGo(R, h) {
+  if (!h.hz) return toast(`${h.call} was heard before this receiver's frequency was known.`);
+  const D = RXD[R.kind], mode = D.on(R) ? R.st.mode || R.st.receiving?.mode : null;
+  const freq = mode === "cw" ? Math.round(h.hz / 10) * 10 : mode === "lsb" ? Math.round((h.hz + 700) / 10) * 10 : Math.round((h.hz - 700) / 10) * 10;
+  if (D.say) D.say(R, { freq }); else D.tune(R, freq, mode || "usb");
+  toast(`${h.call}: ${(h.hz / 1e6).toFixed(4)} MHz.`, false, null, true);
+}
 function cwDraw(R) {
   const d = R.dom;
   if (!d?.cw) return;
   const on = !!S?.cw && !!d.kcw; d.cw.hidden = !on;         // (only where there's a CW key: not a room)
   if (!on) return;
   const st = CW.st, here = rigOnRadio(R);
-  d.cwsays.textContent = !here ? "" : st?.pitch ? `${st.pitch} Hz${st.wpm ? ` · ${Math.round(st.wpm)} wpm` : ""}` : "no keyed tone";
+  d.cwsays.textContent = !here ? "" : st?.pitch ? `${st.pitch} Hz${st.wpm ? ` · ${Math.round(st.wpm)} wpm` : ""}${st.signals?.length > 1 ? ` · ${st.signals.length} signals followed` : ""}` : "no keyed tone";
+  // who's been heard: a key each, the newest first; a click goes there
+  const chips = here ? CW.heard.slice(0, 14) : [], sig = chips.map(h => `${h.call}:${h.hz}:${h.n}`).join();
+  d.cwheard.hidden = !chips.length;
+  if (d.cwheard.dataset.sig !== sig) {
+    d.cwheard.dataset.sig = sig;
+    d.cwheard.replaceChildren(el("b", { textContent: "Heard" }), ...chips.map(h => {
+      const b = el("button", { type: "button", textContent: h.hz ? `${h.call} ${(h.hz / 1e6).toFixed(4)}` : h.call });
+      b.title = `${h.call}: ${Math.round(h.wpm)} words a minute, ${new Date(h.when).toLocaleTimeString("en-GB")}${h.n > 1 ? `, heard ${h.n} times` : ""}${h.hz ? " · click to tune there" : ""}`;
+      b.onclick = () => cwGo(R, h);
+      return b; }));
+  }
   // being sent now: a tone there in the last second, its text to come when the over ends
   const going = here && !!st?.pitch && st.env.slice(-st.tape_rate).some(v => v > 128);
   d.cwnow.classList.toggle("on", going);
@@ -3335,7 +3381,7 @@ async function rigPoll() {
     try { await RXD[R.kind].poll(R, R.n++); R.down = null; }
     catch (e) { R.down = R.kind === "own" ? `${rxHost(R.origin)} isn't answering` : "The radio isn't answering"; }
     R.busy = false;
-    if (R.dom?.kcw) await cwPoll();
+    if (R.dom?.kcw) await cwPoll(R);
     if (R.dom?.kft8) await ftPoll();
     if (R.dom?.kpsk31) await kbPoll();
     if (R.dom?.ksstv) await picPoll();
@@ -3385,8 +3431,8 @@ function rigView(o, box, win) {
     d.cw = el("div", { className: "rcw", hidden: true },
               el("h4", {}, "Morse", d.cwsays = el("span"), key,
                  cwKey("Copy", "Copy everything read so far", () => CW.lines.length ? cwCopy(CW.lines.map(l => `${cwWho(l)}  ${cwPlain(l)}`).join("\n"), "the Morse read so far") : toast("Nothing read yet.")),
-                 cwKey("Clear", "Empty the list", () => { CW.lines = []; cwDraw(R); })),
-              d.tape = el("canvas", { width: CW_W, height: CW_H }), d.cwnow = el("div", { className: "rnow" }), d.copy = el("div", { className: "rcopy" })),
+                 cwKey("Clear", "Empty the list, and who's been heard", () => { CW.lines = []; CW.heard = []; cwDraw(R); })),
+              d.tape = el("canvas", { width: CW_W, height: CW_H }), d.cwnow = el("div", { className: "rnow" }), d.cwheard = el("div", { className: "rheard", hidden: true }), d.copy = el("div", { className: "rcopy" })),
     d.ft = el("div", { className: "rcw rft", hidden: true },
               el("h4", { title: "A line: the slot's time (UTC), how strong (a rough guide: not the figure other programs give), where in the sound, the message, how far and which way. In Heard: when last, the strongest, how many times" },
                  d.ftname = el("b"), d.ftsays = el("span"),

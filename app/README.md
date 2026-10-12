@@ -1136,8 +1136,22 @@ The cards:
   the radio listens to what a receiver is playing -- as it came, before the
   noise reduction (which is for the ears: its turning the level up and down
   would blur the edges of the marks, and the reader's own filter is far
-  narrower) -- for a keyed tone between 250 and 2800 Hz, and reads the
-  strongest, an over at a time. Real traffic comes in overs: a three-second
+  narrower) -- for keyed tones between 250 and 2800 Hz, and reads each of
+  them, an over at a time: every tone found (`morse.tones()`: the
+  strongest first, no two within 70 Hz, and not one within 250 Hz of
+  another that's 12 dB stronger, which is that one's skirt) is followed as
+  a signal of its own, up to `MOST` (4), with its own place, speed and
+  overs; the strongest is looked at every step and is the one on the tape,
+  the others one step in three, and of those only what's read with a
+  quality of 0.7 or more is said (off the air, rubbish scored 0.2 to 0.65
+  and callsigns 0.87 and up). An over read twice (the same stretch of time
+  at the same place, or with the same words) is said once. The reading is
+  timed: when it takes more than three quarters of the time it has (a
+  busy band on a Zero 2 W) one signal fewer is followed, down to the
+  strongest alone, and one more again when it's under a third (`"most"`
+  and `"signals"` in the answer say how many). On a PC, four at once in a
+  real 30 m pile-up took a tenth of a core; the Zero is about ten times
+  slower, so there it will usually follow two or three. Real traffic comes in overs: a three-second
   call, silence, then someone else at another speed and a slightly different
   pitch; so each over is read on its own, with its own pitch and speed, when
   it has been quiet for 1.3 s (a long one every six seconds or so, at a gap
@@ -1165,7 +1179,7 @@ The cards:
   the line are settled by what's sent on the air all the time: "CQCQDE"
   and "73ES" are parted, and a callsign sent in two pieces ("DL2 OE", or
   "GW4I MC" when GW4IMC has been read whole lately) is put together. `GET /api/rx/morse?since=N` gives whether it's on, the
-  tone's pitch, the last eight seconds of envelope for the tape, and the
+  strongest tone's pitch, the signals followed, the last eight seconds of envelope for the tape, and the
   overs read after number N (each with its letters, when each began and how
   sure it is, and its marks). The page keeps the log itself (the last 120
   lines, gone when the page is closed): an over a line, a long over's parts

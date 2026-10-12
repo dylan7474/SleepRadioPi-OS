@@ -295,9 +295,15 @@ Actions, Sleep timer and Radio folders open:
   read: a line an over with its time, pitch and speed, coloured by sender so
   the two sides of a contact read apart, callsigns picked out (click one to
   copy it) and a doubtful letter fainter. The log scrolls back, and *Copy*
-  takes all of it. It reads the strongest keyed tone it hears, an over at a
-  time, a second or so after the sender stops; the rig's CW mode narrows
-  the receiver to the one you're tuned to. The noise reduction (the *NR*
+  takes all of it. It reads **every Morse signal in what's heard**, up to
+  four at once, each an over at a time, a second or so after the sender
+  stops: in upper sideband that's a couple of kHz of band, a pile-up or
+  two contacts side by side, and the rig's CW mode narrows the receiver
+  to the one you're tuned to. Each line gives the signal's own frequency,
+  and a **Heard** row keeps the callsigns read, the newest first, each
+  with where it was: click one to go there. Only what's read well is said
+  of the weaker ones, and on a Zero 2 W the reader follows fewer signals
+  by itself when it can't keep up (never fewer than the strongest). The noise reduction (the *NR*
   key) is for your ears only: the reader takes the sound before it, and has
   a far narrower filter of its own.
   A tight filter round the tone and a best-fit reading of the timing (not a
@@ -1031,12 +1037,12 @@ What's left to do (everything else described here is built and running):
   temperature-compensated crystal (a Nooelec NESDR SMArt v5), so that it
   stays on frequency without calibrating, as a receiver that's simply
   there in Receivers with no second computer.
-- **Morse across the band** — the Morse reader reads one signal, the strongest
-  in what's playing. Next: every Morse signal in a KiwiSDR's view read at
-  once, each named by its callsign on the waterfall and in a list of who's
-  been heard (the receiver's wide "IQ" mode gives about 10 kHz to read
-  from; the search at its heart has to be made several times faster for the
-  Zero 2 W first).
+- **Morse across the band: wider** — the Morse reader reads every signal
+  in what's playing (up to four, across the couple of kHz a sideband
+  gives) and lists who's been heard. Still to do: a KiwiSDR's wide "IQ"
+  mode, about 10 kHz at once (the radio then has to make the sound you
+  hear itself); each signal named by its callsign on the waterfall; and
+  the heard list kept by the radio, not only in the page.
 - **Band conditions: more of it** — *How the bands are* says it from the
   last survey and the last hour's listening, in the Bands window or by
   the DJ, against the same hour on the days before, with the weather

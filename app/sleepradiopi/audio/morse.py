@@ -47,6 +47,7 @@ import multiprocessing as mp
 import os
 import re
 import threading
+import time
 from collections import deque
 
 import numpy as np
@@ -93,6 +94,14 @@ STEP_S = 0.4                 # the sound is looked at this often
 MAX_PENDING = 600            # blocks fed and not yet taken, at most (half a minute)
 DECIMATE = 6                 # of the speaker's rate: 7350 samples a second is plenty for a tone under 2.8 kHz
 RATE = pcm.SAMPLE_RATE / DECIMATE
+MOST = 4                     # signals read at once, at most (fewer when the reading can't keep up: Reader.most)
+APART_HZ = 70.0              # two tones nearer than this are one signal
+SKIRT_HZ, SKIRT_DB = 250.0, 12.0     # ...and one this near a stronger one must be within this of its strength, or it's that one's skirt
+SIGNAL_S = 20.0              # a signal whose tone hasn't shown for this long is given up
+NEW_BACK_S = 10.0            # a signal just found is read from this far back (the over that showed it)
+OTHERS_EVERY = 3             # the signals after the strongest are looked at one step in this many (the looking is most of the cost)
+OTHERS_QUALITY = 0.7         # ...and only what's read this well is said of them (off the air: rubbish 0.2-0.65, callsigns 0.87 and up)
+BUSY, IDLE = 0.75, 0.35      # the reading takes this share of the time it has: one signal fewer / one more may be read
 TAPE_S = 8.0                 # of the envelope, for the page's tape
 TAPE_RATE = 50.0
 
@@ -130,20 +139,35 @@ def refine_pitch(x: np.ndarray, rate: float, pitch: float, reach: float = 35.0) 
     return float(f[m][np.argmax(np.convolve(X[m], np.ones(w) / w, "same"))])
 
 
-def strongest_tone(x: np.ndarray, rate: float) -> float | None:
-    """The pitch of the strongest narrow tone that comes and goes in the audio band, or None."""
+def tones(x: np.ndarray, rate: float, most: int = 1) -> list[float]:
+    """The pitches of the narrow tones that come and go in the audio band, the strongest first, most of them at
+    most, no two nearer than APART_HZ."""
     n, hop = 2048, 1024
     if len(x) < n * 2:
-        return None
+        return []
     win = np.hanning(n)
     frames = np.array([np.abs(np.fft.rfft(x[a:a + n] * win)) ** 2 for a in range(0, len(x) - n, hop)])
     f = np.fft.rfftfreq(n, 1 / rate)
     band = np.flatnonzero((f >= BAND[0]) & (f <= BAND[1]))
     top = np.percentile(frames[:, band], 90, axis=0)                       # (keyed: its best moments, not its average)
-    i = int(np.argmax(top))
-    if 10 * np.log10(top[i] / (np.median(frames[:, band]) + 1e-12)) < TONE_OVER_DB:
-        return None
-    return float(f[band][i])
+    floor, fb, out, power = np.median(frames[:, band]) + 1e-12, f[band], [], []
+    while len(out) < most:
+        i = int(np.argmax(top))
+        if 10 * np.log10(top[i] / floor + 1e-12) < TONE_OVER_DB:
+            break
+        # (a strong signal's keying spreads either side of it -- a teleprinter's most of all: what's close
+        # by and far weaker is that, not another station)
+        if not any(abs(fb[i] - at) < SKIRT_HZ and top[i] * 10 ** (SKIRT_DB / 10) < was for at, was in zip(out, power)):
+            out.append(float(fb[i]))
+            power.append(float(top[i]))
+        top = np.where(np.abs(fb - fb[i]) < APART_HZ, 0.0, top)            # (its own skirts aren't another signal)
+    return out
+
+
+def strongest_tone(x: np.ndarray, rate: float) -> float | None:
+    """The pitch of the strongest narrow tone that comes and goes in the audio band, or None."""
+    found = tones(x, rate)
+    return found[0] if found else None
 
 
 def _prior(n_max: int, weight: float) -> np.ndarray:
@@ -319,14 +343,9 @@ def overs(env: np.ndarray, er: float, noise: tuple[float, float], quiet_s: float
     on = np.flatnonzero(np.convolve(env, np.ones(w) / w, "same") > lo + 3.5 * 0.52 * lo)
     if not len(on):
         return []
-    out, a, last = [], on[0], on[0]
-    for i in on[1:]:
-        if i - last > quiet_s * er:
-            out.append((a, last))
-            a = i
-        last = i
-    out.append((a, last))
-    return [(a / er, b / er) for a, b in out if (b - a) / er > 0.25]
+    cut = np.flatnonzero(np.diff(on) > quiet_s * er)                    # (quiet for that long between them: two overs)
+    first, last = on[np.concatenate(([0], cut + 1))], on[np.concatenate((cut, [len(on) - 1]))]
+    return [(float(a) / er, float(b) / er) for a, b in zip(first, last) if (b - a) / er > 0.25]
 
 
 def word_gaps(letters: list[str], gaps: list[float], known: frozenset[str] = frozenset()) -> list[bool]:
@@ -451,25 +470,46 @@ def decode(x: np.ndarray, rate: float, pitch: float, noise: tuple[float, float],
     return out
 
 
+class _Signal:
+    """One Morse signal being followed: where its tone is, and how far it's been read."""
+
+    def __init__(self, pitch: float, done: int, seen: int) -> None:
+        self.pitch = pitch
+        self.done = done                             # read up to here (samples since switched on)
+        self.seen = seen                             # ...when its tone last showed
+        self.floor: float | None = None              # the noise, remembered: an over with no quiet in it is read against this
+        self.going: tuple[float, float] | None = None    # (pitch, words a minute) of a long over part-read
+        self.turn = int(pitch) % OTHERS_EVERY        # (so that they aren't all looked at in the same step)
+
+
 class Reader:
     """Hears a receiver's sound and reads the Morse in it, an over at a time: feed() it blocks as they're
-    played (or take() sound already at RATE), step() it a few times a second, ask status() what it has read."""
+    played (or take() sound already at RATE), step() it a few times a second, ask status() what it has read.
 
-    def __init__(self) -> None:
+    Every Morse signal in what's heard is read, not only the strongest: each tone found is followed as a
+    signal of its own (its own place, speed and overs), up to MOST at once. On a slow processor that can be
+    more than there's time for, so the reading is timed: while it takes more than BUSY of the time it has,
+    one signal fewer is followed (the weakest goes first; never fewer than one), and when it's IDLE again,
+    one more."""
+
+    def __init__(self, most: int = MOST) -> None:
         self.on = False
         self._lock = threading.Lock()
         self._pending: list[np.ndarray] = []
         self._left = np.zeros(0, np.float32)         # (samples waiting to make up a whole DECIMATE)
         self._x = np.zeros(0, np.float32)            # the audio kept, at RATE
         self._x0 = 0                                 # ...and where it starts, in samples since switched on
-        self._done = 0                               # read up to here
         self._n = 0
         self._overs: deque[dict] = deque(maxlen=40)
         self._calls: deque[str] = deque(maxlen=40)   # callsigns read whole of late: one sent again in two pieces is that one
         self._tape: dict = {"at": 0.0, "pitch": None, "wpm": None, "env": []}
-        self._floor: float | None = None             # the noise, remembered: an over with no quiet in it is read against this
-        self._going: tuple[float, float] | None = None   # (pitch, words a minute) of a long over part-read
-        self._tone: tuple[int, float | None] = (-10**9, None)   # (when looked for, the pitch found)
+        self._signals: list[_Signal] = []            # the signals followed, the strongest first
+        self._looked = -10**9                        # when tones were last looked for
+        self._quiet_to = 0                           # with no signal at all: nothing to read before here
+        self.limit = max(1, most)                    # as many signals as this, at most
+        self.most = self.limit                       # ...and as many as there's time for, just now
+        self._load = 0.0                             # the share of its time the reading has been taking, of late
+        self._clock = time.perf_counter
 
     # --- the sound coming in -----------------------------------------------------------------
 
@@ -500,7 +540,8 @@ class Reader:
     # --- what the page asks for --------------------------------------------------------------
 
     def status(self, since: int = 0) -> dict:
-        """{"on", "at" (s of audio heard), "pitch", "wpm", "env" (the tape: 0-255 at TAPE_RATE, ending at "at"),
+        """{"on", "at" (s of audio heard), "pitch", "wpm", "env" (the tape: 0-255 at TAPE_RATE, ending at "at"; the
+        strongest signal's), "signals": [{"pitch", "wpm"?}] (those followed, the strongest first), "most",
         "overs": [{"n", "t0", "t1", "pitch", "wpm", "quality", "chars": [[char, at, confidence]], "marks": [[from, to]]}]}"""
         with self._lock:
             return {"on": self.on, **self._tape, "tape_rate": TAPE_RATE, "overs": [o for o in self._overs if o["n"] > since]}
@@ -508,54 +549,88 @@ class Reader:
     # --- the reading -------------------------------------------------------------------------
 
     def step(self) -> None:
-        """Take in the sound that's arrived, and read whatever over has ended in it."""
+        """Take in the sound that's arrived, and read whatever overs have ended in it."""
+        began = self._clock()
         with self._lock:
             new, self._pending = self._pending, []
+        got = sum(len(n) for n in new) / RATE
         if new:
             self._x = np.concatenate([self._x, *new])
             over = len(self._x) - int(KEEP_S * RATE)
             if over > 0:
                 self._x, self._x0 = self._x[over:], self._x0 + over
         end = self._x0 + len(self._x)
-        a = max(self._x0, self._done - int(PAD_S * RATE))
+        if len(self._x) < RATE * 1.5:
+            return
+        if end - self._looked >= RATE:               # (looked for once a second)
+            self._looked = end
+            self._follow(tones(self._x[-int(RATE * 8):], RATE, self.most), end)
+        if not self._signals:
+            self._quiet_to = max(self._quiet_to, end - int(RATE * (QUIET_S + PAD_S)))
+            self._show(end, None, None, None, 0.0)
+        for k, sig in enumerate(list(self._signals)):
+            sig.turn += 1
+            if k == 0 or sig.turn % OTHERS_EVERY == 0:            # (the strongest every time: it's the one on the tape)
+                self._read(sig, end, show=k == 0)
+        if got:                                      # how hard that was: the time it took against the sound it had to read
+            self._load += 0.2 * (min(4.0, (self._clock() - began) / got) - self._load)
+            if self._load > BUSY and self.most > 1:
+                self.most -= 1
+                self._signals = self._signals[:self.most]
+                self._load = (BUSY + IDLE) / 2       # (and see how that goes before another change)
+                log.info("morse: the reading can't keep up: %d signal%s at once", self.most, "" if self.most == 1 else "s")
+            elif self._load < IDLE and self.most < self.limit and len(self._signals) >= self.most:
+                self.most += 1
+                self._load = (BUSY + IDLE) / 2
+
+    def _follow(self, found: list[float], end: int) -> None:
+        """The tones just found (the strongest first) against the signals followed: each is one of them, or a
+        new one; one whose tone hasn't shown for SIGNAL_S (and isn't mid-over) is given up."""
+        order = []
+        for pitch in found:
+            sig = next((s for s in self._signals if s not in order and abs((s.going[0] if s.going else s.pitch) - pitch) < APART_HZ), None)
+            if sig is None:
+                back = max(self._x0, self._quiet_to - int(3 * RATE), end - int(NEW_BACK_S * RATE)) if self._signals or self._quiet_to \
+                    else self._x0                   # (the first of all: whatever has been heard so far)
+                sig = _Signal(pitch, back, end)
+            sig.pitch, sig.seen = pitch, end
+            order.append(sig)
+        rest = [s for s in self._signals if s not in order and (s.going is not None or end - s.seen < SIGNAL_S * RATE)]
+        self._signals = (order + rest)[:self.most]
+
+    def _read(self, sig: _Signal, end: int, show: bool) -> None:
+        """One signal: read whatever over of its has ended."""
+        a = max(self._x0, sig.done - int(PAD_S * RATE))
         x = self._x[a - self._x0:]
         if len(x) < RATE * 1.5:
             return
-        if end - self._tone[0] >= RATE:              # (looked for once a second)
-            self._tone = (end, strongest_tone(x[-int(RATE * 8):], RATE))
-        pitch = self._going[0] if self._going else self._tone[1]
-        if pitch is None:
-            self._done = max(self._done, end - int(RATE * (QUIET_S + PAD_S)))
-            self._show(end, None, None, None, 0.0)
-            return
+        pitch = sig.going[0] if sig.going else sig.pitch
         env, er, noise = noise_level(x, RATE, pitch)
         # (a stretch that is all sending has no quiet to measure: the least seen lately stands, creeping up
         # so that a noisier band is believed within a minute)
-        self._floor = noise[0] if self._floor is None else min(noise[0], self._floor * 1.005)
-        noise = (self._floor, noise[1])
-        self._show(end, pitch, env[-int(er * TAPE_S):], er, noise[0])
+        sig.floor = noise[0] if sig.floor is None else min(noise[0], sig.floor * 1.005)
+        noise = (sig.floor, noise[1])
+        if show:
+            self._show(end, pitch, env[-int(er * TAPE_S):], er, noise[0])
         spans, now = overs(env, er, noise), len(x) / RATE
-        if not spans or now - spans[-1][1] > QUIET_S + PAD_S:    # quiet at the end: that much needn't be gone over again
-            keep = int(RATE * (QUIET_S + PAD_S))                  # (or every look would be at more of the same quiet)
-            self._done = max(self._done, min(end - keep, a + int(spans[-1][1] * RATE) + int(0.2 * RATE)) if spans else end - keep)
         for s0, s1 in spans:
             i0 = a + int(s0 * RATE)
-            if a + int(s1 * RATE) <= self._done:
+            if a + int(s1 * RATE) <= sig.done:
                 continue
             ended = now - s1 > QUIET_S
-            if not ended and s1 - max(s0, (self._done - a) / RATE) < LONG_OVER_S:
+            if not ended and s1 - max(s0, (sig.done - a) / RATE) < LONG_OVER_S:
                 break                                # still being sent: wait for it
-            carried = self._going is not None and i0 < self._done     # the rest of a long over: from the gap it was cut at, at its speed
+            carried = sig.going is not None and i0 < sig.done     # the rest of a long over: from the gap it was cut at, at its speed
             # (otherwise from where it began, even if that was while another station, at another pitch, was being read)
-            i0 = max(i0, self._done if carried else self._done - int(3 * RATE))
+            i0 = max(i0, sig.done if carried else sig.done - int(3 * RATE))
             lead = 0 if carried else min(i0 - a, int(PAD_S * RATE))      # (quiet before it, to read it against)
             j1 = min(len(x), int((s1 + PAD_S) * RATE)) if ended else len(x)
             seg = x[i0 - a - lead:j1]
-            r = decode(seg, RATE, pitch, noise, wpm=self._going[1] if carried else None, known=frozenset(self._calls))
+            r = decode(seg, RATE, pitch, noise, wpm=sig.going[1] if carried else None, known=frozenset(self._calls))
             t0 = (i0 - lead) / RATE                  # the segment's start, in seconds since switched on
             chars, marks = r["chars"], r["marks"]
             if ended:
-                self._done, self._going = a + int(s1 * RATE) + int(0.2 * RATE), None
+                sig.done, sig.going = a + int(s1 * RATE) + int(0.2 * RATE), None
             else:                                    # a long over: as far as the last gap between words, the rest next time
                 gaps = [i for i, c in enumerate(chars) if c[0] == " "]
                 if gaps:
@@ -564,8 +639,13 @@ class Reader:
                     chars, marks = chars[:g], [m for m in marks if m[1] <= cut]
                 else:
                     cut = marks[-1][1] + 0.05 if marks else len(seg) / RATE - 0.5
-                self._done = i0 - lead + int(cut * RATE)
-                self._going = (r["pitch"], r["wpm"]) if r["text"] else None
+                sig.done = i0 - lead + int(cut * RATE)
+                sig.going = (r["pitch"], r["wpm"]) if r["text"] else None
+            if chars and not show and r["quality"] < OTHERS_QUALITY:
+                chars = []                           # (a weak one beside the one listened to: only what's read well is said)
+            if chars and self._twice(t0 + marks[0][0] if marks else t0, t0 + marks[-1][1] if marks else t0, r["pitch"],
+                                     "".join(c[0] for c in chars)):
+                chars = []                           # (a strong signal's clicks and skirts, read again a little way off)
             if chars:
                 self._n += 1
                 over = {"n": self._n, "t0": round(t0 + (marks[0][0] if marks else 0), 3), "t1": round(t0 + (marks[-1][1] if marks else 0), 3),
@@ -577,9 +657,25 @@ class Reader:
                         self._calls.append(word)
                 with self._lock:
                     self._overs.append(over)
-                    self._tape["wpm"] = over["wpm"]
+                    if show:
+                        self._tape["wpm"] = over["wpm"]
             if not ended:
                 break
+        # (after the reading, not before: a signal looked at only now and then may find its over ended a while ago)
+        if not spans or now - spans[-1][1] > QUIET_S + PAD_S:    # quiet at the end: that much needn't be gone over again
+            keep = int(RATE * (QUIET_S + PAD_S))                  # (or every look would be at more of the same quiet)
+            sig.done = max(sig.done, min(end - keep, a + int(spans[-1][1] * RATE) + int(0.2 * RATE)) if spans else end - keep)
+
+    def _twice(self, t0: float, t1: float, pitch: float, text: str) -> bool:
+        """Has this over been read already, as another signal's? The same stretch of time (half of it or more),
+        and either the same place within APART_HZ or the same words."""
+        for o in reversed(self._overs):
+            if o["t1"] < t0 - 30:
+                break
+            both = min(t1, o["t1"]) - max(t0, o["t0"])
+            if both > 0.5 * min(t1 - t0, o["t1"] - o["t0"]) and (abs(o["pitch"] - pitch) < APART_HZ or "".join(c[0] for c in o["chars"]) == text):
+                return True
+        return False
 
     def _show(self, end: int, pitch: float | None, env: np.ndarray | None, er: float | None, lo: float) -> None:
         tape: list[int] = []
@@ -588,8 +684,9 @@ class Reader:
             n = int(len(env) / er * TAPE_RATE)
             tape = np.clip((np.interp(np.arange(n) / TAPE_RATE, np.arange(len(env)) / er, env) - lo) / (top - lo) * 255, 0, 255).astype(int).tolist()
         with self._lock:
-            self._tape = {"at": round(end / RATE, 3), "pitch": None if pitch is None else round(pitch), "wpm": self._tape.get("wpm"), "env": tape}
-
+            self._tape = {"at": round(end / RATE, 3), "pitch": None if pitch is None else round(pitch), "wpm": self._tape.get("wpm"), "env": tape,
+                          "signals": [{"pitch": round(s.going[0] if s.going else s.pitch), **({"wpm": round(s.going[1], 1)} if s.going else {})}
+                                      for s in self._signals], "most": self.most}
 
 
 def _serve(conn) -> None:
@@ -677,7 +774,7 @@ class Remote:
                     with self._lock:
                         if stop.is_set():
                             break
-                        self._tape = {k: st[k] for k in ("at", "pitch", "wpm", "env")}
+                        self._tape = {k: st[k] for k in ("at", "pitch", "wpm", "env", "signals", "most") if k in st}
                         self._overs.extend(st["overs"])
         except (EOFError, OSError):
             log.error("morse: the reading process has gone (exit code %s)", proc.exitcode)

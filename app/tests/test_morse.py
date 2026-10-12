@@ -242,3 +242,61 @@ def test_word_gaps_follow_the_sender_and_what_is_sent_on_the_air():
     assert _words("CQ DE GW4IMC GW4IM C K", {14: 5.5}) == "CQ DE GW4IMC GW4IMC K"
     assert _words("G4ABC K", {4: 5.5}, frozenset({"G4ABCK"})) == "G4ABC K"          # (K is a word of its own)
     assert _words("ST 73 ES", {1: 5.8}) == "ST 73 ES"
+
+
+def test_every_signal_in_what_is_heard_is_read_not_only_the_strongest() -> None:
+    a = _keyed("CQ CQ DE OH4X OH4X K", 23, 620) * 4000
+    b = _keyed("G4XYZ DE DL1ABC 5NN TU", 28, 1100, lead=2.5) * 2500
+    c = _keyed("CQ TEST M8ODJ M8ODJ", 18, 1750, lead=4.0) * 1500
+    d = _keyed("R2RZ 599 73", 33, 2300, lead=1.5) * 1200
+    x = _hiss(max(map(len, (a, b, c, d))) + int(RATE * 5))
+    for s in (a, b, c, d):
+        x[:len(s)] += s
+    assert morse.tones(x[:int(RATE * 8)], RATE, 4)[0] == morse.strongest_tone(x[:int(RATE * 8)], RATE)
+    assert sorted(round(p / 50) * 50 for p in morse.tones(x[int(RATE * 5):int(RATE * 13)], RATE, 4)) == [600, 1100, 1750, 2300]
+
+    def read(most):
+        r = morse.Reader(most)
+        r.on = True
+        step = int(RATE * morse.STEP_S)
+        for i in range(0, len(x), step):
+            r.take(x[i:i + step])
+            r.step()
+        by: dict[int, str] = {}
+        for o in r.status()["overs"]:
+            by[round(o["pitch"] / 50) * 50] = (by.get(round(o["pitch"] / 50) * 50, "") + " " + _text(o)).strip()
+        return by, r
+    by, r = read(4)
+    assert by == {600: "CQ CQ DE OH4X OH4X K", 1100: "G4XYZ DE DL1ABC 5NN TU", 1750: "CQ TEST M8ODJ M8ODJ", 2300: "R2RZ 599 73"}
+    assert r.status()["most"] == 4 and len(r.status()["signals"]) <= 4
+    one, _ = read(1)                                  # (one at a time, as it used to be: whichever is strongest)
+    assert set(one) < set(by) and 600 in one
+
+
+def test_fewer_signals_are_followed_when_the_reading_cant_keep_up() -> None:
+    a = _keyed("CQ CQ DE OH4X OH4X K", 23, 620) * 4000
+    b = _keyed("G4XYZ DE DL1ABC 5NN TU", 28, 1100) * 2500
+    c = _keyed("CQ TEST M8ODJ M8ODJ", 18, 1750) * 1500
+    x = _hiss(max(map(len, (a, b, c))) + int(RATE * 3))
+    for s in (a, b, c):
+        x[:len(s)] += s
+    r = morse.Reader(4)
+    r.on = True
+    now = [0.0]
+    slow = [2.0]                                      # the reading takes twice as long as the sound lasts: far too slow
+    step = int(RATE * morse.STEP_S)
+
+    def clock():
+        now[0] += slow[0] * morse.STEP_S / 2          # (asked twice a step)
+        return now[0]
+    r._clock = clock
+    for i in range(0, len(x), step):
+        r.take(x[i:i + step])
+        r.step()
+    assert r.most == 1 and len(r.status()["signals"]) == 1          # down to the strongest alone, never none
+    assert any("OH4X" in _text(o) for o in r.status()["overs"])
+    slow[0] = 0.05                                    # a fast processor again: back up to as many as there are
+    for i in range(0, len(x), step):
+        r.take(x[i:i + step])
+        r.step()
+    assert r.most > 1
