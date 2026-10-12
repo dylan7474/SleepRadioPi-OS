@@ -309,8 +309,9 @@ Actions, Sleep timer and Radio folders open:
   and `pictures.py`.
 - **PSK31 and RTTY, read as text.** The *PSK* and *RTTY* keys in a
   receiver's window read the two keyboard modes as they're typed. PSK31,
-  and PSK63 (the same at twice the speed): every signal in what the
-  receiver hears at once, a line each, each at its own speed (the key
+  PSK63 (the same at twice the speed) and QPSK31 (the four-phase kind,
+  with error correction, either way up): every signal in what the
+  receiver hears at once, a line each, each as what it is (the key
   goes to the band's PSK31 frequency, 14.070 MHz on 20 m). RTTY, the radio
   teleprinter: every pair of tones there, up to four at once, each at
   whatever speed and spacing it has -- an amateur contest at 45 baud with
@@ -971,8 +972,6 @@ What's left to do (everything else described here is built and running):
   where your own receiver's reports put you among others', once *Report*
   is on; the weather teleprinters' strength as a yardstick for the lower
   bands by day; and the DJ saying it, at the top of the hour.
-- **QPSK31** — the PSK reader does PSK31 and PSK63 (both BPSK); the
-  four-phase kind, with its error correction, is left. It's seldom heard.
 - **A laser-cut wood cathedral** — a real-wood version of the cathedral case:
   - the face and fretwork cut from walnut-veneered plywood, the sides and
     back from plywood or MDF;

@@ -98,6 +98,82 @@ def test_psk31_and_psk63_side_by_side_each_at_its_own_speed() -> None:
     assert speeds == {800: 31, 1500: 63, 2200: 31}
 
 
+# --- QPSK31 ----------------------------------------------------------------------------------
+
+def test_the_qpsk_code_is_g3plxs() -> None:
+    # (rate 1/2, five bits deep, the polynomials 0x17 and 0x19; bit 0 of what comes out from the first. Noughts all
+    # the way are half turns, as PSK31's idle is, and ones no turn at all.)
+    assert list(psk._QPSK_OUT[:8]) == [0, 3, 1, 2, 1, 2, 0, 3] and psk._QPSK_OUT[16] == 3 and psk._QPSK_OUT[31] == 2
+    assert psk._QPSK_TURN[psk._QPSK_OUT[0]] == -1 and psk._QPSK_TURN[psk._QPSK_OUT[31]] == 1
+    # the bits a run of turns came from are found again, and a few turns spoilt are put right from those around them
+    rng = np.random.default_rng(1)
+    bits = rng.integers(0, 2, 200)
+    sr, turns = 0, []
+    for b in bits:
+        sr = ((sr << 1) | int(b)) & 31
+        turns.append(psk._QPSK_TURN[psk._QPSK_OUT[sr]])
+    turns = np.array(turns)
+    got, agree = psk.qpsk_bits(turns)
+    assert (got[4:] == bits[4:]).all() and agree[4:].all()
+    spoilt = turns.copy()
+    for i in (30, 61, 95, 140):
+        spoilt[i] *= 1j
+    got, agree = psk.qpsk_bits(spoilt)
+    assert (got[4:] == bits[4:]).all() and not agree[[30, 61, 95, 140]].any() and agree.sum() == 196
+
+
+@pytest.mark.parametrize("pitch", [600.0, 1503.7, 2700.0])
+def test_qpsk31_is_read_down_into_the_noise_and_only_the_right_way_up(pitch: float) -> None:
+    text = "CQ CQ CQ de M8ODJ M8ODJ pse k\n"
+    for snr in (10, -6, -9):
+        x = _noisy(psk.qpsk_send(text, RATE, pitch) * 3000, snr)
+        r = psk.read_qpsk(x, RATE, pitch + 1.5)      # (from a little off: it finds the rest)
+        assert _said(r["chars"]) == text and abs(r["pitch"] - pitch) < 1.0 and r["qpsk"] and r["eye"] > 0.9, (pitch, snr)
+        assert psk.read_qpsk(x, RATE, pitch + 1.5, reverse=True)["chars"] == []          # the other sideband's way: nothing
+        assert len(psk.read(x, RATE, pitch + 1.5)["chars"]) <= 1, (pitch, snr)           # ...and as plain PSK31, nothing to speak of
+    x = _noisy(psk.qpsk_send(text, RATE, pitch, reverse=True) * 3000, 0)                # heard in lower sideband
+    assert psk.read_qpsk(x, RATE, pitch - 1.5)["chars"] == [] and _said(psk.read_qpsk(x, RATE, pitch - 1.5, reverse=True)["chars"]) == text
+    assert abs(psk.read_qpsk(x, RATE, pitch - 1.5, reverse=True)["pitch"] - pitch) < 1.0
+
+
+def test_qpsk31_says_nothing_of_psk31_noise_or_a_carrier() -> None:
+    rng = np.random.default_rng(3)
+    n = int(RATE * 8)
+    for seed in range(6):
+        for reverse in (False, True):
+            assert psk.read_qpsk(np.random.default_rng(seed).normal(0, 1000, n), RATE, 1000.0, reverse=reverse)["chars"] == []
+    for snr in (10, -3):                             # plain PSK31: every turn is one of QPSK's four, but they don't make its code
+        x = _noisy(psk.send("CQ CQ de G4XYZ G4XYZ the quick brown fox 599\n", RATE, 1000.0) * 3000, snr)
+        assert psk.read_qpsk(x, RATE, 1001.0)["chars"] == [] and psk.read_qpsk(x, RATE, 1001.0, reverse=True)["chars"] == []
+    tone = 3000 * np.cos(2 * np.pi * 1200 * np.arange(n) / RATE) + rng.normal(0, 300, n)
+    for off in (0.0, 4.0, 7.8, 15.6):                # a whistle, on pitch and at each place its turning looks like one of the four
+        assert psk.read_qpsk(tone, RATE, 1200.0 + off)["chars"] == [], off
+
+
+def test_qpsk31_among_the_others_each_read_as_what_it_is() -> None:
+    rng = np.random.default_rng(5)
+    said = {800: ("psk31", "CQ CQ de M8ODJ M8ODJ pse k\n" * 2), 1500: ("qpsk", "CQ de G4XYZ G4XYZ qpsk test 599 the quick brown fox\n" * 2),
+            2200: ("qpsk-lsb", "DL1ABC de F5ABC ur 599 name is Jean\n" * 2)}
+    n = int(RATE * 34)
+    x = rng.normal(0, 300, n)
+    for pitch, (kind, text) in said.items():
+        y = (psk.send(text, RATE, pitch) if kind == "psk31" else psk.qpsk_send(text, RATE, pitch, reverse=kind == "qpsk-lsb")) * 1500
+        x[int(2 * RATE):int(2 * RATE) + len(y)] += y[:n - int(2 * RATE)]
+    r = keyboard.Reader("psk31")
+    r.on = True
+    step, kinds = int(RATE * keyboard.STEP_S), {}
+    for i in range(0, len(x), step):
+        r.take(x[i:i + step])
+        r.step()
+        kinds.update({s["hz"]: bool(s.get("qpsk")) for s in r.status()["signals"]})
+    lines: dict[int, str] = {}
+    for p in r.status()["pieces"]:
+        lines[p["hz"]] = lines.get(p["hz"], "") + p["text"]
+        assert bool(p.get("qpsk")) == (said[min(said, key=lambda hz: abs(hz - p["hz"]))][0] != "psk31") and p["baud"] == 31
+    assert sorted(lines) == sorted(said) and all(lines[hz] == said[hz][1] for hz in said)
+    assert kinds == {800: False, 1500: True, 2200: True}
+
+
 def test_psk31_says_nothing_of_noise_or_a_carrier() -> None:
     rng = np.random.default_rng(4)
     for _ in range(5):

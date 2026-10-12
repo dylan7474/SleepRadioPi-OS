@@ -1242,7 +1242,19 @@ The cards:
   speed: read at the wrong one PSK31 never makes the "00" that ends a
   letter and PSK63 is filtered away, so nothing comes of it. A piece of
   text and a signal say which (`"baud": 31 | 63`); the page marks a PSK63
-  line.
+  line. QPSK31 (`psk.read_qpsk`, `"qpsk": true`): each symbol turns the
+  phase a quarter turn either way, a half, or not at all, carrying the two
+  outputs of G3PLX's code (rate 1/2, five bits deep, polynomials 0x17 and
+  0x19, checked against fldigi's source) fed with the same Varicode bits.
+  `qpsk_bits` is a Viterbi decoder over the whole eight seconds at once;
+  what's left of a pitch error comes from the turns' fourth power, and
+  which of the four quarters it leaves is the one that makes sense as the
+  code. A letter is said where the text read, coded again, gives back the
+  symbols heard (85% of them, over a second): that test is what tells
+  QPSK31 from plain PSK31, noise and a whistle, none of which says
+  anything. Which way the quarter turns go depends on the sideband, so a
+  new signal that's neither PSK31 nor PSK63 is tried both ways. Clean to
+  about -9 dB on a made signal; not yet heard off the air.
   RTTY (`audio/rtty.py`): two humps 170, 450 or 850 Hz apart with a dip
   between; which tone is there, moment by moment, against a line half way
   between the two tones' own strengths of late (one often fades more than

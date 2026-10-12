@@ -39,6 +39,19 @@ say which it is, so the reader that follows them tries a new one at each
 speed: read at the wrong one, PSK31 never makes the two 0s that end a
 letter and PSK63 is filtered away, so nothing comes of it.
 
+QPSK31 is the four-phase kind, seldom heard: the same speed and width, but
+each symbol turns the phase by a quarter turn either way, a half, or not at
+all, and carries two bits -- not two bits of text, but the two outputs of
+an error-correcting code (rate 1/2, five bits deep: the polynomials 0x17
+and 0x19, as G3PLX's PSK31 has them and fldigi sends them) fed with the
+same Varicode bits. A symbol damaged by noise is put right from those
+around it (qpsk_bits(): a Viterbi decoder, over the whole stretch at once).
+What an error-correcting code gives for free is a test of whether it is
+the mode at all: the text read, coded again, must give back the symbols
+heard. Where it does, nearly symbol for symbol, the letters are said; a
+plain PSK31 signal, noise or a whistle doesn't. Which way the quarter turns
+go depends on the sideband: read_qpsk(reverse=True) is the other.
+
 read() does one signal in a stretch of sound; the reader that follows a
 band of them over time is audio/keyboard.py.
 """
@@ -57,6 +70,12 @@ EYE_MIN = 0.80               # the eye a stretch must have to be said (noise: 0.
 TURNS_MIN = 0.85             # a tone that hardly ever turns is a carrier (a whistle), not PSK31: text turns for a third of its bits
 DIP_MAX = 0.55               # ...and at a turn the strength must dip (to nothing, on a clean signal): under this much of itself
 EYE_OVER = 33                # ...taken over this many symbols, about a second of PSK31 (noise alone then strays to 0.8 very seldom)
+
+QPSK_AGREE_MIN = 0.85        # QPSK: of the symbols about a letter, this share must be what the text read codes back to (noise: about a third)
+QPSK_FOURTH_MIN = 0.35       # ...and worth trying at all only if the phase steps keep to four places (their fourth power agrees with itself)
+# what the code puts out for each five bits (the newest lowest): bit 0 from 0x17, bit 1 from 0x19
+_QPSK_OUT = np.array([(bin(0x17 & i).count("1") & 1) | ((bin(0x19 & i).count("1") & 1) << 1) for i in range(32)])
+_QPSK_TURN = np.array([-1, 1j, 1, -1j])      # the turn of phase each of the four makes, heard in upper sideband (0: a half turn, as PSK31's idle)
 
 # Varicode (G3PLX): the bits of each character, by its ASCII number
 _VARICODE = """1010101011 1011011011 1011101101 1101110111 1011101011 1101011111 1011101111 1011111101
@@ -214,6 +233,116 @@ def read(x: np.ndarray, rate: float, pitch: float, baud: float = BAUD) -> dict:
             c = VARICODE.get("".join(map(str, run)))
             if c in PRINTS and good[start:i + 1].all():
                 chars.append((c, float(when[i]), float(np.min(sure[start:i + 1]))))
+            run, start = [], None
+    out["chars"] = chars
+    return out
+
+
+# --- QPSK31 --------------------------------------------------------------------------------
+
+def qpsk_send(text: str, rate: float, pitch: float, lead: int = 24, baud: float = BAUD, reverse: bool = False) -> np.ndarray:
+    """text as QPSK31 at this pitch (amplitude 1), as heard in upper sideband (reverse: in lower). For the tests."""
+    bits = [0] * lead + [int(b) for c in text for b in ENCODE[c] + "00"] + [0] * lead
+    turns, sr = [], 0
+    for b in bits:
+        sr = ((sr << 1) | b) & 31
+        turns.append(_QPSK_TURN[_QPSK_OUT[sr]])
+    turns = np.array(turns)
+    if reverse:
+        turns = np.conj(turns)
+    phase = np.concatenate(([1 + 0j], np.cumprod(turns)))          # where the phase is in each symbol
+    sps = rate / baud
+    n = int(len(bits) * sps)
+    t = np.arange(n) / sps
+    k = np.minimum(t.astype(int), len(bits) - 1)
+    w = (1 + np.cos(np.pi * (t - k))) / 2            # from one to the next, as a raised cosine (a half turn goes through nothing)
+    z = phase[k] * w + phase[k + 1] * (1 - w)
+    return np.real(z * np.exp(2j * np.pi * pitch * np.arange(n) / rate))
+
+
+def qpsk_bits(d: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+    """The turns of phase d (complex, one a symbol, as _QPSK_TURN has them) -> (the bits the code was fed, most
+    likely; for each symbol, whether those bits coded again give the turn nearest to what was heard)."""
+    n = len(d)
+    like = np.real(d[:, None] * np.conj(_QPSK_TURN)[None, :])          # how like each of the four each turn is
+    states = np.arange(16)
+    came = np.stack([((states << 1) | b) & 31 for b in (0, 1)])        # the five bits arrived at, from each state with each bit
+    out, nxt = _QPSK_OUT[came], came & 15
+    # (what comes into each state: from which two states, with which bit)
+    prev = np.zeros((16, 2), int)
+    for s0 in states:
+        for b in (0, 1):
+            t = nxt[b, s0]
+            prev[t, s0 >> 3] = s0                   # (the oldest bit of where it came from tells the two apart)
+    bit_in = states & 1
+    score = np.zeros(16)
+    back = np.zeros((n, 16), np.int8)
+    for i in range(n):
+        cand = score[prev] + like[i][out[bit_in[:, None], prev]]
+        back[i] = np.argmax(cand, axis=1)
+        score = cand[states, back[i]]
+        score -= score.max()
+    st = int(np.argmax(score))
+    bits, turned = np.zeros(n, np.int8), np.zeros(n, np.int8)
+    for i in range(n - 1, -1, -1):
+        bits[i] = st & 1
+        p = prev[st, back[i, st]]
+        turned[i] = _QPSK_OUT[((p << 1) | (st & 1)) & 31]
+        st = int(p)
+    return bits, turned == np.argmax(like, axis=1)
+
+
+def read_qpsk(x: np.ndarray, rate: float, pitch: float, baud: float = BAUD, reverse: bool = False) -> dict:
+    """The QPSK31 at about this pitch in x (heard in upper sideband; reverse: lower) -> as read(), with "agree" (the
+    share of symbols that are what the text read codes back to: the best second of it) for "eye", and "qpsk":
+    True. Only the letters sent while that was QPSK_AGREE_MIN or better."""
+    out = {"pitch": pitch, "baud": baud, "qpsk": True, "reverse": reverse, "eye": 0.0, "level": 0.0, "chars": []}
+    s, when, _ = _symbols(x, rate, pitch, baud)
+    if len(s) < 32:
+        return out
+    d = s[1:] * np.conj(s[:-1])
+    if reverse:
+        d = np.conj(d)
+    fourth = np.sum(d ** 4)
+    if abs(fourth) < QPSK_FOURTH_MIN * float(np.sum(np.abs(d) ** 4)):      # (not four places: noise, or something else)
+        return out
+    turn = float(np.angle(fourth)) / 4               # what's left of a pitch error turns them all alike: to within a quarter turn...
+    best = None
+    for quarter in range(4):                         # ...and which quarter is the one that makes sense as the code
+        dq = d * np.exp(-1j * (turn + quarter * np.pi / 2))
+        bits, agree = qpsk_bits(dq)
+        if best is None or agree.mean() > best[2].mean():
+            best = (quarter, bits, agree)
+    quarter, bits, agree = best
+    off = (turn + quarter * np.pi / 2) / (2 * np.pi)
+    off = (off + 0.5) % 1.0 - 0.5                    # (as a pitch error, the short way round)
+    mag = np.abs(d) + 1e-12
+    box = np.ones(min(int(round(EYE_OVER * baud / BAUD)), len(d)))
+    near = np.convolve(agree.astype(float), box, "same") / np.convolve(np.ones(len(d)), box, "same")
+    good = near >= QPSK_AGREE_MIN
+    if good.any():                                   # (and nothing once the signal has dropped away)
+        power = np.convolve(mag, np.ones(8) / 8, "same")
+        good &= power >= 0.25 * np.median(power[good])
+    out.update(pitch=float(pitch + (-off if reverse else off) * baud), eye=float(near.max()),
+               level=float(np.sqrt(np.mean(np.abs(s[1:][good]) ** 2))) if good.any() else 0.0)
+    if not good.any():
+        return out
+    chars, run, start, zeros = [], [], None, 0       # letters, as read() finds them
+    for i, b in enumerate(bits):
+        if b:
+            if zeros >= 2 and not run:
+                start = i
+            if zeros == 1 and run:
+                run.append(0)
+            if start is not None:
+                run.append(1)
+            zeros = 0
+            continue
+        zeros += 1
+        if zeros == 2 and run:
+            c = VARICODE.get("".join(map(str, run)))
+            if c in PRINTS and good[start:i + 1].all():
+                chars.append((c, float(when[i]), float(near[start:i + 1].min())))
             run, start = [], None
     out["chars"] = chars
     return out

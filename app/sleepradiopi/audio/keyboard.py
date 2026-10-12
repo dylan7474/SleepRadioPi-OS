@@ -8,7 +8,8 @@ or two, and what's new since the last look is passed on.
     to PSK_MOST). Each is a track, known by its pitch and its speed; a track
     nothing has come from for a while is dropped, and a new one has to say
     a few letters before it's believed. A new signal is tried at each speed
-    (read at the wrong one it says nothing: see audio/psk.py).
+    (read at the wrong one it says nothing: see audio/psk.py), and, if it
+    says nothing as either, as QPSK31, the four-phase kind, each way up.
   * RTTY: every signal there, too (up to RTTY_MOST: in a contest there are
     a dozen side by side), each a track known by its tones. Once one
     frames, its tones, speed and sense are kept (so reading on costs a
@@ -118,7 +119,7 @@ class Reader:
 
     def status(self, since: int = 0) -> dict:
         """{"on", "mode", "at" (s of sound heard), "signals": [{"hz", ...}] (being read now: PSK with "baud" 31 or 63,
-        RTTY with "shift", "baud", "mark_high", "framed"), "pieces": [{"n", "hz", "baud"? (PSK: 31 or 63), "t0", "t1",
+        RTTY with "shift", "baud", "mark_high", "framed"), "pieces": [{"n", "hz", "baud"? (PSK: 31 or 63), "qpsk"? (the four-phase kind), "t0", "t1",
         "text"}] after number since}"""
         with self._lock:
             return {"on": self.on, "mode": self.mode, "at": round(self._at, 2), "signals": list(self._signals),
@@ -157,9 +158,13 @@ class Reader:
         pieces, seen = [], []
         for hz, track in pitches:
             if track is not None:
-                r = psk.read(x, RATE, hz, track["baud"])
+                r = psk.read_qpsk(x, RATE, hz, track["baud"], track["reverse"]) if track.get("qpsk") else psk.read(x, RATE, hz, track["baud"])
             else:                                    # a new one: which speed is it? The one that says the more
                 r = max((psk.read(x, RATE, hz, baud) for baud in psk.BAUDS), key=lambda r: len(r["chars"]))
+                if len(r["chars"]) < PSK_FIRST:      # ...or neither: the four-phase kind, then, one way up or the other
+                    q = max((psk.read_qpsk(x, RATE, hz, reverse=rev) for rev in (False, True)), key=lambda r: len(r["chars"]))
+                    if len(q["chars"]) >= PSK_FIRST:
+                        r = q
             if any(abs(r["pitch"] - s) < PSK_SAME_HZ for s in seen):      # (two finds of the one signal)
                 continue
             if track is None:
@@ -169,16 +174,19 @@ class Reader:
             if track is None:
                 if len(chars) < PSK_FIRST or len(self._tracks) >= PSK_MOST:
                     continue
-                track = {"hz": r["pitch"], "baud": r["baud"], "done": t0, "last": end, "eye": r["eye"]}
+                track = {"hz": r["pitch"], "baud": r["baud"], "done": t0, "last": end, "eye": r["eye"],
+                         **({"qpsk": True, "reverse": r["reverse"]} if r.get("qpsk") else {})}
                 self._tracks.append(track)
             seen.append(r["pitch"])
             if r["chars"]:
                 track.update(hz=r["pitch"], eye=r["eye"])
             if chars:
                 track.update(done=chars[-1][1], last=end)
-                pieces.append({"hz": round(track["hz"]), "baud": psk.NAMES[track["baud"]], "t0": round(chars[0][1], 2), "t1": round(chars[-1][1], 2), "text": "".join(c for c, _ in chars)})
+                pieces.append({"hz": round(track["hz"]), "baud": psk.NAMES[track["baud"]], **({"qpsk": True} if track.get("qpsk") else {}),
+                               "t0": round(chars[0][1], 2), "t1": round(chars[-1][1], 2), "text": "".join(c for c, _ in chars)})
             track["done"] = max(track["done"], t0)   # (what has gone from the window is done with)
-        return pieces, [{"hz": round(t["hz"]), "baud": psk.NAMES[t["baud"]], "eye": round(t["eye"], 2)} for t in sorted(self._tracks, key=lambda t: t["hz"])]
+        return pieces, [{"hz": round(t["hz"]), "baud": psk.NAMES[t["baud"]], "eye": round(t["eye"], 2), **({"qpsk": True} if t.get("qpsk") else {})}
+                        for t in sorted(self._tracks, key=lambda t: t["hz"])]
 
     def _teleprinter(self, x: np.ndarray, t0: float, end: float) -> tuple[list[dict], list[dict]]:
         upto = end - MARGIN_S

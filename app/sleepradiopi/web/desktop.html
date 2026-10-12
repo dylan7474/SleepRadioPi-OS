@@ -2406,7 +2406,7 @@ function rigKbKeys(R, k) {
       const to = D.ftGo && ftWhere(R, mode, KB_PSK), sideband = (D.on(R) ? R.st.mode || R.st.receiving?.mode : null) === "usb";
       if (!to) return toast("PSK31 reader on. Tune this receiver to a band's PSK31 frequency in USB: on 20 m that's 14.070 MHz.", false, null, true);
       if (!(sideband && Math.abs((D.tuned(R) || 0) - to.hz) < 5 && rigOnRadio(R))) await D.ftGo(R, to.hz);
-      toast(`PSK31 reader on, ${to.band}: every signal in what the receiver hears is read at once, a line each, PSK63 as well.`, false, null, true);
+      toast(`PSK31 reader on, ${to.band}: every signal in what the receiver hears is read at once, a line each, PSK63 and QPSK31 as well.`, false, null, true);
     } catch (e) { rigOops(e); } }, mode === "psk31" ? "Read PSK31 and PSK63 as text: go to the band's PSK31 frequency and read every signal there at once" : "Read RTTY (radio teleprinter) as text: every pair of tones in what the receiver is playing, up to four at once");
   return [key("psk31"), key("rtty")];
 }
@@ -2418,8 +2418,8 @@ function kbLog(p, st) {
   v.hz = p.hz;
   p.text.replace(/\r\n?/g, "\n").split("\n").forEach((part, i) => {
     let l = KB.lines.findLast(l => Math.abs(l.hz - p.hz) <= KB_SAME_HZ);
-    if (i || !l || p.t0 - l.t1 > 20 || l.text.length > 240) { if (!part && i) return void (l && (l.closed = true)); KB.lines.push(l = { id: ++KB.line, hz: p.hz, baud: p.baud, when, hue: v.hue, text: "", t1: p.t1 }); }
-    else if (l.closed) { KB.lines.push(l = { id: ++KB.line, hz: p.hz, baud: p.baud, when, hue: v.hue, text: "", t1: p.t1 }); }
+    if (i || !l || p.t0 - l.t1 > 20 || l.text.length > 240) { if (!part && i) return void (l && (l.closed = true)); KB.lines.push(l = { id: ++KB.line, hz: p.hz, baud: p.baud, qpsk: p.qpsk, when, hue: v.hue, text: "", t1: p.t1 }); }
+    else if (l.closed) { KB.lines.push(l = { id: ++KB.line, hz: p.hz, baud: p.baud, qpsk: p.qpsk, when, hue: v.hue, text: "", t1: p.t1 }); }
     l.text += part; l.t1 = p.t1; l.hz = p.hz;
   });
   KB.lines = KB.lines.filter(l => l.text.trim() || l === KB.lines[KB.lines.length - 1]).slice(-KB_LINES);
@@ -2435,10 +2435,10 @@ async function kbPoll() {
   } catch (e) { /* the next one will do */ }
   KB.busy = false;
 }
-const kbWho = l => `${new Date(l.when).toLocaleTimeString("en-GB")} ${String(l.hz).padStart(4)} Hz${l.baud === 63 ? " ·63" : ""}`;
+const kbWho = l => `${new Date(l.when).toLocaleTimeString("en-GB")} ${String(l.hz).padStart(4)} Hz${l.qpsk ? " ·Q" : ""}${l.baud === 63 ? " ·63" : ""}`;
 function kbRow(l) {
   const text = el("span", { className: "rtext" });
-  const row = el("div", { className: "rline", title: l.baud === 63 ? "PSK63: the same as PSK31 at twice the speed" : "" }, el("span", { className: "rwho", textContent: kbWho(l) }), text);
+  const row = el("div", { className: "rline", title: l.qpsk ? "QPSK31: the four-phase kind, with error correction" : l.baud === 63 ? "PSK63: the same as PSK31 at twice the speed" : "" }, el("span", { className: "rwho", textContent: kbWho(l) }), text);
   row.style.setProperty("--hue", CW_HUES[l.hue]);
   for (const w of l.text.split(/(\s+)/)) {           // a callsign among the words is picked out (a teleprinter's are in capitals already)
     const call = w.toUpperCase().replace(/^[^A-Z0-9]+|[^A-Z0-9/]+$/g, "");
@@ -2459,7 +2459,7 @@ function kbDraw(R) {
   d.kbsays.textContent = !here ? "" : mode === "rtty"
     ? (sig.length === 1 ? `${sig[0].baud} baud · ${sig[0].shift} Hz apart, about ${sig[0].hz} Hz · ${Math.round(sig[0].framed * 100)}% framed`
       : sig.length ? `${sig.length} signals: ${sig.map(s => `${s.hz} Hz (${Math.round(s.baud)} baud, ${s.shift} apart)`).join(", ")}` : "no teleprinter signal")
-    : (sig.length ? `${sig.length} signal${sig.length === 1 ? "" : "s"}: ${sig.map(s => s.hz + (s.baud === 63 ? " (PSK63)" : "")).join(", ")} Hz` : "no PSK31 or PSK63 signal");
+    : (sig.length ? `${sig.length} signal${sig.length === 1 ? "" : "s"}: ${sig.map(s => s.hz + (s.qpsk ? " (QPSK31)" : s.baud === 63 ? " (PSK63)" : "")).join(", ")} Hz` : "no PSK31, PSK63 or QPSK31 signal");
   const box = d.kbcopy, said = !here ? `Listen to this receiver, and the ${KB_NAMES[mode]} in what it plays is read here.` : !KB.lines.length ? `Listening for ${KB_NAMES[mode]}…` : "";
   if (said) { if (box.dataset.said !== said) { box.dataset.said = said; box.replaceChildren(el("span", { className: "rnone", textContent: said })); } return; }
   if (box.dataset.said) { box.dataset.said = ""; box.replaceChildren(); }
