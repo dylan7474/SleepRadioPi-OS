@@ -401,3 +401,24 @@ def test_the_survey_from_the_web(tmp_path: Path, monkeypatch) -> None:
     finally:
         httpd.shutdown()
         httpd.server_close()
+
+
+def test_a_bands_week_one_finding_an_hour(tmp_path: Path) -> None:
+    radio = _Radio()
+    job = _job(radio)
+    file = tmp_path / "survey.json"
+    job.keep_in(file)
+    place = survey.clean_places(PLACES[:1])
+    hour0 = (T0 // 3600 + 1) * 3600                   # (the top of an hour)
+    for n, at in ((3, hour0 + 60), (5, hour0 + 1800), (2, hour0 + 3000), (4, hour0 + 3 * 86400), (1, hour0 + 8 * 86400)):
+        radio.HEARD = {7_074_000: [{"snr": 0.0, "dt": 0.5, "hz": 800 + i, "text": f"CQ G{i}ABC IO91"} for i in range(n)]}
+        radio.at = at
+        job.start(RX, place, "itself")
+        job._thread.join(30)
+    assert "week" not in job.found(RX)["ft8:40 m"]                       # (not sent to the page with every look)
+    week = job.found(RX, week=True)["ft8:40 m"]["week"]
+    assert [n for _, n in week] == [4, 1]                                # the first hour's three rounds (most: 5) are over a week old now
+    kept = json.loads(file.read_text())["found"][RX]["ft8:40 m"]["week"]
+    again = survey.Job(clock=radio.clock)
+    again.keep_in(file)
+    assert again.found(RX, week=True)["ft8:40 m"]["week"] == [[float(t), n] for t, n in kept]

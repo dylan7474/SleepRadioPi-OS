@@ -436,7 +436,7 @@ def make_handler(station: Station, output: Mp3Output, speaker=None,
                 from sleepradiopi.playback import conditions as conditions_mod, survey as survey_mod
                 # With no receiver named: the one surveyed latest. "say_every_h": how often the DJ says it (0: never).
                 base = parse_qs(urlparse(self.path).query).get("base", [""])[0].rstrip("/")
-                found = survey_mod.job.found(base) if base else {}
+                found = survey_mod.job.found(base, week=True) if base else {}
                 if not base:
                     base, found = conditions_mod.freshest(survey_mod.job)
                 out = conditions_mod.summary(found, ft8_mod.reader.heard()["heard"], time.time())

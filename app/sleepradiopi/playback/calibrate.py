@@ -160,6 +160,18 @@ def weather(x: np.ndarray, rate: float = AUDIO_RATE) -> float | None:
     return (middle(found[0]) + middle(found[0] + 450.0)) / 2
 
 
+def strength(x: np.ndarray, middle: float, rate: float = AUDIO_RATE) -> float | None:
+    """How strong a weather teleprinter is: its two tones (225 Hz either side of middle) over the noise between
+    300 and 2700 Hz, in dB. None if that can't be told (silence)."""
+    f, p = spectrum(x, rate, 8192)
+    band = (f > 300) & (f < 2700)
+    floor = float(np.median(p[band])) if band.any() else 0.0
+    tones = [float(p[(f > t - 40) & (f < t + 40)].max(initial=0.0)) for t in (middle - 225.0, middle + 225.0)]
+    if floor <= 0 or max(tones) <= 0:
+        return None
+    return round(10 * float(np.log10(max(tones) / floor)), 1)
+
+
 def fit(points: list[tuple[int, float]], ppm: int, trim: int, shift_hz: int, line_from: int = LINE_FROM) -> dict:
     """What the measurements ask for. points: [(the station's frequency Hz, how far above where it should be its
     tone was, Hz)]; ppm, trim, shift_hz: the receiver's settings they were taken with (shift: its upconverter).

@@ -355,7 +355,16 @@ Actions, Sleep timer and Radio folders open:
   which parts of the world they're in -- and from who's been heard in the
   last hour on the band you're listening to; it says when a band has
   opened or closed since the last look, and with the survey set to go by
-  itself it keeps itself up to date. Under it, what the sun is doing, from
+  itself it keeps itself up to date. After a few days of that it also
+  knows what's usual: the survey keeps a week of each band, and a band
+  well up or down on the same hour of the days before says so ("Better
+  than usual for this hour: about 6 on the last 3 days"), as do the bands
+  all together. A second yardstick is the German weather service's
+  teleprinters: always on, from near Hamburg, on a few frequencies from
+  4.6 to 14.5 MHz, so how strong each is ("strong on 7.6 MHz, fair on 10.1
+  MHz, not heard on 4.6 MHz") says how those parts of the short waves are
+  carrying even when no amateurs are about; the survey by itself now
+  listens to them too. Under it, what the sun is doing, from
   NOAA when there's internet: the solar flux, the K index, and any radio
   blackout or geomagnetic storm, each with what it means for the bands.
   It's how the bands are *here*, with this aerial, not a forecast. It's
@@ -1011,10 +1020,9 @@ What's left to do (everything else described here is built and running):
   Zero 2 W first).
 - **Band conditions: more of it** — *How the bands are* says it from the
   last survey and the last hour's listening, in the Bands window or by
-  the DJ. Still to do: how today compares with the last few days (only a
-  day of each band is kept); where your own receiver's reports put you
-  among others', once *Report* is on; the weather teleprinters' strength
-  as a yardstick for the lower bands by day.
+  the DJ, against the same hour on the days before, with the weather
+  teleprinters' strength as a second yardstick. Still to do: where your
+  own receiver's reports put you among others', once *Report* is on.
 - **A laser-cut wood cathedral** — a real-wood version of the cathedral case:
   - the face and fretwork cut from walnut-veneered plywood, the sides and
     back from plywood or MDF;

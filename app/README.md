@@ -1336,7 +1336,21 @@ The cards:
   America, Africa, Asia or Australia and the Pacific; a part with one
   station in ten, or two, is named); "only round about" when nobody is
   past 1,500 km; and "busier", "quieter", "has opened" or "has closed"
-  against the survey before. Then one sentence for the lot. A band the
+  against the survey before. *Than usual*: the survey keeps a week of
+  each place, one finding an hour (`"week"`, the most heard in the hour;
+  left out of `/api/rx/survey`, which the page asks every two seconds);
+  `conditions.usual()` is the mean over the earlier days surveyed within
+  an hour and a half of this time of day, said once there are two such
+  days and the band is 1.6 times that or that fraction of it (`"usual"`,
+  `"days"`, `"than_usual"` on each band, and `"than_usual"` for the bands
+  all together). *The weather teleprinters* (`"weather"`:
+  `conditions.yardstick()`): the survey measures each one's two tones
+  over the noise (`calibrate.strength()`, the place's `"db"`), and it's
+  said strong (25 dB or more), fair (12), weak or not heard, the lowest
+  frequency first; those two figures are first guesses, from one
+  recording that measured 42 dB. The page's *By itself* plan includes the
+  weather places from now on (choose it again to add them to a plan made
+  before). Then one sentence for the lot. A band the
   survey hasn't covered lately is said from the heard list instead ("10
   stations in the last hour"). `"sun"` is NOAA's Space Weather Prediction
   Center's figures (`conditions.Sun`: the planetary K index, the 10.7 cm

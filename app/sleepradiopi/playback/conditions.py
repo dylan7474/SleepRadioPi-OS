@@ -16,10 +16,19 @@ guesses; what's on the air is the fact, and the radio already gathers it:
 
 summary() puts them together, a band at a time: how good ("good", "fair",
 "poor", "nothing heard"), where it's open to (the parts of the world the
-stations are in, most first), how far, how that compares with a while ago,
-and a sentence that says so: "20 m is good: open to Europe and North
+stations are in, most first), how far, how that compares with a while ago
+and with the same hour on the days before (usual(): the survey keeps a
+week of each band, an hour apart), and a sentence that says so: "20 m is good: open to Europe and North
 America, 16 stations, the farthest 5,516 km." What's heard depends on the
 aerial and the receiver as much as the band: it's how the bands are *here*.
+
+The weather teleprinters are a second yardstick (yardstick()): the German
+weather service sends from near Hamburg, all day and night, on the same
+few frequencies between 4.5 and 15 MHz with the same power. A ham band is
+only as busy as the people on it; these are always there, so how strong
+each is says how that part of the short waves is carrying from there to
+here -- by day especially, when the lower ham bands are quiet for want of
+people as much as of propagation. The survey measures each (its "db").
 
 The sun's part comes from outside, when there's internet: NOAA's Space
 Weather Prediction Center publishes the solar flux (how busy the sun is:
@@ -58,6 +67,9 @@ FRESH_S = 2 * 3600.0         # a survey this old still says how a band is
 HEARD_S = 3600.0             # ...and who's been heard in the last hour does
 GOOD, FAIR = 15, 5           # stations in one FT8 slot: this many is a good band, this many a fair one
 NEAR_KM = 1500               # everybody nearer than this: the band is open, but only round about
+USUAL_DAYS = 2               # this many earlier days must have been surveyed at about this hour to say what's usual
+USUAL_NEAR_S = 5400.0        # ..."about this hour": within an hour and a half of it
+USUAL_BY = 1.6               # this many times the usual (or that fraction of it) is better (or poorer) than usual
 REGIONS = {"EU": "Europe", "NA": "North America", "SA": "South America", "AF": "Africa", "AS": "Asia", "OC": "Australia and the Pacific"}
 K_URL = "https://services.swpc.noaa.gov/products/noaa-planetary-k-index.json"
 FLUX_URL = "https://services.swpc.noaa.gov/products/summary/10cm-flux.json"
@@ -111,9 +123,32 @@ def _and(names: list[str]) -> str:
     return names[0] if len(names) == 1 else ", ".join(names[:-1]) + " and " + names[-1]
 
 
-def band_says(band: str, n: int, km: int | None, to: dict[str, int] | None, before: int | None = None, hour: int | None = None) -> dict:
-    """One band, from a count of stations in one slot -> {"band", "state", "n", "km"?, "to": [...], "says"}.
-    hour: it's from the list of who's been heard, and this many were in the last hour (said so)."""
+def usual(week: list, t: float) -> tuple[float, int] | None:
+    """How many stations a band usually has at this hour: the mean, over the earlier days it was surveyed within
+    USUAL_NEAR_S of this time of day, of what was heard then -> (that, how many days), or None with too few days."""
+    days: dict[int, list[int]] = {}
+    for at, n in week:
+        ago = t - at
+        d = round(ago / 86400)
+        if d >= 1 and abs(ago - d * 86400) <= USUAL_NEAR_S:
+            days.setdefault(d, []).append(n)
+    if len(days) < USUAL_DAYS:
+        return None
+    return sum(sum(v) / len(v) for v in days.values()) / len(days), len(days)
+
+
+def than_usual(n: float, norm: float) -> str:
+    """"better", "poorer" or "usual": n against what's usual (small numbers either way are neither)."""
+    if max(n, norm) < FAIR:
+        return "usual"
+    return "better" if n >= USUAL_BY * norm else "poorer" if n * USUAL_BY <= norm else "usual"
+
+
+def band_says(band: str, n: int, km: int | None, to: dict[str, int] | None, before: int | None = None, hour: int | None = None,
+              norm: tuple[float, int] | None = None) -> dict:
+    """One band, from a count of stations in one slot -> {"band", "state", "n", "km"?, "to": [...], "says",
+    "usual"? (stations at this hour on the days before), "days"? (how many of them), "than_usual"?}.
+    hour: it's from the list of who's been heard, and this many were in the last hour (said so). norm: usual()."""
     state = "good" if n >= GOOD else "fair" if n >= FAIR else "poor" if n else "nothing heard"
     where = _to(to or {})
     if not n:
@@ -130,7 +165,13 @@ def band_says(band: str, n: int, km: int | None, to: dict[str, int] | None, befo
         says += " Busier than it was." if n > before else " Quieter than it was."
     elif before is not None and bool(n) != bool(before) and max(n, before) >= 3:
         says += " It has opened." if n else " It has closed."
-    return {"band": band, "state": state, "n": n, **({"km": km} if km else {}), "to": where, "says": says}
+    extra = {}
+    if norm is not None:
+        extra = {"usual": round(norm[0], 1), "days": norm[1], "than_usual": than_usual(n, norm[0])}
+        if extra["than_usual"] != "usual":
+            says += (f" {'Better' if extra['than_usual'] == 'better' else 'Poorer'} than usual for this hour: "
+                     f"about {round(norm[0])} on the last {norm[1]} days.")
+    return {"band": band, "state": state, "n": n, **({"km": km} if km else {}), "to": where, "says": says, **extra}
 
 
 def summary(found: dict, heard: list[dict], now: float) -> dict:
@@ -143,7 +184,8 @@ def summary(found: dict, heard: list[dict], now: float) -> dict:
         if mode != "ft8" or band not in BANDS or now - f.get("t", 0) > FRESH_S:
             continue
         day = [d for d in f.get("day", []) if d[0] < f["t"] - 60]
-        bands[band] = {**band_says(band, int(f["n"]), f.get("km"), f.get("to"), day[-1][1] if day else None), "t": f["t"], "by": "survey",
+        bands[band] = {**band_says(band, int(f["n"]), f.get("km"), f.get("to"), day[-1][1] if day else None,
+                                   norm=usual(f.get("week", []), f["t"])), "t": f["t"], "by": "survey",
                        **({"day": f["day"]} if len(f.get("day", [])) > 1 else {})}
     by_band: dict[str, list[dict]] = {}
     for h in heard:                                  # (the reader hears a band for as long as it's listened to: more stations than one slot's)
@@ -170,7 +212,40 @@ def summary(found: dict, heard: list[dict], now: float) -> dict:
         closed = [b["band"] for b in order if not b["n"]]
         if closed:
             says += f" Nothing on {_and(closed)}."
-    return {"bands": order, "says": says, "t": max((b["t"] for b in order), default=None)}
+    known = [b for b in order if "usual" in b]         # all the bands together, against the same hour on the days before
+    overall = than_usual(sum(b["n"] for b in known), sum(b["usual"] for b in known)) if len(known) >= 2 else None
+    if overall in ("better", "poorer"):
+        says += f" The bands are {'better' if overall == 'better' else 'poorer'} than usual for this hour."
+    steady = yardstick(found, now)
+    return {"bands": order, "says": says, "t": max((b["t"] for b in order), default=None), **({"than_usual": overall} if overall else {}),
+            **({"weather": steady} if steady else {})}
+
+
+STRONG_DB, FAIR_DB = 25.0, 12.0      # a weather teleprinter's tones this far over the noise: strong, fair (else weak)
+
+
+def yardstick(found: dict, now: float) -> dict | None:
+    """The weather teleprinters as the survey last found them -> {"at": [{"khz", "n", "db"?, "state": "strong" |
+    "fair" | "weak" | "not heard", "t"}], "says"}, the lowest frequency first; None if none was listened to lately."""
+    at = []
+    for key, f in found.items():
+        kind, _, khz = key.partition(":")
+        if kind != "wx" or now - f.get("t", 0) > FRESH_S:
+            continue
+        try:
+            khz = float(khz)
+        except ValueError:
+            continue
+        db = f.get("db")
+        state = "not heard" if not f.get("n") else "strong" if (db or 0) >= STRONG_DB else "fair" if (db or 0) >= FAIR_DB else "weak" if db is not None else "heard"
+        at.append({"khz": khz, "n": int(f.get("n", 0)), **({"db": db} if db is not None else {}), "state": state, "t": f["t"]})
+    if not at:
+        return None
+    at.sort(key=lambda a: a["khz"])
+    mhz = lambda a: f"{a['khz'] / 1000:.1f}"
+    groups = [(state, [mhz(a) for a in at if a["state"] == state]) for state in ("strong", "fair", "weak", "heard", "not heard")]
+    parts = [f"{state} on {_and(where)} MHz" for state, where in groups if where]
+    return {"at": at, "says": "The German weather teleprinters, a steady signal from Hamburg: " + ", ".join(parts) + "."}
 
 
 def sun_says(flux: float | None, k: float | None, scales: dict | None = None) -> str:
@@ -273,7 +348,7 @@ def freshest(job) -> tuple[str | None, dict]:
     """The receiver whose survey is the latest, and what it found: (its address, survey.Job.found() of it)."""
     best, when, found = None, 0.0, {}
     for base in job.bases():
-        f = job.found(base)
+        f = job.found(base, week=True)
         t = max((v.get("t", 0) for k, v in f.items() if k.startswith("ft8:")), default=0)
         if t > when:
             best, when, found = base, t, f
@@ -304,6 +379,8 @@ def spoken(s: dict, sun_now: dict | None = None) -> str | None:
         rest = [_metres(b["band"]).replace(" metres", "") for b in live[2:]]
         if rest:
             said.append(f"Also open: {_and(rest)} metres.")
+    if s.get("than_usual") in ("better", "poorer"):
+        said.append(f"The bands are {s['than_usual']} than usual for this time of day.")
     if sun_now:
         flux, k = sun_now.get("flux"), sun_now.get("k")
         words = []

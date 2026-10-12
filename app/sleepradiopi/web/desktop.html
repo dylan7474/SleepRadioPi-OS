@@ -2658,6 +2658,8 @@ const condAge = t => { const m = Math.round((Date.now() / 1000 - t) / 60); retur
 const condLines = cond => [
   el("p", { id: "cond-says", style: "font-weight:700;margin:2px 0 6px", textContent: cond.says }),
   ...cond.bands.filter(b => b.n).map(b => el("p", { className: "note", style: "margin:2px 0", textContent: b.says + (b.by === "heard" ? " (from who's been heard)" : ""), title: `As of ${condAge(b.t)}` })),
+  ...(cond.weather ? [el("p", { className: "note", id: "cond-weather", style: "margin:6px 0 0", textContent: cond.weather.says,
+    title: cond.weather.at.map(a => `${a.khz} kHz: ${a.state}${a.db != null ? ` (${a.db} dB over the noise)` : ""}, ${condAge(a.t)}`).join(" · ") })] : []),
   ...(cond.sun ? [el("p", { className: "note", id: "cond-sun", style: "margin:6px 0 0", textContent: "The sun: " + cond.sun.says, title: `From NOAA's Space Weather Prediction Center, ${condAge(cond.sun.t)}` })] : [])];
 // Conditions: how the bands are, in sentences, from this receiver's survey and who's been heard (playback/conditions.py),
 // with the sun's figures from NOAA. Asked for when the window opens and every so often while it's open.
@@ -4486,10 +4488,10 @@ const UI = {
               : line(sbtn("FT8 on every band", go(["ft8"]), "primary"), sbtn("Everything", go(["ft8", "ft4", "psk31", "rtty"], true)),
                      ...(own ? [sbtn("Find Morse and teleprinters", go([], true)), (() => {             // by itself: FT8 on every band, on the hour, while the radio isn't playing this receiver
                        const every = MODES.srv?.itself?.plan?.[R.origin]?.every_h || 0;
-                       const s = el("select", { id: "survey-itself", title: "The radio can survey this receiver by itself: FT8 on every band, on the hour, whenever it isn't playing this receiver. Each key then shows the band's last day" },
+                       const s = el("select", { id: "survey-itself", title: "The radio can survey this receiver by itself: FT8 on every band and the weather teleprinters, on the hour, whenever it isn't playing this receiver. Each key then shows the band's last day" },
                          ...[[0, "By itself: never"], [1, "By itself: every hour"], [2, "By itself: every 2 hours"], [3, "By itself: every 3 hours"], [6, "By itself: every 6 hours"]].map(([value, textContent]) => el("option", { value, textContent })));
                        s.value = every;
-                       s.onchange = async () => { try { MODES.srv = await api("/api/rx/survey", { base: R.origin, itself: +s.value, places: modePlaces(R).filter(p => p.mode === "ft8").map(modePlace) });
+                       s.onchange = async () => { try { MODES.srv = await api("/api/rx/survey", { base: R.origin, itself: +s.value, places: modePlaces(R).filter(p => p.mode === "ft8" || p.weather).map(modePlace) });
                          toast(+s.value ? `The radio will survey FT8 on every band ${+s.value === 1 ? "every hour" : `every ${s.value} hours`}, when it isn't playing this receiver.` : "The radio surveys this receiver only when you ask."); drawDesk(); } catch (e) { rigOops(e); drawDesk(); } };
                        return s; })()] : [])),
           run ? null : surveyLast(R, places),

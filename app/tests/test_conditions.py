@@ -159,7 +159,7 @@ class _Surveys:
     def bases(self) -> list[str]:
         return list(self.all)
 
-    def found(self, base: str) -> dict:
+    def found(self, base: str, week: bool = False) -> dict:
         return self.all.get(base, {})
 
 
@@ -245,3 +245,50 @@ def test_conditions_from_the_web(tmp_path: Path, monkeypatch) -> None:
     finally:
         httpd.shutdown()
         httpd.server_close()
+
+
+def test_against_the_same_hour_on_the_days_before() -> None:
+    day = 86400
+    week = lambda *ns: [[NOW - 400 - d * day + off, n] for d, n in enumerate(ns, 1) for off in (0,)]
+    # what's usual: the mean over the earlier days surveyed near this hour; other hours of those days don't count
+    assert conditions.usual(week(6, 4, 8) + [[NOW - 400 - day + 6 * 3600, 40]], NOW - 400) == (6.0, 3)
+    assert conditions.usual(week(6), NOW - 400) is None and conditions.usual([], NOW) is None       # one day isn't "usual"
+    assert conditions.usual([[NOW - 3600, 9], [NOW - 7200, 9]], NOW) is None                         # (today's own hours aren't either)
+    assert (conditions.than_usual(16, 6), conditions.than_usual(3, 12), conditions.than_usual(7, 6), conditions.than_usual(2, 1)) == ("better", "poorer", "usual", "usual")
+    found = _found()
+    found["ft8:20 m"]["week"] = week(6, 4, 8) + [[NOW - 400, 16]]
+    found["ft8:40 m"]["week"] = week(8, 6, 7)
+    found["ft8:15 m"]["week"] = week(14, 12, 16)
+    s = conditions.summary(found, [], NOW)
+    by = {b["band"]: b for b in s["bands"]}
+    assert by["20 m"]["says"].endswith("the farthest 5,516 km. Better than usual for this hour: about 6 on the last 3 days.")
+    assert (by["20 m"]["usual"], by["20 m"]["days"], by["20 m"]["than_usual"]) == (6.0, 3, "better")
+    assert by["40 m"]["than_usual"] == "usual" and "usual" not in by["40 m"]["says"]                # about as ever: nothing said
+    assert by["15 m"]["says"].endswith("Poorer than usual for this hour: about 14 on the last 3 days.")
+    assert "usual" not in by["10 m"] and "than_usual" not in conditions.summary(_found(), [], NOW)   # no week kept: as before
+    assert s["than_usual"] == "usual" and "than usual" not in s["says"]                              # 27 against 27 all told
+    found["ft8:15 m"]["week"] = week(1, 0, 2)
+    s = conditions.summary(found, [], NOW)
+    assert s["than_usual"] == "better" and s["says"].endswith("The bands are better than usual for this hour.")
+    assert conditions.spoken(s).endswith("The bands are better than usual for this time of day.")
+
+
+def test_the_weather_teleprinters_as_a_yardstick() -> None:
+    from sleepradiopi.audio import rtty
+    from sleepradiopi.playback import calibrate
+    rng = np.random.default_rng(3)
+    t = np.arange(int(6 * calibrate.AUDIO_RATE)) / calibrate.AUDIO_RATE
+    bits = np.repeat(rng.integers(0, 2, len(t) // 240 + 1), 240)[:len(t)]          # 50 baud at 12 kHz
+    tones = np.sin(2 * np.pi * np.cumsum(np.where(bits, 1725.0, 1275.0)) / calibrate.AUDIO_RATE)
+    noise = rng.normal(0, 1, len(t))
+    loud, faint = calibrate.strength(tones + 0.05 * noise, 1500.0), calibrate.strength(0.05 * tones + noise, 1500.0)
+    assert loud > 30 and faint < loud - 20 and calibrate.strength(np.zeros(60000), 1500.0) is None
+    assert calibrate.weather(tones + 0.05 * noise) == pytest.approx(1500.0, abs=15)   # (the same sound the survey would call "there")
+    found = {**_found(), "wx:4583": {"n": 0, "t": NOW - 100}, "wx:7646": {"n": 1, "db": 31.5, "t": NOW - 90}, "wx:10100.8": {"n": 1, "db": 14.0, "t": NOW - 80},
+             "wx:14467.3": {"n": 1, "db": 6.0, "t": NOW - 70}, "wx:11039": {"n": 1, "db": 30.0, "t": NOW - 5 * 3600}}
+    s = conditions.summary(found, [], NOW)
+    assert [a["khz"] for a in s["weather"]["at"]] == [4583.0, 7646.0, 10100.8, 14467.3]          # the lowest first; one five hours old says nothing now
+    assert [a["state"] for a in s["weather"]["at"]] == ["not heard", "strong", "fair", "weak"]
+    assert s["weather"]["says"] == ("The German weather teleprinters, a steady signal from Hamburg: strong on 7.6 MHz, fair on 10.1 MHz, "
+                                    "weak on 14.5 MHz, not heard on 4.6 MHz.")
+    assert "weather" not in conditions.summary(_found(), [], NOW)

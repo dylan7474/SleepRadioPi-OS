@@ -17,7 +17,8 @@ does it itself, here:
                        own locator;
       PSK31            a few seconds: how many signals stand out;
       weather          the German weather service's teleprinters: there or
-                       not (the two tones, as calibrate.weather finds them).
+                       not (the two tones, as calibrate.weather finds them),
+                       and how strong ("db": the tones over the noise).
   * It's put back where it was at the end.
 
 The finder: amateur teleprinters and Morse have no one frequency -- they
@@ -105,6 +106,7 @@ PSK_LISTEN_S, WEATHER_LISTEN_S = 8.0, 4.0
 PLACES_MOST = 120
 DAY_S = 24 * 3600.0
 DAY_MOST = 30                        # findings kept for a place's day
+WEEK_S = 7 * DAY_S                   # ...and, one an hour (the most heard in it), for a week: how a band usually is at this hour
 EVERY_H = (1, 2, 3, 6)               # by itself: how many hours apart
 TICK_S = 30.0
 
@@ -240,9 +242,11 @@ class Job:
         try:
             kept = json.loads(file.read_text())["found"]
             found = {str(base): {str(key): {"n": int(f["n"]), "t": float(f["t"]), **({"km": int(f["km"])} if f.get("km") else {}),
+                                            **({"db": float(f["db"])} if isinstance(f.get("db"), (int, float)) else {}),
                                             **({"where": [dict(a) for a in f["where"]]} if isinstance(f.get("where"), list) else {}),
                                             **({"to": {str(r): int(n) for r, n in f["to"].items()}} if isinstance(f.get("to"), dict) else {}),
-                                            "day": [[float(t), int(n)] for t, n in f.get("day", [])][-DAY_MOST:]}
+                                            "day": [[float(t), int(n)] for t, n in f.get("day", [])][-DAY_MOST:],
+                                            "week": [[float(t), int(n)] for t, n in f.get("week", [])][-int(WEEK_S // 3600):]}
                                  for key, f in places.items()} for base, places in kept.items()}
         except FileNotFoundError:
             return
@@ -262,13 +266,16 @@ class Job:
         except OSError as e:
             log.warning("survey: what was found wasn't kept (%s)", e)
 
-    def found(self, base: str) -> dict:
+    def found(self, base: str, week: bool = False) -> dict:
         """What's been found on a receiver: {place's key: {"n", "km"?, "t" (when, by the clock), "day": [[t, n]] (each
         finding of the last day, the oldest first), "where"? (a stretch swept: where each signal found is, [{"hz", "wpm"? |
-        "baud", "shift"}], the strongest first)}}"""
+        "baud", "shift"}], the strongest first)}}. week: with "week" too, [[t, n]] an hour apart for the last seven
+        days (band conditions' "than usual"; too much to send the page every two seconds)."""
         now = self._clock()
         with self._lock:
-            return {key: {**f, "day": [d for d in f["day"] if now - d[0] <= DAY_S]} for key, f in self._found.get(base, {}).items()}
+            return {key: {**{k: v for k, v in f.items() if k != "week"}, "day": [d for d in f["day"] if now - d[0] <= DAY_S],
+                          **({"week": [w for w in f.get("week", []) if now - w[0] <= WEEK_S]} if week else {})}
+                    for key, f in self._found.get(base, {}).items()}
 
     def bases(self) -> list[str]:
         """The receivers something has been found on."""
@@ -364,7 +371,11 @@ class Job:
         x = sound.since_mark()
         if mode == "psk31":
             return {"n": len(psk.find(x, AUDIO_RATE)) if len(x) >= AUDIO_RATE else 0}
-        return {"n": 1 if len(x) >= AUDIO_RATE and calibrate.weather(x) is not None else 0}
+        middle = calibrate.weather(x) if len(x) >= AUDIO_RATE else None
+        if middle is None:
+            return {"n": 0}
+        db = calibrate.strength(x, middle)           # (how strong: band conditions' yardstick, a steady station of known place)
+        return {"n": 1, **({"db": db} if db is not None else {})}
 
     def _run(self, base: str, places: list[dict], stop: threading.Event, why: str = "asked") -> None:
         sound, done, before, moved = None, 0, None, False
@@ -404,7 +415,12 @@ class Job:
                 with self._lock:
                     was = self._found.setdefault(base, {}).get(place["key"], {})
                     day = [d for d in was.get("day", []) if t - d[0] <= DAY_S] + [[round(t), heard["n"]]]
-                    self._found[base][place["key"]] = {**heard, "t": round(t), "day": day[-DAY_MOST:]}
+                    week = [w for w in was.get("week", []) if t - w[0] <= WEEK_S]
+                    if week and week[-1][0] // 3600 == t // 3600:      # (the same hour by the clock: the most heard in it)
+                        week[-1] = [week[-1][0], max(week[-1][1], heard["n"])]
+                    else:
+                        week.append([round(t), heard["n"]])
+                    self._found[base][place["key"]] = {**heard, "t": round(t), "day": day[-DAY_MOST:], "week": week}
                 done += 1
             with self._lock:
                 self._state.update(running=False, at=None, done=done, **({"stopped": True} if stop.is_set() else {}))
