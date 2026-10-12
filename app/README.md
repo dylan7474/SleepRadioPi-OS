@@ -1274,9 +1274,9 @@ The cards:
   the keys and kept in the browser, a receiver at a time; the receiver and
   the readers are put back as they were. For an internet receiver it's
   the page that runs it (close the page and it stops) and the radio plays
-  each place as it goes. Amateur teleprinters and Morse aren't surveyed:
-  they have no one frequency. An OpenWebRX is tuned by hand, so its keys
-  only say where.
+  each place as it goes, and amateur teleprinters and Morse aren't
+  surveyed (they have no one frequency: the radio's own survey, below,
+  finds them). An OpenWebRX is tuned by hand, so its keys only say where.
   *The survey, by the radio* (a receiver of your own; `POST /api/rx/survey
   {"base", "places": [{"key", "mode": "ft8" | "ft4" | "wspr" | "psk31" |
   "weather", "band", "hz"}]}`, `{"stop": true}`, `GET /api/rx/survey?base=`;
@@ -1295,6 +1295,26 @@ The cards:
   night's calibration nobody asked for leaves such a receiver alone). A
   survey and a calibration never run together, and nothing is reported to
   PSK Reporter from a receiver being taken round.
+  *The finder* (places of mode `"rtty"` or `"cw"`, with `"lo"` and `"hi"`:
+  a stretch of band, 150 kHz at most; the page's `MODE_SWEEP` has each
+  band's): the receiver is put in the middle of the stretch and its
+  waterfall (`/spectrum`: 256 kHz, 250 Hz a bin, ten rows a second) watched
+  for five seconds. `active()` keeps what comes and goes -- the best tenth
+  of a bin's moments against its worst, 5 dB for Morse, 1 dB for a
+  teleprinter (steady while it sends, but not dead steady, as a dongle's
+  own whistles every 30 kHz are). Up to six candidates, the strongest
+  first, are each tuned to the middle of what's heard and listened to (8 s
+  for Morse, 4.5 s for a teleprinter), and `heard_as()` has the mode's own
+  reader judge it: Morse if `morse.decode`'s quality is 0.3 or more at 8
+  to 45 words a minute; a teleprinter if a pair of tones frames
+  (`rtty.read`), which now also wants one tone at a time (`BOTH_MAX`: the
+  weaker of the two against the stronger). What's found is `"where":
+  [{"hz", "wpm"} | {"hz", "baud", "shift"}]`, the strongest first, beside
+  `"n"`. Simpler tests were tried on the air and failed: a tone that comes
+  and goes, even with its marks counted and timed, took a carrier with
+  noise on it for Morse; framing alone took two steady tones for a
+  teleprinter. About twenty seconds a stretch with nothing in it, and
+  eight or so more for each candidate.
   *A name of your own* (the **Name…** key in a receiver's window; `POST
   /api/rx/name {"base": "http://192.168.50.4:8075", "name": "Short
   wave"}`, an empty name for its own again; kept in the settings as

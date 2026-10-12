@@ -153,6 +153,130 @@ def test_a_round_can_be_stopped_and_a_receiver_that_wont_do_is_said() -> None:
     assert "isn't answering" in job.status()["error"]
 
 
+# --- the finder: a stretch of band swept for Morse and teleprinters ---------------------------
+
+def _morse(text: str, wpm: float, pitch: float, seconds: float) -> np.ndarray:
+    """A Morse tone at 12 kHz (amplitude 1), the text over and over for that long."""
+    from sleepradiopi.audio.morse import MORSE
+    CODE = {v: k for k, v in MORSE.items()}
+    dit, key, t = 1.2 / wpm, np.zeros(int(seconds * survey.AUDIO_RATE)), 0.2
+    while t < seconds:
+        for ch in text:
+            if ch == " ":
+                t += 4 * dit
+                continue
+            for e in CODE[ch]:
+                d = dit if e == "." else 3 * dit
+                key[int(t * survey.AUDIO_RATE):int((t + d) * survey.AUDIO_RATE)] = 1.0
+                t += d + dit
+            t += 2 * dit
+    return key * np.sin(2 * np.pi * pitch * np.arange(len(key)) / survey.AUDIO_RATE)
+
+
+class _Band(_Radio):
+    """A receiver with a waterfall, and a band with things on it: Morse, a teleprinter, FT4 coming and going, and
+    the dongle's own steady whistle."""
+    ON_AIR = {14_010_300: "cw", 14_025_600: "cw", 14_039_000: "whistle", 14_052_000: "carrier", 14_080_500: "ft4", 14_088_000: "rtty", 14_094_000: "tones"}
+
+    def get(self, url: str) -> dict:
+        if "/spectrum" not in url:
+            return super().get(url)
+        if url.endswith("since=0"):
+            return {"running": True, "n": 100, "rows": []}
+        import base64
+        rng = np.random.default_rng(3)
+        centre, n = 14_059_000, 1024                 # (not where it's tuned: the dongle's own centre, as the real one has it)
+        f = centre + (np.arange(n) - n / 2) * 250.0
+        rows = 30.0 + rng.normal(0, 0.4, (50, n))
+        for hz, kind in self.ON_AIR.items():
+            i = int(np.argmin(np.abs(f - hz)))
+            rows[:, i] += {"cw": 18.0 * (rng.random(50) > 0.45), "ft4": 20.0 * (np.arange(50) % 30 < 18), "whistle": 22.0, "rtty": 15.0 + rng.normal(0, 1.2, 50),
+                           "carrier": 6.0 + 14.0 * (rng.random(50) > 0.5), "tones": 14.0 + rng.normal(0, 1.5, 50)}[kind]
+        return {"running": True, "n": 150, "centre": centre, "rate": 256_000, "per_db": 2.5,
+                "rows": [[100 + k, base64.b64encode(np.clip(r * 2.5, 0, 255).astype(np.uint8).tobytes()).decode()] for k, r in enumerate(rows)]}
+
+    def sound(self, url: str):
+        radio = self
+        radio.asked.append(url)
+
+        class Sound:
+            began = radio.at
+
+            def mark(self) -> None:
+                self.began = radio.at
+
+            def since_mark(self) -> np.ndarray:
+                seconds = radio.at - self.began
+                n = int(seconds * survey.AUDIO_RATE)
+                x = np.random.default_rng(5).normal(0, 100, n)
+                for hz, kind in radio.ON_AIR.items():    # what of the band is in the 300 to 2900 Hz it hears, in upper sideband
+                    pitch = hz - radio.freq
+                    if not 300 <= pitch <= 2900:
+                        continue
+                    if kind == "cw":
+                        x += 2000 * _morse("CQ CQ DE G4XYZ K ", 22, pitch, seconds)[:n]
+                    elif kind in ("whistle", "carrier"):       # (a carrier with noise on it comes and goes, in a way, and isn't Morse)
+                        x += 2000 * np.sin(2 * np.pi * pitch * np.arange(n) / survey.AUDIO_RATE) * (1.0 if kind == "whistle" else np.abs(np.convolve(np.random.default_rng(8).normal(0, 1, n), np.ones(300) / 300, "same")) * 25)
+                    elif kind == "rtty":
+                        from sleepradiopi.audio import rtty
+                        x += 2000 * rtty.send("CQ CQ DE DL1ABC DL1ABC K\r\n" * 4, survey.AUDIO_RATE, pitch - 85, 170, 45.45, True, lead=0.1)[:n]
+                    elif kind == "tones":            # two steady tones a teleprinter's distance apart, as on 14.090 MHz one afternoon
+                        t = np.arange(n) / survey.AUDIO_RATE
+                        x += 1500 * np.sin(2 * np.pi * (pitch - 225) * t) + 1500 * np.sin(2 * np.pi * (pitch + 225) * t)
+                    else:                            # FT4-ish: a burst of tones, then nothing
+                        t = np.arange(n) / survey.AUDIO_RATE
+                        x += 2000 * np.sin(2 * np.pi * (pitch + 20 * np.floor(t * 20) % 4) * t) * (t % 3 < 1.8)
+                return x.astype(np.float32)
+
+            def close(self) -> None:
+                radio.closed = True
+
+        return Sound()
+
+
+def test_what_comes_and_goes_in_a_waterfall() -> None:
+    rows = np.array([np.frombuffer(__import__("base64").b64decode(r[1]), np.uint8) for r in _Band().get("http://r/spectrum?since=100")["rows"]], float) / 2.5
+    cw = survey.active(rows, 14_059_000, 256_000, 14_000_000, 14_070_000, survey.SWING_DB["cw"])
+    assert sorted(hz for hz, _, _ in cw) == [14_010_250, 14_025_500, 14_052_000]       # what comes and goes; not the whistle, as strong as any
+    tele = survey.active(rows, 14_059_000, 256_000, 14_080_000, 14_100_000, survey.SWING_DB["rtty"])
+    assert sorted(hz for hz, _, _ in tele) == [14_080_500, 14_088_000, 14_094_000]     # a teleprinter is steadier: all are worth a listen
+    assert survey.active(rows, 14_059_000, 256_000, 14_053_000, 14_070_000, survey.SWING_DB["cw"]) == []
+    assert survey.active(rows[:3], 14_059_000, 256_000, 14_000_000, 14_070_000, 5.0) == []     # (too short a look to tell)
+
+
+def test_morse_and_teleprinters_are_found_by_sweeping_their_part_of_the_band(tmp_path: Path) -> None:
+    radio = _Band(receiving={"freq": 14_074_000, "mode": "usb"})
+    job = _job(radio)
+    job.keep_in(tmp_path / "survey.json")
+    places = survey.clean_places([{"key": "cw:20 m", "mode": "cw", "band": "20 m", "hz": 14_030_000, "lo": 14_000_000, "hi": 14_070_000},
+                                  {"key": "rtty:20 m", "mode": "rtty", "band": "20 m", "hz": 14_085_000, "lo": 14_080_000, "hi": 14_100_000}])
+    job.start(RX, places)
+    job._thread.join(60)
+    assert job.status()["done"] == 2 and "error" not in job.status()
+    found = job.found(RX)
+    cw, tele = found["cw:20 m"], found["rtty:20 m"]
+    assert cw["n"] == 2 and sorted(round(s["hz"], -2) for s in cw["where"]) == [14_010_300, 14_025_600]      # where each is, to a hundred Hz
+    assert all(19 <= s["wpm"] <= 25 for s in cw["where"])                      # ...and how fast, as the Morse reader read it
+    assert tele["n"] == 1 and abs(tele["where"][0]["hz"] - 14_088_000) < 150 and (tele["where"][0]["baud"], tele["where"][0]["shift"]) == (45.45, 170)
+    assert radio.tuned[0] == (14_035_000, "usb") and radio.tuned[-1] == (14_074_000, "usb")       # the middle of the stretch first; back at the end
+    again = survey.Job(clock=radio.clock)            # kept, with where each was
+    again.keep_in(tmp_path / "survey.json")
+    assert again.found(RX)["cw:20 m"]["where"] == cw["where"]
+    for bad in ({"key": "cw:20 m", "mode": "cw", "band": "20 m", "hz": 14_030_000}, {"key": "a", "mode": "rtty", "band": "x", "hz": 14e6, "lo": 14.1e6, "hi": 14.0e6},
+                {"key": "a", "mode": "cw", "band": "x", "hz": 14e6, "lo": 14.0e6, "hi": 14.4e6}):
+        with pytest.raises(ValueError):
+            survey.clean_places([bad])
+
+
+def test_a_receiver_with_no_waterfall_is_swept_for_nothing_and_the_round_goes_on() -> None:
+    radio = _Radio()
+    job = _job(radio)
+    job._get = lambda url: {"running": False, "rows": []} if "/spectrum" in url else radio.get(url)
+    job.start(RX, survey.clean_places([{"key": "cw:40 m", "mode": "cw", "band": "40 m", "hz": 7_020_000, "lo": 7_000_000, "hi": 7_040_000}, PLACES[0]]))
+    job._thread.join(30)
+    assert job.status()["done"] == 1 and list(job.found(RX)) == ["ft8:40 m"]
+
+
 def test_a_round_begun_by_itself_leaves_a_receiver_somebody_is_listening_to() -> None:
     radio = _Radio(receiving={"freq": 7_100_000, "mode": "lsb"})
     job = _job(radio)

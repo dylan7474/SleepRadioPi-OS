@@ -147,6 +147,25 @@ def test_rtty_says_nothing_of_noise() -> None:
     assert _followed("rtty", rng.normal(0, 1000, int(RATE * 40))) == {}
 
 
+def test_two_steady_tones_are_not_a_teleprinter() -> None:
+    # (two carriers 450 Hz apart on 14.090 MHz, with noise deciding between them, framed now and then and read as
+    # "KKHXK8'QQCKBU": a teleprinter sends one tone or the other, never both)
+    rng = np.random.default_rng(11)
+    t = np.arange(int(RATE * 8)) / RATE
+    said = 0
+    for seed in range(12):
+        x = 1500 * np.sin(2 * np.pi * 1111 * t) + 1500 * np.sin(2 * np.pi * 1561 * t) + np.random.default_rng(seed).normal(0, 900, len(t))
+        r = rtty.read(x, RATE, 1111.0, 450.0)
+        said += len(r["codes"])
+        assert r["both"] > rtty.BOTH_MAX or not r["codes"]
+    assert said == 0
+    for snr in (10, -3):                             # a real one, strong or weak, is one tone at a time
+        y = _noisy(rtty.send(MESSAGE, RATE, 915, 170, 45.45, True) * 2000, snr)
+        r = rtty.read(y, RATE, 915.0, 170.0)
+        assert r["codes"] and r["both"] < 0.3, snr
+    assert rng is not None
+
+
 def test_rtty_followed_from_its_start_to_its_last_letter() -> None:
     rng = np.random.default_rng(7)
     y = rtty.send(MESSAGE * 3, RATE, 915, 170, 45.45, True) * 2000

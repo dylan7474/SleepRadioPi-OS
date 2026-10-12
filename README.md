@@ -324,7 +324,14 @@ Actions, Sleep timer and Radio folders open:
   by itself on the hour (every hour, or every 2, 3 or 6), whenever it isn't
   playing that receiver; the radio keeps what it finds, and each key then
   shows the band's last day as a row of small bars -- when it opened, when
-  it was busiest.
+  it was busiest. Morse and amateur teleprinters have no one frequency, so
+  for those the radio sweeps their part of each band (*Find Morse and
+  teleprinters*, or as part of *Everything*): it watches the receiver's
+  waterfall for what comes and goes, listens a few seconds to each such
+  thing, and lets the reader for the mode be the judge. A key then says
+  how many it found ("3 found") and goes to the strongest; pointing at it
+  lists where each is, with a Morse signal's speed. On 40 m one afternoon:
+  four Morse contacts, at 15 to 29 words a minute.
 - **Receivers with names.** *Name…* in a receiver's window calls it what
   you like -- "Short wave", "VHF" -- in Receivers, on its window and
   wherever it's mentioned: two dongles on one computer are otherwise told
@@ -895,12 +902,7 @@ What's left to do (everything else described here is built and running):
   once, each named by its callsign on the waterfall and in a list of who's
   been heard (the receiver's wide "IQ" mode gives about 10 kHz to read
   from; the search at its heart has to be made several times faster for the
-  Zero 2 W first). After that, a Morse finder: sweep the Morse parts of
-  each band and say where the activity is.
-- **A finder for teleprinters and Morse** — the survey leaves amateur
-  teleprinters and Morse out: they have no one frequency. They need a
-  finder that sweeps their part of each band and says where the activity
-  is.
+  Zero 2 W first).
 - **Pictures: more of them** — an SSTV picture is only read from its
   header: one joined late could be started from its line syncs (their
   spacing says the mode). A chart begun by hand has its lines start

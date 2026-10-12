@@ -20,6 +20,36 @@ does it itself, here:
                        not (the two tones, as calibrate.weather finds them).
   * It's put back where it was at the end.
 
+The finder: amateur teleprinters and Morse have no one frequency -- they
+are wherever in their part of the band somebody is sending -- so a place
+of mode "rtty" or "cw" is a stretch of band ("lo" to "hi"), swept:
+
+  * The receiver's own waterfall (its /spectrum: a quarter of a megahertz
+    at once, 250 Hz a bin) is watched for a few seconds with the receiver
+    in the middle of the stretch. What matters is what comes and goes: a
+    dongle has steady whistles of its own every 30 kHz, as strong as any
+    station, and they never move (active()). Morse is keyed, so it swings
+    by 10 or 20 dB; a teleprinter is steady while it sends but not dead
+    steady.
+  * Each candidate, the strongest first, is then listened to for a few
+    seconds, tuned so that it falls in the middle of what's heard, and
+    the reader for the mode is the judge. Morse: the Morse reader
+    (audio/morse.py) reads those seconds, and it is Morse if what it
+    read holds together (its "quality") at a speed people send at. A
+    teleprinter: a pair of tones that frames, one tone at a time
+    (audio/rtty.py). FT4 and the rest, which also come and go, are
+    neither and are left out.
+
+What's found is where each is ("where": the frequency on the air, with a
+Morse signal's speed or a teleprinter's speed and shift), the strongest
+first. Worked out on 20, 30 and 40 m off the air, where simpler tests
+failed: a tone that merely comes and goes (and even a count of its marks
+and their lengths) took a carrier with noise on it for Morse, and the
+teleprinter reader's framing alone took two steady tones on 14.090 MHz
+for a teleprinter. Against what the Morse reader made of a quarter of a
+minute of each: quality 0.57 to 0.99 in eight seconds for real contacts
+("UR SIGNA...", "CQ CQ DE EA1..."), 0.02 to 0.17 for the rest.
+
 What was found is kept (keep_in(): on the card, written once at the end of
 a round), a receiver at a time and a place at a time: the latest, and each
 finding of the last day, so a key can show a band's day -- when it opened,
@@ -45,14 +75,28 @@ from typing import Callable
 
 import numpy as np
 
-from sleepradiopi.audio import ft8, psk
+from base64 import b64decode
+
+from sleepradiopi.audio import ft8, morse, psk, rtty
 from sleepradiopi.config.atomic import write_atomic
 from sleepradiopi.playback import calibrate
 
 log = logging.getLogger(__name__)
 
 AUDIO_RATE = calibrate.AUDIO_RATE
-MODES = ("ft8", "ft4", "wspr", "psk31", "weather")
+MODES = ("ft8", "ft4", "wspr", "psk31", "weather", "rtty", "cw")
+FIND_MODES = ("rtty", "cw")          # ...of which these are a stretch of band, swept (the finder)
+SPAN_MOST_HZ = 150_000               # a stretch is no wider than this (the waterfall shows 256 kHz)
+WATERFALL_S = 5.0                    # the waterfall watched this long
+OVER_DB = 7.0                        # something there: this far over the stretch's noise at its best
+SWING_DB = {"cw": 5.0, "rtty": 1.0}  # ...and it comes and goes by this much (a dongle's own whistles: under half a dB)
+CENTRE_CLEAR_HZ = 1_500              # (the dongle's own centre is a spike)
+FIND_MOST = 6                        # candidates listened to, a stretch
+FIND_LISTEN_S = {"cw": 8.0, "rtty": 4.5}     # how long each candidate is listened to (five seconds was too few for the Morse reader to be sure)
+MORSE_QUALITY_MIN = 0.3              # what the Morse reader read holds together this well, or it isn't Morse...
+MORSE_WPM = (8.0, 45.0)              # ...at a speed people send at
+PITCH_HZ = {"cw": 700.0, "rtty": 1300.0}     # where a candidate is put in what's heard
+SAME_HZ = {"cw": 150.0, "rtty": 300.0}       # two findings this close are one signal
 SLOT_MODES = ("ft8", "ft4", "wspr")
 CUTS_S = {"ft8": (0.5, 2.0, 3.5), "ft4": (0.5, 2.0, 3.5), "wspr": (2.0,)}     # how late a slot is cut, each tried (see audio/ft8.py)
 BEFORE_S, AFTER_S = 1.0, 4.5         # listened from this long before a slot begins to this long after it ends
@@ -81,7 +125,57 @@ def clean_places(places) -> list[dict]:
         if key in seen:
             raise ValueError("each place has a key of its own")
         seen.add(key)
-        out.append({"key": key, "mode": p["mode"], "band": band, "hz": int(hz)})
+        place = {"key": key, "mode": p["mode"], "band": band, "hz": int(hz)}
+        if p["mode"] in FIND_MODES:
+            lo, hi = p.get("lo"), p.get("hi")
+            if any(isinstance(v, bool) or not isinstance(v, (int, float)) for v in (lo, hi)) or not 100_000 <= lo < hi <= 500_000_000 or hi - lo > SPAN_MOST_HZ:
+                raise ValueError("a place to sweep has where it begins and ends (lo and hi, in Hz), no more than 150 kHz apart")
+            place.update(lo=int(lo), hi=int(hi))
+        out.append(place)
+    return out
+
+
+def active(rows: np.ndarray, centre: float, rate: float, lo: float, hi: float, swing_db: float, most: int = FIND_MOST) -> list[tuple[int, float, float]]:
+    """What comes and goes between lo and hi in a waterfall's rows (dB, a row a moment, the lowest frequency
+    first) -> [(Hz, dB over the noise at its best, how much it comes and goes, dB)], the strongest first."""
+    if len(rows) < 8:
+        return []
+    n = rows.shape[1]
+    f = centre + (np.arange(n) - n / 2) * rate / n
+    top, low = np.percentile(rows, 90, axis=0), np.percentile(rows, 10, axis=0)
+    inside = (f >= lo) & (f <= hi) & (np.abs(f - centre) > CENTRE_CLEAR_HZ)
+    if not inside.any():
+        return []
+    floor = float(np.median(np.median(rows, axis=0)[inside]))
+    found = []
+    for i in np.argsort(top)[::-1]:
+        if top[i] - floor < OVER_DB or len(found) >= most:
+            break
+        if not inside[i] or not (top[i] >= top[max(0, i - 1):i + 2]).all() or top[i] - low[i] < swing_db:
+            continue
+        found.append((int(f[i]), round(float(top[i] - floor), 1), round(float(top[i] - low[i]), 1)))
+    return found
+
+
+def heard_as(x: np.ndarray, mode: str) -> list[dict]:
+    """What a few seconds of sound at 12 kHz hold of the mode looked for -> [{"hz" (in the sound), "wpm" (Morse),
+    "baud", "shift" (a teleprinter)}]: the strongest keyed tone, if the Morse reader makes Morse of it, or the
+    pairs of tones that frame as a teleprinter."""
+    if len(x) < 2 * AUDIO_RATE:
+        return []
+    if mode == "cw":
+        pitch = morse.strongest_tone(x, AUDIO_RATE)
+        if pitch is None:
+            return []
+        read = morse.decode(x, AUDIO_RATE, pitch, morse.noise_level(x, AUDIO_RATE, pitch)[2])
+        if read["quality"] < MORSE_QUALITY_MIN or not MORSE_WPM[0] <= read["wpm"] <= MORSE_WPM[1]:
+            return []
+        return [{"hz": read["pitch"], "wpm": round(read["wpm"])}]
+    out = []
+    for low, shift, _ in rtty.find_all(x, AUDIO_RATE, most=2):
+        r = rtty.read(x, AUDIO_RATE, low, shift)
+        if r["codes"]:
+            out.append({"hz": low + shift / 2, "baud": r["baud"], "shift": round(shift)})
     return out
 
 
@@ -142,6 +236,7 @@ class Job:
         try:
             kept = json.loads(file.read_text())["found"]
             found = {str(base): {str(key): {"n": int(f["n"]), "t": float(f["t"]), **({"km": int(f["km"])} if f.get("km") else {}),
+                                            **({"where": [dict(a) for a in f["where"]]} if isinstance(f.get("where"), list) else {}),
                                             "day": [[float(t), int(n)] for t, n in f.get("day", [])][-DAY_MOST:]}
                                  for key, f in places.items()} for base, places in kept.items()}
         except FileNotFoundError:
@@ -164,7 +259,8 @@ class Job:
 
     def found(self, base: str) -> dict:
         """What's been found on a receiver: {place's key: {"n", "km"?, "t" (when, by the clock), "day": [[t, n]] (each
-        finding of the last day, the oldest first)}}"""
+        finding of the last day, the oldest first), "where"? (a stretch swept: where each signal found is, [{"hz", "wpm"? |
+        "baud", "shift"}], the strongest first)}}"""
         now = self._clock()
         with self._lock:
             return {key: {**f, "day": [d for d in f["day"] if now - d[0] <= DAY_S]} for key, f in self._found.get(base, {}).items()}
@@ -205,6 +301,36 @@ class Job:
                 return False
             self._sleep(min(0.2, max(0.0, until - self._clock())))
         return not stop.is_set()
+
+    def _find(self, place: dict, base: str, sound, stop: threading.Event) -> dict | None:
+        """A stretch of band swept for Morse or teleprinters (see the top). None: stopped."""
+        mode, lo, hi = place["mode"], place["lo"], place["hi"]
+        self._post(base + "/tune", {"freq": (lo + hi) // 2, "mode": "usb"})
+        if not self._wait(SETTLE_S, stop):
+            return None
+        since = self._get(base + "/spectrum?since=0").get("n", 0)       # (asking is what starts them being kept)
+        if not self._wait(WATERFALL_S, stop):
+            return None
+        w = self._get(base + f"/spectrum?since={since}")
+        rows = [np.frombuffer(b64decode(r[1]), np.uint8) for r in w.get("rows", [])]
+        if not rows:
+            raise ValueError("this receiver has no waterfall to look for them in")
+        width = min(len(r) for r in rows)
+        rows = np.array([r[:width] for r in rows], float) / float(w.get("per_db", 2.5))
+        signals: list[dict] = []
+        for hz, db, _ in active(rows, float(w.get("centre", (lo + hi) // 2)), float(w.get("rate", 256_000)), lo, hi, SWING_DB[mode]):
+            dial = int(hz - PITCH_HZ[mode])
+            self._post(base + "/tune", {"freq": dial, "mode": "usb"})
+            if not self._wait(SETTLE_S, stop):
+                return None
+            sound.mark()
+            if not self._wait(FIND_LISTEN_S[mode], stop):
+                return None
+            for s in heard_as(sound.since_mark(), mode):
+                on_air = int(round(dial + s["hz"]))
+                if lo - 1_000 <= on_air <= hi + 1_000 and all(abs(on_air - g["hz"]) > SAME_HZ[mode] for g in signals):
+                    signals.append({**s, "hz": on_air, "db": db})
+        return {"n": len(signals), "where": [{k: v for k, v in s.items() if k != "db"} for s in sorted(signals, key=lambda s: -s["db"])]}
 
     def _listen(self, place: dict, sound, stop: threading.Event) -> dict | None:
         """What's at one place, the receiver being there already. None: stopped."""
@@ -253,8 +379,15 @@ class Job:
                 if not lo <= place["hz"] <= hi:
                     continue
                 moved = True
-                self._post(base + "/tune", {"freq": place["hz"], "mode": "usb"})
-                heard = self._listen(place, sound, stop)
+                if place["mode"] in FIND_MODES:
+                    try:
+                        heard = self._find(place, base, sound, stop)
+                    except ValueError as e:          # (no waterfall to look in: that place is left, the round goes on)
+                        log.info("survey: %s: %s", place["key"], e)
+                        continue
+                else:
+                    self._post(base + "/tune", {"freq": place["hz"], "mode": "usb"})
+                    heard = self._listen(place, sound, stop)
                 if heard is None:
                     break
                 t = self._clock()
@@ -269,6 +402,10 @@ class Job:
             log.warning("survey: %s", e)
             with self._lock:
                 self._state.update(running=False, at=None, done=done, error=str(e) if isinstance(e, ValueError) else f"the receiver isn't answering ({e})")
+        except Exception:                            # (anything else: said, and the round over -- never left "running" for good)
+            log.exception("survey: the round fell over")
+            with self._lock:
+                self._state.update(running=False, at=None, done=done, error="it stopped unexpectedly (the radio's log says why)")
         finally:
             if before and moved:                     # back where it was
                 try:
