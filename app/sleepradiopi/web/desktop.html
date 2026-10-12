@@ -2758,6 +2758,19 @@ async function modeSurvey(R, modes) {
   MODES.run = null; drawDesk(); toast(done);
 }
 const modeAge = at => { const m = Math.round((Date.now() - at) / 60000); return m < 1 ? "just now" : m < 60 ? `${m} min ago` : m < 1440 ? `${Math.round(m / 60)} h ago` : `${Math.round(m / 1440)} d ago`; };
+// the last survey in a line: when it was, and what it came to (the places listened to within the hour before the latest)
+function surveyLast(R, places) {
+  const found = MODES.found[R.origin] || {}, last = Object.values(found).reduce((a, f) => Math.max(a, f.at || 0), 0);
+  if (!last) return help("No survey of this receiver yet.");
+  const round = places.map(p => [p, found[p.key]]).filter(([, f]) => f && f.at > last - 3600000), with_ = round.filter(([, f]) => f.n);
+  const best = with_.filter(([p]) => FT_NAMES[p.mode]).sort((a, b) => b[1].n - a[1].n)[0], far = with_.filter(([, f]) => f.km).sort((a, b) => b[1].km - a[1].km)[0];
+  const d = new Date(last), today = d.toDateString() === new Date().toDateString();
+  const when = `${today ? "today" : d.toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "long" })} at ${d.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" })} (${modeAge(last)})`;
+  const says = !round.length ? "" : !with_.length ? `nothing heard at any of the ${round.length} places listened to`
+    : `something at ${with_.length} of the ${round.length} places listened to` + (best ? `; the busiest ${best[0].band} ${FT_NAMES[best[0].mode]} with ${best[1].n} heard` : "")
+      + (far ? `; the farthest ${far[1].km.toLocaleString("en-GB")} km, on ${far[0].band}` : "");
+  return el("p", { className: "shelp", id: "survey-last" }, el("b", { textContent: "Last survey: " }), `${when}${says ? ": " + says : ""}. The keys above say what each place had.`);
+}
 function modeKey(R, p) {
   const f = MODES.found[R.origin]?.[p.key], swept = modeOwn(R) && modeSweep(p), what = FT_NAMES[p.mode] ? "heard" : p.mode === "psk31" ? "signal" + (f?.n === 1 ? "" : "s") : swept ? "found" : "there", now = modeRun(R)?.at === p.key;
   const at = swept && f?.where?.length ? f.where : null, atSays = s => `${(s.hz / 1e6).toFixed(4)}${s.wpm ? ` (${s.wpm} words a minute)` : s.baud ? ` (${Math.round(s.baud)} baud, ${s.shift} Hz apart)` : ""}`;
@@ -3961,6 +3974,9 @@ function listenLine() {
               sbtn("Stop listening", () => { const a = $("listenHere"); if (a) { a.pause(); a.removeAttribute("src"); a.load(); } }));
 }
 // each: load() -> data; build(data, act) -> nodes. act(fn) runs a change, reloads, redraws.
+// what the Wi-Fi is doing, in a few words (offline: a radio set to work without it)
+const wifiNow = w => w.mode === "offline" ? (w.trial_until ? "Off for a ten-minute trial" : "Off: this radio works without Wi-Fi")
+  : w.mode === "hotspot" ? `Its own network: ${w.hotspot.ssid}${w.visit ? " · on for a visit" : ""}` : w.ssid ? `${w.ssid} · ${w.ip}` : "Not connected";
 const UI = {
   tests: {
     load: async () => (await api("/api/status")).speaker,
@@ -4131,7 +4147,7 @@ const UI = {
       const pw = el("input", { type: "password", placeholder: "Its password", id: "wifi-pw" });
       const join = w.joining ? line(el("b", { textContent: w.joining }), pw, sbtn("Join", () => act(() => api("/api/wifi/add", { ssid: w.joining, password: pw.value })), "primary"), sbtn("Cancel", () => { w.joining = null; win4(w); })) : null;
       return [
-        grp("Wi-Fi", srow("Now", el("b", { textContent: w.mode === "hotspot" ? `Its own network: ${w.hotspot.ssid}` : w.ssid ? `${w.ssid} · ${w.ip}` : "Not connected" })),
+        grp("Wi-Fi", srow("Now", el("b", { textContent: wifiNow(w) })),
           el("div", {}, ...rows), rows.length ? null : help("Press Look again to see the networks nearby."), join,
           line(sbtn("Look again", () => act(() => api("/api/wifi/scan", {}))), sbtn("Try the saved networks now", () => act(() => api("/api/wifi/try", {}))))),
         grp("Saved networks", ...[...known].map(n => srow(n, help(w.on_card?.includes(n) ? "From the card" : "Saved"), w.saved?.includes(n) ? sbtn("Forget", () => act(() => api("/api/wifi/remove", { ssid: n }))) : el("span"))),
@@ -4145,6 +4161,22 @@ const UI = {
           }))),
           help("It only starts its own network when you ask (below), after a settings reset, or with no network set up."),
           line(sbtn("Switch to its own network now…", () => ask("Switch the radio to its own network now? It leaves your Wi-Fi, so this page loses it until you join SleepRadio-Setup.", "Switch", () => act(() => api("/api/wifi/hotspot-now", {})))))),
+        grp("Without Wi-Fi", ...(w.offline ? [
+          help(w.forced_on ? "This radio is set to work without Wi-Fi, but the file wifi-on.txt on its card keeps the Wi-Fi on."
+            : w.mode === "offline" ? "The Wi-Fi is off, and stays off."
+            : "This radio is set to work without Wi-Fi. The Wi-Fi is on for this visit: it goes off again about 15 minutes after the last visitor leaves its own network, or when the radio next starts."),
+          line(sbtn("Use Wi-Fi again", () => act(async () => { await api("/api/wifi/offline", { on: false }); toast("The radio uses Wi-Fi again."); }), "primary")),
+          help("To visit it: hold buttons 1 and 4 for 5 seconds, then press 2. It makes its own network and says how to join. Nothing is forgotten."),
+        ] : [
+          help("For a radio that lives where there is no Wi-Fi. It starts with the Wi-Fi off, says nothing about it, and just plays. To get back in, hold buttons 1 and 4 on the radio for 5 seconds, then press 2: it makes its own network for a visit."),
+          line(sbtn("Try it for 10 minutes", () => ask("Turn the Wi-Fi off for 10 minutes? This page loses the radio until it comes back by itself.", "Try it", () => act(() => api("/api/wifi/trial", {})))),
+            sbtn("Turn the Wi-Fi off for good…", async () => {
+              let voice = true; try { voice = (await api("/api/status")).voices_ready !== false; } catch {}
+              ask((voice ? "" : "The DJ's voice isn't on the radio yet, and it needs the internet to fetch it: without it the radio plays with no DJ. ")
+                + "Turn the Wi-Fi off for good? This page loses the radio. To get back in: hold buttons 1 and 4 on the radio for 5 seconds, then press 2.",
+                "Turn it off", () => act(() => api("/api/wifi/offline", { on: true })));
+            })),
+        ])),
       ];
     },
   },
@@ -4187,10 +4219,16 @@ const UI = {
   updates: {
     load: () => api("/api/update"),
     build: (u, act) => [grp("Updates", srow("On the radio", el("b", { textContent: niceVersion(u.version), title: u.version })),
-      u.available ? srow("New", el("span", { textContent: u.available.version || u.available.tag || "ready" }), sbtn("Install", () => ask("Install the update? The radio restarts; the old version is kept to go back to.", "Install", () => act(() => api("/api/update/install", {}))), "primary")) : help("Press Look for updates to check."),
+      u.available ? srow(u.available.from_file ? "From the file" : "New", el("span", { textContent: u.available.version || u.available.tag || "ready" }), sbtn("Install", () => ask("Install the update? The radio restarts; the old version is kept to go back to.", "Install", () => act(() => api("/api/update/install", {}))), "primary")) : help("Press Look for updates to check."),
       u.job && u.job.state !== "idle" ? help(`Working: ${u.job.state}`) : null,
       line(sbtn("Look for updates", () => act(() => api("/api/update/check", {})))),
-      help("An update never touches your music, voices or settings."))],
+      help("An update never touches your music, voices or settings.")),
+      grp("From a file", help("For a radio with no internet. On a phone or computer, fetch the file ending .update from the release page (github.com/dylan7474/SleepRadioPi-OS/releases), then send it here."),
+        (() => { const f = el("input", { type: "file", hidden: true, accept: ".update" });
+          f.onchange = () => { const file = f.files[0]; if (!file) return; toast("Sending the update file: about a minute…", true);
+            act(async () => { const r = await fetch("/api/update/file", { method: "POST", body: file }); const d = await r.json().catch(() => ({}));
+              if (!r.ok) throw new Error(d.error || "that file wasn't taken"); toast(`Version ${d.available?.version || "?"} is ready: press Install.`); }); };
+          return line(sbtn("Send an update file…", () => f.click()), f); })())],
   },
   backup: {
     load: async () => ({}),
@@ -4203,7 +4241,7 @@ const UI = {
           line(sbtn("Open the Backups folder", () => open(BACKUPS.id), "primary"))),
         grp("Save and load a file", line(sbtn("Save settings", () => { const a = el("a", { href: "/api/settings", download: "" }); document.body.append(a); a.click(); a.remove(); }), sbtn("Load settings…", () => f.click()), f),
         help("The file has your buttons, lists, playlists, programmes, stations, podcasts, the DJ, the EQ… never Wi-Fi passwords or keys.")),
-        grp("Start again", help("To put every setting back as it came (keeping your music, books and voices): hold buttons 1 and 4 on the radio for 15 seconds, then choose 4."))];
+        grp("Start again", help("To put every setting back as it came (keeping your music, books and voices): hold buttons 1 and 4 on the radio for 5 seconds, then choose 4."))];
     },
   },
   power: {
@@ -4454,6 +4492,7 @@ const UI = {
                        s.onchange = async () => { try { MODES.srv = await api("/api/rx/survey", { base: R.origin, itself: +s.value, places: modePlaces(R).filter(p => p.mode === "ft8").map(modePlace) });
                          toast(+s.value ? `The radio will survey FT8 on every band ${+s.value === 1 ? "every hour" : `every ${s.value} hours`}, when it isn't playing this receiver.` : "The radio surveys this receiver only when you ask."); drawDesk(); } catch (e) { rigOops(e); drawDesk(); } };
                        return s; })()] : [])),
+          run ? null : surveyLast(R, places),
           help(run ? (own ? "The radio is taking the receiver round the bands by itself: you can close this page. It goes back where it was at the end." : "The receiver is being taken round the bands; it goes back where it was at the end.")
             : own ? `The radio takes the receiver to each place in turn and listens: a whole slot for FT8 and FT4, a few seconds for PSK31 and the weather teleprinters. FT8 alone takes ${mins(["ft8"])}, everything ${mins(["ft8", "ft4", "psk31", "rtty"], true)} or more. It's the radio's doing, so this page can be closed; it listens to the receiver directly, so nothing is heard unless the radio is playing this receiver (then you hear it go round). The receiver goes back where it was. Morse and amateur teleprinters have no one frequency, so their part of each band is swept (${mins([], true)} or more by itself): the receiver's waterfall is watched for what comes and goes, each such thing is listened to for a few seconds, and a key that found some says how many and goes to the strongest.${surveyed ? ` Last surveyed ${modeAge(surveyed)}.` : ""}`
             : `The receiver is taken to each place in turn and listened to: a whole slot for FT8 and FT4, a quarter of a minute for PSK31 and the weather teleprinters. FT8 alone takes ${mins(["ft8"])}, everything ${mins(["ft8", "ft4", "psk31", "rtty"])}. The radio plays each as it goes, and the receiver goes back where it was. Amateur teleprinters and Morse aren't surveyed: they have no one frequency.${surveyed ? ` Last surveyed ${modeAge(surveyed)}.` : ""}`)),
@@ -4633,7 +4672,7 @@ const SUMS = {
                       d.jingle_every ? `a jingle every ${d.jingle_every}` : "no jingles"].join(" · ") : "Off: music only, no speech",
   noise: n => n.on ? `${n.kinds[n.kind]?.label || n.kind} noise · balance ${n.mix}` : "Off",
   voices: v => `${VOICE(v.current)} · ${v.voices.length} installed`,
-  wifi: w => w.mode === "hotspot" ? `Its own network: ${w.hotspot.ssid}` : w.ssid ? `${w.ssid} · ${w.ip}` : "Not connected",
+  wifi: w => wifiNow(w),
   identity: ({ id, auth, status }) => [id.name, id.hardware === "cathedral" ? "cathedral case" : "box case", auth.protected ? "password on" : "no password", status.stream ? "browser listening on" : ""].filter(Boolean).join(" · "),
   buttons: b => b.buttons.map((x, i) => `${i + 1} ${x.label}${x.steps?.length > 1 ? ` +${x.steps.length - 1}` : ""}`).join(" · ") + (b.bank ? ` · ${b.bank} set` : ""),
   updates: u => u.available ? `${niceVersion(u.version)} · an update is ready` : niceVersion(u.version),

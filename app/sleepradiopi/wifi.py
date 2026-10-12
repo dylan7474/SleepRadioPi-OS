@@ -32,7 +32,19 @@ The manager runs as root (started by S35wifi):
     python3 -m sleepradiopi.wifi manager
 
 The station asks it for things by writing REQUEST ({"action": "reload" |
-"scan" | "hotspot" | "station"}) and reads STATUS.
+"scan" | "hotspot" | "station" | "offline" | "trial"}) and reads STATUS.
+
+A radio that lives where there's no Wi-Fi is set "offline" (the page's Wi-Fi
+window; kept in wifi.json): it starts with the Wi-Fi off -- no hotspot,
+nothing tried, nothing said -- and just plays. The way back in is a visit:
+asked for its own network (the service menu's 2: hold buttons 1 and 4), it
+makes the hotspot without forgetting anything, and turns the Wi-Fi off again
+once nobody has been on it for VISIT_S (or at the next start). A network
+joined during a visit (a phone's, for an update) is kept until the next
+start. Without buttons, a file called wifi-on.txt on the card's boot
+partition (made on a PC) overrides offline for as long as it's there. A
+trial ("trial") turns the Wi-Fi off for TRIAL_S and then back on, to see
+that the radio is happy without it before saying so for good.
 """
 
 from __future__ import annotations
@@ -59,6 +71,8 @@ HOTSPOT_IP = "192.168.4.1"
 HOTSPOT = {"ssid": "SleepRadio-Setup", "password": "sleepradio"}
 JOIN_S, RETRY_S = 45, 300
 RECONNECT_S, RECONNECT_MAX_S, RESTART_S = 30, 120, 600
+VISIT_S, VISIT_CHECK_S, TRIAL_S = 900, 10, 600
+FORCE_ON = Path("/boot/wifi-on.txt")          # (on the card: Wi-Fi whatever "offline" says)
 
 
 # --- the saved networks (station side) --------------------------------------------------
@@ -82,7 +96,7 @@ def load(path: Path = NETWORKS) -> dict:
         data = {}
     nets = [n for n in data.get("networks", []) if isinstance(n, dict) and isinstance(n.get("ssid"), str)]
     hotspot = data.get("hotspot") if isinstance(data.get("hotspot"), dict) else {}
-    return {"networks": nets, "hotspot": {**default_hotspot(path), **hotspot}}
+    return {"networks": nets, "hotspot": {**default_hotspot(path), **hotspot}, "offline": data.get("offline") is True}
 
 
 def default_hotspot(networks: Path = NETWORKS) -> dict:
@@ -123,6 +137,14 @@ def set_hotspot(ssid: str, password: str, path: Path = NETWORKS) -> dict:
         raise ValueError("the hotspot needs a password of 8-63 characters")
     data = load(path)
     data["hotspot"] = {"ssid": ssid, "password": password}
+    save(data, path)
+    return data
+
+
+def set_offline(on: bool, path: Path = NETWORKS) -> dict:
+    """A radio that lives without Wi-Fi: off at start-up, no hotspot (see the top)."""
+    data = load(path)
+    data["offline"] = bool(on)
     save(data, path)
     return data
 
@@ -193,9 +215,11 @@ def iw_scan(text: str) -> dict[str, int]:
 
 class Manager:
     def __init__(self, sh=None, base_conf: Path = BASE_CONF, networks: Path = NETWORKS, run: Path = RUN,
-                 clock=time.monotonic, sleep=time.sleep) -> None:
+                 clock=time.monotonic, sleep=time.sleep, force_on: Path = FORCE_ON) -> None:
         self.sh = sh or self._sh
-        self.base_conf, self.networks, self.rundir = base_conf, networks, run
+        self.base_conf, self.networks, self.rundir, self.force_on = base_conf, networks, run, force_on
+        self.visit, self.visit_idle, self.visit_check = False, 0.0, 0.0   # the hotspot of an offline radio
+        self.trial_until: float | None = None     # Wi-Fi off just to try it: back on then
         self.clock, self.sleep = clock, sleep
         self.mode = "off"
         self.status = {"mode": "off"}
@@ -220,6 +244,10 @@ class Manager:
                                                       "password": data["hotspot"]["password"],
                                                       "ip": HOTSPOT_IP},
                        "nearby": self.nearby, "at": time.time(), **({"setup": True} if self.setup else {}),
+                       "offline": data["offline"], **({"visit": True} if self.visit and self.mode == "hotspot" else {}),
+                       **({"forced_on": True} if data["offline"] and self.force_on.exists() else {}),
+                       **({"trial_until": time.time() + self.trial_until - self.clock()}
+                          if self.trial_until is not None and self.mode == "offline" else {}),
                        **extra}
         tmp = self.rundir / "wifi-status.tmp"
         tmp.write_text(json.dumps(self.status))
@@ -230,6 +258,18 @@ class Manager:
         for name in ("wpa_supplicant", "udhcpc", "hostapd", "dnsmasq"):
             self.sh("killall", "-q", name)
         self.sh("ip", "addr", "flush", "dev", IFACE)
+
+    def offline(self) -> bool:
+        """Set to live without Wi-Fi (and not overridden from the card)?"""
+        return load(self.networks)["offline"] and not self.force_on.exists()
+
+    def go_offline(self, asked: bool = False) -> None:
+        """Wi-Fi off altogether. asked: someone just chose it (the station says so)."""
+        self._stop_everything()
+        self.sh("ip", "link", "set", IFACE, "down")
+        self.mode, self.setup, self.visit, self.lost_since = "offline", False, False, None
+        self._write_status(**({"asked": True} if asked else {}))
+        log.warning("wifi: off (%s)", "a trial" if self.trial_until is not None else "this radio is set to work without it")
 
     def start_station(self) -> None:
         self.mode = "connecting"                  # said first: starting it takes seconds (udhcpc waits for
@@ -270,6 +310,8 @@ class Manager:
         if not self.nearby:                       # (the Wi-Fi had only just come up)
             self.scan()
         self.setup = False
+        self.visit = self.offline()               # an offline radio's hotspot is a visit: it ends by itself
+        self.visit_idle, self.visit_check = self.clock(), self.clock() + VISIT_CHECK_S
         self._stop_everything()
         spot = load(self.networks)["hotspot"]
         (self.rundir / "hostapd.conf").write_text(hostapd_conf(spot["ssid"], spot["password"]))
@@ -281,7 +323,8 @@ class Manager:
         self.mode = "hotspot"
         self._write_status(**({"failed": failed} if failed else {}), **({"again": True} if again else {}))
         log.warning("wifi: %s; hotspot %s is on at %s (%d networks nearby)",
-                    f"couldn't join {failed}" if failed else "no saved network", spot["ssid"], HOTSPOT_IP,
+                    f"couldn't join {failed}" if failed else "a visit" if self.visit else "no saved network",
+                    spot["ssid"], HOTSPOT_IP,
                     len(self.nearby))
 
     def have_networks(self) -> bool:
@@ -365,7 +408,7 @@ class Manager:
                        if s != own][:20]
 
     def handle(self, action: str) -> None:
-        if self.mode == "hotspot" and action in ("reload", "station"):
+        if self.mode == "hotspot" and action in ("reload", "station", "offline"):
             self.setup = True                     # someone is setting it up: say how it goes, and come back if it fails
         if action == "reload":
             if self.mode in ("station", "connecting"):
@@ -376,16 +419,32 @@ class Manager:
         elif action == "scan":
             self.scan()
         elif action == "hotspot":
+            self.trial_until = None
             self.start_hotspot()
         elif action == "station":
             self.join_or_keep_trying()
+        elif action == "trial":
+            self.trial_until = self.clock() + TRIAL_S
+            self.go_offline(asked=True)
+            return
+        elif action == "offline":                 # the setting was changed on the page
+            self.trial_until = None
+            if self.offline():
+                self.go_offline(asked=True)
+                return
+            if self.mode in ("offline", "hotspot"):
+                self.join_or_keep_trying()
         keep = {k: self.status[k] for k in ("failed", "again") if k in self.status} if self.mode == "hotspot" else {}
         self._write_status(**(self.connected() or {}), **keep)
 
     def start(self) -> None:
-        """At start-up: join a saved network (or keep trying)."""
+        """At start-up: join a saved network (or keep trying) -- or, on a radio
+        set to work without Wi-Fi, leave it off."""
         self.lost_since, self.retry_at = None, self.clock() + RETRY_S
-        self.join_or_keep_trying()
+        if self.offline():
+            self.go_offline()
+        else:
+            self.join_or_keep_trying()
 
     def step(self) -> None:
         """One turn of the loop (every 2 s): requests, and keeping connected."""
@@ -406,6 +465,22 @@ class Manager:
                 self._reconnecting()              # dropped: keep trying, quietly
             else:
                 self._keep_trying()
+        elif self.mode == "offline":
+            if self.trial_until is not None and self.clock() >= self.trial_until:
+                self.trial_until = None
+                log.info("wifi: the trial without Wi-Fi is over")
+                self.join_or_keep_trying()
+        elif self.mode == "hotspot" and self.visit:   # (no saved network is tried: it's meant to be off)
+            if self.clock() >= self.visit_check:
+                self.visit_check = self.clock() + VISIT_CHECK_S
+                if self.hotspot_in_use():
+                    self.visit_idle = self.clock()
+                elif self.clock() - self.visit_idle >= VISIT_S:
+                    log.info("wifi: nobody on the hotspot for %d min; the visit is over", VISIT_S // 60)
+                    if self.offline():
+                        self.go_offline()
+                    else:                         # (offline was turned off meanwhile)
+                        self.join_or_keep_trying()
         elif self.mode == "hotspot" and self.clock() >= self.retry_at:
             if not self.hotspot_in_use() and self.have_networks():
                 failed = self.status.get("failed")
@@ -426,7 +501,7 @@ class Manager:
         except (OSError, ValueError):
             return None
         path.unlink(missing_ok=True)
-        return action if action in ("reload", "scan", "hotspot", "station") else None
+        return action if action in ("reload", "scan", "hotspot", "station", "offline", "trial") else None
 
 
 def ask(action: str, run: Path = RUN) -> None:

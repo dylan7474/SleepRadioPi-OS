@@ -21,6 +21,15 @@ restarting, "updated to version 1.2".
 
 The download is checked against the manifest's SHA-256 (both come from the
 same release, over HTTPS).
+
+A radio with no internet (one that works without Wi-Fi, visited on its own
+network) takes the same release from a file instead: the release's
+sleepradio-VERSION.update, a plain tar of manifest.json, the image and
+config.txt, fetched on a phone or PC and sent from the page (Updates ->
+From a file). The station keeps it in STATE (BUNDLE) and hands the helper
+its manifest with "bundle" instead of URLs; from there it's the same road --
+the same checks, the same spare slot, the same way back if it doesn't start.
+The file is as trusted as whoever can use the page: it isn't signed.
 """
 
 from __future__ import annotations
@@ -32,8 +41,10 @@ import json
 import logging
 import os
 import re
+import shutil
 import subprocess
 import sys
+import tarfile
 import threading
 import time
 import urllib.error
@@ -51,6 +62,9 @@ STATE = Path("/data/radio/.update")        # pending.json, result.json (the stat
 CONFIRM_S = 300                           # the new system must be on air within this
 SLOT_BYTES = 256 * 1024 * 1024
 UA = {"User-Agent": "SleepRadioPi-updater"}
+BUNDLE = "bundle.update"                  # an update sent from the page as a file, kept in STATE
+BUNDLE_SPARE = 8 * 1024 * 1024            # ...and the room that must be left there besides
+BUSY = ("requested", "downloading", "writing", "verifying", "ready")
 
 
 def this_version(path: Path = VERSION_FILE) -> str:
@@ -139,6 +153,41 @@ def newer(release: str, current: str) -> bool:
     return release.strip().lstrip("v") != current.strip().lstrip("v").split("-")[0]
 
 
+def read_bundle(path: Path) -> dict:
+    """The manifest of an update file, once the file has what the manifest says."""
+    try:
+        with tarfile.open(path, "r:") as t:
+            sizes = {m.name: m.size for m in t.getmembers() if m.isfile()}
+            if sizes.get("manifest.json", 1 << 30) > 1 << 20:
+                raise ValueError("that isn't a Sleep Radio update file")
+            m = json.load(t.extractfile("manifest.json"))
+    except (tarfile.TarError, OSError, ValueError, EOFError, KeyError, AttributeError) as e:
+        raise ValueError("that isn't a Sleep Radio update file") from e
+    if not isinstance(m, dict) or not all(k in m for k in ("version", "rootfs", "kernel_sha256")):
+        raise ValueError("that isn't a Sleep Radio update file")
+    try:
+        if sizes.get(m["rootfs"]["file"]) != int(m["rootfs"]["size"]):
+            raise ValueError
+        if m.get("config_txt") and m["config_txt"]["file"] not in sizes:
+            raise ValueError
+    except (KeyError, TypeError, ValueError):
+        raise ValueError("the update file is incomplete: fetch it again") from None
+    return m
+
+
+def _from_bundle(path: Path, name: str, size: int, write: Callable[[bytes], None],
+                 progress: Callable[[int], None] = lambda got: None) -> int:
+    """As download(), from a file inside the update file."""
+    got = 0
+    with tarfile.open(path, "r:") as t:
+        f = t.extractfile(name)
+        while got < size and (chunk := f.read(min(1 << 20, size - got))):
+            write(chunk)
+            got += len(chunk)
+            progress(got)
+    return got
+
+
 # --- the root side (update-watch) ---------------------------------------------------------
 
 class Paths:
@@ -220,25 +269,38 @@ def install(req: dict, p: Paths = Paths(), status=None) -> str:
     if not 0 < size <= SLOT_BYTES:
         raise ValueError("the image doesn't fit a root slot")
     dev = p.device(new)
-    say("downloading", progress=0.0)
+    bundle = req.get("bundle")
+    if bundle and Path(bundle) != p.state / BUNDLE:     # (only the one the station keeps)
+        raise ValueError("that isn't where an update file is kept")
+    doing = "writing" if bundle else "downloading"
+    say(doing, progress=0.0)
     got, h = 0, hashlib.sha256()
     with open(dev, "r+b" if dev.exists() else "wb") as out:
         def write(chunk: bytes) -> None:
             h.update(chunk)
             out.write(chunk)
-        got = download(req["rootfs"]["url"], size, write,
-                       lambda n: say("downloading", progress=round(n / size, 3)))
+        if bundle:
+            got = _from_bundle(Path(bundle), req["rootfs"]["file"], size, write,
+                               lambda n: say(doing, progress=round(n / size, 3)))
+        else:
+            got = download(req["rootfs"]["url"], size, write,
+                           lambda n: say(doing, progress=round(n / size, 3)))
         out.flush()
         os.fsync(out.fileno())
     if got != size or h.hexdigest() != want:
-        raise ValueError("the download doesn't match the release's checksum; nothing was changed")
+        raise ValueError(("the update file" if bundle else "the download") +
+                         " doesn't match the release's checksum; nothing was changed")
     say("verifying")
     if _sha256_file(dev, size) != want:                 # what's actually on the card
         raise ValueError("the written image doesn't read back right; nothing was changed")
     cfg = req.get("config_txt")
     if cfg and _sha256_file(p.boot / "config.txt") != cfg["sha256"]:
-        with _get(cfg["url"]) as r:
-            data = r.read()
+        if bundle:
+            with tarfile.open(bundle, "r:") as t:
+                data = t.extractfile(cfg["file"]).read(1 << 20)
+        else:
+            with _get(cfg["url"]) as r:
+                data = r.read()
         if hashlib.sha256(data).hexdigest() != cfg["sha256"]:
             raise ValueError("config.txt doesn't match the release's checksum; nothing was changed")
         p.remount("rw")
@@ -322,10 +384,15 @@ def main(argv=None) -> int:
     if args.cmd == "rollback":
         print(rollback())
         return 0
+    req = {}
     try:
         req = json.loads(REQUEST.read_text())
         REQUEST.unlink(missing_ok=True)
-        slot = install(req)
+        try:
+            slot = install(req)
+        finally:
+            if req.get("bundle"):                    # (it's in the slot now, or no good)
+                (STATE / BUNDLE).unlink(missing_ok=True)
         end = time.monotonic() + 30                  # let the station say it's restarting
         while not GO.exists() and time.monotonic() < end:
             time.sleep(0.5)
@@ -357,6 +424,8 @@ class Updates:
         self.available: dict | None = None
         try:                    # made by the station (radio), so it can confirm updates
             self.state.mkdir(parents=True, exist_ok=True)
+            (self.state / BUNDLE).unlink(missing_ok=True)     # (a file sent and never installed)
+            (self.state / (BUNDLE + ".part")).unlink(missing_ok=True)
         except OSError:
             pass
 
@@ -367,14 +436,15 @@ class Updates:
     def status(self) -> dict:
         with self._lock:
             job = dict(self._job)
-        if job["state"] in ("requested", "downloading", "verifying", "ready"):
+        if job["state"] in BUSY:
             try:
                 job.update(json.loads(self.status_file.read_text()))
             except (OSError, ValueError):
                 pass
         return {"version": self.version, "job": job,
                 "available": None if self.available is None else
-                {"version": self.available["version"], "notes": self.available.get("notes", "")}}
+                {"version": self.available["version"], "notes": self.available.get("notes", ""),
+                 **({"from_file": True} if self.available.get("bundle") else {})}}
 
     def check(self) -> dict:
         m = fetch_manifest(self.source)
@@ -383,19 +453,62 @@ class Updates:
             self._job = {"state": "checked"}
         return self.status()
 
+    def take_file(self, size: int, read: Callable[[int], bytes]) -> dict:
+        """An update sent from the page as a file (size bytes, from read(n)):
+        keep it, and offer it as the update to install. Any version will do --
+        it's also the way to put an older one back."""
+        with self._lock:
+            if self._job["state"] in BUSY or self._job["state"] == "receiving":
+                raise ValueError("an update is already under way")
+            was, self._job = self._job, {"state": "receiving"}
+        path, part = self.state / BUNDLE, self.state / (BUNDLE + ".part")
+        try:
+            if not 0 < size <= SLOT_BYTES + (1 << 20):
+                raise ValueError("that isn't a Sleep Radio update file")
+            path.unlink(missing_ok=True)
+            if shutil.disk_usage(self.state).free < size + BUNDLE_SPARE:
+                raise ValueError("there isn't room on the radio to take the update file")
+            got = 0
+            with open(part, "wb") as out:
+                while got < size:
+                    chunk = read(min(1 << 20, size - got))
+                    if not chunk:
+                        raise ValueError("the update file didn't all arrive: send it again")
+                    out.write(chunk)
+                    got += len(chunk)
+                out.flush()
+                os.fsync(out.fileno())
+            m = read_bundle(part)
+            os.replace(part, path)
+        except BaseException:
+            part.unlink(missing_ok=True)
+            with self._lock:
+                self._job = was
+            raise
+        m["bundle"] = str(path)
+        with self._lock:
+            self.available = m
+            self._job = {"state": "checked"}
+        log.info("an update file was sent: version %s", m["version"])
+        return self.status()
+
     def install(self) -> dict:
         if self.available is None:
             raise ValueError("check for an update first")
         with self._lock:
-            if self._job["state"] in ("requested", "downloading", "verifying", "ready"):
+            if self._job["state"] in BUSY:
                 raise ValueError("an update is already under way")
             self._job = {"state": "requested"}
         m = self.available
         self.status_file.unlink(missing_ok=True)
         _write_json(self.request, {"version": m["version"], "rootfs": m["rootfs"], "current": self.version,
-                                   "kernel_sha256": m["kernel_sha256"], "config_txt": m.get("config_txt")})
-        self.say(f"Downloading an update: version {m['version']}. "
-                 "The music carries on while it downloads.")
+                                   "kernel_sha256": m["kernel_sha256"], "config_txt": m.get("config_txt"),
+                                   **({"bundle": m["bundle"]} if m.get("bundle") else {})})
+        if m.get("bundle"):
+            self.say(f"Installing an update: version {m['version']}. The music carries on meanwhile.")
+        else:
+            self.say(f"Downloading an update: version {m['version']}. "
+                     "The music carries on while it downloads.")
         threading.Thread(target=self._follow, name="update", daemon=True).start()
         return self.status()
 
@@ -417,6 +530,8 @@ class Updates:
             if st.get("state") == "error":
                 with self._lock:
                     self._job = {"state": "error", "message": st.get("message", "the update failed")}
+                    if (self.available or {}).get("bundle"):     # (the helper has thrown the file away)
+                        self.available = None
                 self.say("The update didn't work, so nothing has changed.")
                 return
             time.sleep(1)

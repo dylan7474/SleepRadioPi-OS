@@ -341,3 +341,135 @@ def test_the_station_says_what_the_wifi_is_doing() -> None:
     main._wifi_event(a, None, {"mode": "hotspot", "hotspot": spot})            # ... but a hotspot always is
     assert len(a.said) == 1
     assert "check the Wi-Fi name and password" in announce.failed_text(spot)
+
+
+# --- a radio that works without Wi-Fi ---------------------------------------------------------
+
+def _offline_manager(tmp_path, pi):
+    m, run = _manager(tmp_path, pi)
+    m.force_on = tmp_path / "wifi-on.txt"
+    return m, run
+
+
+def test_an_offline_radio_starts_with_the_wifi_off_and_stays_off(tmp_path: Path) -> None:
+    pi = FakePi()
+    pi.connected_to = "CHIGLEY"                           # (its network is even in range)
+    m, run = _offline_manager(tmp_path, pi)
+    wifi.set_offline(True, tmp_path / "wifi.json")
+    m.start()
+    st = wifi.status(run)
+    assert st["mode"] == "offline" and st["offline"] and not st.get("asked")     # nothing to say at start-up
+    assert ("ip", "link", "set", "wlan0", "down") in pi.cmds and pi.now < 5
+    _run_for(m, pi, 6 * 3600)                             # all day: nothing is started, nothing tried
+    assert wifi.status(run)["mode"] == "offline"
+    assert not any(c[0] in ("wpa_supplicant", "hostapd", "udhcpc", "dnsmasq") for c in pi.cmds)
+    assert wifi.load(tmp_path / "wifi.json")["offline"]
+    wifi.add_network("Home", "password1", tmp_path / "wifi.json")
+    assert wifi.load(tmp_path / "wifi.json")["offline"]   # (kept when the networks change)
+
+
+def test_a_visit_to_an_offline_radio_ends_by_itself_and_forgets_nothing(tmp_path: Path) -> None:
+    pi = FakePi()
+    m, run = _offline_manager(tmp_path, pi)
+    wifi.add_network("Home", "password1", tmp_path / "wifi.json")
+    wifi.set_offline(True, tmp_path / "wifi.json")
+    m.start()
+    wifi.ask("hotspot", run)                              # the service menu's 2
+    _run_for(m, pi, 4)
+    st = wifi.status(run)
+    assert st["mode"] == "hotspot" and st["visit"] and st["offline"]
+    assert [n["ssid"] for n in wifi.load(tmp_path / "wifi.json")["networks"]] == ["Home"]
+    joins = lambda: len([c for c in pi.cmds if c[0] == "wpa_supplicant"])
+    before = joins()
+    pi.hotspot_clients = True                             # someone is on it: it stays, however long
+    _run_for(m, pi, 3 * wifi.VISIT_S)
+    assert wifi.status(run)["mode"] == "hotspot" and joins() == before      # (and Home is never tried)
+    pi.hotspot_clients = False                            # they've gone
+    _run_for(m, pi, wifi.VISIT_S - 30)
+    assert wifi.status(run)["mode"] == "hotspot"
+    _run_for(m, pi, 60)
+    st = wifi.status(run)
+    assert st["mode"] == "offline" and not st.get("asked") and not st.get("visit")
+    assert ("ip", "link", "set", "wlan0", "down") in pi.cmds[-6:]
+
+
+def test_joining_a_network_during_a_visit_and_turning_offline_off(tmp_path: Path) -> None:
+    pi = FakePi()
+    m, run = _offline_manager(tmp_path, pi)
+    wifi.set_offline(True, tmp_path / "wifi.json")
+    m.start()
+    wifi.ask("hotspot", run)
+    _run_for(m, pi, 4)
+    wifi.add_network("Phone", "password1", tmp_path / "wifi.json")      # a phone's network, for an update
+    pi.connected_to = "Phone"
+    wifi.ask("reload", run)
+    _run_for(m, pi, 4)
+    st = wifi.status(run)
+    assert st["mode"] == "station" and st["ssid"] == "Phone" and st["offline"]   # on until it next starts...
+    m2, run2 = wifi.Manager(sh=pi.sh, base_conf=m.base_conf, networks=tmp_path / "wifi.json", run=run,
+                            clock=pi.clock, sleep=pi.sleep, force_on=m.force_on), run
+    m2.start()
+    assert wifi.status(run2)["mode"] == "offline"                               # ...then off again
+    wifi.set_offline(False, tmp_path / "wifi.json")                             # "Use Wi-Fi again" (from a visit)
+    wifi.ask("hotspot", run)
+    _run_for(m2, pi, 4)
+    wifi.ask("offline", run)
+    _run_for(m2, pi, 4)
+    assert wifi.status(run)["mode"] == "station" and not wifi.status(run)["offline"]
+
+
+def test_turned_off_from_the_page_says_so_and_a_trial_comes_back(tmp_path: Path) -> None:
+    pi = FakePi()
+    pi.connected_to = "CHIGLEY"
+    m, run = _offline_manager(tmp_path, pi)
+    m.start()
+    wifi.ask("trial", run)                                # "Try it for 10 minutes"
+    _run_for(m, pi, 4)
+    st = wifi.status(run)
+    assert st["mode"] == "offline" and st["asked"] and st["trial_until"] and not st["offline"]
+    _run_for(m, pi, wifi.TRIAL_S - 30)
+    assert wifi.status(run)["mode"] == "offline"
+    _run_for(m, pi, 60)
+    assert wifi.status(run)["mode"] == "station"          # back by itself
+    wifi.set_offline(True, tmp_path / "wifi.json")        # "Turn the Wi-Fi off for good"
+    wifi.ask("offline", run)
+    _run_for(m, pi, 4)
+    st = wifi.status(run)
+    assert st["mode"] == "offline" and st["asked"] and "trial_until" not in st
+    _run_for(m, pi, 2 * wifi.TRIAL_S)
+    assert wifi.status(run)["mode"] == "offline"
+
+
+def test_a_file_on_the_card_keeps_the_wifi_on(tmp_path: Path) -> None:
+    pi = FakePi()
+    pi.connected_to = "CHIGLEY"
+    m, run = _offline_manager(tmp_path, pi)
+    wifi.set_offline(True, tmp_path / "wifi.json")
+    m.force_on.write_text("")                             # wifi-on.txt, made on a PC
+    m.start()
+    st = wifi.status(run)
+    assert st["mode"] == "station" and st["offline"] and st["forced_on"]
+
+
+def test_the_station_says_the_wifi_is_off_only_when_it_was_asked_for() -> None:
+    from sleepradiopi import main
+    from sleepradiopi.io import announce
+
+    class FakeAnnouncer:
+        text = "the address"
+
+        def __init__(self):
+            self.said = []
+
+        def say(self, lines, tune, label="Wi-Fi", wait=0, plain=False):
+            self.said.append(lines[0])
+    spot = {"ssid": "SleepRadio-Setup", "password": "sleepradio", "ip": "192.168.4.1"}
+    a = FakeAnnouncer()
+    main._wifi_event(a, None, {"mode": "offline"})                              # start-up: silent
+    main._wifi_event(a, {"mode": "hotspot"}, {"mode": "offline"})               # a visit ending: silent
+    assert a.said == []
+    main._wifi_event(a, {"mode": "station"}, {"mode": "offline", "asked": True})
+    main._wifi_event(a, {"mode": "station"}, {"mode": "offline", "asked": True, "trial_until": 1.0})
+    assert a.said == [announce.OFFLINE, announce.TRIAL]
+    main._wifi_event(a, {"mode": "offline"}, {"mode": "hotspot", "hotspot": spot, "visit": True})
+    assert a.said[-1] == announce.visit_text(spot) and "s, l, e, e, p" in a.said[-1] and "visit" in a.said[-1]

@@ -93,6 +93,9 @@ def announcement(addrs: list[tuple[str, str]], host: str, hotspot: dict | None =
 
 
 JOINING = "Joining your Wi-Fi now."
+OFFLINE = ("The Wi-Fi is off now, and stays off. To turn it on for a visit, open the service menu, "
+           "and choose two.")
+TRIAL = "The Wi-Fi is off for ten minutes, to try it. Then it comes back by itself."
 
 # The Wi-Fi set-up's tunes: (notes in Hz, 0 = a rest; seconds each).
 CUES = {
@@ -101,6 +104,13 @@ CUES = {
     "joined": ((660.0, 880.0, 1320.0), 0.14),              # rising: it's on your Wi-Fi
     "failed": ((440.0, 330.0), 0.3),                       # falling: it couldn't join
 }
+
+
+def visit_text(hotspot: dict) -> str:
+    """Said when a radio that works without Wi-Fi makes its network for a visit."""
+    pw = hotspot["password"]
+    return (f"The Wi-Fi is on for a visit. On your phone, join {hotspot['ssid']}. "
+            f"The password is {pw}, spelled {', '.join(pw)}. Then open: {spoken_ip(hotspot['ip'])}.")
 
 
 def joined_text(ssid: str | None) -> str:

@@ -182,22 +182,28 @@ def _wifi_event(announcer, was: dict | None, st: dict) -> None:
     """Say what the Wi-Fi is doing while it's being set up: a tune at once, then
     the words in the plain voice (instant, and there before the DJ's is).
     Becoming a hotspot (no network set up,
-    or asked for) says how to join it, once each time -- in a new place you'd
+    or asked for -- a visit to a radio that works without Wi-Fi) says how to join it, once each time -- in a new place you'd
     otherwise never know; a join asked for from the hotspot says it's joining,
-    then that it's on (and its new address) or that it couldn't. Everything
+    then that it's on (and its new address) or that it couldn't; the Wi-Fi turned
+    off from the page says so, and how to get back in. Everything
     else -- a drop in the night, the regular retries -- stays silent."""
     from sleepradiopi.io import announce
     mode = st.get("mode")
     if mode == (was or {}).get("mode"):
         return
-    if mode == "hotspot":
+    if mode == "offline":
+        if st.get("asked") and was is not None:   # (chosen just now; not the visit ending, or a start-up)
+            announcer.say([announce.TRIAL if st.get("trial_until") else announce.OFFLINE], announce.cue("joining"),
+                          wait=20, plain=True)
+    elif mode == "hotspot":
         if st.get("again"):
             return
         if st.get("failed"):
             announcer.say([announce.failed_text(st["hotspot"], st["failed"])], announce.cue("failed"),
                           wait=20, plain=True)
         else:
-            announcer.say([announcer.text], announce.cue("setup"), wait=20, plain=True)
+            announcer.say([announce.visit_text(st["hotspot"]) if st.get("visit") else announcer.text],
+                          announce.cue("setup"), wait=20, plain=True)
     elif st.get("setup") and was is not None:     # (seen happening, not found so at start-up)
         if mode == "connecting":
             announcer.say([announce.JOINING], announce.cue("joining"), wait=20, plain=True)
@@ -514,8 +520,12 @@ def _service_menu(station: Station, control, presets, config_file: Path, ready=l
         if not power.request_restart():
             _restart_soon(control)    # (a desktop: at least restart the station)
 
+    def offline():
+        return wifi.load()["offline"]
+
     def forget_wifi():
-        reset.forget_wifi(wifi.NETWORKS)
+        if not offline():             # (a radio set to work without Wi-Fi: a visit, nothing forgotten)
+            reset.forget_wifi(wifi.NETWORKS)
         try:
             wifi.ask("hotspot")
         except OSError:
@@ -547,7 +557,7 @@ def _service_menu(station: Station, control, presets, config_file: Path, ready=l
         threading.Thread(target=make_fixed_lines, name="service-lines", daemon=True).start()
     menu = service_mod.ServiceMenu(say, {"restart": restart, "wifi": forget_wifi, "status": status,
                                          "rollback": rollback, "reset": factory_reset}, prepare=prepare, busy=busy,
-                                   on_open=on_open, on_close=on_close)
+                                   on_open=on_open, on_close=on_close, offline=offline)
     menu_ref.append(menu)
     return menu
 

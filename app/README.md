@@ -948,7 +948,10 @@ The cards:
   added on the page, and a renamed hotspot) and ask the Wi-Fi manager for
   the hotspot, which then announces how to join it; the network on the card
   (`/boot/wpa_supplicant.conf`) stays, so with nobody on the hotspot the
-  radio tries that again every 5 minutes. **3**: a status report (network,
+  radio tries that again every 5 minutes. On a radio set to work without
+  Wi-Fi (`"offline"` in `wifi.json`) **2** is "turn the Wi-Fi on" instead:
+  nothing is deleted, the hotspot is a visit (it ends by itself; see
+  `wifi.py`), and the menu's words say so. **3**: a status report (network,
   address, version, songs, free space), then **3** again goes back to the
   previous version: the root helper (`power-request-watch` →
   `updater.py rollback`) checks the other root slot holds a system
@@ -1314,7 +1317,9 @@ The cards:
   the page needn't stay open. What's found is kept in
   `~/.local/state/sleepradiopi/survey.json` (written once a round): for
   each place the latest and each finding of the last day (`"day": [[t,
-  n]]`), which the key draws as bars. *By itself* (`{"base", "itself": 0 |
+  n]]`), which the key draws as bars; the page's *Last survey* line is
+  worked out from the same (the latest `t`, and the places listened to
+  within the hour before it). *By itself* (`{"base", "itself": 0 |
   1 | 2 | 3 | 6, "places"}`, the setting `survey_itself`): on the hour,
   that many hours apart, while the radio isn't playing that receiver and
   nobody else is listening to it (another radio in the house: a round or a
@@ -1532,7 +1537,10 @@ The cards:
 - **Wi-Fi** — the connection; saved networks (the card's, and ones added
   here — kept as WPA keys, never passwords); *Find networks*; add or remove
   one; the hotspot's name and password (SleepRadio-Setup / sleepradio to
-  start with); *Try saved networks now* while it's a hotspot. See
+  start with); *Try saved networks now* while it's a hotspot; **Without
+  Wi-Fi** (a ten-minute trial, or off for good, for a radio that lives
+  where there's none: it then starts with the Wi-Fi down, and the service
+  menu's 2 lets you in for a visit). See
   `sleepradiopi/wifi.py` for how the manager decides.
 - **Updates** — the radio's version; *Check for updates* looks at the latest
   GitHub release (`update_source`) and *Install* puts it on (see the
@@ -1652,11 +1660,13 @@ everything but the page itself and the login needs the session cookie
 | `GET` / `POST /api/dj` | The DJ settings (and the voices there are) / any of `{"voice", "chattiness", "dj_hooks", "jingle_every", "news_enabled", "startup_sound", "dj_speed", "news_speed"}` |
 | `GET /api/wifi` | Wi-Fi: mode (station / hotspot / connecting), network and address, saved networks, nearby ones (`signal` in dBm); `setup` while a join asked for from the hotspot is under way or has worked, `failed` (the network's name) when it didn't and the hotspot came back |
 | `POST /api/wifi/add` / `remove` / `scan` / `hotspot` / `try` | `{"ssid", "password"}` / `{"ssid"}` / – / `{"ssid", "password"}` / – |
+| `POST /api/wifi/offline` / `trial` | `{"on": bool}`: work without Wi-Fi (off from now on and at every start; `GET /api/wifi` then has `offline`, mode `offline`, and `visit` while its hotspot is on for a visit) / –: off for ten minutes, then back (`trial_until`) |
 | `GET /api/voices` | The voices, the one in use, and any download/upload/install under way |
 | `POST /api/voices/standard` | Download and install the standard voice |
 | `POST /api/voices/upload?name=N&file=F` | The archive as the body (up to 400 MB); installed in the background |
 | `GET /api/update` | The radio's version, any update found, and one under way |
 | `POST /api/update/check` / `/api/update/install` | Look for a newer release / install it (the root helper does the work) |
+| `POST /api/update/file` | The release's `sleepradio-VERSION.update` as the body, for a radio with no internet: kept, checked, and offered as the update to install (`available.from_file`) |
 | `GET /api/search?q=` | Up to 40 tracks and 20 albums matching every word, each with an `id` |
 | `GET /api/albums` | Every album and folder with tracks: `id`, `root` (`music` \| `ondemand`), `folder`, `title`, `artist`, `tracks` |
 | `GET /api/browse?root=&path=` | One folder: the `folders` in it holding audio (`name`, `tracks`, `folders`, `own`: tracks of its own) and its own `album`, if any, with its tracks in `list` (`n`, `title`, `artist`, `path`) |

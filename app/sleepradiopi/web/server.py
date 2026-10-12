@@ -1040,6 +1040,18 @@ def make_handler(station: Station, output: Mp3Output, speaker=None,
                 self._upload_voice()
             elif path.startswith("/api/wifi/"):
                 self._wifi(path.rsplit("/", 1)[1])
+            elif path == "/api/update/file" and updates is not None:
+                # the release's .update file as the body: for a radio with no internet
+                length = int(self.headers.get("Content-Length", 0) or 0)
+                try:
+                    reply = updates.take_file(length, self.rfile.read)
+                except (ValueError, OSError) as e:
+                    if length and not self.rfile.closed:
+                        self.close_connection = True       # don't read a big body we've refused
+                    self._error(str(e) or e.__class__.__name__)
+                    return
+                log.info("update file from %s", self.address_string())
+                self._send(json.dumps(reply).encode(), "application/json")
             elif path in ("/api/update/check", "/api/update/install") and updates is not None:
                 self._body()
                 try:
@@ -1919,13 +1931,16 @@ def make_handler(station: Station, output: Mp3Output, speaker=None,
             st = wifi_mod.status()
             saved = wifi_mod.load()
             return {**st, "saved": [n["ssid"] for n in saved["networks"]],
-                    "on_card": wifi_mod.card_networks(), "hotspot_settings": {"ssid": saved["hotspot"]["ssid"]}}
+                    "on_card": wifi_mod.card_networks(), "hotspot_settings": {"ssid": saved["hotspot"]["ssid"]},
+                    "offline": saved["offline"]}
 
         def _wifi(self, action: str) -> None:
             """POST /api/wifi/add {"ssid", "password"}, /remove {"ssid"}, /scan,
             /hotspot {"ssid", "password"} (the radio's own network's details),
             /try (leave the hotspot and try the saved networks now), /hotspot-now
-            (switch to the radio's own network now: the only way it does, besides a reset)."""
+            (switch to the radio's own network now: the only way it does, besides a reset),
+            /offline {"on": bool} (work without Wi-Fi: off from now on, the service menu's 2
+            lets you back in), /trial (off for ten minutes, then back, to try it)."""
             try:
                 body = self._body()
                 if action == "add":
@@ -1942,6 +1957,13 @@ def make_handler(station: Station, output: Mp3Output, speaker=None,
                     wifi_mod.ask("station")
                 elif action == "hotspot-now":
                     wifi_mod.ask("hotspot")
+                elif action == "offline":
+                    if not isinstance(body.get("on"), bool):
+                        raise ValueError('send {"on": true|false}')
+                    wifi_mod.set_offline(body["on"])
+                    wifi_mod.ask("offline")
+                elif action == "trial":
+                    wifi_mod.ask("trial")
                 else:
                     self.send_error(404)
                     return

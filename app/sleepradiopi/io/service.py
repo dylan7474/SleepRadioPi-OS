@@ -6,7 +6,9 @@ through it:
 
     1  restart the radio
     2  reset the Wi-Fi: forget the networks added on the page, and make the
-       radio's own network (SleepRadio-Setup) to set a new one up
+       radio's own network (SleepRadio-Setup) to set a new one up -- or, on
+       a radio set to work without Wi-Fi, turn the Wi-Fi on for a visit:
+       its own network, nothing forgotten, off again by itself afterwards
     3  a status report (address, Wi-Fi, version, free space); then press 3
        again to go back to the previous version of the software
     4  factory reset: every setting back to how it came (Wi-Fi and the
@@ -39,6 +41,10 @@ CLOSED = "Service menu closed."
 RESTARTING = "Rebooting."
 WIFI = ("Resetting the Wi-Fi. I'll forget the networks added on the web page, and make my own network, "
         "so you can set up a new one.")
+# A radio set to work without Wi-Fi: 2 lets you in, and forgets nothing.
+MENU_OFFLINE = MENU.replace("Two to reset the Wi-Fi.", "Two to turn the Wi-Fi on.")
+WIFI_VISIT = ("Turning the Wi-Fi on for a visit. I'll make my own network, and tell you how to join it. "
+              "Nothing is forgotten, and I'll turn it off again when you've gone.")
 ROLLBACK_ASK = "To go back to the previous version of the software, press three again. Or press nothing, to leave."
 ROLLBACK = "Going back to the previous version of the software. Rebooting."
 NO_ROLLBACK = "There's no previous version on this radio to go back to, so nothing has changed."
@@ -53,6 +59,8 @@ CANCELLED = "Cancelled. Nothing has changed."
 SEL_MENU = ("Service menu. Turn the selector to choose, and press the button on the back to confirm. "
             "One: restart. Two: reset the Wi-Fi. Three: a status report. Four: factory reset.")
 SEL_OPTIONS = ("Restart the radio.", "Reset the Wi-Fi.", "Status report.", "Factory reset.")
+SEL_MENU_OFFLINE = SEL_MENU.replace("Two: reset the Wi-Fi.", "Two: turn the Wi-Fi on.")
+SEL_WIFI_OFFLINE = "Turn the Wi-Fi on."
 SEL_NOTHING = "Nothing here. Turn to one, two, three or four."
 SEL_ROLLBACK_ASK = ("To go back to the previous version of the software, press the back button again. "
                     "Or turn the selector, to leave.")
@@ -60,7 +68,8 @@ SEL_RESET_ASK = ("Factory reset. This puts every setting back to how it came, in
                  "page's password. Your music, audiobooks and voices are kept. To confirm, press the back button "
                  "again. Or turn the selector, to leave.")
 FIXED = (MENU, CLOSED, RESTARTING, WIFI, ROLLBACK, NO_ROLLBACK, RESET_ASK, RESET_NEXT, RESETTING, CANCELLED,
-         SEL_MENU, *SEL_OPTIONS, SEL_NOTHING, SEL_RESET_ASK)
+         SEL_MENU, *SEL_OPTIONS, SEL_NOTHING, SEL_RESET_ASK, MENU_OFFLINE, WIFI_VISIT, SEL_MENU_OFFLINE,
+         SEL_WIFI_OFFLINE)
 
 
 class ServiceMenu:
@@ -73,11 +82,14 @@ class ServiceMenu:
     def __init__(self, say: Callable[[str], None], actions: dict, prepare: Callable[[str], None] = lambda t: None,
                  wait_s: float = WAIT_S, clock=time.monotonic, busy: Callable[[], bool] = lambda: False,
                  on_open: Callable[[], None] = lambda: None,
-                 on_close: Callable[[bool], None] = lambda resume: None) -> None:
+                 on_close: Callable[[bool], None] = lambda resume: None,
+                 offline: Callable[[], bool] = lambda: False) -> None:
         """busy(): still making or saying the words (the wait starts after).
         on_open(): the menu opens (pause the show); on_close(resume): it
         closed -- resume the show (once its last words are said), unless the
-        radio is about to restart."""
+        radio is about to restart. offline(): the radio is set to work without
+        Wi-Fi (2 then turns it on for a visit, rather than resetting it)."""
+        self.offline = offline
         self.say, self.prepare, self.actions, self.busy = say, prepare, actions, busy
         self.selector = False                 # the cathedral: select() + confirm() instead of press()
         self.choice: int | None = None
@@ -107,7 +119,7 @@ class ServiceMenu:
         if self.state is None:
             self.on_open()
         self.choice = None
-        self._to("menu", SEL_MENU if self.selector else MENU)
+        self._to("menu", self._menu)
         if self._status is None:           # (opened from the page: no hold to make them in)
             self._prepare_all()
 
@@ -115,7 +127,7 @@ class ServiceMenu:
         """Make the menu's words and the status report now (slow on a Zero), so
         a press speaks at once."""
         def run():
-            self.prepare(SEL_MENU if self.selector else MENU)
+            self.prepare(self._menu)
             self.prepare(RESTARTING)
             try:
                 self._status = f"{self.actions['status']()} {self.rollback_ask}"
@@ -123,6 +135,12 @@ class ServiceMenu:
             except Exception:
                 log.exception("service menu: couldn't get the status ready")
         threading.Thread(target=run, name="service-prepare", daemon=True).start()
+
+    @property
+    def _menu(self) -> str:
+        if self.offline():
+            return SEL_MENU_OFFLINE if self.selector else MENU_OFFLINE
+        return SEL_MENU if self.selector else MENU
 
     @property
     def rollback_ask(self) -> str:
@@ -138,7 +156,7 @@ class ServiceMenu:
         if state == "menu":
             if index < len(SEL_OPTIONS):
                 self.choice = index
-                self._to("menu", SEL_OPTIONS[index])
+                self._to("menu", SEL_WIFI_OFFLINE if index == 1 and self.offline() else SEL_OPTIONS[index])
             else:
                 self.choice = None
                 self._to("menu", SEL_NOTHING)
@@ -152,12 +170,12 @@ class ServiceMenu:
         log.info("service menu (%s): confirm %s", state, self.choice)
         if state == "menu":
             if self.choice is None:
-                self._to("menu", SEL_MENU)
+                self._to("menu", self._menu)
             elif self.choice == 0:
                 self._close(resume=False)
                 self._do("restart", RESTARTING)
             elif self.choice == 1:
-                self.say(WIFI)
+                self.say(WIFI_VISIT if self.offline() else WIFI)
                 self._close()
                 self._do("wifi", None)
             elif self.choice == 2:
@@ -185,7 +203,7 @@ class ServiceMenu:
                 self._close(resume=False)
                 self._do("restart", RESTARTING)
             elif n == 2:
-                self.say(WIFI)
+                self.say(WIFI_VISIT if self.offline() else WIFI)
                 self._close()
                 self._do("wifi", None)
             elif n == 3:
@@ -334,6 +352,8 @@ def status_text(addresses: list, wifi: dict, version: str, free_gb: float | None
         parts.append(f"I'm connected to the Wi-Fi network {wifi['ssid']}.")
     elif wifi.get("mode") == "connecting":
         parts.append("I'm trying to reconnect to the Wi-Fi.")
+    elif wifi.get("mode") == "offline":
+        parts.append("The Wi-Fi is off: I'm set to work without it.")
     if addresses:
         parts.append(f"My address is {spoken_ip(addresses[0][1])}.")
     else:

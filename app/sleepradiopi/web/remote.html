@@ -290,8 +290,8 @@
   <section class="win">
     <div class="tbar"><i></i><b><span>Connect this radio to Wi-Fi</span></b><u></u></div>
     <div class="pad">
-      <h1>Hello. Which Wi-Fi is home?</h1>
-      <p class="note" style="margin:0;font-size:14px">The radio can't find a network it knows, so it has made its own. Pick yours, type its password, and the radio joins it. Then put this phone back on your Wi-Fi.</p>
+      <h1 id="setupHead">Hello. Which Wi-Fi is home?</h1>
+      <p class="note" id="setupNote" style="margin:0;font-size:14px">The radio can't find a network it knows, so it has made its own. Pick yours, type its password, and the radio joins it. Then put this phone back on your Wi-Fi.</p>
       <p class="note" id="joinFailed" hidden style="margin:8px 0 0;font-size:14px;font-weight:bold"></p>
     </div>
     <div class="strip">Networks nearby<button type="button" id="rescan">Look again</button></div>
@@ -307,6 +307,8 @@
   </section>
   <p class="note" style="margin:0;background:var(--win);border-radius:8px;padding:10px 12px">Not listed? <a href="#" id="typeName">Type a network's name</a>. Afterwards, the radio says its address out loud if you hold its knob for 3 seconds.</p>
   <button class="wide" type="button" id="noWifi">Use the radio without Wi-Fi for now</button>
+  <button class="wide" type="button" id="fullPage" hidden>Open the radio's full page (updates, settings)</button>
+  <button class="wide" type="button" id="offline">This radio will never have Wi-Fi: turn it off…</button>
 </main>
 
 <div class="toast" id="toast" role="status" hidden></div>
@@ -513,6 +515,31 @@ $("joinForm").onsubmit = async e => {
   } catch (err) { toast(err.message); }
 };
 $("noWifi").onclick = () => startRemote();
+$("fullPage").onclick = () => { location.href = "/desktop"; };
+// A radio that lives where there's no Wi-Fi: off for good, after a second tap.
+let offlineSure = false;
+$("offline").onclick = async () => {
+  if (!offlineSure) {
+    offlineSure = true; $("offline").textContent = "Tap again to turn the Wi-Fi off for good";
+    setTimeout(() => { offlineSure = false; if ($("offline")) $("offline").textContent = "This radio will never have Wi-Fi: turn it off…"; }, 8000);
+    return;
+  }
+  try {
+    await api("/api/wifi/offline", { on: true });
+    joining = "-";                                    // (nothing more to look for)
+    $("setup").replaceChildren(el("section", { className: "win" }, el("div", { className: "pad" },
+      el("h1", { textContent: "The Wi-Fi is off" }),
+      el("p", { className: "note", style: "margin:0;font-size:14px", textContent: "The radio plays without Wi-Fi from now on, and says nothing more about it. To get back in (to change something, or to update it): hold buttons 1 and 4 on the radio for 5 seconds, then press 2. It makes this network again for a visit, and says how to join." }))));
+  } catch (err) { toast(err.message); }
+};
+// (the same screen serves a visit to a radio that works without Wi-Fi)
+function visitWords(w) {
+  if (!w.visit) return;
+  $("setupHead").textContent = "The Wi-Fi is on for a visit";
+  $("setupNote").textContent = "This radio works without Wi-Fi. Its own network is on while you're here, and goes off again about 15 minutes after you leave. For updates and settings, open the full page. Joining a network below connects it until it next starts.";
+  $("fullPage").hidden = false; $("offline").hidden = true;
+  $("noWifi").textContent = "Use the remote";
+}
 
 // --- start ----------------------------------------------------------------------------------
 $("loginForm").onsubmit = async e => {
@@ -539,7 +566,7 @@ async function boot() {
   try {
     const w = await api("/api/wifi");
     $("bars").querySelectorAll("i").forEach(i => i.classList.toggle("on", w.mode === "station"));
-    if (w.mode === "hotspot") { show("setup"); loadNets(true); setInterval(() => { if (mode === "setup" && !joining) loadNets(false); }, 5000); return; }
+    if (w.mode === "hotspot") { show("setup"); visitWords(w); loadNets(true); setInterval(() => { if (mode === "setup" && !joining) loadNets(false); }, 5000); return; }
   } catch {}
   if (computer && stay !== "remote" && !location.search.includes("remote")) return location.replace("/desktop");
   startRemote();

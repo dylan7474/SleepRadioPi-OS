@@ -285,3 +285,21 @@ def test_the_selector_version_turn_to_choose_back_button_to_confirm() -> None:
     assert r.done == ["rollback"]
     r.menu.open(); r.menu.select(5)
     assert r.said[-1] == service.SEL_NOTHING
+
+
+def test_on_a_radio_that_works_without_wifi_two_turns_it_on_for_a_visit() -> None:
+    r = Rig()
+    r.menu.offline = lambda: True
+    r.menu.open()
+    assert r.said[-1] == service.MENU_OFFLINE and "turn the Wi-Fi on" in r.said[-1] and "reset the Wi-Fi" not in r.said[-1]
+    r.press(2)
+    assert r.done[-1] == "wifi" and r.said[-1] == service.WIFI_VISIT and "Nothing is forgotten" in r.said[-1]
+    r.menu.selector = True                                # the cathedral's
+    r.menu.open()
+    assert r.said[-1] == service.SEL_MENU_OFFLINE
+    r.menu.select(1)
+    assert r.said[-1] == service.SEL_WIFI_OFFLINE
+    r.menu.confirm()
+    assert r.said[-1] == service.WIFI_VISIT
+    assert "The Wi-Fi is off" in service.status_text([], {"mode": "offline"}, "1.9.9", 1.0, 3, spoken_ip)
+    assert service.MENU_OFFLINE in service.FIXED and service.WIFI_VISIT in service.FIXED

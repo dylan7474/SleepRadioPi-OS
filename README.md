@@ -176,7 +176,9 @@ Actions, Sleep timer and Radio folders open:
   second while they're held) and the DJ reads out the choices, with the
   music paused until you leave the menu. **1** restarts the radio;
   **2** resets the Wi-Fi (forgets the networks added on the page and makes
-  the radio's own SleepRadio-Setup network to set a new one up); **3** gives
+  the radio's own SleepRadio-Setup network to set a new one up) — or, on a
+  radio set to work without Wi-Fi, turns the Wi-Fi on for a visit and
+  forgets nothing; **3** gives
   a status report — address, Wi-Fi, software version, songs and free space —
   and then **3 again** goes back to the previous version of the software;
   **4** is a **factory reset**, confirmed by pressing **2, then 3**: every
@@ -335,7 +337,9 @@ Actions, Sleep timer and Radio folders open:
   by itself on the hour (every hour, or every 2, 3 or 6), whenever it isn't
   playing that receiver; the radio keeps what it finds, and each key then
   shows the band's last day as a row of small bars -- when it opened, when
-  it was busiest. Morse and amateur teleprinters have no one frequency, so
+  it was busiest. Under the survey's keys a line says when the **last
+  survey** was and what it came to (how many places had something, the
+  busiest, the farthest). Morse and amateur teleprinters have no one frequency, so
   for those the radio sweeps their part of each band (*Find Morse and
   teleprinters*, or as part of *Everything*): it watches the receiver's
   waterfall for what comes and goes, listens a few seconds to each such
@@ -425,11 +429,35 @@ Actions, Sleep timer and Radio folders open:
 - **Pull the plug any time.** The system and the music are read-only, logs
   live in RAM, and settings are written atomically, so a power cut can't
   corrupt anything.
+- **A radio with no Wi-Fi at all.** Some radios live where there is no
+  network (a care home, a shed, a caravan) and just play. Set one up as
+  usual, then tell it so: Settings → Wi-Fi → **Without Wi-Fi** → *Turn the
+  Wi-Fi off for good* (or, on a new radio's set-up page on a phone, *This
+  radio will never have Wi-Fi*). From then on it starts with the Wi-Fi off:
+  no network of its own for passers-by to find, nothing tried, and nothing
+  said about Wi-Fi when it's switched on. *Try it for 10 minutes* turns
+  the Wi-Fi off and back on by itself, to see that all is well first.
+  **To get back in** (to change something, add music, or update it): open
+  the service menu (hold buttons 1 and 4 for 5 seconds) and press **2**.
+  The radio makes its own network for a **visit** and says how to join;
+  nothing is forgotten, and the Wi-Fi goes off again about 15 minutes after
+  the last visitor leaves (or when the radio next starts). A network joined
+  during a visit (your phone's, say) is used until the radio next starts.
+  A radio with no buttons can be let in from a PC instead: an empty file
+  called `wifi-on.txt` on the card's first partition keeps the Wi-Fi on for
+  as long as it's there. Do put the DJ's voice on first: fetching it needs
+  the internet once. The time comes from the radio's clock chip, if it has
+  one; without one, an offline radio doesn't say the time.
 - **Updates from the web page.** Settings → Updates checks for a new release
   on GitHub and installs it into a spare system slot while the music plays;
   the radio restarts, and the DJ says it's been updated. If a new version
   doesn't come on air within 5 minutes, the radio goes back to the old one
-  by itself (and says so).
+  by itself (and says so). **A radio with no internet** takes the same
+  update from a file: fetch `sleepradio-VERSION.update` from the
+  [releases page](https://github.com/dylan7474/SleepRadioPi-OS/releases) on
+  a phone or computer, join the radio's own network, and send it with
+  Settings → Updates → *Send an update file*. It's checked and installed
+  the same way, with the same way back.
 
 ## Build one
 
@@ -627,7 +655,12 @@ checks it against the SHA-256 (and reads it back from the card), updates
 `config.txt` if needed, switches `cmdline.txt` and reboots. The station
 confirms the update once music plays; if it hasn't within 5 minutes,
 `S98update-watchdog` switches back to the old slot and reboots. Logs:
-`grep update /var/log/messages`.
+`grep update /var/log/messages`. An update sent as a file (the release's
+`sleepradio-VERSION.update`: a plain tar of `manifest.json`, the image and
+`config.txt`) is kept in `/data/radio/.update/bundle.update` and goes down
+the same road, read from the file instead of fetched. It isn't signed: it
+is as trusted as whoever can use the radio's page, so set the page's
+password on a radio others can reach.
 
 ### Updating over Wi-Fi from the PC
 
@@ -758,7 +791,11 @@ Other targets are passed through to Buildroot: `make menuconfig`,
   one, keeps reconnecting (`wpa_cli reassociate` every 30 s, backing off to
   2 min, and a full Wi-Fi restart every 10 min). The hotspot (hostapd +
   dnsmasq, 192.168.4.1) only runs when asked for, or with no network set up at
-  all; if the manager can't run, `S35wifi` joins the card's network directly
+  all. `"offline": true` in `wifi.json` (the page's *Without Wi-Fi*) leaves
+  the Wi-Fi down from start-up (`ip link set wlan0 down`; the log says
+  `wifi: off`); a hotspot asked for then is a visit that ends 15 minutes
+  after its last client leaves, and `/boot/wifi-on.txt` overrides the
+  setting. If the manager can't run, `S35wifi` joins the card's network directly
   after 20 s.
 - Serial console: GPIO14/15, 115200 baud (Bluetooth is disabled so the full
   UART is used).

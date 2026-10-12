@@ -211,3 +211,131 @@ def test_install_survives_a_cut_download(release, monkeypatch) -> None:
         assert (tmp / "slot_p3").read_bytes()[:len(image)] == image
     finally:
         httpd.shutdown()
+
+
+# --- an update from a file (a radio with no internet) --------------------------------------
+
+def _bundle(tmp: Path, leave_out: str | None = None) -> Path:
+    import tarfile
+    path = tmp / "sleepradio-1.2.0.update"
+    with tarfile.open(path, "w") as t:
+        for name in ("manifest.json", "rootfs.squashfs", "config.txt"):
+            if name != leave_out:
+                t.add(tmp / "release" / name, arcname=name)
+    return path
+
+
+def _send(u, path: Path):
+    with open(path, "rb") as f:
+        return u.take_file(path.stat().st_size, f.read)
+
+
+def test_an_update_from_a_file_takes_the_same_road(release) -> None:
+    url, paths, image, remounts, tmp = release
+    (tmp / "version").write_text("1.1.0\n")
+    (tmp / "run").mkdir()
+    said = []
+    u = up.Updates("http://127.0.0.1:9/none", said.append, state=paths.state, run=tmp / "run",
+                   version_file=tmp / "version", restart_delay_s=0.1)       # (no internet to check with)
+    st = _send(u, _bundle(tmp))
+    assert st["available"] == {"version": "1.2.0", "notes": "Faster start.", "from_file": True}
+    assert (paths.state / up.BUNDLE).is_file() and not (paths.state / (up.BUNDLE + ".part")).exists()
+    u.install()
+    req = json.loads((tmp / "run" / "update-request").read_text())
+    assert req["bundle"] == str(paths.state / up.BUNDLE) and "url" not in req["rootfs"] and "Installing" in said[0]
+    assert up.install(req, paths) == "p3"
+    assert (tmp / "slot_p3").read_bytes()[:len(image)] == image                       # the image, checked
+    assert "root=/dev/mmcblk0p3" in (paths.boot / "cmdline.txt").read_text()
+    assert (paths.boot / "config.txt").read_text() == "dtparam=audio=off\n# new\n"       # from the file too
+    assert json.loads((paths.state / "pending.json").read_text())["version"] == "1.2.0"  # the watchdog's as ever
+    end = time.monotonic() + 15
+    while not (tmp / "run" / "update-reboot").exists() and time.monotonic() < end:
+        time.sleep(0.2)
+    assert "restarting" in said[-1]
+    up.Updates(url, state=paths.state, run=tmp / "run", version_file=tmp / "version")    # the next start:
+    assert not (paths.state / up.BUNDLE).exists()                                        # the file is cleared away
+
+
+def test_a_wrong_or_damaged_update_file_changes_nothing(release) -> None:
+    url, paths, image, remounts, tmp = release
+    (tmp / "version").write_text("1.1.0\n")
+    (tmp / "run").mkdir()
+    u = up.Updates(url, state=paths.state, run=tmp / "run", version_file=tmp / "version")
+    junk = tmp / "holiday.jpg"
+    junk.write_bytes(b"\xff\xd8" + b"x" * 5000)
+    with pytest.raises(ValueError, match="isn't a Sleep Radio update file"):
+        _send(u, junk)
+    with pytest.raises(ValueError, match="incomplete"):
+        _send(u, _bundle(tmp, leave_out="rootfs.squashfs"))
+    whole = _bundle(tmp)
+    with pytest.raises(ValueError, match="didn't all arrive"):                 # the phone walked away
+        with open(whole, "rb") as f:
+            cut = f.read(100_000)
+            u.take_file(whole.stat().st_size, lambda n, it=iter([cut, b""]): next(it))
+    with pytest.raises(ValueError):
+        u.take_file(up.SLOT_BYTES + (2 << 20), lambda n: b"")                  # far too big to be one
+    assert u.status()["available"] is None and list(paths.state.glob("bundle*")) == []
+    with pytest.raises(ValueError):
+        u.install()
+    # a file whose image was damaged on the way: the helper's checksum refuses it, nothing switched
+    data = bytearray(whole.read_bytes())
+    at = data.find(bytes(range(256))) + 5000
+    data[at] ^= 0xFF
+    whole.write_bytes(bytes(data))
+    _send(u, whole)
+    u.install()
+    req = json.loads((tmp / "run" / "update-request").read_text())
+    with pytest.raises(ValueError, match="checksum"):
+        up.install(req, paths)
+    assert "root=/dev/mmcblk0p2" in (paths.boot / "cmdline.txt").read_text() and not (paths.state / "pending.json").exists()
+    with pytest.raises(ValueError, match="isn't where"):                        # (only the station's own file)
+        up.install({**req, "bundle": str(whole)}, paths)
+
+
+def test_the_page_sends_the_file_and_turns_the_wifi_off(release, monkeypatch) -> None:
+    import urllib.error
+    import urllib.request
+    from sleepradiopi import wifi
+    from sleepradiopi.web.server import make_handler
+    url, paths, image, remounts, tmp = release
+    (tmp / "version").write_text("1.1.0\n")
+    (tmp / "run").mkdir()
+    u = up.Updates(url, state=paths.state, run=tmp / "run", version_file=tmp / "version")
+    nets, asked = tmp / "wifi.json", []
+    monkeypatch.setattr(wifi, "set_offline", lambda on, real=wifi.set_offline: real(on, nets))
+    monkeypatch.setattr(wifi, "load", lambda path=None, real=wifi.load: real(nets))
+    monkeypatch.setattr(wifi, "ask", lambda action, run=None: asked.append(action))
+    monkeypatch.setattr(wifi, "status", lambda run=None: {"mode": "station"})
+    monkeypatch.setattr(wifi, "card_networks", lambda conf=None: [])
+
+    class FakeStation:
+        def status(self):
+            return {"on_air": False}
+    httpd = ThreadingHTTPServer(("127.0.0.1", 0), make_handler(FakeStation(), None, None, None, updates=u))
+    threading.Thread(target=httpd.serve_forever, daemon=True).start()
+    base = f"http://127.0.0.1:{httpd.server_address[1]}"
+
+    def post(path, data):
+        req = urllib.request.Request(base + path, data=data, method="POST")
+        try:
+            with urllib.request.urlopen(req, timeout=20) as r:
+                return r.status, json.load(r)
+        except urllib.error.HTTPError as e:
+            return e.code, json.load(e)
+    try:
+        code, reply = post("/api/update/file", b"not an update at all" * 100)
+        assert code == 400 and "isn't a Sleep Radio update file" in reply["error"]
+        code, reply = post("/api/update/file", _bundle(tmp).read_bytes())
+        assert code == 200 and reply["available"] == {"version": "1.2.0", "notes": "Faster start.", "from_file": True}
+        code, reply = post("/api/update/install", b"{}")
+        assert code == 200 and json.loads((tmp / "run" / "update-request").read_text())["bundle"]
+        code, reply = post("/api/wifi/offline", b'{"on": "yes"}')
+        assert code == 400 and asked == []
+        code, reply = post("/api/wifi/offline", b'{"on": true}')
+        assert code == 200 and reply["offline"] is True and asked == ["offline"] and wifi.load()["offline"]
+        code, reply = post("/api/wifi/trial", b"{}")
+        assert code == 200 and asked == ["offline", "trial"]
+        code, reply = post("/api/wifi/offline", b'{"on": false}')
+        assert code == 200 and reply["offline"] is False
+    finally:
+        httpd.shutdown()

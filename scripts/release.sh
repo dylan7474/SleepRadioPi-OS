@@ -16,11 +16,13 @@
 #
 # A release has rootfs.squashfs (written into the radio's spare root slot),
 # config.txt and manifest.json (version, notes, sizes and SHA-256s, and the
-# kernel's SHA-256: a radio refuses an update that changes the kernel).
+# kernel's SHA-256: a radio refuses an update that changes the kernel), and
+# the same three as one file, sleepradio-VERSION.update, for sending to a
+# radio that has no internet from its page.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-usage() { sed -n '2,19p' "$0" | sed 's/^# \{0,1\}//'; exit 1; }
+usage() { sed -n '2,21p' "$0" | sed 's/^# \{0,1\}//'; exit 1; }
 VERSION=${1:-}; shift || true
 [[ "$VERSION" =~ ^[0-9]+(\.[0-9]+){1,2}(-[a-z0-9.]+)?$ ]] || usage
 NOTES="" SDCARD="" LOCAL=""
@@ -76,6 +78,10 @@ if [ -n "$SDCARD" ]; then
 	echo "compressing the card image ..."
 	xz -T0 -6 -c "$IMAGES/sdcard.img" > "$OUT/sdcard.img.xz"
 fi
+# The same three in one file, for a radio with no internet: sent from its page
+# (Updates -> From a file). A plain tar: the image is already compressed.
+tar -C "$OUT" -cf "$OUT/sleepradio-$VERSION.update" manifest.json rootfs.squashfs config.txt
+
 echo "release files in $OUT:"; ls -la "$OUT"
 
 if [ -n "$LOCAL" ]; then
@@ -90,5 +96,5 @@ git push -q origin "$TAG"
 gh release create "$TAG" "$OUT"/* --title "SleepRadioPi-OS $VERSION" \
 	--notes "${NOTES:-SleepRadioPi-OS $VERSION}
 
-Update a radio from its web page: Settings -> Updates. For a new card, flash sdcard.img.xz (if attached) or build it yourself (see the README)."
+Update a radio from its web page: Settings -> Updates (a radio with no internet: send it sleepradio-$VERSION.update there). For a new card, flash sdcard.img.xz (if attached) or build it yourself (see the README)."
 echo "published $TAG"
