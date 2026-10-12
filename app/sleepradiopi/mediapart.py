@@ -24,6 +24,11 @@ put on from any computer through the web page:
      (a note in /data says where it begins and how big it is, and it must
      match), and only if there is no filesystem of any kind on it.
 
+A radio set up on a PC is also given its first settings there: where the
+music is, and that it has a speaker. So is this one (starter()): without
+them the station looks for music in its own home folder, finds none, and
+plays through no speaker -- as the first card made this way did.
+
 run() does whichever step is due; /etc/init.d/S00data (root, at start-up)
 calls it when there is no music partition, or one is part made:
 `python3 -m sleepradiopi.mediapart` -- its exit code 10 asks for a restart.
@@ -45,6 +50,8 @@ log = logging.getLogger(__name__)
 DEVICE = Path("/dev/mmcblk0")
 NOTE = Path("/data/media-partition.json")
 FOLDERS = ("music", "jingles", "voices", "ondemand", "audiobooks")      # what a new music partition begins with
+CONFIG = Path("/data/radio/.config/sleepradiopi/config.json")           # the station's settings (its home is /data/radio)
+STARTER = {"music_folder": "/media/music", "voices_folder": "/media/voices", "jingles_folder": "/media/jingles"}
 RESTART = 10                 # (the exit code that asks for one)
 
 SECTOR = 512
@@ -145,12 +152,39 @@ def format(partition: Path | str, mkfs: str = "mkfs.ext4", mount: bool = True) -
             subprocess.run(["umount", at], check=True)
 
 
+def starter(config: Path = CONFIG) -> bool:
+    """The settings a radio begins with, as scripts/provision-media.sh writes them on a PC: where the music, the
+    voices and the jingles are, and that there's a speaker. A radio with no settings yet gets them all; one that
+    has some is only told where the folders are, where it doesn't say. -> whether anything was written."""
+    try:
+        had = json.loads(config.read_text())
+        if not isinstance(had, dict):
+            return False
+    except FileNotFoundError:
+        had = None
+    except (OSError, ValueError):
+        return False                                 # (settings that can't be read: not this one's to mend)
+    new = {**STARTER, "speaker_enabled": True, "speaker_mono": False} if had is None else {**had, **{k: v for k, v in STARTER.items() if not had.get(k)}}
+    if new == had:
+        return False
+    from sleepradiopi.config.atomic import write_atomic
+    write_atomic(config, json.dumps(new, indent=2) + "\n")
+    try:                                             # (the station isn't root: its settings are its own, as its home is)
+        owner = os.stat(config.parents[2])
+        for path in (config, config.parent, config.parents[1]):
+            os.chown(path, owner.st_uid, owner.st_gid)
+    except OSError:
+        pass
+    return True
+
+
 def _note(note: Path, **what) -> None:
     from sleepradiopi.config.atomic import write_atomic
     write_atomic(note, json.dumps({**what, "t": round(time.time())}))
 
 
-def run(device: Path = DEVICE, note: Path = NOTE, partition: Path | None = None, where: Path | None = None, formatter=format) -> str:
+def run(device: Path = DEVICE, note: Path = NOTE, partition: Path | None = None, where: Path | None = None, formatter=format,
+        config: Path = CONFIG) -> str:
     """Do the step that's due. -> "restart" (the table was written: start again and it's there), "ready" (it's
     formatted: mount it), or "left" (nothing to do, or nothing that may be done). partition: the new one's
     device; where: the folder that says where it begins and how big it is (/sys/class/block/mmcblk0p6)."""
@@ -202,6 +236,8 @@ def run(device: Path = DEVICE, note: Path = NOTE, partition: Path | None = None,
         log.warning("media partition: formatted")
     else:
         log.warning("media partition: there's a filesystem on it already (music from before?): kept as it is")
+    if starter(config):
+        log.warning("media partition: the radio's first settings written (music on /media, a speaker)")
     _note(note, state="ready", start=state["start"], sectors=state["sectors"])
     return "ready"
 

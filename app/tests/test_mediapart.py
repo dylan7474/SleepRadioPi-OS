@@ -107,14 +107,34 @@ def _sys(folder: Path, start: int, sectors: int) -> Path:
 def test_a_new_card_is_given_its_music_partition_in_two_starts(tmp_path: Path) -> None:
     card, part, note = _card(tmp_path / "card.img", 4 * 1024 * MB), tmp_path / "p6", tmp_path / "data" / "media-partition.json"
     formatted = []
-    assert mp.run(card, note, part, tmp_path / "sys", formatter=formatted.append) == "restart"       # the first start: the table
+    assert mp.run(card, note, part, tmp_path / "sys", formatter=formatted.append, config=tmp_path / "radio" / ".config" / "sleepradiopi" / "config.json") == "restart"       # the first start: the table
     state = json.loads(note.read_text())
     assert (state["state"], state["start"], state["sectors"]) == ("made", 1728512, 6660096) and formatted == []
     assert mp.plan(card)["writes"][2][1] == _sector(card, 0)      # (written: doing it again changes nothing)
     part.write_bytes(bytes(8192))                    # the second: the partition is there, and blank
-    assert mp.run(card, note, part, _sys(tmp_path / "sys", 1728512, 6660096), formatter=formatted.append) == "ready" and formatted == [part]
+    conf = tmp_path / "radio" / ".config" / "sleepradiopi" / "config.json"
+    assert not conf.exists()                         # (nothing of the radio's own is written before there's somewhere for music)
+    assert mp.run(card, note, part, _sys(tmp_path / "sys", 1728512, 6660096), formatter=formatted.append, config=conf) == "ready" and formatted == [part]
     assert json.loads(note.read_text())["state"] == "ready"
-    assert mp.run(card, note, part, tmp_path / "sys", formatter=lambda p: pytest.fail("formatted again!")) == "left"       # every start after: nothing
+    # ...and its first settings, as a PC would have given it: where the music is, and that it has a speaker
+    assert json.loads(conf.read_text()) == {"music_folder": "/media/music", "voices_folder": "/media/voices", "jingles_folder": "/media/jingles",
+                                            "speaker_enabled": True, "speaker_mono": False}
+    assert mp.run(card, note, part, tmp_path / "sys", formatter=lambda p: pytest.fail("formatted again!"), config=conf) == "left"       # every start after: nothing
+
+
+def test_the_first_settings_are_given_and_a_radios_own_are_kept(tmp_path: Path) -> None:
+    conf = tmp_path / "radio" / ".config" / "sleepradiopi" / "config.json"
+    assert mp.starter(conf) is True and json.loads(conf.read_text())["speaker_enabled"] is True
+    assert mp.starter(conf) is False                 # (already there: nothing written)
+    # settings the station wrote for itself before there was a music partition (every folder "not set"): told where they are, the rest kept
+    conf.write_text(json.dumps({"music_folder": None, "jingles_folder": None, "voices_folder": None, "speaker_enabled": False, "station_name": "Carisbrooke", "volume": 40}))
+    assert mp.starter(conf) is True
+    assert json.loads(conf.read_text()) == {"music_folder": "/media/music", "jingles_folder": "/media/jingles", "voices_folder": "/media/voices",
+                                            "speaker_enabled": False, "station_name": "Carisbrooke", "volume": 40}
+    conf.write_text(json.dumps({"music_folder": "/media/music", "voices_folder": "/somewhere/else", "jingles_folder": "/media/jingles"}))
+    assert mp.starter(conf) is False and json.loads(conf.read_text())["voices_folder"] == "/somewhere/else"      # a choice already made is left
+    conf.write_text("{ not json")                    # settings that can't be read: not mended here
+    assert mp.starter(conf) is False and conf.read_text() == "{ not json"
 
 
 def test_only_the_partition_made_here_is_formatted_and_only_if_its_empty(tmp_path: Path) -> None:
@@ -124,10 +144,10 @@ def test_only_the_partition_made_here_is_formatted_and_only_if_its_empty(tmp_pat
     made = note.read_text()
     # music from before the card was flashed again: an ext filesystem is already where the partition is
     part.write_bytes(bytes(1080) + b"\x53\xef" + bytes(4096))
-    assert mp.run(card, note, part, _sys(tmp_path / "sys", 1728512, 6660096), formatter=no) == "ready" and json.loads(note.read_text())["state"] == "ready"
+    assert mp.run(card, note, part, _sys(tmp_path / "sys", 1728512, 6660096), formatter=no, config=tmp_path / "c" / "x" / "y" / "config.json") == "ready" and json.loads(note.read_text())["state"] == "ready"
     note.write_text(made)                            # a FAT filesystem there (somebody's memory card): kept too
     part.write_bytes(bytes(82) + b"FAT32   " + bytes(420) + b"\x55\xaa" + bytes(4096))
-    assert mp.run(card, note, part, tmp_path / "sys", formatter=no) == "ready"
+    assert mp.run(card, note, part, tmp_path / "sys", formatter=no, config=tmp_path / "c" / "x" / "y" / "config.json") == "ready"
     note.write_text(made)                            # the partition there isn't the one made here: left
     part.write_bytes(bytes(8192))
     assert mp.run(card, note, part, _sys(tmp_path / "sys", 1728512, 999), formatter=no) == "left" and json.loads(note.read_text())["state"] == "left"
