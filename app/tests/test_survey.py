@@ -40,7 +40,8 @@ class _Radio:
         self.at += s
 
     def get(self, url: str) -> dict:
-        return {"tunes": True, "tunable": [100_000, 30_000_000], "receiving": self.receiving, "upconverter": 125}
+        # (as the real one says it: "tunes" only while someone is listening to it as a rig; idle, "receiving" is null)
+        return {"tunable": [100_000, 30_000_000], "receiving": self.receiving, "upconverter": 125, **({"tunes": True} if self.receiving else {})}
 
     def post(self, url: str, body: dict) -> dict:
         self.freq = body["freq"]
@@ -139,7 +140,7 @@ def test_a_round_can_be_stopped_and_a_receiver_that_wont_do_is_said() -> None:
     st = job.status()
     assert not st["running"] and st["done"] == 1 and st["stopped"] is True and list(job.found(RX)) == ["ft8:40 m"]
     assert radio.tuned[-1] == (9_500_000, "am")      # put back all the same
-    job._get = lambda url: {"tunes": False}
+    job._get = lambda url: {"receiving": None, "running": False}           # (a scanner of channels: nowhere it can be sent)
     job.start(RX, survey.clean_places(PLACES))
     job._thread.join(30)
     assert "can't move it" in job.status()["error"]

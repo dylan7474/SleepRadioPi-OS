@@ -232,10 +232,10 @@ class Job:
         sound, done, before = None, 0, None
         try:
             st = self._get(base + "/status")
-            if not st.get("tunes"):
+            if not st.get("tunable"):                # (a receiver that's tuned like a rig says how far it reaches)
                 raise ValueError("this receiver isn't one the radio can tune: a survey can't move it")
-            before = st.get("receiving")
-            lo, hi = st.get("tunable") or (0, 30_000_000)
+            before = st.get("receiving") if st.get("tunes") else None      # (it says "tunes" only while someone is tuning it)
+            lo, hi = st["tunable"]
             first = next((p for p in places if lo <= p["hz"] <= hi), None)
             if first is None:
                 raise ValueError("this receiver doesn't reach any of those places")
