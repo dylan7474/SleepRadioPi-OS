@@ -343,8 +343,18 @@ Actions, Sleep timer and Radio folders open:
   lately heard. The radio keeps the list over a restart (written to the
   card a quarter of an hour apart at most). A message that names your own
   callsign (the one kept for the rooms) is picked out in amber. The decoding is ft8_lib's
-  (MIT), built into the image; receive only -- nothing is sent, on the air
-  or to any website. See `app/sleepradiopi/audio/ft8.py`.
+  (MIT), built into the image; receive only -- nothing is sent on the air.
+  See `app/sleepradiopi/audio/ft8.py`.
+- **Reporting what's heard.** PSK Reporter (pskreporter.info) and WSPRnet
+  (wsprnet.org) collect who heard whom from receivers all over the world
+  and map it. The *Report* key beside *Heard* sends them what the radio
+  reads: FT8 and FT4 to PSK Reporter, WSPR beacons to WSPRnet, as heard by
+  your callsign at your locator. Those are public websites and both appear
+  on their maps, so it is off until you switch it on (it asks first), and
+  it needs both set. Only a receiver of your own is reported -- one where
+  your locator says it is -- never one on the internet. It keeps to the
+  websites' pace: a report every five minutes or so, a station on a band
+  no more than once in half an hour. See `app/sleepradiopi/audio/report.py`.
 - **Rooms: radio amateurs' digital voice.** Yaesu "System Fusion" radios
   talk across the internet through reflectors -- rooms like CQ-UK or America
   Link, the network a Pi-Star hotspot uses, with many of Yaesu's WIRES-X
@@ -862,11 +872,6 @@ What's left to do (everything else described here is built and running):
   Android app's ballistics; one meter first.
 - **Calibrate, by itself** — a dongle drifts a hundred Hz or so as it
   warms: *Calibrate* run by the radio now and then (it's a key today).
-- **Reporting what's heard** — PSK Reporter (pskreporter.info) collects
-  who heard whom from receivers all over the world and maps it: the radio
-  could send it the FT8, FT4 and WSPR stations it hears (and WSPR spots to
-  wsprnet.org). It gives your callsign and locator to a public website, so
-  it would be a switch that is off until you turn it on.
 - **A dongle inside the radio** — the bigger radios (a Pi 3 inside) have
   the room and the processor for an RTL-SDR of their own: one with a
   temperature-compensated crystal (a Nooelec NESDR SMArt v5), so that it

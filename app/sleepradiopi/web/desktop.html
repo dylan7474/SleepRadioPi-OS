@@ -2157,7 +2157,11 @@ function cwDraw(R) {
 // Each line says how far and which way, once the radio knows its own locator (the key in the list's heading keeps it);
 // Heard turns the list into who has been heard on the band, the farthest first; Map draws their squares on the world.
 // A message naming the owner's callsign (the one kept for the rooms) is picked out.
-const FT = { since: 0, lines: [], st: null, busy: false, asked: 0, view: "list", heard: [], heardAt: 0, band: null, land: null, landAsked: false, map: null };
+// Report: what's read from a receiver of your own goes to PSK Reporter (FT8, FT4) and WSPRnet (WSPR), as heard by your
+// callsign at your locator: off until it's switched on here, and never from a receiver on the internet.
+const FT = { since: 0, lines: [], st: null, busy: false, asked: 0, view: "list", heard: [], heardAt: 0, band: null, dial: null, land: null, landAsked: false, map: null, rep: null, repAt: 0 };
+// what the reader is told about where a receiver is: the band, where it's tuned, and whether it's one of your own
+const ftAt = (R, band, hz) => ({ band, dial: Math.round(hz), own: R.kind === "own" });
 const FT_WINDS = ["N", "NNE", "NE", "ENE", "E", "ESE", "SE", "SSE", "S", "SSW", "SW", "WSW", "W", "WNW", "NW", "NNW"];
 const ftFar = x => x.km == null ? "" : `${x.km.toLocaleString("en-GB")} km ${FT_WINDS[Math.round(x.deg / 22.5) % 16]}`;
 // WSPR is the same reader's third mode: beacons of a watt or less, two minutes each, a line for each one heard.
@@ -2179,8 +2183,8 @@ function rigFtKeys(R, k) {
     const D = RXD[R.kind], on = S?.ft8 !== mode;
     try {
       const to = on && D.ftGo ? ftWhere(R, mode) : null;
-      S = { ...(S || {}), ...(await api("/api/rx/ft8", { on, mode, ...(to ? { band: to.band } : {}) })) };
-      Object.assign(FT, { since: 0, lines: [], st: null, band: to?.band || null });
+      S = { ...(S || {}), ...(await api("/api/rx/ft8", { on, mode, ...(to ? ftAt(R, to.band, to.hz) : {}) })) };
+      Object.assign(FT, { since: 0, lines: [], st: null, band: to?.band || null, dial: to?.hz || null });
       rigPaint(R); cwDraw(R); ftDraw(R); kbDraw(R); picDraw(R);
       if (!on) return;
       const sideband = (D.on(R) ? R.st.mode || R.st.receiving?.mode : null) === "usb";
@@ -2203,8 +2207,21 @@ async function ftPoll() {
     FT.lines = FT.lines.slice(-FT_LINES); FT.st = st;
     if (FT.view !== "list" && Date.now() - FT.heardAt > 3000) { FT.heardAt = Date.now(); FT.heard = (await api("/api/rx/ft8/heard")).heard; }
     if (S.ft8 !== (st.on ? st.mode : null)) S = { ...S, ft8: st.on ? st.mode : null };
+    if (Date.now() - FT.repAt > 15000) { FT.repAt = Date.now(); FT.rep = await api("/api/rx/report"); }
   } catch (e) { /* the next one will do */ }
   FT.busy = false;
+}
+const ftRepSays = r => !r ? "" : !r.on ? "Not reporting." : [r.now ? "Reporting what this receiver hears." : "Reporting is on, but not for this: only a receiver of your own, on the mode's frequency, is reported.",
+  `Sent so far: ${r.sent.psk} to PSK Reporter, ${r.sent.wspr} to WSPRnet.`, r.waiting ? `${r.waiting} waiting${r.next_s != null ? `, the next in ${Math.ceil(r.next_s / 60)} min` : ""}.` : "",
+  r.last?.error ? `The last try failed: ${r.last.error}` : ""].filter(Boolean).join(" ");
+async function ftReport(R) {                        // the Report key: on asks first, since it tells the world who and where you are
+  try {
+    const r = FT.rep = await api("/api/rx/report");
+    if (r.on) { FT.rep = await api("/api/rx/report", { on: false }); toast("Reporting is off: nothing more is sent."); return ftDraw(R); }
+    if (!r.can) return toast(`Reporting needs ${[r.callsign ? "" : "your callsign (it's kept in Find a room)", r.locator ? "" : "your locator (the key beside this one)"].filter(Boolean).join(" and ")} first: the report is from you.`, false, null, true);
+    ask(`Report what this radio hears? FT8 and FT4 stations go to pskreporter.info and WSPR beacons to wsprnet.org, as heard by ${r.callsign} in ${r.locator}: both are public websites, and your callsign and locator appear on their maps. Only a receiver of your own is reported, never one on the internet. It stays on until you press Report again.`, "Report", async () => {
+      try { FT.rep = await api("/api/rx/report", { on: true }); toast(`Reporting is on, as ${r.callsign} in ${r.locator}: the first report goes in about five minutes.`, false, null, true); ftDraw(R); } catch (e) { rigOops(e); } });
+  } catch (e) { rigOops(e); }
 }
 const ftUtc = t => new Date(t * 1000).toISOString().slice(11, 19);
 const ftPower = dbm => { const w = Math.pow(10, dbm / 10) / 1000; return w >= 1 ? `${+w.toPrecision(2)} W` : `${+(w * 1000).toPrecision(2)} mW`; };
@@ -2335,7 +2352,9 @@ function ftDraw(R) {
   const slot = FT_SLOT[mode] || 15;
   const band = ftBand(mode, hz), heard = FT.view === "heard", map = FT.view === "map", list = heard ? ftHeardList() : [], view = FT.view === "list" ? "" : FT.view;
   // (the reader is told the band the receiver is on, when that changes: its heard list is kept by it)
-  if (here && band && st && st.band !== band && FT.band !== band) { FT.band = band; api("/api/rx/ft8", { on: true, mode, band }).catch(() => {}); }
+  // (...and where it's tuned and whether it's one of yours, for reporting)
+  if (here && band && st && (st.band !== band || st.dial !== Math.round(hz)) && (FT.band !== band || FT.dial !== hz)) { FT.band = band; FT.dial = hz; api("/api/rx/ft8", { on: true, mode, ...ftAt(R, band, hz) }).catch(() => {}); }
+  d.ftrep.classList.toggle("on", !!FT.rep?.on); d.ftrep.title = `${ftRepSays(FT.rep)} Report: send what a receiver of your own hears to PSK Reporter and WSPRnet, as heard by your callsign at your locator (both public websites)`.trim();
   d.ftname.textContent = FT_NAMES[mode];
   d.ftsays.textContent = !here ? "" : [band || "not on a frequency it's used on", sideband ? "" : "not in USB",
     map ? (n => `${n} square${n === 1 ? "" : "s"} heard`)(ftSquares().size)
@@ -2585,7 +2604,7 @@ async function modeGo(R, p) {                       // the receiver there, and t
   const D = RXD[R.kind];
   if (!D.modeGo) return toast(`An ${D.word} is tuned by hand: ${(p.hz / 1e6).toFixed(4)} MHz, ${p.tune.toUpperCase()}.`);
   if (FT_NAMES[p.mode]) {
-    S = { ...(S || {}), ...(await api("/api/rx/ft8", { on: true, mode: p.mode, band: p.band })) };
+    S = { ...(S || {}), ...(await api("/api/rx/ft8", { on: true, mode: p.mode, ...ftAt(R, p.band, p.hz) })) };
     Object.assign(FT, { since: 0, lines: [], st: null, band: p.band });
   } else if (PIC_NAMES[p.mode]) {
     S = { ...(S || {}), ...(await api("/api/rx/pictures", { on: true, mode: p.mode })) };
@@ -3261,6 +3280,7 @@ function rigView(o, box, win) {
               el("h4", { title: "A line: the slot's time (UTC), how strong (a rough guide: not the figure other programs give), where in the sound, the message, how far and which way. In Heard: when last, the strongest, how many times" },
                  d.ftname = el("b"), d.ftsays = el("span"),
                  d.ftloc = cwKey("Your locator…", "Where the radio is, as a locator (IO94): each station then shows how far away it is and which way", () => ftLocator(R)),
+                 d.ftrep = cwKey("Report", "", () => ftReport(R)),
                  d.ftheard = cwKey("Heard", "Who has been heard on this band, the farthest first: the radio keeps the list, a restart or not (press again for the messages)", () => { FT.view = FT.view === "heard" ? "list" : "heard"; FT.heardAt = 0; ftPoll().then(() => ftDraw(R)); ftDraw(R); }),
                  d.ftmap = cwKey("Map", "The locator squares heard on this band, on a map of the world: the brighter the more lately heard, yours ringed in green. Point at a square for who is in it (press again for the messages)", () => { FT.view = FT.view === "map" ? "list" : "map"; FT.heardAt = 0; ftPoll().then(() => ftDraw(R)); ftDraw(R); }),
                  cwKey("Copy", "Copy everything listed", () => {

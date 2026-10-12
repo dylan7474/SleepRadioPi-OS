@@ -568,6 +568,15 @@ def main() -> None:
     from sleepradiopi.audio import ft8 as ft8_mod
     ft8_mod.HOME = settings.locator                  # (how far an FT8 station is: audio/ft8.py)
     ft8_mod.reader.keep_in(Path.home() / ".local" / "state" / "sleepradiopi" / "heard.json")     # who's been heard, kept over a restart
+    from sleepradiopi.audio import report as report_mod
+    from sleepradiopi import updater as updater_mod
+    report_mod.SOFTWARE = f"Sleep Radio {updater_mod.this_version()}"
+    ft8_mod.reader.report = report_mod.reporter.heard        # (what's read is handed on; it's only sent if reporting is switched on)
+    if settings.report_heard:
+        try:
+            report_mod.reporter.switch(True)
+        except ValueError as e:
+            log.warning("report: not switched on (%s)", e)
     room_mod.LEVEL = settings.room_level
     from sleepradiopi.audio import denoise as denoise_mod
     try:

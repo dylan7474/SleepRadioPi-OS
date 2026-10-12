@@ -59,7 +59,11 @@ K1JT's, from WSJT-X: GPL; the last version that is all C, in the image as
 in its stride, so a slot is simply cut two seconds on. A slot takes it one
 to seven seconds on the Zero 2 W.
 
-Receive only: nothing is sent, here or anywhere.
+Receive only: nothing is sent on the air. What's read can be reported to
+PSK Reporter and WSPRnet (audio/report.py: off until the owner switches it
+on), but only from a receiver of the owner's own: the page says the
+receiver is one (and where it's tuned) with the band, and reports() checks
+the radio is still playing it.
 
 `reader` is the one the radio uses: the station feeds it, the web side
 switches it and asks what it has read.
@@ -294,6 +298,10 @@ class Reader:
         self.mode = "ft8"
         self.band: str | None = None                 # what the page says the receiver is on ("40 m"): the heard list is kept by it
         self._heard: dict[tuple[str | None, str], dict] = {}     # (band, call) -> who's been heard
+        self.dial: int | None = None                 # where the receiver is tuned (Hz), if the page says: a message's place on the air is this and its pitch
+        self.own: str | None = None                  # the receiver, if it's one of the owner's own ("http://192.168.50.4:8075"): only those are reported
+        self.playing: Callable[[], str | None] | None = None     # what the radio is playing now (its address): the web side sets it
+        self.report: Callable[[str, int, float, list[dict]], None] | None = None      # where what's read is reported (audio/report.py), if anywhere
         self._clock, self._decode = clock, decode
         self._lock = threading.Lock()
         self._left = np.zeros(0, np.float32)         # (samples waiting to make up a whole DECIMATE)
@@ -354,13 +362,13 @@ class Reader:
     # --- what the page asks for --------------------------------------------------------------
 
     def status(self, since: int = 0) -> dict:
-        """{"on", "mode", "band", "home" (the radio's locator), "can" (there's a decoder), "slot" (s), "slots" (read so
+        """{"on", "mode", "band", "dial" (Hz, where the page said the receiver is tuned), "home" (the radio's locator), "can" (there's a decoder), "slot" (s), "slots" (read so
         far), "late" (s the sound is behind the clock, once known), "last": {"t", "heard" | "error"}, "messages": [{"n", "t" (the slot's start, by the clock), "snr", "dt",
         "hz", "text", "call"?, "grid"?, "km"?, "deg"?, "me"? (it names the owner's callsign)}] after number since,
         "call": the owner's callsign}"""
         with self._lock:
             own = own_call()
-            return {"on": self.on, "mode": self.mode, "band": self.band, "home": HOME, "call": own, "can": decoder_path() is not None, "can_wspr": wspr_decoder_path() is not None,
+            return {"on": self.on, "mode": self.mode, "band": self.band, "dial": self.dial, "home": HOME, "call": own, "can": decoder_path() is not None, "can_wspr": wspr_decoder_path() is not None,
                     "slot": MODES[self.mode], "slots": self._slots, "late": None if self._late is None else round(self._late, 2), "last": self._last,
                     "messages": [_mine(_far(m), own) for m in self._messages if m["n"] > since]}
 
@@ -369,6 +377,13 @@ class Reader:
         clock), "count", "cq" (it was calling CQ when last heard)}], the latest heard first}"""
         with self._lock:
             return {"band": self.band, "home": HOME, "heard": [_far(h) for h in sorted(self._heard.values(), key=lambda h: -h["last"])]}
+
+    def reports(self) -> bool:
+        """Is what's read now fit to report? Only from a receiver of the owner's own, tuned where the page said,
+        and still the one the radio is playing."""
+        if self.report is None or not self.own or not self.dial or self.playing is None:
+            return False
+        return (self.playing() or "").startswith(self.own)
 
     def forget(self) -> None:
         """The heard list emptied, on the card too."""
@@ -470,6 +485,7 @@ class Reader:
                 return
             self._slots += 1
             self._last = {"t": t0, "heard": len(found)}
+            told = []
             for m in found:
                 self._n += 1
                 call, grid, cq = (m.get("call"), m.get("grid"), False) if self.mode == "wspr" else who(m["text"])
@@ -478,9 +494,13 @@ class Reader:
                     h.update(snr=max(h["snr"], m["snr"]), last=t0, count=h["count"] + 1, cq=cq, **({"grid": grid} if grid else {}))
                     m = {**m, "call": call, **({"grid": h["grid"]} if "grid" in h else {})}
                     self._changed = True
+                    told.append(m)
                 self._messages.append({"n": self._n, "t": t0, **m})
             for key in sorted(self._heard, key=lambda k: self._heard[k]["last"])[:max(0, len(self._heard) - HEARD_MOST)]:
                 del self._heard[key]
+            mode, dial = self.mode, self.dial
+        if told and self.reports():
+            self.report(mode, dial, t0, told)
 
 
 def _far(d: dict) -> dict:
@@ -512,9 +532,10 @@ class Live(Reader):
         self._switching = threading.Lock()
         self._stop = threading.Event()
 
-    def switch(self, on: bool, mode: str | None = None, band: str | None = None) -> None:
-        """On or off, FT8, FT4 or WSPR, and the band the receiver is on if the page says. On (or another mode) starts
-        from nothing, but for who's been heard. ValueError: no such mode."""
+    def switch(self, on: bool, mode: str | None = None, band: str | None = None, dial: int | None = None, own: str | None = None) -> None:
+        """On or off, FT8, FT4 or WSPR, and the band the receiver is on if the page says: with where it's tuned
+        (Hz) and, if it's one of the owner's own, its address (see reports()). On (or another mode) starts from
+        nothing, but for who's been heard. ValueError: no such mode."""
         on, mode = bool(on), (mode or self.mode)
         if mode not in MODES:
             raise ValueError("mode is ft8, ft4 or wspr")
@@ -522,10 +543,13 @@ class Live(Reader):
             if band is not None:
                 with self._lock:
                     self.band = " ".join(str(band).split())[:8] or None
+                    self.dial, self.own = (int(dial), own or None) if self.band and dial else (None, None)
             if on == self.on and mode == self.mode:
                 return
             self._stop.set()
             with self._lock:
+                if band is None:                     # (another mode, or off: where it was tuned no longer holds)
+                    self.dial, self.own = None, None
                 self.on, self.mode = on, mode
                 self._left = np.zeros(0, np.float32)
                 self._forget_sound()

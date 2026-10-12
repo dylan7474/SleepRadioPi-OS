@@ -1175,6 +1175,19 @@ The cards:
   `GET /desktop/land.json`: Natural Earth's, public domain). A message that
   names the owner's callsign (the rooms' one) comes with `"me": true` and
   is shown in amber.
+  *Reporting what's heard* (the **Report** key; `GET /api/rx/report`, `POST
+  /api/rx/report {"on": true | false}`, the setting `report_heard`): FT8 and
+  FT4 go to PSK Reporter (UDP, IPFIX, to report.pskreporter.info:4739) and
+  WSPR spots to WSPRnet (a web request each), as heard by the owner's
+  callsign at the radio's locator; it can't be switched on without both.
+  Only a receiver of the owner's own is reported: the page sends `"dial"`
+  (Hz) and `"own": true` with the band, the radio notes the address of
+  what it's playing then, and nothing is passed on once it's playing
+  something else. PSK Reporter's rules are kept: a datagram every five
+  minutes and a bit (not on the clock), a station on a band once in half
+  an hour, the descriptors with the first three datagrams and then hourly.
+  `GET` says how it's doing: `sent`, `waiting`, `last`, and `now` (what's
+  being read is fit to report). See `audio/report.py`.
   *WSPR* (the **WSPR** key; the same reader and the same calls, with
   `"mode": "wspr"`): beacons of a watt or less, each sending its call,
   locator and power over 110 seconds from the even minute, within 200 Hz

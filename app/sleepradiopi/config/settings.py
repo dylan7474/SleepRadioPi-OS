@@ -41,6 +41,7 @@ class Settings:
     callsign: str | None = None           # the owner's amateur radio callsign: what a room is joined under (playback/room.py)
     receiver_names: dict = field(default_factory=dict)   # names given to receivers on the desktop: {"http://192.168.50.4:8075": "Short wave"}
     locator: str | None = None            # the radio's place as a locator ("IO94"): how far an FT8 station is (audio/ft8.py)
+    report_heard: bool = False            # FT8, FT4 and WSPR heard on a receiver of your own reported to PSK Reporter and WSPRnet, under your callsign (audio/report.py)
     room_level: int = 100                 # how loud rooms are, % (25-150): a voice, not levelled like music (playback/room.py)
     noise_reduction: str = "off"          # receivers: the hiss under a voice turned down -- off, light, strong or rig (audio/denoise.py)
     monitor_music: int = 10               # how loud the programme stays under a monitored room, % of itself (0-100) (playback/monitor.py)
