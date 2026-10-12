@@ -245,6 +245,7 @@
   .rig .rpic .rshow { flex: 0 1 17em; min-height: 6em; overflow: auto; background: #0a1118; border: 1px solid #1e3445; display: flex; align-items: flex-start; justify-content: center; }
   .rig .rpic .rshow img { display: block; width: 100%; max-width: 640px; height: auto; min-height: 0; flex: none; border: 0; cursor: default; }
   .rig .rpic .rshow .rnone { padding: 8px; }
+  .rig .rpic .rshow.sliding img { cursor: col-resize; outline: 2px solid #f0b045; outline-offset: -2px; }
   .rig .rpic .rthumbs { flex: none; display: flex; gap: 5px; overflow-x: auto; min-height: 0; }
   .rig .rpic .rthumbs a { flex: none; border: 1px solid #1e3445; line-height: 0; }
   .rig .rpic .rthumbs a.on { border-color: #f0b045; }
@@ -2475,9 +2476,11 @@ function kbDraw(R) {
   if (changed && stick) box.scrollTop = box.scrollHeight;
 }
 // The picture reader (audio/pictures.py): SSTV pictures and weather charts, drawn as they're read. The radio keeps the
-// last few; the page shows the one coming (asked for again as it grows) and the others small, each a link to itself.
-const PIC = { st: null, busy: false, asked: 0, show: null };
-const PIC_NAMES = { sstv: "SSTV", fax: "Weather fax" }, PIC_KEYS = { sstv: "SSTV", fax: "Fax" };
+// last few, on its card, so they're there after a restart; the page shows the one coming (asked for again as it grows)
+// and the others small, each a link to itself. Clean takes the speckle of a weak signal out of what's shown. Slide,
+// for a chart whose lines begin part of the way across (one begun by hand): click where its left edge really is.
+const PIC = { st: null, busy: false, asked: 0, show: null, clean: false, sliding: false, slid: 0 };
+const PIC_NAMES = { sstv: "SSTV", fax: "Weather fax", hell: "Hellschreiber" }, PIC_KEYS = { sstv: "SSTV", fax: "Fax", hell: "Hell" };
 // where SSTV is, a band: [band, kHz, the sideband used there]
 const PIC_SSTV = [["80 m", 3730, "lsb"], ["40 m", 7171, "lsb"], ["20 m", 14230, "usb"], ["15 m", 21340, "usb"], ["10 m", 28680, "usb"]];
 // the weather services' fax broadcasts: [who, kHz]. Tuned 1.9 kHz under each in upper sideband, black is 1500 Hz and white 2300
@@ -2490,14 +2493,16 @@ function rigPicKeys(R, k) {
       PIC.st = null; PIC.show = null;
       rigPaint(R); cwDraw(R); ftDraw(R); kbDraw(R); picDraw(R);
       if (!on) return;
+      if (mode === "hell") return toast("Hellschreiber reader on: text sent as a picture of itself, printed here on a tape, twice over so that a whole line is always there to read. Tune so its rasping tone is in what you hear: amateurs use it around 14.063 and 7.037 MHz, upper sideband, mostly at weekends.", false, null, true);
       if (mode === "fax") return toast("Weather fax reader on: a chart is read from its start tone. Modes… has the weather services' frequencies; if a chart is already under way there, Start now begins it from where it is.", false, null, true);
       const [lo, hi] = D.reach(R), near = D.tuned(R) || 14230000;
       const to = D.modeGo && PIC_SSTV.map(([band, khz, tune]) => ({ band, hz: khz * 1000, tune })).filter(f => f.hz >= lo && f.hz <= hi).reduce((a, f) => !a || Math.abs(f.hz - near) < Math.abs(a.hz - near) ? f : a, null);
       if (!to) return toast("SSTV reader on: a picture is read when its header is heard. On 20 m they're on 14.230 MHz, upper sideband.", false, null, true);
       await D.modeGo(R, to.hz, to.tune);
       toast(`SSTV reader on, ${to.band}: a picture is drawn as it's sent, from the moment its header is heard (they take one to two minutes).`, false, null, true);
-    } catch (e) { rigOops(e); } }, mode === "sstv" ? "Read slow-scan television: go to the band's SSTV frequency and draw each picture as it's sent" : "Read weather fax: charts from the weather services, drawn as they're sent");
-  return [key("sstv"), key("fax")];
+    } catch (e) { rigOops(e); } }, mode === "sstv" ? "Read slow-scan television: go to the band's SSTV frequency and draw each picture as it's sent (one already under way is picked up from its line pulses)"
+      : mode === "hell" ? "Read Hellschreiber: text sent as a picture of itself, printed on a tape as it comes" : "Read weather fax: charts from the weather services, drawn as they're sent");
+  return [key("sstv"), key("fax"), key("hell")];
 }
 async function picPoll() {
   if (!S?.pictures || PIC.busy || Date.now() - PIC.asked < 1500) return;
@@ -2509,7 +2514,7 @@ async function picPoll() {
   } catch (e) { /* the next one will do */ }
   PIC.busy = false;
 }
-const picSrc = p => `/api/rx/pictures/${p.n}.png?lines=${p.lines}`;
+const picSrc = (p, big) => `/api/rx/pictures/${p.n}.png?lines=${p.lines}&v=${PIC.slid}${big && PIC.clean ? "&clean=1" : ""}`;
 function picDraw(R) {
   const d = R.dom;
   if (!d?.pic) return;
@@ -2519,12 +2524,20 @@ function picDraw(R) {
   const shown = pics.find(p => p.n === PIC.show) || coming || pics[pics.length - 1];
   d.picname.textContent = PIC_NAMES[mode];
   d.picsays.textContent = !here ? "" : coming ? `${coming.name} · line ${coming.lines}${coming.h ? ` of ${coming.h}` : ""}`
-    : st?.state === "announced" ? "a chart's start tone: it begins when the lines do" : mode === "fax" ? "listening for a chart's start tone" : "listening for a picture's header";
+    : st?.state === "announced" ? "a chart's start tone: it begins when the lines do" : mode === "fax" ? "listening for a chart's start tone" : mode === "hell" ? "listening for a keyed tone" : "listening for a picture's header, or one under way";
   d.picbegin.hidden = mode !== "fax" || !!coming; d.picend.hidden = !coming;
-  const src = shown && shown.lines ? picSrc(shown) : "";
+  d.picclean.hidden = !shown; d.picclean.classList.toggle("on", PIC.clean);
+  if (!shown?.grey) PIC.sliding = false;
+  d.picslide.hidden = !shown?.grey; d.picslide.classList.toggle("on", PIC.sliding); d.picshow.classList.toggle("sliding", PIC.sliding);
+  d.picshow.onclick = !PIC.sliding ? null : async e => {       // where the chart's left edge really is: that far across what's shown
+    const img = e.target.closest("img"); if (!img || !shown) return;
+    const r = img.getBoundingClientRect(), along = Math.min(.9999, Math.max(0, (e.clientX - r.left) / r.width));
+    try { PIC.st = await api("/api/rx/pictures", { slide: along, n: shown.n }); PIC.sliding = false; PIC.slid++; PIC.asked = 0; toast(shown.done ? "The chart is slid round: its left edge is where you clicked." : "The chart is slid round, and the lines still to come will match."); picDraw(R); } catch (err) { rigOops(err); }
+  };
+  const src = shown && shown.lines ? picSrc(shown, true) : "";
   if (d.picshow.dataset.src !== src || d.picshow.dataset.here !== String(here)) {
     d.picshow.dataset.src = src; d.picshow.dataset.here = String(here);
-    if (!src) d.picshow.replaceChildren(el("span", { className: "rnone", textContent: !here ? `Listen to this receiver, and ${mode === "fax" ? "the charts" : "the pictures"} in what it plays are drawn here.` : mode === "fax" ? "No chart yet. They come at set times through the day: half an hour's wait is usual." : "No picture yet. Someone has to send one: weekends and evenings are best." }));
+    if (!src) d.picshow.replaceChildren(el("span", { className: "rnone", textContent: !here ? `Listen to this receiver, and ${mode === "fax" ? "the charts" : "the pictures"} in what it plays are drawn here.` : mode === "fax" ? "No chart yet. They come at set times through the day: half an hour's wait is usual." : mode === "hell" ? "No tape yet. Someone has to send some: it's a weekend mode, around 14.063 MHz." : "No picture yet. Someone has to send one: weekends and evenings are best." }));
     else {
       const stick = d.picshow.scrollHeight - d.picshow.scrollTop - d.picshow.clientHeight < 12, img = el("img", { src, alt: `${shown.name}, ${shown.lines} lines` });
       img.onload = () => { d.picshow.replaceChildren(img); if (stick && shown === coming) d.picshow.scrollTop = d.picshow.scrollHeight; };      // (drawn when it has come: no blink)
@@ -3361,7 +3374,9 @@ function rigView(o, box, win) {
                  cwKey("Clear", "Empty the list", () => { KB.lines = []; kbDraw(R); })),
               d.kbcopy = el("div", { className: "rcopy" })),
     d.pic = el("div", { className: "rcw rft rpic", hidden: true },
-              el("h4", { title: "The picture being read, as far as it has come; under it the last few (the radio keeps six, until it restarts)" }, d.picname = el("b"), d.picsays = el("span"),
+              el("h4", { title: "The picture being read, as far as it has come; under it the last few (the radio keeps eight, on its card: they're still there after a restart)" }, d.picname = el("b"), d.picsays = el("span"),
+                 d.picclean = cwKey("Clean", "Take the speckle of a weak signal out of the picture shown: each dot becomes the middle one of the nine about it (press again for it as it was read)", () => { PIC.clean = !PIC.clean; picDraw(R); }),
+                 d.picslide = cwKey("Slide…", "A chart whose lines begin part of the way across (one begun by hand): press this, then click on the chart where its left edge really is, and it's turned round to put it there", () => { PIC.sliding = !PIC.sliding; if (PIC.sliding) toast("Click on the chart where its left edge really is."); picDraw(R); }),
                  d.picbegin = cwKey("Start now", "A chart already under way: read it from here, without waiting for the next one's start tone (its lines will begin wherever they happen to)", async () => { try { await api("/api/rx/pictures", { begin: true }); PIC.asked = 0; } catch (e) { rigOops(e); } }),
                  d.picend = cwKey("End", "Finish the picture being read here, and keep it", async () => { try { await api("/api/rx/pictures", { end: true }); PIC.asked = 0; } catch (e) { rigOops(e); } })),
               d.picshow = el("div", { className: "rshow" }), d.picthumbs = el("div", { className: "rthumbs" })));

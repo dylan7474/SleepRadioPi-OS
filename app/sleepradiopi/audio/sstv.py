@@ -18,6 +18,14 @@ sends them on 145.800):
     transmitter whose clock is a little off doesn't give a slanted picture.
   * Colour is three scans of each line (green, blue, red: Martin and
     Scottie) or brightness and two colour-difference scans (Robot, PD).
+  * A picture joined late -- the receiver tuned there half way through,
+    or the header lost in a fade -- has no header to go by, but its sync
+    pulses still come once a line, and how far apart they are is the
+    mode's own (446.4 ms: Martin M1; 428.2: Scottie S1...), as is how long
+    each lasts. A handful in a row at one mode's spacing (find_late()) and
+    the picture is begun from the first of them: what's left of it, from
+    the top of the frame down. With nothing to say how many lines are
+    still to come, it ends when the pulses stop.
 
 Weather fax (HF radiofax: the German and British weather services send
 charts round the clock):
@@ -26,6 +34,16 @@ charts round the clock):
   * A chart is announced by a 300 Hz start tone, then half a minute of
     "phasing" lines -- white with a black bar at the edge -- which say where
     a line begins; a 450 Hz tone ends it.
+
+Hellschreiber (Rudolf Hell's teleprinter of 1929, still used by amateurs,
+around 14.063 and 7.037 MHz): text sent as a picture of itself. A tone is
+keyed on and off 245 times a second, painting each letter as seven columns
+of dots, bottom to top, 17.5 columns a second; nothing is decoded -- the
+eye reads it, and reads it through noise that would beat any decoder. The
+paper tape printed every column twice, one above the other, so that
+whatever the timing a whole line of text is always there to read; so does
+this (the Hell class below), a strip of tape at a time, as a picture that
+grows downwards.
 
 How the pitch is followed: the sound is moved down so that 1900 Hz (the
 middle) is at 0, low-passed, and the pitch is how fast the phase turns from
@@ -149,24 +167,99 @@ def find_vis(f: np.ndarray, rate: float) -> tuple[int, int] | None:
     return None
 
 
-class Picture:
-    """One SSTV picture being read out of a pitch record: line by line as the sound for each arrives."""
+LATE_LINES = 5               # sync pulses in a row at a mode's spacing, for a picture with no header to be begun
+LATE_TIMING = 0.004          # ...each within this share of a line of where the last says it should be (and a millisecond)
+LATE_LOST = 8                # lines in a row with no sync pulse: a picture joined late has ended
 
-    def __init__(self, code: int, start: int, rate: float) -> None:
+
+def find_late(f: np.ndarray, rate: float) -> tuple[int, int, int] | None:
+    """A picture under way in the pitch f, by its sync pulses -> (the mode's number, the sample its first pulse
+    here begins at, whether that line is an odd one: 1 or 0, which Robot 36 needs); None. The pulses must be
+    the mode's length and at the sync's pitch, LATE_LINES of them one line apart (one may be missing), with
+    picture between them: pitch that's nearly all between black and white. (Noise alone dips to the sync's
+    pitch dozens of times a second, for a few milliseconds each, and some five of those are always a line
+    apart; what it doesn't do is stay between black and white in between.)"""
+    step = max(1, int(rate * 0.001))                 # looked at every millisecond
+    n = len(f) // step
+    if n < 600:
+        return None
+    c = f[:n * step].reshape(n, step).mean(axis=1)
+    low = c < (SYNC_HZ + BLACK_HZ) / 2               # nearer the sync's pitch than black
+    edge = np.diff(low.astype(np.int8))
+    begins, ends = np.flatnonzero(edge == 1) + 1, np.flatnonzero(edge == -1) + 1
+    if not len(begins) or not len(ends):
+        return None
+    ends = ends[ends > begins[0]]
+    m = min(len(begins), len(ends))
+    begins, lengths = begins[:m], (ends[:m] - begins[:m])
+    filled = np.concatenate(([0], np.cumsum(low)))   # (how much of any stretch is "sync"...
+    picture = np.concatenate(([0], np.cumsum((c > BLACK_HZ - 80) & (c < WHITE_HZ + 80))))       # ...and how much is picture)
+    total = np.concatenate(([0.0], np.cumsum(c)))
+    pitched = np.abs((total[begins + lengths] - total[begins]) / np.maximum(lengths, 1) - SYNC_HZ) < 90        # each pulse: at the sync's pitch
+    best = None
+    for code, mode in MODES.items():
+        ok = (lengths >= 0.6 * mode["sync"]) & (lengths <= 1.5 * mode["sync"] + 1.5) & pitched
+        starts = begins[ok]
+        if len(starts) < LATE_LINES:
+            continue
+        period = line_s(mode) * 1000.0               # in these milliseconds
+        near = LATE_TIMING * period + 1.0
+        for i in range(len(starts) - LATE_LINES + 1):
+            chain, skipped = [int(starts[i])], 0
+            for s in starts[i + 1:]:
+                gap = s - chain[-1]
+                k = int(round(gap / period))
+                if k == 0:
+                    continue
+                if k > 2 or (k == 2 and skipped) or abs(gap - k * period) > near * k:
+                    if gap > 2.5 * period:
+                        break
+                    continue
+                # between the two it's picture, not more of the same (a warble crosses the line all the time)
+                a, b = chain[-1] + int(1.5 * mode["sync"]) + 2, int(s)
+                if b > a and ((filled[b] - filled[a]) / (b - a) > 0.25 or (picture[b] - picture[a]) / (b - a) < 0.8):
+                    continue
+                skipped += k == 2
+                chain.append(int(s))
+            if len(chain) >= LATE_LINES and (best is None or len(chain) > best[2]):
+                best = (code, chain[0], len(chain))
+        if best is not None and best[0] == code and best[2] >= 2 * LATE_LINES:
+            break
+    if best is None:
+        return None
+    code, first, _ = best
+    mode, odd = MODES[code], 0
+    if mode["kind"] == "robot36":                    # (which of the pair a line is, by the pulse after its brightness: black before R-Y, white before B-Y)
+        at = int(first + mode["sync"] + mode["porch"] + mode["scan"] + 0.5)
+        sep = c[at:at + int(mode["gap"])]
+        odd = int(len(sep) > 0 and float(np.mean(sep)) > CENTRE_HZ)
+    return code, first * step, odd
+
+
+class Picture:
+    """One SSTV picture being read out of a pitch record: line by line as the sound for each arrives.
+    late: it was joined part of the way through (find_late()): `start` is where a sync pulse begins, `odd` whether
+    that line is an odd one, and it ends when the pulses do (its height isn't known until then)."""
+
+    def __init__(self, code: int, start: int, rate: float, late: bool = False, odd: int = 0) -> None:
         self.code, self.mode, self.rate = code, MODES[code], rate
+        self.late, self._odd, self._missed, self.lost = late, int(odd) if late else 0, 0, False
         self.name = self.mode["name"]
         self.w, self.h = self.mode["w"], self.mode["h"]
         self.rgb = np.zeros((self.h, self.w, 3), np.uint8)
         self.done = 0                                # lines of the picture read so far
         self._line = line_s(self.mode) * rate        # samples to a line as sent
         self._start = float(start) + (0.009 * rate if self.mode["kind"] == "scottie" else 0.0)   # (Scottie: a sync before the first line)
+        if late:                                     # (from a line's own sync pulse: Scottie's comes two colours into the line)
+            m = self.mode
+            self._start = float(start) - (2 * (m["gap"] + m["scan"]) * rate / 1000 if m["kind"] == "scottie" else 0.0)
         self._sent = 0                               # lines as sent, read so far
         self._slip = 0.0                             # how far the lines have been nudged, samples
         self._yuv: np.ndarray | None = np.zeros((self.h, self.w, 3), np.float32) if self.mode["kind"] in ("pd", "robot36") else None
 
     @property
     def finished(self) -> bool:
-        return self._sent >= lines_sent(self.mode)
+        return self.lost or self._sent >= lines_sent(self.mode)
 
     def moved(self, by: int) -> None:
         """The record has lost its first `by` samples."""
@@ -200,6 +293,15 @@ class Picture:
             j = int(np.argmin(got))
             if got[j] < (SYNC_HZ + BLACK_HZ) / 2:    # (a pulse is there: a quarter of the way to it, each line)
                 self._slip += 0.25 * (tries[j] - want)
+                self._missed = 0
+            else:
+                self._missed += 1
+                if self.late and self._missed >= LATE_LOST:      # the pulses have stopped: so has the picture, those lines ago
+                    self._sent -= LATE_LOST - 1
+                    self.done = max(0, self._sent * (2 if m["kind"] == "pd" else 1))
+                    self.rgb = self.rgb[:self.done]
+                    self.lost = True
+                    break
             at = self._start + self._slip + k * self._line
             px = lambda start_ms, scan, w=self.w: _level(_means(cum, at + start_ms * ms + np.arange(w) * (scan * ms / w), scan * ms / w))
             if m["kind"] == "martin":
@@ -223,14 +325,15 @@ class Picture:
             else:                                    # Robot 36: the colour of this line and the one beside it
                 y = px(m["sync"] + m["porch"], m["scan"])
                 c = np.repeat(px(m["sync"] + m["porch"] + m["scan"] + m["gap"] + m["porch2"], m["scan2"], self.w // 2), 2)
+                odd = (k + self._odd) % 2            # (joined late, the first line here may be the second of a pair)
                 self._yuv[k, :, 0] = y
-                self._yuv[k, :, 2 if k % 2 == 0 else 1] = c        # even: R-Y; odd: B-Y
-                pair = k - 1 if k % 2 else k
-                for row in range(pair, min(pair + 2, k + 1)):
+                self._yuv[k, :, 1 if odd else 2] = c # even: R-Y; odd: B-Y
+                pair = k - 1 if odd else k
+                for row in range(max(pair, 0), min(pair + 2, k + 1)):
                     u = self._yuv[pair + 1, :, 1] if pair + 1 <= k else np.full(self.w, 128.0)
-                    v = self._yuv[pair, :, 2]
+                    v = self._yuv[pair, :, 2] if pair >= 0 else np.full(self.w, 128.0)
                     self.rgb[row] = _rgb(self._yuv[row, :, 0], u, v)
-                self.done = k + 1 if k % 2 else k    # (a line isn't done until the one that shares its colour has come)
+                self.done = k + 1 if odd else k      # (a line isn't done until the one that shares its colour has come)
             self._sent += 1
         return self.done - before
 
@@ -351,6 +454,138 @@ class Fax:
         if rows:
             self.grey = np.vstack([self.grey, *[r[None, :] for r in rows]])
         return self.done - before
+
+
+# --- Hellschreiber ---------------------------------------------------------------------------
+
+HELL_DOTS_S = 245.0          # dots a second: fourteen to a column (each of the seven sent as two halves)
+HELL_COLUMN = 14
+HELL_STRIP = 315             # columns to a strip of tape here: eighteen seconds, about 45 letters
+HELL_SCALE = 2               # each dot drawn this many across and down
+HELL_GAP = 6                 # blank lines between strips
+HELL_WIDTH = HELL_STRIP * HELL_SCALE
+HELL_STRIP_LINES = 2 * HELL_COLUMN * HELL_SCALE + HELL_GAP
+HELL_INK = 4.0               # a tone that's keyed: its best moments this many times its quiet ones
+HELL_QUIET_S = 9.0           # no ink for this long: the over has ended
+HELL_MOST_STRIPS = 40        # (twelve minutes: a tape is cut there, and another begun)
+HELL_BAND = (400.0, 2700.0)  # where the tone is looked for in the audio, Hz
+
+
+def hell_tone(x: np.ndarray, rate: float) -> float | None:
+    """The pitch of the strongest narrow tone in a few seconds of sound, if one stands out; None."""
+    if len(x) < rate:
+        return None
+    n = 1 << int(np.log2(len(x)))
+    spec = np.abs(np.fft.rfft(x[-n:] * np.hanning(n))) ** 2
+    hz = np.fft.rfftfreq(n, 1 / rate)
+    w = max(1, int(60.0 / hz[1]))                     # (keyed 245 times a second it's spread over a few hundred Hz: its middle)
+    wide = np.convolve(spec, np.ones(w) / w, "same")
+    band = (hz >= HELL_BAND[0]) & (hz <= HELL_BAND[1])
+    i = int(np.argmax(np.where(band, wide, 0.0)))
+    if wide[i] < 8.0 * float(np.median(wide[band])):
+        return None
+    return float(hz[i])
+
+
+def hell_strength(x: np.ndarray, rate: float, pitch: float, first: int = 0) -> np.ndarray:
+    """How strong the tone at `pitch` is, sample by sample (x's first sample is number `first` of the sound, so
+    that one stretch follows on from the last)."""
+    z = x * np.exp(-2j * np.pi * pitch / rate * (first + np.arange(len(x))))
+    return np.abs(_low_pass(z, rate, 190.0, 2 * int(rate / 380.0) | 1))
+
+
+class Hell:
+    """A Hellschreiber tape being read out of a record of the tone's strength: a strip of text at a time."""
+
+    name = "Hellschreiber"
+
+    def __init__(self, start: float, rate: float) -> None:
+        self.rate, self.w = rate, HELL_WIDTH
+        self._strips: list[np.ndarray] = []          # the strips finished, each HELL_STRIP_LINES x HELL_WIDTH
+        self._cols: list[np.ndarray] = []            # the strip being printed: its columns so far, each fourteen dots, bottom first
+        self._start = float(start)                   # the sample the next column begins at
+        self._col = HELL_COLUMN / HELL_DOTS_S * rate
+        self._peak, self._floor = 0.0, 0.0
+        self._quiet = 0                              # columns in a row with no ink
+        self._inked = False                          # the strip being printed has something on it
+        self.finished = False
+        self.again = 0                               # the line from which what's been passed on may have changed
+
+    def _draw(self, cols: list[np.ndarray]) -> np.ndarray:
+        dots = np.zeros((HELL_COLUMN, HELL_STRIP), np.float32)
+        if cols:
+            dots[:, :len(cols)] = np.array(cols).T[::-1]          # (the first dot of a column is its bottom)
+        span = max(self._peak - self._floor, 1e-9)
+        ink = np.clip((dots - self._floor) / span, 0.0, 1.0)
+        paper = (255 - 255 * ink).astype(np.uint8)
+        twice = np.repeat(np.repeat(np.vstack([paper, paper]), HELL_SCALE, axis=0), HELL_SCALE, axis=1)
+        return np.vstack([twice, np.full((HELL_GAP, HELL_WIDTH), 255, np.uint8)])
+
+    @property
+    def rgb(self) -> np.ndarray:
+        strips = self._strips + ([self._draw(self._cols)] if self._cols and self._inked else [])
+        return np.vstack(strips) if strips else np.zeros((0, HELL_WIDTH), np.uint8)
+
+    @property
+    def done(self) -> int:
+        return (len(self._strips) + (1 if self._cols and self._inked else 0)) * HELL_STRIP_LINES
+
+    @property
+    def h(self) -> int:
+        return self.done
+
+    def moved(self, by: int) -> None:
+        self._start -= by
+
+    def reach(self) -> int:
+        return max(0, int(self._start) - 2)
+
+    def needs(self) -> int:
+        return int(self._start + self._col) + 1
+
+    def read(self, a: np.ndarray, cum: np.ndarray) -> int:
+        before = self.done
+        self.again = len(self._strips) * HELL_STRIP_LINES         # (the strip being printed is drawn afresh each time)
+        dot = self._col / HELL_COLUMN
+        while not self.finished and self.needs() <= len(a):
+            col = _means(cum, self._start + np.arange(HELL_COLUMN) * dot, dot).astype(np.float32)
+            self._start += self._col
+            # the paper's own grey (the quiet between dots) and the ink's black, followed slowly
+            self._floor = float(np.min(col)) if not self._peak else 0.98 * self._floor + 0.02 * float(np.min(col))
+            self._peak = max(float(np.max(col)), 0.999 * self._peak)
+            inked = float(np.max(col)) > self._floor + 0.4 * (self._peak - self._floor) and self._peak > HELL_INK * max(self._floor, 1e-9)
+            self._quiet = 0 if inked else self._quiet + 1
+            self._inked = self._inked or inked
+            self._cols.append(col)
+            if len(self._cols) >= HELL_STRIP:        # the strip's full: kept if there's anything on it
+                if self._inked:
+                    self._strips.append(self._draw(self._cols))
+                self._cols, self._inked = [], False
+            if self._quiet * self._col > HELL_QUIET_S * self.rate or len(self._strips) >= HELL_MOST_STRIPS:
+                while self._cols and self._quiet and len(self._cols) > 0 and self._quiet > 0:      # (the blank end of the tape cut off)
+                    self._cols.pop()
+                    self._quiet -= 1
+                if self._cols and self._inked:
+                    self._strips.append(self._draw(self._cols))
+                self._cols, self._inked = [], False
+                self.finished = True
+        return self.done - before
+
+
+def send_hell(dots: np.ndarray, rate: float, pitch: float = 980.0, lead_s: float = 1.0) -> np.ndarray:
+    """A pattern (seven rows, any number of columns, True for ink; the top row first) as Hellschreiber sound."""
+    per = rate / HELL_DOTS_S * 2                     # samples to a dot (two halves)
+    key = np.zeros(int(dots.shape[1] * 7 * per) + 1)
+    for c in range(dots.shape[1]):
+        for r in range(7):                           # bottom to top
+            if dots[6 - r, c]:
+                a = (c * 7 + r) * per
+                key[int(round(a)):int(round(a + per))] = 1.0
+    ramp = np.hanning(2 * int(rate * 0.0012) + 1)
+    key = np.convolve(key, ramp / ramp.sum(), "same")
+    tone = np.sin(2 * np.pi * pitch * np.arange(len(key)) / rate) * key
+    quiet = np.zeros(int(lead_s * rate))
+    return np.concatenate((quiet, tone, quiet))
 
 
 # --- making the sound of a picture (for the tests) -----------------------------------------

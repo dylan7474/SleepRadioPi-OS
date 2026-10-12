@@ -293,10 +293,20 @@ Actions, Sleep timer and Radio folders open:
   (the amateur bands' picture mode: 14.230 MHz; the space station uses it
   too); *Fax* does the same for the weather services' charts -- isobars,
   fronts and coastlines from Hamburg and Northwood, round the clock. The
-  last six stay to look at and save. The radio's own reader again, tried
-  on a made-up test card in seven SSTV modes and on a real chart from
-  Northwood on 4.610 MHz. See `app/sleepradiopi/audio/sstv.py` and
-  `pictures.py`.
+  last eight stay to look at and save, on the radio's card: they're still
+  there after a restart. An SSTV picture that's already under way when
+  you arrive is picked up from its line pulses (their spacing says which
+  mode it is) and drawn from there down. *Clean* takes the speckle of a
+  weak signal out of the picture shown. *Slide…*, for a chart begun by
+  hand (its lines then start part of the way across): click where its
+  left edge really is, and it's turned round to put it there, the lines
+  still to come as well. *Hell* reads Hellschreiber, a teleprinter of
+  1929 that sends text as a picture of itself: it's printed on a tape,
+  twice over as the paper ones were, a strip at a time. The radio's own
+  reader again, tried on a made-up test card in nine SSTV modes and on a
+  real chart from Northwood on 4.610 MHz; the late start and Hellschreiber
+  only on made-up signals so far. See `app/sleepradiopi/audio/sstv.py`
+  and `pictures.py`.
 - **PSK31 and RTTY, read as text.** The *PSK* and *RTTY* keys in a
   receiver's window read the two keyboard modes as they're typed. PSK31,
   and PSK63 (the same at twice the speed): every signal in what the
@@ -903,12 +913,6 @@ What's left to do (everything else described here is built and running):
   been heard (the receiver's wide "IQ" mode gives about 10 kHz to read
   from; the search at its heart has to be made several times faster for the
   Zero 2 W first).
-- **Pictures: more of them** — an SSTV picture is only read from its
-  header: one joined late could be started from its line syncs (their
-  spacing says the mode). A chart begun by hand has its lines start
-  wherever they happen to: a way to slide it straight. Speckle from a weak
-  signal could be cleaned. Pictures kept on the card, not only in memory.
-  Hellschreiber, the same idea for text.
 - **QPSK31** — the PSK reader does PSK31 and PSK63 (both BPSK); the
   four-phase kind, with its error correction, is left. It's seldom heard.
 - **Music from any computer** — adding music needs a Linux PC today

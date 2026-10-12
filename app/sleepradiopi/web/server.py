@@ -391,7 +391,7 @@ def make_handler(station: Station, output: Mp3Output, speaker=None,
                 from sleepradiopi.audio import pictures as pictures_mod
                 self._send(json.dumps(pictures_mod.reader.status()).encode(), "application/json")
             elif path.startswith("/api/rx/pictures/") and path.endswith(".png"):
-                # One of those pictures, as far as it has been read, as a PNG file.
+                # One of those pictures, as far as it has been read, as a PNG file. ?clean=1: with the speckle taken out.
                 from sleepradiopi.audio import pictures as pictures_mod
                 try:
                     picture = pictures_mod.reader.picture(int(path[len("/api/rx/pictures/"):-4]))
@@ -400,6 +400,8 @@ def make_handler(station: Station, output: Mp3Output, speaker=None,
                 if picture is None:
                     self._error("no such picture")
                     return
+                if parse_qs(urlparse(self.path).query).get("clean", [""])[0] == "1":
+                    picture = pictures_mod.clean(picture)
                 self._send(pictures_mod.png(picture), "image/png")
             elif path == "/api/rx/name":
                 # The names given to receivers on the desktop.
@@ -852,17 +854,24 @@ def make_handler(station: Station, output: Mp3Output, speaker=None,
                 # {"on": true | false, "mode"?: "sstv" | "fax"}: the reader for SSTV pictures and weather charts
                 # (audio/pictures.py); off again at the next start. Or {"begin": true}: read a chart from now, without
                 # waiting for its start tone; {"end": true}: the picture being read is finished here.
+                # {"slide": 0.37, "n": 5}: chart 5's lines begin that far across it: it's turned round to match.
                 from sleepradiopi.audio import pictures as pictures_mod
                 try:
                     body = self._body()
+                    if "slide" in body:
+                        if isinstance(body.get("n"), bool) or not isinstance(body.get("n"), int):
+                            raise ValueError("n is the chart's number")
+                        pictures_mod.reader.slide(body["n"], body["slide"])
+                        self._send(json.dumps(pictures_mod.reader.status()).encode(), "application/json")
+                        return
                     if body.get("begin") is True or body.get("end") is True:
                         pictures_mod.reader.order("begin" if body.get("begin") is True else "end")
                         self._send(json.dumps(pictures_mod.reader.status()).encode(), "application/json")
                         return
                     if not isinstance(body["on"], bool) or body.get("mode", "sstv") not in pictures_mod.MODES:
                         raise ValueError
-                except (ValueError, TypeError, KeyError, AttributeError):
-                    self._error('send {"on": true | false, "mode": "sstv" | "fax"}, {"begin": true} or {"end": true}')
+                except (ValueError, TypeError, KeyError, AttributeError) as e:
+                    self._error(str(e) if isinstance(e, ValueError) and str(e) else 'send {"on": true | false, "mode": "sstv" | "fax"}, {"begin": true} or {"end": true}')
                     return
                 pictures_mod.reader.switch(body["on"], body.get("mode"))
                 self._send(json.dumps(self._one_reader("pictures" if body["on"] else None)).encode(), "application/json")

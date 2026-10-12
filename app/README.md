@@ -1347,8 +1347,35 @@ The cards:
   *Where to listen* (tuned 1.9 kHz under each in upper sideband, so black
   is 1500 Hz and white 2300).
   The reading is in a process of its own (`audio/pictures.py`), which
-  passes back each new line; the last six pictures are kept in memory and
-  made into PNG files when the page asks. Nothing is written to the card.
+  passes back each new line; the last eight pictures are kept and made
+  into PNG files when the page asks. A finished one is written to the card
+  as a PNG (`~/.local/state/sleepradiopi/pictures/`, with `pictures.json`
+  saying what they are: once, when it's finished) and read back at
+  start-up (`unpng()` reads the PNGs `png()` writes).
+  *Joined late* (`sstv.find_late`): with no header, a picture under way is
+  known by its sync pulses -- the mode's length, at the sync's pitch, five
+  in a row one line apart to 0.4% (446.4 ms is Martin M1, 428.2 Scottie
+  S1...), with pitch between them that's nearly all between black and
+  white (noise alone dips to the sync's pitch dozens of times a second,
+  and some five of those are always a line apart). It's begun from the
+  first of them, named "... (joined late)", and ends when eight lines in a
+  row have no pulse; Robot 36 says which of a pair a line is by the pulse
+  after its brightness. A picture ended by hand isn't begun again from
+  what's left of it, nor a finished one from its own last lines.
+  *Clean* (`GET /api/rx/pictures/N.png?clean=1`, `pictures.clean`): each
+  dot becomes the middle one of the nine about it; the picture kept is as
+  it was read. *Slide* (`POST /api/rx/pictures {"slide": 0.37, "n": N}`):
+  chart N's lines begin that far across it, so it's turned round to put
+  that at the left edge -- a finished one where it's kept, one still
+  coming in the reader (`Fax.rephase`), which lays the rest out to match.
+  *Hellschreiber* (`"mode": "hell"`, the **Hell** key; `sstv.Hell`): the
+  strongest narrow tone in what's heard is found and its strength
+  followed (the record the reader keeps is that, not the pitch); when
+  it's being keyed a tape is begun. A column is fourteen dots at 245 a
+  second, printed twice one above the other, 315 columns (18 seconds) to
+  a strip, a dot two across and down; a strip with nothing on it isn't
+  kept, the strip being printed is passed on afresh each second, and nine
+  seconds without ink ends the tape.
   *One reader at a time:* Morse, FT8 / FT4 and PSK31 / RTTY each have
   their own place on a band, so switching one on switches the others off
   (each of those calls answers with all three: `{"cw", "ft8",
