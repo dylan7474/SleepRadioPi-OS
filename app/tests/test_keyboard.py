@@ -58,6 +58,46 @@ def test_psk31_is_read_down_into_the_noise(pitch: float) -> None:
     assert found and abs(found[0][0] - pitch) < 5.0
 
 
+@pytest.mark.parametrize("pitch", [600.0, 1503.7, 2700.0])
+def test_psk63_is_read_too_and_neither_speed_reads_the_other(pitch: float) -> None:
+    text = "CQ TEST de G4XYZ G4XYZ 599 001 The quick brown fox, jumps over 0123456789 times?\n"
+    for snr in (10, -3, -6):                         # (twice as wide as PSK31: 3 dB less to spare)
+        x = _noisy(psk.send(text, RATE, pitch, baud=62.5) * 3000, snr)
+        r = psk.read(x, RATE, pitch + 5.0, 62.5)
+        assert _said(r["chars"]) == text and abs(r["pitch"] - pitch) < 1.0 and r["baud"] == 62.5, (pitch, snr)
+        assert psk.read(x, RATE, pitch + 5.0)["chars"] == [], (pitch, snr)            # read as PSK31: nothing, not rubbish
+    x = _noisy(psk.send(text, RATE, pitch) * 3000, -3)
+    assert psk.read(x, RATE, pitch + 2.0, 62.5)["chars"] == [] and _said(psk.read(x, RATE, pitch + 2.0)["chars"]) == text      # ...and PSK31 as PSK63
+    rng = np.random.default_rng(4)                   # noise, and a carrier, at the faster speed: nothing
+    assert psk.read(rng.normal(0, 1000, int(RATE * 8)), RATE, pitch, 62.5)["chars"] == []
+    tone = 3000 * np.cos(2 * np.pi * pitch * np.arange(int(RATE * 8)) / RATE) + rng.normal(0, 300, int(RATE * 8))
+    assert psk.read(tone, RATE, pitch, 62.5)["chars"] == [] and psk.read(tone, RATE, pitch + 31.0, 62.5)["chars"] == []
+
+
+def test_psk31_and_psk63_side_by_side_each_at_its_own_speed() -> None:
+    rng = np.random.default_rng(5)
+    said = {800: (31.25, "CQ CQ de M8ODJ M8ODJ pse k\n" * 2), 1500: (62.5, "CQ TEST de G4XYZ G4XYZ test 599 001 001 the quick brown fox\n" * 2),
+            2200: (31.25, "DL1ABC de F5ABC ur 599 599 name is Jean\n" * 2)}
+    n = int(RATE * 30)
+    x = rng.normal(0, 300, n)
+    for pitch, (baud, text) in said.items():
+        y = psk.send(text, RATE, pitch, baud=baud) * 1500
+        x[int(2 * RATE):int(2 * RATE) + len(y)] += y[:n - int(2 * RATE)]
+    r = keyboard.Reader("psk31")
+    r.on = True
+    step, speeds = int(RATE * keyboard.STEP_S), {}
+    for i in range(0, len(x), step):
+        r.take(x[i:i + step])
+        r.step()
+        speeds.update({s["hz"]: s["baud"] for s in r.status()["signals"]})
+    lines: dict[int, str] = {}
+    for p in r.status()["pieces"]:
+        lines[p["hz"]] = lines.get(p["hz"], "") + p["text"]
+        assert p["baud"] == psk.NAMES[said[min(said, key=lambda hz: abs(hz - p["hz"]))][0]]
+    assert sorted(lines) == sorted(said) and all(lines[hz] == said[hz][1] for hz in said)
+    assert speeds == {800: 31, 1500: 63, 2200: 31}
+
+
 def test_psk31_says_nothing_of_noise_or_a_carrier() -> None:
     rng = np.random.default_rng(4)
     for _ in range(5):
@@ -114,6 +154,61 @@ def test_rtty_followed_from_its_start_to_its_last_letter() -> None:
     got = _followed("rtty", x)                       # read a step at a time: the figures shift carried across the joins
     (hz, text), = got.items()                        # (one signal, named by the middle of its two tones)
     assert abs(hz - 1000) <= 4 and text.strip() == (MESSAGE * 3).replace("\r", "").strip()
+
+
+def test_rtty_several_at_once_as_in_a_contest() -> None:
+    # four side by side, of different strengths, one the other way up, each starting when it likes
+    msgs = ["CQ TEST DE G4XYZ G4XYZ CQ\r\n" * 3, "DL1ABC 599 023 023 TU\r\n" * 4, "F5ABC DE EA3XYZ 599 114 114 K\r\n" * 3, "RYRYRY DE OH2ABC OH2ABC 599 = 12:30\r\n" * 3]
+    rng = np.random.default_rng(6)
+    n = int(RATE * 40)
+    x = rng.normal(0, 300, n)
+    for (low, amp, high, delay), m in zip([(500, 2000, True, 2.0), (950, 1200, True, 5.0), (1400, 900, False, 1.0), (1850, 1500, True, 8.0)], msgs):
+        y = rtty.send(m, RATE, low, 170, 45.45, high) * amp
+        x[int(delay * RATE):int(delay * RATE) + len(y)] += y[:n - int(delay * RATE)]
+    found = rtty.find_all(x[int(10 * RATE):int(18 * RATE)], RATE, most=8)       # (all four going)
+    assert sorted(round(low / 10) * 10 for low, shift, _ in found if shift == 170.0)[:4] == [500, 950, 1400, 1850]
+    got = _followed("rtty", x)
+    assert [abs(hz - want) <= 6 for hz, want in zip(sorted(got), (585, 1035, 1485, 1935))] == [True] * 4
+    # each from its first letter to its last, and nothing after it stopped (next door's keying leaks into its tones)
+    assert [got[hz].strip() for hz in sorted(got)] == [m.replace("\r", "").strip() for m in msgs]
+
+
+def test_rtty_of_different_shifts_and_speeds_together() -> None:
+    rng = np.random.default_rng(9)
+    n = int(RATE * 30)
+    x = rng.normal(0, 300, n)
+    said = [(600, 170, 45.45, "CQ CQ DE M8ODJ M8ODJ K\r\n" * 3), (1275, 450, 50.0, "ZCZC 123 WEATHER FORECAST NORTH SEA = WIND 5 TO 7\r\n" * 3)]
+    for low, shift, baud, m in said:
+        y = rtty.send(m, RATE, low, shift, baud, True) * 1500
+        x[int(2 * RATE):int(2 * RATE) + len(y)] += y[:n - int(2 * RATE)]
+    got = _followed("rtty", x)
+    assert len(got) == 2
+    for (hz, text), (low, shift, baud, m) in zip(sorted(got.items()), said):
+        assert abs(hz - (low + shift / 2)) <= 6 and m.replace("\r", "").strip() in text.strip() and len(text.strip()) <= len(m.replace("\r", "").strip()) + 2
+    assert _followed("rtty", rng.normal(0, 300, int(RATE * 40))) == {}           # and of noise alone, nothing
+
+
+def test_a_wide_teleprinter_is_one_signal_not_a_narrow_one_inside_it() -> None:
+    # (the German weather service read off the air as two: its own, and a "170 Hz" pair made of the energy its
+    # keying puts between its tones, which framed and read as rubbish)
+    r = keyboard.Reader("rtty")
+    wide = {"low": 860.0, "shift": 450.0, "baud": 50.0, "mark_high": False, "done": 0.0, "last": 0.0, "figs": False, "framed": 1.0, "level": 1.0}
+    narrow = {**wide, "low": 1000.0, "shift": 170.0}
+    rng = np.random.default_rng(2)
+    y = rtty.send("ZCZC WEATHER FORECAST NORTH SEA = WIND 5 TO 7\r\n" * 3, RATE, 860, 450, 50.0, False) * 2000
+    x = (y + rng.normal(0, 300, len(y)))[:int(RATE * 8)].astype(np.float32)
+    real = rtty.find_all
+    try:
+        rtty.find_all = lambda x, rate, most=4: [(1000.0, 170.0, 20.0), (860.0, 450.0, 30.0)]       # (both offered, the narrow one first)
+        r._rttys = [dict(wide, level=rtty.read(x, RATE, 860.0, 450.0)["level"])]
+        r._teleprinter(x, 0.0, 8.0)                  # the wide one being read: the pair inside it isn't even tried
+        assert [(s["low"], s["shift"]) for s in r._rttys] == [(860.0, 450.0)] and r._tried == {}
+        r._rttys = [dict(narrow)]                    # the narrow one got in first: the wide one frames, and takes over
+        pieces, signals = r._teleprinter(x, 0.0, 8.0)
+        assert [(s["low"], s["shift"]) for s in r._rttys] == [(860.0, 450.0)] and len(signals) == 1
+        assert "WEATHER FORECAST" in "".join(p["text"] for p in pieces)
+    finally:
+        rtty.find_all = real
 
 
 # --- the reader as the radio has it -----------------------------------------------------------

@@ -45,6 +45,8 @@ FRAMED_MIN = 0.92            # of the characters framed, this share must have th
 CHARS_MIN = 6                # ...and there must be this many
 NEAR_S = 1.5                 # a character is said if FRAMED_NEAR of those in this long before it, or after it, are
 FRAMED_NEAR = 0.85           # framed: a signal that stops is followed by nothing, not by noise read as letters
+LEVEL_MIN = 0.3              # ...and it's as strong as this much of what the signal is (about 10 dB down): next door's keying
+                             # leaks into a signal's tones once it has stopped, and frames, being a teleprinter's too
 
 NUL, LF, CR, FIGS, LTRS = "\0", "\n", "\r", "\x0e", "\x0f"
 LETTERS = [NUL, "E", LF, "A", " ", "S", "I", "U", CR, "D", "R", "J", "N", "F", "C", "K",
@@ -118,6 +120,51 @@ def find(x: np.ndarray, rate: float) -> tuple[float, float, float] | None:
     return mid - shift / 2, shift, db
 
 
+TONE_CLEAR_HZ = 60.0         # two signals' tones are at least this far apart
+
+
+def find_all(x: np.ndarray, rate: float, most: int = 4) -> list[tuple[float, float, float]]:
+    """Every RTTY signal there may be in x -> [(the lower tone Hz, how far apart Hz, dB over the noise: the weaker
+    tone's)], the strongest first: pairs of humps as find() sees them, none sharing a tone with a stronger one.
+    (In a contest there are a dozen side by side; a pair made of two neighbours' tones doesn't frame, and is
+    dropped by whoever reads it.)"""
+    f, p = spectrum(x, rate)
+    step = f[1]
+    w = max(3, int(40.0 / step) | 1)
+    wide = np.convolve(p, np.ones(w) / w, "same")
+    band = (f >= BAND[0]) & (f <= BAND[1])
+    floor = float(np.median(wide[band]))
+    if floor <= 0:
+        return []
+    clear = max(1, int(TONE_CLEAR_HZ / step))
+    pairs = []
+    for n, shift in enumerate(SHIFTS):
+        k = int(round(shift / step))
+        idx = np.flatnonzero(band & (f + shift <= BAND[1]))
+        if not len(idx):
+            continue
+        both = np.minimum(wide[idx], wide[idx + k])
+        both = np.where(wide[idx + k // 2] < 0.5 * both, both, 0.0)       # (a dip between them, as in find())
+        for _ in range(most * 2):                    # the peaks of it, the tallest first
+            i = int(np.argmax(both))
+            db = 10 * np.log10(max(both[i], 1e-30) / floor)
+            if db < OVER_DB:
+                break
+            lo, hi = _centre(f, p, idx[i], w), _centre(f, p, idx[i] + k, w)
+            mid = (lo + hi) / 2
+            pairs.append((db - n, mid - shift / 2, shift, float(db)))     # (a wider pair has to be clearly the better)
+            both[max(0, i - clear):i + clear + 1] = 0.0
+    found: list[tuple[float, float, float]] = []
+    for _, low, shift, db in sorted(pairs, reverse=True):
+        mine = (low, low + shift)
+        if any(abs(a - b) < TONE_CLEAR_HZ for g, s, _ in found for a in mine for b in (g, g + s)):
+            continue
+        found.append((low, shift, db))
+        if len(found) >= most:
+            break
+    return found
+
+
 def _centre(f: np.ndarray, p: np.ndarray, i: int, w: int) -> float:
     a, b = max(0, i - w // 2), min(len(p), i + w // 2 + 1)
     return float(np.sum(f[a:b] * p[a:b]) / np.sum(p[a:b]))
@@ -129,11 +176,11 @@ def tones(x: np.ndarray, rate: float, low: float, shift: float) -> tuple[list[np
     return [z for z, _ in both], both[0][1]
 
 
-def keying(base: list[np.ndarray], r: float, baud: float) -> np.ndarray:
-    """Which tone is there, moment by moment, from tones() -> + for the upper, - for the lower, about 1 either
-    way. The line between them is drawn half way between the two tones' own strengths of late, so a tone that
-    has faded more than the other still has its bits, and a tone not sent at all (the idle one) reads as the
-    other."""
+def keying(base: list[np.ndarray], r: float, baud: float) -> tuple[np.ndarray, np.ndarray]:
+    """Which tone is there, moment by moment, from tones() -> (+ for the upper, - for the lower, about 1 either
+    way; how strong the two are together, moment by moment). The line between them is drawn half way between
+    the two tones' own strengths of late, so a tone that has faded more than the other still has its bits, and
+    a tone not sent at all (the idle one) reads as the other."""
     e, top = [], []
     block = max(1, int(r * 0.1))
     for z in base:
@@ -150,7 +197,7 @@ def keying(base: list[np.ndarray], r: float, baud: float) -> np.ndarray:
         e.append(a)
         top.append(peak)
     scale = (top[0] + top[1]) / 2 + 1e-12
-    return ((e[1] - e[0]) - (top[1] - top[0]) / 2) / scale
+    return ((e[1] - e[0]) - (top[1] - top[0]) / 2) / scale, e[0] + e[1]
 
 
 def frame(k: np.ndarray, r: float, baud: float, start: int = 0) -> tuple[list[tuple[int, int, float]], list[int]]:
@@ -186,34 +233,51 @@ def frame(k: np.ndarray, r: float, baud: float, start: int = 0) -> tuple[list[tu
     return chars, bad
 
 
-def read(x: np.ndarray, rate: float, low: float, shift: float, baud: float | None = None, mark_high: bool | None = None) -> dict:
+def read(x: np.ndarray, rate: float, low: float, shift: float, baud: float | None = None, mark_high: bool | None = None,
+         level: float | None = None) -> dict:
     """The RTTY in x with its tones at low and low + shift -> {"baud", "mark_high", "framed" (the share of characters
-    with their stop bit), "codes": [(five bits, when it ended: s into x, how sure)]}: the speed and the sense that
-    frame best, of those tried (all of them, unless given). When they're being found, no "codes" unless enough
-    are framed; either way only the characters with good framing around them."""
-    best = {"baud": baud, "mark_high": mark_high, "framed": 0.0, "codes": []}
+    with their stop bit, over the stretch that's said), "level" (how strong it is where it's said), "codes": [(five
+    bits, when it ended: s into x, how sure)]}: the speed and the sense that say most, of those tried (all of
+    them, unless given). Only the characters with good framing around them are said, and only those about as
+    strong as the signal is (`level`, if the caller has been following it; else as the rest of what's said here); when the speed and sense are being found, none at all unless there are
+    enough of them and the stretch they make is nearly all framed. (The stretch, not all of x: a signal that
+    has only just begun has seconds of noise before it, which frames badly at any speed -- judged over all of
+    it, a station's first words were lost while its framing "improved".)"""
+    best = {"baud": baud, "mark_high": mark_high, "framed": 0.0, "level": 0.0, "codes": []}
     base, r = tones(x, rate, low, shift)
+    near = NEAR_S * r
     for b in ((baud,) if baud else BAUDS):
-        k = keying(base, r, b)
+        k, strength = keying(base, r, b)
         for high in ((mark_high,) if mark_high is not None else (True, False)):
             chars, bad = frame(k if high else -k, r, b)
-            n = len(chars)
-            framed = n / (n + len(bad)) if n + len(bad) else 0.0
-            score = framed * n * b                   # (most characters well framed: the wrong speed frames fewer, worse)
-            if n and score > best.get("score", 0.0):
-                best = {"baud": b, "mark_high": high, "framed": framed, "score": score, "chars": chars, "bad": bad, "codes": []}
-    chars, bad = best.pop("chars", []), np.array(best.pop("bad", []))
+            if not chars:
+                continue
+            ends, bad = np.array([at for _, at, _ in chars]), np.array(bad)
+
+            def side(lo: float, hi: float) -> bool:      # well framed between these?
+                good = int(np.sum((ends >= lo) & (ends <= hi)))
+                return good >= 4 and good / (good + int(np.sum((bad >= lo) & (bad <= hi)))) >= FRAMED_NEAR
+            # (before it or after it: the first and last of an over have noise on one side)
+            said = [(code, at, sure) for code, at, sure in chars if side(at - near, at) or side(at, at + near)]
+            was = level
+            if said:                                 # ...and as strong as the signal: its own level where it's said, unless told
+                loud = np.array([strength[max(0, int(at - 4.0 * r / b))] for _, at, _ in said])      # (in the middle of each)
+                was = float(np.median(loud)) if level is None else level
+                said = [c for c, l in zip(said, loud) if l >= LEVEL_MIN * was]
+            if said:
+                lo, hi = said[0][1], said[-1][1]
+                n = int(np.sum((ends >= lo) & (ends <= hi)))
+                framed = n / (n + int(np.sum((bad >= lo) & (bad <= hi))))
+            else:
+                framed = len(chars) / (len(chars) + len(bad))
+            score = (len(said) * b, framed)          # (most characters well framed: the wrong speed frames fewer, worse)
+            if score > best.get("score", (0.0, 0.0)) or "score" not in best:
+                best = {"baud": b, "mark_high": high, "framed": framed, "score": score, "level": was if said else 0.0,
+                        "codes": [(code, at / r, sure) for code, at, sure in said]}
     best.pop("score", None)
     finding = baud is None or mark_high is None
-    if finding and (len(chars) < CHARS_MIN or best["framed"] < FRAMED_MIN):
-        return best
-    ends, near = np.array([at for _, at, _ in chars]), NEAR_S * r
-    def side(lo: float, hi: float) -> bool:          # well framed between these?
-        good = int(np.sum((ends >= lo) & (ends <= hi)))
-        return good >= 4 and good / (good + int(np.sum((bad >= lo) & (bad <= hi)))) >= FRAMED_NEAR
-    for code, at, sure in chars:                     # (before it or after it: the first and last of an over have noise on one side)
-        if side(at - near, at) or side(at, at + near):
-            best["codes"].append((code, at / r, sure))
+    if finding and (len(best["codes"]) < CHARS_MIN or best["framed"] < FRAMED_MIN):
+        best["codes"] = []
     return best
 
 

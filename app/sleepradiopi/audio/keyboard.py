@@ -4,13 +4,24 @@ audio/psk.py and audio/rtty.py each read a stretch of sound. This is the
 part that keeps listening: the last few seconds are read again every second
 or two, and what's new since the last look is passed on.
 
-  * PSK31: every signal in what the receiver hears, at once (up to
-    PSK_MOST). Each is a track, known by its pitch; a track nothing has come
-    from for a while is dropped, and a new one has to say a few letters
-    before it's believed.
-  * RTTY: one signal, the strongest pair of tones. Once it frames, its
-    tones, speed and sense are kept (so reading on costs a sixth of
-    finding), and looked for afresh when it has said nothing for a while.
+  * PSK31 and PSK63: every signal in what the receiver hears, at once (up
+    to PSK_MOST). Each is a track, known by its pitch and its speed; a track
+    nothing has come from for a while is dropped, and a new one has to say
+    a few letters before it's believed. A new signal is tried at each speed
+    (read at the wrong one it says nothing: see audio/psk.py).
+  * RTTY: every signal there, too (up to RTTY_MOST: in a contest there are
+    a dozen side by side), each a track known by its tones. Once one
+    frames, its tones, speed and sense are kept (so reading on costs a
+    sixth of finding), and it's dropped when it has said nothing for a
+    while. Finding is the dear part, so only RTTY_TRY new pairs of tones
+    are tried each time, the strongest untried first; one that didn't
+    frame is left a few seconds (it may only just have begun), and twice
+    as long each time it fails again. Two signals can't share a stretch
+    of the band: the keying of a wide one (the weather broadcasts' tones
+    are 450 Hz apart) puts energy between its tones that looks like a
+    narrow pair, and frames, and reads as rubbish (seen on the German
+    weather service). So a pair inside a signal being read is left alone,
+    and a wider one that frames takes over from a narrower one inside it.
 
 What's read comes out in pieces: {"n", "hz", "t0", "t1" (seconds of sound
 since switched on), "text"}; the page puts a signal's pieces together on a
@@ -48,7 +59,13 @@ PSK_MOST = 6                 # PSK31 signals read at once
 PSK_SAME_HZ = 10.0           # a signal within this of a track is that track
 PSK_FIRST = 4                # letters a new signal must say at once to be believed
 TRACK_S = 20.0               # a track nothing has come from for this long is dropped
-RTTY_LOST_S = 12.0           # an RTTY signal that has said nothing for this long is looked for afresh
+RTTY_LOST_S = 12.0           # an RTTY signal that has said nothing for this long is dropped (and looked for afresh)
+RTTY_MOST = 4                # RTTY signals read at once
+RTTY_TRY = 1                 # new pairs of tones tried each time (finding one costs six readings)
+RTTY_GAP_HZ = 20.0           # two signals' tones are at least this far from each other's stretch of the band
+RTTY_SAME_HZ = 40.0          # a pair of tones within this of a track's, the same distance apart, is that track
+RTTY_AGAIN_S = 3.0           # a pair that didn't frame isn't tried again for this long (it may have just begun)...
+RTTY_AGAIN_MOST_S = 24.0     # ...twice as long each time it fails again, up to this
 
 
 class Reader:
@@ -66,7 +83,8 @@ class Reader:
         self._n = 0
         self._pieces: deque[dict] = deque(maxlen=200)
         self._tracks: list[dict] = []                # PSK31: {"hz", "done" (s read up to), "last" (s something came), "eye"}
-        self._rtty: dict | None = None               # RTTY: {"low", "shift", "baud", "mark_high", "done", "last", "figs"}
+        self._rttys: list[dict] = []                 # RTTY: {"low", "shift", "baud", "mark_high", "done", "last", "figs", "framed"}
+        self._tried: dict[tuple[int, int], tuple[float, int]] = {}     # RTTY: pairs of tones that didn't frame -> (when, how many times)
         self._at = 0.0
         self._signals: list[dict] = []               # what's being read now, for the page
 
@@ -99,8 +117,9 @@ class Reader:
     # --- what the page asks for --------------------------------------------------------------
 
     def status(self, since: int = 0) -> dict:
-        """{"on", "mode", "at" (s of sound heard), "signals": [{"hz", ...}] (being read now), "pieces": [{"n", "hz",
-        "t0", "t1", "text"}] after number since}"""
+        """{"on", "mode", "at" (s of sound heard), "signals": [{"hz", ...}] (being read now: PSK with "baud" 31 or 63,
+        RTTY with "shift", "baud", "mark_high", "framed"), "pieces": [{"n", "hz", "baud"? (PSK: 31 or 63), "t0", "t1",
+        "text"}] after number since}"""
         with self._lock:
             return {"on": self.on, "mode": self.mode, "at": round(self._at, 2), "signals": list(self._signals),
                     "pieces": [p for p in self._pieces if p["n"] > since]}
@@ -137,7 +156,10 @@ class Reader:
                 pitches.append((hz, None))
         pieces, seen = [], []
         for hz, track in pitches:
-            r = psk.read(x, RATE, hz)
+            if track is not None:
+                r = psk.read(x, RATE, hz, track["baud"])
+            else:                                    # a new one: which speed is it? The one that says the more
+                r = max((psk.read(x, RATE, hz, baud) for baud in psk.BAUDS), key=lambda r: len(r["chars"]))
             if any(abs(r["pitch"] - s) < PSK_SAME_HZ for s in seen):      # (two finds of the one signal)
                 continue
             if track is None:
@@ -147,42 +169,60 @@ class Reader:
             if track is None:
                 if len(chars) < PSK_FIRST or len(self._tracks) >= PSK_MOST:
                     continue
-                track = {"hz": r["pitch"], "done": t0, "last": end, "eye": r["eye"]}
+                track = {"hz": r["pitch"], "baud": r["baud"], "done": t0, "last": end, "eye": r["eye"]}
                 self._tracks.append(track)
             seen.append(r["pitch"])
             if r["chars"]:
                 track.update(hz=r["pitch"], eye=r["eye"])
             if chars:
                 track.update(done=chars[-1][1], last=end)
-                pieces.append({"hz": round(track["hz"]), "t0": round(chars[0][1], 2), "t1": round(chars[-1][1], 2), "text": "".join(c for c, _ in chars)})
+                pieces.append({"hz": round(track["hz"]), "baud": psk.NAMES[track["baud"]], "t0": round(chars[0][1], 2), "t1": round(chars[-1][1], 2), "text": "".join(c for c, _ in chars)})
             track["done"] = max(track["done"], t0)   # (what has gone from the window is done with)
-        return pieces, [{"hz": round(t["hz"]), "eye": round(t["eye"], 2)} for t in sorted(self._tracks, key=lambda t: t["hz"])]
+        return pieces, [{"hz": round(t["hz"]), "baud": psk.NAMES[t["baud"]], "eye": round(t["eye"], 2)} for t in sorted(self._tracks, key=lambda t: t["hz"])]
 
     def _teleprinter(self, x: np.ndarray, t0: float, end: float) -> tuple[list[dict], list[dict]]:
         upto = end - MARGIN_S
-        s = self._rtty
-        if s is not None and end - s["last"] > RTTY_LOST_S:
-            s = self._rtty = None
-        if s is None:
-            found = rtty.find(x, RATE)
-            if found is None:
-                return [], []
-            r = rtty.read(x, RATE, found[0], found[1])
-            if not r["codes"]:
-                return [], []
-            s = self._rtty = {"low": found[0], "shift": found[1], "baud": r["baud"], "mark_high": r["mark_high"], "done": t0, "last": end, "figs": False}
-        else:
-            r = rtty.read(x, RATE, s["low"], s["shift"], s["baud"], s["mark_high"])
-        codes = [(c, t0 + when, sure) for c, when, sure in r["codes"] if s["done"] + AGAIN_S < t0 + when <= upto]
+        self._rttys = [s for s in self._rttys if end - s["last"] <= RTTY_LOST_S]
+        self._tried = {k: v for k, v in self._tried.items() if end - v[0] < 2 * RTTY_AGAIN_MOST_S}
+
+        def resting(key) -> bool:                    # tried, didn't frame, and not yet due another go
+            at, fails = self._tried.get(key, (0.0, 0))
+            return fails > 0 and end - at < min(RTTY_AGAIN_MOST_S, RTTY_AGAIN_S * 2 ** (fails - 1))
         pieces = []
-        if codes:
-            chars, s["figs"] = rtty.text(codes, s["figs"])
-            s.update(done=codes[-1][1], last=end)
-            said = "".join(c for c, _, _ in chars).replace("\r", "")
-            if said:
-                pieces.append({"hz": round(s["low"] + s["shift"] / 2), "t0": round(codes[0][1], 2), "t1": round(codes[-1][1], 2), "text": said})
-        s["done"] = max(s["done"], t0)
-        return pieces, [{"hz": round(s["low"] + s["shift"] / 2), "shift": round(s["shift"]), "baud": s["baud"], "mark_high": s["mark_high"], "framed": round(r["framed"], 2)}]
+
+        def said(s: dict, r: dict) -> None:          # what's new from a signal, passed on
+            codes = [(c, t0 + when, sure) for c, when, sure in r["codes"] if s["done"] + AGAIN_S < t0 + when <= upto]
+            if codes:
+                chars, s["figs"] = rtty.text(codes, s["figs"])
+                s.update(done=codes[-1][1], last=end)
+                text = "".join(c for c, _, _ in chars).replace("\r", "")
+                if text:
+                    pieces.append({"hz": round(s["low"] + s["shift"] / 2), "t0": round(codes[0][1], 2), "t1": round(codes[-1][1], 2), "text": text})
+                s["level"] += 0.3 * (r["level"] - s["level"])      # (how strong it is, followed: a fade is, a stop isn't)
+            s["done"], s["framed"] = max(s["done"], t0), r["framed"]
+
+        for s in self._rttys:                        # the ones being read: on from where they were
+            said(s, rtty.read(x, RATE, s["low"], s["shift"], s["baud"], s["mark_high"], s["level"]))
+        tries = 0                                    # ...and a new one, if there's a pair of tones that isn't one of them
+        for low, shift, _ in rtty.find_all(x, RATE, most=RTTY_MOST * 2):
+            key = (round(low / RTTY_SAME_HZ), round(shift))
+            if tries >= RTTY_TRY:
+                break
+            across = [s for s in self._rttys if low < s["low"] + s["shift"] + RTTY_GAP_HZ and s["low"] < low + shift + RTTY_GAP_HZ]
+            if resting(key) or any(s["shift"] >= shift for s in across) or (not across and len(self._rttys) >= RTTY_MOST):
+                continue
+            tries += 1
+            r = rtty.read(x, RATE, low, shift)
+            if not r["codes"]:
+                self._tried[key] = (end, self._tried.get(key, (0.0, 0))[1] + 1)
+                continue
+            self._tried.pop(key, None)
+            self._rttys = [s for s in self._rttys if not any(s is a for a in across)]      # (the narrower ones inside it were its own keying)
+            s = {"low": low, "shift": shift, "baud": r["baud"], "mark_high": r["mark_high"], "done": t0, "last": end, "figs": False, "framed": r["framed"], "level": r["level"]}
+            self._rttys.append(s)
+            said(s, r)
+        return pieces, [{"hz": round(s["low"] + s["shift"] / 2), "shift": round(s["shift"]), "baud": s["baud"], "mark_high": s["mark_high"], "framed": round(s["framed"], 2)}
+                        for s in sorted(self._rttys, key=lambda s: s["low"])]
 
 
 def _serve(conn, mode: str) -> None:

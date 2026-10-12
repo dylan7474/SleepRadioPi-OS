@@ -1,4 +1,4 @@
-"""PSK31 read off a receiver's audio, as text.
+"""PSK31 and PSK63 read off a receiver's audio, as text.
 
 PSK31 is the amateur bands' keyboard-to-keyboard mode: a steady tone whose
 phase is turned over, or not, 31.25 times a second -- a turn is a 0, none is
@@ -32,6 +32,13 @@ is left alone (on the air it read as "e  t e", from the odd turn noise
 gave it) -- as is one 16 Hz off pitch, which looks like a turn every symbol
 but never dips.
 
+PSK63 is the same thing at twice the speed: 62.5 turns a second, twice as
+wide, used where there's signal to spare (contests, mostly). Everything
+here takes the speed (`baud`) and does the same at either. A signal doesn't
+say which it is, so the reader that follows them tries a new one at each
+speed: read at the wrong one, PSK31 never makes the two 0s that end a
+letter and PSK63 is filtered away, so nothing comes of it.
+
 read() does one signal in a stretch of sound; the reader that follows a
 band of them over time is audio/keyboard.py.
 """
@@ -40,14 +47,16 @@ from __future__ import annotations
 import numpy as np
 
 BAUD = 31.25
+BAUDS = (31.25, 62.5)        # PSK31 and PSK63
+NAMES = {31.25: 31, 62.5: 63}        # ...as they're called
 BAND = (300.0, 2900.0)       # where signals are looked for in the audio, Hz
 OVER_DB = 5.0                # a signal: this far over the noise, in a 60 Hz width
 APART = 60.0                 # two signals are at least this far apart, Hz
-BASE_RATE = 500.0            # samples a second once a signal is at 0 Hz (16 a symbol)
+BASE_RATE = 500.0            # samples a second once a PSK31 signal is at 0 Hz (16 a symbol; twice that for PSK63)
 EYE_MIN = 0.80               # the eye a stretch must have to be said (noise: 0.64; a clean signal: over 0.95)
 TURNS_MIN = 0.85             # a tone that hardly ever turns is a carrier (a whistle), not PSK31: text turns for a third of its bits
 DIP_MAX = 0.55               # ...and at a turn the strength must dip (to nothing, on a clean signal): under this much of itself
-EYE_OVER = 33                # ...taken over this many symbols, about a second (noise alone then strays to 0.8 very seldom)
+EYE_OVER = 33                # ...taken over this many symbols, about a second of PSK31 (noise alone then strays to 0.8 very seldom)
 
 # Varicode (G3PLX): the bits of each character, by its ASCII number
 _VARICODE = """1010101011 1011011011 1011101101 1101110111 1011101011 1101011111 1011101111 1011111101
@@ -71,10 +80,10 @@ ENCODE = {c: bits for bits, c in VARICODE.items()}
 PRINTS = frozenset(chr(i) for i in range(32, 127)) | {"\n", "\r"}
 
 
-def send(text: str, rate: float, pitch: float, lead: int = 24) -> np.ndarray:
-    """text as PSK31 at this pitch (amplitude 1), with `lead` idle symbols either side. For the tests."""
+def send(text: str, rate: float, pitch: float, lead: int = 24, baud: float = BAUD) -> np.ndarray:
+    """text as PSK31 (or PSK63: baud) at this pitch (amplitude 1), with `lead` idle symbols either side. For the tests."""
     bits = [0] * lead + [int(b) for c in text for b in ENCODE[c] + "00"] + [0] * lead
-    sps = rate / BAUD
+    sps = rate / baud
     n = int(len(bits) * sps)
     t = np.arange(n) / sps                           # in symbols
     k = np.minimum(t.astype(int), len(bits) - 1)
@@ -139,12 +148,12 @@ def find(x: np.ndarray, rate: float, most: int = 8) -> list[tuple[float, float]]
     return found
 
 
-def _symbols(x: np.ndarray, rate: float, pitch: float) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+def _symbols(x: np.ndarray, rate: float, pitch: float, baud: float = BAUD) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     """The signal at pitch, once a symbol at the best moment -> (the symbols, complex; when each is, s into x;
     the strength half way from each to the one before, where a turn dips to nothing)."""
-    z, r = to_base(x, rate, pitch, BASE_RATE)
-    z = _low_pass(z, r, 0.75 * BAUD, int(r / BAUD * 3) | 1)       # its own width
-    sps = r / BAUD
+    z, r = to_base(x, rate, pitch, BASE_RATE * baud / BAUD)
+    z = _low_pass(z, r, 0.75 * baud, int(r / baud * 3) | 1)       # its own width
+    sps = r / baud
     power = np.abs(z) ** 2
     n = int((len(z) - 1) / sps) - 1
     if n < 8:
@@ -157,26 +166,26 @@ def _symbols(x: np.ndarray, rate: float, pitch: float) -> tuple[np.ndarray, np.n
     return s, when / r, np.sqrt(np.interp(when - sps / 2, np.arange(len(power)), power))
 
 
-def read(x: np.ndarray, rate: float, pitch: float) -> dict:
-    """The PSK31 at about this pitch in x -> {"pitch" (as found), "eye" (0.64 noise .. 1 clean: the best second of
-    it), "level", "chars": [(char, when it ended: s into x, how sure 0-1)]}: only the letters sent while the eye
-    was EYE_MIN or better."""
-    out = {"pitch": pitch, "eye": 0.0, "level": 0.0, "chars": []}
+def read(x: np.ndarray, rate: float, pitch: float, baud: float = BAUD) -> dict:
+    """The PSK31 (or PSK63: baud) at about this pitch in x -> {"pitch" (as found), "baud", "eye" (0.64 noise .. 1
+    clean: the best second of it), "level", "chars": [(char, when it ended: s into x, how sure 0-1)]}: only the
+    letters sent while the eye was EYE_MIN or better."""
+    out = {"pitch": pitch, "baud": baud, "eye": 0.0, "level": 0.0, "chars": []}
     for _ in range(2):                               # (once to find what's left of the pitch error, once on pitch)
-        s, when, between = _symbols(x, rate, pitch)
+        s, when, between = _symbols(x, rate, pitch, baud)
         if len(s) < 16:
             return out
         d = s[1:] * np.conj(s[:-1])
         turn = float(np.angle(np.sum(d ** 2)) / 2)   # what the phase moves on by each symbol, turns apart
-        off = turn / (2 * np.pi) * BAUD
-        if abs(off) < 0.4:
+        off = turn / (2 * np.pi) * baud
+        if abs(off) < 0.4 * baud / BAUD:
             break
         pitch += off
     d = d * np.exp(-1j * turn)
     mag = np.abs(d) + 1e-12
     sure = np.abs(d.real) / mag
     bits = d.real > 0
-    box = np.ones(min(EYE_OVER, len(d)))
+    box = np.ones(min(int(round(EYE_OVER * baud / BAUD)), len(d)))
     eye = np.convolve(np.abs(d.real), box, "same") / np.convolve(mag, box, "same")      # the eye about each symbol
     good = eye >= EYE_MIN
     if good.any():                                   # ...and nothing once the signal has dropped away (its last second's eye lingers)

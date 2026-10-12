@@ -1222,7 +1222,13 @@ The cards:
   the symbol rate off it, has a perfect eye and is told apart by never
   turning, or never dipping when it "turns". Clean down to about -9 dB
   against the noise in 2.5 kHz. The PSK key goes to the band's PSK31
-  frequency in upper sideband.
+  frequency in upper sideband. PSK63 is the same at 62.5 symbols a second
+  and twice the width (`baud` throughout `audio/psk.py`; clean to about -6
+  dB). A signal doesn't say which it is, so a new one is tried at each
+  speed: read at the wrong one PSK31 never makes the "00" that ends a
+  letter and PSK63 is filtered away, so nothing comes of it. A piece of
+  text and a signal say which (`"baud": 31 | 63`); the page marks a PSK63
+  line.
   RTTY (`audio/rtty.py`): two humps 170, 450 or 850 Hz apart with a dip
   between; which tone is there, moment by moment, against a line half way
   between the two tones' own strengths of late (one often fades more than
@@ -1235,6 +1241,21 @@ The cards:
   their stop bits: noise frames about half the time. Clean down to about
   -3 dB. The RTTY key doesn't tune: a teleprinter signal is wherever it
   is (the German weather service: 10.1008 MHz, so 10.0993 in USB).
+  Several at once (`rtty.find_all`, `RTTY_MOST` = 4 in `audio/keyboard.py`):
+  each pair of tones that frames becomes a track with its own speed, sense
+  and place in the figures shift; one new pair is tried each time round
+  (finding costs six readings), and one that didn't frame rests 3 seconds,
+  then 6, 12, 24. A signal's speed and sense are chosen by its well-framed
+  characters, and its framing judged over the stretch they make, not the
+  whole eight seconds (so one that has just begun is caught with its first
+  words). A character is also only said while the tones are within about
+  10 dB of the signal's own strength as it's been followed: once a station
+  stops, its neighbour's keying leaks into its tones and frames. And two
+  signals can't share a stretch of the band: the keying of a 450 Hz one
+  puts energy between its tones that looks like a 170 Hz pair and reads as
+  rubbish (seen on the weather service), so a pair inside a signal being
+  read is left, and a wider one that frames takes over a narrower inside it.
+  Callsigns in the text of either mode are picked out on the page.
   On the Zero 2 W's kind of processor (measured on a Pi 3): a fifth of
   one core with six PSK31 signals being read, a tenth for a teleprinter
   signal, and next to nothing when there's nothing there.

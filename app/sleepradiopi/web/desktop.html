@@ -2384,10 +2384,11 @@ function ftDraw(R) {
   box.dataset.n = fresh[fresh.length - 1].n;
   if (stick) box.scrollTop = box.scrollHeight;
 }
-// The PSK31 / RTTY reader (audio/keyboard.py): what's typed on the air, as it's typed. PSK31: every signal in what the
-// receiver hears at once, a line each, told apart by pitch. RTTY: the one teleprinter signal there, at whatever speed
-// and shift it has. The radio sends pieces of text; the page puts a signal's pieces on its line, and starts a new
-// line where the sender did.
+// The PSK31 / RTTY reader (audio/keyboard.py): what's typed on the air, as it's typed. PSK31 and PSK63: every signal
+// in what the receiver hears at once, a line each, told apart by pitch (a PSK63 one says so). RTTY: every teleprinter
+// signal there, too, each at whatever speed and shift it has. The radio sends pieces of text; the page puts a signal's
+// pieces on its line, and starts a new line where the sender did. A callsign in what's read is picked out, as in the
+// other lists: click it to copy it.
 const KB = { since: 0, lines: [], line: 0, hue: 0, voices: [], st: null, busy: false, asked: 0 };
 const KB_NAMES = { psk31: "PSK31", rtty: "RTTY" }, KB_KEYS = { psk31: "PSK", rtty: "RTTY" }, KB_LINES = 150, KB_SAME_HZ = 12;
 // where PSK31 is used, a band: [band, dial frequency in kHz] (upper sideband; the signals are 1 to 2 kHz up from it)
@@ -2400,12 +2401,12 @@ function rigKbKeys(R, k) {
       Object.assign(KB, { since: 0, lines: [], voices: [], st: null });
       rigPaint(R); cwDraw(R); ftDraw(R); kbDraw(R); picDraw(R);
       if (!on) return;
-      if (mode === "rtty") return toast("Teleprinter reader on: tune so that a signal's two tones are both in what you hear. Amateurs use the top of each band's data part (14.080 to 14.100 MHz); the German weather service is on 10.1008 MHz all day (tune 10.0993 USB).", false, null, true);
+      if (mode === "rtty") return toast("Teleprinter reader on: tune so that a signal's two tones are both in what you hear; several side by side are each read on a line of their own. Amateurs use the top of each band's data part (14.080 to 14.100 MHz); the German weather service is on 10.1008 MHz all day (tune 10.0993 USB).", false, null, true);
       const to = D.ftGo && ftWhere(R, mode, KB_PSK), sideband = (D.on(R) ? R.st.mode || R.st.receiving?.mode : null) === "usb";
       if (!to) return toast("PSK31 reader on. Tune this receiver to a band's PSK31 frequency in USB: on 20 m that's 14.070 MHz.", false, null, true);
       if (!(sideband && Math.abs((D.tuned(R) || 0) - to.hz) < 5 && rigOnRadio(R))) await D.ftGo(R, to.hz);
-      toast(`PSK31 reader on, ${to.band}: every signal in what the receiver hears is read at once, a line each.`, false, null, true);
-    } catch (e) { rigOops(e); } }, mode === "psk31" ? "Read PSK31 as text: go to the band's PSK31 frequency and read every signal there at once" : "Read RTTY (radio teleprinter) as text: the strongest pair of tones in what the receiver is playing");
+      toast(`PSK31 reader on, ${to.band}: every signal in what the receiver hears is read at once, a line each, PSK63 as well.`, false, null, true);
+    } catch (e) { rigOops(e); } }, mode === "psk31" ? "Read PSK31 and PSK63 as text: go to the band's PSK31 frequency and read every signal there at once" : "Read RTTY (radio teleprinter) as text: every pair of tones in what the receiver is playing, up to four at once");
   return [key("psk31"), key("rtty")];
 }
 // a piece of text from the reader -> the log: on its signal's line, a new line where the sender began one
@@ -2416,8 +2417,8 @@ function kbLog(p, st) {
   v.hz = p.hz;
   p.text.replace(/\r\n?/g, "\n").split("\n").forEach((part, i) => {
     let l = KB.lines.findLast(l => Math.abs(l.hz - p.hz) <= KB_SAME_HZ);
-    if (i || !l || p.t0 - l.t1 > 20 || l.text.length > 240) { if (!part && i) return void (l && (l.closed = true)); KB.lines.push(l = { id: ++KB.line, hz: p.hz, when, hue: v.hue, text: "", t1: p.t1 }); }
-    else if (l.closed) { KB.lines.push(l = { id: ++KB.line, hz: p.hz, when, hue: v.hue, text: "", t1: p.t1 }); }
+    if (i || !l || p.t0 - l.t1 > 20 || l.text.length > 240) { if (!part && i) return void (l && (l.closed = true)); KB.lines.push(l = { id: ++KB.line, hz: p.hz, baud: p.baud, when, hue: v.hue, text: "", t1: p.t1 }); }
+    else if (l.closed) { KB.lines.push(l = { id: ++KB.line, hz: p.hz, baud: p.baud, when, hue: v.hue, text: "", t1: p.t1 }); }
     l.text += part; l.t1 = p.t1; l.hz = p.hz;
   });
   KB.lines = KB.lines.filter(l => l.text.trim() || l === KB.lines[KB.lines.length - 1]).slice(-KB_LINES);
@@ -2433,10 +2434,18 @@ async function kbPoll() {
   } catch (e) { /* the next one will do */ }
   KB.busy = false;
 }
-const kbWho = l => `${new Date(l.when).toLocaleTimeString("en-GB")} ${String(l.hz).padStart(4)} Hz`;
+const kbWho = l => `${new Date(l.when).toLocaleTimeString("en-GB")} ${String(l.hz).padStart(4)} Hz${l.baud === 63 ? " ·63" : ""}`;
 function kbRow(l) {
-  const row = el("div", { className: "rline" }, el("span", { className: "rwho", textContent: kbWho(l) }), el("span", { className: "rtext", textContent: l.text }));
+  const text = el("span", { className: "rtext" });
+  const row = el("div", { className: "rline", title: l.baud === 63 ? "PSK63: the same as PSK31 at twice the speed" : "" }, el("span", { className: "rwho", textContent: kbWho(l) }), text);
   row.style.setProperty("--hue", CW_HUES[l.hue]);
+  for (const w of l.text.split(/(\s+)/)) {           // a callsign among the words is picked out (a teleprinter's are in capitals already)
+    const call = w.toUpperCase().replace(/^[^A-Z0-9]+|[^A-Z0-9/]+$/g, "");
+    if (w === w.toUpperCase() && call.length >= 4 && CW_CALL.test(call) && !/^[A-R]{2}\d\d$/.test(call)) {
+      const a = w.toUpperCase().indexOf(call);
+      text.append(w.slice(0, a), el("span", { className: "call", textContent: w.slice(a, a + call.length), title: "Click to copy this callsign" }), w.slice(a + call.length));
+    } else text.append(w);
+  }
   return row;
 }
 function kbDraw(R) {
@@ -2447,8 +2456,9 @@ function kbDraw(R) {
   const st = KB.st, here = rigOnRadio(R), sig = st?.signals || [];
   d.kbname.textContent = KB_NAMES[mode];
   d.kbsays.textContent = !here ? "" : mode === "rtty"
-    ? (sig[0] ? `${sig[0].baud} baud · ${sig[0].shift} Hz apart, about ${sig[0].hz} Hz · ${Math.round(sig[0].framed * 100)}% framed` : "no teleprinter signal")
-    : (sig.length ? `${sig.length} signal${sig.length === 1 ? "" : "s"}: ${sig.map(s => s.hz).join(", ")} Hz` : "no PSK31 signal");
+    ? (sig.length === 1 ? `${sig[0].baud} baud · ${sig[0].shift} Hz apart, about ${sig[0].hz} Hz · ${Math.round(sig[0].framed * 100)}% framed`
+      : sig.length ? `${sig.length} signals: ${sig.map(s => `${s.hz} Hz (${Math.round(s.baud)} baud, ${s.shift} apart)`).join(", ")}` : "no teleprinter signal")
+    : (sig.length ? `${sig.length} signal${sig.length === 1 ? "" : "s"}: ${sig.map(s => s.hz + (s.baud === 63 ? " (PSK63)" : "")).join(", ")} Hz` : "no PSK31 or PSK63 signal");
   const box = d.kbcopy, said = !here ? `Listen to this receiver, and the ${KB_NAMES[mode]} in what it plays is read here.` : !KB.lines.length ? `Listening for ${KB_NAMES[mode]}…` : "";
   if (said) { if (box.dataset.said !== said) { box.dataset.said = said; box.replaceChildren(el("span", { className: "rnone", textContent: said })); } return; }
   if (box.dataset.said) { box.dataset.said = ""; box.replaceChildren(); }
@@ -3345,7 +3355,7 @@ function rigView(o, box, win) {
                  d.picbegin = cwKey("Start now", "A chart already under way: read it from here, without waiting for the next one's start tone (its lines will begin wherever they happen to)", async () => { try { await api("/api/rx/pictures", { begin: true }); PIC.asked = 0; } catch (e) { rigOops(e); } }),
                  d.picend = cwKey("End", "Finish the picture being read here, and keep it", async () => { try { await api("/api/rx/pictures", { end: true }); PIC.asked = 0; } catch (e) { rigOops(e); } })),
               d.picshow = el("div", { className: "rshow" }), d.picthumbs = el("div", { className: "rthumbs" })));
-  d.copy.onclick = d.ftcopy.onclick = e => { const c = e.target.closest(".call"); if (c) { const call = c.textContent.replace(/^<|>$/g, ""); cwCopy(call, call); } };
+  d.copy.onclick = d.ftcopy.onclick = d.kbcopy.onclick = e => { const c = e.target.closest(".call"); if (c) { const call = c.textContent.replace(/^<|>$/g, ""); cwCopy(call, call); } };
   d.tape.setAttribute("aria-hidden", "true");
   const foot = el("div", { className: "rfoot" }, ...D.foot(R, k), el("span", { className: "rtip", textContent: D.tip || (R.kind !== "own" ? "Click the scope to tune · wheel to step, Shift for fine · drag the frequency onto a button · be a good guest" : "Click the scope to tune · drag the frequency onto a button") }));
   box.append(el("div", { className: "wbody" }, el("div", { className: "rig" }, bands, tft, modes, foot)));

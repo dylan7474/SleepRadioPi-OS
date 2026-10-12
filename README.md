@@ -298,12 +298,15 @@ Actions, Sleep timer and Radio folders open:
   Northwood on 4.610 MHz. See `app/sleepradiopi/audio/sstv.py` and
   `pictures.py`.
 - **PSK31 and RTTY, read as text.** The *PSK* and *RTTY* keys in a
-  receiver's window read the two keyboard modes as they're typed. PSK31:
-  every signal in what the receiver hears at once, a line each (the key
+  receiver's window read the two keyboard modes as they're typed. PSK31,
+  and PSK63 (the same at twice the speed): every signal in what the
+  receiver hears at once, a line each, each at its own speed (the key
   goes to the band's PSK31 frequency, 14.070 MHz on 20 m). RTTY, the radio
-  teleprinter: the strongest pair of tones there, at whatever speed and
-  spacing it has -- an amateur contest at 45 baud, or the German weather
-  service's shipping bulletins on 10.1008 MHz, which run all day. Both are
+  teleprinter: every pair of tones there, up to four at once, each at
+  whatever speed and spacing it has -- an amateur contest at 45 baud with
+  stations side by side, or the German weather service's shipping
+  bulletins on 10.1008 MHz, which run all day. A callsign in what's read
+  is picked out: click it to copy it. Both are
   the radio's own readers (no outside program), tried on signals off the
   air; neither says anything of noise or a plain whistle. See
   `app/sleepradiopi/audio/psk.py`, `rtty.py` and `keyboard.py`.
@@ -904,11 +907,8 @@ What's left to do (everything else described here is built and running):
   wherever they happen to: a way to slide it straight. Speckle from a weak
   signal could be cleaned. Pictures kept on the card, not only in memory.
   Hellschreiber, the same idea for text.
-- **PSK31 and RTTY: more of them** — the PSK31 reader does plain PSK31
-  (BPSK); the faster and four-phase kinds (PSK63, QPSK31) are left. The
-  RTTY reader reads one signal, the strongest: in a contest there are a
-  dozen side by side, which could be read at once as PSK31 is. Both could
-  pick out callsigns as the FT8 list does.
+- **QPSK31** — the PSK reader does PSK31 and PSK63 (both BPSK); the
+  four-phase kind, with its error correction, is left. It's seldom heard.
 - **Music from any computer** — adding music needs a Linux PC today
   (`provision-media.sh`). The radio could make its music partition itself on
   first boot and take music uploaded from the web page, so that Windows and
