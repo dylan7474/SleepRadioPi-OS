@@ -574,6 +574,11 @@ The cards:
   dark are kept in the browser. **The media manager is built in**: in Music,
   On demand and Audiobooks windows, *Upload…* / *Upload a folder…* or drop
   files and whole folders from your computer (one at a time, with progress);
+  ***Sync a folder…*** brings a folder of the radio's up to date from one
+  on your computer in one go -- choose your whole music folder in the Music
+  window and only what's new or changed is sent, what's already there is
+  left, and what's gone from the computer is taken off the radio if you
+  tick the box (it tells you how many of each before it starts);
   *New folder*; *Download* (a file, or a folder as a zip); **drag a folder,
   album or song onto another folder to move it** (Music → On demand takes it
   out of the show) — playlists, programmes and buttons that pointed at it
@@ -653,6 +658,15 @@ The cards:
   `.part` file then renamed into place, so a dropped connection never leaves
   half a song; a file that's already there is skipped, and a different one of
   the same name is kept as "… (2)". Up to 1 GB a file, keeping 200 MB free.
+  For a sync (`GET /api/media/tree?kind=&path=`: every file under a folder
+  with its size, in one answer; `&replace=1` on an upload: a different file
+  of that name gives way to the new one; `"prune": true` on a delete: the
+  folders it leaves empty go too) the page compares the folder chosen with
+  the radio's by name and size -- nothing is read to compare them -- takes
+  away first (it makes the room), then sends. Any computer with a browser
+  can do it; over a Zero's Wi-Fi a first full library takes hours, where a
+  card reader and `scripts/provision-media.sh` take minutes, but keeping
+  one up to date afterwards is quick.
   `/media` stays read-only (power-cut safe) except while you're changing
   things: the station asks the root helper `media-rw-watch` for it (a lease
   in `/run/sleepradiopi/media-rw`) and it goes read-only again ~2 minutes

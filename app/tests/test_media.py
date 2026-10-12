@@ -103,6 +103,43 @@ def test_folders_and_deleting(tmp_path: Path) -> None:
             lib.delete("music", bad)
 
 
+def test_a_whole_library_listed_and_brought_up_to_date(tmp_path: Path, monkeypatch) -> None:
+    lib = _lib(tmp_path)
+    _up(lib, "music", "", "ABBA/Gold/Disc 1/02 - Knowing Me.mp3", b"k" * 20)
+    _up(lib, "music", "", "Queen/A Night at the Opera/11 - Bohemian Rhapsody.flac", b"q" * 30)
+    (tmp_path / "music" / ".incoming" / "left.part").write_bytes(b"half")       # (a broken upload's leftovers: not part of the library)
+    tree = lib.tree("music")
+    assert tree["files"] == {"ABBA/Gold/Disc 1/01 - Dancing Queen.mp3": 10, "ABBA/Gold/Disc 1/02 - Knowing Me.mp3": 20, "ABBA/Gold/cover.jpg": 1,
+                             "Queen/A Night at the Opera/11 - Bohemian Rhapsody.flac": 30} and "free" in tree["usage"]
+    assert lib.tree("music", "ABBA/Gold")["files"] == {"Disc 1/01 - Dancing Queen.mp3": 10, "Disc 1/02 - Knowing Me.mp3": 20, "cover.jpg": 1}      # under a folder: named from it
+    assert lib.tree("jingles")["files"] == {} and lib.tree("music", "ABBA/Gold")["path"] == "ABBA/Gold"
+    with pytest.raises(MediaError):
+        lib.tree("music", "Nobody")
+    with pytest.raises(MediaError):
+        lib.tree("music", "../etc")
+    # a file that has changed takes the old one's place (a plain upload keeps both)
+    assert _up(lib, "music", "", "ABBA/Gold/Disc 1/02 - Knowing Me.mp3", b"K" * 25)["path"] == "ABBA/Gold/Disc 1/02 - Knowing Me (2).mp3"
+    lib.delete("music", "ABBA/Gold/Disc 1/02 - Knowing Me (2).mp3")
+    got = lib.receive("music", "", "ABBA/Gold/Disc 1/02 - Knowing Me.mp3", 25, io.BytesIO(b"K" * 25).read, True)
+    assert got == {"path": "ABBA/Gold/Disc 1/02 - Knowing Me.mp3", "status": "replaced"}
+    assert (tmp_path / "music" / "ABBA/Gold/Disc 1/02 - Knowing Me.mp3").read_bytes() == b"K" * 25
+    assert lib.receive("music", "", "ABBA/Gold/Disc 1/02 - Knowing Me.mp3", 25, io.BytesIO(b"K" * 25).read, True)["status"] == "same"
+    assert lib.receive("music", "", "Queen/Jazz/01 - Mustapha.mp3", 5, io.BytesIO(b"m" * 5).read, True)["status"] == "added"
+    # replacing needs only the difference in room: a full card can still take a file no bigger than the one it replaces
+    monkeypatch.setattr(lib, "usage", lambda: {"free": media_mod.KEEP_FREE + 3, "total": 1 << 34})
+    assert lib.receive("music", "", "ABBA/Gold/Disc 1/02 - Knowing Me.mp3", 26, io.BytesIO(b"n" * 26).read, True)["status"] == "replaced"
+    with pytest.raises(MediaError, match="room"):
+        lib.receive("music", "", "Queen/Jazz/02 - Fat Bottomed Girls.mp3", 26, io.BytesIO(b"n" * 26).read, True)
+    monkeypatch.undo()
+    # taking away what's gone: the folders that leaves empty go with it, but not the ones with something in, nor the library
+    lib.delete("music", "Queen/A Night at the Opera/11 - Bohemian Rhapsody.flac", prune=True)
+    assert not (tmp_path / "music" / "Queen" / "A Night at the Opera").exists() and (tmp_path / "music" / "Queen" / "Jazz").is_dir()
+    lib.delete("music", "Queen/Jazz/01 - Mustapha.mp3", prune=True)
+    assert not (tmp_path / "music" / "Queen").exists() and (tmp_path / "music").is_dir()
+    lib.delete("music", "ABBA/Gold/cover.jpg")       # (without it: the folder stays)
+    assert (tmp_path / "music" / "ABBA" / "Gold").is_dir()
+
+
 def test_the_lease_and_the_rescan(tmp_path: Path) -> None:
     rescans = []
     lib = _lib(tmp_path, lambda kinds: rescans.append(kinds))
@@ -168,6 +205,13 @@ def test_web_api(tmp_path: Path) -> None:
         assert code == 200 and d["path"] == "Queen"
         code, d = call("/api/media/delete", {"kind": "music", "path": "../../etc"})
         assert code == 400
+        code, d = call("/api/media/tree?kind=music")      # the whole of it in one answer
+        assert code == 200 and d["files"] == {"ABBA/Gold/Disc 1/01 - Dancing Queen.mp3": 10, "ABBA/Gold/Disc 2/01 - Waterloo.mp3": 8, "ABBA/Gold/cover.jpg": 1}
+        assert call("/api/media/tree?kind=music&path=ABBA/Gold/Disc%202")[1]["files"] == {"01 - Waterloo.mp3": 8} and call("/api/media/tree?kind=music&path=Nobody")[0] == 400
+        code, d = call("/api/media/upload?kind=music&dir=ABBA/Gold&replace=1&name=" + urllib.request.quote("Disc 2/01 - Waterloo.mp3"), raw=b"waterloo, remastered")
+        assert code == 200 and d == {"path": "ABBA/Gold/Disc 2/01 - Waterloo.mp3", "status": "replaced"}
+        code, d = call("/api/media/delete", {"kind": "music", "path": "ABBA/Gold/Disc 2/01 - Waterloo.mp3", "prune": True})
+        assert code == 200 and not (tmp_path / "music" / "ABBA" / "Gold" / "Disc 2").exists() and (tmp_path / "music" / "ABBA" / "Gold").is_dir()
         code, d = call("/api/media/delete", {"kind": "music", "path": "ABBA/Gold/Disc 1"})
         assert code == 200
         code, d = call("/api/media/done", {})

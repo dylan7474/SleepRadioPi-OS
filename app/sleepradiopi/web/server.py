@@ -305,6 +305,15 @@ def make_handler(station: Station, output: Mp3Output, speaker=None,
                     self._error(str(e))
                     return
                 self._send(json.dumps(listing).encode(), "application/json")
+            elif path == "/api/media/tree" and media is not None:
+                # Every file under a folder with its size, in one answer: for syncing a whole library (media.tree()).
+                q = parse_qs(urlparse(self.path).query)
+                try:
+                    listing = media.tree(q.get("kind", ["music"])[0], q.get("path", [""])[0])
+                except media_mod.MediaError as e:
+                    self._error(str(e))
+                    return
+                self._send(json.dumps(listing).encode(), "application/json")
             elif path == "/api/media/download" and media is not None:
                 self._download()
             elif path == "/api/books":
@@ -1627,16 +1636,17 @@ def make_handler(station: Station, output: Mp3Output, speaker=None,
 
         def _media(self, action: str) -> None:
             """The music library manager: POST /api/media/upload?kind=&dir=&name= with
-            the file as the body (name may include folders, for a folder upload);
+            the file as the body (name may include folders, for a folder upload;
+            &replace=1: a different file of that name is replaced, not kept beside it);
             /api/media/mkdir {"kind", "path", "name"}; /api/media/delete {"kind",
-            "path"}; /api/media/done {} (changes finished: read-only again, and
+            "path", "prune"?: true (the folders it leaves empty go too)}; /api/media/done {} (changes finished: read-only again, and
             the library is rescanned)."""
             if action == "upload":
                 q = parse_qs(urlparse(self.path).query)
                 length = int(self.headers.get("Content-Length", 0) or 0)
                 try:
                     reply = media.receive(q.get("kind", ["music"])[0], q.get("dir", [""])[0],
-                                          q.get("name", [""])[0], length, self.rfile.read)
+                                          q.get("name", [""])[0], length, self.rfile.read, q.get("replace", [""])[0] == "1")
                 except media_mod.MediaError as e:
                     self.close_connection = True          # (the rest of the body wasn't read)
                     self._error(str(e))
@@ -1649,7 +1659,7 @@ def make_handler(station: Station, output: Mp3Output, speaker=None,
                 if action == "mkdir":
                     reply = {"path": media.mkdir(kind, body.get("path", ""), body.get("name", ""))}
                 elif action == "delete":
-                    media.delete(kind, body.get("path", ""))
+                    media.delete(kind, body.get("path", ""), body.get("prune") is True)
                     reply = {"deleted": body.get("path")}
                 elif action in ("move", "rename"):
                     old = body.get("path", "")

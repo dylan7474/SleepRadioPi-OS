@@ -3402,8 +3402,13 @@ function folderView(o, box, win) {
     upDir.setAttribute("webkitdirectory", "");
     up.onchange = () => { upload(o, [...up.files].map(f => [f, f.name])); up.value = ""; };
     upDir.onchange = () => { upload(o, [...upDir.files].map(f => [f, f.webkitRelativePath || f.name])); upDir.value = ""; };
+    const syncDir = el("input", { type: "file", multiple: true, hidden: true, id: "sync-folder" });      // a folder that is this one as it should be
+    syncDir.setAttribute("webkitdirectory", "");
+    syncDir.onchange = () => { syncFolder(o, [...syncDir.files].map(f => [f, f.webkitRelativePath || f.name])); syncDir.value = ""; };
+    const syncKeyT = T("Sync a folder…", () => syncDir.click());
+    syncKeyT.title = "Bring this folder up to date from one on this computer: only what's new or changed is sent, and what's gone is taken away if you ask. Choose your whole music folder here to sync the lot";
     tools.append(T(o.path ? "▶ Play all" : "▶ Play everything", () => play(o), "primary", !o.kids.length),
-      T("Upload…", () => up.click()), T("Upload a folder…", () => upDir.click()),
+      T("Upload…", () => up.click()), T("Upload a folder…", () => upDir.click()), syncKeyT, syncDir,
       T("New folder", () => { win.mkdir = !win.mkdir; drawDesk(); }),
       syncKey(T("Download", () => download(selectedIn(o) || o)), k => { const p = selectedIn(o); k.disabled = !(p || o.path) || !!(p && !p.root); }), up, upDir);
     tools.append(infoKey(o, picked));
@@ -3777,10 +3782,10 @@ async function dropped(dt) {                         // files, and folders (with
   for (const e of entries) await walk(e, "");
   return out;
 }
-function sendFile(kind, dir, name, file, onprogress) {
+function sendFile(kind, dir, name, file, onprogress, replace) {      // (replace: a different file of that name gives way to this one)
   return new Promise((ok, no) => {
     const x = new XMLHttpRequest();
-    x.open("POST", `/api/media/upload?kind=${kind}&dir=${encodeURIComponent(dir)}&name=${encodeURIComponent(name)}`);
+    x.open("POST", `/api/media/upload?kind=${kind}&dir=${encodeURIComponent(dir)}&name=${encodeURIComponent(name)}${replace ? "&replace=1" : ""}`);
     x.upload.onprogress = e => e.lengthComputable && onprogress(e.loaded / e.total);
     x.onload = () => { let d = {}; try { d = JSON.parse(x.responseText); } catch {} x.status < 300 ? ok(d) : no(new Error(d.error || `the radio said no (${x.status})`)); };
     x.onerror = () => no(new Error("the upload was cut off"));
@@ -3805,6 +3810,53 @@ async function upload(o, files) {
   uploading = false;
   await afterChange([o]);
   toast(`${added} added${same ? `, ${same} already there` : ""}${failed.length ? `. Not added: ${failed.slice(0, 3).join(", ")}${failed.length > 3 ? "…" : ""}` : "."}`);
+}
+// Sync a folder…: a folder on this computer is this folder of the radio's as it should be. The radio says what it has
+// (every file's name and size, in one answer); what's new here, or a different size, is sent, the rest left; and what
+// the radio has that isn't here is taken away only if asked. The folder chosen is matched to the one that's open: its
+// insides go into this one's, so choosing "Music" for the radio's Music brings the whole library up to date.
+const SYNC_TAKES = /\.(mp3|flac|m4a|ogg|opus|wav|jpg|jpeg|png)$/i, SYNC_KEEP_FREE = 200 * 1024 * 1024;
+const syncSize = b => b >= 1e9 ? `${(b / 1e9).toFixed(1)} GB` : b >= 1e6 ? `${Math.round(b / 1e6)} MB` : b ? "under 1 MB" : "nothing";
+async function syncFolder(o, picked) {
+  if (uploading) return toast("An upload is already going: wait for it to finish.");
+  const kind = kindOf(o), base = o.path || "", top = picked[0]?.[1].split("/")[0] || "that folder", files = new Map();
+  for (const [f, rel] of picked) {
+    const parts = rel.split("/"), name = parts.slice(1).join("/");
+    if (name && !parts.some(p => p.startsWith(".")) && SYNC_TAKES.test(name)) files.set(name, f);
+  }
+  if (!files.size) return toast(`There's nothing in “${top}” that the radio plays.`);
+  let tree;
+  try { tree = await api(`/api/media/tree?kind=${kind}&path=${encodeURIComponent(base)}`); } catch (e) { return toast(e.message); }
+  const add = [...files].filter(([n, f]) => tree.files[n] !== f.size), gone = Object.keys(tree.files).filter(n => !files.has(n));
+  const bytes = add.reduce((a, [, f]) => a + f.size, 0), back = add.reduce((a, [n]) => a + (tree.files[n] || 0), 0), freed = gone.reduce((a, n) => a + tree.files[n], 0);
+  if (!add.length && !gone.length) return toast(`${o.title} already has all ${files.size.toLocaleString("en-GB")} files of “${top}”: nothing to do.`);
+  const remove = el("input", { type: "checkbox", id: "sync-remove" });
+  const room = tree.usage.free + back - SYNC_KEEP_FREE, fits = () => bytes <= room + (remove.checked ? freed : 0);
+  const short = el("p", { style: "color:#c0392b" });
+  const tell = () => { short.textContent = fits() ? "" : `There isn't room on the radio for all of it: ${syncSize(Math.max(0, room + (remove.checked ? freed : 0)))} free. What fits will be sent, in order.`; };
+  remove.onchange = tell; tell();
+  const more = el("div", {}, ...(gone.length ? [el("p", {}, el("label", {}, remove, ` Also take off the radio the ${gone.length.toLocaleString("en-GB")} file${gone.length === 1 ? "" : "s"} (${syncSize(freed)}) it has here that ${gone.length === 1 ? "isn't" : "aren't"} in “${top}”`))] : []), short);
+  ask(`Bring ${o.title} up to date from “${top}” on this computer? ${add.length.toLocaleString("en-GB")} file${add.length === 1 ? "" : "s"} to send (${syncSize(bytes)}); ${(files.size - add.length).toLocaleString("en-GB")} already there and left as they are. A file counts as the same if its name and size are.`,
+    "Sync", () => syncRun(o, kind, base, add, remove.checked ? gone : []), more);
+}
+async function syncRun(o, kind, base, add, gone) {
+  uploading = true;
+  let sent = 0, replaced = 0, removed = 0;
+  const failed = [], under = n => (base ? base + "/" : "") + n;
+  for (let i = 0; i < gone.length; i++) {            // (first: it makes the room)
+    if (i % 5 === 0) toast(`Taking away ${i + 1} of ${gone.length}: ${lastPart(gone[i])}`, true);
+    try { await api("/api/media/delete", { kind, path: under(gone[i]), prune: true }); removed++; } catch (e) { failed.push(`${lastPart(gone[i])} (${e.message})`); }
+  }
+  for (let i = 0; i < add.length; i++) {
+    const [name, f] = add[i];
+    const say = pct => toast(`Sending ${i + 1} of ${add.length} to ${o.title}: ${lastPart(name)}${pct != null ? " · " + Math.round(pct * 100) + "%" : ""}`, true);
+    say(0);
+    try { const d = await sendFile(kind, base, name, f, say, true); d.status === "replaced" ? replaced++ : sent++; }
+    catch (e) { failed.push(`${lastPart(name)} (${e.message})`); if (/room/.test(e.message)) break; }
+  }
+  uploading = false;
+  await afterChange([o]);
+  toast(`${o.title} is up to date: ${sent} added${replaced ? `, ${replaced} replaced` : ""}${removed ? `, ${removed} taken away` : ""}${failed.length ? `. Not done: ${failed.slice(0, 3).join(", ")}${failed.length > 3 ? ` and ${failed.length - 3} more` : ""}` : "."}`, false, null, true);
 }
 async function afterChange(folders) {                // the radio rescans; the windows show it
   try { await api("/api/media/done", {}); } catch {}

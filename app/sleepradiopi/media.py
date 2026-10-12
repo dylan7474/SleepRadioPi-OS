@@ -14,6 +14,14 @@ into place once complete, so a broken upload never leaves half a song in the
 library. The station rescans the library (only new files' tags are read)
 once changes have settled.
 
+A whole library is brought up to date in one go from the page ("Sync a
+folder…"): tree() lists everything under a folder with its size, in one
+answer; the page compares that with the folder chosen on the computer and
+sends only what's new or a different size (receive(replace=True) puts a
+changed file in the old one's place), and takes away what's gone if asked
+(delete(prune=True) takes the folders that leaves empty, too). A file is
+the same if its name and its size are: nothing is read to compare them.
+
 Tags (title, artist, album, track number) can be changed too: the file is
 copied to a hidden .part file, the tags are written there, and it's swapped
 in, so a power cut never leaves a half-written song. What a file's tags were
@@ -54,6 +62,7 @@ TAGGED = {".mp3", ".m4a", ".m4b", ".flac", ".ogg", ".opus"}      # (a .wav has n
 TAG_KINDS = ("music", "ondemand", "audiobooks")
 MAX_TAG = 200
 MAX_TAG_FILES = 2000         # in one folder's list
+MAX_TREE = 60000             # files in one tree() (a big library is a few thousand)
 
 
 def _easy(path: Path, suffix: str):
@@ -187,6 +196,28 @@ class MediaLibrary:
         return {"kind": kind, "path": "/".join(parts), "folders": sorted(folders, key=key),
                 "files": sorted(files, key=key), "usage": self.usage(),
                 "writable": self._writable(self._root(kind))}
+
+    def tree(self, kind: str, rel: str | None = "") -> dict:
+        """Every file under a folder, however deep -> {"kind", "path", "files": {"Artist/Album/01 - Song.mp3":
+        size}, "usage"}: for bringing a whole library up to date (hidden files and uploads part done are left out)."""
+        path = self.resolve(kind, rel)
+        files: dict[str, int] = {}
+        if path.is_dir():
+            for folder, dirs, names in os.walk(path):
+                dirs[:] = sorted(d for d in dirs if not d.startswith("."))
+                for name in sorted(names):
+                    if name.startswith("."):
+                        continue
+                    full = Path(folder) / name
+                    try:
+                        files[full.relative_to(path).as_posix()] = full.stat().st_size
+                    except OSError:
+                        continue
+                    if len(files) > MAX_TREE:
+                        raise MediaError("there are too many files there to list in one go")
+        elif path != self._root(kind):
+            raise MediaError("that folder isn't there any more")
+        return {"kind": kind, "path": "/".join(_clean_rel(rel)), "files": files, "usage": self.usage()}
 
     # --- making it writable ---------------------------------------------------------------
 
@@ -389,7 +420,8 @@ class MediaLibrary:
         log.info("media: made %s/%s", kind, path.relative_to(self._root(kind)))
         return str(path.relative_to(self._root(kind)))
 
-    def delete(self, kind: str, rel: str) -> None:
+    def delete(self, kind: str, rel: str, prune: bool = False) -> None:
+        """prune: the folders that leaves empty go too (but never the library's own)."""
         root = self._root(kind)
         path = self.resolve(kind, rel)
         if path == root:
@@ -404,6 +436,16 @@ class MediaLibrary:
                 path.unlink()
         except OSError as e:
             raise MediaError(f"couldn't delete it ({e.strerror})") from None
+        if prune:
+            above = path.parent
+            while above != root and root in above.parents:
+                try:
+                    if any(not e.name.startswith(".") for e in os.scandir(above)):
+                        break
+                    shutil.rmtree(above)             # (nothing in it but hidden leftovers)
+                except OSError:
+                    break
+                above = above.parent
         log.info("media: deleted %s/%s", kind, rel)
         self._changed(kind)
 
@@ -461,10 +503,12 @@ class MediaLibrary:
         self._changed(kind, to_kind)
         return str(dest.relative_to(dst_root))
 
-    def receive(self, kind: str, folder: str, name: str, length: int, read: Callable[[int], bytes]) -> dict:
+    def receive(self, kind: str, folder: str, name: str, length: int, read: Callable[[int], bytes], replace: bool = False) -> dict:
         """One uploaded file: `name` may be a path inside `folder` (a folder upload,
         e.g. 'Rubber Soul/01 - Drive My Car.mp3'). Streamed to a hidden .part file,
-        then renamed into place. Returns {"path", "status": "added" | "same"}."""
+        then renamed into place. Returns {"path", "status": "added" | "same" | "replaced"}.
+        A different file of that name is kept beside the new one, unless replace (a sync:
+        the new one takes its place)."""
         root = self._root(kind)
         parts = _clean_rel(name)
         if not parts:
@@ -475,9 +519,10 @@ class MediaLibrary:
             raise MediaError(f"{parts[-1]}: the radio plays {', '.join(sorted(playable))} files here")
         if length <= 0 or length > MAX_FILE:
             raise MediaError(f"{parts[-1]}: files up to {MAX_FILE >> 30} GB")
-        if self.usage()["free"] - length < KEEP_FREE:
-            raise MediaError(f"{parts[-1]}: not enough room left on the radio")
         dest = self.resolve(kind, "/".join(_clean_rel(folder) + parts))
+        was = dest.stat().st_size if replace and dest.is_file() else 0       # (replaced, the old one's room comes back)
+        if self.usage()["free"] + was - length < KEEP_FREE:
+            raise MediaError(f"{parts[-1]}: not enough room left on the radio")
         self._open(root)
         if dest.is_file() and dest.stat().st_size == length:
             _drain(read, length)
@@ -500,7 +545,8 @@ class MediaLibrary:
                 f.flush()
                 os.fsync(f.fileno())
             dest.parent.mkdir(parents=True, exist_ok=True)
-            if dest.exists():                         # a different file of that name: keep both
+            replaced = replace and dest.is_file()
+            if dest.exists() and not replaced:        # a different file of that name: keep both
                 n = 2
                 while (alt := dest.with_name(f"{dest.stem} ({n}){dest.suffix}")).exists():
                     n += 1
@@ -513,9 +559,9 @@ class MediaLibrary:
                 tmp.unlink()
             except OSError:
                 pass
-        log.info("media: added %s/%s (%d bytes)", kind, dest.relative_to(root), length)
+        log.info("media: %s %s/%s (%d bytes)", "replaced" if replaced else "added", kind, dest.relative_to(root), length)
         self._changed(kind)
-        return {"path": str(dest.relative_to(root)), "status": "added"}
+        return {"path": str(dest.relative_to(root)), "status": "replaced" if replaced else "added"}
 
 
 def _drain(read: Callable[[int], bytes], length: int) -> None:

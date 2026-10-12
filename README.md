@@ -913,8 +913,6 @@ far, not yet on a real card in a radio.**
 
 What's left to do (everything else described here is built and running):
 
-- **Library tools** — adding and deleting music is on the web page (Settings
-  → Media library); still to do: syncing a whole desktop library in one go.
 - **A needle VU meter** — a physical meter driven from a PWM pin, with the
   Android app's ballistics; one meter first.
 - **A dongle inside the radio** — the bigger radios (a Pi 3 inside) have
@@ -928,6 +926,16 @@ What's left to do (everything else described here is built and running):
   been heard (the receiver's wide "IQ" mode gives about 10 kHz to read
   from; the search at its heart has to be made several times faster for the
   Zero 2 W first).
+- **Band conditions** — the radio already gathers a good deal of what
+  says how the bands are: the survey's count of stations and the farthest
+  of them, band by band, hour by hour; who's been heard and from where;
+  how strong the weather service's teleprinters are. Put together it could
+  say it plainly -- "20 m is open to North America, 40 m is local only" --
+  and show how today compares with the last few days. From outside it
+  could add what the sun is doing (the solar flux, the K index and
+  sunspot number that NOAA publishes, and any warning of a flare or a
+  storm), and, once *Report* is on, where your own receiver's reports
+  put you among others'. And the DJ could say it, at the top of the hour.
 - **QPSK31** — the PSK reader does PSK31 and PSK63 (both BPSK); the
   four-phase kind, with its error correction, is left. It's seldom heard.
 - **Music from any computer** — adding music needed a Linux PC
