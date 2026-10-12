@@ -2563,6 +2563,19 @@ function rigCalKey(R, k) {
   return k("Calibrate", () => {
     if (CAL.busy) return toast("A receiver is being calibrated: it takes a minute and a half.");
     if (!R.st?.upconverter) return toast("Calibrate is for a short-wave receiver (one behind an upconverter): the stations it goes by are on short wave.");
+    // (by itself: the radio does it without being asked, at night or while it's listened to; chosen here, kept at once)
+    const way = el("select", { id: "cal-itself", style: "max-width:100%", title: "A dongle drifts as it warms and with the weather: the radio can calibrate this receiver without being asked. Each night: between 3 and 5, only if the radio isn't playing it. While I listen: half an hour after it's switched to, then every three hours" },
+      ...[["never", "Only when I press Calibrate"], ["night", "Also by itself, each night (3 to 5, if not playing it)"], ["listening", "Also by itself, while I listen (you'll hear it go)"]]
+        .map(([value, textContent]) => el("option", { value, textContent })));
+    const itself = el("p", { style: "margin-top:-4px" }, way), was = el("p", { style: "font-size:12px;opacity:.75;margin-top:-6px" });
+    way.disabled = true;
+    api("/api/rx/calibrate").then(st => {
+      way.value = st.itself?.plan?.[R.origin] || "never"; way.disabled = false;
+      const last = (st.itself?.log || []).find(l => l.base === R.origin);
+      if (last) was.textContent = `Last done by itself ${new Date(last.t * 1000).toLocaleString("en-GB", { weekday: "short", hour: "2-digit", minute: "2-digit" })}: ` + (last.error ? `not calibrated (${last.error}).`
+        : last.before && last.ppm === last.before.ppm && last.trim === last.before.trim ? `already within ${Math.round(last.was)} Hz.` : `it was up to ${Math.round(last.was)} Hz out; set to ppm ${last.ppm}, trim ${last.trim}${last.before ? ` (from ${last.before.ppm}, ${last.before.trim})` : ""}.`);
+    }).catch(() => {});
+    way.onchange = async () => { try { await api("/api/rx/calibrate", { base: R.origin, itself: way.value }); toast(way.value === "never" ? "This receiver is calibrated only when you press the key." : way.value === "night" ? "This receiver will be calibrated each night, when the radio isn't playing it." : "This receiver will be calibrated while you listen: half an hour in, then every three hours."); } catch (e) { rigOops(e); } };
     ask(`Put ${R.o.title} on frequency? It's taken round the bands for a few minutes${rigOnRadio(R) ? " -- you'll hear it go --" : ""} and then put back: FT8 on each band is compared with a KiwiSDR among your stations (about four minutes), or without one, broadcast stations are measured (a minute and a half; best in the evening).`, "Calibrate", async () => {
       CAL.busy = true;
       try {
@@ -2576,8 +2589,8 @@ function rigCalKey(R, k) {
           () => api("/api/rx/calibrate", { base: R.origin, ppm: r.before.ppm, trim: r.before.trim }), true);
       } catch (e) { rigOops(e); }
       CAL.busy = false;
-    });
-  }, "Put this receiver on frequency: the dongle's error measured on broadcast stations, and set");
+    }, el("div", {}, itself, was));
+  }, "Put this receiver on frequency: the dongle's error measured off the air, and set. The radio can also do it by itself: the choice is asked here");
 }
 // Where to listen (the Modes… key): each mode's usual place on each band, as keys that take the receiver there and
 // switch the right reader on; and a survey, which goes round them, listens a slot or a few seconds on each, and writes
@@ -5263,11 +5276,11 @@ async function addToPlaylist(pl, o) {
   try { const d = await api("/api/playlists/add", { name: pl.name, ...what }); await loadPlaylists(d); drawDesk(); toast(`Added ${d.added === 1 ? "“" + o.title + "”" : d.added + " songs"} to ${d.name}.`); }
   catch (e) { toast("Not added: " + e.message + "."); }
 }
-function ask(msg, yes, fn) {
+function ask(msg, yes, fn, more) {                  // (more: something else to show under the words, a choice say)
   const box = el("div", { className: "confirm" });
   const no = el("button", { type: "button", textContent: "Cancel" }), go = el("button", { type: "button", className: "danger", textContent: yes });
   no.onclick = () => box.remove(); go.onclick = () => { box.remove(); fn(); };
-  box.append(el("div", { className: "box", role: "dialog" }, el("p", { textContent: msg }), el("div", { className: "btns" }, no, go)));
+  box.append(el("div", { className: "box", role: "dialog" }, el("p", { textContent: msg }), ...(more ? [more] : []), el("div", { className: "btns" }, no, go)));
   box.addEventListener("keydown", e => { if (e.key === "Escape") { e.preventDefault(); box.remove(); } });   // (as on a Mac: Escape cancels)
   box.addEventListener("pointerdown", e => { if (e.target === box) box.remove(); });                       // (a click outside, too)
   document.body.append(box); no.focus();            // the safe choice is the default: Enter doesn't delete

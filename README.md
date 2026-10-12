@@ -330,7 +330,12 @@ Actions, Sleep timer and Radio folders open:
   a hundred. The receiver itself
   now also allows for the steps its tuner chip moves in, which were up to
   140 Hz of that. On the author's: from 83 Hz out at 6 MHz to within a few
-  Hz from 7 to 14 MHz, checked against someone else's receiver.
+  Hz from 7 to 14 MHz, checked against someone else's receiver. A dongle
+  goes on drifting, so the radio can do it by itself, a receiver at a time
+  (the choice is in the key's own question): each night between 3 and 5,
+  if the radio isn't playing that receiver, or while you listen -- half an
+  hour after you switch to it, when it's warm, then every three hours
+  (you hear it go round). What it found last is shown there too.
 - **FT8 and FT4, read as text.** The *FT8* and *FT4* keys in a receiver's
   window take it to the mode's frequency on the band it's on and list every
   message heard, each time a slot ends (15 seconds for FT8, 7.5 for FT4):
@@ -870,8 +875,6 @@ What's left to do (everything else described here is built and running):
   → Media library); still to do: syncing a whole desktop library in one go.
 - **A needle VU meter** — a physical meter driven from a PWM pin, with the
   Android app's ballistics; one meter first.
-- **Calibrate, by itself** — a dongle drifts a hundred Hz or so as it
-  warms: *Calibrate* run by the radio now and then (it's a key today).
 - **A dongle inside the radio** — the bigger radios (a Pi 3 inside) have
   the room and the processor for an RTL-SDR of their own: one with a
   temperature-compensated crystal (a Nooelec NESDR SMArt v5), so that it

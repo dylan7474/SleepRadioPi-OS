@@ -406,8 +406,9 @@ def make_handler(station: Station, output: Mp3Output, speaker=None,
                 self._send(json.dumps({"receiver_names": self._receiver_names()}).encode(), "application/json")
             elif path == "/api/rx/calibrate":
                 # A receiver of your own being put on frequency (playback/calibrate.py): how far it has got, what it found.
+                # "itself": the receivers the radio calibrates by itself, and what that found lately.
                 from sleepradiopi.playback import calibrate as calibrate_mod
-                self._send(json.dumps(calibrate_mod.job.status()).encode(), "application/json")
+                self._send(json.dumps({**calibrate_mod.job.status(), "itself": calibrate_mod.keeper.status()}).encode(), "application/json")
             elif path == "/api/rx/keyboard":
                 # The PSK31 / RTTY reader (audio/keyboard.py): whether it's on, what it's reading now, and the
                 # pieces of text read since ?since=N.
@@ -786,6 +787,17 @@ def make_handler(station: Station, output: Mp3Output, speaker=None,
                     base = str(body["base"]).rstrip("/")
                     if not base.startswith(("http://", "https://")) or any(c.isspace() for c in base):
                         raise ValueError("base is the receiver's address: http://192.168.50.154:8074")
+                    if "itself" in body:
+                        # {"base", "itself": "never" | "night" | "listening"}: calibrated by the radio itself, and when. Kept.
+                        plan = {b: w for b, w in calibrate_mod.keeper.status()["plan"].items() if b != base}
+                        if body["itself"] != "never":
+                            plan[base] = body["itself"]
+                        plan = calibrate_mod.clean_plan(plan)
+                        calibrate_mod.keeper.set_plan(plan)
+                        if config_file is not None:
+                            save_setting(config_file, "calibrate_itself", plan)
+                        self._send(json.dumps({**calibrate_mod.job.status(), "itself": calibrate_mod.keeper.status()}).encode(), "application/json")
+                        return
                     if "ppm" in body or "trim" in body:
                         if isinstance(body.get("ppm"), bool) or isinstance(body.get("trim"), bool) or not isinstance(body.get("ppm"), int) or not isinstance(body.get("trim"), int):
                             raise ValueError("ppm and trim are whole numbers")

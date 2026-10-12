@@ -41,6 +41,21 @@ or too few bands have stations heard by both.
 
 The receiver hears one thing at a time, so it's taken round for a few
 minutes and then put back; if the radio is playing it, that's heard.
+
+By itself: a dongle goes on drifting, a hundred Hz or so as it warms and
+with the weather, so a calibration by hand doesn't last. The Keeper does it
+for the receivers the owner has chosen, one of two ways each:
+
+  * "night": once a night, in the small hours (NIGHT_HOURS), and only while
+    the radio isn't playing that receiver, so nobody hears it go. A dongle
+    that has been idle is cold, though: this suits one that's always warm
+    (listened to on another radio, or kept running).
+  * "listening": while the radio is playing it. Once it has been on for
+    WARM_S (so it's warm), and then every AGAIN_S while it stays on. It's
+    heard going round the bands for those few minutes.
+
+Whatever it finds is kept in a short log (when, what it was out by, what it
+was set to), so a setting that looks wrong can be seen and put back.
 """
 from __future__ import annotations
 
@@ -472,4 +487,119 @@ class Job:
                 sound.close()
 
 
+WAYS = ("night", "listening")
+NIGHT_HOURS = (3, 5)         # by the radio's clock: from 3 o'clock to just before 5
+WARM_S = 30 * 60.0           # listened to this long, a dongle has stopped warming
+AGAIN_S = 3 * 3600.0         # ...and while it's still on, it's done again this often
+LOG_MOST = 12
+TICK_S = 30.0
+
+
+def clean_plan(plan) -> dict[str, str]:
+    """The receivers calibrated by themselves, as kept: {"http://192.168.50.4:8075": "night" | "listening"}.
+    ValueError says what's wrong."""
+    if not isinstance(plan, dict):
+        raise ValueError("the plan is receivers and how: {\"http://the receiver\": \"night\"}")
+    out = {}
+    for base, way in plan.items():
+        base = str(base).rstrip("/")
+        if not base.startswith(("http://", "https://")) or any(c.isspace() for c in base):
+            raise ValueError("a receiver is named by its address: http://192.168.50.154:8074")
+        if way not in WAYS:
+            raise ValueError("a receiver is calibrated at night, or while listening")
+        out[base] = way
+    return out
+
+
+class Keeper:
+    """Calibrates the receivers in its plan by itself (see the top). playing() is the address of what the radio
+    is playing now, kiwi() a KiwiSDR among the stations to compare FT8 with (or None); tick() is called a couple
+    of times a minute."""
+
+    def __init__(self, job: Job, playing: Callable[[], str | None] = lambda: None, kiwi: Callable[[], str | None] = lambda: None,
+                 clock: Callable[[], float] = time.time, localtime: Callable[[float], time.struct_time] = time.localtime) -> None:
+        self.job, self.playing, self.kiwi = job, playing, kiwi
+        self._clock, self._localtime = clock, localtime
+        self.plan: dict[str, str] = {}
+        self._lock = threading.Lock()
+        self._since: dict[str, float] = {}           # receiver -> since when the radio has been playing it
+        self._ran: dict[str, float] = {}             # ...when it was last calibrated here
+        self._night: dict[str, str] = {}             # ...and the night ("2026-10-12") that was last done
+        self._doing: dict | None = None              # {"base", "way", "t"}: the one being done
+        self._log: list[dict] = []
+        self._stop = threading.Event()
+
+    def set_plan(self, plan: dict[str, str]) -> None:
+        with self._lock:
+            self.plan = dict(plan)
+            for kept in (self._since, self._night):
+                for base in [b for b in kept if b not in plan]:
+                    del kept[base]
+
+    def status(self) -> dict:
+        """{"plan": {receiver: way}, "log": [{"t", "base", "way", "ppm", "trim", "before": {"ppm", "trim"}, "was",
+        "now", "by"} | {"t", "base", "way", "error"}], the latest first}"""
+        with self._lock:
+            return {"plan": dict(self.plan), "log": json.loads(json.dumps(self._log[::-1]))}
+
+    def tick(self) -> None:
+        now = self._clock()
+        st = self.job.status()
+        with self._lock:
+            doing, plan = self._doing, dict(self.plan)
+        if doing is not None:                        # the one begun here: has it finished?
+            if st.get("running"):
+                return
+            entry = {"t": doing["t"], "base": doing["base"], "way": doing["way"]}
+            r = st.get("result") if st.get("base") == doing["base"] else None
+            if r:
+                entry.update(ppm=r["ppm"], trim=r["trim"], before=r.get("before"), was=r.get("was"), now=r.get("now"), by=r.get("by"))
+            else:
+                entry["error"] = st.get("error") or "it stopped"
+            with self._lock:
+                self._doing = None
+                self._log = (self._log + [entry])[-LOG_MOST:]
+            log.info("calibrate: by itself, %s: %s", doing["base"], entry.get("error") or f"ppm {entry['ppm']}, trim {entry['trim']}")
+            return
+        on = self.playing() or ""
+        for base in plan:                            # how long each has been playing, to the second it began
+            if on.startswith(base):
+                self._since.setdefault(base, now)
+            else:
+                self._since.pop(base, None)
+        if st.get("running"):                        # (one begun by hand: wait)
+            return
+        t = self._localtime(now)
+        night = time.strftime("%Y-%m-%d", t)
+        for base, way in plan.items():
+            if way == "night":
+                due = NIGHT_HOURS[0] <= t.tm_hour < NIGHT_HOURS[1] and self._night.get(base) != night and base not in self._since
+            else:
+                due = base in self._since and now - self._since[base] >= WARM_S and now - self._ran.get(base, 0.0) >= AGAIN_S
+            if not due:
+                continue
+            try:
+                self.job.start(base, self.kiwi())
+            except ValueError:
+                return
+            with self._lock:
+                self._doing = {"base": base, "way": way, "t": now}
+            self._ran[base] = now
+            if way == "night":
+                self._night[base] = night
+            return
+
+    def start(self) -> None:
+        self._stop = stop = threading.Event()
+        threading.Thread(target=self._run, args=(stop,), name="calibrate-keeper", daemon=True).start()
+
+    def _run(self, stop: threading.Event) -> None:
+        while not stop.wait(TICK_S):
+            try:
+                self.tick()
+            except Exception:                        # (one that falls over mustn't end the keeper)
+                log.exception("calibrate: by itself failed")
+
+
 job = Job()
+keeper = Keeper(job)

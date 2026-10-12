@@ -1336,7 +1336,16 @@ The cards:
   signals on a long wire at night, which is why their error went with
   their frequency and why they came and went by the hour.) The receiver keeps what's set
   (its `POST /calibrate`). About a minute and a half; the receiver is put
-  back where it was; if the radio is playing it, the round is heard. The decoding is ft8_lib's `decode_ft8` (MIT, built into the image:
+  back where it was; if the radio is playing it, the round is heard.
+  *By itself* (`POST /api/rx/calibrate {"base", "itself": "never" | "night"
+  | "listening"}`, the setting `calibrate_itself`, `"itself": {"plan",
+  "log"}` in the `GET`): the `Keeper` in `playback/calibrate.py` starts the
+  same job for the receivers chosen -- `"night"`: once a night between 3 and
+  5 by the radio's clock, while the radio isn't playing that receiver;
+  `"listening"`: once the radio has played it for half an hour, then every
+  three hours while it stays on -- never while another calibration runs,
+  and keeps the last dozen results. Nothing is reported to PSK Reporter
+  while a calibration has the receiver. The decoding is ft8_lib's `decode_ft8` (MIT, built into the image:
   `package/ft8-lib`), run at low priority on each slot: about half a second
   of one core on the Zero 2 W's processor. The sound a receiver sends is
   late, by how much depending on how it comes: half a second from a

@@ -383,6 +383,9 @@ class Reader:
         and still the one the radio is playing."""
         if self.report is None or not self.own or not self.dial or self.playing is None:
             return False
+        from sleepradiopi.playback import calibrate   # (a receiver being calibrated is taken round the bands: not where the page said)
+        if calibrate.job.status().get("running"):
+            return False
         return (self.playing() or "").startswith(self.own)
 
     def forget(self) -> None:

@@ -811,6 +811,26 @@ def main() -> None:
     retire_artist_radio(station, args.config, presets, settings)
     station.on_profiles = folders
     folders(60.0)
+    # Calibrate, by itself: the receivers chosen for it, at night or while they're listened to (playback/calibrate.py)
+    from sleepradiopi.playback import calibrate as calibrate_mod, radio as radio_mod, receiver as receiver_mod
+    def a_kiwi() -> str | None:               # (a KiwiSDR among the stations: FT8 on both at once is the better yardstick)
+        try:
+            saved = load(args.config).radio_stations
+            stations = radio_mod.DEFAULT_STATIONS if saved is None else radio_mod.validate_stations(saved)
+        except (OSError, ValueError):
+            return None
+        for st in stations:
+            spec = receiver_mod.parse(str(st.get("url", "")))
+            if spec and spec["kind"] == "kiwi":
+                return spec["base"]
+        return None
+    calibrate_mod.keeper.playing = lambda: (station.source or {}).get("url")
+    calibrate_mod.keeper.kiwi = a_kiwi
+    try:
+        calibrate_mod.keeper.set_plan(calibrate_mod.clean_plan(settings.calibrate_itself))
+    except ValueError as e:
+        log.warning("calibrate: the saved plan can't be used (%s)", e)
+    calibrate_mod.keeper.start()
     serve(station, stream, args.port or settings.http_port, control, args.config, announcer, jobs, updates,
           presets, directory, media, lamps)
 

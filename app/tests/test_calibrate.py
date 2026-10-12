@@ -11,7 +11,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from sleepradiopi.audio import rtty
+from sleepradiopi.audio import ft8, rtty
 from sleepradiopi.playback import calibrate
 from sleepradiopi.web.server import make_handler
 
@@ -277,6 +277,125 @@ def test_one_band_of_ft8_is_better_than_stations_that_wont_do(monkeypatch) -> No
     assert r["by"] == "ft8" and r["used"] == [[7_074_000, 36.0]] and (rx.ppm, rx.trim) == (67, 218 + 36) and abs(rx.error(14_074_000)) < 1
 
 
+class _Job:
+    """A calibration that takes as long as the test says."""
+
+    def __init__(self) -> None:
+        self.state, self.started = {"running": False}, []
+
+    def status(self) -> dict:
+        return dict(self.state)
+
+    def start(self, base: str, kiwi: str | None = None) -> None:
+        if self.state.get("running"):
+            raise ValueError("a calibration is already running")
+        self.started.append((base, kiwi))
+        self.state = {"running": True, "base": base}
+
+    def done(self, **result) -> None:
+        self.state = {"running": False, "base": self.state["base"], **result}
+
+
+def _keeper(plan: dict, hour: float):
+    """A Keeper on a clock of ours (hours since a midnight), with what the radio is playing in on[0]."""
+    job, on, at = _Job(), [None], [hour * 3600.0]
+    k = calibrate.Keeper(job, playing=lambda: on[0], kiwi=lambda: "http://kiwi:8073/", clock=lambda: at[0], localtime=__import__("time").gmtime)
+    k.set_plan(calibrate.clean_plan(plan))
+    return k, job, on, at
+
+
+def test_by_itself_at_night_when_nobody_is_listening() -> None:
+    rx = "http://receiver:8075"
+    k, job, on, at = _keeper({rx + "/": "night"}, hour=2.9)
+    k.tick()
+    assert job.started == []                         # not yet 3 o'clock
+    at[0] = 3.1 * 3600
+    on[0] = rx + "/stream?freq=7074000"              # ...and now somebody is listening to it: not while they are
+    k.tick()
+    assert job.started == []
+    on[0] = "http://stream.example/radio4"           # gone on to something else
+    at[0] += 600
+    k.tick()
+    assert job.started == [(rx, "http://kiwi:8073/")]
+    k.tick()                                         # (still going: nothing more)
+    job.done(result={"ppm": 60, "trim": -170, "before": {"ppm": 60, "trim": -166}, "was": 6.0, "now": 2.0, "by": "ft8"})
+    k.tick()
+    [entry] = k.status()["log"]
+    assert (entry["base"], entry["way"], entry["ppm"], entry["trim"], entry["before"], entry["by"]) == (rx, "night", 60, -170, {"ppm": 60, "trim": -166}, "ft8")
+    at[0] += 1800
+    k.tick()
+    assert len(job.started) == 1                     # once a night
+    at[0] += 24 * 3600                               # the next night: again; one that fails is said
+    k.tick()
+    assert len(job.started) == 2
+    job.done(error="the receiver isn't answering (timed out)")
+    k.tick()
+    assert "answering" in k.status()["log"][0]["error"] and len(k.status()["log"]) == 2
+    at[0] = 30 * 3600                                # six in the morning: too late
+    k2, job2, on2, at2 = _keeper({rx: "night"}, hour=6.0)
+    k2.tick()
+    assert job2.started == []
+
+
+def test_by_itself_while_listening_once_its_warm_and_then_now_and_again() -> None:
+    rx = "http://receiver:8075"
+    k, job, on, at = _keeper({rx: "listening"}, hour=14.0)
+    k.tick()
+    assert job.started == []                         # nobody listening: left alone
+    on[0] = rx + "/stream"
+    k.tick()
+    at[0] += calibrate.WARM_S - 60
+    k.tick()
+    assert job.started == []                         # not warm yet
+    at[0] += 120
+    k.tick()
+    assert len(job.started) == 1
+    job.done(result={"ppm": 60, "trim": -150, "before": {"ppm": 60, "trim": -166}, "was": 16.0, "now": 2.0, "by": "ft8"})
+    k.tick()
+    at[0] += calibrate.AGAIN_S - 300
+    k.tick()
+    assert len(job.started) == 1                     # not again so soon
+    at[0] += 600
+    k.tick()
+    assert len(job.started) == 2
+    job.done(result={"ppm": 60, "trim": -150, "before": {"ppm": 60, "trim": -150}, "was": 3.0, "now": 3.0, "by": "ft8"})
+    k.tick()
+    on[0] = None                                     # switched to something else and back: it warms again first
+    at[0] += calibrate.AGAIN_S + 60
+    k.tick()
+    on[0] = rx + "/stream"
+    k.tick()
+    assert len(job.started) == 2
+    at[0] += calibrate.WARM_S + 1
+    k.tick()
+    assert len(job.started) == 3
+    job2 = _Job()                                    # one begun by hand is waited for, not joined
+    k3, job3, on3, at3 = _keeper({rx: "listening"}, hour=14.0)
+    job3.state = {"running": True, "base": "http://another:8074"}
+    on3[0] = rx + "/stream"
+    k3.tick()
+    at3[0] += calibrate.WARM_S + 1
+    k3.tick()
+    assert job3.started == [] and k3.status()["log"] == []
+
+
+def test_the_plan_is_checked() -> None:
+    assert calibrate.clean_plan({"http://a:8075/": "night", "https://b": "listening"}) == {"http://a:8075": "night", "https://b": "listening"}
+    for bad in ([], {"a:8075": "night"}, {"http://a b": "night"}, {"http://a": "weekly"}, {"http://a": None}):
+        with pytest.raises(ValueError):
+            calibrate.clean_plan(bad)
+
+
+def test_nothing_is_reported_while_a_receiver_is_being_calibrated(monkeypatch) -> None:
+    r = ft8.Reader()
+    r.own, r.dial, r.playing, r.report = "http://receiver:8075", 14_074_000, (lambda: "http://receiver:8075/stream"), (lambda *a: None)
+    assert r.reports() is True
+    busy = _Job()
+    busy.state = {"running": True, "base": "http://receiver:8075"}
+    monkeypatch.setattr(calibrate, "job", busy)      # (it's being taken round the bands: not where the page said)
+    assert r.reports() is False
+
+
 def test_calibrating_from_the_web(tmp_path: Path, monkeypatch) -> None:
     conf = tmp_path / "config.toml"
     conf.write_text("{}")
@@ -295,8 +414,19 @@ def test_calibrating_from_the_web(tmp_path: Path, monkeypatch) -> None:
         except urllib.error.HTTPError as e:
             return e.code, json.loads(e.read() or b"{}")
 
+    monkeypatch.setattr(calibrate, "keeper", calibrate.Keeper(calibrate.job))
     try:
-        assert call("/api/rx/calibrate") == (200, {"running": False})
+        assert call("/api/rx/calibrate") == (200, {"running": False, "itself": {"plan": {}, "log": []}})
+        # by itself: chosen a receiver at a time, kept in the settings
+        for bad in ({"base": "http://receiver:8074", "itself": "weekly"}, {"base": "receiver", "itself": "night"}):
+            assert call("/api/rx/calibrate", bad)[0] == 400
+        code, st = call("/api/rx/calibrate", {"base": "http://receiver:8074/", "itself": "night"})
+        assert code == 200 and st["itself"]["plan"] == {"http://receiver:8074": "night"} and not st["running"]
+        assert call("/api/rx/calibrate", {"base": "http://other:8075", "itself": "listening"})[1]["itself"]["plan"] == {"http://receiver:8074": "night", "http://other:8075": "listening"}
+        assert json.loads(conf.read_text())["calibrate_itself"] == {"http://receiver:8074": "night", "http://other:8075": "listening"}
+        assert call("/api/rx/calibrate", {"base": "http://receiver:8074", "itself": "never"})[1]["itself"]["plan"] == {"http://other:8075": "listening"}
+        assert call("/api/rx/calibrate", {"base": "http://other:8075", "itself": "never"})[1]["itself"]["plan"] == {}
+        assert json.loads(conf.read_text())["calibrate_itself"] == {}
         for bad in ({}, {"base": "192.168.50.154:8074"}, {"base": "http://a b"}, {"base": "http://receiver:8074", "ppm": 1.5, "trim": 0}):
             assert call("/api/rx/calibrate", bad)[0] == 400
         code, st = call("/api/rx/calibrate", {"base": "http://receiver:8074/"})
