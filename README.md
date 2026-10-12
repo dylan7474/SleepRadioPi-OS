@@ -877,6 +877,21 @@ Partitions 5 and 6 are in an extended partition (MBR: the Zero 2 W can't boot
 from GPT). `S00data` checks `/data` with `e2fsck -p` and mounts it before
 anything else starts.
 
+Partition 6 isn't in the image: it's added to fill whatever card the image is
+written to. `scripts/provision-media.sh` does that on a Linux PC, and copies
+the music across. A card that has never been near one is given its partition
+6 by the radio itself (`app/sleepradiopi/mediapart.py`, from `S00data`): at
+the first start it writes the partition table -- the same bytes `sfdisk`
+writes on the PC -- and restarts once; at the second it formats the
+partition it made and gives it its folders, and music is then put on from the
+web page. It touches only a card laid out exactly as the image leaves it,
+with room after the settings; a card that already has a partition 6 never
+gets as far as being looked at, and only the partition it made itself (a
+note in `/data` says where it begins and how big it is), with no filesystem
+on it, is ever formatted. So a card flashed again over its old music gets
+its music back rather than a blank partition. **Tried on card images only so
+far, not yet on a real card in a radio.**
+
 ## Layout
 
 | Path | What |
@@ -915,10 +930,12 @@ What's left to do (everything else described here is built and running):
   Zero 2 W first).
 - **QPSK31** — the PSK reader does PSK31 and PSK63 (both BPSK); the
   four-phase kind, with its error correction, is left. It's seldom heard.
-- **Music from any computer** — adding music needs a Linux PC today
-  (`provision-media.sh`). The radio could make its music partition itself on
-  first boot and take music uploaded from the web page, so that Windows and
-  Mac users can do it too.
+- **Music from any computer** — adding music needed a Linux PC
+  (`provision-media.sh`). The radio now makes its music partition itself at
+  its first start (see *Card layout*), so that Windows and Mac users can
+  put music on from the web page; it's written and tested on card images,
+  and has still to be tried on a real card before the set-up steps above
+  are changed to say so.
 - **A laser-cut wood cathedral** — a real-wood version of the cathedral case:
   - the face and fretwork cut from walnut-veneered plywood, the sides and
     back from plywood or MDF;
