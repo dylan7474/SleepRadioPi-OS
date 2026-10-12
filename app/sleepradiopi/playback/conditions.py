@@ -28,6 +28,15 @@ disturbed the earth's magnetic field is: 5 and over is a storm, which
 closes paths over the poles and can shut the bands altogether) and its
 scales for radio blackouts and storms. Sun fetches them, a few times a
 day, and keeps what it last had.
+
+Nothing here is said or shown unless it's asked for. It can be looked at
+(the desktop's Bands window), and it can be said: with EVERY_H set (off to
+begin with) the DJ reads a short version between songs, like the news --
+say_due() is asked at each gap, and answers once in an hour that's one of
+its hours, from a quarter past (the survey that goes by itself on the hour
+has finished by then), outside the news's quiet hours, and only if
+there's something recent to go by. spoken() is that short version: the
+best band or two and what the sun is doing, in words a voice can say.
 """
 from __future__ import annotations
 
@@ -56,6 +65,9 @@ SCALES_URL = "https://services.swpc.noaa.gov/products/noaa-scales.json"
 SUN_EVERY_S = 3 * 3600.0     # the K index is given every three hours
 SUN_RETRY_S = 900.0          # ...and after a try that failed, not again for this long
 SUN_OLD_S = 12 * 3600.0      # figures older than this aren't said as how the sun is
+EVERY_H = 0                  # the DJ says how the bands are this many hours apart (0: not at all); main.py sets it from the settings
+SAY_HOURS = (0, 1, 2, 3, 6)
+SAY_FROM_MIN = 15            # ...from this far past the hour (clear of the news, and of the messages at 7 and 22 minutes past)
 
 
 def region(grid: str) -> str | None:
@@ -255,3 +267,68 @@ class Sun:
 
 
 sun = Sun()
+
+
+def freshest(job) -> tuple[str | None, dict]:
+    """The receiver whose survey is the latest, and what it found: (its address, survey.Job.found() of it)."""
+    best, when, found = None, 0.0, {}
+    for base in job.bases():
+        f = job.found(base)
+        t = max((v.get("t", 0) for k, v in f.items() if k.startswith("ft8:")), default=0)
+        if t > when:
+            best, when, found = base, t, f
+    return best, found
+
+
+def _metres(band: str) -> str:
+    return band.replace(" m", " metres")
+
+
+def spoken(s: dict, sun_now: dict | None = None) -> str | None:
+    """A summary() as the DJ says it: the two best bands, what's closed, and the sun in a few words. None if
+    there's nothing to say."""
+    live = sorted((b for b in s["bands"] if b["n"]), key=lambda b: (-b["n"], -(b.get("km") or 0)))
+    if not s["bands"]:
+        return None
+    if not live:
+        said = ["The short wave bands. Nothing heard on any band just now."]
+    else:
+        said = ["The short wave bands."]
+        for b in live[:2]:
+            line = f"{_metres(b['band'])} is {b['state']}"
+            if b.get("km") and b["km"] < NEAR_KM:
+                line += ", but only round about"
+            elif b["to"]:
+                line += f", open to {_and(b['to'])}"
+            said.append(line + ".")
+        rest = [_metres(b["band"]).replace(" metres", "") for b in live[2:]]
+        if rest:
+            said.append(f"Also open: {_and(rest)} metres.")
+    if sun_now:
+        flux, k = sun_now.get("flux"), sun_now.get("k")
+        words = []
+        if flux is not None:
+            words.append("the sun is busy" if flux >= 150 else "the sun is middling" if flux >= 100 else "the sun is quiet")
+        if k is not None:
+            words.append("there's a magnetic storm" if k >= 5 else "the earth's field is unsettled" if k >= 4 else "the earth's field is quiet")
+        if words:
+            said.append((" and ".join(words) + ".").capitalize())
+    return " ".join(said)
+
+
+_said: str | None = None             # the hour ("2026-10-12 14") it was last said in
+
+
+def say_due(at, clock_ok: bool, quiet: bool, job, heard: list[dict]) -> str | None:
+    """Is it time for the DJ to say how the bands are, in a gap at `at` (a datetime)? -> the words, once in an
+    hour that's one of its hours; None otherwise, or if there's nothing recent to go by."""
+    global _said
+    if not EVERY_H or not clock_ok or quiet or at.hour % EVERY_H or at.minute < SAY_FROM_MIN:
+        return None
+    key = f"{at:%Y-%m-%d %H}"
+    if _said == key:
+        return None
+    words = spoken(summary(freshest(job)[1], heard, at.timestamp()), sun.status())
+    if words:
+        _said = key
+    return words

@@ -354,8 +354,14 @@ Actions, Sleep timer and Radio folders open:
   itself it keeps itself up to date. Under it, what the sun is doing, from
   NOAA when there's internet: the solar flux, the K index, and any radio
   blackout or geomagnetic storm, each with what it means for the bands.
-  It's how the bands are *here*, with this aerial, not a forecast. See
-  `app/sleepradiopi/playback/conditions.py`.
+  It's how the bands are *here*, with this aerial, not a forecast. It's
+  there when you ask for it and not otherwise: **Bands**, in the menu
+  bar, shows it at a click (with a key to survey the bands now), and the
+  DJ can say a short version between songs, like the news -- every hour,
+  or every 2, 3 or 6 -- "The short wave bands. 20 metres is good, open to
+  Europe and North America. 40 metres is fair, but only round about. The
+  sun is middling and the earth's field is quiet." Off until you choose
+  it, in that window. See `app/sleepradiopi/playback/conditions.py`.
 - **Receivers with names.** *Name…* in a receiver's window calls it what
   you like -- "Short wave", "VHF" -- in Receivers, on its window and
   wherever it's mentioned: two dongles on one computer are otherwise told
@@ -967,11 +973,11 @@ What's left to do (everything else described here is built and running):
   from; the search at its heart has to be made several times faster for the
   Zero 2 W first).
 - **Band conditions: more of it** — *How the bands are* says it from the
-  last survey and the last hour's listening. Still to do: how today
-  compares with the last few days (only a day of each band is kept);
-  where your own receiver's reports put you among others', once *Report*
-  is on; the weather teleprinters' strength as a yardstick for the lower
-  bands by day; and the DJ saying it, at the top of the hour.
+  last survey and the last hour's listening, in the Bands window or by
+  the DJ. Still to do: how today compares with the last few days (only a
+  day of each band is kept); where your own receiver's reports put you
+  among others', once *Report* is on; the weather teleprinters' strength
+  as a yardstick for the lower bands by day.
 - **A laser-cut wood cathedral** — a real-wood version of the cathedral case:
   - the face and fretwork cut from walnut-veneered plywood, the sides and
     back from plywood or MDF;

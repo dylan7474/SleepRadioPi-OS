@@ -1339,6 +1339,16 @@ The cards:
   asked and more than three hours old, kept in
   `~/.cache/sleepradiopi/sun.json`, not said once twelve hours old), with
   what they mean in words. With no internet there's simply no sun line.
+  With no `base` it's the receiver surveyed latest (`"base"` says which).
+  *Said by the DJ* (`POST /api/rx/conditions {"say_every_h": 0 | 1 | 2 | 3
+  | 6}`, the setting `conditions_every_h`, 0 to begin with): the station
+  asks `conditions.say_due()` at each gap between songs where no message
+  is due (`Station._bands_due`); it answers once in an hour that's one of
+  its hours, from a quarter past, outside the news's quiet hours, with a
+  trusted clock, and only if a survey or the heard list gives something
+  recent -- then `spoken()`: the two best bands, the others that are
+  open, and the sun in a few words (`"spoken"` in the `GET` is what it
+  would say now). On the desktop it's the **Bands** window (the menu bar).
   *The finder* (places of mode `"rtty"` or `"cw"`, with `"lo"` and `"hi"`:
   a stretch of band, 150 kHz at most; the page's `MODE_SWEEP` has each
   band's): the receiver is put in the middle of the stretch and its

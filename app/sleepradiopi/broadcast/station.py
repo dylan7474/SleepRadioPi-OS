@@ -1880,15 +1880,31 @@ class Station:
                 and self.news_schedule.due_at(end_at) is not None:
             return
         message = self.messages.due(end_at, clock_trusted(), self.profile)   # (the radio-wide ones, and this theme's)
+        record = self.messages.played(end_at) if message else ("none",)
+        if not message:                              # ...or how the short-wave bands are, if that's asked for and it's the hour
+            message = self._bands_due(end_at)
         if not message:
             return
-        record = self.messages.played(end_at)
         self._gap_decision = decision[:4] + (message,)
         step = Step("say", self._say(message), message=record)
         plan = self._plan
         plan.insert(1 if decision[2] and plan and plan[0].kind == "say" else 0, step)
         self.gap_plan = [s.describe() for s in plan]
         log.info("message in the next gap: %s", message[:60])
+
+    def _bands_due(self, end_at: datetime) -> str | None:
+        """How the short-wave bands are, for the DJ to say in this gap (playback/conditions.py): only if it's been
+        asked for, at its hours, outside the news's quiet hours."""
+        from sleepradiopi.audio import ft8
+        from sleepradiopi.playback import conditions, survey
+        if not conditions.EVERY_H:
+            return None
+        quiet = self.config.news_quiet_hours and end_at.time() in QuietHours.of_minutes(self.config.news_quiet_start_min, self.config.news_quiet_end_min)
+        try:
+            return conditions.say_due(end_at, clock_trusted(), bool(quiet), survey.job, ft8.reader.heard()["heard"])
+        except Exception:                            # (nothing of the bands may stop the show)
+            log.exception("band conditions: not said")
+            return None
 
     def _run_gap(self) -> None:
         plan = self._plan

@@ -613,6 +613,7 @@
   <button class="m" type="button" data-open="root:ondemand">On demand</button>
   <button class="m" type="button" data-open="box:programmes">Programmes</button>
   <button class="m" type="button" id="scheduleMenu">Schedule</button>
+  <button class="m" type="button" data-open="set:conditions" title="How the short-wave bands are, from what the radio has heard">Bands</button>
   <button class="m" type="button" id="tidy">Tidy up</button>
   <button class="m" type="button" id="settingsMenu">Settings</button>
   <a class="m classic" href="/?remote" id="classic" title="The phone remote (big keys), here">Phone remote</a>
@@ -733,7 +734,7 @@ const PANEL = {};
 for (const [key, title, sym, h, page] of PANELS) PANEL[key] = mk({ id: "set:" + key, kind: "panel", key, title, sym, h, page });
 for (const [key, title, sym, h] of [["messages", "Messages", "✎", 55], ["birthdays", "Birthdays", "✿", 340], ["stations", "Stations", "R", 8],
                                     ["tests", "Test sounds", "▶", 150], ["stream", "Listen in a browser", "◠", 200], ["lists", "Themes", "A", 195],
-                                    ["findstation", "Find a station", "R", 8], ["findreceiver", "Find a receiver", "⌁", 200], ["modes", "Where to listen", "⌖", 215], ["findroom", "Find a room", "☊", 265], ["findpodcast", "Follow a podcast", "P", 275], ["newlist", "New theme", "A", 195]])
+                                    ["findstation", "Find a station", "R", 8], ["findreceiver", "Find a receiver", "⌁", 200], ["modes", "Where to listen", "⌖", 215], ["conditions", "Band conditions", "☼", 45], ["findroom", "Find a room", "☊", 265], ["findpodcast", "Follow a podcast", "P", 275], ["newlist", "New theme", "A", 195]])
   PANEL[key] = mk({ id: "set:" + key, kind: "panel", key, title, sym, h, page: key });
 const DJ = mk({ id: "dj", kind: "dj", title: "The DJ" });
 const NOTES = mk({ id: "notes", kind: "folder", box: "messages", title: "Messages", kids: [], sym: "✎" });   // a folder of sticky notes
@@ -2652,6 +2653,12 @@ async function modeSurveyRadio(R, modes, sweep) {   // the radio's own survey of
   if (!places.length) return toast("This receiver doesn't reach any of them.");
   try { MODES.srv = await api("/api/rx/survey", { base: R.origin, places }); drawDesk(); modePoll(R, true); } catch (e) { rigOops(e); }
 }
+const condAge = t => { const m = Math.round((Date.now() / 1000 - t) / 60); return m < 2 ? "just now" : m < 90 ? `${m} minutes ago` : `${Math.round(m / 60)} hours ago`; };
+// the lines that say it: the best of it in bold, a line for each band with something on it, and the sun
+const condLines = cond => [
+  el("p", { id: "cond-says", style: "font-weight:700;margin:2px 0 6px", textContent: cond.says }),
+  ...cond.bands.filter(b => b.n).map(b => el("p", { className: "note", style: "margin:2px 0", textContent: b.says + (b.by === "heard" ? " (from who's been heard)" : ""), title: `As of ${condAge(b.t)}` })),
+  ...(cond.sun ? [el("p", { className: "note", id: "cond-sun", style: "margin:6px 0 0", textContent: "The sun: " + cond.sun.says, title: `From NOAA's Space Weather Prediction Center, ${condAge(cond.sun.t)}` })] : [])];
 // Conditions: how the bands are, in sentences, from this receiver's survey and who's been heard (playback/conditions.py),
 // with the sun's figures from NOAA. Asked for when the window opens and every so often while it's open.
 async function condPoll(R, now) {
@@ -4417,11 +4424,7 @@ const UI = {
       modePoll(R);                                 // (the radio's own survey, if this is a receiver of yours: how it's doing, what it found)
       condPoll(R);
       const cond = MODES.condFor === R.origin ? MODES.cond : null;
-      const condAge = t => { const m = Math.round((Date.now() / 1000 - t) / 60); return m < 2 ? "just now" : m < 90 ? `${m} minutes ago` : `${Math.round(m / 60)} hours ago`; };
-      const condGrp = !cond ? null : grp("How the bands are",
-        el("p", { id: "cond-says", style: "font-weight:700;margin:2px 0 6px", textContent: cond.says }),
-        ...cond.bands.filter(b => b.n).map(b => el("p", { className: "note", style: "margin:2px 0", textContent: b.says + (b.by === "heard" ? " (from who's been heard)" : ""), title: `As of ${condAge(b.t)}` })),
-        cond.sun ? el("p", { className: "note", id: "cond-sun", style: "margin:6px 0 0", textContent: "The sun: " + cond.sun.says, title: `From NOAA's Space Weather Prediction Center, ${condAge(cond.sun.t)}` }) : null,
+      const condGrp = !cond ? null : grp("How the bands are", ...condLines(cond),
         help(cond.bands.length ? `What this receiver has itself heard${cond.t ? `, the latest ${condAge(cond.t)}` : ""}: it's how the bands are here, with this aerial. ${own ? "A survey of FT8 on every band brings it up to date; set By itself, below, and it keeps itself so." : "Read FT8 on a band for a while and that band is said here."}`
           : own ? "Press FT8 on every band, below: a few minutes later this says which bands are open, and to where. Set By itself and it stays up to date." : "Read FT8 on a band for a while and how that band is is said here. A receiver of your own can be surveyed band by band."));
       const bands = MODE_BANDS.filter(b => places.some(p => p.band === b));
@@ -4456,6 +4459,23 @@ const UI = {
             : `The receiver is taken to each place in turn and listened to: a whole slot for FT8 and FT4, a quarter of a minute for PSK31 and the weather teleprinters. FT8 alone takes ${mins(["ft8"])}, everything ${mins(["ft8", "ft4", "psk31", "rtty"])}. The radio plays each as it goes, and the receiver goes back where it was. Amateur teleprinters and Morse aren't surveyed: they have no one frequency.${surveyed ? ` Last surveyed ${modeAge(surveyed)}.` : ""}`)),
       ];
     },
+  },
+  // Band conditions (the menu bar's Bands): how the short-wave bands are, at a click, from the receiver surveyed
+  // latest; and the choice of having the DJ say it between songs, as the news is said. Nothing is said unless asked for.
+  conditions: {
+    load: () => api("/api/rx/conditions"),
+    build: (c, act) => [
+      grp("How the bands are", ...condLines(c),
+        help(c.bands.length ? `What the radio has itself heard${c.t ? `, the latest ${condAge(c.t)}` : ""}: it's how the bands are here, with this aerial, not a forecast.`
+          : "Nothing to go by yet. A survey of FT8 on every band says how the bands are: it's in a receiver's window, under Modes…, and can go by itself on the hour.")),
+      c.base ? grp("Bring it up to date", line(sbtn("Survey FT8 on every band now", async () => {
+          try { await api("/api/rx/survey", { base: c.base, places: FT_FREQS.ft8.map(([band, khz]) => ({ key: `ft8:${band}`, mode: "ft8", band, hz: khz * 1000 })) });
+            toast("The radio is surveying FT8 on every band: about five minutes. Open Bands again then.", false, null, true); } catch (e) { toast(e.message); } }, "primary")),
+        help(`The receiver ${RX_NAMES[c.base] || rxHost(c.base)} is taken round the bands, without a sound unless the radio is playing it. Modes…, in its window, can have this done by itself every hour.`)) : null,
+      grp("Said by the DJ",
+        srow("Every", seg([[0, "Never"], [1, "Hour"], [2, "2 h"], [3, "3 h"], [6, "6 h"]], c.say_every_h, v => act(() => api("/api/rx/conditions", { say_every_h: v })))),
+        c.spoken ? el("p", { className: "note", id: "cond-spoken", textContent: `As it would be said now: “${c.spoken}”` }) : null,
+        help("Like the news: at a quarter past the hour or the first gap after, on Theme Radio with the DJ on, and not in the news's quiet hours. It's only said when there's something recent to go by, so it wants the survey going by itself (Modes…, in a receiver's window)."))],
   },
   findreceiver: {
     load: async () => { let near = null; try { near = JSON.parse(localStorage.getItem("srd.rxnear")); } catch {}
@@ -4626,6 +4646,7 @@ const SUMS = {
   lists: d => `${d.profiles.length} theme${d.profiles.length === 1 ? "" : "s"} · ${d.artists.length} artists to choose from`,
   findstation: () => "From the internet radio directory",
   findreceiver: () => "Other people's receivers on the internet",
+  conditions: () => "How the short-wave bands are, from what the radio has heard",
   modes: () => { const R = O[MODES.rx]?.rig; return R ? `${R.o.title}: FT8, FT4, WSPR, PSK31, teleprinter, Morse, SSTV and weather fax, band by band` : "FT8, FT4, WSPR, PSK31, teleprinter, Morse, SSTV and weather fax, band by band"; },
   findroom: () => "Radio amateurs' digital voice rooms",
   findpodcast: () => "From Apple's podcast directory",

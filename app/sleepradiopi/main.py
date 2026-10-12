@@ -845,6 +845,7 @@ def main() -> None:
     survey_mod.rounds.start()
     from sleepradiopi.playback import conditions as conditions_mod
     conditions_mod.sun.keep_in(Path.home() / ".cache" / "sleepradiopi" / "sun.json")      # NOAA's figures for the sun, as last had
+    conditions_mod.EVERY_H = settings.conditions_every_h if settings.conditions_every_h in conditions_mod.SAY_HOURS else 0
     serve(station, stream, args.port or settings.http_port, control, args.config, announcer, jobs, updates,
           presets, directory, media, lamps)
 

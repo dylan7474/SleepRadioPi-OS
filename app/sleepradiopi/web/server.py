@@ -434,9 +434,15 @@ def make_handler(station: Station, output: Mp3Output, speaker=None,
                 # reader has heard in the last hour, a band at a time and in a sentence; and the sun's figures from NOAA.
                 from sleepradiopi.audio import ft8 as ft8_mod
                 from sleepradiopi.playback import conditions as conditions_mod, survey as survey_mod
+                # With no receiver named: the one surveyed latest. "say_every_h": how often the DJ says it (0: never).
                 base = parse_qs(urlparse(self.path).query).get("base", [""])[0].rstrip("/")
-                out = conditions_mod.summary(survey_mod.job.found(base) if base else {}, ft8_mod.reader.heard()["heard"], time.time())
-                self._send(json.dumps({**out, "sun": conditions_mod.sun.status(), "home": ft8_mod.HOME}).encode(), "application/json")
+                found = survey_mod.job.found(base) if base else {}
+                if not base:
+                    base, found = conditions_mod.freshest(survey_mod.job)
+                out = conditions_mod.summary(found, ft8_mod.reader.heard()["heard"], time.time())
+                sun_now = conditions_mod.sun.status()
+                self._send(json.dumps({**out, "sun": sun_now, "home": ft8_mod.HOME, "base": base or None, "say_every_h": conditions_mod.EVERY_H,
+                                       "spoken": conditions_mod.spoken(out, sun_now)}).encode(), "application/json")
             elif path == "/api/rx/survey":
                 # The survey run by the radio (playback/survey.py): how far a round has got; with ?base=, what's been
                 # found on that receiver; "itself": the receivers surveyed on the hour.
@@ -765,6 +771,21 @@ def make_handler(station: Station, output: Mp3Output, speaker=None,
                     ft8_mod.reader.playing = lambda: (station.source or {}).get("url")
                 ft8_mod.reader.switch(body["on"], body.get("mode"), body.get("band"), None if dial is None else int(dial), own)
                 self._send(json.dumps(self._one_reader("ft8" if body["on"] else None)).encode(), "application/json")
+            elif path == "/api/rx/conditions":
+                # {"say_every_h": 0 | 1 | 2 | 3 | 6}: the DJ says how the short-wave bands are, that many hours apart
+                # (0: not at all), between songs, like the news. Kept.
+                from sleepradiopi.playback import conditions as conditions_mod
+                try:
+                    every = self._body().get("say_every_h")
+                    if isinstance(every, bool) or every not in conditions_mod.SAY_HOURS:
+                        raise ValueError
+                except (ValueError, TypeError, AttributeError):
+                    self._error('send {"say_every_h": 0, 1, 2, 3 or 6}')
+                    return
+                conditions_mod.EVERY_H = every
+                if config_file is not None:
+                    save_setting(config_file, "conditions_every_h", every)
+                self._send(json.dumps({"say_every_h": every}).encode(), "application/json")
             elif path == "/api/rx/survey":
                 # {"base", "places": [{"key", "mode", "band", "hz"}]}: take that receiver of your own round those places
                 # now and write down what's on each (playback/survey.py). {"stop": true}: the round stopped.

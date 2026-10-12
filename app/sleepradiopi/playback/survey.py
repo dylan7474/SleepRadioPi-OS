@@ -270,6 +270,11 @@ class Job:
         with self._lock:
             return {key: {**f, "day": [d for d in f["day"] if now - d[0] <= DAY_S]} for key, f in self._found.get(base, {}).items()}
 
+    def bases(self) -> list[str]:
+        """The receivers something has been found on."""
+        with self._lock:
+            return list(self._found)
+
     def forget(self, base: str) -> None:
         with self._lock:
             self._found.pop(base, None)

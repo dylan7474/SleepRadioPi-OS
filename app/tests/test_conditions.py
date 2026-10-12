@@ -138,6 +138,74 @@ def test_noaas_figures_are_fetched_now_and_then_and_kept(tmp_path: Path) -> None
     assert "scales" not in sun.fetch()
 
 
+def test_as_the_dj_says_it() -> None:
+    s = conditions.summary(_found(), [], NOW)
+    assert conditions.spoken(s) == "The short wave bands. 20 metres is good, open to Europe and North America. 40 metres is fair, but only round about. Also open: 15 metres."
+    said = conditions.spoken(s, {"flux": 122.0, "k": 0.67})
+    assert said.endswith("Also open: 15 metres. The sun is middling and the earth's field is quiet.")
+    assert conditions.spoken(s, {"flux": 180.0, "k": 6.0}).endswith("The sun is busy and there's a magnetic storm.")
+    dead = conditions.summary({"ft8:10 m": {"n": 0, "t": NOW}}, [], NOW)
+    assert conditions.spoken(dead) == "The short wave bands. Nothing heard on any band just now."
+    assert conditions.spoken(conditions.summary({}, [], NOW)) is None             # nothing to go by: nothing said
+    assert "km" not in said and " m " not in said and "," not in said.replace(", open", "").replace(", but", "")      # (words a voice can say)
+
+
+class _Surveys:
+    """What the survey has found, a receiver at a time."""
+
+    def __init__(self, found: dict) -> None:
+        self.all = found
+
+    def bases(self) -> list[str]:
+        return list(self.all)
+
+    def found(self, base: str) -> dict:
+        return self.all.get(base, {})
+
+
+def test_the_dj_says_it_only_when_asked_and_once_in_its_hour(monkeypatch) -> None:
+    from datetime import datetime
+    at = lambda h, m: datetime.fromtimestamp(NOW).replace(hour=h, minute=m, second=0)
+    fresh = lambda h, m: {"ft8:20 m": {"n": 16, "km": 5516, "to": {"EU": 10, "NA": 5}, "t": at(h, m).timestamp() - 300}}
+    monkeypatch.setattr(conditions, "sun", conditions.Sun(get=lambda url: (_ for _ in ()).throw(OSError("offline"))))
+    monkeypatch.setattr(conditions, "_said", None)
+    job = _Surveys({"http://old:1": {"ft8:40 m": {"n": 3, "t": at(9, 0).timestamp() - 9000}}, "http://receiver:8075": fresh(9, 20)})
+    assert conditions.freshest(job)[0] == "http://receiver:8075"
+    monkeypatch.setattr(conditions, "EVERY_H", 0)                # not asked for: never
+    assert conditions.say_due(at(9, 20), True, False, job, []) is None
+    monkeypatch.setattr(conditions, "EVERY_H", 3)                # every three hours: at 0, 3, 6, 9...
+    assert conditions.say_due(at(9, 5), True, False, job, []) is None             # not before a quarter past (the news, the survey still going)
+    assert conditions.say_due(at(9, 20), False, False, job, []) is None           # the clock isn't to be trusted
+    assert conditions.say_due(at(9, 20), True, True, job, []) is None             # the news's quiet hours
+    words = conditions.say_due(at(9, 20), True, False, job, [])
+    assert words == "The short wave bands. 20 metres is good, open to Europe and North America."
+    assert conditions.say_due(at(9, 40), True, False, job, []) is None            # once in the hour
+    job.all["http://receiver:8075"] = fresh(10, 20)
+    assert conditions.say_due(at(10, 20), True, False, job, []) is None           # ten o'clock isn't one of its hours
+    job.all["http://receiver:8075"] = {"ft8:20 m": {"n": 16, "t": at(12, 20).timestamp() - 3 * 3600}}
+    assert conditions.say_due(at(12, 20), True, False, job, []) is None           # nothing recent to go by: nothing said...
+    job.all["http://receiver:8075"] = fresh(12, 40)
+    assert conditions.say_due(at(12, 40), True, False, job, []) is not None       # ...until there is, later in the hour
+
+
+def test_the_station_puts_it_in_a_gap_like_a_message(tmp_path: Path, monkeypatch) -> None:
+    from datetime import datetime
+    from test_offline import _station
+    st = _station(tmp_path / "st")
+    monkeypatch.setattr(conditions, "EVERY_H", 0)
+    assert st._bands_due(datetime.fromtimestamp(NOW)) is None    # not asked for
+    monkeypatch.setattr(conditions, "EVERY_H", 1)
+    asked = []
+    monkeypatch.setattr(conditions, "say_due", lambda at, clock_ok, quiet, job, heard: asked.append((clock_ok, quiet, type(heard))) or "The short wave bands. 20 metres is good.")
+    st.config.news_quiet_hours, st.config.news_quiet_start_min, st.config.news_quiet_end_min = True, 23 * 60, 6 * 60
+    noon, night = datetime.fromtimestamp(NOW).replace(hour=12, minute=20), datetime.fromtimestamp(NOW).replace(hour=2, minute=20)
+    assert st._bands_due(noon) == "The short wave bands. 20 metres is good." and asked[-1][1:] == (False, list)
+    st._bands_due(night)
+    assert asked[-1][1] is True                      # (the small hours: the news's quiet hours are its own)
+    monkeypatch.setattr(conditions, "say_due", lambda *a: (_ for _ in ()).throw(RuntimeError("boom")))
+    assert st._bands_due(noon) is None               # nothing of the bands may stop the show
+
+
 def test_conditions_from_the_web(tmp_path: Path, monkeypatch) -> None:
     conf = tmp_path / "config.toml"
     conf.write_text("{}")
@@ -156,8 +224,24 @@ def test_conditions_from_the_web(tmp_path: Path, monkeypatch) -> None:
             d = json.loads(r.read())
         assert [b["band"] for b in d["bands"]] == ["40 m", "20 m"] and d["bands"][1]["says"].startswith("20 m is good: open to Europe and North America")
         assert d["bands"][0]["by"] == "heard" and d["sun"] is None and d["home"] == "IO94" and d["says"].startswith("20 m is the busiest")
-        with urllib.request.urlopen(base + "/api/rx/conditions", timeout=5) as r:      # no receiver named: who's been heard is all there is
-            assert [b["band"] for b in json.loads(r.read())["bands"]] == ["40 m"]
+        assert d["base"] == "http://receiver:8075" and d["say_every_h"] == 0 and d["spoken"].startswith("The short wave bands. 20 metres is good, open to Europe and North America.")
+        with urllib.request.urlopen(base + "/api/rx/conditions", timeout=5) as r:      # no receiver named: the one surveyed latest
+            d = json.loads(r.read())
+        assert [b["band"] for b in d["bands"]] == ["40 m", "20 m"] and d["base"] == "http://receiver:8075"
+
+        def post(body):
+            req = urllib.request.Request(base + "/api/rx/conditions", data=json.dumps(body).encode(), method="POST")
+            try:
+                with urllib.request.urlopen(req, timeout=5) as r:
+                    return r.status, json.loads(r.read())
+            except urllib.error.HTTPError as e:
+                return e.code, json.loads(e.read() or b"{}")
+
+        monkeypatch.setattr(conditions, "EVERY_H", 0)                                  # how often the DJ says it: kept
+        for bad in ({}, {"say_every_h": 4}, {"say_every_h": True}, {"say_every_h": "1"}):
+            assert post(bad)[0] == 400 and conditions.EVERY_H == 0
+        assert post({"say_every_h": 2}) == (200, {"say_every_h": 2}) and conditions.EVERY_H == 2 and json.loads(conf.read_text())["conditions_every_h"] == 2
+        assert post({"say_every_h": 0}) == (200, {"say_every_h": 0}) and conditions.EVERY_H == 0
     finally:
         httpd.shutdown()
         httpd.server_close()
