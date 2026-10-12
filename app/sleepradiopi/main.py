@@ -812,7 +812,7 @@ def main() -> None:
     station.on_profiles = folders
     folders(60.0)
     # Calibrate, by itself: the receivers chosen for it, at night or while they're listened to (playback/calibrate.py)
-    from sleepradiopi.playback import calibrate as calibrate_mod, radio as radio_mod, receiver as receiver_mod
+    from sleepradiopi.playback import calibrate as calibrate_mod, receiver as receiver_mod
     def a_kiwi() -> str | None:               # (a KiwiSDR among the stations: FT8 on both at once is the better yardstick)
         try:
             saved = load(args.config).radio_stations
