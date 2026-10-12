@@ -19,6 +19,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
+from sleepradiopi.broadcast import away as away_mod
 from sleepradiopi.broadcast import birthdays, messages, profiles
 from sleepradiopi.broadcast import playlists as playlists_mod
 from sleepradiopi.broadcast.station import Station
@@ -615,6 +616,23 @@ def make_handler(station: Station, output: Mp3Output, speaker=None,
                 self._set_identity()
             elif path in ("/api/lamps", "/api/lamps/sweep") and lamps is not None:
                 self._set_lamps(path.endswith("sweep"))
+            elif path in ("/api/messages/away", "/api/messages/away/look"):
+                # {"url", "every_min"}: the document the messages from away are kept in (broadcast/away.py), and how
+                # often it's looked at; saved. /look: fetch it now. Either way the answer waits for the fetch.
+                try:
+                    if path.endswith("/look"):
+                        self._body()
+                    else:
+                        cfg = away_mod.validate(self._body())
+                        away_mod.remote.set(cfg)
+                        if config_file is not None:
+                            save_setting(config_file, "messages_away", cfg)
+                        log.info("messages from away: %s, every %d min", "a link" if cfg["url"] else "no link", cfg["every_min"])
+                except (ValueError, TypeError, AttributeError) as e:
+                    self._error(str(e) if isinstance(e, ValueError) else 'send {"url", "every_min"}')
+                    return
+                away_mod.remote.look()
+                self._send(json.dumps(self._messages_state()).encode(), "application/json")
             elif path == "/api/messages/hear":
                 self._hear_message()
             elif path == "/api/profiles":
@@ -1323,7 +1341,8 @@ def make_handler(station: Station, output: Mp3Output, speaker=None,
             return {**station.messages.cfg, "next": nxt.strftime("%H:%M") if nxt else None,
                     "next_day": nxt.date() != date.today() if nxt else False,
                     "due_now": bool(nxt and nxt <= datetime.now()),
-                    "clock_trusted": trusted, "can_hear": speaker is not None and station._has_voice}
+                    "clock_trusted": trusted, "can_hear": speaker is not None and station._has_voice,
+                    "away": away_mod.remote.status()}
 
         def _set_messages(self) -> None:
             """POST /api/messages {"on", "every_min", "offset_min", "start_min", "end_min",

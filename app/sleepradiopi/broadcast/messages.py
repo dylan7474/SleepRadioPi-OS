@@ -18,6 +18,10 @@ TIMED_WINDOW_MIN; its hours don't apply). Also "days" (0 Monday .. 6 Sunday),
 loses track of the days). Only when the clock can be trusted (offline, the
 day could be wrong). When two are due in one gap, one is read (a timed one
 first, else the one said longest ago) and the other waits for the next gap.
+Messages can also come from away (away.py: a document of the owner's that
+the radio fetches): set_away() gives them, marked "away"; they're said with
+the radio's own, are never saved with them, and one with no "station" is
+said on whichever station is playing.
 (Settings from before each message had its own timing: the old shared ones,
 "every_min", "start_min", "end_min", "date_first", are given to each.)
 """
@@ -164,18 +168,22 @@ class Messages:
         self._done: set[str] = set()          # "text@2026-10-01 09:07": said in that slot / at that time
         self._last: dict[str, datetime] = {}   # text -> when it was last said (who's waited longest)
         self._pending = None                  # what due() chose, for played()
+        self.away: list[dict] = []            # the ones from away (away.py), as validate() leaves a message
 
     def set(self, cfg: dict) -> None:
         self.cfg = validate(cfg)
+
+    def set_away(self, items: list[dict]) -> None:
+        self.away = [dict(m) for m in items]
 
     def active(self, today: date, station: str | None = None) -> list[dict]:
         """Today's messages of this station (whatever their times): every message
         belongs to a theme (one with none is Default's; station None -- artist radio,
         or no theme -- reads Default's)."""
         here = (station or DEFAULT).lower()
-        return [m for m in self.cfg["list"]
+        return [m for m in self.cfg["list"] + self.away
                 if not m.get("off") and (not m.get("until") or date.fromisoformat(m["until"]) >= today)
-                and (m.get("station") or DEFAULT).lower() == here
+                and ((m.get("station") or DEFAULT).lower() == here or (m.get("away") and not m.get("station")))
                 and (not m.get("days") or today.weekday() in m["days"])
                 and (not m.get("date") or m["date"] == f"{today.month:02d}-{today.day:02d}")]
 

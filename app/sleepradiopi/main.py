@@ -853,6 +853,15 @@ def main() -> None:
     except ValueError as e:
         log.warning("survey: the saved plan can't be used (%s)", e)
     survey_mod.rounds.start()
+    # Messages from away: a document of the owner's, fetched now and then, said with the radio's own (broadcast/away.py)
+    from sleepradiopi.broadcast import away as away_mod
+    try:
+        away_mod.remote.set(settings.messages_away)
+    except ValueError as e:
+        log.warning("messages from away: the saved link can't be used (%s)", e)
+    away_mod.remote.on_change = station.messages.set_away
+    away_mod.remote.keep_in(Path.home() / ".local" / "state" / "sleepradiopi" / "messages-away.json")
+    away_mod.remote.start()
     from sleepradiopi.playback import conditions as conditions_mod
     conditions_mod.sun.keep_in(Path.home() / ".cache" / "sleepradiopi" / "sun.json")      # NOAA's figures for the sun, as last had
     conditions_mod.EVERY_H = settings.conditions_every_h if settings.conditions_every_h in conditions_mod.SAY_HOURS else 0

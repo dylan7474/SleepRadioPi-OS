@@ -48,6 +48,25 @@ Actions, Sleep timer and Radio folders open:
   someone with a poor memory, *"It's Tuesday, the twenty-ninth of September.
   You're at Willow Court, and you're safe here."* A message can have a last
   day (for "coming to see you on Sunday").
+- **Messages from away** — for a radio you can't reach from home (a care
+  home's Wi-Fi lets nothing in), the messages can live in a document of
+  your own that the radio fetches: a Google Doc is the easy one, since you
+  edit it on your phone and its link never changes. Share it so that
+  *anyone with the link can view*, and paste the link into the radio's
+  Messages window (*From a document elsewhere*) before it leaves home. The
+  radio looks every half hour (or 15 minutes, an hour, 3 hours) and says
+  those messages with its own. Each paragraph is a message; notes in
+  square brackets at its start say when, for example
+  `[at 10:00 16:00] [until 2026-10-18] Dylan is coming to see you on
+  Sunday.` -- also `[every 60]`, `[from 09:00 to 18:00]`, `[days sat sun]`,
+  `[date 12-25]`, `[no date]`, `[theme Carisbrooke]`, `[off]`; a line
+  beginning with `#` is a note to yourself. A paragraph whose notes aren't
+  understood is left out and listed in the Messages window, rather than
+  said at the wrong times. What was last fetched is kept, so the radio
+  goes on saying it through a restart or a week with no internet (give a
+  dated message an `[until ...]`). The link is the secret: anyone with it
+  can read the messages, only you can change them, and nothing but
+  messages can come from it.
 - **Themes: the radio's stations** — Sleep Radio itself is the first, playing
   all your music; make more from named lists of artists, each a station of
   its own (a theme called "Carisbrooke" is *"Carisbrooke Radio"*) with its own
@@ -1032,11 +1051,9 @@ What's left to do (everything else described here is built and running):
     brackets);
   - the flat parts exported as DXF/SVG for the laser from the same OpenSCAD
     design.
-- **Messages, from further away** — the Messages (built 2026-09-29) are
-  written on the radio's own page; for a radio in a care home they'd need
-  updating from home, through a private link the radio checks or through
-  remote access, since a care home's Wi-Fi usually blocks incoming
-  connections. Maybe a recorded clip as well as the DJ's reading.
+- **Messages from away: a recorded clip** — the messages can now be kept
+  in a document the radio fetches (see *Messages from away*). Maybe a
+  recorded clip, in your own voice, as well as the DJ's reading.
 - **A glow behind the grilles** — warm-white LEDs (a 5 V COB strip)
   lighting the grille from behind, for a soft glow at night: dimmable from the
   page, fading with the sleep timer, shared with the VU meter's backlight. On

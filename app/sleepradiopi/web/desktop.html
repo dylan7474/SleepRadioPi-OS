@@ -3979,6 +3979,27 @@ function listenLine() {
 // what the Wi-Fi is doing, in a few words (offline: a radio set to work without it)
 const wifiNow = w => w.mode === "offline" ? (w.trial_until ? "Off for a ten-minute trial" : "Off: this radio works without Wi-Fi")
   : w.mode === "hotspot" ? `Its own network: ${w.hotspot.ssid}${w.visit ? " · on for a visit" : ""}` : w.ssid ? `${w.ssid} · ${w.ip}` : "Not connected";
+// Messages from away: a document of your own (a Google Doc, say) that the radio fetches now and then (broadcast/away.py)
+function awayGrp(a, act) {
+  const url = Object.assign(el("input", { type: "url", id: "away-url", placeholder: "https://docs.google.com/document/d/…", style: "width:100%" }), { value: a.url || "" });
+  const send = body => act(async () => { const r = await api("/api/messages/away", body);
+    toast(!r.away.url ? "No document: only the messages written here are said." : r.away.error ? `Saved, but ${r.away.error}.` : `Fetched: ${r.away.count} message${r.away.count === 1 ? "" : "s"} from the document.`); });
+  const when = a.t ? `Last fetched ${condAge(a.t)}: ${a.count} message${a.count === 1 ? "" : "s"}.` : a.url ? "Not fetched yet." : "";
+  const says = m => (m.times?.length ? `At ${m.times.join(", ")}` : `Every ${m.every} min, ${m.from} to ${m.to}`) + (m.days?.length ? `, ${m.days.map(d => DAYN[d].slice(0, 3)).join(" ")}` : "")
+    + (m.until ? `, until ${m.until}` : "") + (m.station ? `, on ${m.station}` : "") + (m.off ? ", off" : "");
+  return grp("From a document elsewhere",
+    help("For a radio you can't reach from home. Keep its messages in a document of your own, share it so that anyone with the link can view it, and paste the link here: the radio fetches it and says those messages with its own. A Google Doc is the easy one: edit it on your phone, and its link stays the same."),
+    srow("Link", url),
+    srow("Look", seg([[15, "15 min"], [30, "30 min"], [60, "hour"], [180, "3 hours"]], a.every_min || 30, v => send({ url: url.value.trim(), every_min: v }))),
+    line(sbtn("Save and fetch", () => send({ url: url.value.trim(), every_min: a.every_min || 30 }), "primary"),
+      a.url ? sbtn("Look now", () => act(async () => { const r = await api("/api/messages/away/look", {}); toast(r.away.error ? `Not fetched: ${r.away.error}.` : `Fetched: ${r.away.count} message${r.away.count === 1 ? "" : "s"}.`); })) : null,
+      a.url ? sbtn("Stop using it", () => { url.value = ""; send({ url: "", every_min: a.every_min || 30 }); }) : null),
+    when ? help(when) : null,
+    a.error ? el("p", { className: "shelp", id: "away-error", style: "font-weight:700", textContent: `The last look failed: ${a.error}. The messages fetched before are still said.` }) : null,
+    ...(a.wrong || []).map(w => el("p", { className: "shelp", style: "font-weight:700", textContent: `Left out: ${w}` })),
+    ...(a.list || []).map(m => el("p", { className: "note", style: "margin:2px 0", title: says(m), textContent: `“${m.text}” · ${says(m)}` })),
+    help("In the document, each paragraph is a message. Start one with notes in square brackets to say when: [at 10:00 16:00], [every 60], [from 09:00 to 18:00], [until 2026-10-18], [days sat sun], [no date], [theme Carisbrooke], [off]. A line beginning with # is a note to yourself."));
+}
 const UI = {
   tests: {
     load: async () => (await api("/api/status")).speaker,
@@ -4264,7 +4285,8 @@ const UI = {
           srow("Say the date first", sw(m.date_first, v => save({ date_first: v }), "Date first")),
           help(m.next ? `Next: ${m.next}${m.next_day ? " tomorrow" : ""}` : "")),
         grp("The notes", help(`${m.list.length} in the Messages folder. Each can be said with the others in turn (every ${m.every_min} min, in these hours), or at its own times, days and dates.`),
-          line(sbtn("Themes…", () => open(LISTS.id))), help("Messages belong to a theme: write them in its Messages folder."))];
+          line(sbtn("Themes…", () => open(LISTS.id))), help("Messages belong to a theme: write them in its Messages folder.")),
+        awayGrp(m.away || {}, act)];
     },
   },
   note: {

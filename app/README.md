@@ -906,6 +906,22 @@ The cards:
   show (not while a station, album, audiobook or podcast plays), only once
   the clock is known, and on every theme. Kept in the settings
   as `messages` (`broadcast/messages.py`).
+  **From away** (`broadcast/away.py`; the setting `messages_away`:
+  `{"url", "every_min"}`, never put in the saved-settings file): a
+  document elsewhere, fetched every 15, 30, 60 or 180 minutes by a thread
+  of its own (five minutes after a look that failed), and its messages
+  said with the radio's own -- `Messages.set_away()`; they're marked
+  `"away"`, are never saved with the radio's, and one with no `[theme]`
+  is said on whichever station is playing. `away.direct()` turns the
+  links people copy into the address of the words themselves (a Google
+  Doc's share link to its `/export?format=txt`, a Drive file, Dropbox, a
+  gist); `away.parse()` reads paragraphs and their `[notes]` (or JSON, the
+  same list as the radio's), each message checked by
+  `messages.validate()`; a web page instead of words (a link that isn't
+  shared) is refused and says so. 64 KB at most. What's fetched is kept
+  in `~/.local/state/sleepradiopi/messages-away.json`; a look that fails
+  changes nothing, an empty document means none, a new link forgets the
+  old one's at once.
 - **Volume** — the same 0–100 scale as the knob, and it follows the knob.
   **Speakers: Stereo / Mono** switches at once. **Sleep timer** (5 min to
   1½ h; on the desktop, the Sleep timer folder in Actions) runs on the radio: it fades the speakers (and the page's own stream)
@@ -1726,6 +1742,7 @@ everything but the page itself and the login needs the session cookie
 | `GET` / `POST /api/birthdays` | The list (and whose birthday it is today) / `{"birthdays": [...]}` to replace it |
 | `POST /api/birthdays/hear` | `{"name", "day", "month", "year"?}` — say that wish now |
 | `GET` / `POST /api/messages` | The messages and their times, with `next` (HH:MM) and `due_now` / the same object to replace them |
+| `POST /api/messages/away` / `/api/messages/away/look` | `{"url", "every_min"}`: the document messages from away are kept in ("" for none), saved, and fetched at once / fetch it now. Both answer as `GET /api/messages`, whose `away` is `{"url", "every_min", "count", "list", "t"?, "error"?, "wrong"?: paragraphs left out}` |
 | `POST /api/messages/hear` | `{"text"}` — the DJ says it now (with the day and date first, if that's on) |
 | `GET` / `POST /api/settings` | Download the settings file / load one (400 with `{"error"}` if it's wrong) |
 | `POST /api/power` | Shut down, or `{"restart": true}` to restart (404 unless the appliance's watcher is there) |
