@@ -2018,6 +2018,31 @@ function rigNrKey(R, k) {
       toast(to === "off" ? "Noise reduction off." : `${NR_SAYS[to]} (It takes a few seconds to learn the noise.)`, false, null, true);
     } catch (e) { rigOops(e); } }, "Noise reduction for receivers: off, 1, 2, 3 (for speech in hiss; not for music)");
 }
+// What's this? (audio/identify.py): the radio listens to what it's playing from this receiver for twelve seconds and names
+// it -- from where it is on the band, how it sounds, and what the readers make of it. The answer is the radio's sentence.
+const WHAT = { busy: false };
+function rigWhatKey(R, k) {
+  return k("What's this?", async () => {
+    const D = RXD[R.kind], t = $("toast");
+    if (WHAT.busy) return;
+    if (!(D.on(R) && rigOnRadio(R))) return toast("Play this receiver on the radio first: What's this? listens to what the radio is playing.", false, null, true);
+    WHAT.busy = true;
+    try {
+      let st = await api("/api/rx/identify", { hz: D.tuned(R) || null, mode: R.st.mode || R.st.receiving?.mode || R.mode });
+      const n = st.n;
+      while (st.n === n && (st.state === "listening" || st.state === "thinking")) {
+        toast(st.state === "listening" ? `Listening to it: ${Math.ceil(st.left_s)} s…` : "Working out what it is…", true, null, true);
+        await new Promise(r => setTimeout(r, 1000));
+        st = await api("/api/rx/identify");
+      }
+      if (st.n !== n) return;                          // (asked again from another window)
+      const msg = st.state === "done" ? st.result.says : st.error ? st.error[0].toUpperCase() + st.error.slice(1) : "It couldn't be worked out.";
+      toast(msg, true, null, true);                    // (it stays to be read: a click, or twenty seconds, puts it away)
+      t.onclick = () => { t.hidden = true; t.onclick = null; };
+      setTimeout(() => { if (t.textContent === msg) t.hidden = true; }, 20000);
+    } catch (e) { rigOops(e); } finally { WHAT.busy = false; }
+  }, "What is this signal? The radio listens for twelve seconds and names it: from where it is, how it sounds, and what the readers make of it");
+}
 // The Morse reader (audio/morse.py): the radio reads the strongest keyed tone in what a receiver is playing, an over at a
 // time. One reader, so one state for every rig window: the tape (the envelope, then the marks as read, a letter under
 // its own) and the text, fainter where a letter stood less clear of the noise. The text is a log: a line an over with
@@ -3034,7 +3059,7 @@ const RXD = {
             try { await rxSay(R.origin, "/skip", { freq: hz, on: true }); R.bands = null; toast(`The band now skips ${c.name}. (Channels… has it back.)`); } catch (e) { rigOops(e); } }), "Leave this channel out of the band"),
           k("◀", need(() => this.step(R, -1)), "One channel down"), k("▶", need(() => this.step(R, 1)), "One channel up")),
         el("div", { className: "rgrp" }, k("Channels…", need(async () => { if (this.band(R).range) return toast(`${this.band(R).name} is tuned across: it has no channels.`); const id = `rxb:${R.origin}:${this.band(R).id}`; if (!O[id]) await loadFolder(mk({ id: "rxf:" + R.origin, kind: "folder", box: "rxbands", origin: R.origin, title: `${R.o.title}: bands`, kids: [], sym: "⌁", alt: true })); open(id); }), "The band's channels as stations: drag one onto a button"),
-          k("Bands…", () => this.folder(R), "The bands as folders"), rigNameKey(R, k), rigCalKey(R, k), rigNrKey(R, k), rigCwKey(R, k), ...rigFtKeys(R, k), ...rigKbKeys(R, k), ...rigPicKeys(R, k), k("Modes…", () => { MODES.rx = R.o.id; open(PANEL.modes.id); drawDesk(); }, "Where to listen: FT8, FT4, WSPR, PSK31, teleprinter, Morse, SSTV and weather fax band by band, and a survey of what's there now"), k("Find…", () => open(PANEL.findreceiver.id), "Other people's receivers on the internet"))];
+          k("Bands…", () => this.folder(R), "The bands as folders"), rigNameKey(R, k), rigCalKey(R, k), rigNrKey(R, k), rigCwKey(R, k), ...rigFtKeys(R, k), ...rigKbKeys(R, k), ...rigPicKeys(R, k), rigWhatKey(R, k), k("Modes…", () => { MODES.rx = R.o.id; open(PANEL.modes.id); drawDesk(); }, "Where to listen: FT8, FT4, WSPR, PSK31, teleprinter, Morse, SSTV and weather fax band by band, and a survey of what's there now"), k("Find…", () => open(PANEL.findreceiver.id), "Other people's receivers on the internet"))];
     },
     lamps(R, w) { R.dom.kscan?.classList.toggle("on", !!this.band(R) && this.band(R).mode !== "wfm" && !R.st.hold); R.dom.khold?.classList.toggle("on", !!R.st?.hold); R.dom.kmon?.classList.toggle("on", !!this.monitored(R)); },
   },
@@ -3120,7 +3145,7 @@ const RXD = {
               if (have.some(o => o.url === st.url)) return toast("That one is already with your stations.");
               await api("/api/radio/stations", { stations: [...have, st] }); await loadFolder(STATIONS); toast(`Saved “${st.name}” with your stations.`); drawDesk();
             } catch (e) { rigOops(e); } }, "Keep this frequency as a station (drag it onto a button from Stations)"),
-          rigNameKey(R, k), rigNrKey(R, k), rigCwKey(R, k), ...rigFtKeys(R, k), ...rigKbKeys(R, k), ...rigPicKeys(R, k), k("Modes…", () => { MODES.rx = R.o.id; open(PANEL.modes.id); drawDesk(); }, "Where to listen: FT8, FT4, WSPR, PSK31, teleprinter, Morse, SSTV and weather fax band by band, and a survey of what's there now"), k("Find…", () => open(PANEL.findreceiver.id), "Other people's receivers on the internet"))];
+          rigNameKey(R, k), rigNrKey(R, k), rigCwKey(R, k), ...rigFtKeys(R, k), ...rigKbKeys(R, k), ...rigPicKeys(R, k), rigWhatKey(R, k), k("Modes…", () => { MODES.rx = R.o.id; open(PANEL.modes.id); drawDesk(); }, "Where to listen: FT8, FT4, WSPR, PSK31, teleprinter, Morse, SSTV and weather fax band by band, and a survey of what's there now"), k("Find…", () => open(PANEL.findreceiver.id), "Other people's receivers on the internet"))];
     },
     stepWord(R) { return R.step >= 1000 ? `${R.step / 1000} kHz` : `${R.step} Hz`; },
     lamps() {},

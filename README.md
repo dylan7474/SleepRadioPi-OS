@@ -289,6 +289,19 @@ Actions, Sleep timer and Radio folders open:
   radio holds to it.
 
   ![The rig: a short-wave receiver's window on 40 m, with its waterfall and, under it, FT8 messages being read off the air; along the bottom the keys for calibrating it, noise reduction, the Morse, FT8, FT4, PSK31 and teleprinter readers, and where to listen](docs/rig.jpg)
+- **What's this?** A key in a receiver's window that names what you're
+  hearing: the radio listens to what it's playing for twelve seconds and
+  says, in a sentence, what it most likely is and which key reads it --
+  *"Morse, about 24 words a minute. It reads: “DL1BUG …”. The CW key reads
+  it."*, *"The German weather service's teleprinter: 50 baud, the two
+  tones 450 Hz apart."*, *"FT8, most likely: 8 signals of its width on
+  FT8's frequency on 80 m."*, *"Speech, most likely: aviation weather
+  read out by Shannon. If it sounds like a duck, it's the other sideband."* It
+  goes by where the signal is (what's usually on that frequency), how it
+  sounds, and what the radio's own readers make of it, and it always says
+  how sure it is: read, likely, or a guess. Nothing but noise is said to
+  be that, with whose part of the band it is. See
+  `app/sleepradiopi/audio/identify.py`.
 - **Morse, read as text.** The *CW* key in a receiver's window has the radio
   read the Morse in what that receiver is playing: a paper tape of the dots
   and dashes with each letter under its own, and under it a log of what was

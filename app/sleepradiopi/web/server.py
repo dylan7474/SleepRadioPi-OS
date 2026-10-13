@@ -437,6 +437,10 @@ def make_handler(station: Station, output: Mp3Output, speaker=None,
                 except ValueError:
                     since = 0
                 self._send(json.dumps(keyboard_mod.reader.status(since)).encode(), "application/json")
+            elif path == "/api/rx/identify":
+                # What's this? (audio/identify.py): how the listening is going, and what it was when it's done.
+                from sleepradiopi.audio import identify as identify_mod
+                self._send(json.dumps(identify_mod.listener.status()).encode(), "application/json")
             elif path == "/api/rx/conditions":
                 # How the bands are (playback/conditions.py): from that receiver's survey (?base=) and who the FT8
                 # reader has heard in the last hour, a band at a time and in a sentence; and the sun's figures from NOAA.
@@ -1037,6 +1041,19 @@ def make_handler(station: Station, output: Mp3Output, speaker=None,
                 self._send(json.dumps({"callsign": call, "decoder": room_mod.DECODER.is_file()}).encode(), "application/json")
             elif path.startswith("/api/rx/own/"):
                 self._own_receiver(path, self.rfile.read(int(self.headers.get("Content-Length", 0) or 0)))
+            elif path == "/api/rx/identify":
+                # {"hz": where the receiver being played is tuned, "mode": "usb" | "lsb" | "am" | ...}: What's this? The
+                # radio listens to what it's playing for twelve seconds and names it (audio/identify.py): then GET it.
+                from sleepradiopi.audio import identify as identify_mod
+                try:
+                    body = self._body()
+                    if not isinstance(body, dict):
+                        raise ValueError('send {"hz": Hz, "mode": "usb"}')
+                    said = identify_mod.listener.start(body.get("hz"), body.get("mode") or "usb")
+                except (ValueError, TypeError) as e:
+                    self._error(str(e))
+                    return
+                self._send(json.dumps(said).encode(), "application/json")
             elif path == "/api/rx/tune":
                 # {"base", "freq" (Hz), "mode", "zoom", "centre" (Hz), "profile"}: retune the receiver being listened to, where
                 # it is (any of them; "base" must be the one that's on, so a stale window can't move another).

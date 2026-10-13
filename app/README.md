@@ -1491,6 +1491,34 @@ The cards:
   their own place on a band, so switching one on switches the others off
   (each of those calls answers with all three: `{"cw", "ft8",
   "keyboard"}`).
+  *What's this?* (the key in a receiver's window; `POST /api/rx/identify
+  {"hz": where it's tuned, "mode": "usb"}`, then `GET /api/rx/identify`
+  until its `"state"` is `"done"`; `audio/identify.py`): the radio listens
+  to what it's playing for twelve seconds and names it, in a sentence.
+  Three things are put together. *Where it is*: a list of what's usually
+  where -- the Morse, data and speech parts of each amateur band, FT8's,
+  FT4's, WSPR's and PSK31's own frequencies, the broadcast bands, the
+  aircraft's and the ships' bands, the time signals, the weather charts
+  and the weather teleprinters (and on VHF the airband, marine, 2 m and
+  PMR). *How it sounds*: what stands out of the noise, how wide each
+  thing is, whether it's there all the time or comes and goes, and
+  whether the whole swells and wanders about as speech does. *What the
+  readers make of it*: the readers are the judges -- it's Morse if the
+  Morse reader reads it, a teleprinter if a pair of tones frames, PSK31
+  if it says letters it's sure of, a picture if the header or the line
+  pulses are found. How sure is always said (`"sure"`): `"read"` when a
+  reader read it (with what it read), `"likely"` when it's by the place
+  and the sound (FT8, FT4 and WSPR, which keep to their own frequencies;
+  speech; a broadcast station; a time signal; a weather chart service
+  between charts), `"guess"` for what it can only describe (a block of
+  data so many Hz wide, a tone keyed any old how) and `"nothing"` for
+  noise -- when it still says whose place it is. If one of the readers'
+  keys reads it, it says which (`"key"`). Rules worked out against the
+  air, not a trained network: it runs in a second or two, in a process
+  of its own at low priority, and can say why. It listens to what the
+  *radio* is playing, so the receiver has to be on the radio (not
+  paused); an AM or FM detector gives it little to go by but speech and
+  the place.
   *Calibrate* (the key in a short-wave receiver of your own's window;
   `POST /api/rx/calibrate {"base": "http://the-receiver:8074"}`, then `GET
   /api/rx/calibrate` until it's done; with `"ppm"` and `"trim"` it sets
