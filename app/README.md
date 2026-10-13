@@ -1072,9 +1072,17 @@ The cards:
     `POST /api/rooms/monitor {"url", "name", "on"}`; `playback/monitor.py`.
   A receiver of your own's *Bands…* folder holds its bands, each a folder: the whole band at once, then its channels one by one,
   every one a station -- double-click to listen, drag onto a button to keep
-  it there. While its window is open the page asks the receiver itself (not
-  the radio) every few seconds who has the air: "On air now", "Heard 3 min
-  ago". *Tune…* listens to any frequency (narrow FM, AM or broadcast FM); *Skip it*
+  it there. While its window is open the page asks the receiver every few
+  seconds who has the air: "On air now", "Heard 3 min ago". Whatever the
+  page asks of a receiver of your own -- its bands, its waterfall, a retune
+  -- it asks *through the radio* (`GET /api/rx/own/bands?base=http://the-receiver:8074`,
+  and likewise `status`, `spectrum`; `POST` for `tune`, `hold`, `skip`,
+  `bands`: the receiver's own answer comes back as it is), never of the
+  receiver directly: so a rig works the same when the radio's page is
+  reached from away from home or over https (a tunnel, a published
+  address), where a browser couldn't reach a receiver at home. The radio
+  asks only the receivers your saved stations play from, and only those
+  things. *Tune…* listens to any frequency (narrow FM, AM or broadcast FM); *Skip it*
   leaves the channel you clicked out of its band (one that's always open).
   *New band…* makes a band of your own on the receiver: a name, where it
   starts and ends (MHz) and how far apart its channels are -- PMR 446, the

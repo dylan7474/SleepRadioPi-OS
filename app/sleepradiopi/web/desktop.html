@@ -692,8 +692,12 @@ const rxOrigin = url => { const m = /^(https?:\/\/[^/]+)\/audio\?(?:.*&)?(?:band
 const rxOrigins = stations => [...new Set(stations.map(x => rxOrigin(x.url)).filter(Boolean))];
 const rxMhz = hz => String(+(hz / 1e6).toFixed(4));
 const rxAgo = sec => sec < 90 ? `${Math.max(1, Math.round(sec))} s` : sec < 5400 ? `${Math.round(sec / 60)} min` : `${Math.round(sec / 3600)} h`;
-async function rxGet(origin, path) {              // (asked of the receiver itself, not through the radio)
-  const r = await fetch(origin + path, { cache: "no-store" });
+// A receiver of your own is asked through the radio (/api/rx/own/...), never by the page itself: away from home, or with
+// the radio's page on https, a browser can't reach a receiver at home (and at home it's the same answer).
+const rxVia = (origin, path) => { const [what, q] = path.split("?"); return `/api/rx/own${what}?base=${encodeURIComponent(origin)}${q ? "&" + q : ""}`; };
+async function rxGet(origin, path) {              // (asked of the receiver, through the radio)
+  const r = await fetch(rxVia(origin, path), { cache: "no-store" });
+  if (r.status === 401) { showLogin(); throw new Error("the radio wants its password"); }
   if (!r.ok) throw new Error(`the receiver said ${r.status}`);
   return r.json();
 }
@@ -1993,7 +1997,8 @@ const KIWI_BANDS = [["160 m", 1810, 2000, 1900, "lsb"], ["80 m", 3500, 3800, 370
 // what the filter passes, about the frequency shown (in Morse that is the signal's own: the radio sets the receiver below it)
 const KIWI_PASS = { lsb: [-2700, -300], usb: [300, 2700], am: [-4900, 4900], cw: [-200, 200], nbfm: [-6000, 6000] };
 async function rxSay(origin, path, body) {          // (said to a receiver of your own; its "error" is the reason)
-  const r = await fetch(origin + path, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+  const r = await fetch(rxVia(origin, path), { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+  if (r.status === 401) { showLogin(); throw new Error("the radio wants its password"); }
   const d = await r.json().catch(() => ({}));
   if (!r.ok) throw new Error(d.error || `the receiver said ${r.status}`);
   return d;
@@ -3513,8 +3518,8 @@ function folderView(o, box, win) {
     const origin = o.origin;
     tools.append(T("Tune…", () => { win.naming = !win.naming; win.banding = false; drawDesk(); }));
     if (o.box === "rxbands") tools.append(T("◂ Rig", () => open("rx:" + origin), "primary"), T("New band…", () => { win.banding = !win.banding; win.naming = false; drawDesk(); }), T("Find a receiver", () => open(PANEL.findreceiver.id)));
-    const rxPost = async (path, body) => {             // (said to the receiver itself; its "error" is the reason)
-      const r = await fetch(origin + path, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+    const rxPost = async (path, body) => {             // (said to the receiver, through the radio; its "error" is the reason)
+      const r = await fetch(rxVia(origin, path), { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
       const d = await r.json().catch(() => ({}));
       if (!r.ok) throw new Error(d.error || `the receiver said ${r.status}`);
       return d;

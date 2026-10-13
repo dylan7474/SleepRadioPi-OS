@@ -12,12 +12,15 @@ import logging
 from http.cookies import SimpleCookie
 import os
 import queue
+import re
 import threading
 import time
+import urllib.error
+import urllib.request
 from datetime import date, datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from urllib.parse import parse_qs, urlparse
+from urllib.parse import parse_qs, urlencode, urlparse
 
 from sleepradiopi.broadcast import away as away_mod
 from sleepradiopi.broadcast import birthdays, messages, profiles
@@ -51,6 +54,10 @@ LAND = (Path(__file__).parent / "land.json").read_bytes()
 KEY_HELD_MAX_S = 30  # a page's button held longer than this is let go (a lost "up")
 IDLE_CLOSE_S = 30  # close a stream connection that has had no audio for this long
 MAX_SETTINGS_BYTES = 512 * 1024   # room for a long list of internet radio stations
+# A receiver of your own, asked through the radio (/api/rx/own/...): whose it is (the address a saved station plays
+# from) and what may be asked of one -- what the page asks, no more (receiver/sleepradio_receiver.py answers it).
+OWN_RX = re.compile(r"(https?://[^/\s]+)/audio\?(?:.*&)?(?:band|freq)=")
+OWN_RX_ASKS = {"GET": ("status", "bands", "spectrum"), "POST": ("skip", "tune", "hold", "bands")}
 # Set where something restarts the station when it exits (init's respawn on the
 # appliance image, systemd's Restart= on Raspberry Pi OS). Without it, e.g. on
 # a desktop, loaded settings that need a restart wait for the next start.
@@ -459,6 +466,8 @@ def make_handler(station: Station, output: Mp3Output, speaker=None,
                 # Who the FT8 / FT4 reader has heard, a band at a time, the latest first (since the radio started).
                 from sleepradiopi.audio import ft8 as ft8_mod
                 self._send(json.dumps(ft8_mod.reader.heard()).encode(), "application/json")
+            elif path.startswith("/api/rx/own/"):
+                self._own_receiver(path)
             elif path == "/api/rx":
                 # The rig on the desktop: the receiver being listened to (a KiwiSDR), where it's tuned and
                 # its waterfall since row ?since=N. {"on": false} when the radio is playing something else.
@@ -1026,6 +1035,8 @@ def make_handler(station: Station, output: Mp3Output, speaker=None,
                 if config_file is not None:
                     save_setting(config_file, "callsign", call or None)
                 self._send(json.dumps({"callsign": call, "decoder": room_mod.DECODER.is_file()}).encode(), "application/json")
+            elif path.startswith("/api/rx/own/"):
+                self._own_receiver(path, self.rfile.read(int(self.headers.get("Content-Length", 0) or 0)))
             elif path == "/api/rx/tune":
                 # {"base", "freq" (Hz), "mode", "zoom", "centre" (Hz), "profile"}: retune the receiver being listened to, where
                 # it is (any of them; "base" must be the one that's on, so a stale window can't move another).
@@ -1655,6 +1666,42 @@ def make_handler(station: Station, output: Mp3Output, speaker=None,
             """The names given to receivers on the desktop: {its address as the desktop has it: name}."""
             names = load_settings(config_file).receiver_names if config_file is not None else {}
             return {str(k): str(v) for k, v in names.items()} if isinstance(names, dict) else {}
+
+        def _own_receiver(self, path: str, body: bytes | None = None) -> None:
+            """/api/rx/own/WHAT?base=http://the-receiver:8074 (and whatever else WHAT takes): asked of that receiver
+            of your own by the radio, its answer passed back as it came. The page asks only the radio, so a rig
+            works wherever the radio's page is reached from -- away from home, or over https, where a browser can't
+            ask a receiver at home itself. Only the receivers the saved stations play from, and only what the
+            page asks of one: the radio fetches nothing else for anybody."""
+            what = path[len("/api/rx/own/"):]
+            query = parse_qs(urlparse(self.path).query, keep_blank_values=True)
+            base = query.pop("base", [""])[0].rstrip("/")
+            own = {m.group(1) for m in (OWN_RX.match(str(s.get("url", ""))) for s in self._radio_stations()) if m}
+            if what not in OWN_RX_ASKS["GET" if body is None else "POST"]:
+                self._error("that isn't asked of a receiver")
+                return
+            if base not in own:
+                self._error("that isn't a receiver of your own (a saved station makes it one)")
+                return
+            req = urllib.request.Request(f"{base}/{what}" + (f"?{urlencode(query, doseq=True)}" if query else ""), data=body,
+                                         headers={"Content-Type": "application/json"} if body is not None else {})
+            try:
+                try:
+                    with urllib.request.urlopen(req, timeout=8 if body is None else 15) as r:
+                        code, said = r.status, r.read()
+                except urllib.error.HTTPError as e:        # (its own no, and its reason: passed back as they are)
+                    code, said = e.code, e.read()
+            except (OSError, ValueError) as e:
+                code, said = 502, json.dumps({"error": f"the receiver isn't answering ({str(getattr(e, 'reason', e))[:60]})"}).encode()
+            self.send_response(code)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(said)))
+            self.send_header("Cache-Control", "no-store")
+            self.end_headers()
+            try:
+                self.wfile.write(said)
+            except (BrokenPipeError, ConnectionResetError):
+                pass  # the browser went away mid-reply; nothing to do
 
         def _radio_stations(self) -> list[dict]:
             saved = load_settings(config_file).radio_stations if config_file is not None else None
