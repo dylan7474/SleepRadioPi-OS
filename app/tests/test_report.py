@@ -249,11 +249,44 @@ def test_reporting_from_the_web(tmp_path: Path, monkeypatch) -> None:
         for bad in ("14074000", True, 5, 9e9):
             assert call("/api/rx/ft8", {"on": True, "band": "20 m", "dial": bad})[0] == 400
         assert call("/api/rx/ft8", {"on": True, "band": "20 m", "dial": 14074000, "own": True})[0] == 200
-        assert call("/api/rx/ft8", {"on": True, "mode": "ft4"})[0] == 200 and ft8.reader.dial is None         # another mode: where it was tuned no longer holds
+        assert call("/api/rx/ft8", {"on": True, "mode": "ft4"})[0] == 200 and ft8.reader.dial == 14074000     # another mode: where it's tuned stays (/api/rx/where says it)
+        assert call("/api/rx/where", {"band": "20 m", "dial": 14080000, "sideband": "usb"})[0] == 200 and (ft8.reader.dial, ft8.reader.own) == (14080000, None)
         code, st = call("/api/rx/report", {"on": False})
         assert code == 200 and st["on"] is False and json.loads(conf.read_text())["report_heard"] is False
     finally:
         report.reporter.switch(False)
         ft8.reader.switch(False)
-        ft8.reader.playing, ft8.reader.mode, ft8.reader.band = None, "ft8", None       # (as it began, for the tests after)
+        ft8.reader.playing, ft8.reader.mode, ft8.reader.band, ft8.reader.dial, ft8.reader.own = None, "ft8", None, None, None       # (as it began, for the tests after)
         httpd.shutdown()
+
+
+def test_psk_rtty_and_morse_are_reported_too() -> None:
+    r, clock, sent, posted = _reporter()
+    r.spot("psk31", "EA1ABC", 14_070_900, 12.0, None, T0)                  # off: nothing kept
+    assert r.status()["waiting"] == 0
+    _on(r)
+    r.spot("psk31", "EA1ABC", 14_070_900, 12.0, "IN83", T0)
+    r.spot("cw", "DL1ABC", 14_025_600, None, None, T0)                     # (no strength: 0)
+    r.spot("rtty", "G4XYZ", 14_085_500, 9.0, None, T0)
+    r.spot("wspr", "K1ABC", 14_097_100, -20.0, None, T0)                   # WSPR goes another way (heard(): WSPRnet)
+    r.spot("olivia", "K1ABC", 14_072_000, 3.0, None, T0)
+    assert r.status()["waiting"] == 3
+    clock.at = T0 + report.SEND_EVERY_S + report.JITTER_S
+    r.step()
+    assert len(sent) == 1 and all(x in sent[0] for x in (b"\x06EA1ABC", b"\x05PSK31\x04IN83", b"\x06DL1ABC", b"\x02CW", b"\x05G4XYZ", b"\x04RTTY"))
+    assert struct.pack("!I", 14_070_900) + b"\x0c\x05PSK31" in sent[0]          # where it was on the air, and how strong
+
+
+def test_a_believed_station_is_reported_when_whats_playing_may_be() -> None:
+    from sleepradiopi.audio import heard
+    s, spots = heard.Store(), []
+    s.where = {"band": "20 m", "dial": 14_069_000, "sideband": "usb"}
+    s.report = lambda *a: spots.append(a)
+    t = heard.Text("psk31", s)
+    t.take(1, "cq de ea1abc k cq de ea1abc k ", 1900.0, 12.0)            # believed, but not to be reported (a receiver on the internet, say)
+    assert s.get("20 m", "EA1ABC", "psk31") and spots == []
+    s.may_report = lambda: True
+    t.take(1, "de ea1abc k ", 1900.0, 13.0)
+    assert spots == [("psk31", "EA1ABC", 14_070_900, 13.0, None, spots[0][5])]
+    t.take(2, "de g4xyz ", 1300.0)                                          # read once: not yet believed, not reported
+    assert len(spots) == 1

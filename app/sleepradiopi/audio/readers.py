@@ -12,7 +12,9 @@ from __future__ import annotations
 import logging
 from typing import Callable
 
-from sleepradiopi.audio import ft8, keyboard, morse, pictures
+from urllib.parse import parse_qs, urlparse
+
+from sleepradiopi.audio import ft8, heard, keyboard, morse, pictures
 
 log = logging.getLogger(__name__)
 
@@ -29,6 +31,30 @@ def state() -> dict | None:
     if pictures.reader.on:
         return {"reader": "pictures", "mode": pictures.reader.mode}
     return None
+
+
+def place_from(source, playing: Callable[[], str | None] | None = None, centre: int = 700) -> dict | None:
+    """Where the receiver is, from what's playing -- a receiver of your own tuned from its window is kept as
+    .../audio?freq=MHz&mode=.. (Station.retuned) -- so that, after a restart, the readers know the band (the heard
+    list) and FT8 and the others may report, before any page has said (POST /api/rx/where says it from then on).
+    -> the place told, or None (not a receiver of your own at a frequency)."""
+    from sleepradiopi.audio import identify
+    url = str((source or {}).get("url") or "")
+    at = urlparse(url)
+    q = parse_qs(at.query)
+    if not at.path.endswith("/audio") or "freq" not in q or at.scheme not in ("http", "https"):
+        return None
+    try:
+        dial = int(round(float(q["freq"][0]) * 1e6))
+    except ValueError:
+        return None
+    side = (q.get("mode") or [None])[0]
+    where = {"band": identify.ham_band(dial), "dial": dial, "sideband": side, "centre": centre if side == "cw" else 0}
+    heard.store.where = where
+    if playing is not None:
+        ft8.reader.playing = playing
+    ft8.reader.place(where["band"], dial, f"{at.scheme}://{at.netloc}")
+    return where
 
 
 def restore(saved, playing: Callable[[], str | None] | None = None) -> str | None:

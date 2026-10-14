@@ -520,9 +520,7 @@ class Live(Reader):
             if on == self.on and mode == self.mode:
                 return
             self._stop.set()
-            with self._lock:
-                if band is None:                     # (another mode, or off: where it was tuned no longer holds)
-                    self.dial, self.own = None, None
+            with self._lock:                         # (where the receiver is stays: the page says it with /api/rx/where, for every reader)
                 self.on, self.mode = on, mode
                 self._left = np.zeros(0, np.float32)
                 self._forget_sound()

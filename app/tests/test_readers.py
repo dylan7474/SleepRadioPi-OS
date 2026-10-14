@@ -68,3 +68,17 @@ def test_a_receiver_tuned_while_playing_keeps_where() -> None:
         assert not st.retuned("http://rx:8075", freq, mode)
     for other in (None, {"kind": "album", "folder": "x"}, {"kind": "radio", "name": "BBC", "url": "http://bbc.example/live"}):
         assert not _station(other)[0].retuned("http://rx:8075", 18_100_000, "usb")
+
+
+def test_where_the_receiver_is_after_a_restart(monkeypatch) -> None:
+    from sleepradiopi.audio import ft8, heard
+    monkeypatch.setattr(heard, "store", heard.Store())
+    monkeypatch.setattr(ft8, "reader", ft8.Reader())
+    playing = lambda: "http://rx:8075/audio?freq=18.096400&mode=usb"
+    assert readers.place_from({"kind": "radio", "url": "http://rx:8075/audio?freq=18.096400&mode=usb"}, playing) == \
+        {"band": "17 m", "dial": 18_096_400, "sideband": "usb", "centre": 0}
+    assert (ft8.reader.band, ft8.reader.dial, ft8.reader.own, ft8.reader.playing) == ("17 m", 18_096_400, "http://rx:8075", playing)
+    assert heard.store.where["band"] == "17 m"
+    assert readers.place_from({"url": "http://rx:8075/audio?freq=7.030000&mode=cw"})["centre"] == 700
+    for other in (None, {"kind": "album"}, {"url": "http://rx:8075/audio?band=60m"}, {"url": "http://bbc.example/live?freq=x"}):
+        assert readers.place_from(other) is None

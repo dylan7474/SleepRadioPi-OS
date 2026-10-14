@@ -80,6 +80,14 @@ _AIR = ((2850, 3025), (3400, 3500), (4650, 4700), (5450, 5680), (6525, 6685), (8
 _SEA = ((4063, 4438), (6200, 6525), (8195, 8815), (12230, 13200), (16360, 17410), (22000, 22855))
 
 
+def ham_band(hz) -> str | None:
+    """The amateur band a frequency (Hz) is in, named as the readers name them ("40 m"), or None."""
+    if not isinstance(hz, (int, float)) or isinstance(hz, bool):
+        return None
+    khz = hz / _K
+    return next((b for b, lo, *_, hi in _HAM if lo <= khz <= hi), "60 m" if 5250 <= khz <= 5450 else "2 m" if 144000 <= khz <= 146000 else None)
+
+
 def _table() -> list[tuple[float, float, str, str]]:
     t: list[tuple[float, float, str, str]] = []
     add = lambda lo, hi, kind, name: t.append((float(round(lo * _K)), float(round(hi * _K)), kind, name))

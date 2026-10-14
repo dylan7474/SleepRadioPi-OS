@@ -70,6 +70,8 @@ class Store:
         self._lock = threading.Lock()
         self._heard: dict[tuple[str | None, str, str], dict] = {}      # (band, call, family) -> the station
         self.where: dict = {}                        # what the page says of the receiver the text readers hear: {"band", "dial", "sideband", "centre"}
+        self.report: Callable | None = None          # Text's stations go on to here (audio/report.py: spot(mode, call, hz, snr, grid, t))...
+        self.may_report: Callable[[], bool] = lambda: False     # ...when this says what's playing may be reported (main.py joins them up)
         self._file: Path | None = None
         self._changed = False
         self._saved = 0.0
@@ -208,13 +210,19 @@ class Text:
                     continue
                 del self._seen[(band, call)]
             cq = False
-            for w in reversed(whole[:m.start()].split()[-6:]):
+            for w in reversed(whole[:m.start()].split()[-6:]):     # (calling CQ if CQ comes just before the DE)
                 if w == "CQ":
                     cq = True
                     break
                 if w in _ENDS or CALL.match(w):
                     break
-            out.append(self.store.add(mode or self.mode, band, call, now, snr, None, cq, on_air(where, pitch)))
+            h = self.store.add(mode or self.mode, band, call, now, snr, None, cq, on_air(where, pitch))
+            out.append(h)
+            if self.store.report is not None and h.get("hz") and self.store.may_report():
+                try:
+                    self.store.report(mode or self.mode, call, h["hz"], snr, h.get("grid"), now)
+                except Exception:                    # (reporting going wrong mustn't stop the reading)
+                    log.exception("heard: reporting %s failed", call)
         for m in _LOC.finditer(whole):
             if m.end(1) >= new_from and self._last.get(signal):
                 g = m.group(1)

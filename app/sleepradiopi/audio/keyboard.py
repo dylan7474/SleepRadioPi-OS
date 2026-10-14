@@ -153,7 +153,9 @@ class Reader:
         upto = end - MARGIN_S
         self._tracks = [t for t in self._tracks if end - t["last"] < TRACK_S]
         pitches = [(t["hz"], t) for t in self._tracks]
-        for hz, _ in psk.find(x, RATE, most=PSK_MOST * 2):
+        humps = psk.find(x, RATE, most=PSK_MOST * 2)
+        strength = lambda hz: next((round(db, 1) for h, db in humps if abs(h - hz) < psk.APART * 0.75), None)     # (dB over the noise)
+        for hz, _ in humps:
             if all(abs(hz - p) > psk.APART * 0.75 for p, _ in pitches) and len(pitches) < PSK_MOST * 2:
                 pitches.append((hz, None))
         pieces, seen = [], []
@@ -181,9 +183,12 @@ class Reader:
             seen.append(r["pitch"])
             if r["chars"]:
                 track.update(hz=r["pitch"], eye=r["eye"])
+            if strength(track["hz"]) is not None:
+                track["db"] = strength(track["hz"])
             if chars:
                 track.update(done=chars[-1][1], last=end)
                 pieces.append({"hz": round(track["hz"]), "baud": psk.NAMES[track["baud"]], **({"qpsk": True} if track.get("qpsk") else {}),
+                               **({"db": track["db"]} if track.get("db") is not None else {}),
                                "t0": round(chars[0][1], 2), "t1": round(chars[-1][1], 2), "text": "".join(c for c, _ in chars)})
             track["done"] = max(track["done"], t0)   # (what has gone from the window is done with)
         return pieces, [{"hz": round(t["hz"]), "baud": psk.NAMES[t["baud"]], "eye": round(t["eye"], 2), **({"qpsk": True} if t.get("qpsk") else {})}
@@ -198,22 +203,27 @@ class Reader:
             at, fails = self._tried.get(key, (0.0, 0))
             return fails > 0 and end - at < min(RTTY_AGAIN_MOST_S, RTTY_AGAIN_S * 2 ** (fails - 1))
         pieces = []
+        pairs = rtty.find_all(x, RATE, most=RTTY_MOST * 2)
 
         def said(s: dict, r: dict) -> None:          # what's new from a signal, passed on
+            db = next((db for low, shift, db in pairs if abs(low - s["low"]) < RTTY_SAME_HZ and abs(shift - s["shift"]) < RTTY_SAME_HZ), None)
+            if db is not None:
+                s["db"] = round(db, 1)                # (dB over the noise: the weaker tone's)
             codes = [(c, t0 + when, sure) for c, when, sure in r["codes"] if s["done"] + AGAIN_S < t0 + when <= upto]
             if codes:
                 chars, s["figs"] = rtty.text(codes, s["figs"])
                 s.update(done=codes[-1][1], last=end)
                 text = "".join(c for c, _, _ in chars).replace("\r", "")
                 if text:
-                    pieces.append({"hz": round(s["low"] + s["shift"] / 2), "t0": round(codes[0][1], 2), "t1": round(codes[-1][1], 2), "text": text})
+                    pieces.append({"hz": round(s["low"] + s["shift"] / 2), "t0": round(codes[0][1], 2), "t1": round(codes[-1][1], 2), "text": text,
+                                   **({"db": s["db"]} if s.get("db") is not None else {})})
                 s["level"] += 0.3 * (r["level"] - s["level"])      # (how strong it is, followed: a fade is, a stop isn't)
             s["done"], s["framed"] = max(s["done"], t0), r["framed"]
 
         for s in self._rttys:                        # the ones being read: on from where they were
             said(s, rtty.read(x, RATE, s["low"], s["shift"], s["baud"], s["mark_high"], s["level"]))
         tries = 0                                    # ...and a new one, if there's a pair of tones that isn't one of them
-        for low, shift, _ in rtty.find_all(x, RATE, most=RTTY_MOST * 2):
+        for low, shift, _ in pairs:
             key = (round(low / RTTY_SAME_HZ), round(shift))
             if tries >= RTTY_TRY:
                 break
@@ -332,7 +342,7 @@ class Remote:
                     heard_mod.store.tick()
                     for p in st["pieces"]:          # (a signal at a time: its pitch, to the nearest 20 Hz, tells it)
                         mode = "rtty" if self.mode == "rtty" else "qpsk31" if p.get("qpsk") else "psk63" if p.get("baud") == 63 else "psk31"
-                        self._calls.take((mode, round(p["hz"] / 20)), p["text"], p["hz"], mode=mode)
+                        self._calls.take((mode, round(p["hz"] / 20)), p["text"], p["hz"], p.get("db"), mode=mode)
         except (EOFError, OSError):
             log.error("keyboard: the reading process has gone (exit code %s)", proc.exitcode)
             with self._lock:

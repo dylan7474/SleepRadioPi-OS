@@ -1273,14 +1273,25 @@ The cards:
   A line naming the owner's callsign is amber in every panel. The band
   conditions still go by FT8, FT4 and WSPR only.
   *Reporting what's heard* (the **Report** key; `GET /api/rx/report`, `POST
-  /api/rx/report {"on": true | false}`, the setting `report_heard`): FT8 and
-  FT4 go to PSK Reporter (UDP, IPFIX, to report.pskreporter.info:4739) and
-  WSPR spots to WSPRnet (a web request each), as heard by the owner's
-  callsign at the radio's locator; it can't be switched on without both.
-  Only a receiver of the owner's own is reported: the page sends `"dial"`
-  (Hz) and `"own": true` with the band, the radio notes the address of
-  what it's playing then, and nothing is passed on once it's playing
-  something else. PSK Reporter's rules are kept: a datagram every five
+  /api/rx/report {"on": true | false}`, the setting `report_heard`): FT8,
+  FT4, PSK31/PSK63/QPSK31, RTTY and Morse go to PSK Reporter (UDP, IPFIX,
+  to report.pskreporter.info:4739) and WSPR spots to WSPRnet (a web request
+  each), as heard by the owner's callsign at the radio's locator; it can't
+  be switched on without both. FT8, FT4 and WSPR are handed over by their
+  reader a slot at a time (`Reporter.heard`); PSK, RTTY and Morse by the
+  heard list as each station is believed or heard again (`Reporter.spot`,
+  from `heard.Text`), with the reader's own strength figure (dB over the
+  noise beside the signal: a rough guide, as FT8's is). Only a receiver of
+  the owner's own is reported: the page says where it is with `POST
+  /api/rx/where` (`"own": true`), the radio notes the address of what it's
+  playing then, and nothing is passed on once it's playing something else
+  or while a survey or calibration has it (`ft8.Reader.reports()`, which
+  every mode goes by). After a restart the radio knows where the receiver
+  is from what it's playing (`readers.place_from`: the frequency kept by
+  `Station.retuned`), before a page says.
+  *Your station* (Settings, This radio): the callsign (the same one rooms
+  are joined under), the locator and Report on/off in one place; every
+  reader's panel has the same Locator and Report keys (`stationKeys`). PSK Reporter's rules are kept: a datagram every five
   minutes and a bit (not on the clock), a station on a band once in half
   an hour, the descriptors with the first three datagrams and then hourly.
   `GET` says how it's doing: `sent`, `waiting`, `last`, and `now` (what's

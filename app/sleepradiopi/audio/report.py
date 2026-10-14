@@ -3,11 +3,15 @@
 Two websites collect who heard whom from receivers all over the world and
 draw it on a map, so that a station can see where its signal is getting to:
 
-  * pskreporter.info takes FT8 and FT4 (and much else): "M0ABC in IO94
-    heard K1ABC on 14.0751 MHz at -12 dB".
+  * pskreporter.info takes FT8 and FT4, PSK31, RTTY and Morse (and much
+    else): "M0ABC in IO94 heard K1ABC on 14.0751 MHz at -12 dB".
   * wsprnet.org takes WSPR beacons, with their power and drift as well.
 
-This sends them what the radio's reader (audio/ft8.py) reads. It gives the
+This sends them what the radio's readers read: FT8, FT4 and WSPR from
+audio/ft8.py (heard()), PSK31, RTTY and Morse from the list of who's been
+heard (audio/heard.py: spot(), a station once its call has been read
+twice). The strength is each reader's own figure in dB (FT8's in 2.5 kHz,
+the others' over the noise beside the signal): a rough guide either way. It gives the
 owner's callsign and locator to a public website, so it is OFF until it's
 switched on, and can't be switched on until both are set.
 
@@ -63,7 +67,7 @@ WSPR_URL = "http://wsprnet.org/post"
 WSPR_WAITING_MOST = 200
 WSPR_TIMEOUT_S = 20.0
 TICK_S = 5.0
-MODE_NAMES = {"ft8": "FT8", "ft4": "FT4", "wspr": "WSPR"}
+MODE_NAMES = {"ft8": "FT8", "ft4": "FT4", "wspr": "WSPR", "psk31": "PSK31", "psk63": "PSK63", "qpsk31": "QPSK31", "rtty": "RTTY", "cw": "CW"}
 
 SOFTWARE = "Sleep Radio"             # main.py adds the version
 
@@ -177,11 +181,23 @@ class Reporter:
                         self._wspr.append({"call": call, "grid": m["grid"], "dial": int(dial), "hz": hz, "snr": m["snr"], "dt": m.get("dt", 0.0),
                                            "drift": m.get("drift", 0), "dbm": m["dbm"], "t": t0})
                     continue
-                key = (call, hz // 1_000_000)
-                if now - self._sent_at.get(key, 0.0) < AGAIN_AFTER_S or (key not in self._waiting and len(self._waiting) >= WAITING_MOST):
-                    continue
-                had = self._waiting.get(key)
-                self._waiting[key] = {"call": call, "hz": hz, "snr": m["snr"], "mode": mode, "grid": m.get("grid") or (had or {}).get("grid") or "", "t": t0}
+                self._queue(now, mode, call, hz, m["snr"], m.get("grid"), t0)
+
+    def spot(self, mode: str, call: str, hz: int, snr: float | None, grid: str | None, t: float) -> None:
+        """One station heard by another reader (PSK31, RTTY, Morse: audio/heard.py), on the air at hz."""
+        if not self.on or mode not in MODE_NAMES or mode == "wspr" or not call or not hz:
+            return
+        now = self._clock()
+        with self._lock:
+            self._queue(now, mode, call, int(hz), 0.0 if snr is None else snr, grid, t)
+
+    def _queue(self, now: float, mode: str, call: str, hz: int, snr: float, grid: str | None, t: float) -> None:
+        """A spot waiting for the next datagram, unless that station on that band went lately (the lock is held)."""
+        key = (call, hz // 1_000_000)
+        if now - self._sent_at.get(key, 0.0) < AGAIN_AFTER_S or (key not in self._waiting and len(self._waiting) >= WAITING_MOST):
+            return
+        had = self._waiting.get(key)
+        self._waiting[key] = {"call": call, "hz": hz, "snr": snr, "mode": mode, "grid": grid or (had or {}).get("grid") or "", "t": t}
 
     # --- the switch, and how it's doing ------------------------------------------------------
 

@@ -648,7 +648,10 @@ class Reader:
                 chars = []                           # (a strong signal's clicks and skirts, read again a little way off)
             if chars:
                 self._n += 1
+                lit = env[int(s0 * er):max(int(s0 * er) + 1, int(s1 * er))]       # (how strong: the over's keyed level over the noise, dB)
+                db = round(20 * float(np.log10(max(float(np.percentile(lit, 90)), 1e-9) / noise[0])), 1) if len(lit) else None
                 over = {"n": self._n, "t0": round(t0 + (marks[0][0] if marks else 0), 3), "t1": round(t0 + (marks[-1][1] if marks else 0), 3),
+                        **({"db": db} if db is not None else {}),
                         "pitch": round(r["pitch"]), "wpm": round(r["wpm"], 1), "quality": round(r["quality"], 2),
                         "chars": [[c, round(t0 + at, 3), round(conf, 2)] for c, at, conf in chars],
                         "marks": [[round(t0 + m0, 3), round(t0 + m1, 3)] for m0, m1 in marks]}
@@ -781,7 +784,7 @@ class Remote:
                         self._overs.extend(st["overs"])
                     heard_mod.store.tick()
                     for o in st["overs"]:           # (an over is whole: a space after it; a signal is its pitch, to the nearest 30 Hz)
-                        self._calls.take(round(o["pitch"] / 30), "".join(c[0] for c in o["chars"]) + " ", o["pitch"])
+                        self._calls.take(round(o["pitch"] / 30), "".join(c[0] for c in o["chars"]) + " ", o["pitch"], o.get("db"))
         except (EOFError, OSError):
             log.error("morse: the reading process has gone (exit code %s)", proc.exitcode)
             with self._lock:

@@ -2069,6 +2069,7 @@ async function cwPoll(R) {
     if (st.overs.length && st.overs[0].n <= CW.since) CW.overs = [];              // (the reader began again)
     for (const o of st.overs) { CW.overs.push(o); CW.since = o.n; cwLog(o, st, R); }
     if (st.overs.length || HEARD.view.cw !== "list") await heardPoll();
+    await stationPoll();
     if (!st.overs.length && CW.overs.length && st.at < CW.overs[CW.overs.length - 1].t0) Object.assign(CW, { since: 0, overs: [] });
     CW.overs = CW.overs.slice(-30); CW.st = st; CW.got = Date.now();
     const lead = st.at - CW.got / 1000;
@@ -2185,7 +2186,7 @@ function cwDraw(R) {
   if (!on) return;
   const st = CW.st, here = rigOnRadio(R);
   d.cwsays.textContent = !here ? "" : st?.pitch ? `${st.pitch} Hz${st.wpm ? ` · ${Math.round(st.wpm)} wpm` : ""}${st.signals?.length > 1 ? ` · ${st.signals.length} signals followed` : ""}` : "no keyed tone";
-  heardWhere(R);
+  heardWhere(R); stationDraw(R);
   // who's been heard on this band (the radio's list: a call after DE, read twice): a key each, the newest first; a click goes there
   const chips = here && HEARD.view.cw === "list" ? heardList("cw", heardBand(R, "cw"), true).slice(0, 14) : [], sig = chips.map(h => `${h.call}:${h.hz}:${h.count}`).join();
   d.cwheard.hidden = !chips.length;
@@ -2245,6 +2246,63 @@ function heardWhere(R) {                            // the radio told where the 
   const w = { band: hamBand(hz), dial: hz ? Math.round(hz) : null, sideband: side || null, centre: side === "cw" ? (CW_PITCH[R.kind] || 700) : 0, own: R.kind === "own" }, sig = JSON.stringify(w);
   if (sig !== HEARD.told) { HEARD.told = sig; api("/api/rx/where", w).catch(() => { HEARD.told = ""; }); }
 }
+// Your station: your callsign, your locator and whether what you hear is reported (Settings, This radio, has all three).
+// The locator and Report keys are in every reader's panel too -- the same keys, kept the same by stationDraw.
+const STATION = { rep: null, repAt: 0 };
+const stationHome = () => HEARD.home || STATION.rep?.locator || FT.st?.home || null;
+async function stationPoll(now) {
+  if (!now && Date.now() - STATION.repAt < 15000) return;
+  STATION.repAt = Date.now();
+  try { STATION.rep = await api("/api/rx/report"); } catch (e) { /* the next one will do */ }
+}
+const stationRepSays = r => !r ? "" : !r.on ? "Not reporting." : [r.now ? "Reporting what this receiver hears." : "Reporting is on, but not for this: only a receiver of your own, that the radio is playing, is reported.",
+  `Sent so far: ${r.sent.psk} to PSK Reporter, ${r.sent.wspr} to WSPRnet.`, r.waiting ? `${r.waiting} waiting${r.next_s != null ? `, the next in ${Math.ceil(r.next_s / 60)} min` : ""}.` : "",
+  r.last?.error ? `The last try failed: ${r.last.error}` : ""].filter(Boolean).join(" ");
+const STATION_REPORT_ASK = r => `Report what this radio hears? FT8, FT4, PSK, RTTY and Morse stations go to pskreporter.info and WSPR beacons to wsprnet.org, as heard by ${r.callsign} in ${r.locator}: both are public websites, and your callsign and locator appear on their maps. Only a receiver of your own is reported, never one on the internet, and a PSK, RTTY or Morse station only once its call has been read twice. It stays on until you switch it off.`;
+async function stationReport(after) {               // Report on or off: on asks first, since it tells the world who and where you are
+  try {
+    const r = STATION.rep = await api("/api/rx/report");
+    if (r.on) { STATION.rep = await api("/api/rx/report", { on: false }); toast("Reporting is off: nothing more is sent."); return after(); }
+    if (!r.can) return toast(`Reporting needs ${[r.callsign ? "" : "your callsign", r.locator ? "" : "your locator"].filter(Boolean).join(" and ")} first (Settings, This radio, Your station): the report is from you.`, false, null, true);
+    ask(STATION_REPORT_ASK(r), "Report", async () => {
+      try { STATION.rep = await api("/api/rx/report", { on: true }); toast(`Reporting is on, as ${r.callsign} in ${r.locator}: the first report goes in about five minutes.`, false, null, true); after(); } catch (e) { rigOops(e); } });
+  } catch (e) { rigOops(e); }
+}
+async function stationLocator(value) {              // -> the locator kept ("" cleared); everything that says how far is asked again
+  const r = await api("/api/rx/locator", { locator: value });
+  HEARD.home = r.home; if (FT.st) FT.st.home = r.home; if (STATION.rep) STATION.rep.locator = r.home;
+  Object.assign(FT, { since: 0, lines: [] }); heardPoll(true);
+  toast(r.home ? `The radio is in ${r.home}: each station now shows how far and which way.` : "The locator is cleared.");
+  return r.home;
+}
+// the two keys, for a panel's heading: kept in R.dom.station, so every panel's say the same
+function stationKeys(R, k) {
+  const loc = k("Your locator…", "Where the radio is, as a locator (IO94): each station then shows how far away it is and which way", () => {
+    const f = el("input", { type: "text", maxLength: 6, placeholder: "IO94", value: stationHome() || "", title: "Your locator: IO94 or IO94kn. Enter keeps it, Escape leaves it" });
+    let over = false;
+    const done = async keep => {
+      if (over) return;                              // (once only: see rigNameKey)
+      over = true;
+      if (f.isConnected) f.replaceWith(loc);
+      if (!keep || f.value.trim().toUpperCase() === (stationHome() || "").toUpperCase()) return;
+      try { await stationLocator(f.value); rigReaders(R); } catch (e) { rigOops(e); }
+    };
+    f.onkeydown = e => { if (e.key === "Enter") done(true); else if (e.key === "Escape") done(false); e.stopPropagation(); };
+    f.onblur = () => done(false);
+    loc.replaceWith(f); f.focus(); f.select();
+  });
+  const rep = k("Report", "", () => stationReport(() => rigReaders(R)));
+  (R.dom.station ||= []).push([loc, rep]);
+  return [loc, rep];
+}
+function stationDraw(R) {
+  for (const [loc, rep] of R.dom?.station || []) {
+    if (loc.isConnected) loc.textContent = stationHome() ? `From ${stationHome()}` : "Your locator…";
+    rep.classList.toggle("on", !!STATION.rep?.on);
+    rep.title = `${stationRepSays(STATION.rep)} Report: send what a receiver of your own hears -- FT8, FT4, PSK, RTTY and Morse to PSK Reporter, WSPR to WSPRnet -- as heard by your callsign at your locator (both public websites)`.trim();
+  }
+}
+const rigReaders = R => { cwDraw(R); ftDraw(R); kbDraw(R); };
 // The mode keys, one way for all of them (FT8, FT4, WSPR, PSK, RTTY, CW, SSTV, Fax, Hell): switched on, the receiver goes
 // to the mode's usual place on the band it's on (the nearest it reaches) -- unless it's already in the mode's part of
 // this band, where it stays, so a Morse or teleprinter signal you've tuned to is read where it is. A receiver tuned by
@@ -2352,9 +2410,8 @@ const heardSummary = (panel, R) => { const v = HEARD.view[panel], list = v === "
 // Each line says how far and which way, once the radio knows its own locator (the key in the list's heading keeps it);
 // Heard turns the list into who has been heard on the band, the farthest first; Map draws their squares on the world.
 // A message naming the owner's callsign (the one kept for the rooms) is picked out.
-// Report: what's read from a receiver of your own goes to PSK Reporter (FT8, FT4) and WSPRnet (WSPR), as heard by your
-// callsign at your locator: off until it's switched on here, and never from a receiver on the internet.
-const FT = { since: 0, lines: [], st: null, busy: false, asked: 0, rep: null, repAt: 0 };
+// Your locator and Report are the keys every reader's panel has (stationKeys).
+const FT = { since: 0, lines: [], st: null, busy: false, asked: 0 };
 const FT_WINDS = ["N", "NNE", "NE", "ENE", "E", "ESE", "SE", "SSE", "S", "SSW", "SW", "WSW", "W", "WNW", "NW", "NNW"];
 const ftFar = x => x.km == null ? "" : `${x.km.toLocaleString("en-GB")} km ${FT_WINDS[Math.round(x.deg / 22.5) % 16]}`;
 // WSPR is the same reader's third mode: beacons of a watt or less, two minutes each, a line for each one heard.
@@ -2392,21 +2449,9 @@ async function ftPoll() {
     FT.lines = FT.lines.slice(-FT_LINES); FT.st = st;
     if (HEARD.view.ft !== "list") await heardPoll();
     if (S.ft8 !== (st.on ? st.mode : null)) S = { ...S, ft8: st.on ? st.mode : null };
-    if (Date.now() - FT.repAt > 15000) { FT.repAt = Date.now(); FT.rep = await api("/api/rx/report"); }
+    await stationPoll();
   } catch (e) { /* the next one will do */ }
   FT.busy = false;
-}
-const ftRepSays = r => !r ? "" : !r.on ? "Not reporting." : [r.now ? "Reporting what this receiver hears." : "Reporting is on, but not for this: only a receiver of your own, on the mode's frequency, is reported.",
-  `Sent so far: ${r.sent.psk} to PSK Reporter, ${r.sent.wspr} to WSPRnet.`, r.waiting ? `${r.waiting} waiting${r.next_s != null ? `, the next in ${Math.ceil(r.next_s / 60)} min` : ""}.` : "",
-  r.last?.error ? `The last try failed: ${r.last.error}` : ""].filter(Boolean).join(" ");
-async function ftReport(R) {                        // the Report key: on asks first, since it tells the world who and where you are
-  try {
-    const r = FT.rep = await api("/api/rx/report");
-    if (r.on) { FT.rep = await api("/api/rx/report", { on: false }); toast("Reporting is off: nothing more is sent."); return ftDraw(R); }
-    if (!r.can) return toast(`Reporting needs ${[r.callsign ? "" : "your callsign (it's kept in Find a room)", r.locator ? "" : "your locator (the key beside this one)"].filter(Boolean).join(" and ")} first: the report is from you.`, false, null, true);
-    ask(`Report what this radio hears? FT8 and FT4 stations go to pskreporter.info and WSPR beacons to wsprnet.org, as heard by ${r.callsign} in ${r.locator}: both are public websites, and your callsign and locator appear on their maps. Only a receiver of your own is reported, never one on the internet. It stays on until you press Report again.`, "Report", async () => {
-      try { FT.rep = await api("/api/rx/report", { on: true }); toast(`Reporting is on, as ${r.callsign} in ${r.locator}: the first report goes in about five minutes.`, false, null, true); ftDraw(R); } catch (e) { rigOops(e); } });
-  } catch (e) { rigOops(e); }
 }
 const ftUtc = t => new Date(t * 1000).toISOString().slice(11, 19);
 const ftPower = dbm => { const w = Math.pow(10, dbm / 10) / 1000; return w >= 1 ? `${+w.toPrecision(2)} W` : `${+(w * 1000).toPrecision(2)} mW`; };
@@ -2489,26 +2534,6 @@ function heardMapDraw(R, box, list, redraw) {
   return sq;
 }
 function ftMapDraw(R) { return heardMapDraw(R, R.dom.ftcopy, ftHeardList(), () => ftDraw(R)); }
-async function ftLocator(R) {                       // the radio's own locator, typed where its key was
-  const d = R.dom, f = el("input", { type: "text", id: "ft-locator", maxLength: 6, placeholder: "IO94", value: FT.st?.home || "", title: "Your locator: IO94 or IO94kn. Enter keeps it, Escape leaves it" });
-  let over = false;
-  const done = async keep => {
-    if (over) return;                                // (once only: see rigNameKey)
-    over = true;
-    if (f.isConnected) f.replaceWith(d.ftloc);
-    if (!keep || f.value.trim().toUpperCase() === (FT.st?.home || "").toUpperCase()) return;
-    try {
-      const r = await api("/api/rx/locator", { locator: f.value });
-      if (FT.st) FT.st.home = r.home;
-      Object.assign(FT, { since: 0, lines: [], heardAt: 0 });     // (asked for again: each with how far, now)
-      toast(r.home ? `The radio is in ${r.home}: each station now shows how far and which way.` : "The locator is cleared.");
-      ftDraw(R);
-    } catch (e) { rigOops(e); }
-  };
-  f.onkeydown = e => { if (e.key === "Enter") done(true); else if (e.key === "Escape") done(false); e.stopPropagation(); };
-  f.onblur = () => done(false);
-  d.ftloc.replaceWith(f); f.focus(); f.select();
-}
 function ftDraw(R) {
   const d = R.dom;
   if (!d?.ft) return;
@@ -2520,7 +2545,7 @@ function ftDraw(R) {
   // (the readers are told where the receiver is when that changes -- the band, for the heard list; where it's tuned
   // and whether it's one of yours, for reporting -- by the one message they all go by)
   if (here && st) heardWhere(R);
-  d.ftrep.classList.toggle("on", !!FT.rep?.on); d.ftrep.title = `${ftRepSays(FT.rep)} Report: send what a receiver of your own hears to PSK Reporter and WSPRnet, as heard by your callsign at your locator (both public websites)`.trim();
+  stationDraw(R);
   d.ftname.textContent = FT_NAMES[mode];
   d.ftsays.textContent = !here ? "" : [band || "not on a frequency it's used on", sideband ? "" : "not in USB",
     map ? (n => `${n} square${n === 1 ? "" : "s"} heard`)(ftSquares().size)
@@ -2528,7 +2553,7 @@ function ftDraw(R) {
     : st?.last?.error ? st.last.error : st?.last ? `${st.last.heard} heard at ${ftUtc(st.last.t)}` : mode === "wspr" ? "the first list comes after one whole two-minute slot" : "the first list comes after one whole slot"].filter(Boolean).join(" · ");
   d.ftbar.style.width = here ? (Date.now() / 1000 % slot) / slot * 100 + "%" : "0";
   d.ftheard.classList.toggle("on", heard); d.ftmap.classList.toggle("on", map);
-  if (d.ftloc.isConnected) { d.ftloc.textContent = st?.home ? `From ${st.home}` : "Your locator…"; d.ftloc.hidden = !st; }
+
   if ((d.ftcopy.dataset.view || "") !== view) { d.ftcopy.replaceChildren(); Object.assign(d.ftcopy.dataset, { view, n: "", said: "", sig: "" }); }
   if (map && here) { ftMapDraw(R); return; }
   if (heard && here && list.length) {
@@ -2593,6 +2618,7 @@ async function kbPoll() {
     for (const p of st.pieces) { KB.since = p.n; kbLog(p, st); }
     KB.st = st;
     if (st.pieces.length || HEARD.view.kb !== "list") await heardPoll();
+    await stationPoll();
     if (S.keyboard !== (st.on ? st.mode : null)) S = { ...S, keyboard: st.on ? st.mode : null };
   } catch (e) { /* the next one will do */ }
   KB.busy = false;
@@ -2622,7 +2648,7 @@ function kbDraw(R) {
     ? (sig.length === 1 ? `${sig[0].baud} baud · ${sig[0].shift} Hz apart, about ${sig[0].hz} Hz · ${Math.round(sig[0].framed * 100)}% framed`
       : sig.length ? `${sig.length} signals: ${sig.map(s => `${s.hz} Hz (${Math.round(s.baud)} baud, ${s.shift} apart)`).join(", ")}` : "no teleprinter signal")
     : (sig.length ? `${sig.length} signal${sig.length === 1 ? "" : "s"}: ${sig.map(s => s.hz + (s.qpsk ? " (QPSK31)" : s.baud === 63 ? " (PSK63)" : "")).join(", ")} Hz` : "no PSK31, PSK63 or QPSK31 signal");
-  heardWhere(R);
+  heardWhere(R); stationDraw(R);
   d.kbheard.classList.toggle("on", HEARD.view.kb === "heard"); d.kbmap.classList.toggle("on", HEARD.view.kb === "map");
   if (heardShow(R, "kb", d.kbcopy, here, kbDraw)) { if (here && HEARD.view.kb !== "list") d.kbsays.textContent = heardSummary("kb", R); return; }
   const box = d.kbcopy, said = !here ? `Listen to this receiver, and the ${KB_NAMES[mode]} in what it plays is read here.` : !KB.lines.length ? `Listening for ${KB_NAMES[mode]}…` : "";
@@ -3546,7 +3572,7 @@ function rigView(o, box, win) {
        el("div", { className: "rticks" }, ...["1", "3", "5", "7", "9", "+20", "+40", "+60"].map(t => el("span", { textContent: t })))),
     rigCanvas(R), d.scale = el("div", { className: "rscale" }),
     d.cw = el("div", { className: "rcw", hidden: true },
-              el("h4", { title: "A line an over: when it began (UTC, as the bands keep time), where it is, how fast, and what was sent" }, "Morse", d.cwsays = el("span"), key,
+              el("h4", { title: "A line an over: when it began (UTC, as the bands keep time), where it is, how fast, and what was sent" }, "Morse", d.cwsays = el("span"), key, ...stationKeys(R, cwKey),
                  d.cwheardk = cwKey("Heard", "Who has been heard sending Morse on this band (the call after DE, read twice), the farthest first: the radio keeps the list, a restart or not (press again for what's read)", () => heardToggle(R, "cw", "heard", cwDraw)),
                  d.cwmap = cwKey("Map", "The locator squares of those who gave one, on a map of the world (press again for what's read)", () => heardToggle(R, "cw", "map", cwDraw)),
                  cwKey("Copy", "Copy everything read so far", () => heardCopy(R, "cw") || (CW.lines.length ? cwCopy(CW.lines.map(l => `${cwWho(l)}  ${cwPlain(l)}`).join("\n"), "the Morse read so far") : toast("Nothing read yet."))),
@@ -3555,8 +3581,7 @@ function rigView(o, box, win) {
     d.ft = el("div", { className: "rcw rft", hidden: true },
               el("h4", { title: "A line: the slot's time (UTC), how strong (a rough guide: not the figure other programs give), where in the sound, the message, how far and which way. In Heard: when last, the strongest, how many times" },
                  d.ftname = el("b"), d.ftsays = el("span"),
-                 d.ftloc = cwKey("Your locator…", "Where the radio is, as a locator (IO94): each station then shows how far away it is and which way", () => ftLocator(R)),
-                 d.ftrep = cwKey("Report", "", () => ftReport(R)),
+                 ...stationKeys(R, cwKey),
                  d.ftheard = cwKey("Heard", "Who has been heard on this band, the farthest first: the radio keeps the list, a restart or not (press again for the messages)", () => heardToggle(R, "ft", "heard", ftDraw)),
                  d.ftmap = cwKey("Map", "The locator squares heard on this band, on a map of the world: the brighter the more lately heard, yours ringed in green. Point at a square for who is in it (press again for the messages)", () => heardToggle(R, "ft", "map", ftDraw)),
                  cwKey("Copy", "Copy everything listed", () => {
@@ -3567,7 +3592,7 @@ function rigView(o, box, win) {
                    if (!await heardClear(R, "ft", ftDraw)) { FT.lines = []; d.ftcopy.replaceChildren(); Object.assign(d.ftcopy.dataset, { n: "", said: "", sig: "" }); ftDraw(R); } })),
               el("div", { className: "rftbar" }, d.ftbar = el("i")), d.ftcopy = el("div", { className: "rcopy" })),
     d.kb = el("div", { className: "rcw rft rkb", hidden: true },
-              el("h4", { title: "A line: when it began (UTC, as the bands keep time), where in the sound the signal is, and what it's sending" }, d.kbname = el("b"), d.kbsays = el("span"),
+              el("h4", { title: "A line: when it began (UTC, as the bands keep time), where in the sound the signal is, and what it's sending" }, d.kbname = el("b"), d.kbsays = el("span"), ...stationKeys(R, cwKey),
                  d.kbheard = cwKey("Heard", "Who has been heard sending PSK and RTTY on this band (the call after DE, read twice), the farthest first: the radio keeps the list, a restart or not (press again for what's read)", () => heardToggle(R, "kb", "heard", kbDraw)),
                  d.kbmap = cwKey("Map", "The locator squares of those who gave one, on a map of the world (press again for what's read)", () => heardToggle(R, "kb", "map", kbDraw)),
                  cwKey("Copy", "Copy everything read so far", () => heardCopy(R, "kb") || (KB.lines.length ? cwCopy(KB.lines.map(l => `${kbWho(l)}  ${l.text}`).join("\n"), "the text read so far") : toast("Nothing read yet."))),
@@ -4369,14 +4394,21 @@ const UI = {
     },
   },
   identity: {
-    load: async () => ({ id: await api("/api/identity"), auth: await api("/api/auth"), status: await api("/api/status") }),
-    build: ({ id, auth, status }, act) => {
+    load: async () => ({ id: await api("/api/identity"), auth: await api("/api/auth"), status: await api("/api/status"), rep: await api("/api/rx/report").catch(() => null) }),
+    build: ({ id, auth, status, rep }, act) => {
       const name = el("input", { type: "text", value: id.station_name, placeholder: id.default_names[id.hardware], id: "radio-name" });
+      const call = el("input", { type: "text", value: rep?.callsign || "", placeholder: "M0ABC", id: "station-call", maxLength: 12 });
+      const loc = el("input", { type: "text", value: rep?.locator || "", placeholder: "IO94", id: "station-loc", maxLength: 6 });
       const pw = el("input", { type: "password", placeholder: auth.protected ? "A new password" : "Choose a password", id: "radio-pw" });
       return [
         grp("This radio", srow("Name", name, sbtn("Save", () => ask(`Call the radio “${name.value || id.default_names[id.hardware]}”? It restarts to take the new name up, and its address becomes ${hostFor(name.value, id.default_host)}.local.`, "Rename and restart", () => act(() => api("/api/identity", { hardware: id.hardware, station_name: name.value.trim() }))), "primary")),
           srow("Case", seg([["box", "Box"], ["cathedral", "Cathedral"]], id.hardware, v => ask(`Set this radio up as the ${v}? It restarts.`, "Change and restart", () => act(() => api("/api/identity", { hardware: v, station_name: id.station_name }))))),
           help(`The name is what the DJ says, what the pages are called and the radio's address on your network: this one is ${id.host}.local. A radio with no name of its own is ${id.default_host}.local, so name each one if you have several.`)),
+        rep ? grp("Your station",
+          srow("Callsign", call, sbtn("Keep", () => act(async () => { const r = await api("/api/rooms/callsign", { callsign: call.value }); toast(r.callsign ? `Your callsign is ${r.callsign}.` : "The callsign is cleared."); }), "primary")),
+          srow("Locator", loc, sbtn("Keep", () => act(() => stationLocator(loc.value)), "primary")),
+          srow("Report what's heard", sw(rep.on, v => v ? stationReport(() => act(async () => {})) : act(() => api("/api/rx/report", { on: false })), "Report what's heard"), help(stationRepSays(rep) || " ")),
+          help("Your callsign is what rooms are joined under and what reports are sent as; your locator is where the radio is, for how far each station is. Report sends what a receiver of your own hears -- FT8, FT4, PSK, RTTY and Morse to PSK Reporter, WSPR to WSPRnet -- to their public maps, as heard by you; the readers' panels have the same Locator and Report keys.")) : null,
         grp("Password", help(auth.protected ? "The page asks for a password, once per browser." : "Off: anyone on your Wi-Fi can use the page."),
           line(pw, sbtn(auth.protected ? "Change it" : "Set it", () => pw.value && act(() => api("/api/password", { password: pw.value })), "primary"),
                auth.protected ? sbtn("Remove the password", () => act(() => api("/api/password", { password: null }))) : null)),

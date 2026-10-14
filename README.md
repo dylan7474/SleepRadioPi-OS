@@ -467,9 +467,11 @@ Actions, Sleep timer and Radio folders open:
   See `app/sleepradiopi/audio/ft8.py`.
 - **Reporting what's heard.** PSK Reporter (pskreporter.info) and WSPRnet
   (wsprnet.org) collect who heard whom from receivers all over the world
-  and map it. The *Report* key beside *Heard* sends them what the radio
-  reads: FT8 and FT4 to PSK Reporter, WSPR beacons to WSPRnet, as heard by
-  your callsign at your locator. Those are public websites and both appear
+  and map it. The *Report* key, in every reader's panel and in Settings ->
+  This radio -> *Your station* (with your callsign and locator), sends them
+  what the radio reads: FT8, FT4, PSK, RTTY and Morse to PSK Reporter (a
+  PSK, RTTY or Morse station once its call has been read twice), WSPR
+  beacons to WSPRnet, as heard by your callsign at your locator. Those are public websites and both appear
   on their maps, so it is off until you switch it on (it asks first), and
   it needs both set. Only a receiver of your own is reported -- one where
   your locator says it is -- never one on the internet. It keeps to the

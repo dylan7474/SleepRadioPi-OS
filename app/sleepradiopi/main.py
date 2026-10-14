@@ -584,6 +584,8 @@ def main() -> None:
     from sleepradiopi import updater as updater_mod
     report_mod.SOFTWARE = f"Sleep Radio {updater_mod.this_version()}"
     ft8_mod.reader.report = report_mod.reporter.heard        # (what's read is handed on; it's only sent if reporting is switched on)
+    from sleepradiopi.audio import heard as heard_mod      # (...and the stations the other readers hear: PSK31, RTTY, Morse)
+    heard_mod.store.report, heard_mod.store.may_report = report_mod.reporter.spot, ft8_mod.reader.reports
     if settings.report_heard:
         try:
             report_mod.reporter.switch(True)
@@ -792,6 +794,7 @@ def main() -> None:
     station.on_source = lambda source: save_setting(args.config, "stream_source", source)
     # ...and so is the reader for receivers that was on (Morse, FT8, PSK31...), and how (audio/readers.py).
     from sleepradiopi.audio import readers as readers_mod
+    readers_mod.place_from(station.source, lambda: (station.source or {}).get("url"))     # (where the receiver is, till a page says)
     readers_mod.restore(settings.rx_reader, lambda: (station.source or {}).get("url"))
     if control is not None and not settings.programme_mode:
         # a bedside radio plays as soon as it's powered (in programme mode: quiet until one's on):
