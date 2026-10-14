@@ -1253,6 +1253,13 @@ The cards:
   the radio's own finder and What's this? all go by it. *Times*: every
   reader's lines and every Heard list are in UTC, as the bands keep time
   (the survey's times, which are the radio's own doings, stay local).
+  *One look for every reader's panel*: the heading is the mode's short
+  name -- the same as its key and its column in the Modes window (CW,
+  FT8, PSK, RTTY, SSTV, Fax, Hell) -- with the long one beside it ("CW ·
+  Morse", "RTTY · teleprinter"), then a status line that begins with the
+  band and is cut to one line (all of it on hover: `rigSays`), then the
+  same keys (the locator, Report, Heard, Map, Copy, Clear for the text
+  readers).
   *One list for every reader* (`audio/heard.py`): the heard list isn't
   FT8's own any more. FT8, FT4 and WSPR hand in the stations their
   messages name; Morse, PSK31 and RTTY hand in the call after DE (the
