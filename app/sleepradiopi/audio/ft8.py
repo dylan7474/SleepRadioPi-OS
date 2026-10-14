@@ -367,6 +367,14 @@ class Reader:
                     "slot": MODES[self.mode], "slots": self._slots, "late": None if self._late is None else round(self._late, 2), "last": self._last,
                     "messages": [_mine(_far(m), own) for m in self._messages if m["n"] > since]}
 
+    def place(self, band: str | None, dial: int | None, own: str | None) -> None:
+        """Where the receiver is, as the page says it (POST /api/rx/where, the one message every reader is told
+        by): the band (the heard list is kept by it), where it's tuned (Hz) and, if it's the owner's own, its
+        address (reports())."""
+        with self._lock:
+            self.band = " ".join(str(band).split())[:8] or None if band else None
+            self.dial, self.own = (int(dial), own or None) if self.band and dial else (None, None)
+
     def heard(self) -> dict:
         """{"band", "home", "heard": [{"band", "call", "grid"?, "km"?, "deg"?, "snr" (the best), "first", "last" (by the
         clock), "count", "cq" (it was calling CQ when last heard)}], the latest heard first}"""

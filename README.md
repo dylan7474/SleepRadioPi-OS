@@ -305,6 +305,12 @@ Actions, Sleep timer and Radio folders open:
   how sure it is: read, likely, or a guess. Nothing but noise is said to
   be that, with whose part of the band it is. See
   `app/sleepradiopi/audio/identify.py`.
+- **The mode keys.** Every reader's key in a receiver's window -- FT8,
+  FT4, WSPR, PSK, RTTY, CW, SSTV, Fax, Hell -- works the same way: it
+  takes the receiver to where that mode is used on the band it's on (the
+  Morse end, the PSK frequency, the nearest weather fax station...), or
+  leaves it where it is if you're already in that mode's part of the band,
+  so a signal you've tuned to is read where it is.
 - **Morse, read as text.** The *CW* key in a receiver's window has the radio
   read the Morse in what that receiver is playing: a paper tape of the dots
   and dashes with each letter under its own, and under it a log of what was

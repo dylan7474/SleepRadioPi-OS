@@ -105,6 +105,7 @@ def test_the_page_asks_for_it_and_says_where(tmp_path: Path, monkeypatch) -> Non
     s = heard.Store()
     monkeypatch.setattr(heard, "store", s)
     monkeypatch.setattr(ft8, "HOME", "IO94")
+    monkeypatch.setattr(ft8, "reader", ft8.Reader(store=s))
     s.add("ft8", "20 m", "K1ABC", None, -5.0, "FN42")
     s.add("cw", "40 m", "G4ABC")
     conf = tmp_path / "config.json"
@@ -128,6 +129,11 @@ def test_the_page_asks_for_it_and_says_where(tmp_path: Path, monkeypatch) -> Non
         assert call("/api/rx/where", {"band": "40 m", "dial": 7_020_000, "sideband": "cw", "centre": 700}) == \
             (200, {"where": {"band": "40 m", "dial": 7_020_000, "sideband": "cw", "centre": 700}})
         assert s.where["dial"] == 7_020_000
+        assert (ft8.reader.band, ft8.reader.dial, ft8.reader.own) == ("40 m", 7_020_000, None)     # FT8 goes by the same message
+        assert call("/api/rx/where", {"band": "20 m", "dial": 14_074_000, "sideband": "usb", "own": True})[0] == 200
+        assert (ft8.reader.band, ft8.reader.dial, ft8.reader.own) == ("20 m", 14_074_000, None)    # (own: only if the radio is playing one)
+        assert call("/api/rx/where", {"band": None, "dial": None})[0] == 200
+        assert (ft8.reader.band, ft8.reader.dial) == (None, None)
         for bad in ({"dial": "7020"}, {"band": 40}, {"sideband": "u s b"}, {"centre": 9000}):
             assert call("/api/rx/where", bad)[0] == 400
         assert call("/api/rx/heard", {"clear": True, "families": ["cw"]})[1]["heard"][0]["call"] == "K1ABC"

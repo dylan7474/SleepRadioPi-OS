@@ -2055,10 +2055,11 @@ function rigCwKey(R, k) {
   return R.dom.kcw = k("CW", async () => {
     try {
       S = { ...(S || {}), ...(await api("/api/rx/morse", { on: !S?.cw })) };
-      Object.assign(CW, { since: 0, overs: [], lines: [], voices: [], st: null, leads: [], lead: null });
+      Object.assign(CW, { since: 0, overs: [], lines: [], voices: [], st: null, leads: [], lead: null }); HEARD.told = "";
       rigPaint(R); cwDraw(R); ftDraw(R); kbDraw(R); picDraw(R);     // (one reader at a time: the radio has switched the others off)
-      if (S.cw) toast("Morse reader on: every Morse signal in what this receiver plays is read (up to four at once), a second or so after each over ends. In upper sideband that's a couple of kHz of band; the CW mode narrows it to the signal you're tuned to.", false, null, true);
-    } catch (e) { rigOops(e); } }, "Read Morse as text: every keyed tone in what the receiver is playing, up to four at once");
+      const to = S.cw ? await modeKeyGo(R, "cw") : null;
+      if (S.cw) toast((to && !to.stayed ? `${to.band}, the Morse end of the band. ` : "") + "Morse reader on: every Morse signal in what this receiver plays is read (up to four at once), a second or so after each over ends. In upper sideband that's a couple of kHz of band; the CW mode narrows it to the signal you're tuned to.", false, null, true);
+    } catch (e) { rigOops(e); } }, "Read Morse as text: go to the Morse end of the band (or stay, if you're there already) and read every keyed tone, up to four at once");
 }
 async function cwPoll(R) {
   if (!S?.cw || CW.busy || Date.now() - CW.asked < 600) return;
@@ -2238,11 +2239,41 @@ async function heardPoll(now) {
   try { const d = await api("/api/rx/heard"); Object.assign(HEARD, { all: d.heard, home: d.home, call: d.call }); } catch (e) { /* the next one will do */ }
   HEARD.busy = false;
 }
-function heardWhere(R) {                            // the radio told where the receiver it's playing is tuned, when that changes
+function heardWhere(R) {                            // the radio told where the receiver it's playing is tuned, when that changes (every reader goes by it)
   if (!rigOnRadio(R)) return;
   const D = RXD[R.kind], hz = D.tuned(R), side = D.on(R) ? R.st.mode || R.st.receiving?.mode : null;
-  const w = { band: hamBand(hz), dial: hz ? Math.round(hz) : null, sideband: side || null, centre: side === "cw" ? (CW_PITCH[R.kind] || 700) : 0 }, sig = JSON.stringify(w);
+  const w = { band: hamBand(hz), dial: hz ? Math.round(hz) : null, sideband: side || null, centre: side === "cw" ? (CW_PITCH[R.kind] || 700) : 0, own: R.kind === "own" }, sig = JSON.stringify(w);
   if (sig !== HEARD.told) { HEARD.told = sig; api("/api/rx/where", w).catch(() => { HEARD.told = ""; }); }
+}
+// The mode keys, one way for all of them (FT8, FT4, WSPR, PSK, RTTY, CW, SSTV, Fax, Hell): switched on, the receiver goes
+// to the mode's usual place on the band it's on (the nearest it reaches) -- unless it's already in the mode's part of
+// this band, where it stays, so a Morse or teleprinter signal you've tuned to is read where it is. A receiver tuned by
+// hand (an internet one) is told where instead. The places are the ones the Modes window has.
+const PIC_HELL = [["40 m", 7036], ["20 m", 14062]];          // (Hellschreiber: the signals about 1 kHz up from these, upper sideband)
+function modeSpots(mode) {                          // [{band, hz, tune}]
+  const at = (list, tune = "usb", under = 0) => list.map(([band, khz, t]) => ({ band, hz: Math.round((khz - under) * 1000), tune: t || tune }));
+  return FT_FREQS[mode] ? at(FT_FREQS[mode]) : mode === "psk31" ? at(KB_PSK) : mode === "rtty" ? at(MODE_RTTY) : mode === "cw" ? at(MODE_CW, "cw")
+    : mode === "sstv" ? at(PIC_SSTV) : mode === "fax" ? at(PIC_FAX, "usb", 1.9) : mode === "hell" ? at(PIC_HELL) : [];
+}
+function modeSpot(R, mode) {                        // the nearest of them this receiver reaches
+  const D = RXD[R.kind], [lo, hi] = D.reach(R), near = D.tuned(R) || 14074000;
+  return modeSpots(mode).filter(f => f.hz >= lo && f.hz <= hi).reduce((a, f) => !a || Math.abs(f.hz - near) < Math.abs(a.hz - near) ? f : a, null);
+}
+function modeThere(R, mode, to) {                   // already where the mode is: in its part of this band, or on its frequency
+  const D = RXD[R.kind], hz = D.tuned(R), side = D.on(R) ? R.st.mode || R.st.receiving?.mode : null;
+  if (!rigOnRadio(R) || !hz) return false;
+  const stretch = MODE_SWEEP[mode]?.[hamBand(hz)];
+  if (stretch) return hz >= stretch[0] * 1000 - 3000 && hz < stretch[1] * 1000 && (mode === "cw" ? !!side : side === "usb");     // (its top is the next mode's bottom)
+  return Math.abs(hz - to.hz) < ({ fax: 1000, sstv: 3000, hell: 5000 }[mode] || 5) && side === to.tune;
+}
+// -> where it went, or {.., stayed: true}; null: nowhere this receiver reaches, or one tuned by hand
+async function modeKeyGo(R, mode) {
+  const D = RXD[R.kind], to = D.modeGo ? modeSpot(R, mode) : null;
+  if (!to) return null;
+  if (modeThere(R, mode, to)) return { ...to, stayed: true };
+  await D.modeGo(R, to.hz, to.tune);
+  HEARD.told = "";                                  // (the readers are told where it is now: heardWhere)
+  return to;
 }
 // the band a panel's list is of: FT8's as its reader has it, the others' the band the receiver is in
 const heardBand = (R, panel) => panel === "ft" ? FT.st?.band : rigOnRadio(R) ? hamBand(RXD[R.kind].tuned(R)) : null;
@@ -2323,9 +2354,7 @@ const heardSummary = (panel, R) => { const v = HEARD.view[panel], list = v === "
 // A message naming the owner's callsign (the one kept for the rooms) is picked out.
 // Report: what's read from a receiver of your own goes to PSK Reporter (FT8, FT4) and WSPRnet (WSPR), as heard by your
 // callsign at your locator: off until it's switched on here, and never from a receiver on the internet.
-const FT = { since: 0, lines: [], st: null, busy: false, asked: 0, band: null, dial: null, rep: null, repAt: 0 };
-// what the reader is told about where a receiver is: the band, where it's tuned, and whether it's one of your own
-const ftAt = (R, band, hz) => ({ band, dial: Math.round(hz), own: R.kind === "own" });
+const FT = { since: 0, lines: [], st: null, busy: false, asked: 0, rep: null, repAt: 0 };
 const FT_WINDS = ["N", "NNE", "NE", "ENE", "E", "ESE", "SE", "SSE", "S", "SSW", "SW", "WSW", "W", "WNW", "NW", "NNW"];
 const ftFar = x => x.km == null ? "" : `${x.km.toLocaleString("en-GB")} km ${FT_WINDS[Math.round(x.deg / 22.5) % 16]}`;
 // WSPR is the same reader's third mode: beacons of a watt or less, two minutes each, a line for each one heard.
@@ -2335,26 +2364,18 @@ const FT_FREQS = {
   ft8: [["160 m", 1840], ["80 m", 3573], ["60 m", 5357], ["40 m", 7074], ["30 m", 10136], ["20 m", 14074], ["17 m", 18100], ["15 m", 21074], ["12 m", 24915], ["10 m", 28074], ["6 m", 50313], ["2 m", 144174]],
   ft4: [["80 m", 3575], ["40 m", 7047.5], ["30 m", 10140], ["20 m", 14080], ["17 m", 18104], ["15 m", 21140], ["12 m", 24919], ["10 m", 28180], ["6 m", 50318], ["2 m", 144170]],
   wspr: [["160 m", 1836.6], ["80 m", 3568.6], ["60 m", 5287.2], ["40 m", 7038.6], ["30 m", 10138.7], ["20 m", 14095.6], ["17 m", 18104.6], ["15 m", 21094.6], ["12 m", 24924.6], ["10 m", 28124.6], ["6 m", 50293], ["2 m", 144489]] };
-// the mode's frequency to go to: the band's the receiver is on (the nearest), 20 m if it's nowhere yet; only where it reaches
-function ftWhere(R, mode, freqs = FT_FREQS[mode]) {
-  const [lo, hi] = RXD[R.kind].reach(R), near = RXD[R.kind].tuned(R) || 14074000;
-  return freqs.map(([band, khz]) => ({ band, hz: khz * 1000 })).filter(f => f.hz >= lo && f.hz <= hi)
-    .reduce((a, f) => !a || Math.abs(f.hz - near) < Math.abs(a.hz - near) ? f : a, null);
-}
 const ftBand = (mode, hz) => FT_FREQS[mode].find(([, khz]) => Math.abs(khz * 1000 - hz) <= 500)?.[0];
 function rigFtKeys(R, k) {
   const key = mode => R.dom["k" + mode] = k(FT_NAMES[mode], async () => {
     const D = RXD[R.kind], on = S?.ft8 !== mode;
     try {
-      const to = on && D.ftGo ? ftWhere(R, mode) : null;
-      S = { ...(S || {}), ...(await api("/api/rx/ft8", { on, mode, ...(to ? ftAt(R, to.band, to.hz) : {}) })) };
-      Object.assign(FT, { since: 0, lines: [], st: null, band: to?.band || null, dial: to?.hz || null });
+      S = { ...(S || {}), ...(await api("/api/rx/ft8", { on, mode })) };
+      Object.assign(FT, { since: 0, lines: [], st: null }); HEARD.told = "";
       rigPaint(R); cwDraw(R); ftDraw(R); kbDraw(R); picDraw(R);
       if (!on) return;
-      const sideband = (D.on(R) ? R.st.mode || R.st.receiving?.mode : null) === "usb";
-      if (!to) return toast(D.ftGo ? `${FT_NAMES[mode]} reader on, but this receiver doesn't reach a band it's used on.`
+      const to = await modeKeyGo(R, mode);
+      if (!to) return toast(D.modeGo ? `${FT_NAMES[mode]} reader on, but this receiver doesn't reach a band it's used on.`
         : `${FT_NAMES[mode]} reader on. Tune this receiver to a band's ${FT_NAMES[mode]} frequency in USB: on 20 m that's ${FT_FREQS[mode].find(f => f[0] === "20 m")[1] / 1000} MHz.`, false, null, true);
-      if (!(sideband && Math.abs((D.tuned(R) || 0) - to.hz) < 5 && rigOnRadio(R))) await D.ftGo(R, to.hz);
       toast(mode === "wspr" ? `WSPR reader on, ${to.band}: every beacon heard is listed when its two-minute slot ends (they start on the even minute, so the first list is two to four minutes away). For another band: press its key, then this one off and on.`
         : `${FT_NAMES[mode]} reader on, ${to.band}: every message heard is listed when its ${mode === "ft8" ? "15" : "7.5"}-second slot ends. For another band: press its key, then this one off and on.`, false, null, true);
     } catch (e) { rigOops(e); } }, mode === "wspr" ? "Read WSPR: go to the band's WSPR frequency and list every beacon heard, with where it is and its power"
@@ -2496,9 +2517,9 @@ function ftDraw(R) {
   const st = FT.st, here = rigOnRadio(R), D = RXD[R.kind], hz = D.tuned(R), sideband = (D.on(R) ? R.st.mode || R.st.receiving?.mode : null) === "usb";
   const slot = FT_SLOT[mode] || 15;
   const band = ftBand(mode, hz), heard = HEARD.view.ft === "heard", map = HEARD.view.ft === "map", list = heard ? ftHeardList() : [], view = HEARD.view.ft === "list" ? "" : HEARD.view.ft;
-  // (the reader is told the band the receiver is on, when that changes: its heard list is kept by it)
-  // (...and where it's tuned and whether it's one of yours, for reporting)
-  if (here && band && st && (st.band !== band || st.dial !== Math.round(hz)) && (FT.band !== band || FT.dial !== hz)) { FT.band = band; FT.dial = hz; api("/api/rx/ft8", { on: true, mode, ...ftAt(R, band, hz) }).catch(() => {}); }
+  // (the readers are told where the receiver is when that changes -- the band, for the heard list; where it's tuned
+  // and whether it's one of yours, for reporting -- by the one message they all go by)
+  if (here && st) heardWhere(R);
   d.ftrep.classList.toggle("on", !!FT.rep?.on); d.ftrep.title = `${ftRepSays(FT.rep)} Report: send what a receiver of your own hears to PSK Reporter and WSPRnet, as heard by your callsign at your locator (both public websites)`.trim();
   d.ftname.textContent = FT_NAMES[mode];
   d.ftsays.textContent = !here ? "" : [band || "not on a frequency it's used on", sideband ? "" : "not in USB",
@@ -2540,15 +2561,14 @@ function rigKbKeys(R, k) {
     const D = RXD[R.kind], on = S?.keyboard !== mode;
     try {
       S = { ...(S || {}), ...(await api("/api/rx/keyboard", { on, mode })) };
-      Object.assign(KB, { since: 0, lines: [], voices: [], st: null });
+      Object.assign(KB, { since: 0, lines: [], voices: [], st: null }); HEARD.told = "";
       rigPaint(R); cwDraw(R); ftDraw(R); kbDraw(R); picDraw(R);
       if (!on) return;
-      if (mode === "rtty") return toast("Teleprinter reader on: tune so that a signal's two tones are both in what you hear; several side by side are each read on a line of their own. Amateurs use the top of each band's data part (14.080 to 14.100 MHz); the German weather service is on 10.1008 MHz all day (tune 10.0993 USB).", false, null, true);
-      const to = D.ftGo && ftWhere(R, mode, KB_PSK), sideband = (D.on(R) ? R.st.mode || R.st.receiving?.mode : null) === "usb";
+      const to = await modeKeyGo(R, mode);
+      if (mode === "rtty") return toast(`Teleprinter reader on${to && !to.stayed ? `, ${to.band}, where amateurs' teleprinters gather (tune up from here)` : ""}: tune so that a signal's two tones are both in what you hear; several side by side are each read on a line of their own. The German weather service is on 10.1008 MHz all day (tune 10.0993 USB).`, false, null, true);
       if (!to) return toast("PSK31 reader on. Tune this receiver to a band's PSK31 frequency in USB: on 20 m that's 14.070 MHz.", false, null, true);
-      if (!(sideband && Math.abs((D.tuned(R) || 0) - to.hz) < 5 && rigOnRadio(R))) await D.ftGo(R, to.hz);
       toast(`PSK31 reader on, ${to.band}: every signal in what the receiver hears is read at once, a line each, PSK63 and QPSK31 as well.`, false, null, true);
-    } catch (e) { rigOops(e); } }, mode === "psk31" ? "Read PSK31 and PSK63 as text: go to the band's PSK31 frequency and read every signal there at once" : "Read RTTY (radio teleprinter) as text: every pair of tones in what the receiver is playing, up to four at once");
+    } catch (e) { rigOops(e); } }, mode === "psk31" ? "Read PSK31 and PSK63 as text: go to the band's PSK31 frequency (or stay, if you're there already) and read every signal there at once" : "Read RTTY (radio teleprinter) as text: go to where amateurs' teleprinters gather on the band (or stay, if you're there already) and read every pair of tones, up to four at once");
   return [key("psk31"), key("rtty")];
 }
 // a piece of text from the reader -> the log: on its signal's line, a new line where the sender began one
@@ -2638,15 +2658,13 @@ function rigPicKeys(R, k) {
       PIC.st = null; PIC.show = null;
       rigPaint(R); cwDraw(R); ftDraw(R); kbDraw(R); picDraw(R);
       if (!on) return;
-      if (mode === "hell") return toast("Hellschreiber reader on: text sent as a picture of itself, printed here on a tape, twice over so that a whole line is always there to read. Tune so its rasping tone is in what you hear: amateurs use it around 14.063 and 7.037 MHz, upper sideband, mostly at weekends.", false, null, true);
-      if (mode === "fax") return toast("Weather fax reader on: a chart is read from its start tone. Modes… has the weather services' frequencies; if a chart is already under way there, Start now begins it from where it is.", false, null, true);
-      const [lo, hi] = D.reach(R), near = D.tuned(R) || 14230000;
-      const to = D.modeGo && PIC_SSTV.map(([band, khz, tune]) => ({ band, hz: khz * 1000, tune })).filter(f => f.hz >= lo && f.hz <= hi).reduce((a, f) => !a || Math.abs(f.hz - near) < Math.abs(a.hz - near) ? f : a, null);
+      const to = await modeKeyGo(R, mode), at = to && !to.stayed ? `, ${to.band}` : "";
+      if (mode === "hell") return toast(`Hellschreiber reader on${at}: text sent as a picture of itself, printed here on a tape, twice over so that a whole line is always there to read. Tune so its rasping tone is in what you hear: amateurs use it around 14.063 and 7.037 MHz, upper sideband, mostly at weekends.`, false, null, true);
+      if (mode === "fax") return toast(`Weather fax reader on${at}: a chart is read from its start tone. Modes… has the weather services' other frequencies; if a chart is already under way, Start now begins it from where it is.`, false, null, true);
       if (!to) return toast("SSTV reader on: a picture is read when its header is heard. On 20 m they're on 14.230 MHz, upper sideband.", false, null, true);
-      await D.modeGo(R, to.hz, to.tune);
       toast(`SSTV reader on, ${to.band}: a picture is drawn as it's sent, from the moment its header is heard (they take one to two minutes).`, false, null, true);
     } catch (e) { rigOops(e); } }, mode === "sstv" ? "Read slow-scan television: go to the band's SSTV frequency and draw each picture as it's sent (one already under way is picked up from its line pulses)"
-      : mode === "hell" ? "Read Hellschreiber: text sent as a picture of itself, printed on a tape as it comes" : "Read weather fax: charts from the weather services, drawn as they're sent");
+      : mode === "hell" ? "Read Hellschreiber: go to where it's used on the band (or stay, if you're there already) and print the text, a picture of itself, on a tape as it comes" : "Read weather fax: go to the nearest weather service's chart frequency (or stay) and draw the charts as they're sent");
   return [key("sstv"), key("fax"), key("hell")];
 }
 async function picPoll() {
@@ -2841,8 +2859,8 @@ async function modeGo(R, p) {                       // the receiver there, and t
   const D = RXD[R.kind];
   if (!D.modeGo) return toast(`An ${D.word} is tuned by hand: ${(p.hz / 1e6).toFixed(4)} MHz, ${p.tune.toUpperCase()}.`);
   if (FT_NAMES[p.mode]) {
-    S = { ...(S || {}), ...(await api("/api/rx/ft8", { on: true, mode: p.mode, ...ftAt(R, p.band, p.hz) })) };
-    Object.assign(FT, { since: 0, lines: [], st: null, band: p.band });
+    S = { ...(S || {}), ...(await api("/api/rx/ft8", { on: true, mode: p.mode })) };
+    Object.assign(FT, { since: 0, lines: [], st: null });
   } else if (PIC_NAMES[p.mode]) {
     S = { ...(S || {}), ...(await api("/api/rx/pictures", { on: true, mode: p.mode })) };
     PIC.st = null; PIC.show = null;
@@ -2853,6 +2871,7 @@ async function modeGo(R, p) {                       // the receiver there, and t
     Object.assign(KB, { since: 0, lines: [], voices: [], st: null });
   }
   await D.modeGo(R, p.hz, p.tune);
+  HEARD.told = "";                                  // (the readers are told where it is now: heardWhere)
 }
 const modeSleep = (ms, run) => new Promise(ok => { const t0 = Date.now(), tick = () => run?.stop || Date.now() - t0 >= ms ? ok() : setTimeout(tick, 200); tick(); });
 // listen at one place and say what was there: {n (stations or signals), km? (the farthest), at}
@@ -2992,7 +3011,6 @@ const RXD = {
     chans(R) { return (this.band(R)?.channels || []).filter(c => !c.skip); },
     on(R) { return !!R.st?.receiving; },
     reach(R) { return R.st?.tunable || [24e6, 1766e6]; },
-    ftGo(R, hz) { return this.tune(R, hz, "usb"); },
     modeGo(R, hz, mode) { return this.tune(R, hz, mode); },
     tuned(R) {                                      // the held channel, who has the air, or who last had it
       const st = R.st, r = st?.receiving;
@@ -3143,7 +3161,6 @@ const RXD = {
     station(R) { const hz = this.tuned(R), mode = this.on(R) ? R.st.mode : R.mode; return hz ? { name: this.label(R, hz, mode), url: this.link(R, hz, mode), info: `${this.word} · ${R.o.title}` } : null; },
     on(R) { return !!R.st?.on && R.st.base === R.origin && !R.st.ended; },
     reach() { return [10e3, 30e6]; },
-    ftGo(R, hz) { return this.say(R, { freq: hz, mode: "usb" }); },
     modeGo(R, hz, mode) { return this.say(R, { freq: hz, mode }); },
     tuned(R) { return this.on(R) ? (R.last = R.st.freq) : R.last; },
     pass(R, hz) { const [a, b] = KIWI_PASS[this.on(R) ? R.st.mode : R.mode] || [-2700, 2700]; return [hz + a, hz + b]; },
@@ -3229,7 +3246,7 @@ const OWN_TUNED = ["usb", "lsb", "cw"];              // a receiver of your own, 
 Object.assign(RXD.own, { land: RXD.kiwi.land, follow: RXD.kiwi.follow, stepWord: RXD.kiwi.stepWord });
 const OWRX_PASS = { nfm: [-4000, 4000], am: [-4000, 4000], usb: [300, 3000], lsb: [-3000, -300], cw: [-100, 100] };
 RXD.owrx = { ...RXD.kiwi,
-  ftGo: null, modeGo: null,                         // (its bands are its owner's: it's tuned by hand)
+  modeGo: null,                                     // (its bands are its owner's: it's tuned by hand)
   modes: [["nfm", "FM", "Narrow FM"], ["am", "AM", "AM"], ["usb", "USB", "Upper sideband"], ["lsb", "LSB", "Lower sideband"], ["cw", "CW", "Morse"]],
   unit: "MHz", example: () => "145.500", steps: [10, 100, 1000, 5000, 6250, 12500, 25000], word: "OpenWebRX",
   link(R, hz, mode) { return `${R.origin}#freq=${Math.round(hz)},mod=${mode}`; },

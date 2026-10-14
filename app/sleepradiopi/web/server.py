@@ -890,10 +890,12 @@ def make_handler(station: Station, output: Mp3Output, speaker=None,
                 heard_mod.store.forget(set(fams) if fams else None)
                 self._send(json.dumps(self._heard_list()).encode(), "application/json")
             elif path == "/api/rx/where":
-                # {"band": "40 m" | null, "dial": Hz | null, "sideband": "usb" | "lsb" | "cw" | ..., "centre"?: Hz}: where the
-                # receiver the radio is playing is tuned, as the page has it -- each station the text readers (Morse, PSK31,
-                # RTTY) hear is kept by band, and where it was on the air (audio/heard.py). FT8 is told with its own switch.
-                from sleepradiopi.audio import heard as heard_mod
+                # {"band": "40 m" | null, "dial": Hz | null, "sideband": "usb" | "lsb" | "cw" | ..., "centre"?: Hz, "own"?: true}:
+                # where the receiver the radio is playing is tuned, as the page has it: the one message every reader is
+                # told by. Each station heard is kept by band, with where it was on the air (audio/heard.py), and FT8's
+                # reader is told the band, the dial and -- with own, a receiver of the owner's own (the one the radio is
+                # playing: its address is the radio's word, not the page's) -- what may be reported (audio/report.py).
+                from sleepradiopi.audio import ft8 as ft8_mod, heard as heard_mod
                 try:
                     body = self._body()
                     band, dial, side, centre = body.get("band"), body.get("dial"), body.get("sideband"), body.get("centre", 0)
@@ -906,6 +908,12 @@ def make_handler(station: Station, output: Mp3Output, speaker=None,
                     self._error('send {"band": "40 m", "dial": 7020000, "sideband": "usb"}')
                     return
                 heard_mod.store.where = {"band": band or None, "dial": int(dial) if dial else None, "sideband": side, "centre": int(centre or 0)}
+                own = None
+                if body.get("own") is True and station is not None:
+                    at = urlparse((station.source or {}).get("url") or "")
+                    own = f"{at.scheme}://{at.netloc}" if at.scheme in ("http", "https") and at.netloc else None
+                    ft8_mod.reader.playing = lambda: (station.source or {}).get("url")
+                ft8_mod.reader.place(band or None, int(dial) if dial else None, own)
                 self._send(json.dumps({"where": heard_mod.store.where}).encode(), "application/json")
             elif path == "/api/rx/keyboard":
                 # {"on": true | false, "mode"?: "psk31" | "rtty"}: the PSK31 / RTTY reader for receivers

@@ -1231,6 +1231,21 @@ The cards:
   `GET /desktop/land.json`: Natural Earth's, public domain). A message that
   names the owner's callsign (the rooms' one) comes with `"me": true` and
   is shown in amber.
+  *The mode keys* (FT8, FT4, WSPR, PSK, RTTY, CW, SSTV, Fax, Hell: one way
+  for all, `modeKeyGo` in the page): switched on, the receiver goes to the
+  mode's usual place on the band it's on, the nearest it reaches -- the
+  places the Modes window has (CW: the Morse end, 14.030 MHz on 20 m, in
+  CW; Fax: the nearest weather service's chart frequency; Hell: 14.062 or
+  7.036) -- unless it's already in the mode's part of this band (Morse,
+  teleprinters and PSK: the stretches the finder sweeps) or on its
+  frequency, where it stays, so a signal you've tuned to is read where it
+  is. An internet receiver tuned by hand is told where instead. Every
+  reader is then told where the receiver is by the one message, `POST
+  /api/rx/where {"band", "dial", "sideband", "centre", "own"}`, which the
+  page sends whenever the tuning changes: FT8's reader takes its band,
+  dial and whether it may report from it (own: the receiver the radio is
+  playing) from it too (`ft8.Reader.place`); `/api/rx/ft8`'s own band,
+  dial and own still work, but the page no longer sends them.
   *One list for every reader* (`audio/heard.py`): the heard list isn't
   FT8's own any more. FT8, FT4 and WSPR hand in the stations their
   messages name; Morse, PSK31 and RTTY hand in the call after DE (the
@@ -1326,8 +1341,10 @@ The cards:
   the figures, but for "=" (the weather broadcasts end every report with
   it). A character is only said where nearly all those around it have
   their stop bits: noise frames about half the time. Clean down to about
-  -3 dB. The RTTY key doesn't tune: a teleprinter signal is wherever it
-  is (the German weather service: 10.1008 MHz, so 10.0993 in USB).
+  -3 dB. The RTTY key goes where amateurs' teleprinters gather on the band
+  (14.085 MHz on 20 m), or stays if the receiver is already in that part
+  of the band -- see *The mode keys* below (the German weather service:
+  10.1008 MHz, so 10.0993 in USB).
   Several at once (`rtty.find_all`, `RTTY_MOST` = 4 in `audio/keyboard.py`):
   each pair of tones that frames becomes a track with its own speed, sense
   and place in the figures shift; one new pair is tried each time round
