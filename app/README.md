@@ -1426,6 +1426,19 @@ The cards:
   noise on it for Morse; framing alone took two steady tones for a
   teleprinter. About twenty seconds a stretch with nothing in it, and
   eight or so more for each candidate.
+  *PSK31 found* (a place of mode `"psk31"` given `"lo"` and `"hi"`; the
+  page's stretch is from 1 kHz under the PSK frequency to 4 kHz over;
+  without them it's the old count of what stands out): too narrow and
+  steady for the waterfall, and next to FT8 (on 17 m, 2026-10-14, PSK
+  Reporter had PSK31 at 18.0969-18.0980 MHz and FT8 from 18.1003; the old
+  count took FT8 for PSK31). So the stretch is listened to straight
+  through, 400-2600 Hz of what's heard at a time (2.2 kHz steps), ten
+  seconds each, and `psk.heard()` judges: a signal counts only if the PSK
+  reader reads at least six letters from it, at least a second apart,
+  0.8 sure on average -- the same rule as "What's this?". What's found is
+  `"where": [{"hz", "psk" (31 or 63), "text" (the first 30 letters)}]`;
+  the key goes to the strongest with it at 1000 Hz. About 35 seconds a
+  band.
   *A name of your own* (the **Name…** key in a receiver's window; `POST
   /api/rx/name {"base": "http://192.168.50.4:8075", "name": "Short
   wave"}`, an empty name for its own again; kept in the settings as

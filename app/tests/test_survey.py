@@ -10,7 +10,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from sleepradiopi.audio import ft8
+from sleepradiopi.audio import ft8, psk
 from sleepradiopi.playback import calibrate, survey
 from sleepradiopi.web.server import make_handler
 
@@ -267,6 +267,55 @@ def test_morse_and_teleprinters_are_found_by_sweeping_their_part_of_the_band(tmp
         with pytest.raises(ValueError):
             survey.clean_places([bad])
 
+
+
+class _PskBand(_Radio):
+    """17 m as it was on 2026-10-14: PSK31 below 18.100 MHz, and at 18.100 what stands out but doesn't spell (a carrier here)."""
+    ON_AIR = {18_097_400: "cq cq de g4abc g4abc io94 pse k cq cq de g4abc g4abc io94 pse k ", 18_101_200: None}
+
+    def sound(self, url: str):
+        radio = self
+        radio.asked.append(url)
+
+        class Sound:
+            began = radio.at
+
+            def mark(self) -> None:
+                self.began = radio.at
+
+            def since_mark(self) -> np.ndarray:
+                n = int((radio.at - self.began) * survey.AUDIO_RATE)
+                x = np.random.default_rng(7).normal(0, 300, n)
+                for hz, text in radio.ON_AIR.items():
+                    pitch = hz - radio.freq
+                    if not 300 <= pitch <= 2900:
+                        continue
+                    if text is None:
+                        x += 3000 * np.sin(2 * np.pi * pitch * np.arange(n) / survey.AUDIO_RATE)
+                    else:
+                        s = psk.send(text * 2, survey.AUDIO_RATE, pitch)[:n]
+                        x[:len(s)] += 3000 * s / np.abs(s).max()
+                return x.astype(np.float32)
+
+            def close(self) -> None:
+                radio.closed = True
+
+        return Sound()
+
+
+def test_psk31_is_found_by_listening_through_its_part_of_the_band(tmp_path: Path) -> None:
+    radio = _PskBand(receiving={"freq": 18_100_000, "mode": "usb"})
+    job = _job(radio)
+    job.keep_in(tmp_path / "survey.json")
+    job.start(RX, survey.clean_places([{"key": "psk31:17 m", "mode": "psk31", "band": "17 m", "hz": 18_096_000, "lo": 18_095_000, "hi": 18_101_000}]))
+    job._thread.join(60)
+    assert job.status()["done"] == 1 and "error" not in job.status()
+    f = job.found(RX)["psk31:17 m"]
+    assert f["n"] == 1 and abs(f["where"][0]["hz"] - 18_097_400) < 20 and f["where"][0]["psk"] == 31 and "g4abc" in f["where"][0]["text"]
+    dials = [hz for hz, _ in radio.tuned[:-1]]
+    assert dials[0] == 18_094_600 and all(b - a == 2_200 for a, b in zip(dials, dials[1:])) and dials[-1] + 400 < 18_101_000     # a couple of kHz at a time, all of it
+    assert radio.tuned[-1] == (18_100_000, "usb")    # back where it was
+    assert survey.clean_places([{"key": "psk31:20 m", "mode": "psk31", "band": "20 m", "hz": 14_070_000}])[0].get("lo") is None     # (no stretch: the old count)
 
 def test_a_receiver_with_no_waterfall_is_swept_for_nothing_and_the_round_goes_on() -> None:
     radio = _Radio()

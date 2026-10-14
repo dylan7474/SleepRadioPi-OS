@@ -378,12 +378,16 @@ Actions, Sleep timer and Radio folders open:
   it was busiest. Under the survey's keys a line says when the **last
   survey** was and what it came to (how many places had something, the
   busiest, the farthest). Morse and amateur teleprinters have no one frequency, so
-  for those the radio sweeps their part of each band (*Find Morse and
-  teleprinters*, or as part of *Everything*): it watches the receiver's
+  for those the radio sweeps their part of each band (*Find Morse,
+  teleprinters and PSK*, or as part of *Everything*): it watches the receiver's
   waterfall for what comes and goes, listens a few seconds to each such
-  thing, and lets the reader for the mode be the judge. A key then says
+  thing, and lets the reader for the mode be the judge. PSK31 is
+  listened to straight through, from a kilohertz under its frequency to
+  four over, and only a signal the PSK reader can read letters from
+  counts (so FT8 next door doesn't). A key then says
   how many it found ("3 found") and goes to the strongest; pointing at it
-  lists where each is, with a Morse signal's speed. On 40 m one afternoon:
+  lists where each is, with a Morse signal's speed or what a PSK signal
+  was saying. On 40 m one afternoon:
   four Morse contacts, at 15 to 29 words a minute.
 - **How the bands are.** At the top of *Where to listen*, in plain words,
   from what the radio has itself heard: "20 m is good: open to Europe and

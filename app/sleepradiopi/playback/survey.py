@@ -41,6 +41,15 @@ of mode "rtty" or "cw" is a stretch of band ("lo" to "hi"), swept:
     (audio/rtty.py). FT4 and the rest, which also come and go, are
     neither and are left out.
 
+PSK31 has its frequencies, but its signals spread a few kilohertz up from
+them, are often weak, and sit near FT8 (on 17 m PSK31 was at 18.097 MHz
+and FT8 from 18.100). A count of what stands out took FT8 for PSK31, and
+a PSK31 signal is too narrow and too steady for the waterfall's 250 Hz
+bins to pick out. So a "psk31" place given "lo" and "hi" is listened to
+straight through instead, a couple of kilohertz of it at a time, long
+enough for the PSK reader to read letters (audio/psk.py heard()): it is
+PSK only if it spells. (Without lo and hi it's the old count.)
+
 What's found is where each is ("where": the frequency on the air, with a
 Morse signal's speed or a teleprinter's speed and shift), the strongest
 first. Worked out on 20, 30 and 40 m off the air, where simpler tests
@@ -86,7 +95,7 @@ log = logging.getLogger(__name__)
 
 AUDIO_RATE = calibrate.AUDIO_RATE
 MODES = ("ft8", "ft4", "wspr", "psk31", "weather", "rtty", "cw")
-FIND_MODES = ("rtty", "cw")          # ...of which these are a stretch of band, swept (the finder)
+FIND_MODES = ("rtty", "cw", "psk31")  # ...of which these are a stretch of band, swept (the finder): PSK31 only when given lo and hi
 SPAN_MOST_HZ = 150_000               # a stretch is no wider than this (the waterfall shows 256 kHz)
 WATERFALL_S = 5.0                    # the waterfall watched this long
 OVER_DB = 7.0                        # something there: this far over the stretch's noise at its best
@@ -97,7 +106,10 @@ FIND_LISTEN_S = {"cw": 8.0, "rtty": 4.5}     # how long each candidate is listen
 MORSE_QUALITY_MIN = 0.3              # what the Morse reader read holds together this well, or it isn't Morse...
 MORSE_WPM = (8.0, 45.0)              # ...at a speed people send at
 PITCH_HZ = {"cw": 700.0, "rtty": 1300.0}     # where a candidate is put in what's heard
-SAME_HZ = {"cw": 150.0, "rtty": 300.0}       # two findings this close are one signal
+SAME_HZ = {"cw": 150.0, "rtty": 300.0, "psk31": 80.0}     # two findings this close are one signal
+PSK_HEARD_HZ = (400.0, 2600.0)       # PSK31 swept: the part of what's heard that is read, a step at a time...
+PSK_FIND_LISTEN_S = 10.0             # ...for this long (a few seconds of an over is enough letters; an idle tone spells nothing)
+PSK_PITCH_HZ = 1000.0                # (where a found one is put, to read it)
 SLOT_MODES = ("ft8", "ft4", "wspr")
 CUTS_S = {"ft8": (0.5, 2.0, 3.5), "ft4": (0.5, 2.0, 3.5), "wspr": (2.0,)}     # how late a slot is cut, each tried (see audio/ft8.py)
 BEFORE_S, AFTER_S = 1.0, 4.5         # listened from this long before a slot begins to this long after it ends
@@ -128,7 +140,7 @@ def clean_places(places) -> list[dict]:
             raise ValueError("each place has a key of its own")
         seen.add(key)
         place = {"key": key, "mode": p["mode"], "band": band, "hz": int(hz)}
-        if p["mode"] in FIND_MODES:
+        if p["mode"] in FIND_MODES and (p["mode"] != "psk31" or "lo" in p or "hi" in p):
             lo, hi = p.get("lo"), p.get("hi")
             if any(isinstance(v, bool) or not isinstance(v, (int, float)) for v in (lo, hi)) or not 100_000 <= lo < hi <= 500_000_000 or hi - lo > SPAN_MOST_HZ:
                 raise ValueError("a place to sweep has where it begins and ends (lo and hi, in Hz), no more than 150 kHz apart")
@@ -320,8 +332,10 @@ class Job:
         return not stop.is_set()
 
     def _find(self, place: dict, base: str, sound, stop: threading.Event) -> dict | None:
-        """A stretch of band swept for Morse or teleprinters (see the top). None: stopped."""
+        """A stretch of band swept for Morse, teleprinters or PSK31 (see the top). None: stopped."""
         mode, lo, hi = place["mode"], place["lo"], place["hi"]
+        if mode == "psk31":
+            return self._find_psk(place, base, sound, stop)
         self._post(base + "/tune", {"freq": (lo + hi) // 2, "mode": "usb"})
         if not self._wait(SETTLE_S, stop):
             return None
@@ -347,6 +361,27 @@ class Job:
                 on_air = int(round(dial + s["hz"]))
                 if lo - 1_000 <= on_air <= hi + 1_000 and all(abs(on_air - g["hz"]) > SAME_HZ[mode] for g in signals):
                     signals.append({**s, "hz": on_air, "db": db})
+        return {"n": len(signals), "where": [{k: v for k, v in s.items() if k != "db"} for s in sorted(signals, key=lambda s: -s["db"])]}
+
+    def _find_psk(self, place: dict, base: str, sound, stop: threading.Event) -> dict | None:
+        """A stretch of a PSK31 band listened to a couple of kilohertz at a time (see the top). None: stopped."""
+        lo, hi = place["lo"], place["hi"]
+        a, b = PSK_HEARD_HZ
+        signals: list[dict] = []
+        dial = int(lo - a)
+        while dial + a < hi:
+            self._post(base + "/tune", {"freq": dial, "mode": "usb"})
+            if not self._wait(SETTLE_S, stop):
+                return None
+            sound.mark()
+            if not self._wait(PSK_FIND_LISTEN_S, stop):
+                return None
+            x = sound.since_mark()
+            for s in psk.heard(x, AUDIO_RATE, most=4) if len(x) >= 2 * AUDIO_RATE else []:
+                on_air = int(round(dial + s["hz"]))
+                if a <= s["hz"] <= b and all(abs(on_air - g["hz"]) > SAME_HZ["psk31"] for g in signals):
+                    signals.append({"hz": on_air, "psk": s["baud"], "text": s["text"][:30], "db": s["db"]})
+            dial += int(b - a)
         return {"n": len(signals), "where": [{k: v for k, v in s.items() if k != "db"} for s in sorted(signals, key=lambda s: -s["db"])]}
 
     def _listen(self, place: dict, sound, stop: threading.Event) -> dict | None:
@@ -400,7 +435,7 @@ class Job:
                 if not lo <= place["hz"] <= hi:
                     continue
                 moved = True
-                if place["mode"] in FIND_MODES:
+                if "lo" in place:
                     try:
                         heard = self._find(place, base, sound, stop)
                     except ValueError as e:          # (no waterfall to look in: that place is left, the round goes on)

@@ -2704,10 +2704,12 @@ function rigCalKey(R, k) {
 const modeOwn = R => R.kind === "own";
 const modeRun = R => modeOwn(R) ? (MODES.srv?.running && MODES.srv.base === R.origin ? MODES.srv : null) : MODES.run;
 // Morse and amateur teleprinters have no one frequency: the radio's survey sweeps their part of the band (the finder).
+// PSK31 has, but spreads a few kHz up from it: the finder listens through from 1 kHz under to 4 kHz over, reading.
 // [lo, hi] in kHz, a band; a key that found some says how many and goes to the strongest.
 const MODE_SWEEP = {
   cw: { "160 m": [1810, 1838], "80 m": [3500, 3570], "40 m": [7000, 7040], "30 m": [10100, 10130], "20 m": [14000, 14070], "17 m": [18068, 18095], "15 m": [21000, 21070], "12 m": [24890, 24915], "10 m": [28000, 28070] },
-  rtty: { "80 m": [3580, 3600], "40 m": [7040, 7050], "30 m": [10140, 10150], "20 m": [14080, 14100], "17 m": [18100, 18110], "15 m": [21080, 21110], "12 m": [24920, 24930], "10 m": [28080, 28110] } };
+  rtty: { "80 m": [3580, 3600], "40 m": [7040, 7050], "30 m": [10140, 10150], "20 m": [14080, 14100], "17 m": [18100, 18110], "15 m": [21080, 21110], "12 m": [24920, 24930], "10 m": [28080, 28110] },
+  psk31: Object.fromEntries(KB_PSK.map(([band, khz]) => [band, [khz - 1, khz + 4]])) };
 const modeSweep = p => !p.weather && !p.fax ? MODE_SWEEP[p.mode]?.[p.band] : null;
 const modePlace = p => ({ key: p.key, mode: p.weather ? "weather" : p.mode, band: p.band, hz: Math.round(p.hz), ...(modeSweep(p) ? { lo: modeSweep(p)[0] * 1000, hi: modeSweep(p)[1] * 1000 } : {}) });
 async function modePoll(R, now) {                   // how the radio's survey is doing, and what it has found
@@ -2850,8 +2852,8 @@ function surveyLast(R, places) {
   return el("p", { className: "shelp", id: "survey-last" }, el("b", { textContent: "Last survey: " }), `${when}${says ? ": " + says : ""}. The keys above say what each place had.`);
 }
 function modeKey(R, p) {
-  const f = MODES.found[R.origin]?.[p.key], swept = modeOwn(R) && modeSweep(p), what = FT_NAMES[p.mode] ? "heard" : p.mode === "psk31" ? "signal" + (f?.n === 1 ? "" : "s") : swept ? "found" : "there", now = modeRun(R)?.at === p.key;
-  const at = swept && f?.where?.length ? f.where : null, atSays = s => `${(s.hz / 1e6).toFixed(4)}${s.wpm ? ` (${s.wpm} words a minute)` : s.baud ? ` (${Math.round(s.baud)} baud, ${s.shift} Hz apart)` : ""}`;
+  const f = MODES.found[R.origin]?.[p.key], swept = modeOwn(R) && modeSweep(p), what = FT_NAMES[p.mode] ? "heard" : swept && (!f || f.where) ? "found" : p.mode === "psk31" ? "signal" + (f?.n === 1 ? "" : "s") : "there", now = modeRun(R)?.at === p.key;
+  const at = swept && f?.where?.length ? f.where : null, atSays = s => `${(s.hz / 1e6).toFixed(4)}${s.wpm ? ` (${s.wpm} words a minute)` : s.psk ? ` (PSK${s.psk}${s.text ? `: “${s.text}”` : ""})` : s.baud ? ` (${Math.round(s.baud)} baud, ${s.shift} Hz apart)` : ""}`;
   const b = el("button", { type: "button", className: (f?.n ? "heard" : "") + (now ? " now" : "") }, p.weather ? p.band.replace(" MHz", "") : p.fax ? p.band : (p.hz / 1e6).toFixed(p.hz % 1000 ? 4 : 3),
                el("small", { textContent: now ? "listening…" : !f ? "\u00a0" : !f.n ? "nothing" : p.weather ? "there" : f.km ? `${f.n} · ${f.km.toLocaleString("en-GB")} km` : `${f.n} ${what}` }));
   const day = f?.day?.length > 1 ? f.day : null, most = day ? Math.max(1, ...day.map(d => d[1])) : 1;       // (the radio's surveys of the last day)
@@ -2860,8 +2862,8 @@ function modeKey(R, p) {
     + (f ? ` · surveyed ${modeAge(f.at)}: ${!f.n ? "nothing heard" : p.weather ? "it was there" : `${f.n} ${what}${f.km ? `, the farthest ${f.km.toLocaleString("en-GB")} km away` : ""}`}` : "")
     + (at ? ` · found at ${at.map(atSays).join(", ")} MHz: this key goes to the strongest` : "")
     + (day ? ` · its last day: ${day.map(([t, n]) => `${new Date(t * 1000).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" })} ${n}`).join(", ")}` : "");
-  // (one the sweep found: to the strongest of them -- Morse on its own frequency, a teleprinter with its tones about 1300 Hz up in what's heard)
-  const to = !at ? p : p.mode === "cw" ? { ...p, hz: at[0].hz } : { ...p, hz: at[0].hz - 1300 };
+  // (one the sweep found: to the strongest of them -- Morse on its own frequency, a teleprinter with its tones about 1300 Hz up in what's heard, PSK at 1000 Hz)
+  const to = !at ? p : p.mode === "cw" ? { ...p, hz: at[0].hz } : { ...p, hz: at[0].hz - (p.mode === "psk31" ? 1000 : 1300) };
   b.onclick = async () => { if (modeRun(R)) return toast("A survey is running: stop it first."); try { await modeGo(R, to); open(R.o.id); } catch (e) { rigOops(e); } };
   return b;
 }
@@ -4570,7 +4572,7 @@ const UI = {
       for (const band of bands) { grid.append(el("span", { textContent: band })); for (const [mode] of MODE_COLS) { const p = at([mode, band]); grid.append(p ? modeKey(R, p) : el("i", { textContent: "·" })); } }
       const weather = places.filter(p => p.weather), faxes = places.filter(p => p.fax), surveyed = Object.values(MODES.found[R.origin] || {}).reduce((a, f) => Math.max(a, f.at), 0);
       const go = (modes, sweep) => () => own ? modeSurveyRadio(R, modes, sweep) : modeSurvey(R, modes);
-      const secs = (modes, sweep) => places.filter(p => own && modeSweep(p) ? sweep : modes.includes(p.mode) && (p.mode !== "rtty" || p.weather)).reduce((a, p) => a + (own && modeSweep(p) ? 20 : { ft8: 32, ft4: 22 }[p.mode] || 17), 0);
+      const secs = (modes, sweep) => places.filter(p => own && modeSweep(p) ? sweep : modes.includes(p.mode) && (p.mode !== "rtty" || p.weather)).reduce((a, p) => a + (own && modeSweep(p) ? (p.mode === "psk31" ? 35 : 20) : { ft8: 32, ft4: 22 }[p.mode] || 17), 0);
       const mins = (modes, sweep) => { const m = Math.round(secs(modes, sweep) / 60); return `about ${m} minute${m === 1 ? "" : "s"}`; };
       return [
         condGrp,
@@ -4584,7 +4586,7 @@ const UI = {
           run ? line(sbtn("Stop", own ? async () => { try { await api("/api/rx/survey", { stop: true }); modePoll(R, true); } catch (e) { rigOops(e); } } : () => { run.stop = true; drawDesk(); }, "danger"),
                      el("span", { className: "note", textContent: `Listening: ${run.i} of ${run.of}…${own && run.why === "itself" ? " (the radio began this one itself)" : ""}` }))
               : line(sbtn("FT8 on every band", go(["ft8"]), "primary"), sbtn("Everything", go(["ft8", "ft4", "psk31", "rtty"], true)),
-                     ...(own ? [sbtn("Find Morse and teleprinters", go([], true)), (() => {             // by itself: FT8 on every band, on the hour, while the radio isn't playing this receiver
+                     ...(own ? [sbtn("Find Morse, teleprinters and PSK", go([], true)), (() => {             // by itself: FT8 on every band, on the hour, while the radio isn't playing this receiver
                        const every = MODES.srv?.itself?.plan?.[R.origin]?.every_h || 0;
                        const s = el("select", { id: "survey-itself", title: "The radio can survey this receiver by itself: FT8 on every band and the weather teleprinters, on the hour, whenever it isn't playing this receiver. Each key then shows the band's last day" },
                          ...[[0, "By itself: never"], [1, "By itself: every hour"], [2, "By itself: every 2 hours"], [3, "By itself: every 3 hours"], [6, "By itself: every 6 hours"]].map(([value, textContent]) => el("option", { value, textContent })));
@@ -4594,7 +4596,7 @@ const UI = {
                        return s; })()] : [])),
           run ? null : surveyLast(R, places),
           help(run ? (own ? "The radio is taking the receiver round the bands by itself: you can close this page. It goes back where it was at the end." : "The receiver is being taken round the bands; it goes back where it was at the end.")
-            : own ? `The radio takes the receiver to each place in turn and listens: a whole slot for FT8 and FT4, a few seconds for PSK31 and the weather teleprinters. FT8 alone takes ${mins(["ft8"])}, everything ${mins(["ft8", "ft4", "psk31", "rtty"], true)} or more. It's the radio's doing, so this page can be closed; it listens to the receiver directly, so nothing is heard unless the radio is playing this receiver (then you hear it go round). The receiver goes back where it was. Morse and amateur teleprinters have no one frequency, so their part of each band is swept (${mins([], true)} or more by itself): the receiver's waterfall is watched for what comes and goes, each such thing is listened to for a few seconds, and a key that found some says how many and goes to the strongest.${surveyed ? ` Last surveyed ${modeAge(surveyed)}.` : ""}`
+            : own ? `The radio takes the receiver to each place in turn and listens: a whole slot for FT8 and FT4, a few seconds for the weather teleprinters. FT8 alone takes ${mins(["ft8"])}, everything ${mins(["ft8", "ft4", "psk31", "rtty"], true)} or more. It's the radio's doing, so this page can be closed; it listens to the receiver directly, so nothing is heard unless the radio is playing this receiver (then you hear it go round). The receiver goes back where it was. Morse and amateur teleprinters have no one frequency, so their part of each band is swept (${mins([], true)} or more by itself, with PSK): the receiver's waterfall is watched for what comes and goes, and each such thing is listened to for a few seconds. PSK31 is listened to straight through, from a kilohertz under its frequency to four over, ten seconds at a time: only a signal the PSK reader can read letters from counts, so FT8 next door doesn't. A key that found some says how many and goes to the strongest.${surveyed ? ` Last surveyed ${modeAge(surveyed)}.` : ""}`
             : `The receiver is taken to each place in turn and listened to: a whole slot for FT8 and FT4, a quarter of a minute for PSK31 and the weather teleprinters. FT8 alone takes ${mins(["ft8"])}, everything ${mins(["ft8", "ft4", "psk31", "rtty"])}. The radio plays each as it goes, and the receiver goes back where it was. Amateur teleprinters and Morse aren't surveyed: they have no one frequency.${surveyed ? ` Last surveyed ${modeAge(surveyed)}.` : ""}`)),
       ];
     },

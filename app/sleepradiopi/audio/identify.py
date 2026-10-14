@@ -249,8 +249,6 @@ MORSE_LETTERS = 4
 MORSE_TRIED = 2              # keyed tones the Morse reader is given, the strongest
 RTTY_TRIED = 2
 PSK_TRIED = 3
-PSK_LETTERS = 6              # a PSK31 signal has to say this many letters...
-PSK_SURE = 0.8               # ...each as sure as this, on average (PSK31: 0.99; Morse read as PSK31 says "letters" too, at 0.54)
 
 
 def _morse(x: np.ndarray, rate: float, pitch: float) -> dict | None:
@@ -278,12 +276,8 @@ def _rtty(x: np.ndarray, rate: float) -> dict | None:
 
 def _psk(x: np.ndarray, rate: float) -> dict | None:
     """PSK31 or PSK63 in the sound, if a signal says enough letters -> {"hz", "baud" (31 or 63), "text"}."""
-    for hz, _ in psk.find(x, rate, most=PSK_TRIED):
-        r = max((psk.read(x, rate, hz, baud) for baud in psk.BAUDS), key=lambda r: len(r["chars"]))
-        said = "".join(c for c, *_ in r["chars"])
-        if (len(r["chars"]) >= PSK_LETTERS and sum(c in psk.PRINTS for c in said) >= 0.9 * len(said) and r["chars"][-1][1] - r["chars"][0][1] >= 1.0
-                and float(np.mean([sure for *_, sure in r["chars"]])) >= PSK_SURE):
-            return {"hz": float(r["pitch"]), "baud": psk.NAMES[r["baud"]], "text": " ".join(said.split())[:60]}
+    for s in psk.heard(x, rate, most=PSK_TRIED):
+        return {k: v for k, v in s.items() if k != "db"}
     return None
 
 

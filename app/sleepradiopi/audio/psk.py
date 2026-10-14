@@ -70,6 +70,8 @@ EYE_MIN = 0.80               # the eye a stretch must have to be said (noise: 0.
 TURNS_MIN = 0.85             # a tone that hardly ever turns is a carrier (a whistle), not PSK31: text turns for a third of its bits
 DIP_MAX = 0.55               # ...and at a turn the strength must dip (to nothing, on a clean signal): under this much of itself
 EYE_OVER = 33                # ...taken over this many symbols, about a second of PSK31 (noise alone then strays to 0.8 very seldom)
+LETTERS_MIN = 6              # heard(): a signal has to say this many letters...
+SURE_MIN = 0.8               # ...each as sure as this, on average (PSK31: 0.99; Morse read as PSK31 says "letters" too, at 0.54)
 
 QPSK_AGREE_MIN = 0.85        # QPSK: of the symbols about a letter, this share must be what the text read codes back to (noise: about a third)
 QPSK_FOURTH_MIN = 0.35       # ...and worth trying at all only if the phase steps keep to four places (their fourth power agrees with itself)
@@ -235,6 +237,20 @@ def read(x: np.ndarray, rate: float, pitch: float, baud: float = BAUD) -> dict:
                 chars.append((c, float(when[i]), float(np.min(sure[start:i + 1]))))
             run, start = [], None
     out["chars"] = chars
+    return out
+
+
+def heard(x: np.ndarray, rate: float, most: int = 3) -> list[dict]:
+    """The PSK31 and PSK63 signals in x that say enough letters to be sure of -> [{"hz", "baud" (31 or 63),
+    "db" (over the noise), "text"}], the strongest first. (What "What's this?" and the survey's finder go by:
+    a hump that merely stands out may be FT8 or a whistle; one that spells is PSK.)"""
+    out = []
+    for hz, db in find(x, rate, most=most):
+        r = max((read(x, rate, hz, baud) for baud in BAUDS), key=lambda r: len(r["chars"]))
+        said = "".join(c for c, *_ in r["chars"])
+        if (len(r["chars"]) >= LETTERS_MIN and sum(c in PRINTS for c in said) >= 0.9 * len(said) and r["chars"][-1][1] - r["chars"][0][1] >= 1.0
+                and float(np.mean([sure for *_, sure in r["chars"]])) >= SURE_MIN):
+            out.append({"hz": float(r["pitch"]), "baud": NAMES[r["baud"]], "db": round(float(db), 1), "text": " ".join(said.split())[:60]})
     return out
 
 
