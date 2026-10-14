@@ -36,6 +36,7 @@ def _followed(mode: str, x: np.ndarray) -> dict[int, str]:
         r.step()
     lines: dict[int, str] = {}
     for p in r.status()["pieces"]:
+        assert len(p["sure"]) == len(p["text"]) and set(p["sure"]) <= set("012")      # (how sure, a figure a letter: the page shades by it)
         lines[p["hz"]] = lines.get(p["hz"], "") + p["text"]
     return lines
 
@@ -416,3 +417,7 @@ def test_one_rule_for_what_is_psk() -> None:
     assert not psk.spells({"chars": [("e", 0.1, 1.0), ("t", 0.2, 1.0), ("a", 0.3, 1.0)]})   # too few
     assert not psk.spells({"chars": [(c, i * 0.3, 0.5) for i, c in enumerate("cq de g4abc")]})   # not sure enough
     assert psk.spells({"qpsk": True, "chars": [(c, i * 0.3, 0.5) for i, c in enumerate("cq de g4abc")]})   # (QPSK31: its own tests stand)
+
+
+def test_how_sure_a_letter_is() -> None:
+    assert keyboard.surety([("c", 0.1, 0.99), ("q", 0.2, 0.5), (" ", 0.3, 0.1), ("d", 0.4, 0.66)]) == "2102"

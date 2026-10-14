@@ -2609,11 +2609,18 @@ function kbLog(p, st) {
   let v = KB.voices.find(v => Math.abs(v.hz - p.hz) <= KB_SAME_HZ);
   if (!v) { KB.voices.push(v = { hue: KB.hue++ % CW_HUES.length }); KB.voices = KB.voices.slice(-CW_HUES.length); }
   v.hz = p.hz;
-  p.text.replace(/\r\n?/g, "\n").split("\n").forEach((part, i) => {
+  // (each letter with how sure it is, "2" sure .. "0" doubtful; a line break is the sender's: \r\n, \r or \n)
+  const sure = p.sure?.length === p.text.length ? p.sure : "2".repeat(p.text.length), parts = [["", ""]];
+  for (let k = 0; k < p.text.length; k++) {
+    const c = p.text[k];
+    if (c === "\r" || c === "\n") { if (!(c === "\n" && p.text[k - 1] === "\r")) parts.push(["", ""]); continue; }
+    parts[parts.length - 1][0] += c; parts[parts.length - 1][1] += sure[k];
+  }
+  parts.forEach(([part, partSure], i) => {
     let l = KB.lines.findLast(l => Math.abs(l.hz - p.hz) <= KB_SAME_HZ);
-    if (i || !l || p.t0 - l.t1 > 20 || l.text.length > 240) { if (!part && i) return void (l && (l.closed = true)); KB.lines.push(l = { id: ++KB.line, hz: p.hz, baud: p.baud, qpsk: p.qpsk, when, hue: v.hue, text: "", t1: p.t1 }); }
-    else if (l.closed) { KB.lines.push(l = { id: ++KB.line, hz: p.hz, baud: p.baud, qpsk: p.qpsk, when, hue: v.hue, text: "", t1: p.t1 }); }
-    l.text += part; l.t1 = p.t1; l.hz = p.hz;
+    if (i || !l || p.t0 - l.t1 > 20 || l.text.length > 240) { if (!part && i) return void (l && (l.closed = true)); KB.lines.push(l = { id: ++KB.line, hz: p.hz, baud: p.baud, qpsk: p.qpsk, when, hue: v.hue, text: "", sure: "", t1: p.t1 }); }
+    else if (l.closed) { KB.lines.push(l = { id: ++KB.line, hz: p.hz, baud: p.baud, qpsk: p.qpsk, when, hue: v.hue, text: "", sure: "", t1: p.t1 }); }
+    l.text += part; l.sure += partSure; l.t1 = p.t1; l.hz = p.hz;
   });
   KB.lines = KB.lines.filter(l => l.text.trim() || l === KB.lines[KB.lines.length - 1]).slice(-KB_LINES);
 }
@@ -2635,12 +2642,24 @@ function kbRow(l) {
   const text = el("span", { className: "rtext" });
   const row = el("div", { className: "rline", title: l.qpsk ? "QPSK31: the four-phase kind, with error correction" : l.baud === 63 ? "PSK63: the same as PSK31 at twice the speed" : "" }, el("span", { className: "rwho", textContent: kbWho(l) }), text);
   row.style.setProperty("--hue", CW_HUES[l.hue]);
-  for (const w of l.text.split(/(\s+)/)) {           // a callsign among the words is picked out (a teleprinter's are in capitals already)
-    const call = w.toUpperCase().replace(/^[^A-Z0-9]+|[^A-Z0-9/]+$/g, "");
-    if (w === w.toUpperCase() && call.length >= 4 && CW_CALL.test(call) && !/^[A-R]{2}\d\d$/.test(call)) {
-      const a = w.toUpperCase().indexOf(call);
-      text.append(w.slice(0, a), el("span", { className: "call", textContent: w.slice(a, a + call.length), title: "Click to copy this callsign" }), w.slice(a + call.length));
-    } else text.append(w);
+  const sure = l.sure?.length === l.text.length ? l.sure : "2".repeat(l.text.length);
+  const shade = (from, to) => {                      // letters as read: a less sure one fainter, as in Morse's log (runs of the same together)
+    for (let k = from; k < to;) {
+      let e = k; while (e < to && sure[e] === sure[k]) e++;
+      const part = l.text.slice(k, e);
+      text.append(sure[k] === "2" ? part : el("span", { className: sure[k] === "1" ? "c2" : "c1", textContent: part }));
+      k = e;
+    }
+  };
+  let at = 0;
+  for (const w of l.text.split(/(\s+)/)) {           // a callsign among the words is picked out (a teleprinter's are in capitals already), if every letter of it is sure
+    const call = w.toUpperCase().replace(/^[^A-Z0-9]+|[^A-Z0-9/]+$/g, ""), a = w.toUpperCase().indexOf(call);
+    if (w === w.toUpperCase() && call.length >= 4 && CW_CALL.test(call) && !/^[A-R]{2}\d\d$/.test(call) && !/[01]/.test(sure.slice(at + a, at + a + call.length))) {
+      shade(at, at + a);
+      text.append(el("span", { className: "call", textContent: w.slice(a, a + call.length), title: "Click to copy this callsign" }));
+      shade(at + a + call.length, at + w.length);
+    } else shade(at, at + w.length);
+    at += w.length;
   }
   return heardMark(row, l.text);
 }
@@ -2665,7 +2684,7 @@ function kbDraw(R) {
   let changed = false;
   for (const [id, row] of have) if (!KB.lines.some(l => String(l.id) === id)) { row.remove(); changed = true; }
   for (const l of KB.lines) {
-    const sg = String(l.text.length), row = have.get(String(l.id));
+    const sg = `${l.text.length}:${l.sure?.length}`, row = have.get(String(l.id));
     if (row?.dataset.sig === sg) continue;
     const made = kbRow(l); made.dataset.id = l.id; made.dataset.sig = sg;
     if (row) row.replaceWith(made); else box.append(made);
@@ -3599,7 +3618,7 @@ function rigView(o, box, win) {
                    if (!await heardClear(R, "ft", ftDraw)) { FT.lines = []; d.ftcopy.replaceChildren(); Object.assign(d.ftcopy.dataset, { n: "", said: "", sig: "" }); ftDraw(R); } })),
               el("div", { className: "rftbar" }, d.ftbar = el("i")), d.ftcopy = el("div", { className: "rcopy" })),
     d.kb = el("div", { className: "rcw rft rkb", hidden: true },
-              el("h4", { title: "A line: when it began (UTC, as the bands keep time), where in the sound the signal is, and what it's sending" }, d.kbname = el("b"), d.kbsub = el("i", { className: "rsub" }), d.kbsays = el("span", { className: "rsays" }), ...stationKeys(R, cwKey),
+              el("h4", { title: "A line: when it began (UTC, as the bands keep time), where in the sound the signal is, and what it's sending. A letter read less surely is fainter" }, d.kbname = el("b"), d.kbsub = el("i", { className: "rsub" }), d.kbsays = el("span", { className: "rsays" }), ...stationKeys(R, cwKey),
                  d.kbheard = cwKey("Heard", "Who has been heard sending PSK and RTTY on this band (the call after DE, read twice), the farthest first: the radio keeps the list, a restart or not (press again for what's read)", () => heardToggle(R, "kb", "heard", kbDraw)),
                  d.kbmap = cwKey("Map", "The locator squares of those who gave one, on a map of the world (press again for what's read)", () => heardToggle(R, "kb", "map", kbDraw)),
                  cwKey("Copy", "Copy everything read so far", () => heardCopy(R, "kb") || (KB.lines.length ? cwCopy(KB.lines.map(l => `${kbWho(l)}  ${l.text}`).join("\n"), "the text read so far") : toast("Nothing read yet."))),

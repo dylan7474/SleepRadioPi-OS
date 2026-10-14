@@ -26,7 +26,8 @@ or two, and what's new since the last look is passed on.
     and a wider one that frames takes over from a narrower one inside it.
 
 What's read comes out in pieces: {"n", "hz", "t0", "t1" (seconds of sound
-since switched on), "text"}; the page puts a signal's pieces together on a
+since switched on), "text", "sure" (a figure a letter: 2 sure, 1 middling,
+0 doubtful, as the page shades them -- the Morse reader's thresholds)}; the page puts a signal's pieces together on a
 line (web/desktop.html: the PSK and RTTY keys).
 
 `reader` is the one the radio uses: the station feeds it what a receiver
@@ -68,6 +69,11 @@ RTTY_GAP_HZ = 20.0           # two signals' tones are at least this far from eac
 RTTY_SAME_HZ = 40.0          # a pair of tones within this of a track's, the same distance apart, is that track
 RTTY_AGAIN_S = 3.0           # a pair that didn't frame isn't tried again for this long (it may have just begun)...
 RTTY_AGAIN_MOST_S = 24.0     # ...twice as long each time it fails again, up to this
+
+
+def surety(chars) -> str:
+    """[(char, when, how sure 0-1)] -> a figure a letter: "2" sure, "1" middling, "0" doubtful (as Morse's are shaded)."""
+    return "".join("2" if sure >= 0.66 else "1" if sure >= 0.33 else "0" for *_, sure in chars)
 
 
 class Reader:
@@ -173,7 +179,7 @@ class Reader:
             if track is None:
                 track = next((t for t in self._tracks if abs(t["hz"] - r["pitch"]) < PSK_SAME_HZ), None)
             done = track["done"] if track else t0
-            chars = [(c, t0 + when) for c, when, _ in r["chars"] if done + AGAIN_S < t0 + when <= upto]
+            chars = [(c, t0 + when, sure) for c, when, sure in r["chars"] if done + AGAIN_S < t0 + when <= upto]
             if track is None:
                 if not psk.spells(r) or len(self._tracks) >= PSK_MOST:
                     continue                         # (the one rule: the finder and What's this? go by it too)
@@ -187,9 +193,10 @@ class Reader:
                 track["db"] = strength(track["hz"])
             if chars:
                 track.update(done=chars[-1][1], last=end)
+                typed = "".join(c for c, *_ in chars)
                 pieces.append({"hz": round(track["hz"]), "baud": psk.NAMES[track["baud"]], **({"qpsk": True} if track.get("qpsk") else {}),
                                **({"db": track["db"]} if track.get("db") is not None else {}),
-                               "t0": round(chars[0][1], 2), "t1": round(chars[-1][1], 2), "text": "".join(c for c, _ in chars)})
+                               "t0": round(chars[0][1], 2), "t1": round(chars[-1][1], 2), "text": typed, "sure": surety(chars)})
             track["done"] = max(track["done"], t0)   # (what has gone from the window is done with)
         return pieces, [{"hz": round(t["hz"]), "baud": psk.NAMES[t["baud"]], "eye": round(t["eye"], 2), **({"qpsk": True} if t.get("qpsk") else {})}
                         for t in sorted(self._tracks, key=lambda t: t["hz"])]
@@ -213,9 +220,10 @@ class Reader:
             if codes:
                 chars, s["figs"] = rtty.text(codes, s["figs"])
                 s.update(done=codes[-1][1], last=end)
-                text = "".join(c for c, _, _ in chars).replace("\r", "")
+                chars = [ch for ch in chars if ch[0] != "\r"]
+                text = "".join(c for c, _, _ in chars)
                 if text:
-                    pieces.append({"hz": round(s["low"] + s["shift"] / 2), "t0": round(codes[0][1], 2), "t1": round(codes[-1][1], 2), "text": text,
+                    pieces.append({"hz": round(s["low"] + s["shift"] / 2), "t0": round(codes[0][1], 2), "t1": round(codes[-1][1], 2), "text": text, "sure": surety(chars),
                                    **({"db": s["db"]} if s.get("db") is not None else {})})
                 s["level"] += 0.3 * (r["level"] - s["level"])      # (how strong it is, followed: a fade is, a stop isn't)
             s["done"], s["framed"] = max(s["done"], t0), r["framed"]
