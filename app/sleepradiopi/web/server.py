@@ -764,7 +764,7 @@ def make_handler(station: Station, output: Mp3Output, speaker=None,
                     save_setting(config_file, "noise_reduction", level)
                 self._send(json.dumps({"nr": level}).encode(), "application/json")
             elif path == "/api/rx/morse":
-                # {"on": true | false}: the Morse reader for receivers (audio/morse.py). Off again at the next start.
+                # {"on": true | false}: the Morse reader for receivers (audio/morse.py). Kept over a restart.
                 from sleepradiopi.audio import morse as morse_mod
                 try:
                     body = json.loads(self.rfile.read(int(self.headers.get("Content-Length", 0))) or b"{}")
@@ -774,13 +774,13 @@ def make_handler(station: Station, output: Mp3Output, speaker=None,
                     self._error('send {"on": true | false}')
                     return
                 morse_mod.reader.switch(body["on"])
-                self._send(json.dumps(self._one_reader("cw" if body["on"] else None)).encode(), "application/json")
+                self._send(json.dumps(self._one_reader("cw" if body["on"] else None, keep=True)).encode(), "application/json")
             elif path == "/api/rx/ft8":
                 # {"on": true | false, "mode"?: "ft8" | "ft4", "band"?: "40 m", "dial"?: Hz, "own"?: true}: the FT8 / FT4
                 # reader for receivers (audio/ft8.py); band is what the page says the receiver is on, for the list of
                 # who's been heard; dial is where it's tuned and own that it's a receiver of the owner's own (the one
                 # the radio is playing): what's read from one of those can be reported (audio/report.py).
-                # Off again at the next start.
+                # Kept over a restart (audio/readers.py).
                 from sleepradiopi.audio import ft8 as ft8_mod
                 try:
                     body = json.loads(self.rfile.read(int(self.headers.get("Content-Length", 0))) or b"{}")
@@ -801,7 +801,7 @@ def make_handler(station: Station, output: Mp3Output, speaker=None,
                     own = f"{at.scheme}://{at.netloc}" if at.scheme in ("http", "https") and at.netloc else None
                     ft8_mod.reader.playing = lambda: (station.source or {}).get("url")
                 ft8_mod.reader.switch(body["on"], body.get("mode"), body.get("band"), None if dial is None else int(dial), own)
-                self._send(json.dumps(self._one_reader("ft8" if body["on"] else None)).encode(), "application/json")
+                self._send(json.dumps(self._one_reader("ft8" if body["on"] else None, keep=True)).encode(), "application/json")
             elif path == "/api/rx/conditions":
                 # {"say_every_h": 0 | 1 | 2 | 3 | 6}: the DJ says how the short-wave bands are, that many hours apart
                 # (0: not at all), between songs, like the news. Kept.
@@ -873,7 +873,7 @@ def make_handler(station: Station, output: Mp3Output, speaker=None,
                 self._send(json.dumps(ft8_mod.reader.heard()).encode(), "application/json")
             elif path == "/api/rx/keyboard":
                 # {"on": true | false, "mode"?: "psk31" | "rtty"}: the PSK31 / RTTY reader for receivers
-                # (audio/keyboard.py). Off again at the next start.
+                # (audio/keyboard.py). Kept over a restart.
                 from sleepradiopi.audio import keyboard as keyboard_mod
                 try:
                     body = json.loads(self.rfile.read(int(self.headers.get("Content-Length", 0))) or b"{}")
@@ -883,7 +883,7 @@ def make_handler(station: Station, output: Mp3Output, speaker=None,
                     self._error('send {"on": true | false, "mode": "psk31" | "rtty"}')
                     return
                 keyboard_mod.reader.switch(body["on"], body.get("mode"))
-                self._send(json.dumps(self._one_reader("keyboard" if body["on"] else None)).encode(), "application/json")
+                self._send(json.dumps(self._one_reader("keyboard" if body["on"] else None, keep=True)).encode(), "application/json")
             elif path == "/api/rx/calibrate":
                 # {"base": "http://192.168.50.154:8074"}: put that receiver of your own on frequency: by FT8 heard on it and
                 # on a KiwiSDR among the stations at the same moment, or failing that from broadcast stations
@@ -921,7 +921,7 @@ def make_handler(station: Station, output: Mp3Output, speaker=None,
                 self._send(json.dumps(calibrate_mod.job.status()).encode(), "application/json")
             elif path == "/api/rx/pictures":
                 # {"on": true | false, "mode"?: "sstv" | "fax"}: the reader for SSTV pictures and weather charts
-                # (audio/pictures.py); off again at the next start. Or {"begin": true}: read a chart from now, without
+                # (audio/pictures.py); kept over a restart. Or {"begin": true}: read a chart from now, without
                 # waiting for its start tone; {"end": true}: the picture being read is finished here.
                 # {"slide": 0.37, "n": 5}: chart 5's lines begin that far across it: it's turned round to match.
                 from sleepradiopi.audio import pictures as pictures_mod
@@ -943,7 +943,7 @@ def make_handler(station: Station, output: Mp3Output, speaker=None,
                     self._error(str(e) if isinstance(e, ValueError) and str(e) else 'send {"on": true | false, "mode": "sstv" | "fax"}, {"begin": true} or {"end": true}')
                     return
                 pictures_mod.reader.switch(body["on"], body.get("mode"))
-                self._send(json.dumps(self._one_reader("pictures" if body["on"] else None)).encode(), "application/json")
+                self._send(json.dumps(self._one_reader("pictures" if body["on"] else None, keep=True)).encode(), "application/json")
             elif path == "/api/rx/name":
                 # {"base": "http://192.168.50.4:8075", "name": "Short wave"} ("" for its own again): what a receiver is
                 # called on the desktop -- two on one computer are otherwise only told apart by their ports. Kept.
@@ -1406,11 +1406,12 @@ def make_handler(station: Station, output: Mp3Output, speaker=None,
             threading.Thread(target=run, name="message-preview", daemon=True).start()
             self._send(json.dumps({"ok": True, "text": words}).encode(), "application/json")
 
-        def _one_reader(self, on: str | None) -> dict:
+        def _one_reader(self, on: str | None, keep: bool = False) -> dict:
             """The readers for receivers, one at a time: each mode has its own place on a band, so with one switched
             on ("cw", "ft8", "keyboard" or "pictures") the others go off. -> {"cw", "ft8", "keyboard", "pictures"}:
-            which is on, and how."""
+            which is on, and how. keep: one was switched: which is on is kept, for after a restart (audio/readers.py)."""
             from sleepradiopi.audio import ft8 as ft8_mod, keyboard as keyboard_mod, morse as morse_mod, pictures as pictures_mod
+            from sleepradiopi.audio import readers as readers_mod
             if on is not None:
                 if on != "cw":
                     morse_mod.reader.switch(False)
@@ -1420,6 +1421,8 @@ def make_handler(station: Station, output: Mp3Output, speaker=None,
                     keyboard_mod.reader.switch(False)
                 if on != "pictures":
                     pictures_mod.reader.switch(False)
+            if keep and config_file is not None:
+                save_setting(config_file, "rx_reader", readers_mod.state())
             return {"cw": morse_mod.reader.on, "ft8": ft8_mod.reader.mode if ft8_mod.reader.on else None,
                     "keyboard": keyboard_mod.reader.mode if keyboard_mod.reader.on else None,
                     "pictures": pictures_mod.reader.mode if pictures_mod.reader.on else None}
@@ -1710,6 +1713,13 @@ def make_handler(station: Station, output: Mp3Output, speaker=None,
                     code, said = e.code, e.read()
             except (OSError, ValueError) as e:
                 code, said = 502, json.dumps({"error": f"the receiver isn't answering ({str(getattr(e, 'reason', e))[:60]})"}).encode()
+            if what == "tune" and code == 200 and station is not None:
+                # (tuned from its window: if the radio is playing it, it keeps where -- a restart comes back there)
+                try:
+                    now = json.loads(said).get("receiving") or {}
+                    station.retuned(base, now.get("freq"), now.get("mode"))
+                except (ValueError, AttributeError):
+                    pass
             self.send_response(code)
             self.send_header("Content-Type", "application/json")
             self.send_header("Content-Length", str(len(said)))

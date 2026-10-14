@@ -290,7 +290,8 @@ Most of these are set from the web page; the rest are in the config file.
 | `broadcast_dj` | `true` | `false`: the show is music only, no speech at all (see *The DJ*). |
 | `buttons` | `[]` | The four preset buttons (the day set): `[preset or null, ...]`, each `{"kind": "show", "artist", "profile"}`, `{"kind": "radio", "name", "url"}`, `{"kind": "album", "folder", "title", "artist"}` or `{"kind": "action", "action": "time" \| "news" \| "sleep" \| "address"}`. |
 | `radio_stations` | the starter set | Internet radio: your saved stations, `[{"name", "url", "info"?}]`. |
-| `stream_source` | `null` | What's playing instead of the show — a station, or an album and the track it's on — kept over a restart; `null` = the show. Not in the settings backup. |
+| `stream_source` | `null` | What's playing instead of the show — a station, or an album and the track it's on — kept over a restart; `null` = the show. A receiver of your own tuned from its window while it's playing is kept as where it was tuned (`…/audio?freq=18.100000&mode=usb`, `Station.retuned`), not the band the station named. Not in the settings backup. |
+| `rx_reader` | `null` | The reader for receivers that's on — `{"reader": "cw" \| "ft8" \| "keyboard" \| "pictures", "mode"?, …}` (`audio/readers.py`) — switched on again after a restart; `null` = none. Not in the settings backup. |
 | `broadcast_profile` | `null` | The theme playing (one of your `profiles`); `null` = the theme last played, else Default. (`broadcast_artist`, artist radio, is retired: one saved from before becomes a one-artist theme at start-up.) |
 | `profiles` | `[]` | `[{"name": "Friday List", "artists": [...]}]` |
 | `birthdays` | `[]` | `[{"name", "day", "month", "year"?}]` |
@@ -1140,7 +1141,7 @@ The cards:
   the voice kept (measured with a clean voice in real band noise); about a
   sixth of one core on the Zero 2 W (`audio/denoise.py`).
   *Morse, read as text* (the **CW** key in a receiver's window;
-  `POST /api/rx/morse {"on": true | false}`, off again at the next start):
+  `POST /api/rx/morse {"on": true | false}`, kept over a restart):
   the radio listens to what a receiver is playing -- as it came, before the
   noise reduction (which is for the ears: its turning the level up and down
   would blur the edges of the marks, and the reader's own filter is far
@@ -1200,7 +1201,7 @@ The cards:
   next to nothing when all is quiet (`audio/morse.py`).
   *FT8 and FT4, read as text* (the **FT8** and **FT4** keys in a
   receiver's window; `POST /api/rx/ft8 {"on": true | false, "mode": "ft8" |
-  "ft4"}`, off again at the next start): a key takes the receiver to the
+  "ft4"}`, kept over a restart): a key takes the receiver to the
   mode's frequency on the band it's on, in upper sideband (14.074 MHz for
   FT8 on 20 m, 14.080 for FT4; 20 m if it was nowhere yet; an OpenWebRX is
   tuned by hand), and the radio cuts what it plays into the mode's slots by
@@ -1262,7 +1263,7 @@ The cards:
   own; the survey leaves it out (two minutes a band).
   *PSK31 and RTTY, read as text* (the **PSK** and **RTTY** keys in a
   receiver's window; `POST /api/rx/keyboard {"on": true | false, "mode":
-  "psk31" | "rtty"}`, off again at the next start; `GET
+  "psk31" | "rtty"}`, kept over a restart; `GET
   /api/rx/keyboard?since=N` gives what's being read now and the pieces of
   text after number N): the last eight seconds of what a receiver plays are
   read again every second and a half, in a process of its own at low

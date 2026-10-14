@@ -64,6 +64,7 @@ class Settings:
     power_on: dict | None = None          # what plays when the radio's switched on (a preset); None: what was on last
     broadcast_dj: bool = True             # False: the show is music only (no welcome, links, time checks)
     stream_source: dict | None = None     # a station or album playing instead of the show; None = the show
+    rx_reader: dict | None = None         # the reader for receivers that's on (audio/readers.py); None: none
     birthdays: list = field(default_factory=list)  # [{"name", "day", "month", "year"?}]: the DJ wishes them on the day
     messages: dict = field(default_factory=dict)   # notes the DJ reads through the day (broadcast/messages.py)
     messages_away: dict = field(default_factory=dict)   # {"url", "every_min"}: messages kept in a document elsewhere (broadcast/away.py)

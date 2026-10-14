@@ -166,3 +166,139 @@ def test_the_radio_plays_on_with_no_network_at_all(tmp_path: Path) -> None:
     assert out["survey"] == 200 and out["survey_after"]["running"] is False and "answering" in out["survey_after"].get("error", "")
     assert out["calibrate_after"]["running"] is False                        # the receiver isn't there: said, and over
     assert out["tracebacks"] <= 1, out["log_tail"]                           # (the PC's missing voice library is the one allowed)
+
+
+class _ReceiverHere:
+    """A receiver of your own, near enough, for the real program to play: /audio (a WAV of quiet hiss, as the real
+    one sends), /tune and /status, and what it was asked for."""
+
+    def __init__(self) -> None:
+        import threading
+        from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+        here = self
+        self.asked: list[str] = []
+        self.receiving = {"freq": 5_398_500, "mode": "usb", "band": "60m"}
+
+        class H(BaseHTTPRequestHandler):
+            def log_message(self, *a) -> None:
+                pass
+
+            def _json(self, d: dict) -> None:
+                body = json.dumps(d).encode()
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+
+            def do_GET(self) -> None:
+                here.asked.append(self.path)
+                if not self.path.startswith("/audio"):
+                    return self._json({"receiving": here.receiving, "tunable": [100_000, 60_000_000], "tunes": True})
+                import struct
+                import numpy as np
+                self.send_response(200)
+                self.send_header("Content-Type", "audio/wav")
+                self.end_headers()
+                self.wfile.write(b"RIFF\xff\xff\xff\xffWAVEfmt " + struct.pack("<IHHIIHH", 16, 1, 1, 12000, 24000, 2, 16) + b"data\xff\xff\xff\xff")
+                rng = np.random.default_rng(1)
+                try:
+                    for _ in range(600):
+                        self.wfile.write((rng.normal(0, 300, 1200)).astype("<i2").tobytes())
+                        time.sleep(0.1)
+                except OSError:
+                    pass
+
+            def do_POST(self) -> None:
+                body = json.loads(self.rfile.read(int(self.headers.get("Content-Length", 0))))
+                here.asked.append(f"POST {self.path}")
+                here.receiving = {"freq": body["freq"], "mode": body["mode"]}
+                self._json({"receiving": here.receiving, "tunes": True})
+
+        self.httpd = ThreadingHTTPServer(("127.0.0.1", 0), H)
+        self.origin = f"http://127.0.0.1:{self.httpd.server_address[1]}"
+        threading.Thread(target=self.httpd.serve_forever, daemon=True).start()
+
+
+def test_a_restart_comes_back_where_the_receiver_was_tuned_with_the_reader_on(tmp_path: Path) -> None:
+    """An update restarts the radio: it used to come back on the station's band (60 m), not where the receiver had
+    been tuned since, and with the PSK31 reader off."""
+    import threading
+    rx = _ReceiverHere()
+    with socket.socket() as s:
+        s.bind(("127.0.0.1", 0))
+        port = s.getsockname()[1]
+    home = tmp_path / "home"
+    home.mkdir()
+    conf = tmp_path / "config.json"
+    band = {"name": "60 metres", "url": f"{rx.origin}/audio?band=60m"}
+    conf.write_text(json.dumps({"music_folder": str(tmp_path / "music"), "jingles_folder": str(tmp_path / "jingles"), "web_stream": True,
+                                "radio_stations": [band], "stream_source": {"kind": "radio", **band}}))
+    env = {**os.environ, "HOME": str(home), "PYTHONPATH": str(Path(__file__).resolve().parent.parent)}
+    base = f"http://127.0.0.1:{port}"
+
+    def call(path, body=None):
+        req = urllib.request.Request(base + path, data=None if body is None else json.dumps(body).encode(), method="GET" if body is None else "POST",
+                                     headers={"Content-Type": "application/json"})
+        with urllib.request.urlopen(req, timeout=10) as r:
+            return json.loads(r.read())
+
+    def start(log):
+        with open(log, "w") as out:
+            p = subprocess.Popen([sys.executable, "-m", "sleepradiopi.main", "--config", str(conf), "--port", str(port)],
+                                 stdout=out, stderr=subprocess.STDOUT, env=env, cwd=tmp_path)
+        for _ in range(120):
+            try:
+                call("/api/status")
+                break
+            except OSError:
+                assert p.poll() is None, log.read_text()[-3000:]
+                time.sleep(0.5)
+
+        def listen():                                # (somebody listening: the show runs, and with it the station)
+            try:
+                with urllib.request.urlopen(base + "/stream", timeout=10) as r:
+                    while r.read(4096):
+                        pass
+            except OSError:
+                pass
+        threading.Thread(target=listen, daemon=True).start()
+        return p
+
+    def stop(p):
+        p.terminate()
+        try:
+            p.wait(10)
+        except subprocess.TimeoutExpired:
+            p.kill()
+
+    p = start(tmp_path / "log1")
+    try:
+        for _ in range(40):                          # playing the receiver's band
+            if any(a.startswith("/audio?band=60m") for a in rx.asked):
+                break
+            time.sleep(0.25)
+        assert any(a.startswith("/audio?band=60m") for a in rx.asked), rx.asked
+        call(f"/api/rx/own/tune?base={rx.origin}", {"freq": 18_100_000, "mode": "usb"})          # tuned in its window...
+        assert call("/api/rx/keyboard", {"on": True, "mode": "psk31"})["keyboard"] == "psk31"     # ...and the PSK31 reader on
+        kept = json.loads(conf.read_text())
+        assert kept["stream_source"]["url"] == f"{rx.origin}/audio?freq=18.100000&mode=usb" and kept["stream_source"]["name"] == "60 metres"
+        assert kept["rx_reader"] == {"reader": "keyboard", "mode": "psk31"}
+    finally:
+        stop(p)
+    rx.asked.clear()
+    p = start(tmp_path / "log2")                     # the update's restart
+    try:
+        assert call("/api/rx/keyboard")["on"] is True and call("/api/rx/keyboard")["mode"] == "psk31"
+        for _ in range(40):
+            if any(a.startswith("/audio") for a in rx.asked):
+                break
+            time.sleep(0.25)
+        played = [a for a in rx.asked if a.startswith("/audio")]
+        assert played and all(a == "/audio?freq=18.100000&mode=usb" for a in played), rx.asked
+        assert call("/api/status")["source"]["name"] == "60 metres"
+        call("/api/rx/keyboard", {"on": False})
+        assert json.loads(conf.read_text())["rx_reader"] is None                                  # off is kept too
+    finally:
+        stop(p)
+        rx.httpd.shutdown()

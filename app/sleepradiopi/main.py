@@ -790,6 +790,9 @@ def main() -> None:
     station.podcasts.keep_fresh()
     # A station or album playing instead of the show is kept over a restart.
     station.on_source = lambda source: save_setting(args.config, "stream_source", source)
+    # ...and so is the reader for receivers that was on (Morse, FT8, PSK31...), and how (audio/readers.py).
+    from sleepradiopi.audio import readers as readers_mod
+    readers_mod.restore(settings.rx_reader, lambda: (station.source or {}).get("url"))
     if control is not None and not settings.programme_mode:
         # a bedside radio plays as soon as it's powered (in programme mode: quiet until one's on):
         # what's been chosen for switch-on, if anything, else what was on last

@@ -287,6 +287,9 @@ Actions, Sleep timer and Radio folders open:
   is one frequency tuned like a rig, with the same click, steps and zoom; an
   internet receiver is tuned where it is, through the one connection the
   radio holds to it.
+  A restart -- an update, say -- comes back where your own receiver was
+  tuned (not the band its station started on), with the reader that was
+  on (Morse, FT8, PSK31, SSTV...) on again.
 
   ![The rig: a short-wave receiver's window on 40 m, with its waterfall and, under it, FT8 messages being read off the air; along the bottom the keys for calibrating it, noise reduction, the Morse, FT8, FT4, PSK31 and teleprinter readers, and where to listen](docs/rig.jpg)
 - **What's this?** A key in a receiver's window that names what you're

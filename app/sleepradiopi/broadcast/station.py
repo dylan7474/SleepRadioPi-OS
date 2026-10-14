@@ -727,6 +727,24 @@ class Station:
     def source(self) -> dict | None:
         return self._source
 
+    def retuned(self, base: str, freq, mode) -> bool:
+        """A receiver of your own was tuned from its window (web/server.py): if it's what's playing, what's playing
+        says where now -- its address becomes base/audio?freq=..&mode=.. -- so a dropped stream, or a restart (an
+        update), comes back there and not to the band the station first named. -> whether it was."""
+        if isinstance(freq, bool) or not isinstance(freq, (int, float)) or not 100_000 <= freq <= 500_000_000 \
+                or not isinstance(mode, str) or not mode.isalpha() or len(mode) > 4:
+            return False
+        with self._lock:
+            src = self._source
+            if not src or src.get("kind", "radio") != "radio" or not str(src.get("url", "")).startswith(base.rstrip("/") + "/audio"):
+                return False
+            url = f"{base.rstrip('/')}/audio?freq={freq / 1e6:.6f}&mode={mode.lower()}"
+            if src["url"] == url:
+                return True
+            src["url"] = url                 # (in place: the stream playing it reconnects to it, see _run_radio)
+        self._notify_source()
+        return True
+
     def _notify_source(self) -> None:
         if self.on_source is not None:
             try:

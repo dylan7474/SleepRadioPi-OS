@@ -23,7 +23,7 @@ from sleepradiopi.config.backup import LOCAL
 
 log = logging.getLogger(__name__)
 
-KEEP = (LOCAL - {"web_password", "stream_source"}) | {"broadcast_voice", "speaker_mono", "speaker_eq",
+KEEP = (LOCAL - {"web_password", "stream_source", "rx_reader"}) | {"broadcast_voice", "speaker_mono", "speaker_eq",
                                                         "speaker_highpass_hz"}
 
 
