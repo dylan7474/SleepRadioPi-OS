@@ -452,7 +452,10 @@ Actions, Sleep timer and Radio folders open:
   their locator squares on a map of the world, the brighter the more
   lately heard. The radio keeps the list over a restart (written to the
   card a quarter of an hour apart at most). A message that names your own
-  callsign (the one kept for the rooms) is picked out in amber. The decoding is ft8_lib's
+  callsign (the one kept for the rooms) is picked out in amber. Morse and
+  PSK31/RTTY have the same *Heard* and *Map* keys: the radio keeps one
+  list of who's been heard for all of them, a station going on it from
+  the call after "DE" once it has been read twice. The decoding is ft8_lib's
   (MIT), built into the image; receive only -- nothing is sent on the air.
   See `app/sleepradiopi/audio/ft8.py`.
 - **Reporting what's heard.** PSK Reporter (pskreporter.info) and WSPRnet

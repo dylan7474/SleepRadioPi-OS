@@ -13,7 +13,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from sleepradiopi.audio import ft8, pcm
+from sleepradiopi.audio import ft8, heard, pcm
 from sleepradiopi.web.server import make_handler
 
 T0 = 1_800_000_000.0                                 # a moment that begins a slot, FT8's and FT4's
@@ -302,15 +302,15 @@ def test_the_live_reader_keeps_the_list_sparingly(tmp_path: Path) -> None:
     clock = Clock(T0)
     r = ft8.Live(clock=clock, decode=lambda samples, mode: [])
     r.keep_in(file)
-    r._heard[("20 m", "K1ABC")] = {"band": "20 m", "call": "K1ABC", "snr": 1.0, "first": T0, "last": T0, "count": 1}
-    r._changed, r._saved = True, T0 - 60.0           # written a minute ago: not again yet
+    r.store.add("ft8", "20 m", "K1ABC", T0, 1.0)
+    r.store._saved = T0 - 60.0                       # written a minute ago: not again yet
     stop = threading.Event()
     t = threading.Thread(target=r._run, args=(stop,), daemon=True)
     t.start()
     try:
         threading.Event().wait(3 * ft8.STEP_S)
         assert not file.exists()
-        clock.at = T0 + ft8.KEEP_EVERY_S             # a quarter of an hour on: now
+        clock.at = T0 + heard.KEEP_EVERY_S           # a quarter of an hour on: now
         for _ in range(40):
             if file.exists():
                 break
@@ -319,8 +319,8 @@ def test_the_live_reader_keeps_the_list_sparingly(tmp_path: Path) -> None:
     finally:
         stop.set()
         t.join(2)
-    r._heard[("20 m", "G4XYZ")] = {"band": "20 m", "call": "G4XYZ", "snr": 1.0, "first": T0, "last": T0, "count": 1}
-    r._changed, r.on = True, True                    # switched off: what's new is kept at once
+    r.store.add("ft8", "20 m", "G4XYZ", T0, 1.0)
+    r.on = True                                      # switched off: what's new is kept at once
     r.switch(False)
     assert len(json.loads(file.read_text())["heard"]) == 2
 

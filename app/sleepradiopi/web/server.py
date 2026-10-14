@@ -470,6 +470,11 @@ def make_handler(station: Station, output: Mp3Output, speaker=None,
                 # Who the FT8 / FT4 reader has heard, a band at a time, the latest first (since the radio started).
                 from sleepradiopi.audio import ft8 as ft8_mod
                 self._send(json.dumps(ft8_mod.reader.heard()).encode(), "application/json")
+            elif path == "/api/rx/heard":
+                # Who every reader has heard (audio/heard.py: FT8, FT4, WSPR, Morse, PSK31, RTTY), the latest first:
+                # {"home" (the radio's locator), "call" (the owner's), "where" (as the page said), "heard": [{"band", "call",
+                # "family" ("wsjt" | "cw" | "psk" | "rtty"), "mode", "first", "last", "count", "cq", "snr"?, "grid"?, "km"?, "deg"?, "hz"?}]}
+                self._send(json.dumps(self._heard_list()).encode(), "application/json")
             elif path.startswith("/api/rx/own/"):
                 self._own_receiver(path)
             elif path == "/api/rx":
@@ -871,6 +876,37 @@ def make_handler(station: Station, output: Mp3Output, speaker=None,
                 self._body()
                 ft8_mod.reader.forget()
                 self._send(json.dumps(ft8_mod.reader.heard()).encode(), "application/json")
+            elif path == "/api/rx/heard":
+                # {"clear": true, "families"?: ["cw", ...]}: who's been heard forgotten -- those families' (a panel's), or everyone's.
+                from sleepradiopi.audio import heard as heard_mod
+                try:
+                    body = self._body()
+                    fams = body.get("families")
+                    if body.get("clear") is not True or not (fams is None or (isinstance(fams, list) and fams and set(fams) <= set(heard_mod.FAMILIES.values()))):
+                        raise ValueError
+                except (ValueError, AttributeError):
+                    self._error('send {"clear": true}, with "families": ["wsjt", "cw", "psk", "rtty"] for only some')
+                    return
+                heard_mod.store.forget(set(fams) if fams else None)
+                self._send(json.dumps(self._heard_list()).encode(), "application/json")
+            elif path == "/api/rx/where":
+                # {"band": "40 m" | null, "dial": Hz | null, "sideband": "usb" | "lsb" | "cw" | ..., "centre"?: Hz}: where the
+                # receiver the radio is playing is tuned, as the page has it -- each station the text readers (Morse, PSK31,
+                # RTTY) hear is kept by band, and where it was on the air (audio/heard.py). FT8 is told with its own switch.
+                from sleepradiopi.audio import heard as heard_mod
+                try:
+                    body = self._body()
+                    band, dial, side, centre = body.get("band"), body.get("dial"), body.get("sideband"), body.get("centre", 0)
+                    for v, lo, hi in ((dial, 100_000, 500_000_000), (centre, 0, 5_000)):
+                        if v is not None and (isinstance(v, bool) or not isinstance(v, (int, float)) or not lo <= v <= hi):
+                            raise ValueError
+                    if not (band is None or (isinstance(band, str) and len(band) <= 8)) or not (side is None or (isinstance(side, str) and side.isalpha() and len(side) <= 4)):
+                        raise ValueError
+                except (ValueError, AttributeError):
+                    self._error('send {"band": "40 m", "dial": 7020000, "sideband": "usb"}')
+                    return
+                heard_mod.store.where = {"band": band or None, "dial": int(dial) if dial else None, "sideband": side, "centre": int(centre or 0)}
+                self._send(json.dumps({"where": heard_mod.store.where}).encode(), "application/json")
             elif path == "/api/rx/keyboard":
                 # {"on": true | false, "mode"?: "psk31" | "rtty"}: the PSK31 / RTTY reader for receivers
                 # (audio/keyboard.py). Kept over a restart.
@@ -1426,6 +1462,11 @@ def make_handler(station: Station, output: Mp3Output, speaker=None,
             return {"cw": morse_mod.reader.on, "ft8": ft8_mod.reader.mode if ft8_mod.reader.on else None,
                     "keyboard": keyboard_mod.reader.mode if keyboard_mod.reader.on else None,
                     "pictures": pictures_mod.reader.mode if pictures_mod.reader.on else None}
+
+        def _heard_list(self) -> dict:
+            from sleepradiopi.audio import ft8 as ft8_mod, heard as heard_mod
+            return {"home": ft8_mod.HOME, "call": ft8_mod.own_call(), "where": heard_mod.store.where,
+                    "heard": [ft8_mod._far(h) for h in heard_mod.store.list()]}
 
         def _body(self):
             return json.loads(self.rfile.read(int(self.headers.get("Content-Length", 0))) or b"{}")

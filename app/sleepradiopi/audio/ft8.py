@@ -41,12 +41,13 @@ Who and how far: most messages name the station sending them, and a first
 call gives its locator (JO31: a square of 1 degree by 2, about 70 miles by
 70 here). With the radio's own locator known (HOME: Settings keep it), each
 is given a distance and a bearing from the middle of its square, and the
-reader keeps a list of who has been heard on each band: when first and
-last, how strong at best, how often. A station's later messages carry no
-locator; they get the one it gave before. The list is kept on the card
-(keep_in() says where), sparingly: a quarter of an hour apart at most, when
-it has changed, and when the reader is switched off; so a restart loses a
-few minutes of it at worst.
+station goes on the list of who has been heard on each band, the one every
+reader hands its stations to (audio/heard.py: when first and last, how
+strong at best, how often). A station's later messages carry no locator;
+they get the one it gave before. The list is kept on the card (keep_in()
+says where), sparingly: a quarter of an hour apart at most, when it has
+changed, and when the reader is switched off; so a restart loses a few
+minutes of it at worst.
 
 A message that names the radio's owner (the callsign kept for the rooms:
 playback/room.py) is marked as theirs: somebody calling or answering them.
@@ -70,7 +71,6 @@ switches it and asks what it has read.
 """
 from __future__ import annotations
 
-import json
 import logging
 import math
 import os
@@ -87,8 +87,7 @@ from typing import Callable
 
 import numpy as np
 
-from sleepradiopi.audio import pcm
-from sleepradiopi.config.atomic import write_atomic
+from sleepradiopi.audio import heard as heard_mod, pcm
 
 log = logging.getLogger(__name__)
 
@@ -114,8 +113,6 @@ DECODER = "decode_ft8"       # ft8_lib's; SLEEPRADIO_FT8_DECODER names another
 WSPR_DECODER = "wsprd"       # WSJT-X's; SLEEPRADIO_WSPR_DECODER names another
 WSPR_LINE = re.compile(r"^\S+\s+(-?\d+)\s+(-?\d+\.\d+)\s+(\d+\.\d+)\s+(-?\d+)\s+(\S.*?)\s*$")
 WSPR_GRID = re.compile(r"^[A-R]{2}\d{2}(?:[A-Xa-x]{2})?$")
-HEARD_MOST = 1500            # stations kept in the list of who's been heard (the longest unheard go first)
-KEEP_EVERY_S = 900.0         # the list goes to the card this often at most, and only when it has changed
 HOME: str | None = None      # the radio's own locator ("IO94" or "IO94kn"): main.py sets it from the settings
 GRID = re.compile(r"^[A-R]{2}\d{2}$")
 CALL = re.compile(r"^(?:[A-Z0-9]{1,4}/)?(?:[A-Z]{1,2}\d|\d[A-Z])\d{0,2}[A-Z]{1,4}(?:/[A-Z0-9]{1,4})?$")
@@ -293,11 +290,12 @@ class Reader:
     """Hears a receiver's sound and reads the FT8 (or FT4) in it, a slot at a time: feed() it blocks as
     they're played, step() it a few times a second, ask status() what it has read."""
 
-    def __init__(self, clock: Callable[[], float] = time.time, decode: Callable[[np.ndarray, str], list[dict]] = run_decoder) -> None:
+    def __init__(self, clock: Callable[[], float] = time.time, decode: Callable[[np.ndarray, str], list[dict]] = run_decoder,
+                 store: heard_mod.Store | None = None) -> None:
         self.on = False
         self.mode = "ft8"
         self.band: str | None = None                 # what the page says the receiver is on ("40 m"): the heard list is kept by it
-        self._heard: dict[tuple[str | None, str], dict] = {}     # (band, call) -> who's been heard
+        self.store = store if store is not None else heard_mod.Store(clock)     # who's been heard (the radio's reader: everyone's list)
         self.dial: int | None = None                 # where the receiver is tuned (Hz), if the page says: a message's place on the air is this and its pitch
         self.own: str | None = None                  # the receiver, if it's one of the owner's own ("http://192.168.50.4:8075"): only those are reported
         self.playing: Callable[[], str | None] | None = None     # what the radio is playing now (its address): the web side sets it
@@ -316,9 +314,6 @@ class Reader:
         self._slots = 0
         self._last: dict | None = None               # the slot last looked at: {"t", "heard" | "error"}
         self._turn = 0                               # (which switching-on this is: a slot read for the last one is dropped)
-        self._file: Path | None = None               # where the heard list is kept (keep_in())
-        self._changed = False                        # ...whether it has changed since it was last written
-        self._saved = 0.0                            # ...and when that was, by the clock
 
     # --- the sound coming in -----------------------------------------------------------------
 
@@ -375,8 +370,7 @@ class Reader:
     def heard(self) -> dict:
         """{"band", "home", "heard": [{"band", "call", "grid"?, "km"?, "deg"?, "snr" (the best), "first", "last" (by the
         clock), "count", "cq" (it was calling CQ when last heard)}], the latest heard first}"""
-        with self._lock:
-            return {"band": self.band, "home": HOME, "heard": [_far(h) for h in sorted(self._heard.values(), key=lambda h: -h["last"])]}
+        return {"band": self.band, "home": HOME, "heard": [_far(h) for h in self.store.list({"wsjt"})]}
 
     def reports(self) -> bool:
         """Is what's read now fit to report? Only from a receiver of the owner's own, tuned where the page said,
@@ -390,50 +384,18 @@ class Reader:
         return (self.playing() or "").startswith(self.own)
 
     def forget(self) -> None:
-        """The heard list emptied, on the card too."""
-        with self._lock:
-            self._heard.clear()
-            self._changed = True
-        self.save()
+        """The heard list emptied (of FT8, FT4 and WSPR), on the card too."""
+        self.store.forget({"wsjt"})
 
-    # --- the heard list, kept ----------------------------------------------------------------
+    # --- the heard list, kept (audio/heard.py) ------------------------------------------------
 
     def keep_in(self, file: Path | None) -> None:
-        """Where the heard list is kept from now on, and what's there read back in. A file that can't be read
-        is left alone until the list is next written."""
-        self._file = file
-        if file is None:
-            return
-        try:
-            kept = json.loads(file.read_text())["heard"]
-            heard = {}
-            for h in kept:
-                band, call = h.get("band"), h["call"]
-                if not isinstance(call, str) or not (band is None or isinstance(band, str)):
-                    raise ValueError("a station with no call or a strange band")
-                for k in ("snr", "first", "last", "count"):
-                    h[k] = float(h[k]) if k != "count" else int(h[k])
-                heard[(band, call)] = h
-        except FileNotFoundError:
-            return
-        except (OSError, ValueError, KeyError, TypeError, AttributeError) as e:
-            log.warning("ft8: the heard list in %s can't be read (%s): beginning again", file, e)
-            return
-        with self._lock:
-            self._heard = {**heard, **self._heard}
-            self._changed = False
+        """Where the heard list is kept from now on, and what's there read back in."""
+        self.store.keep_in(file)
 
     def save(self) -> None:
-        """The heard list written to the card, if it has changed and there's somewhere to keep it."""
-        with self._lock:
-            if self._file is None or not self._changed:
-                return
-            text = json.dumps({"heard": list(self._heard.values())}, separators=(",", ":"))
-            self._changed, self._saved = False, self._clock()
-        try:
-            write_atomic(self._file, text)
-        except OSError as e:
-            log.warning("ft8: the heard list wasn't kept (%s)", e)
+        """The heard list written to the card, if it has changed."""
+        self.store.save()
 
     # --- the reading -------------------------------------------------------------------------
 
@@ -490,19 +452,18 @@ class Reader:
             self._slots += 1
             self._last = {"t": t0, "heard": len(found)}
             told = []
-            for m in found:
+            mode, dial, band = self.mode, self.dial, self.band
+        for m in found:
+            call, grid, cq = (m.get("call"), m.get("grid"), False) if mode == "wspr" else who(m["text"])
+            if call:
+                h = self.store.add(mode, band, call, t0, m["snr"], grid, cq, dial + m["hz"] if dial else None)
+                m = {**m, "call": call, **({"grid": h["grid"]} if "grid" in h else {})}
+                told.append(m)
+            with self._lock:
+                if turn != self._turn:
+                    return
                 self._n += 1
-                call, grid, cq = (m.get("call"), m.get("grid"), False) if self.mode == "wspr" else who(m["text"])
-                if call:
-                    h = self._heard.setdefault((self.band, call), {"band": self.band, "call": call, "snr": m["snr"], "first": t0, "count": 0})
-                    h.update(snr=max(h["snr"], m["snr"]), last=t0, count=h["count"] + 1, cq=cq, **({"grid": grid} if grid else {}))
-                    m = {**m, "call": call, **({"grid": h["grid"]} if "grid" in h else {})}
-                    self._changed = True
-                    told.append(m)
                 self._messages.append({"n": self._n, "t": t0, **m})
-            for key in sorted(self._heard, key=lambda k: self._heard[k]["last"])[:max(0, len(self._heard) - HEARD_MOST)]:
-                del self._heard[key]
-            mode, dial = self.mode, self.dial
         if told and self.reports():
             self.report(mode, dial, t0, told)
 
@@ -573,10 +534,9 @@ class Live(Reader):
         while not stop.wait(STEP_S):
             try:
                 self.step()
-                if self._changed and self._clock() - self._saved >= KEEP_EVERY_S:
-                    self.save()
+                self.store.tick()
             except Exception:                        # (a reading that falls over mustn't end the reader)
                 log.exception("ft8: reading failed")
 
 
-reader = Live()
+reader = Live(store=heard_mod.store)

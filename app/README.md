@@ -1231,6 +1231,25 @@ The cards:
   `GET /desktop/land.json`: Natural Earth's, public domain). A message that
   names the owner's callsign (the rooms' one) comes with `"me": true` and
   is shown in amber.
+  *One list for every reader* (`audio/heard.py`): the heard list isn't
+  FT8's own any more. FT8, FT4 and WSPR hand in the stations their
+  messages name; Morse, PSK31 and RTTY hand in the call after DE (the
+  sender's, never the one being called), once it has been read twice
+  within a quarter of an hour (a misread call seldom comes out the same
+  again), with a locator after LOC, QRA or GRID, and where it was on the
+  air when the page has said where the receiver is tuned (`POST
+  /api/rx/where {"band", "dial", "sideband", "centre"}`, sent by the rig
+  window as it's tuned). Stations are kept a band and a family of modes
+  at a time ("wsjt", "cw", "psk", "rtty"), so FT8's list is as it was;
+  the file is the same `heard.json` (an older one reads in as "wsjt").
+  `GET /api/rx/heard` is all of it (each with "family", "mode", "hz"?),
+  `POST /api/rx/heard {"clear": true, "families"?: [...]}` forgets some or
+  all. On the page each reader's panel -- Morse, FT8, PSK31/RTTY -- has the
+  same **Heard** and **Map** keys and the same Copy and Clear, drawn by the
+  same code; a Morse, PSK or RTTY station's frequency in Heard is a click
+  to go there, and Morse's row of recent calls comes from the same list.
+  A line naming the owner's callsign is amber in every panel. The band
+  conditions still go by FT8, FT4 and WSPR only.
   *Reporting what's heard* (the **Report** key; `GET /api/rx/report`, `POST
   /api/rx/report {"on": true | false}`, the setting `report_heard`): FT8 and
   FT4 go to PSK Reporter (UDP, IPFIX, to report.pskreporter.info:4739) and

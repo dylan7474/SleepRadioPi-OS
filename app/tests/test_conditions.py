@@ -10,7 +10,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from sleepradiopi.audio import ft8
+from sleepradiopi.audio import ft8, heard
 from sleepradiopi.playback import conditions, survey
 from sleepradiopi.web.server import make_handler
 
@@ -218,7 +218,11 @@ def test_conditions_from_the_web(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setattr(survey, "job", job)
     monkeypatch.setattr(conditions, "sun", conditions.Sun(get=lambda url: (_ for _ in ()).throw(OSError("offline"))))
     monkeypatch.setattr(ft8, "HOME", "IO94")
-    monkeypatch.setattr(ft8.reader, "_heard", {("40 m", "DL1ABC"): {"band": "40 m", "call": "DL1ABC", "grid": "JO31", "snr": 1.0, "first": now - 90, "last": now - 90, "count": 2, "cq": False}})
+    store = heard.Store()
+    store.add("ft8", "40 m", "DL1ABC", now - 90, 1.0, "JO31")
+    store.add("ft8", "40 m", "DL1ABC", now - 90, 1.0)
+    store.add("cw", "20 m", "G4ABC", now - 90)        # (Morse heard: not what the band's said from)
+    monkeypatch.setattr(ft8.reader, "store", store)
     try:
         with urllib.request.urlopen(base + "/api/rx/conditions?base=http://receiver:8075/", timeout=5) as r:
             d = json.loads(r.read())

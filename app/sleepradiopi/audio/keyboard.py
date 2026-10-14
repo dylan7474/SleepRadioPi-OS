@@ -43,7 +43,7 @@ from collections import deque
 
 import numpy as np
 
-from sleepradiopi.audio import pcm, psk, rtty
+from sleepradiopi.audio import heard as heard_mod, pcm, psk, rtty
 
 log = logging.getLogger(__name__)
 
@@ -274,6 +274,7 @@ class Remote:
         self._pieces: deque[dict] = deque(maxlen=200)
         self._n = 0                                  # (numbered here: they go on across a switch, so the page can tell a new start)
         self._now: dict = {"at": 0.0, "signals": []}
+        self._calls = heard_mod.Text("psk31", heard_mod.store)  # (who sent what's read goes on the list of who's been heard)
 
     def switch(self, on: bool, mode: str | None = None) -> None:
         """On or off, PSK31 or RTTY. On (or the other mode) starts from nothing. ValueError: no such mode."""
@@ -288,7 +289,9 @@ class Remote:
             self._inbox.on = False
             self._pieces.clear()
             self._now = {"at": 0.0, "signals": []}
+            self._calls.clear()
             if not on:
+                heard_mod.store.save()
                 return
             self._inbox = Reader(mode)
             self._inbox.on = True
@@ -325,6 +328,10 @@ class Remote:
                         for p in st["pieces"]:
                             self._n += 1
                             self._pieces.append({**p, "n": self._n})
+                    heard_mod.store.tick()
+                    for p in st["pieces"]:          # (a signal at a time: its pitch, to the nearest 20 Hz, tells it)
+                        mode = "rtty" if self.mode == "rtty" else "qpsk31" if p.get("qpsk") else "psk63" if p.get("baud") == 63 else "psk31"
+                        self._calls.take((mode, round(p["hz"] / 20)), p["text"], p["hz"], mode=mode)
         except (EOFError, OSError):
             log.error("keyboard: the reading process has gone (exit code %s)", proc.exitcode)
             with self._lock:

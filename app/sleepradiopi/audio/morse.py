@@ -52,7 +52,7 @@ from collections import deque
 
 import numpy as np
 
-from sleepradiopi.audio import pcm
+from sleepradiopi.audio import heard as heard_mod, pcm
 
 log = logging.getLogger(__name__)
 
@@ -730,6 +730,7 @@ class Remote:
         self._proc = None
         self._overs: deque[dict] = deque(maxlen=40)
         self._tape: dict = {"at": 0.0, "pitch": None, "wpm": None, "env": []}
+        self._calls = heard_mod.Text("cw", heard_mod.store)  # (who sent what's read goes on the list of who's been heard)
 
     def switch(self, on: bool) -> None:
         on = bool(on)
@@ -737,8 +738,10 @@ class Remote:
             if on == self.on:
                 return
             self.on = self._inbox.on = on
+            self._calls.clear()
             if not on:
                 self._stop.set()
+                heard_mod.store.save()
                 return
             self._inbox = Reader()
             self._inbox.on = True
@@ -776,6 +779,9 @@ class Remote:
                             break
                         self._tape = {k: st[k] for k in ("at", "pitch", "wpm", "env", "signals", "most") if k in st}
                         self._overs.extend(st["overs"])
+                    heard_mod.store.tick()
+                    for o in st["overs"]:           # (an over is whole: a space after it; a signal is its pitch, to the nearest 30 Hz)
+                        self._calls.take(round(o["pitch"] / 30), "".join(c[0] for c in o["chars"]) + " ", o["pitch"])
         except (EOFError, OSError):
             log.error("morse: the reading process has gone (exit code %s)", proc.exitcode)
             with self._lock:
