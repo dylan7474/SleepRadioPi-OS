@@ -285,3 +285,10 @@ def test_whats_this_from_the_web(tmp_path: Path, monkeypatch) -> None:
     finally:
         httpd.shutdown()
         httpd.server_close()
+
+
+def test_psk31_on_17_m_is_below_ft8() -> None:
+    # PSK Reporter, 2026-10-14: 17 m PSK31 at 18096.9-18098.0 kHz, FT8 from 18100.3
+    kinds = lambda hz: {kind for lo, hi, kind, _ in identify.PLACES if lo <= hz <= hi}
+    assert "psk31" in kinds(18_097_400) and "ft8" not in kinds(18_097_400)
+    assert "ft8" in kinds(18_101_500) and "psk31" not in kinds(18_101_500)

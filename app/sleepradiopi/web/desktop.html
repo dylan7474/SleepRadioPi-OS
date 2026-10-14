@@ -2470,7 +2470,7 @@ function ftDraw(R) {
 const KB = { since: 0, lines: [], line: 0, hue: 0, voices: [], st: null, busy: false, asked: 0 };
 const KB_NAMES = { psk31: "PSK31", rtty: "RTTY" }, KB_KEYS = { psk31: "PSK", rtty: "RTTY" }, KB_LINES = 150, KB_SAME_HZ = 12;
 // where PSK31 is used, a band: [band, dial frequency in kHz] (upper sideband; the signals are 1 to 2 kHz up from it)
-const KB_PSK = [["160 m", 1838], ["80 m", 3580], ["40 m", 7040], ["30 m", 10142], ["20 m", 14070], ["17 m", 18100], ["15 m", 21070], ["12 m", 24920], ["10 m", 28120]];
+const KB_PSK = [["160 m", 1838], ["80 m", 3580], ["40 m", 7040], ["30 m", 10142], ["20 m", 14070], ["17 m", 18096], ["15 m", 21070], ["12 m", 24920], ["10 m", 28120]];
 function rigKbKeys(R, k) {
   const key = mode => R.dom["k" + mode] = k(KB_KEYS[mode], async () => {
     const D = RXD[R.kind], on = S?.keyboard !== mode;
