@@ -6,8 +6,9 @@ or two, and what's new since the last look is passed on.
 
   * PSK31 and PSK63: every signal in what the receiver hears, at once (up
     to PSK_MOST). Each is a track, known by its pitch and its speed; a track
-    nothing has come from for a while is dropped, and a new one has to say
-    a few letters before it's believed. A new signal is tried at each speed
+    nothing has come from for a while is dropped, and a new one is believed
+    only if it spells (psk.spells(): the one rule the survey's finder and
+    What's this? go by too). A new signal is tried at each speed
     (read at the wrong one it says nothing: see audio/psk.py), and, if it
     says nothing as either, as QPSK31, the four-phase kind, each way up.
   * RTTY: every signal there, too (up to RTTY_MOST: in a contest there are
@@ -58,7 +59,7 @@ STEP_S = 1.5                 # the sound is looked at this often
 MAX_PENDING = 600            # blocks fed and not yet taken, at most (half a minute)
 PSK_MOST = 6                 # PSK31 signals read at once
 PSK_SAME_HZ = 10.0           # a signal within this of a track is that track
-PSK_FIRST = 4                # letters a new signal must say at once to be believed
+PSK_FIRST = 4                # letters a new signal must say for its speed (or the four-phase kind) to be the one tried; believed: psk.spells()
 TRACK_S = 20.0               # a track nothing has come from for this long is dropped
 RTTY_LOST_S = 12.0           # an RTTY signal that has said nothing for this long is dropped (and looked for afresh)
 RTTY_MOST = 4                # RTTY signals read at once
@@ -172,8 +173,8 @@ class Reader:
             done = track["done"] if track else t0
             chars = [(c, t0 + when) for c, when, _ in r["chars"] if done + AGAIN_S < t0 + when <= upto]
             if track is None:
-                if len(chars) < PSK_FIRST or len(self._tracks) >= PSK_MOST:
-                    continue
+                if not psk.spells(r) or len(self._tracks) >= PSK_MOST:
+                    continue                         # (the one rule: the finder and What's this? go by it too)
                 track = {"hz": r["pitch"], "baud": r["baud"], "done": t0, "last": end, "eye": r["eye"],
                          **({"qpsk": True, "reverse": r["reverse"]} if r.get("qpsk") else {})}
                 self._tracks.append(track)

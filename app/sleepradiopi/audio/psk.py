@@ -240,6 +240,19 @@ def read(x: np.ndarray, rate: float, pitch: float, baud: float = BAUD) -> dict:
     return out
 
 
+def spells(r: dict) -> bool:
+    """Is what read() (or read_qpsk()) made of a signal PSK, by the one rule every part of the radio goes by -- the
+    live reader taking up a new signal (audio/keyboard.py), the survey's finder and What's this? (heard()): at least
+    LETTERS_MIN letters, a second or more apart from first to last, nearly all of them printable, and as sure as
+    SURE_MIN on average (QPSK31: read_qpsk's own agreement tests stand for that). A hump that merely stands out may be
+    FT8 or a whistle; one that spells is PSK."""
+    chars = r.get("chars") or []
+    if len(chars) < LETTERS_MIN or chars[-1][1] - chars[0][1] < 1.0:
+        return False
+    said = "".join(c for c, *_ in chars)
+    return sum(c in PRINTS for c in said) >= 0.9 * len(said) and (bool(r.get("qpsk")) or float(np.mean([sure for *_, sure in chars])) >= SURE_MIN)
+
+
 def heard(x: np.ndarray, rate: float, most: int = 3) -> list[dict]:
     """The PSK31 and PSK63 signals in x that say enough letters to be sure of -> [{"hz", "baud" (31 or 63),
     "db" (over the noise), "text"}], the strongest first. (What "What's this?" and the survey's finder go by:
@@ -247,9 +260,8 @@ def heard(x: np.ndarray, rate: float, most: int = 3) -> list[dict]:
     out = []
     for hz, db in find(x, rate, most=most):
         r = max((read(x, rate, hz, baud) for baud in BAUDS), key=lambda r: len(r["chars"]))
-        said = "".join(c for c, *_ in r["chars"])
-        if (len(r["chars"]) >= LETTERS_MIN and sum(c in PRINTS for c in said) >= 0.9 * len(said) and r["chars"][-1][1] - r["chars"][0][1] >= 1.0
-                and float(np.mean([sure for *_, sure in r["chars"]])) >= SURE_MIN):
+        if spells(r):
+            said = "".join(c for c, *_ in r["chars"])
             out.append({"hz": float(r["pitch"]), "baud": NAMES[r["baud"]], "db": round(float(db), 1), "text": " ".join(said.split())[:60]})
     return out
 

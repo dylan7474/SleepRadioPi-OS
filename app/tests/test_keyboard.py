@@ -403,3 +403,16 @@ def test_receivers_are_given_names(tmp_path: Path) -> None:
     finally:
         httpd.shutdown()
         httpd.server_close()
+
+
+def test_one_rule_for_what_is_psk() -> None:
+    """psk.spells(): what the live reader, the finder and What's this? all go by."""
+    from sleepradiopi.audio import psk
+    rate = 12_000.0
+    x = psk.send("cq cq de g4abc g4abc pse k", rate, 1000.0)
+    assert psk.spells(psk.read(x, rate, 1000.0))
+    t = np.arange(int(8 * rate)) / rate
+    assert not psk.spells(psk.read(np.sin(2 * np.pi * 1000.0 * t), rate, 1000.0))       # a carrier
+    assert not psk.spells({"chars": [("e", 0.1, 1.0), ("t", 0.2, 1.0), ("a", 0.3, 1.0)]})   # too few
+    assert not psk.spells({"chars": [(c, i * 0.3, 0.5) for i, c in enumerate("cq de g4abc")]})   # not sure enough
+    assert psk.spells({"qpsk": True, "chars": [(c, i * 0.3, 0.5) for i, c in enumerate("cq de g4abc")]})   # (QPSK31: its own tests stand)

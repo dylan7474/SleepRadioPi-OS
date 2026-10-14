@@ -314,7 +314,8 @@ Actions, Sleep timer and Radio folders open:
 - **Morse, read as text.** The *CW* key in a receiver's window has the radio
   read the Morse in what that receiver is playing: a paper tape of the dots
   and dashes with each letter under its own, and under it a log of what was
-  read: a line an over with its time, pitch and speed, coloured by sender so
+  read: a line an over with its time (UTC, as in every reader and every
+  Heard list), pitch and speed, coloured by sender so
   the two sides of a contact read apart, callsigns picked out (click one to
   copy it) and a doubtful letter fainter. The log scrolls back, and *Copy*
   takes all of it. It reads **every Morse signal in what's heard**, up to

@@ -2095,7 +2095,7 @@ function cwLog(o, st, R) {
   CW.lines.push({ id: ++CW.line, when: Date.now() - Math.max(0, st.at - o.t1) * 1000, pitch: o.pitch, hz, wpm: o.wpm, t1: o.t1, n1: o.n, hue: v.hue, chars: [...o.chars] });
   CW.lines = CW.lines.slice(-CW_LINES);
 }
-const cwWho = l => `${new Date(l.when).toLocaleTimeString("en-GB")}  ${l.hz ? (l.hz / 1e6).toFixed(4) : String(l.pitch).padStart(4) + " Hz"}  ${String(Math.round(l.wpm)).padStart(2)} wpm`;
+const cwWho = l => `${ftUtc(l.when / 1000)}  ${l.hz ? (l.hz / 1e6).toFixed(4) : String(l.pitch).padStart(4) + " Hz"}  ${String(Math.round(l.wpm)).padStart(2)} wpm`;
 // a line's words: [[char, at, confidence]] -> [[...]], a run nothing could be made of as one "…"
 function cwWords(l) {
   const words = []; let word = [];
@@ -2193,7 +2193,7 @@ function cwDraw(R) {
     d.cwheard.dataset.sig = sig;
     d.cwheard.replaceChildren(el("b", { textContent: "Heard" }), ...chips.map(h => {
       const b = el("button", { type: "button", textContent: h.hz ? `${h.call} ${(h.hz / 1e6).toFixed(4)}` : h.call });
-      b.title = `${h.call}: last heard ${new Date(h.last * 1000).toLocaleTimeString("en-GB")}${h.count > 1 ? `, ${h.count} times` : ""}${h.grid ? `, in ${h.grid}` : ""}${h.hz ? " · click to tune there" : ""}`;
+      b.title = `${h.call}: last heard ${ftUtc(h.last)} UTC${h.count > 1 ? `, ${h.count} times` : ""}${h.grid ? `, in ${h.grid}` : ""}${h.hz ? " · click to tune there" : ""}`;
       b.onclick = () => cwGo(R, h);
       return b; }));
   }
@@ -2597,7 +2597,7 @@ async function kbPoll() {
   } catch (e) { /* the next one will do */ }
   KB.busy = false;
 }
-const kbWho = l => `${new Date(l.when).toLocaleTimeString("en-GB")} ${String(l.hz).padStart(4)} Hz${l.qpsk ? " ·Q" : ""}${l.baud === 63 ? " ·63" : ""}`;
+const kbWho = l => `${ftUtc(l.when / 1000)} ${String(l.hz).padStart(4)} Hz${l.qpsk ? " ·Q" : ""}${l.baud === 63 ? " ·63" : ""}`;
 function kbRow(l) {
   const text = el("span", { className: "rtext" });
   const row = el("div", { className: "rline", title: l.qpsk ? "QPSK31: the four-phase kind, with error correction" : l.baud === 63 ? "PSK63: the same as PSK31 at twice the speed" : "" }, el("span", { className: "rwho", textContent: kbWho(l) }), text);
@@ -2712,7 +2712,7 @@ function picDraw(R) {
     d.picthumbs.dataset.sig = sig;
     d.picthumbs.replaceChildren(...pics.filter(p => p.lines).map(p => {
       const a = el("a", { href: `/api/rx/pictures/${p.n}.png`, target: "_blank", download: `${p.name.replace(/\s+/g, "-").toLowerCase()}-${new Date(p.t * 1000).toISOString().slice(0, 16).replace(/[-:T]/g, "")}.png`,
-                          className: p === shown ? "on" : "", title: `${p.name}, ${new Date(p.t * 1000).toLocaleTimeString("en-GB")}: click to look at it, again to save it` }, el("img", { src: picSrc(p), alt: p.name }));
+                          className: p === shown ? "on" : "", title: `${p.name}, ${ftUtc(p.t)} UTC: click to look at it, again to save it` }, el("img", { src: picSrc(p), alt: p.name }));
       a.onclick = e => { if (PIC.show !== p.n && p !== shown) { e.preventDefault(); PIC.show = p.n; picDraw(R); } };
       return a;
     }));
@@ -3546,7 +3546,7 @@ function rigView(o, box, win) {
        el("div", { className: "rticks" }, ...["1", "3", "5", "7", "9", "+20", "+40", "+60"].map(t => el("span", { textContent: t })))),
     rigCanvas(R), d.scale = el("div", { className: "rscale" }),
     d.cw = el("div", { className: "rcw", hidden: true },
-              el("h4", {}, "Morse", d.cwsays = el("span"), key,
+              el("h4", { title: "A line an over: when it began (UTC, as the bands keep time), where it is, how fast, and what was sent" }, "Morse", d.cwsays = el("span"), key,
                  d.cwheardk = cwKey("Heard", "Who has been heard sending Morse on this band (the call after DE, read twice), the farthest first: the radio keeps the list, a restart or not (press again for what's read)", () => heardToggle(R, "cw", "heard", cwDraw)),
                  d.cwmap = cwKey("Map", "The locator squares of those who gave one, on a map of the world (press again for what's read)", () => heardToggle(R, "cw", "map", cwDraw)),
                  cwKey("Copy", "Copy everything read so far", () => heardCopy(R, "cw") || (CW.lines.length ? cwCopy(CW.lines.map(l => `${cwWho(l)}  ${cwPlain(l)}`).join("\n"), "the Morse read so far") : toast("Nothing read yet."))),
@@ -3567,7 +3567,7 @@ function rigView(o, box, win) {
                    if (!await heardClear(R, "ft", ftDraw)) { FT.lines = []; d.ftcopy.replaceChildren(); Object.assign(d.ftcopy.dataset, { n: "", said: "", sig: "" }); ftDraw(R); } })),
               el("div", { className: "rftbar" }, d.ftbar = el("i")), d.ftcopy = el("div", { className: "rcopy" })),
     d.kb = el("div", { className: "rcw rft rkb", hidden: true },
-              el("h4", { title: "A line: when it began, where in the sound the signal is, and what it's sending" }, d.kbname = el("b"), d.kbsays = el("span"),
+              el("h4", { title: "A line: when it began (UTC, as the bands keep time), where in the sound the signal is, and what it's sending" }, d.kbname = el("b"), d.kbsays = el("span"),
                  d.kbheard = cwKey("Heard", "Who has been heard sending PSK and RTTY on this band (the call after DE, read twice), the farthest first: the radio keeps the list, a restart or not (press again for what's read)", () => heardToggle(R, "kb", "heard", kbDraw)),
                  d.kbmap = cwKey("Map", "The locator squares of those who gave one, on a map of the world (press again for what's read)", () => heardToggle(R, "kb", "map", kbDraw)),
                  cwKey("Copy", "Copy everything read so far", () => heardCopy(R, "kb") || (KB.lines.length ? cwCopy(KB.lines.map(l => `${kbWho(l)}  ${l.text}`).join("\n"), "the text read so far") : toast("Nothing read yet."))),

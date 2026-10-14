@@ -1246,6 +1246,13 @@ The cards:
   dial and whether it may report from it (own: the receiver the radio is
   playing) from it too (`ft8.Reader.place`); `/api/rx/ft8`'s own band,
   dial and own still work, but the page no longer sends them.
+  *One rule for PSK* (`psk.spells()`): a signal is PSK only if the reader
+  reads six letters or more from it, a second or more apart, nearly all
+  printable and 0.8 sure on average -- the live reader taking up a new
+  signal (so the internet receivers' survey, which counts its signals),
+  the radio's own finder and What's this? all go by it. *Times*: every
+  reader's lines and every Heard list are in UTC, as the bands keep time
+  (the survey's times, which are the radio's own doings, stay local).
   *One list for every reader* (`audio/heard.py`): the heard list isn't
   FT8's own any more. FT8, FT4 and WSPR hand in the stations their
   messages name; Morse, PSK31 and RTTY hand in the call after DE (the
