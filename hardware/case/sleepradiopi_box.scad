@@ -113,12 +113,22 @@ sun_rib_w   = 1.6;       // rays and arc (4 perimeters at 0.4 mm)
 
 /* ---------- Rear panel electronics ---------- */
 pi_dx       = 0;         // Pi position: offset from the centre line
-post_h      = 7;         // room under the Pi for header stubs + encoder wires
+pi_mount    = "standoff"; // "standoff": brass M2.5 standoffs screwed on from outside; "post": printed posts
+standoff_h  = 10;        // standoff mount: length of the brass standoffs (anything from 6 mm)
+post_h      = pi_mount == "standoff" ? standoff_h : 7;  // room under the Pi for header stubs + encoder wires
 post_d      = 6;         // tip, under the Pi
 post_d2     = 7.6;       // below the tip
-// The Pi: four M2.5 self-tappers down through its corner holes into solid
-// posts (the heads sit on the Pi). The back of the panel stays plain. The
-// amp sits on the Pi's header; no standoffs.
+// "standoff": a flat panel with four holes. An M2.5 machine screw from the
+// outside, its head sunk in the panel, goes into the female end of each
+// standoff; the Pi sits on the standoffs (a stud + nut or a second standoff
+// through each corner hole, or a screw into a female end).
+pi_screw_d    = 2.9;     // M2.5 clearance (prints ~2.7)
+pi_head_d     = 5.6;     // head pocket (pan head ~4.5 mm, room for its washer face)
+pi_floor      = 2.6;     // panel left under the head: an M2.5 x 6 goes 3.4 mm into the standoff
+standoff_af   = 5;       // the standoff's hex, across the flats (only for the model and checks)
+// "post": four M2.5 self-tappers down through the Pi's corner holes into
+// solid printed posts (the heads sit on the Pi). The back of the panel stays
+// plain. The amp sits on the Pi's header.
 pi_tap_d      = 2.2;     // pilot for an M2.5 self-tapper (prints ~2.0; tested)
 
 cable_dx    = 32;        // power cable slot: this far out from the Pi's port edge
@@ -460,7 +470,7 @@ module rear() {
             translate([0, D, 0]) mirror([0, 1, 0]) panel_blank();
             // Solid posts: a narrow tip next to the board (clear of the header
             // pins), thicker below.
-            for (h = pi_holes) {
+            if (pi_mount == "post") for (h = pi_holes) {
                 ycyl(h[0], h[1], pi_y, pi_y + 3, post_d);
                 ycyl(h[0], h[1], pi_y + 3 - 0.01, to + 0.01, post_d2);
             }
@@ -473,8 +483,14 @@ module rear() {
         }
         if (rear_port) port_bore();
         translate([0, D, 0]) mirror([0, 1, 0]) panel_screw_holes();
-        // Self-tapper pilots, stopping 1.2 mm short of the outside face
-        for (h = pi_holes) ycyl(h[0], h[1], pi_y - 1, D - 1.2, pi_tap_d);
+        if (pi_mount == "post")
+            // Self-tapper pilots, stopping 1.2 mm short of the outside face
+            for (h = pi_holes) ycyl(h[0], h[1], pi_y - 1, D - 1.2, pi_tap_d);
+        else for (h = pi_holes) {
+            // Screw holes for the standoffs, with head pockets in the outside face
+            ycyl(h[0], h[1], to - 1, D + 1, pi_screw_d);
+            if (panel_t > pi_floor) ycyl(h[0], h[1], to + pi_floor, D + 1, pi_head_d);
+        }
         // Power cable slot (the micro-USB plug threads through it) + zip-tie slots
         yext(to - 1, D + 1) {
             translate(cable_pos) rrect(-cable_w / 2, -cable_h / 2, cable_w / 2, cable_h / 2, 3);
@@ -622,6 +638,8 @@ module tabs_in_place() color("orange") for (p = spk_pos) for (a = clamp_angles)
 module pi_stack_model() {
     module board(y, c) color(c) yext(y - pcb_t, y) translate([pi_x0, pi_z0]) square([pcb_w, pcb_l]);
     board(pi_y, "green");
+    if (pi_mount == "standoff") color("gold") for (h = pi_holes)
+        translate([h[0], to, h[1]]) rotate([90, 30, 0]) cylinder(d = standoff_af / cos(30), h = standoff_h, $fn = 6);
     board(amp_y, "darkgreen");
     // GPIO header + socket along the far edge
     color("black") yext(amp_y, pi_top) translate([pi_x0 + 0.5, pi_z0 + 7]) square([5, 51]);

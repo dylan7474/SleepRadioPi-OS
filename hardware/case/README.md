@@ -28,7 +28,7 @@ slot in the back is a small vent. An optional **bass port** back panel is below.
 | `stl/front_roberts_sunburst.stl`, `twotone/roberts_white_face_blue_letters.3mf`, `twotone/roberts_white_face_black_letters.3mf` | face down | the sunburst front lettered **Roberts Radio** in the **Lobster** script (`fonts/`, SIL Open Font Licence; `-D 'logo_lines=["Roberts","Radio"]' -D 'logo_font="Lobster"' -D 'logo_fit="together"'`: the lines scaled as one, keeping the script's shape), plain or two-tone (white face; blue or black letters: the same two filament changes) -- for a radio with just the knob (the plain `stl/tube.stl`, no buttons) |
 | `twotone/front_blue_face_white_letters.3mf` | face down (PrusaSlicer project) | the same front with a **blue face and white letters** (one filament change) |
 | `twotone/test_white_face_blue_letters.3mf`, `twotone/test_blue_face_white_letters.3mf` | face down (PrusaSlicer projects) | **try these first**: a 50 × 16 mm tile with "SLEEP" at the front's size and depth and the same filament changes, ~9 minutes (`twotone_test.scad` → `stl/twotone_test.stl`) |
-| `stl/rear.stl` | outside face down | back panel with the Pi posts and RTC rim: solid posts for self-tappers, plain back (since 2026-09-30; see *Pi posts: repair adapters* if yours was printed before) |
+| `stl/rear.stl` | outside face down | back panel for the Pi on **brass M2.5 standoffs**: flat inside, four screw holes with head pockets outside, RTC rim (since 2026-10-06; `-D 'pi_mount="post"'` gives the earlier printed posts for self-tappers) |
 | `stl/rear_port.stl` | outside face down, no supports | the same back panel with a **bass port** (`-D rear_port=true`); see *Bass port* below |
 | `post_adapter.scad` → `stl/post_adapter.stl` | flange down, no supports, 100 % infill | **repair adapters** for a back panel printed before 2026-09-30 whose Pi post floors broke out: four top hats, 5.2 mm stems, ~14 min; see *Pi posts: repair adapters* below |
 | `stl/post_adapter_test.stl` | flange down | one adapter each at 5.2 / 5.35 / 5.5 mm (1–3 notches on the flange), to find the push-fit for your printer first |
@@ -243,7 +243,9 @@ front.
 ## Hardware
 
 - 4x M3 x 12 countersunk self-tapping screws per panel (8 in total), into the corner bosses of the tube.
-- 4x M2.5 self-tappers, 8–10 mm, for the Pi (into the posts). No standoffs: the MiniAmp sits on the Pi's header.
+- For the Pi: 4x brass M2.5 standoffs (10 mm, or anything from 6 mm: set `standoff_h` for the checks) and
+  4x M2.5 x 6 machine screws, plus nuts, screws or a second set of standoffs to hold the Pi down. All in the usual
+  M2.5 standoff kit.
 - Speakers: hot glue, **or** 6x M2.5 self-tappers with the printed clamp tabs: x 8 grips best (6 mm into the boss);
   x 6 works (4 mm).
 - Stick-on rubber feet; foam tape for the RTC.
@@ -254,21 +256,27 @@ front.
    rim, or screw on the three clamp tabs. Each tab sits on a 6 mm boss and has a foot under its nose that presses on the
    rim (the tabs print plate-down, foot-up, no supports); swing a tab aside round its screw while the speaker goes in. Turn the
    speaker so its solder tabs sit in a gap between the clamps.
-2. **Pi:** screw it to the four posts with M2.5 self-tappers, **from the Pi side**: each screw goes down through
-   a corner hole in the Pi into the post's pilot hole, and its head sits on the Pi. Stop when snug (PLA strips).
-   Push the MiniAmp onto the header; that holds it, no standoffs needed.
+2. **Pi:** it sits on four brass M2.5 standoffs. Screw each standoff to the panel with an M2.5 x 6 machine
+   screw **from the outside**: the head sinks into its pocket and the screw goes 3.4 mm into the standoff's
+   female end. Hold the standoff while you tighten. Then fit the Pi: with male-female standoffs the studs come up
+   through the Pi's corner holes, and a nut (or a second standoff, to carry the MiniAmp) goes on each; with
+   female-female ones, a screw down through each hole.
 
    ```
-          MiniAmp          ← on the header only
+          MiniAmp          ← on the header (and on a second set of standoffs, if fitted)
       ════════════
-      ══════╤═════  Pi     ← self-tapper: head on the Pi
-          ┌─┼─┐
-          │ │ │          ← solid post, 2.2 mm pilot
-          │ │ │
-      ────┘ │ └────   back panel (plain outside, the pilot stops 1.2 mm short)
+         ┌┴┐               ← nut or second standoff on the stud
+      ═══╪═╪══════  Pi
+         │ │               ← brass standoff, female end on the panel
+         │ │
+      ───┤ ├──────   back panel, flat inside
+         └┬┘               ← M2.5 x 6, head in a 5.6 mm pocket on a 2.6 mm floor
    ```
 
-   The posts leave 7 mm under the Pi for header stubs and encoder wires soldered underneath.
+   The standoffs' length is the room under the Pi for header stubs and wires soldered underneath: 6 mm is
+   the least, 10 mm is comfortable. The panel is the same for any length.
+   `-D 'pi_mount="post"'` gives the earlier panel instead: solid printed posts with 2.2 mm pilots for M2.5
+   self-tappers from the Pi side, 7 mm under the Pi, plain outside.
    With the panel off, there's 58 mm free on the port side and 17 mm on the GPIO side (to the RTC), and 10 mm at
    each end inside the box.
 3. **Power:** thread the micro-USB plug in through the slot in the back panel, plug it in, and zip-tie the cable
@@ -285,7 +293,7 @@ The back panel comes off with all the electronics on it, so you don't need to re
 Back panels printed from this design **before 2026-09-30** have a fault. The screws were meant to go in from the
 outside, with the heads sunk in a hole up each post onto a 2 mm floor; that hole reached into the thin tip of the
 post, leaving a 0.2 mm wall, too thin to print, so the floor comes loose and falls out, leaving hollow posts and
-nothing to screw the Pi to. The current `rear.stl` has solid posts for self-tappers from the Pi side instead, and a
+nothing to screw the Pi to. Later panels had solid posts for self-tappers from the Pi side, and the current `rear.stl` takes brass standoffs instead; a
 plain back. If you already have an old panel, **don't reprint it** (~3 h): print four adapters (~14 min) instead.
 
 ```
