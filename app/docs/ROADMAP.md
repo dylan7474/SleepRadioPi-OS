@@ -1,67 +1,60 @@
 # Roadmap
 
-**Direction (2026-09-22): Broadcast Radio is the product.** The other
-SleepRadio sources (binaural beats) are deferred and may never be built
-(coloured **noise** came back on 2026-09-29, layered on top of everything); their placeholder modules stay in the tree
-until that's decided. **Internet radio came back (2026-09-29)** as the page's
-Streaming view, **audiobooks** on 2026-09-29, and **podcasts** the same day
-(search, follow, episodes, saved places, and a button that plays a run of
-episodes in order), sharing the audiobooks' saved-place and seek plumbing.
+What's built is described in the [app README](../README.md) and the
+[appliance image's README](../../README.md); this is what's left, the same list as
+the image README's [Roadmap](../../README.md#roadmap) (keep the two in step).
 
-What's built is described in the [README](../README.md); this is what's
-left.
-
-## Next
-
-0. **The new desktop interface** (the user's direction, 2026-09-30) — the web page
-   becomes a desktop: icons for every thing (albums, tracks, stations,
-   podcasts, books, playlists, programmes), windows as containers, the radio
-   itself on the desktop (drop anything on its dial to play it, on a button to
-   keep it there), settings kept on the thing they affect and on the radio's
-   back panel, messages as sticky notes, a built-in media manager. Light theme
-   first. The clickable prototype is `docs/prototypes/desktop.html`. Stages:
-   1. **Programmes in the radio** — DONE 2026-09-30 (the scheduler, API, buttons).
-   2. **The desktop served from the radio** — DONE 2026-09-30 (`/desktop`): the
-      real library, playing, buttons, playlists and programmes; settings open
-      the classic page's own in a window until stage 4.
-   3. **The media manager in it** — DONE 2026-09-30: upload (files and folders,
-      with progress), new folder, download (zip for folders), delete via the
-      Trash, and move by dragging (music ↔ on demand; playlists, programmes and
-      buttons follow); real lengths from the files for the timelines.
-   4. **Every setting wired up** — DONE 2026-09-30: native windows for speakers,
-      knob, DJ, noise, sleep timer, voices, Wi-Fi, this radio (+ password,
-      browser stream), buttons (+ day/night), updates, save and load, power;
-      messages as sticky notes, birthdays as a calendar; stations and podcasts
-      found/followed in their windows. Still the classic editor in a window:
-      jingles, artist lists.
-   5. **The switchover** — DONE 2026-09-30: a computer opening the radio gets
-      the desktop (a wide screen and a mouse; the choice of the classic page is
-      remembered); phones and tablets keep this page. Jingles and artist lists
-      have native windows, so nothing on the desktop uses the classic page.
-   6. Next: **schedule anything** (messages, jingles, the news, a time check,
-      sleep as programme blocks), then a **look-and-feel pass** over the
-      settings windows to match the desktop.
-
-1. **Wire the knob and the RTC** — done 2026-09-30 (amp unplugged): the knob's
-   direction, one step a click, short press (pause) and long press all right;
-   the RTC (a DS3231) sets the clock at boot over a power cut, before Wi-Fi.
-   Still to check: that a press wakes the radio after the sleep timer has
-   faded it out and paused it (needs the amp); the RTC over a night unplugged
-   (it flags "oscillator stopped" at every boot, likely a clone chip or a
-   tired CR2032, being replaced). The knob now has volume modes (Automatic:
-   faster turns take bigger steps; Fine, Normal, Coarse; 2026-09-30): try
-   Automatic on the real knob and tune `KNOB_ACCEL` if it jumps too much.
-2. **Library tools** — the web page's *Media library* (Settings) adds and
-   deletes music and jingles (2026-09-29). Still to do: syncing a whole
-   desktop library in one go (e.g. an rsync-style script from the PC).
-3. **Fit the preset buttons** — the code, wiring (GPIO5/6/16/8; button 4 moved off GPIO26, the MiniAmp's shutdown line, 2026-10-01) and case
-   holes are done (2026-09-29): 16 mm buttons ordered; try them in
-   `top_test`, print `tube_buttons` (knob moved back), wire them, and try
-   press / hold on the real thing, and the service menu (1 and 4 held for
-   5 s; built 2026-09-29, tried so far from the page). Also worth a thought before the cathedral:
-   a screw-on lid, so changing the controls means reprinting a lid, not the
-   whole ~5-hour tube. Then
-   maybe: LEDs showing the playing preset (4 more pins), the DJ's time checks
-   or news over a station (off for now: a station plays untouched).
-4. **A needle VU meter** — a physical meter driven from a PWM pin, with the
-   Android app's ballistics (see the [appliance image's roadmap](../../README.md#roadmap)).
+- **A needle VU meter** — a physical meter driven from a PWM pin, with the
+  Android app's ballistics; one meter first.
+- **A dongle inside the radio** — the bigger radios (a Pi 3 inside) have
+  the room and the processor for an RTL-SDR of their own: one with a
+  temperature-compensated crystal (a Nooelec NESDR SMArt v5), so that it
+  stays on frequency without calibrating, as a receiver that's simply
+  there in Receivers with no second computer.
+- **Morse across the band: wider** — the Morse reader reads every signal
+  in what's playing (up to four, across the couple of kHz a sideband
+  gives) and lists who's been heard. Still to do: a KiwiSDR's wide "IQ"
+  mode, about 10 kHz at once (the radio then has to make the sound you
+  hear itself); each signal named by its callsign on the waterfall; and
+  the heard list kept by the radio, not only in the page.
+- **Band conditions: more of it** — *How the bands are* says it from the
+  last survey and the last hour's listening, in the Bands window or by
+  the DJ, against the same hour on the days before, with the weather
+  teleprinters' strength as a second yardstick. Still to do: where your
+  own receiver's reports put you among others', once *Report* is on.
+- **A laser-cut wood cathedral** — a real-wood version of the cathedral case:
+  - the face and fretwork cut from walnut-veneered plywood, the sides and
+    back from plywood or MDF;
+  - the arch kerf-bent (cut so the plywood bends) or built from stacked
+    profiles;
+  - printed parts where that's easier (knob, meter bezel, speaker ring,
+    brackets);
+  - the flat parts exported as DXF/SVG for the laser from the same OpenSCAD
+    design.
+- **Messages from away: a recorded clip** — the messages can now be kept
+  in a document the radio fetches (see *Messages from away*). Maybe a
+  recorded clip, in your own voice, as well as the DJ's reading.
+- **A glow behind the grilles** — warm-white LEDs (a 5 V COB strip)
+  lighting the grille from behind, for a soft glow at night: dimmable from the
+  page, fading with the sleep timer, shared with the VU meter's backlight. On
+  the box it glows round each speaker (a clip-in holder inside the collar,
+  wired with the speakers). On the cathedral radio it's behind the grille
+  cloth, so the sunburst shows in silhouette.
+- **A cathedral radio** — a 1930s art deco cathedral set in wood (a ported
+  4-inch speaker, the VU meter as its dial, a six-way selector) is now its own
+  project, **Phonosphere** (private for now). It runs this software; its
+  differences (six presets, the selector, a back button, the meter and the
+  grille light) are the `"cathedral"` hardware profile here (software done;
+  the image's GPIO keys and PWM next — see *Two radios* in the app README).
+- **Auto-tune with a USB mic** — a cheap USB mic in the Zero's data port,
+  where you sit, and an **Auto-tune** button on the radio's page:
+  - it plays the pink noise, records the box and works out the EQ and low
+    cut with the analyser's maths (and `audio/eq.py`);
+  - it applies them, measures again, and goes back to the old settings if
+    they didn't help;
+  - no phone or laptop needed; re-run it after changing the back panel or
+    moving the radio (a new cathedral box especially);
+  - needs USB audio in the trimmed kernel.
+- **A carry strap** — designed, still to print and fit: a leather strap
+  through two printed side loops, with a drill guide for a case that's already
+  printed (see [the case README](../../hardware/case/README.md#carry-strap)).
