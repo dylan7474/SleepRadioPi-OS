@@ -99,6 +99,55 @@ def test_psk31_and_psk63_side_by_side_each_at_its_own_speed() -> None:
     assert speeds == {800: 31, 1500: 63, 2200: 31}
 
 
+# Real PSK off the air: 20 s each, 12 kHz, recorded from the G8AOE KiwiSDR on 20 m (dial 1 kHz below the
+# spot PSK Reporter gave) by the PSK watch of 2026-10-14/15. -> {pitch: (baud, words it has to read)}
+HEARD_OFF_AIR = {
+    "f1lyv-psk31": {906: (31, ["IV3PTU de F1LYV", "RST: 599", "Name : Je"])},
+    "iz2kxb-psk31-and-psk63": {1401: (63, ["Dipol 14 MHZ", "The Weather here is sun"]),
+                               1666: (31, ["qrz.com/db/IZ2KXB", "ARI_Lecco"])},
+    "wa1qzk-psk31": {898: (31, ["CQ EDL1Y", "EDL1Y DE WA1QZK", "MI NE BOST"])},
+}
+OFF_AIR = Path(__file__).parent / "data" / "psk"
+
+
+def _off_air(name: str) -> np.ndarray:
+    return np.load(OFF_AIR / f"{name}.npy").astype(np.float64)
+
+
+def _nearest(said: dict, hz: float) -> int:
+    return min(said, key=lambda p: abs(p - hz))
+
+
+@pytest.mark.parametrize("name", sorted(HEARD_OFF_AIR))
+def test_real_psk_off_the_air_is_found(name: str) -> None:
+    """The finder's judge (psk.heard, as a survey runs it at 12 kHz) on each 10 s of a real recording."""
+    x, said = _off_air(name), HEARD_OFF_AIR[name]
+    text: dict[int, list[str]] = {}
+    for i in range(0, len(x) - 120_000 + 1, 60_000):                            # 10 s at a time, 5 s apart
+        for s in psk.heard(x[i:i + 120_000], 12_000.0, most=4):
+            hz = _nearest(said, s["hz"])
+            assert abs(hz - s["hz"]) < 10 and s["baud"] == said[hz][0]          # (nothing else heard: no junk)
+            text.setdefault(hz, []).append(s["text"])
+    assert sorted(text) == sorted(said)
+    for hz, (_, words) in said.items():
+        assert all(any(w in t for t in text[hz]) for w in words), text[hz]
+
+
+@pytest.mark.parametrize("name", sorted(HEARD_OFF_AIR))
+def test_real_psk_off_the_air_is_read_as_it_comes(name: str) -> None:
+    """The live reader on the same recordings, brought down to its own rate."""
+    x, said = _off_air(name), HEARD_OFF_AIR[name]
+    k = np.arange(127) - 63
+    h = np.sinc(2 * 3_300 / 12_000 * k) * np.hamming(127)
+    x = np.convolve(x, h / h.sum(), mode="same")
+    x = np.interp(np.arange(int(len(x) * RATE / 12_000)) * (12_000 / RATE), np.arange(len(x)), x)
+    lines = _followed("psk31", x)
+    assert len(lines) == len(said) and all(abs(hz - _nearest(said, hz)) < 10 for hz in lines)
+    for hz, line in lines.items():
+        flat = " ".join(line.split())
+        assert all(" ".join(w.split()) in flat for w in said[_nearest(said, hz)][1]), line
+
+
 # --- QPSK31 ----------------------------------------------------------------------------------
 
 def test_the_qpsk_code_is_g3plxs() -> None:
