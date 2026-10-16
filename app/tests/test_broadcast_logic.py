@@ -13,7 +13,7 @@ from sleepradiopi.broadcast.models import (
 from sleepradiopi.broadcast.script_builder import (
     DjScriptBuilder, ShowClock, minutes_past_rounded, spoken_time, track_phrase,
 )
-from sleepradiopi.broadcast.selector import BroadcastSelector, HookPool, parse_hooks
+from sleepradiopi.broadcast.selector import BroadcastSelector, DeckStore, HookPool, parse_hooks
 from sleepradiopi.broadcast.speech import normalize_for_speech
 
 
@@ -117,13 +117,56 @@ def test_show_clock_silent_wind_down_stops_links():
 
 
 def test_selector_spaces_artists_and_avoids_repeats():
-    pool = [track(f"Song {i}", f"Artist {i % 4}") for i in range(12)]
+    pool = [track(f"Song {i}", f"Artist {i % 12}") for i in range(48)]
     sel = BroadcastSelector(pool, random.Random(7))
-    picks = [sel.next_track() for _ in range(60)]
-    for a, b, c in zip(picks, picks[1:], picks[2:]):
-        assert len({a.artist, b.artist, c.artist}) == 3
-    for i in range(len(picks) - 6):
-        assert len({p.path for p in picks[i:i + 6]}) == 6
+    picks = [sel.next_track() for _ in range(48 * 4)]
+    close = sum(len({a.artist, b.artist, c.artist}) < 3 for a, b, c in zip(picks, picks[1:], picks[2:]))
+    assert close <= 4                     # (only near a deck's end, when the same artists are all that's left)
+    for i in range(len(picks) - 20):      # and not straight back into what's just played, across decks too
+        assert len({p.path for p in picks[i:i + 20]}) == 20
+
+
+def test_selector_plays_every_track_once_before_any_again():
+    pool = [track(f"Song {i}", f"Artist {i % 7}") for i in range(70)]
+    sel = BroadcastSelector(pool, random.Random(3))
+    for _ in range(3):                                   # three whole decks
+        picks = [sel.next_track().path for _ in range(70)]
+        assert sorted(picks) == sorted(t.path for t in pool)
+
+
+def test_the_deck_carries_on_after_a_restart_and_follows_the_library(tmp_path):
+    pool = [track(f"Song {i}", f"Artist {i % 5}") for i in range(40)]
+    store = DeckStore(tmp_path / "decks.json", save_s=0)
+    sel = BroadcastSelector(pool, random.Random(1), store, "Carisbrooke Radio")
+    first = [sel.next_track().path for _ in range(15)]
+    again = BroadcastSelector(pool, random.Random(2), DeckStore(tmp_path / "decks.json", save_s=0), "carisbrooke radio")
+    rest = [again.next_track().path for _ in range(25)]   # (a restart: read back from the file)
+    assert sorted(first + rest) == sorted(t.path for t in pool)
+    other = BroadcastSelector(pool, random.Random(4), DeckStore(tmp_path / "decks.json"), "Default")
+    assert len({other.next_track().path for _ in range(40)}) == 40     # each theme has its own deck
+    new = [track(f"New {i}", f"Newcomer {i}") for i in range(5)]
+    mid = BroadcastSelector(pool, random.Random(6), store, "Sunday")
+    played = {mid.next_track().path for _ in range(10)}
+    grown = BroadcastSelector(pool[5:] + new, random.Random(5), store, "Sunday")
+    left = {t.path for t in pool[5:] + new} - played      # songs gone drop out; new ones join this deck
+    assert sorted(grown.next_track().path for _ in range(len(left))) == sorted(left)
+    (tmp_path / "decks.json").write_text("{nonsense")     # (and a broken file is just a new deck)
+    assert BroadcastSelector(pool, store=DeckStore(tmp_path / "decks.json"), key="x").next_track() is not None
+    quiet = DeckStore(tmp_path / "quiet.json")             # (written at most every DECK_SAVE_S)
+    sel = BroadcastSelector(pool, random.Random(1), quiet, "a")
+    sel.next_track()
+    written = (tmp_path / "quiet.json").read_text()
+    sel.next_track()
+    assert (tmp_path / "quiet.json").read_text() == written
+
+
+def test_a_track_put_back_still_plays_in_this_deck():
+    pool = [track(f"Song {i}", f"Artist {i % 4}") for i in range(12)]
+    sel = BroadcastSelector(pool, random.Random(9))
+    lined = sel.next_track()
+    sel.put_back(lined)                                  # lined up, then the station changed
+    picks = [sel.next_track().path for _ in range(12)]
+    assert sorted(picks) == sorted(t.path for t in pool)
 
 
 def test_selector_empty_pool():

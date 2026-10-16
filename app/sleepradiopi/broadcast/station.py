@@ -53,7 +53,7 @@ from . import profiles as profiles_mod
 from .birthdays import BirthdayWishes, wish_text
 from .messages import Messages
 from .script_builder import DjScriptBuilder, ShowClock, artist_station_name
-from .selector import BroadcastSelector, HookPool, parse_hooks
+from .selector import BroadcastSelector, DeckStore, HookPool, parse_hooks
 
 log = logging.getLogger(__name__)
 
@@ -256,6 +256,7 @@ class Station:
             log.warning("playlists ignored: %s", e)
             self.playlists = []
         self._path_index: dict | None = None   # (root, path in it) -> track, for playlists
+        self._decks = DeckStore(cfg.get("deck_file"))   # each theme's shuffled deck, kept between starts
         self.selector = BroadcastSelector(self.tracks)
         self.artist: str | None = None      # artist radio: only this artist's tracks
         self.profile: str | None = None     # ...or only the artists on this list
@@ -2596,7 +2597,7 @@ class Station:
         self.artist, self.profile = (None, profile) if profile else (artist, None)
         if profile:
             self._last_theme = profile
-        self.selector = BroadcastSelector(pool)
+        self.selector = BroadcastSelector(pool, store=self._decks, key=profile or "")
         self.builder.station = name
         if hasattr(self, "base"):             # (not while starting up: they come after)
             self._apply_settings()
@@ -2741,6 +2742,7 @@ class Station:
             in_show = self._in_music
             was_next = self._queue[0] if self._queue else None
             before = (self.profile or "").lower()
+            old_deck = self.selector
             found = self._use_selection(profile)
             # Another station, mid-show: it takes over now, like turning the dial -- the
             # song playing stops and the new one opens (its welcome if made, else a short
@@ -2756,7 +2758,8 @@ class Station:
                 if self._in_gap or any(t.path == lined.path for t in self.selector.pool):
                     keep += 1
             while len(self._queue) > keep:
-                self._queue.pop()
+                dropped = self._queue.pop()      # (back in the deck it came from: it still plays it)
+                (self.selector if self.selector.key == old_deck.key else old_deck).put_back(dropped)
             if in_show and not self._in_gap:
                 self._refill()
                 if self._queue and self._queue[0] is not was_next and self._gap_decision is not None:

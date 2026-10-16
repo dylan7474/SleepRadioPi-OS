@@ -29,8 +29,9 @@ Actions, Sleep timer and Radio folders open:
 
 ### On air
 
-- **A real show, made from your music library.** A proper shuffle (no
-  repeats within the last ~20 songs, the same artist spaced out), with the
+- **A real show, made from your music library.** A proper shuffle — a
+  shuffled deck: every song plays once before any plays again, the same
+  artist spaced out, and its place kept through a power cut — with the
   DJ talking between songs: *"That was Girl, by The Beatles. Coming up, Pink
   Moon, by Nick Drake."* How often it talks is up to you (before every song,
   or every 2, 3 or 5).

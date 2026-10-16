@@ -642,6 +642,7 @@ def main() -> None:
     cfg["scan_cache"] = Path.home() / ".cache" / "sleepradiopi" / "scans.json"
     cfg["voices_dir"] = voices
     cfg["tag_cache"] = Path.home() / ".cache" / "sleepradiopi" / "tags.json"
+    cfg["deck_file"] = Path.home() / ".cache" / "sleepradiopi" / "decks.json"
 
     # One voice only: two don't fit a Pi Zero 2 W's RAM alongside the stream.
     tts = TtsWorker(voices, settings.broadcast_voice) if settings.broadcast_voice else None
