@@ -47,6 +47,40 @@ def test_press_timer_tells_short_from_long() -> None:
     assert calls == ["short", "long"]
 
 
+def test_a_very_long_hold_only_when_wanted() -> None:
+    calls, offline = [], [True]
+    t = PressTimer(lambda: calls.append("short"), lambda: calls.append("long"), long_s=0.1,
+                   very_long=(0.3, lambda: calls.append("visit"), lambda: offline[0], lambda: calls.append("tick")))
+    t.down()
+    assert _wait(lambda: calls == ["tick"])          # the long press reached: a tick, nothing done yet
+    t.up()                                           # let go before the very long one: the long press
+    assert calls == ["tick", "long"]
+    calls.clear()
+    t.down()
+    assert _wait(lambda: calls == ["tick", "visit"])  # held on: the visit, and not the long press
+    t.up()
+    time.sleep(0.05)
+    assert calls == ["tick", "visit"]
+    calls.clear()
+    t.down(); t.up()
+    assert calls == ["short"]                        # a press is still a press
+    calls.clear()
+    offline[0] = False                               # on Wi-Fi: as it always was
+    t.down()
+    assert _wait(lambda: calls == ["long"])
+    time.sleep(0.35)
+    t.up()
+    assert calls == ["long"]
+    calls.clear()
+    offline[0] = True
+    t.down()
+    assert _wait(lambda: calls == ["tick"])
+    t.cancel()                                       # turned while held (seek): nothing more
+    time.sleep(0.35)
+    t.up()
+    assert calls == ["tick"]
+
+
 def test_handle_passes_key_releases() -> None:
     events = []
     data = EVENT.pack(0, 0, EV_KEY, 164, KEY_DOWN) + EVENT.pack(0, 0, EV_KEY, 164, 2) + \

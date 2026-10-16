@@ -26,7 +26,7 @@ from sleepradiopi import wifi
 from sleepradiopi.updater import Updates
 from sleepradiopi.voices import STANDARD_NAME, VoiceJobs
 from sleepradiopi.io.announce import Announcer, beep
-from sleepradiopi.io.knob import Chord, Knob
+from sleepradiopi.io.knob import VERY_LONG_S, Chord, Knob
 from sleepradiopi.io import service as service_mod
 from sleepradiopi.io import presets as presets_mod
 from sleepradiopi.playback import radio as radio_mod
@@ -210,6 +210,25 @@ def _wifi_event(announcer, was: dict | None, st: dict) -> None:
         elif mode == "station":
             announcer.say([announce.joined_text(st.get("ssid")), announcer.text], announce.cue("joined"),
                           wait=20, plain=True)
+
+
+def _offline() -> bool:
+    """Is this radio set to work without Wi-Fi?"""
+    try:
+        return wifi.load()["offline"]
+    except (OSError, ValueError, KeyError):
+        return False
+
+
+def _knob_visit() -> None:
+    """The knob held on (a radio without Wi-Fi, so with no other way in once it's
+    closed up): the Wi-Fi on for a visit, as the service menu's 2 does. The
+    hotspot coming on says how to join it (_wifi_event)."""
+    logging.info("knob held on: turning the Wi-Fi on for a visit")
+    try:
+        wifi.ask("hotspot")
+    except OSError:
+        logging.warning("knob: no Wi-Fi manager to ask")
 
 
 def _wifi_watch(announcer) -> None:
@@ -705,7 +724,9 @@ def main() -> None:
         knob = Knob(control.knob, control.toggle,
                     devices=Path(os.environ.get("SLEEPRADIOPI_INPUT_DIR", "/dev/input")),
                     on_long_press=presets.knob_long, buttons=buttons, chord=chord, raw_keys=raw_keys,
-                    on_held_turn=station.seeker.turn)
+                    on_held_turn=station.seeker.turn,
+                    # held on for 15 s on a radio without Wi-Fi: a visit (a tick at 3 s says keep going)
+                    very_long=(VERY_LONG_S, _knob_visit, _offline, lambda: presets._clip(tick, "Button")))
         presets.keys = knob.keys         # the page's buttons go down and up through the same timers
         if cathedral:                    # the VU needle and the grille's glow (hardware PWM)
             from sleepradiopi.io.lamps import Lamps

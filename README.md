@@ -150,7 +150,9 @@ Actions, Sleep timer and Radio folders open:
   pulses when it's on air.)
 - **One knob.** Turn for volume; press to pause or play; **hold it for 3
   seconds** and the radio reads out its network address (handy away from
-  home).
+  home). On a radio set to work without Wi-Fi, **holding it on for 15
+  seconds** turns the Wi-Fi on for a visit (a tick at 3 seconds says keep
+  holding).
 - **Four preset buttons** (optional), like a car radio's: each plays what
   it holds — Sleep Radio, an artist or list, an internet station, an album
   straight through, a single track (then the radio pauses) — or does something: say the time, read the news now,
@@ -509,9 +511,12 @@ Actions, Sleep timer and Radio folders open:
   nothing is forgotten, and the Wi-Fi goes off again about 15 minutes after
   the last visitor leaves (or when the radio next starts). A network joined
   during a visit (your phone's, say) is used until the radio next starts.
-  A radio with no buttons can be let in from a PC instead: an empty file
-  called `wifi-on.txt` on the card's first partition keeps the Wi-Fi on for
-  as long as it's there. Do put the DJ's voice on first: fetching it needs
+  **Or hold the knob down for 15 seconds** — the way in for a radio with
+  no buttons: a tick at 3 seconds (keep holding; let go there and the
+  3-second hold does its usual thing), then the visit starts at 15. It
+  only does this on a radio set to work without Wi-Fi. A radio can also be
+  let in from a PC: an empty file called `wifi-on.txt` on the card's first
+  partition keeps the Wi-Fi on for as long as it's there. Do put the DJ's voice on first: fetching it needs
   the internet once. The time comes from the radio's clock chip, if it has
   one; without one, an offline radio doesn't say the time.
 - **Updates from the web page.** Settings → Updates checks for a new release
@@ -859,8 +864,8 @@ Other targets are passed through to Buildroot: `make menuconfig`,
   dnsmasq, 192.168.4.1) only runs when asked for, or with no network set up at
   all. `"offline": true` in `wifi.json` (the page's *Without Wi-Fi*) leaves
   the Wi-Fi down from start-up (`ip link set wlan0 down`; the log says
-  `wifi: off`); a hotspot asked for then is a visit that ends 15 minutes
-  after its last client leaves, and `/boot/wifi-on.txt` overrides the
+  `wifi: off`); a hotspot asked for then (the service menu's 2, or the knob
+  held 15 s) is a visit that ends 15 minutes after its last client leaves, and `/boot/wifi-on.txt` overrides the
   setting. If the manager can't run, `S35wifi` joins the card's network directly
   after 20 s.
 - Serial console: GPIO14/15, 115200 baud (Bluetooth is disabled so the full

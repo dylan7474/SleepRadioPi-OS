@@ -62,6 +62,10 @@ and with no network, and is set up from its web page. See
   remembered). Press (and let go) to pause or play. **Hold it for 3 seconds**
   and the radio beeps and reads out its network address — handy away from
   home, where there's no screen to show where the web page is.
+  On a radio set to work **without Wi-Fi**, **hold it on for 15 seconds**
+  to turn the Wi-Fi on for a visit (its own network, as the service menu's
+  2 does) — the way in for a radio with no buttons. A tick at 3 seconds
+  says keep holding; let go there and the 3-second hold acts as usual.
   **Press and turn** to go back or on through what's playing: a book or
   podcast half a minute a click, a song from an album or playlist ten
   seconds a click (a quick spin goes two or four times as far). Playing, it
