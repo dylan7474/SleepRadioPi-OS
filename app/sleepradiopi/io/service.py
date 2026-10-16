@@ -7,8 +7,8 @@ through it:
     1  restart the radio
     2  reset the Wi-Fi: forget the networks added on the page, and make the
        radio's own network (SleepRadio-Setup) to set a new one up -- or, on
-       a radio set to work without Wi-Fi, turn the Wi-Fi on for a visit:
-       its own network, nothing forgotten, off again by itself afterwards
+       a radio set to work without Wi-Fi, turn the Wi-Fi back on (for good:
+       the page turns it off again): its own network, nothing forgotten
     3  a status report (address, Wi-Fi, version, free space); then press 3
        again to go back to the previous version of the software
     4  factory reset: every setting back to how it came (Wi-Fi and the
@@ -41,10 +41,10 @@ CLOSED = "Service menu closed."
 RESTARTING = "Rebooting."
 WIFI = ("Resetting the Wi-Fi. I'll forget the networks added on the web page, and make my own network, "
         "so you can set up a new one.")
-# A radio set to work without Wi-Fi: 2 lets you in, and forgets nothing.
+# A radio set to work without Wi-Fi: 2 turns the Wi-Fi back on, and forgets nothing.
 MENU_OFFLINE = MENU.replace("Two to reset the Wi-Fi.", "Two to turn the Wi-Fi on.")
-WIFI_VISIT = ("Turning the Wi-Fi on for a visit. I'll make my own network, and tell you how to join it. "
-              "Nothing is forgotten, and I'll turn it off again when you've gone.")
+WIFI_VISIT = ("Turning the Wi-Fi back on. I'll make my own network, and tell you how to join it. "
+              "Nothing is forgotten. To go without Wi-Fi again, turn it off on the web page.")
 ROLLBACK_ASK = "To go back to the previous version of the software, press three again. Or press nothing, to leave."
 ROLLBACK = "Going back to the previous version of the software. Rebooting."
 NO_ROLLBACK = "There's no previous version on this radio to go back to, so nothing has changed."

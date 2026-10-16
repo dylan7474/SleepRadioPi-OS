@@ -293,7 +293,7 @@ def test_on_a_radio_that_works_without_wifi_two_turns_it_on_for_a_visit() -> Non
     r.menu.open()
     assert r.said[-1] == service.MENU_OFFLINE and "turn the Wi-Fi on" in r.said[-1] and "reset the Wi-Fi" not in r.said[-1]
     r.press(2)
-    assert r.done[-1] == "wifi" and r.said[-1] == service.WIFI_VISIT and "Nothing is forgotten" in r.said[-1]
+    assert r.done[-1] == "wifi" and r.said[-1] == service.WIFI_VISIT and "Nothing is forgotten" in r.said[-1] and "back on" in r.said[-1]
     r.menu.selector = True                                # the cathedral's
     r.menu.open()
     assert r.said[-1] == service.SEL_MENU_OFFLINE
@@ -303,3 +303,18 @@ def test_on_a_radio_that_works_without_wifi_two_turns_it_on_for_a_visit() -> Non
     assert r.said[-1] == service.WIFI_VISIT
     assert "The Wi-Fi is off" in service.status_text([], {"mode": "offline"}, "1.9.9", 1.0, 3, spoken_ip)
     assert service.MENU_OFFLINE in service.FIXED and service.WIFI_VISIT in service.FIXED
+
+
+
+def test_the_way_in_turns_the_wifi_back_on_for_good(tmp_path, monkeypatch) -> None:
+    from sleepradiopi import main, wifi
+    nets, asked = tmp_path / "wifi.json", []
+    load, set_offline = wifi.load, wifi.set_offline
+    set_offline(True, nets)
+    monkeypatch.setattr(wifi, "load", lambda path=nets: load(path))
+    monkeypatch.setattr(wifi, "set_offline", lambda on: set_offline(on, nets))
+    monkeypatch.setattr(wifi, "ask", asked.append)
+    main._wifi_back_on()                       # the knob held 15 s (or the menu's 2, offline)
+    assert load(nets)["offline"] is False and asked == ["hotspot"]
+    main._wifi_back_on()                       # (a radio already on Wi-Fi: just its own network)
+    assert load(nets)["offline"] is False and asked == ["hotspot", "hotspot"]

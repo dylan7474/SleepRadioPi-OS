@@ -13,11 +13,12 @@ With a long-press action, a press acts when it's let go (pause/play), and
 holding it for LONG_PRESS_S does the long-press action instead (say the
 radio's address).
 
-On a radio set to work without Wi-Fi, holding the knob on for VERY_LONG_S
-turns the Wi-Fi on for a visit (a radio with no buttons has no service
-menu, and shouldn't need opening up to be let in). Then the long press
-waits: a tick at LONG_PRESS_S says it's been reached, and it acts when
-the knob's let go -- unless it's still held at VERY_LONG_S.
+Holding the knob on for VERY_LONG_S is the way in to a radio whose page
+can't be reached: the Wi-Fi back on (on a radio set to work without it)
+and the radio's own network to join (a radio with no buttons has no
+service menu, and shouldn't need opening up to be let in). So the long
+press waits: a tick at LONG_PRESS_S says it's been reached, and it acts
+when the knob's let go -- unless it's still held at VERY_LONG_S.
 
 Holding two preset buttons together (a chord: 1 and 4 open the service
 menu, io/service.py) cancels both buttons' own press and hold the moment
@@ -43,7 +44,7 @@ EVENT = struct.Struct("llHHi")
 EV_KEY, EV_REL = 1, 2
 KEY_UP, KEY_DOWN = 0, 1
 LONG_PRESS_S = 3.0
-VERY_LONG_S = 15.0    # the knob held this long on a radio without Wi-Fi: a visit
+VERY_LONG_S = 15.0    # the knob held this long: the Wi-Fi back on, and the radio's own network
 PRESS_GUARD_S = 0.15  # a preset button pressed again this soon after a press is a bounce, not a press
                       # (short: a real second press steps a button on -- io/presets.py STEP_SETTLE_S)
 RESCAN_S = 10.0   # look for new input devices (modules can load after we start)

@@ -62,10 +62,13 @@ and with no network, and is set up from its web page. See
   remembered). Press (and let go) to pause or play. **Hold it for 3 seconds**
   and the radio beeps and reads out its network address — handy away from
   home, where there's no screen to show where the web page is.
-  On a radio set to work **without Wi-Fi**, **hold it on for 15 seconds**
-  to turn the Wi-Fi on for a visit (its own network, as the service menu's
-  2 does) — the way in for a radio with no buttons. A tick at 3 seconds
-  says keep holding; let go there and the 3-second hold acts as usual.
+  **Hold it on for 15 seconds** to get back in to a radio whose page can't
+  be reached — set to work without Wi-Fi, or moved away from its network:
+  the Wi-Fi comes back on for good (nothing forgotten) and the radio makes
+  its own network, saying how to join; with nobody on it, it goes back to
+  a saved network in range by itself. The way in for a radio with no
+  buttons. A tick at 3 seconds says keep holding; let go there and the
+  3-second hold acts as usual.
   **Press and turn** to go back or on through what's playing: a book or
   podcast half a minute a click, a song from an album or playlist ten
   seconds a click (a quick spin goes two or four times as far). Playing, it
@@ -975,9 +978,9 @@ The cards:
   the hotspot, which then announces how to join it; the network on the card
   (`/boot/wpa_supplicant.conf`) stays, so with nobody on the hotspot the
   radio tries that again every 5 minutes. On a radio set to work without
-  Wi-Fi (`"offline"` in `wifi.json`) **2** is "turn the Wi-Fi on" instead:
-  nothing is deleted, the hotspot is a visit (it ends by itself; see
-  `wifi.py`), and the menu's words say so. **3**: a status report (network,
+  Wi-Fi (`"offline"` in `wifi.json`) **2** is "turn the Wi-Fi on" instead,
+  as holding the knob 15 s is: `offline` back to false, nothing deleted,
+  and the hotspot; the menu's words say so. **3**: a status report (network,
   address, version, songs, free space), then **3** again goes back to the
   previous version: the root helper (`power-request-watch` →
   `updater.py rollback`) checks the other root slot holds a system
@@ -1703,8 +1706,8 @@ The cards:
   one; the hotspot's name and password (SleepRadio-Setup / sleepradio to
   start with); *Try saved networks now* while it's a hotspot; **Without
   Wi-Fi** (a ten-minute trial, or off for good, for a radio that lives
-  where there's none: it then starts with the Wi-Fi down, and the service
-  menu's 2 lets you in for a visit). See
+  where there's none: it then starts with the Wi-Fi down; the knob held
+  15 s, or the service menu's 2, turns it back on). See
   `sleepradiopi/wifi.py` for how the manager decides.
 - **Updates** — the radio's version; *Check for updates* looks at the latest
   GitHub release (`update_source`) and *Install* puts it on (see the

@@ -212,23 +212,23 @@ def _wifi_event(announcer, was: dict | None, st: dict) -> None:
                           wait=20, plain=True)
 
 
-def _offline() -> bool:
-    """Is this radio set to work without Wi-Fi?"""
+def _wifi_back_on() -> None:
+    """The way in to a radio whose page can't be reached -- the knob held on (any
+    radio: one without Wi-Fi, or one moved away from its network), or the service
+    menu's 2 on a radio without Wi-Fi: the Wi-Fi back on for good (nothing
+    forgotten; the page turns it off again), and the radio's own network to
+    join, saying how (_wifi_event). With nobody on it, it goes back to a saved
+    network in range by itself (wifi.RETRY_S)."""
+    logging.info("turning the Wi-Fi back on, with the radio's own network")
     try:
-        return wifi.load()["offline"]
+        if wifi.load()["offline"]:
+            wifi.set_offline(False)
     except (OSError, ValueError, KeyError):
-        return False
-
-
-def _knob_visit() -> None:
-    """The knob held on (a radio without Wi-Fi, so with no other way in once it's
-    closed up): the Wi-Fi on for a visit, as the service menu's 2 does. The
-    hotspot coming on says how to join it (_wifi_event)."""
-    logging.info("knob held on: turning the Wi-Fi on for a visit")
+        logging.exception("wifi: couldn't turn 'without Wi-Fi' off")
     try:
         wifi.ask("hotspot")
     except OSError:
-        logging.warning("knob: no Wi-Fi manager to ask")
+        logging.warning("no Wi-Fi manager to ask")
 
 
 def _wifi_watch(announcer) -> None:
@@ -543,8 +543,10 @@ def _service_menu(station: Station, control, presets, config_file: Path, ready=l
         return wifi.load()["offline"]
 
     def forget_wifi():
-        if not offline():             # (a radio set to work without Wi-Fi: a visit, nothing forgotten)
-            reset.forget_wifi(wifi.NETWORKS)
+        if offline():                 # (a radio set to work without Wi-Fi: back on, nothing forgotten)
+            _wifi_back_on()
+            return
+        reset.forget_wifi(wifi.NETWORKS)
         try:
             wifi.ask("hotspot")
         except OSError:
@@ -726,8 +728,8 @@ def main() -> None:
                     devices=Path(os.environ.get("SLEEPRADIOPI_INPUT_DIR", "/dev/input")),
                     on_long_press=presets.knob_long, buttons=buttons, chord=chord, raw_keys=raw_keys,
                     on_held_turn=station.seeker.turn,
-                    # held on for 15 s on a radio without Wi-Fi: a visit (a tick at 3 s says keep going)
-                    very_long=(VERY_LONG_S, _knob_visit, _offline, lambda: presets._clip(tick, "Button")))
+                    # held on for 15 s: the Wi-Fi back on, its own network (a tick at 3 s says keep going)
+                    very_long=(VERY_LONG_S, _wifi_back_on, lambda: True, lambda: presets._clip(tick, "Button")))
         presets.keys = knob.keys         # the page's buttons go down and up through the same timers
         if cathedral:                    # the VU needle and the grille's glow (hardware PWM)
             from sleepradiopi.io.lamps import Lamps
