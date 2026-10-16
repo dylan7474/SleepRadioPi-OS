@@ -365,10 +365,12 @@ class Presets:
         self.banks[self.bank] = value
 
     def _every(self):
-        """Every preset on every button, in both sets (each step of the ones with steps)."""
+        """Every preset on every button, in both sets (each step of the ones with steps),
+        and in the slots (holding the knob, switch-on), so renames and moves reach them too."""
         for bank in self.banks.values():
             for button in bank:
                 yield from steps(button)
+        yield from (p for p in self.slots.values() if p is not None)
 
     def pin_shows(self, theme: str) -> bool:
         """There's no default station: buttons set to "the show" (no theme) play this
@@ -395,7 +397,7 @@ class Presets:
         return changed
 
     def rename_theme(self, old: str, new: str) -> bool:
-        """A theme was renamed: buttons that play it follow it."""
+        """A theme was renamed: buttons (and the slots) that play it follow it."""
         changed = False
         for p in self._every():
             if p["kind"] == "show" and (p.get("profile") or "").lower() == old.lower():
@@ -406,7 +408,7 @@ class Presets:
         return changed
 
     def rename_playlist(self, old: str, new: str) -> bool:
-        """A playlist was renamed: buttons that play it follow it."""
+        """A playlist was renamed: buttons (and the slots) that play it follow it."""
         changed = False
         for p in self._every():
             if p["kind"] == "playlist" and p["name"].lower() == old.lower():
@@ -627,6 +629,8 @@ class Presets:
             save_setting(self.config_file, "buttons", self.banks["day"])
             save_setting(self.config_file, "buttons_night", self.banks["night"])
             save_setting(self.config_file, "buttons_bank", self.bank)
+            for name, preset in self.slots.items():
+                save_setting(self.config_file, name, preset)
         self.bake()
 
     def bake(self) -> None:

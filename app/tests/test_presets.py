@@ -707,6 +707,11 @@ def test_the_knob_held_and_what_plays_at_switch_on(tmp_path: Path) -> None:
         p.set_slot("power_on", {"kind": "action", "action": "time"})
     with pytest.raises(ValueError):
         p.set_slot("doorbell", RP)
+    p.set_slot("power_on", {"kind": "show", "artist": None, "profile": "Carisbrook Radio"})
+    p.set_slot("knob_long", {"kind": "playlist", "name": "Sunday", "shuffle": False})
+    assert p.rename_theme("carisbrook radio", "Carisbrooke Radio")         # a renamed theme: switch-on follows it
+    assert load(conf).power_on["profile"] == "Carisbrooke Radio"
+    assert p.rename_playlist("sunday", "Monday") and load(conf).knob_long["name"] == "Monday"
     p.set_slot("power_on", None)
     assert not p.power_on() and load(conf).power_on is None
     saved = backup.export(conf, None)
