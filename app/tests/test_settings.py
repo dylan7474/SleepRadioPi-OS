@@ -72,7 +72,7 @@ def test_a_named_radio_has_its_name_on_the_network(tmp_path: Path) -> None:
         from sleepradiopi.io.announce import announcement
         assert announcement([], "x") == "I'm not connected to a network."  # no name: it may play any station
         hotspot = announcement([], "x", {"ssid": "Phonosphere-Setup", "password": "ab", "ip": "192.168.4.1"})
-        assert hotspot.startswith("I couldn't find") and "join Phonosphere-Setup" in hotspot   # (the network keeps it)
+        assert hotspot.startswith("I've made my own") and "join Phonosphere-Setup" in hotspot   # (the network keeps it)
     finally:
         brand.set_name(old)
 

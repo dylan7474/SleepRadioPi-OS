@@ -153,8 +153,9 @@ Actions, Sleep timer and Radio folders open:
   seconds** and the radio reads out its network address (handy away from
   home). **Hold it on for 15 seconds** to get back in when its page can't
   be reached: the Wi-Fi comes back on (if it was set to work without it)
-  and the radio makes its own network to join (a tick at 3 seconds says
-  keep holding).
+  and the radio makes its own network to join (from 3 seconds it ticks
+  each second; at 15 a rising tune says let go, and it tells you how to
+  join once its network is up).
 - **Four preset buttons** (optional), like a car radio's: each plays what
   it holds — Sleep Radio, an artist or list, an internet station, an album
   straight through, a single track (then the radio pauses) — or does something: say the time, read the news now,
@@ -508,10 +509,11 @@ Actions, Sleep timer and Radio folders open:
   said about Wi-Fi when it's switched on. *Try it for 10 minutes* turns
   the Wi-Fi off and back on by itself, to see that all is well first.
   **To get back in** (to change something, add music, or update it): **hold
-  the knob down for 15 seconds** — a tick at 3 seconds (keep holding; let
-  go there and the 3-second hold does its usual thing), then at 15 the
-  Wi-Fi comes back on **for good** and the radio makes its own network and
-  says how to join (the service menu's **2** does the same). Nothing is
+  the knob down for 15 seconds** — from 3 seconds it ticks once a second
+  (keep holding; let go there and the 3-second hold does its usual thing),
+  and at 15 a rising tune and "Turning the Wi-Fi on" say let go. The Wi-Fi
+  comes back on **for good**, and once the radio's own network is up (about
+  10 seconds) it says how to join (the service menu's **2** does the same). Nothing is
   forgotten, and from then on it's an ordinary Wi-Fi radio: a network
   joined from its page is kept. When you've finished, turn *Without Wi-Fi*
   on again on the page. A radio can also be let in from a PC: an empty file called `wifi-on.txt` on the card's first

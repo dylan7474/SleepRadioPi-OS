@@ -79,10 +79,10 @@ def spoken_host(host: str) -> str:
 
 def announcement(addrs: list[tuple[str, str]], host: str, hotspot: dict | None = None) -> str:
     """What the radio says. hotspot: {"ssid", "password", "ip"} when it has
-    made its own network (no saved one in range)."""
+    made its own network (no saved one in range, or asked for: the knob held)."""
     if hotspot:
         pw = hotspot["password"]
-        return (f"I couldn't find a Wi-Fi network I know, so I've made my own. "
+        return (f"I've made my own Wi-Fi network. "
                 f"On your phone, join {hotspot['ssid']}. The password is {pw}, spelled {', '.join(pw)}. "
                 f"Then open: {spoken_ip(hotspot['ip'])}, and add your Wi-Fi.")
     if not addrs:                       # (no name: the radio may be playing any station)
@@ -93,8 +93,7 @@ def announcement(addrs: list[tuple[str, str]], host: str, hotspot: dict | None =
 
 
 JOINING = "Joining your Wi-Fi now."
-OFFLINE = ("The Wi-Fi is off now, and stays off. To turn it on for a visit, open the service menu, "
-           "and choose two.")
+OFFLINE = "The Wi-Fi is off now, and stays off. To turn it back on, hold my knob down for fifteen seconds."
 TRIAL = "The Wi-Fi is off for ten minutes, to try it. Then it comes back by itself."
 
 # The Wi-Fi set-up's tunes: (notes in Hz, 0 = a rest; seconds each).
@@ -103,7 +102,9 @@ CUES = {
     "joining": ((880.0, 0, 880.0), 0.1),                   # two pips: leaving it to join yours
     "joined": ((660.0, 880.0, 1320.0), 0.14),              # rising: it's on your Wi-Fi
     "failed": ((440.0, 330.0), 0.3),                       # falling: it couldn't join
+    "held": ((523.0, 659.0, 784.0, 1047.0), 0.12),          # up the scale: the knob's been held long enough
 }
+WIFI_ON_NOW = "Turning the Wi-Fi on. One moment, and I'll tell you how to join me."
 
 
 def visit_text(hotspot: dict) -> str:

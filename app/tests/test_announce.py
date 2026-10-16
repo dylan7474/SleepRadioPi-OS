@@ -81,6 +81,19 @@ def test_a_very_long_hold_only_when_wanted() -> None:
     assert calls == ["tick"]
 
 
+def test_the_very_long_hold_counts_you_there() -> None:
+    calls = []
+    t = PressTimer(lambda: calls.append("short"), lambda: calls.append("long"), long_s=0.1, tick_s=0.1,
+                   very_long=(0.75, lambda: calls.append("wifi"), lambda: True, lambda: calls.append("tick")))
+    t.down()
+    assert _wait(lambda: "wifi" in calls, 2)
+    t.up()
+    time.sleep(0.25)
+    ticks = calls.count("tick")
+    assert 4 <= ticks <= 7 and calls[-1] == "wifi" and "long" not in calls   # a tick a step, then it
+    assert calls.count("tick") == ticks                                   # (and they stop)
+
+
 def test_handle_passes_key_releases() -> None:
     events = []
     data = EVENT.pack(0, 0, EV_KEY, 164, KEY_DOWN) + EVENT.pack(0, 0, EV_KEY, 164, 2) + \

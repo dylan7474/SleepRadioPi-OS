@@ -231,6 +231,15 @@ def _wifi_back_on() -> None:
         logging.warning("no Wi-Fi manager to ask")
 
 
+def _knob_wifi_on(announcer) -> None:
+    """The knob held long enough: say so at once (the radio's own network takes
+    some seconds to come up, and then says how to join), then turn it on."""
+    from sleepradiopi.io import announce
+    if announcer is not None:
+        announcer.say([announce.WIFI_ON_NOW], announce.cue("held"), plain=True)
+    _wifi_back_on()
+
+
 def _wifi_watch(announcer) -> None:
     was = None
     while True:
@@ -728,8 +737,10 @@ def main() -> None:
                     devices=Path(os.environ.get("SLEEPRADIOPI_INPUT_DIR", "/dev/input")),
                     on_long_press=presets.knob_long, buttons=buttons, chord=chord, raw_keys=raw_keys,
                     on_held_turn=station.seeker.turn,
-                    # held on for 15 s: the Wi-Fi back on, its own network (a tick at 3 s says keep going)
-                    very_long=(VERY_LONG_S, _wifi_back_on, lambda: True, lambda: presets._clip(tick, "Button")))
+                    # held on for 15 s: the Wi-Fi back on, its own network (a tick a second from 3 s
+                    # counts you there; at 15 a rising tune and a word at once -- the network takes a while)
+                    very_long=(VERY_LONG_S, lambda: _knob_wifi_on(announcer), lambda: True,
+                               lambda: presets._clip(tick, "Button")))
         presets.keys = knob.keys         # the page's buttons go down and up through the same timers
         if cathedral:                    # the VU needle and the grille's glow (hardware PWM)
             from sleepradiopi.io.lamps import Lamps

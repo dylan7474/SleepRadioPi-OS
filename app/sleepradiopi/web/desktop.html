@@ -4406,7 +4406,7 @@ const UI = {
             : w.mode === "station" ? `On ${w.ssid} for now, but this radio is set to work without Wi-Fi: the Wi-Fi goes off again when it next starts. To keep it, use Wi-Fi again.`
             : "This radio is set to work without Wi-Fi. The Wi-Fi is on for this visit: it goes off again about 15 minutes after the last visitor leaves its own network, or when the radio next starts."),
           line(sbtn("Use Wi-Fi again", () => act(async () => { await api("/api/wifi/offline", { on: false }); toast("The radio uses Wi-Fi again."); }), "primary")),
-          help("To get back in: hold the knob down for 15 seconds (a tick at 3 seconds: keep holding). The Wi-Fi comes back on for good and the radio makes its own network, saying how to join. Nothing is forgotten; turn the Wi-Fi off here again when you've finished."),
+          help("To get back in: hold the knob down for 15 seconds (it ticks each second from 3; a rising tune at 15 says let go). The Wi-Fi comes back on for good and the radio makes its own network, saying how to join. Nothing is forgotten; turn the Wi-Fi off here again when you've finished."),
         ] : [
           help("For a radio that lives where there is no Wi-Fi. It starts with the Wi-Fi off, says nothing about it, and just plays. To get back in, hold the knob down for 15 seconds: the Wi-Fi comes back on and the radio makes its own network, saying how to join."),
           line(sbtn("Try it for 10 minutes", () => ask("Turn the Wi-Fi off for 10 minutes? This page loses the radio until it comes back by itself.", "Try it", () => act(() => api("/api/wifi/trial", {})))),

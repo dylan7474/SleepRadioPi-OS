@@ -79,13 +79,15 @@ class PressTimer:
 
     very_long: (seconds, on_very_long, when, on_mark): while when() says so
     (checked at each press), the long press waits for the release -- on_mark
-    plays at long_s to say it's been reached -- and a press still held at
-    seconds does on_very_long instead."""
+    plays at long_s to say it's been reached, and every tick_s after, so you
+    can hear it counting -- and a press still held at seconds does
+    on_very_long instead."""
 
     def __init__(self, on_short: Callable[[], None], on_long: Callable[[], None],
                  long_s: float = LONG_PRESS_S, name: str = "knob", guard_s: float = 0.0,
-                 very_long: tuple | None = None) -> None:
+                 very_long: tuple | None = None, tick_s: float = 1.0) -> None:
         self.on_short, self.on_long, self.long_s, self.name = on_short, on_long, long_s, name
+        self.tick_s = tick_s
         self.guard_s = guard_s
         self.very_long = very_long
         self._timer: threading.Timer | str | None = None
@@ -118,7 +120,8 @@ class PressTimer:
         if very is not None:
             log.info("%s: long press reached (holding on for %.0f s does more)", self.name, very[0])
             if len(very) > 3 and very[3] is not None:
-                very[3]()
+                threading.Thread(target=self._ticks, args=(very[3], self._very, very[0] - self.long_s),
+                                 name="knob-ticks", daemon=True).start()
             return
         log.info("%s: long press", self.name)
         self.on_long()
@@ -132,6 +135,18 @@ class PressTimer:
         except Exception:
             log.exception("%s: very long press check", self.name)
             return None
+
+    def _ticks(self, mark: Callable[[], None], timer, left_s: float) -> None:
+        """A tick now and every tick_s while it's held, up to (not at) very_long."""
+        end = time.monotonic() + left_s - self.tick_s / 2
+        while self._very is timer:
+            try:
+                mark()
+            except Exception:
+                log.exception("%s: tick", self.name)
+            time.sleep(self.tick_s)
+            if time.monotonic() >= end:
+                return
 
     def _very_long(self) -> None:
         with self._lock:

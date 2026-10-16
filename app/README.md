@@ -67,8 +67,10 @@ and with no network, and is set up from its web page. See
   the Wi-Fi comes back on for good (nothing forgotten) and the radio makes
   its own network, saying how to join; with nobody on it, it goes back to
   a saved network in range by itself. The way in for a radio with no
-  buttons. A tick at 3 seconds says keep holding; let go there and the
-  3-second hold acts as usual.
+  buttons. From 3 seconds it ticks once a second (let go there and the
+  3-second hold acts as usual); at 15 a rising tune and "Turning the Wi-Fi
+  on" say let go, and once its network is up (about 10 seconds) it says
+  how to join.
   **Press and turn** to go back or on through what's playing: a book or
   podcast half a minute a click, a song from an album or playlist ten
   seconds a click (a quick spin goes two or four times as far). Playing, it
