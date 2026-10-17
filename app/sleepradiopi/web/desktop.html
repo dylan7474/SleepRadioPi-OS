@@ -2085,6 +2085,12 @@ const cwClass = c => c[2] >= .66 ? "" : c[2] >= .33 ? "c2" : "c1";
 // an over as read -> the log. A long over comes in parts: the same sender carrying on stays on its line.
 // The receiver's Morse pitch: in CW the dial is the signal's own frequency when it's heard at this (heardWhere tells the radio).
 const CW_PITCH = { kiwi: 500, owrx: 800, own: 700 };
+// Where a tone heard at this pitch is on the air, Hz: in a sideband the pitch is how far it is from the dial.
+function cwHz(R, pitch) {
+  if (!R || !rigOnRadio(R)) return null;
+  const D = RXD[R.kind], hz = D.tuned(R), mode = D.on(R) ? R.st.mode || R.st.receiving?.mode : null;
+  return !hz ? null : mode === "usb" ? hz + pitch : mode === "lsb" ? hz - pitch : mode === "cw" ? hz + pitch - (CW_PITCH[R.kind] || 700) : null;
+}
 function cwLog(o, st, R) {
   const last = CW.lines[CW.lines.length - 1], near = (a, b) => Math.abs(a.pitch - b.pitch) <= 40 && Math.abs(a.wpm - b.wpm) <= b.wpm * .15;
   if (last && near(last, o) && o.t0 >= last.t1 - .5 && o.t0 - last.t1 < 2) {
@@ -2094,6 +2100,7 @@ function cwLog(o, st, R) {
   let v = CW.voices.find(v => near(v, o));
   if (!v) { CW.voices.push(v = { hue: CW.hue++ % CW_HUES.length }); CW.voices = CW.voices.slice(-CW_HUES.length); }
   Object.assign(v, { pitch: o.pitch, wpm: o.wpm });
+  const hz = cwHz(R, o.pitch);
   CW.lines.push({ id: ++CW.line, when: Date.now() - Math.max(0, st.at - o.t1) * 1000, pitch: o.pitch, hz, wpm: o.wpm, t1: o.t1, n1: o.n, hue: v.hue, chars: [...o.chars] });
   CW.lines = CW.lines.slice(-CW_LINES);
 }
