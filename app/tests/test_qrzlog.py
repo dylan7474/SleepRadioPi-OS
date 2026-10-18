@@ -54,6 +54,14 @@ def test_qrzs_answers_read() -> None:
     q = qrzlog.qso(rs[0])
     assert (q["call"], q["band"], q["mode"], q["country"]) == ("DL1ABC", "20m", "FT8", "Federal Republic Of Germany") and 500 < q["km"] < 700
     assert qrzlog.qso({"call": "x", "qso_date": "junk"})["t"] is None
+    same = qrzlog.qso({"call": "M8KWB", "gridsquare": "IO94"})                     # both only "IO94": how far isn't known
+    assert same["near"] == "same square" and "km" not in same
+    assert qrzlog.qso({"call": "G4X", "gridsquare": "IO94ao"})["near"] == "same square"   # (theirs finer, ours only "IO94": still not known)
+    ft8.HOME = "IO94ml"
+    finer = qrzlog.qso({"call": "G4X", "gridsquare": "IO94ao"})                    # both six characters: how far is known
+    assert "near" not in finer and finer["km"] > 0
+    ft8.HOME = "IO94"
+    assert qrzlog.answer("RESULT=OK&COUNT=26\n")["COUNT"] == "26"                    # (QRZ's line break gone)
     assert qrzlog.pick({"QSO_COUNT": "1,204"}, qrzlog.TOTAL) == 1204 and qrzlog.pick({}, qrzlog.TOTAL) is None
 
 

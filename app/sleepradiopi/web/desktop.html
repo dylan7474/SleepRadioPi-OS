@@ -4951,7 +4951,7 @@ const UI = {
           help(`From QRZ, ${condAge(q.t)}. With Alerts on (Band conditions), the DJ says it when a new country goes in.`)) : null,
         q.had ? grp("The latest", ...q.recent.map(x => el("p", { className: "note", style: "margin:3px 0" },
           el("a", { href: `https://www.qrz.com/db/${encodeURIComponent(x.call)}`, target: "_blank", rel: "noopener", textContent: x.call }),
-          ` · ${[x.country, x.km != null ? `${x.km.toLocaleString("en-GB")} km` : x.grid, x.band, x.mode, t(x)].filter(Boolean).join(" · ")}`)),
+          ` · ${[x.country, x.km != null ? `${x.km.toLocaleString("en-GB")} km` : x.near || x.grid, x.band, x.mode, t(x)].filter(Boolean).join(" · ")}`)),
           q.recent.length ? null : help(q.fetched?.result === "OK" ? `None added or changed since ${q.fetched.since}.`
             : q.fetched?.result ? `QRZ didn't give them: ${q.fetched.result}${q.fetched.reason ? `, ${q.fetched.reason}` : ""}.` : "Not had yet.")) : null,
         q.had && Object.keys(q.status).length ? grp("Everything QRZ says about the book", ...Object.entries(q.status).filter(([k]) => !SHOWN.has(k))

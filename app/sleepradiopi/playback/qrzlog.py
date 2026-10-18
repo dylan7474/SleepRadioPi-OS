@@ -78,11 +78,11 @@ def answer(body: str) -> dict:
         out["ADIF"] = html.unescape(urllib.parse.unquote_plus(adif) if "%3C" in adif.upper() else adif)
         body = body[:m.start()] + body[m.end():]
     for k, v in urllib.parse.parse_qsl(body, keep_blank_values=True):
-        out[k.strip().upper()] = v
+        out[k.strip().upper()] = v.strip()          # (QRZ's COUNT comes with a line break after it)
     data = out.pop("DATA", None)
     if data and "=" in data:
         for k, v in urllib.parse.parse_qsl(html.unescape(data), keep_blank_values=True):
-            out.setdefault(k.strip().upper(), v)
+            out.setdefault(k.strip().upper(), v.strip())
     return out
 
 
@@ -114,7 +114,7 @@ def pick(status: dict, names: tuple[str, ...]) -> int | None:
 
 
 def qso(r: dict) -> dict:
-    """An ADIF record -> {"call", "t", "band", "mode", "grid"?, "km"?, "country"?}."""
+    """An ADIF record -> {"call", "t", "band", "mode", "grid"?, "km"? or "near"? ("same square"), "country"?}."""
     when = None
     try:
         when = datetime.strptime(r.get("qso_date", "") + r.get("time_on", "0000")[:4].ljust(4, "0"), "%Y%m%d%H%M").replace(tzinfo=timezone.utc).timestamp()
@@ -124,7 +124,9 @@ def qso(r: dict) -> dict:
     grid = (r.get("gridsquare") or "").strip()
     if grid:
         out["grid"] = grid
-        if ft8.HOME:
+        if ft8.HOME and grid[:4].upper() == ft8.HOME[:4].upper() and min(len(grid), len(ft8.HOME)) < 6:
+            out["near"] = "same square"              # (both in one 4-character square: how far apart isn't known)
+        elif ft8.HOME:
             try:
                 out["km"] = ft8.path(ft8.HOME, grid[:6])[0]
             except (ValueError, IndexError, TypeError):
