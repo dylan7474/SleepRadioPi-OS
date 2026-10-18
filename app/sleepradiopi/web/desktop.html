@@ -761,7 +761,7 @@ const PANEL = {};
 for (const [key, title, sym, h, page] of PANELS) PANEL[key] = mk({ id: "set:" + key, kind: "panel", key, title, sym, h, page });
 for (const [key, title, sym, h] of [["messages", "Messages", "✎", 55], ["birthdays", "Birthdays", "✿", 340], ["stations", "Stations", "R", 8],
                                     ["tests", "Test sounds", "▶", 150], ["stream", "Listen in a browser", "◠", 200], ["lists", "Themes", "A", 195],
-                                    ["findstation", "Find a station", "R", 8], ["findreceiver", "Find a receiver", "⌁", 200], ["modes", "Where to listen", "⌖", 215], ["conditions", "Band conditions", "☼", 45], ["quakes", "Earthquakes", "≋", 20], ["sun", "The sun", "☀", 45], ["aurora", "Aurora", "◠", 130], ["vhf", "VHF openings", "⌃", 200], ["warnings", "Warnings", "⚠", 35], ["signal", "My signal", "⌇", 210], ["qrz", "QRZ logbook", "Q", 225], ["findroom", "Find a room", "☊", 265], ["findpodcast", "Follow a podcast", "P", 275], ["newlist", "New theme", "A", 195]])
+                                    ["findstation", "Find a station", "R", 8], ["findreceiver", "Find a receiver", "⌁", 200], ["modes", "Where to listen", "⌖", 215], ["conditions", "Band conditions", "☼", 45], ["quakes", "Earthquakes", "≋", 20], ["sun", "The sun", "☀", 45], ["aurora", "Aurora", "◠", 130], ["vhf", "VHF openings", "⌃", 200], ["warnings", "Warnings", "⚠", 35], ["signal", "My signal", "⌇", 210], ["qrz", "QRZ logbook", "Q", 225], ["lightning", "Lightning", "ϟ", 50], ["findroom", "Find a room", "☊", 265], ["findpodcast", "Follow a podcast", "P", 275], ["newlist", "New theme", "A", 195]])
   PANEL[key] = mk({ id: "set:" + key, kind: "panel", key, title, sym, h, page: key });
 const DJ = mk({ id: "dj", kind: "dj", title: "The DJ" });
 const NOTES = mk({ id: "notes", kind: "folder", box: "messages", title: "Messages", kids: [], sym: "✎" });   // a folder of sticky notes
@@ -1154,6 +1154,7 @@ const OUTSIDE_PIC = {
   quakes: '<path d="M2 12h4l2-6 3 12 3-9 2 3h6"/>',
   warnings: '<path d="M12 3 2 20h20L12 3z"/><path d="M12 10v4M12 17v.5"/>',
   qrz: '<rect x="4" y="3" width="16" height="18" rx="2"/><path d="M8 8h8M8 12h8M8 16h5"/>',
+  lightning: '<path d="M13 2.5 5 13.5h6l-1 8 8-11h-6z"/>',
   signal: '<path d="M12 20V11"/><circle cx="12" cy="9" r="1.5"/><path d="M8.5 5.5a5 5 0 0 0 0 7M15.5 5.5a5 5 0 0 1 0 7M5.5 3a9 9 0 0 0 0 12M18.5 3a9 9 0 0 1 0 12"/>',
 };
 const svgPic = d => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${d}</svg>`;
@@ -1848,7 +1849,7 @@ async function open(id) {
   if (o.kind === "panel" && o.key === "lists") return open(LISTS.id);
 
   if (o.kind === "calendar") return open(BDAYS.id);
-  if (o.kind === "outside") { outsideSaw(); return open(PANEL[{ quakes: "quakes", warnings: "warnings", signal: "signal", qrz: "qrz", sun: "sun", aurora: "aurora", vhf: "vhf" }[o.t?.key] || "conditions"].id); }   // (each tile its own window; Bands: Band conditions)
+  if (o.kind === "outside") { outsideSaw(); return open(PANEL[{ quakes: "quakes", warnings: "warnings", signal: "signal", qrz: "qrz", lightning: "lightning", sun: "sun", aurora: "aurora", vhf: "vhf" }[o.t?.key] || "conditions"].id); }   // (each tile its own window; Bands: Band conditions)
   if (o === OUTSIDE) outsideSaw();
   if (o.kind === "list" && !o.key) o.key = "alist";
   const had = W.find(w => w.id === id);
@@ -4399,6 +4400,10 @@ const UI = {
           srow("Voice", seg(d.voices.map(v => [v, VOICE(v)]), d.voice, v => set({ voice: v })), help(d.can_restart ? "Changing it restarts the radio" : "")),
           srow("Speaking speed", ...range("dj-speed", 0.5, 1.5, 0.05, d.dj_speed, v => v.toFixed(2) + "×", v => set({ dj_speed: v })))),
         grp("The news", srow("News speed", ...range("news-speed", 0.5, 1.5, 0.05, d.news_speed, v => v.toFixed(2) + "×", v => set({ news_speed: v })))),
+        (() => { const from = timeIn({ value: hhmm(d.quiet_start_min ?? 1380), id: "quiet-from" }), until = timeIn({ value: hhmm(d.quiet_end_min ?? 360), id: "quiet-until" });
+          from.onchange = () => set({ quiet_start_min: minsOf(from.value) }); until.onchange = () => set({ quiet_end_min: minsOf(until.value) });
+          return grp("Quiet hours (do not disturb)", srow("Quiet hours", sw(d.quiet_on, v => set({ quiet_on: v }), "Quiet hours")), srow("From", from), srow("Until", until),
+            help("No news, birthday wishes or alerts from the DJ in them, and no lightning bell. Music and programmes play as usual.")); })(),
         grp("Waking up", srow("At power-on", seg([[true, "Chime"], [false, "Silent"]], d.startup_sound, v => set({ startup_sound: v })))),
         grp("Each theme's own", help("How much the DJ talks, time checks, the news, jingles and 70s hooks belong to each theme: in its Settings."),
           d.theme ? line(sbtn(`${stationOf(d.theme)}'s settings…`, () => { mk({ id: "tset:" + d.theme, kind: "panel", key: "tset", name: d.theme, title: "Settings", sym: "⚙" }); open("tset:" + d.theme); })) : null),
@@ -4928,6 +4933,31 @@ const UI = {
         grp("Said by the DJ",
           srow("Alerts", sw(w.alerts, v => act(() => api("/api/rx/conditions", { alerts: v })), "Alerts"), help(w.alerts ? "Said in the next gap" : "Off")),
           help("An amber or red weather warning, or a flood warning or severe flood warning, once when it's issued (and again if it's raised), in the next gap between songs, with the DJ on, not in the quiet hours. The same switch as Band conditions' alerts."))];
+    },
+  },
+  // Lightning (a tile in The world outside): strikes near the locator lately, from Blitzortung's live feed, which
+  // the radio listens to now and then (and all the time while a storm's near).
+  lightning: {
+    load: () => api("/api/lightning"),
+    build: (L, act) => {
+      const DIRS = ["N", "NE", "E", "SE", "S", "SW", "W", "NW"], dir = d => DIRS[Math.round(d / 45) % 8];
+      const recent = L.strikes.filter(s => L.t - s.t <= 3600), near = recent.length ? recent.reduce((a, b) => a.km <= b.km ? a : b) : null;
+      const t = s => new Date(s.t * 1000).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+      return [
+        grp(`Within ${L.area_km} km, the last hour`,
+          near ? outKv("Nearest", `${near.km} km ${dir(near.deg)}`, near.km <= L.alert_km ? "close: within the DJ's alert distance" : "") : help(L.home ? "None." : "Set the radio's locator: the strikes kept are those near it."),
+          recent.length ? outKv("Strikes", recent.length, "") : null),
+        L.strikes.length ? grp("The latest", ...L.strikes.slice(0, 40).map(s => el("p", { className: "note", style: "margin:2px 0" },
+          `${t(s)} · ${s.km} km ${dir(s.deg)}`))) : null,
+        grp("Listening",
+          srow("Watch for lightning", sw(L.on, v => act(() => api("/api/lightning", { on: v })), "Watch for lightning"),
+            help(!L.on ? "Off" : L.listening ? "Listening now" : L.listened ? `Last listened ${condAge(L.listened)}${L.error ? ` (${L.error})` : ` (${L.heard} strikes in the world)`}` : "Not yet")),
+          srow("Bell", sw(L.bell, v => act(() => api("/api/lightning", { bell: v })), "Bell"),
+            line(sbtn("Hear the bell", () => api("/api/lightning", { ring: true }).catch(e => toast(e.message))), el("span", { className: "shelp", textContent: L.bell ? " On" : " Off" }))),
+          help(`The bell rings on the radio when a storm first comes within ${L.alert_km} km, and again if one strikes within ${L.close_km} km: twice a storm at most, over whatever's playing (or on its own while paused), whether the DJ's on or not. Never in the quiet hours (the news's, in The DJ's settings).`),
+          help(`Every ${Math.round(L.every_s / 60)} minutes the radio listens for ${Math.round(L.sample_s)} seconds to Blitzortung's live feed of every strike in the world, and keeps those within ${L.area_km} km; while one lands that near, it stays listening until the storm's been quiet for 20 minutes. With Alerts on (Band conditions), the DJ says it once a storm when it comes within ${L.alert_km} km.`),
+          help("Lightning data by Blitzortung.org and its contributors. It's a community network: not for protecting life or property, and its live feed may change or stop without notice.")),
+        line(el("a", { href: "https://www.lightningmaps.org/", target: "_blank", rel: "noopener", textContent: "The live map on LightningMaps.org" }))];
     },
   },
   // QRZ logbook (a tile in The world outside): the book's figures and latest QSOs, and its access key -- typed in

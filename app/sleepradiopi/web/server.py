@@ -464,10 +464,16 @@ def make_handler(station: Station, output: Mp3Output, speaker=None,
                 from sleepradiopi.audio import ft8 as ft8_mod
                 from sleepradiopi.playback import conditions as conditions_mod, survey as survey_mod
                 out = conditions_mod.summary(conditions_mod.freshest(survey_mod.job)[1], ft8_mod.reader.heard()["heard"], time.time())
-                from sleepradiopi.playback import qrzlog as qrz_mod, quakes as quakes_mod, spots as spots_mod, ukwarnings as warn_mod
+                from sleepradiopi.playback import lightning as lightning_mod, qrzlog as qrz_mod, quakes as quakes_mod, spots as spots_mod, ukwarnings as warn_mod
                 self._send(json.dumps(conditions_mod.outside(out, conditions_mod.sun.status(), conditions_mod.forecast.status(), conditions_mod.aurora.status(),
                                                              conditions_mod.daytime(time.time(), ft8_mod.HOME), quakes_mod.quakes.status(),
-                                                             warn_mod.warnings.status(), spots_mod.spots.status(), qrz_mod.logbook.status())).encode(), "application/json")
+                                                             warn_mod.warnings.status(), spots_mod.spots.status(), qrz_mod.logbook.status(),
+                                                             lightning_mod.watch.status())).encode(), "application/json")
+            elif path == "/api/lightning":
+                # The Lightning window (playback/lightning.py): strikes within "area_km" of the locator in the last three
+                # hours (the latest first), whether it's listening now, when it last did, and how much of the world it heard.
+                from sleepradiopi.playback import conditions as conditions_mod, lightning as lightning_mod
+                self._send(json.dumps({**lightning_mod.watch.status(), "alerts": conditions_mod.ALERTS}).encode(), "application/json")
             elif path == "/api/qrz":
                 # The QRZ logbook window (playback/qrzlog.py): whether a key is set (never the key), the book's figures,
                 # everything its STATUS said, the latest QSOs, and QRZ's reason if it said no.
@@ -874,6 +880,34 @@ def make_handler(station: Station, output: Mp3Output, speaker=None,
                     if config_file is not None:
                         save_setting(config_file, "conditions_alerts", alerts)
                 self._send(json.dumps({"say_every_h": conditions_mod.EVERY_H, "alerts": conditions_mod.ALERTS}).encode(), "application/json")
+            elif path == "/api/lightning":
+                # {"on": true | false}: listening for lightning near here now and then (the setting lightning_watch);
+                # {"bell": true | false}: the bell when it comes near (lightning_bell); {"ring": true}: the bell now, to
+                # hear it (quiet hours or not). Kept.
+                from sleepradiopi.playback import lightning as lightning_mod
+                try:
+                    body = self._body()
+                    on, bell, ring = body.get("on"), body.get("bell"), body.get("ring")
+                    if (on is None and bell is None and ring is None) or any(v is not None and not isinstance(v, bool) for v in (on, bell, ring)):
+                        raise ValueError
+                except (ValueError, TypeError, AttributeError):
+                    self._error('send {"on": true or false}, {"bell": true or false} or {"ring": true}')
+                    return
+                if on is not None:
+                    lightning_mod.ON = on
+                    if config_file is not None:
+                        save_setting(config_file, "lightning_watch", on)
+                if bell is not None:
+                    lightning_mod.BELL = bell
+                    if config_file is not None:
+                        save_setting(config_file, "lightning_bell", bell)
+                if ring:
+                    if speaker is None:
+                        self._error("this radio has no speaker")
+                        return
+                    from sleepradiopi.io.announce import Clip as BellClip
+                    speaker.play_clip(BellClip(lightning_mod.bell(), "bell", "Lightning"))
+                self._send(json.dumps({"on": lightning_mod.ON, "bell": lightning_mod.BELL}).encode(), "application/json")
             elif path == "/api/qrz":
                 # {"key": "..."}: the QRZ logbook's access key, kept (never sent back); "" forgets it and what was had.
                 # QRZ is asked at once with a new one.
@@ -1658,13 +1692,14 @@ def make_handler(station: Station, output: Mp3Output, speaker=None,
         def _set_dj(self) -> None:
             """POST /api/dj with any of {"voice", "chattiness", "dj_hooks",
             "jingle_every" (0 = off), "news_enabled", "dj_speed", "news_speed"
-            (0.5-1.5, 1 = the voice's own pace)}. All saved; all live except
+            (0.5-1.5, 1 = the voice's own pace), "quiet_on", "quiet_start_min",
+            "quiet_end_min" (the quiet hours: the radio's do-not-disturb)}. All saved; all live except
             the voice, which restarts the station (only one voice fits in RAM)."""
             try:
                 body = self._body()
                 if not isinstance(body, dict):
                     raise ValueError("send a JSON object")
-                for key in ("dj_hooks", "news_enabled", "startup_sound", "dj_on", "time_checks"):
+                for key in ("dj_hooks", "news_enabled", "startup_sound", "dj_on", "time_checks", "quiet_on"):
                     if key in body and not isinstance(body[key], bool):
                         raise ValueError(f"{key} must be true or false")
                 every = body.get("jingle_every")
@@ -1673,6 +1708,8 @@ def make_handler(station: Station, output: Mp3Output, speaker=None,
                 voice = body.get("voice")
                 if voice is not None and voice not in station.voices():
                     raise ValueError(f"no voice called {voice!r}")
+                if any(k in body for k in ("quiet_on", "quiet_start_min", "quiet_end_min")):
+                    station.set_quiet(body.get("quiet_on"), body.get("quiet_start_min"), body.get("quiet_end_min"))
                 station.set_dj(chattiness=body.get("chattiness"), dj_hooks=body.get("dj_hooks"),
                                jingle_every=every, news_enabled=body.get("news_enabled"),
                                dj_speed=body.get("dj_speed"), news_speed=body.get("news_speed"),
@@ -1688,6 +1725,9 @@ def make_handler(station: Station, output: Mp3Output, speaker=None,
                     save_setting(config_file, "broadcast_dj", body["dj_on"])
                 if "startup_sound" in body:
                     save_setting(config_file, "startup_sound", body["startup_sound"])
+                for key, setting in (("quiet_on", "news_quiet_hours"), ("quiet_start_min", "news_quiet_start_min"), ("quiet_end_min", "news_quiet_end_min")):
+                    if key in body:
+                        save_setting(config_file, setting, getattr(station.config, setting))
                 if "dj_speed" in body:
                     save_setting(config_file, "broadcast_announcer_speed", station.config.announcer_speed)
                 if "news_speed" in body:

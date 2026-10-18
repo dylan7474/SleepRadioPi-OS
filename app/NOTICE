@@ -39,6 +39,14 @@ Third-party components (planned)
     (the 1:110m land outlines, rounded to half a degree, in
      sleepradiopi/web/land.json: the coastlines on the map of who's been heard)
 
+* "Striking a bell 15cm large" (stephan, pdsounds.org) ... public domain
+    https://commons.wikimedia.org/wiki/File:Striking_a_bell_15cm_large.ogg
+    (a double strike cut from it, faded out: sleepradiopi/data/lightning_bell.wav,
+     the bell rung when lightning comes near)
+
+* Lightning strikes: Blitzortung.org and its contributors (a live feed, used
+    as it is; not bundled)
+
 Other planned dependencies (python-vlc / libVLC, mutagen, numpy, sounddevice,
 gpiozero, a small LCD driver library) are permissively licensed (LGPL/MIT/BSD
 family) and do not change the overall GPL-3.0-or-later status, which is

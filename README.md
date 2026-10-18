@@ -476,7 +476,18 @@ Actions, Sleep timer and Radio folders open:
   latest contact; the window the figures and your recent QSOs. With
   Alerts on, the DJ says it when a new country goes in. Reading a
   logbook needs a QRZ Logbook subscription: without one, the window
-  says what QRZ said.
+  says what QRZ said. **Lightning**: strikes within 100 km of your
+  locator, from Blitzortung.org's live feed of every strike in the world
+  (the radio listens 30 seconds every 10 minutes, and all the time while
+  a storm is near); the tile shows the nearest in the last hour. A real
+  bell (a public-domain recording) rings on the radio when a storm first
+  comes within 40 km and again within 10 km -- twice a storm at most, not
+  in the quiet hours -- and with Alerts on, the DJ says where it is.
+  Blitzortung's is a community network: not for protecting life or
+  property, and its feed may change without notice.
+- **Quiet hours (do not disturb).** In The DJ's window: from and until
+  (23:00 to 06:00 to begin with), or off. No news, birthday wishes, alerts
+  or lightning bell in them; music and programmes play as usual.
 - **Receivers with names.** *Name…* in a receiver's window calls it what
   you like -- "Short wave", "VHF" -- in Receivers, on its window and
   wherever it's mentioned: two dongles on one computer are otherwise told
@@ -1134,9 +1145,8 @@ What's left to do (everything else described here is built and running):
   teleprinters' strength as a second yardstick, N0NBH's forecast,
   AuroraWatch UK and alerts. Still to do: where your own receiver's
   reports put you among others', once *Report* is on; more from outside
-  in The world outside (lightning from an AS3935 sensor, a barometer;
-  earthquakes, warnings, PSK Reporter spots of your own callsign and
-  your QRZ logbook are done).
+  in The world outside (a barometer; earthquakes, warnings, PSK Reporter
+  spots of your own callsign, your QRZ logbook and lightning are done).
 - **A laser-cut wood cathedral** — a real-wood version of the cathedral case:
   - the face and fretwork cut from walnut-veneered plywood, the sides and
     back from plywood or MDF;

@@ -1514,6 +1514,22 @@ The cards:
   `"refused"`, QRZ's REASON (reading a book needs a QRZ Logbook
   subscription). The tile's there with no key too (`"key?"`), so its
   window can be found.
+  *Lightning* (`playback/lightning.py`, `GET /api/lightning`, `POST
+  /api/lightning {"on"?, "bell"?, "ring"?}`, the settings
+  `lightning_watch`, `lightning_bell`): `lightning.Watch`, a thread of its
+  own, connects to `wss://ws1|ws7.blitzortung.org/`, sends `{"a":111}`
+  and reads each strike (`decode()`: the site's LZW) for `SAMPLE_S` (30)
+  every `EVERY_S` (600), staying while one lands within `AREA_KM` (100):
+  until `STAY_S` (1200) without one. Only those within `AREA_KM` are kept
+  (three hours, `lightning.json`). Tile `"lightning"` (only once it has
+  listened). Alerts: within `ALERT_KM` (40) in the last ten minutes, once
+  a storm (a gap of an hour makes a new one), "getting closer" when
+  nearer than the ten minutes before. The bell (`data/lightning_bell.wav`,
+  `lightning.bell()`, rung by `main._lightning_bell` with the speaker's
+  `play_clip`) for a storm come within 40 km and again within `CLOSE_KM`
+  (10), never in the quiet hours. *Quiet hours*: `POST /api/dj
+  {"quiet_on", "quiet_start_min", "quiet_end_min"}` (`Station.set_quiet()`:
+  live for the news and the birthdays; saved as `news_quiet_*`).
   *How the bands are* (`GET /api/rx/conditions?base=`;
   `playback/conditions.py`): `summary()` takes a receiver's survey (its
   FT8 places no more than two hours old) and who the FT8 reader has heard

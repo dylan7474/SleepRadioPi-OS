@@ -1629,6 +1629,21 @@ class Station:
             return []
         return sorted(d.name for d in Path(self.voices_dir).iterdir() if (d / "model.onnx").is_file())
 
+    def set_quiet(self, on: bool | None = None, start_min: int | None = None, end_min: int | None = None) -> None:
+        """The quiet hours (the radio's do-not-disturb): no news, birthday wishes, alerts or lightning bell in them.
+        Live: the news schedule and the birthdays take them at once (the alerts and the bell read the config)."""
+        if on is not None:
+            self.config.news_quiet_hours = bool(on)
+        for name, v in (("news_quiet_start_min", start_min), ("news_quiet_end_min", end_min)):
+            if v is not None:
+                if isinstance(v, bool) or not isinstance(v, int) or not 0 <= v < 24 * 60:
+                    raise ValueError("quiet hours: minutes past midnight, 0-1439")
+                setattr(self.config, name, v)
+        quiet = (QuietHours.of_minutes(self.config.news_quiet_start_min, self.config.news_quiet_end_min)
+                 if self.config.news_quiet_hours else None)
+        self.news_schedule.quiet = quiet
+        self.birthdays.quiet = quiet
+
     def dj_settings(self) -> dict:
         b = self.theme_settings()              # (the theme playing's: each theme has its own)
         t = self.settings_theme()
@@ -1638,7 +1653,9 @@ class Station:
                 "dj_hooks": bool(b["dj_hooks"] and self._hook_pool), "hooks_available": self._hook_pool is not None,
                 "jingle_every": b["jingle_every"], "jingles_available": self._jingles_available(),
                 "news_enabled": b["news"], "time_checks": b["time_checks"], "dj_on": self.dj_on,
-                "dj_speed": self.config.announcer_speed, "news_speed": self.config.news_speed}
+                "dj_speed": self.config.announcer_speed, "news_speed": self.config.news_speed,
+                "quiet_on": self.config.news_quiet_hours, "quiet_start_min": self.config.news_quiet_start_min,
+                "quiet_end_min": self.config.news_quiet_end_min}
 
     def _jingles_available(self) -> bool:
         if self.jingles:

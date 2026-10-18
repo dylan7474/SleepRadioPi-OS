@@ -234,6 +234,21 @@ def _wifi_back_on() -> None:
 TWIST_AGAIN_S = 60.0   # a second twist this soon after the address: the radio's own network
 
 
+def _lightning_bell(station, control) -> None:
+    """Lightning near (playback/lightning.py): the bell on the speaker -- over the show, or on its own while paused --
+    unless it's the quiet hours (the news's: the radio's do-not-disturb)."""
+    from datetime import datetime as _when
+    from sleepradiopi.broadcast.news import QuietHours as _Quiet
+    from sleepradiopi.io.announce import Clip as _BellClip
+    from sleepradiopi.playback import lightning as _lightning
+    cfg = station.config
+    if cfg.news_quiet_hours and _when.now().time() in _Quiet.of_minutes(cfg.news_quiet_start_min, cfg.news_quiet_end_min):
+        logging.getLogger(__name__).info("lightning: the bell not rung (the quiet hours)")
+        return
+    control.play_clip(_BellClip(_lightning.bell(), "bell", "Lightning"))
+    logging.getLogger(__name__).info("lightning: the bell rung")
+
+
 def _knob_twist(announcer, said: list) -> None:
     """The knob held and twisted right, left, right: the way in. On a network,
     the radio's address (and that twisting again makes its own network -- for
@@ -942,6 +957,13 @@ def main() -> None:
     from sleepradiopi.playback import qrzlog as qrz_mod
     qrz_mod.KEY = settings.qrz_key or ""
     qrz_mod.logbook.keep_in(Path.home() / ".cache" / "sleepradiopi" / "qrz.json")               # the owner's QRZ logbook (not the key)
+    from sleepradiopi.playback import lightning as lightning_mod
+    lightning_mod.ON = settings.lightning_watch is not False
+    lightning_mod.BELL = settings.lightning_bell is not False
+    if control is not None:
+        lightning_mod.watch.on_bell = lambda: _lightning_bell(station, control)
+    lightning_mod.watch.keep_in(Path.home() / ".cache" / "sleepradiopi" / "lightning.json")    # strikes near here, from Blitzortung
+    lightning_mod.watch.start()
     conditions_mod.EVERY_H = settings.conditions_every_h if settings.conditions_every_h in conditions_mod.SAY_HOURS else 0
     conditions_mod.ALERTS = settings.conditions_alerts is True
     serve(station, stream, args.port or settings.http_port, control, args.config, announcer, jobs, updates,
