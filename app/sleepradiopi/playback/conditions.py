@@ -36,7 +36,24 @@ the higher, the higher the bands that open), the planetary K index (how
 disturbed the earth's magnetic field is: 5 and over is a storm, which
 closes paths over the poles and can shut the bands altogether) and its
 scales for radio blackouts and storms. Sun fetches them, a few times a
-day, and keeps what it last had.
+day, and keeps what it last had. Two more come from outside the same way:
+
+  * A forecast (Forecast): N0NBH's band conditions from hamqsl.com, the
+    figures every ham site shows -- good, fair or poor for 80-40 m,
+    30-20 m, 17-15 m and 12-10 m, by day and by night (the radio says the
+    one it is now, by the sun at its locator) -- with the VHF openings it
+    calculates: sporadic E on 6, 4 and 2 m in Europe, and aurora on VHF.
+    It's a forecast, so it's said only when the radio hasn't heard the
+    bands for itself.
+  * AuroraWatch UK's alert (Aurora), from Lancaster University's
+    magnetometers: green, yellow, amber or red, and what each means for
+    seeing the aurora from the UK. Credited to them, as they ask, and
+    asked for no more often than every quarter of an hour.
+
+And with ALERTS on (off to begin with), the DJ says what's just happened
+in the next gap, whatever the hour (alert_due()): AuroraWatch UK going to
+amber or red, sporadic E opening on 6, 4 or 2 m, a strong radio blackout
+or geomagnetic storm (R3 or G3 and over). Once each, when it starts.
 
 Nothing here is said or shown unless it's asked for. It can be looked at
 (the desktop's Bands window), and it can be said: with EVERY_H set (off to
@@ -51,9 +68,11 @@ from __future__ import annotations
 
 import json
 import logging
+import math
 import threading
 import time
 import urllib.request
+import xml.etree.ElementTree as ET
 from pathlib import Path
 from typing import Callable
 
@@ -80,6 +99,15 @@ SUN_OLD_S = 12 * 3600.0      # figures older than this aren't said as how the su
 EVERY_H = 0                  # the DJ says how the bands are this many hours apart (0: not at all); main.py sets it from the settings
 SAY_HOURS = (0, 1, 2, 3, 6)
 SAY_FROM_MIN = 15            # ...from this far past the hour (clear of the news, and of the messages at 7 and 22 minutes past)
+FORECAST_URL = "https://www.hamqsl.com/solarxml.php"
+FORECAST_EVERY_S = 3600.0    # N0NBH's figures change every few hours: once an hour is plenty
+FORECAST_OLD_S = 12 * 3600.0
+AURORA_URL = "https://aurorawatch-api.lancs.ac.uk/0.2/status/current-status.xml"
+AURORA_EVERY_S = 900.0       # AuroraWatch UK ask for no more than one request in three minutes
+AURORA_OLD_S = 2 * 3600.0    # an alert this old isn't said as how it is now
+AURORA_SITE = "https://aurorawatch.lancs.ac.uk/"
+ALERTS = False               # the DJ says it when the aurora, an opening or a storm begins; main.py sets it from the settings
+ALERT_AGAIN_S = 3 * 3600.0   # ...and the same one not again for this long, whatever it does in between
 
 
 def region(grid: str) -> str | None:
@@ -270,15 +298,18 @@ def _get(url: str, timeout: float = 12.0):
         return json.loads(r.read())
 
 
-class Sun:
-    """NOAA's figures for the sun and the earth's field, fetched now and then (in a thread of its own, when
-    asked and they're stale) and kept."""
+class Kept:
+    """Figures from a site, fetched now and then (in a thread of its own, when asked for and they're stale) and
+    kept, in memory and in a file, for when the radio starts again or the internet goes. A kind of it gives
+    EVERY_S (how stale), OLD_S (too old to say), _fetch() and _says()."""
+    EVERY_S, RETRY_S, OLD_S = SUN_EVERY_S, SUN_RETRY_S, SUN_OLD_S
+    NAME = "figures"
 
     def __init__(self, get: Callable = _get, clock: Callable[[], float] = time.time) -> None:
         self._get, self._clock = get, clock
         self._lock = threading.Lock()
         self._file: Path | None = None
-        self._had: dict | None = None                # {"flux", "k", "a", "scales", "t"}
+        self._had: dict | None = None
         self._tried = 0.0
         self._busy = False
 
@@ -294,22 +325,11 @@ class Sun:
             pass
 
     def fetch(self) -> dict | None:
-        """Ask NOAA now. -> what it said, or None if it couldn't be reached."""
+        """Ask now. -> what was had, or None if it couldn't be reached."""
         try:
-            ks = self._get(K_URL)
-            rows = [row for row in ks if isinstance(row, dict) and row.get("Kp") is not None]
-            if not rows:                             # (as it used to give them: a list of lists under a line of headings)
-                rows = [{"Kp": row[1], "a_running": row[2] if len(row) > 2 else None} for row in ks[1:] if isinstance(row, list) and len(row) > 1]
-            k = rows[-1]
-            flux = self._get(FLUX_URL)
-            flux = flux[0] if isinstance(flux, list) else flux
-            had = {"flux": float(flux.get("flux", flux.get("Flux"))), "k": float(k["Kp"]), "a": k.get("a_running"), "t": self._clock()}
-            try:
-                had["scales"] = {key: {"Scale": (v or {}).get("Scale")} for key, v in (self._get(SCALES_URL).get("0") or {}).items() if key in ("R", "S", "G")}
-            except (OSError, ValueError, TypeError, AttributeError):
-                pass
-        except (OSError, ValueError, TypeError, KeyError, IndexError, AttributeError) as e:
-            log.info("conditions: NOAA's figures weren't had (%s)", e)
+            had = {**self._fetch(), "t": self._clock()}
+        except (OSError, ValueError, TypeError, KeyError, IndexError, AttributeError, ET.ParseError) as e:
+            log.info("conditions: %s weren't had (%s)", self.NAME, e)
             return None
         with self._lock:
             self._had = had
@@ -321,17 +341,17 @@ class Sun:
         return had
 
     def status(self) -> dict | None:
-        """{"flux", "k", "a", "scales", "t", "says"}, or None if there's nothing recent; a fetch is begun if they're stale."""
+        """What was last had, with "says", or None if there's nothing recent; a fetch is begun if it's stale."""
         now = self._clock()
         with self._lock:
             had = self._had
-            stale = had is None or now - had["t"] > SUN_EVERY_S
-            if stale and not self._busy and now - self._tried > SUN_RETRY_S:
+            stale = had is None or now - had["t"] > self.EVERY_S
+            if stale and not self._busy and now - self._tried > self.RETRY_S:
                 self._busy, self._tried = True, now
-                threading.Thread(target=self._refresh, name="conditions-sun", daemon=True).start()
-        if had is None or now - had["t"] > SUN_OLD_S:
+                threading.Thread(target=self._refresh, name=f"conditions-{type(self).__name__.lower()}", daemon=True).start()
+        if had is None or now - had["t"] > self.OLD_S:
             return None
-        return {**had, "says": sun_says(had.get("flux"), had.get("k"), had.get("scales"))}
+        return {**had, "says": self._says(had)}
 
     def _refresh(self) -> None:
         try:
@@ -340,8 +360,178 @@ class Sun:
             with self._lock:
                 self._busy = False
 
+    def _fetch(self) -> dict:
+        raise NotImplementedError
+
+    def _says(self, had: dict) -> str:
+        raise NotImplementedError
+
+
+class Sun(Kept):
+    """NOAA's figures for the sun and the earth's field: {"flux", "k", "a", "scales", "t"}."""
+    NAME = "NOAA's figures"
+
+    def _fetch(self) -> dict:
+        ks = self._get(K_URL)
+        rows = [row for row in ks if isinstance(row, dict) and row.get("Kp") is not None]
+        if not rows:                                 # (as it used to give them: a list of lists under a line of headings)
+            rows = [{"Kp": row[1], "a_running": row[2] if len(row) > 2 else None} for row in ks[1:] if isinstance(row, list) and len(row) > 1]
+        k = rows[-1]
+        flux = self._get(FLUX_URL)
+        flux = flux[0] if isinstance(flux, list) else flux
+        had = {"flux": float(flux.get("flux", flux.get("Flux"))), "k": float(k["Kp"]), "a": k.get("a_running")}
+        try:
+            had["scales"] = {key: {"Scale": (v or {}).get("Scale")} for key, v in (self._get(SCALES_URL).get("0") or {}).items() if key in ("R", "S", "G")}
+        except (OSError, ValueError, TypeError, AttributeError):
+            pass
+        return had
+
+    def _says(self, had: dict) -> str:
+        return sun_says(had.get("flux"), had.get("k"), had.get("scales"))
+
+
+def _xml(url: str, timeout: float = 12.0) -> ET.Element:
+    req = urllib.request.Request(url, headers={"User-Agent": "SleepRadio"})
+    with urllib.request.urlopen(req, timeout=timeout) as r:
+        return ET.fromstring(r.read())
+
+
+# hamqsl.com's VHF phenomena, as it names them -> what they are, and the band
+VHF = {("E-Skip", "europe_6m"): ("es", "6 m"), ("E-Skip", "europe_4m"): ("es", "4 m"), ("E-Skip", "europe"): ("es", "2 m"),
+       ("vhf-aurora", "northern_hemi"): ("aurora", None)}
+HF_GROUPS = ("80m-40m", "30m-20m", "17m-15m", "12m-10m")
+
+
+def daytime(t: float, home: str | None = None) -> bool:
+    """Is the sun up at the radio's locator at time t? (By the clock, 7 till 7, with no locator.)"""
+    try:
+        lat, lon = ft8.locate(home) if home else (None, None)
+    except (ValueError, IndexError, TypeError, AttributeError):
+        lat = lon = None
+    if lat is None:
+        return 7 <= time.localtime(t).tm_hour < 19
+    n = (t - 946728000.0) / 86400                    # days from noon on 1 January 2000
+    g = math.radians((357.528 + 0.9856003 * n) % 360)
+    lam = math.radians((280.460 + 0.9856474 * n) % 360 + 1.915 * math.sin(g) + 0.020 * math.sin(2 * g))
+    eps = math.radians(23.439 - 0.0000004 * n)
+    dec = math.asin(math.sin(eps) * math.sin(lam))
+    ra = math.atan2(math.cos(eps) * math.sin(lam), math.cos(lam))
+    hour_angle = math.radians((18.697374558 + 24.06570982441908 * n) % 24 * 15 + lon) - ra
+    la = math.radians(lat)
+    return math.sin(la) * math.sin(dec) + math.cos(la) * math.cos(dec) * math.cos(hour_angle) > -0.0145   # (-0.83 degrees: the sun's edge on the horizon)
+
+
+def _bands_named(groups: list[str]) -> str:
+    """["30m-20m", "17m-15m"] -> "30 to 20 and 17 to 15 metres"."""
+    return _and([g.replace("m-", " to ").rstrip("m") for g in groups]) + " metres"
+
+
+def forecast_says(had: dict, day: bool) -> str:
+    """N0NBH's forecast, for now (by day or by night), in a sentence."""
+    when = "day" if day else "night"
+    by = {}
+    for g in HF_GROUPS:
+        state = ((had.get("bands") or {}).get(g) or {}).get(when)
+        if state:
+            by.setdefault(state.lower(), []).append(g)
+    parts = [f"{_bands_named(gs)} {state}" for state in ("good", "fair", "poor") if (gs := by.get(state))]
+    says = (f"Forecast for {'today' if day else 'tonight'}: " + "; ".join(parts) + ".") if parts else ""
+    opening = [band for (kind, band) in openings(had) if kind == "es"]
+    if opening:
+        says += f" Sporadic E: {_and(opening)} open in Europe."
+    if any(kind == "aurora" for kind, _ in openings(had)):
+        says += " Aurora on VHF" + (", down to mid latitudes." if "MID" in str((had.get("vhf") or {}).get("aurora", "")).upper() else ".")
+    if had.get("noise"):
+        says += f" Noise {had['noise']}."
+    return says.strip()
+
+
+def openings(had: dict | None) -> list[tuple[str, str | None]]:
+    """The VHF openings in a forecast: [("es", "6 m"), ("aurora", None)], from the lowest band."""
+    vhf = (had or {}).get("vhf") or {}
+    return [(kind, band) for kind, band in sorted(VHF.values(), key=lambda kb: kb[1] or "") [::-1]
+            if (v := vhf.get("aurora" if kind == "aurora" else band)) and "closed" not in str(v).lower()]
+
+
+class Forecast(Kept):
+    """N0NBH's band conditions (hamqsl.com): {"bands": {"80m-40m": {"day": "Fair", "night": "Good"}, ...},
+    "vhf": {"6 m": "Band Closed", ..., "aurora": "Band Closed"}, "noise", "xray", "sunspots", "updated", "t"}."""
+    EVERY_S, RETRY_S, OLD_S = FORECAST_EVERY_S, SUN_RETRY_S, FORECAST_OLD_S
+    NAME = "N0NBH's forecast"
+
+    def __init__(self, get: Callable = _xml, clock: Callable[[], float] = time.time) -> None:
+        super().__init__(get, clock)
+
+    def _fetch(self) -> dict:
+        root = self._get(FORECAST_URL)
+        data = root.find("solardata") if root.tag != "solardata" else root
+        bands: dict[str, dict[str, str]] = {}
+        for b in data.iter("band"):
+            if b.get("name") in HF_GROUPS and b.get("time") in ("day", "night") and (b.text or "").strip():
+                bands.setdefault(b.get("name"), {})[b.get("time")] = b.text.strip()
+        if not bands:
+            raise ValueError("no band conditions in it")
+        vhf = {}
+        for ph in data.iter("phenomenon"):
+            kind = VHF.get((ph.get("name"), ph.get("location")))
+            if kind and (ph.text or "").strip():
+                vhf["aurora" if kind[0] == "aurora" else kind[1]] = ph.text.strip()
+        text = lambda tag: (data.findtext(tag) or "").strip() or None
+        sunspots = text("sunspots")
+        return {"bands": bands, "vhf": vhf, "noise": text("signalnoise"), "xray": text("xray"),
+                "sunspots": int(sunspots) if sunspots and sunspots.isdigit() else None, "updated": text("updated")}
+
+    def _says(self, had: dict) -> str:
+        return forecast_says(had, daytime(self._clock(), ft8.HOME))
+
+
+AURORA_LEVELS = ("green", "yellow", "amber", "red")
+AURORA_MEANS = {
+    "green": "no significant activity",
+    "yellow": "minor geomagnetic activity: the aurora might be seen by eye from Scotland, and by camera from northern England",
+    "amber": "possible aurora: likely to be seen by eye from Scotland, northern England and Northern Ireland",
+    "red": "aurora likely: it may be seen by eye from anywhere in the UK",
+}
+
+
+class Aurora(Kept):
+    """AuroraWatch UK's alert: {"level": "green" | "yellow" | "amber" | "red", "site", "where"?, "credit"?, "t"}.
+    Where the reading's from (the site's place and who to thank) is asked for only when the site changes."""
+    EVERY_S, RETRY_S, OLD_S = AURORA_EVERY_S, AURORA_EVERY_S, AURORA_OLD_S
+    NAME = "AuroraWatch UK's alert"
+
+    def __init__(self, get: Callable = _xml, clock: Callable[[], float] = time.time) -> None:
+        super().__init__(get, clock)
+
+    def _fetch(self) -> dict:
+        root = self._get(AURORA_URL)
+        st = root.find("site_status")
+        level = (st.get("status_id") or "").lower()
+        if level not in AURORA_LEVELS:
+            raise ValueError(f"no alert level in it ({level!r})")
+        had = {"level": level, "site": st.get("site_id")}
+        before = self._had or {}
+        if before.get("site") == had["site"] and before.get("where"):
+            had.update({k: before[k] for k in ("where", "credit") if k in before})
+        elif st.get("site_url"):
+            try:
+                site = self._get(st.get("site_url").replace("http://", "https://", 1))
+                place = site.find(f".//site[@id='{had['site']}']")
+                where = place.findtext("location") if place is not None else None
+                if where:
+                    had["where"] = where.strip()
+                    had["credit"] = " ".join(t.strip() for t in (place.findtext("attribution") or "", place.findtext("license") or "") if t.strip())
+            except (OSError, ValueError, AttributeError, ET.ParseError):
+                pass
+        return had
+
+    def _says(self, had: dict) -> str:
+        return f"AuroraWatch UK: {had['level']}, {AURORA_MEANS[had['level']]}."
+
 
 sun = Sun()
+forecast = Forecast()
+aurora = Aurora()
 
 
 def freshest(job) -> tuple[str | None, dict]:
@@ -359,13 +549,31 @@ def _metres(band: str) -> str:
     return band.replace(" m", " metres")
 
 
-def spoken(s: dict, sun_now: dict | None = None) -> str | None:
-    """A summary() as the DJ says it: the two best bands, what's closed, and the sun in a few words. None if
-    there's nothing to say."""
+def _forecast_spoken(fc: dict, day: bool) -> str | None:
+    """N0NBH's forecast for now, as the DJ says it: the bands that are good (or fair, if none is)."""
+    when = "day" if day else "night"
+    by = {}
+    for g in HF_GROUPS:
+        state = ((fc.get("bands") or {}).get(g) or {}).get(when, "").lower()
+        by.setdefault(state, []).append(g)
+    for state in ("good", "fair"):
+        if by.get(state):
+            return f"The forecast {'today' if day else 'tonight'}: {_bands_named(by[state])} {state}."
+    return "The forecast: the bands are poor." if by.get("poor") else None
+
+
+def spoken(s: dict, sun_now: dict | None = None, fc: dict | None = None, aurora_now: dict | None = None, day: bool = True) -> str | None:
+    """A summary() as the DJ says it: the two best bands, what's closed, and the sun in a few words; with nothing
+    heard to go by, N0NBH's forecast instead (fc). Then any VHF opening, and the aurora if it's above green. None
+    if there's nothing to say."""
     live = sorted((b for b in s["bands"] if b["n"]), key=lambda b: (-b["n"], -(b.get("km") or 0)))
+    said = []
     if not s["bands"]:
-        return None
-    if not live:
+        line = _forecast_spoken(fc, day) if fc else None
+        if not line:
+            return None
+        said = ["The short wave bands.", line]
+    elif not live:
         said = ["The short wave bands. Nothing heard on any band just now."]
     else:
         said = ["The short wave bands."]
@@ -390,6 +598,11 @@ def spoken(s: dict, sun_now: dict | None = None) -> str | None:
             words.append("there's a magnetic storm" if k >= 5 else "the earth's field is unsettled" if k >= 4 else "the earth's field is quiet")
         if words:
             said.append((" and ".join(words) + ".").capitalize())
+    es = [b.replace(" m", " metres") for kind, b in openings(fc) if kind == "es"]
+    if es:
+        said.append(f"Sporadic E is open on {_and(es)} across Europe.")
+    if aurora_now and aurora_now.get("level") in ("yellow", "amber", "red"):
+        said.append(f"AuroraWatch UK is at {aurora_now['level']}.")
     return " ".join(said)
 
 
@@ -405,7 +618,50 @@ def say_due(at, clock_ok: bool, quiet: bool, job, heard: list[dict]) -> str | No
     key = f"{at:%Y-%m-%d %H}"
     if _said == key:
         return None
-    words = spoken(summary(freshest(job)[1], heard, at.timestamp()), sun.status())
+    words = spoken(summary(freshest(job)[1], heard, at.timestamp()), sun.status(), forecast.status(), aurora.status(),
+                   daytime(at.timestamp(), ft8.HOME))
     if words:
         _said = key
     return words
+
+
+_alerted: dict[str, tuple[int, float]] = {}       # what's been alerted: {"aurora": (its level, when said), "es:6 m": ...}
+
+
+def alerts_now(sun_now: dict | None, fc: dict | None, aurora_now: dict | None) -> list[tuple[str, int, str]]:
+    """What's worth an alert as things are: [(what, how high, the words)], highest first within each kind."""
+    out = []
+    if aurora_now and aurora_now.get("level") in ("amber", "red"):
+        level = aurora_now["level"]
+        out.append(("aurora", AURORA_LEVELS.index(level),
+                    f"AuroraWatch UK has gone to {level}: {AURORA_MEANS[level]}."))
+    for kind, band in openings(fc):
+        if kind == "es":
+            out.append((f"es:{band}", 1, f"Sporadic E has opened on {band.replace(' m', ' metres')} across Europe."))
+    for letter, what in (("R", "a strong radio blackout on the sunlit side"), ("G", "a strong geomagnetic storm")):
+        level = str((((sun_now or {}).get("scales") or {}).get(letter) or {}).get("Scale") or "0")
+        if level.isdigit() and int(level) >= 3:
+            out.append((f"noaa:{letter}", int(level), f"NOAA reports {what}: {letter}{level}."))
+    return out
+
+
+def alert_due(at, clock_ok: bool, quiet: bool, now: float | None = None) -> str | None:
+    """Anything just begun worth the DJ saying now (ALERTS on): an aurora alert at amber or red, a sporadic E
+    opening, a radio blackout or storm at 3 or more -- each once when it starts or goes higher, and the same
+    one not again for ALERT_AGAIN_S. What's ended is forgotten, so it's said again if it comes back after that."""
+    if not ALERTS:
+        return None
+    now = time.time() if now is None else now
+    found = alerts_now(sun.status(), forecast.status(), aurora.status())
+    live = {what for what, _, _ in found}
+    for what in [w for w in _alerted if w not in live and now - _alerted[w][1] > ALERT_AGAIN_S]:
+        del _alerted[what]
+    if not clock_ok or quiet:
+        return None
+    said = []
+    for what, level, words in found:
+        before = _alerted.get(what)
+        if before is None or level > before[0]:
+            _alerted[what] = (level, now)
+            said.append(words)
+    return " ".join(said) or None

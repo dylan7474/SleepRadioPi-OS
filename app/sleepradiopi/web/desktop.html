@@ -2883,7 +2883,13 @@ const condLines = cond => [
   ...cond.bands.filter(b => b.n).map(b => el("p", { className: "note", style: "margin:2px 0", textContent: b.says + (b.by === "heard" ? " (from who's been heard)" : ""), title: `As of ${condAge(b.t)}` })),
   ...(cond.weather ? [el("p", { className: "note", id: "cond-weather", style: "margin:6px 0 0", textContent: cond.weather.says,
     title: cond.weather.at.map(a => `${a.khz} kHz: ${a.state}${a.db != null ? ` (${a.db} dB over the noise)` : ""}, ${condAge(a.t)}`).join(" · ") })] : []),
-  ...(cond.sun ? [el("p", { className: "note", id: "cond-sun", style: "margin:6px 0 0", textContent: "The sun: " + cond.sun.says, title: `From NOAA's Space Weather Prediction Center, ${condAge(cond.sun.t)}` })] : [])];
+  ...(cond.sun ? [el("p", { className: "note", id: "cond-sun", style: "margin:6px 0 0", textContent: "The sun: " + cond.sun.says, title: `From NOAA's Space Weather Prediction Center, ${condAge(cond.sun.t)}` })] : []),
+  ...(cond.forecast ? [el("p", { className: "note", id: "cond-forecast", style: "margin:6px 0 0" }, `${cond.forecast.says} (`,
+    el("a", { href: "https://www.hamqsl.com/solar.html", target: "_blank", rel: "noopener", textContent: "N0NBH" }), ")")] : []),
+  ...(cond.aurora ? [el("p", { className: "note", id: "cond-aurora", style: "margin:6px 0 0", title: [cond.aurora.where && `Measured at ${cond.aurora.where}`, cond.aurora.credit, condAge(cond.aurora.t)].filter(Boolean).join(". ") },
+    el("span", { textContent: "● ", style: `color:${{ green: "#2a9d3a", yellow: "#d4b106", amber: "#e07b00", red: "#d0312d" }[cond.aurora.level]}` }),
+    "Alert status by ", el("a", { href: "https://aurorawatch.lancs.ac.uk/", target: "_blank", rel: "noopener", textContent: "AuroraWatch UK" }),
+    `: ${cond.aurora.says.replace(/^AuroraWatch UK: /, "")}`)] : [])];
 // Conditions: how the bands are, in sentences, from this receiver's survey and who's been heard (playback/conditions.py),
 // with the sun's figures from NOAA. Asked for when the window opens and every so often while it's open.
 async function condPoll(R, now) {
@@ -4760,8 +4766,8 @@ const UI = {
     load: () => api("/api/rx/conditions"),
     build: (c, act) => [
       grp("How the bands are", ...condLines(c),
-        help(c.bands.length ? `What the radio has itself heard${c.t ? `, the latest ${condAge(c.t)}` : ""}: it's how the bands are here, with this aerial, not a forecast.`
-          : "Nothing to go by yet. A survey of FT8 on every band says how the bands are: it's in a receiver's window, under Modes…, and can go by itself on the hour.")),
+        help(c.bands.length ? `What the radio has itself heard${c.t ? `, the latest ${condAge(c.t)}` : ""}: it's how the bands are here, with this aerial. The forecast under it is N0NBH's, for everyone.`
+          : `Nothing heard to go by yet${c.forecast ? ", so the DJ goes by N0NBH's forecast" : ""}. A survey of FT8 on every band says how the bands are here: it's in a receiver's window, under Modes…, and can go by itself on the hour.`)),
       c.base ? grp("Bring it up to date", line(sbtn("Survey FT8 on every band now", async () => {
           try { await api("/api/rx/survey", { base: c.base, places: FT_FREQS.ft8.map(([band, khz]) => ({ key: `ft8:${band}`, mode: "ft8", band, hz: khz * 1000 })) });
             toast("The radio is surveying FT8 on every band: about five minutes. Open Bands again then.", false, null, true); } catch (e) { toast(e.message); } }, "primary")),
@@ -4769,7 +4775,10 @@ const UI = {
       grp("Said by the DJ",
         srow("Every", seg([[0, "Never"], [1, "Hour"], [2, "2 h"], [3, "3 h"], [6, "6 h"]], c.say_every_h, v => act(() => api("/api/rx/conditions", { say_every_h: v })))),
         c.spoken ? el("p", { className: "note", id: "cond-spoken", textContent: `As it would be said now: “${c.spoken}”` }) : null,
-        help("Like the news: at a quarter past the hour or the first gap after, on Theme Radio with the DJ on, and not in the news's quiet hours. It's only said when there's something recent to go by, so it wants the survey going by itself (Modes…, in a receiver's window)."))],
+        help("Like the news: at a quarter past the hour or the first gap after, on Theme Radio with the DJ on, and not in the news's quiet hours. What the radio has heard comes first; with no survey lately it says N0NBH's forecast instead."),
+        srow("Alerts", sw(c.alerts, v => act(() => api("/api/rx/conditions", { alerts: v })), "Alerts"),
+          help(c.alerts ? "Said in the next gap, whatever the hour" : "Off")),
+        help("When AuroraWatch UK goes to amber or red, sporadic E opens on 6, 4 or 2 m, or NOAA reports a strong radio blackout or geomagnetic storm: once, when it starts, in the next gap between songs (not in the quiet hours)."))],
   },
   findreceiver: {
     load: async () => { let near = null; try { near = JSON.parse(localStorage.getItem("srd.rxnear")); } catch {}

@@ -17,6 +17,19 @@ from sleepradiopi.web.server import make_handler
 NOW = 1_800_000_000.0
 
 
+def _offline(url):
+    raise OSError("offline")
+
+
+@pytest.fixture(autouse=True)
+def _no_internet(monkeypatch):
+    """No test here goes to N0NBH or AuroraWatch UK for real; and no alert is left over from another."""
+    monkeypatch.setattr(conditions, "forecast", conditions.Forecast(get=_offline))
+    monkeypatch.setattr(conditions, "aurora", conditions.Aurora(get=_offline))
+    monkeypatch.setattr(conditions, "_alerted", {})
+    monkeypatch.setattr(conditions, "ALERTS", False)
+
+
 def test_which_part_of_the_world_a_locator_is_in() -> None:
     where = {"IO94": "EU", "JO31": "EU", "JN70": "EU", "KP20": "EU", "KO85": "EU", "IM76": "EU", "HP94": "EU", "FN42": "NA", "EN37": "NA", "CM87": "NA",
              "GG66": "SA", "FF46": "SA", "KG33": "AF", "JJ00": "AF", "PM95": "AS", "OL72": "AS", "NK94": "AS", "QF56": "OC", "RF73": "OC"}
@@ -244,8 +257,15 @@ def test_conditions_from_the_web(tmp_path: Path, monkeypatch) -> None:
         monkeypatch.setattr(conditions, "EVERY_H", 0)                                  # how often the DJ says it: kept
         for bad in ({}, {"say_every_h": 4}, {"say_every_h": True}, {"say_every_h": "1"}):
             assert post(bad)[0] == 400 and conditions.EVERY_H == 0
-        assert post({"say_every_h": 2}) == (200, {"say_every_h": 2}) and conditions.EVERY_H == 2 and json.loads(conf.read_text())["conditions_every_h"] == 2
-        assert post({"say_every_h": 0}) == (200, {"say_every_h": 0}) and conditions.EVERY_H == 0
+        assert post({"say_every_h": 2}) == (200, {"say_every_h": 2, "alerts": False}) and conditions.EVERY_H == 2 and json.loads(conf.read_text())["conditions_every_h"] == 2
+        assert post({"say_every_h": 0}) == (200, {"say_every_h": 0, "alerts": False}) and conditions.EVERY_H == 0
+        for bad in ({"alerts": 1}, {"alerts": "yes"}, {"alerts": True, "say_every_h": 5}):                # the alerts: on or off, kept
+            assert post(bad)[0] == 400 and conditions.ALERTS is False
+        assert post({"alerts": True}) == (200, {"say_every_h": 0, "alerts": True}) and conditions.ALERTS is True and json.loads(conf.read_text())["conditions_alerts"] is True
+        with urllib.request.urlopen(base + "/api/rx/conditions", timeout=5) as r:
+            d = json.loads(r.read())
+        assert d["alerts"] is True and d["forecast"] is None and d["aurora"] is None and isinstance(d["day"], bool)   # (no internet: no forecast, no alert)
+        assert post({"alerts": False})[1]["alerts"] is False
     finally:
         httpd.shutdown()
         httpd.server_close()
@@ -296,3 +316,163 @@ def test_the_weather_teleprinters_as_a_yardstick() -> None:
     assert s["weather"]["says"] == ("The German weather teleprinters, a steady signal from Hamburg: strong on 7.6 MHz, fair on 10.1 MHz, "
                                     "weak on 14.5 MHz, not heard on 4.6 MHz.")
     assert "weather" not in conditions.summary(_found(), [], NOW)
+
+
+HAMQSL = """<?xml version="1.0" encoding="UTF-8" ?>
+<solar><solardata>
+  <updated> 18 Oct 2026 1751 GMT</updated><solarflux>132</solarflux><xray>B7.2</xray><sunspots>67</sunspots>
+  <calculatedconditions>
+    <band name="80m-40m" time="day">Fair</band><band name="30m-20m" time="day">Good</band>
+    <band name="17m-15m" time="day">Good</band><band name="12m-10m" time="day">Fair</band>
+    <band name="80m-40m" time="night">Good</band><band name="30m-20m" time="night">Good</band>
+    <band name="17m-15m" time="night">Fair</band><band name="12m-10m" time="night">Poor</band>
+  </calculatedconditions>
+  <calculatedvhfconditions>
+    <phenomenon name="vhf-aurora" location="northern_hemi">Band Closed</phenomenon>
+    <phenomenon name="E-Skip" location="europe">Band Closed</phenomenon>
+    <phenomenon name="E-Skip" location="north_america">50MHz ES</phenomenon>
+    <phenomenon name="E-Skip" location="europe_6m">50MHz ES</phenomenon>
+    <phenomenon name="E-Skip" location="europe_4m">Band Closed</phenomenon>
+  </calculatedvhfconditions>
+  <signalnoise>S0-S1</signalnoise>
+</solardata></solar>"""
+
+AW_STATUS = """<?xml version='1.0' encoding='UTF-8' standalone='yes'?><current_status api_version="0.2.5">
+<updated><datetime>2026-10-18T17:51:32+0000</datetime></updated>
+<site_status project_id="project:AWN" site_id="site:AWN:SUM" site_url="http://aurorawatch-api.lancs.ac.uk/0.2.5/project/awn/sum.xml" status_id="{level}"/></current_status>"""
+AW_SITE = """<?xml version='1.0' encoding='UTF-8' standalone='yes'?><project id="project:AWN"><name>AuroraWatch Magnetometer Network</name>
+<site id="site:AWN:SUM" project_id="project:AWN"><location>Sumburgh Head, UK</location>
+<attribution lang="en">Space and Plasma Physics group, Lancaster University, UK.</attribution><license lang="en">CC BY-NC-SA 3.0.</license></site></project>"""
+
+
+def _xml(answers: dict, asked: list):
+    import xml.etree.ElementTree as ET
+
+    def get(url):
+        asked.append(url)
+        if answers.get(url) is None:
+            raise urllib.error.URLError("no route")
+        return ET.fromstring(answers[url])
+    return get
+
+
+def test_n0nbhs_forecast_read_and_said(tmp_path: Path) -> None:
+    clock, asked = [NOW], []
+    fc = conditions.Forecast(get=_xml({conditions.FORECAST_URL: HAMQSL}, asked), clock=lambda: clock[0])
+    fc.keep_in(tmp_path / "forecast.json")
+    had = fc.fetch()
+    assert had["bands"]["30m-20m"] == {"day": "Good", "night": "Good"} and had["bands"]["12m-10m"]["night"] == "Poor"
+    assert had["vhf"] == {"aurora": "Band Closed", "2 m": "Band Closed", "6 m": "50MHz ES", "4 m": "Band Closed"}      # (North America's left out)
+    assert (had["noise"], had["xray"], had["sunspots"]) == ("S0-S1", "B7.2", 67)
+    assert conditions.openings(had) == [("es", "6 m")]
+    assert conditions.forecast_says(had, True) == ("Forecast for today: 30 to 20 and 17 to 15 metres good; 80 to 40 and 12 to 10 metres fair. "
+                                                   "Sporadic E: 6 m open in Europe. Noise S0-S1.")
+    assert conditions.forecast_says(had, False).startswith("Forecast for tonight: 80 to 40 and 30 to 20 metres good; 17 to 15 metres fair; 12 to 10 metres poor.")
+    again = conditions.Forecast(get=_offline, clock=lambda: clock[0])        # kept for when the radio starts again
+    again.keep_in(tmp_path / "forecast.json")
+    assert again.status()["bands"] == had["bands"]
+    clock[0] += conditions.FORECAST_OLD_S + 1
+    assert again.status() is None                                           # too old to be how it is
+    bad = conditions.Forecast(get=_xml({conditions.FORECAST_URL: "<solar><solardata></solardata></solar>"}, asked))
+    assert bad.fetch() is None                                               # nothing in it: not had
+    assert conditions.Forecast(get=_xml({conditions.FORECAST_URL: "<solar><broken"}, asked)).fetch() is None
+
+
+def test_the_forecast_is_said_only_when_nothing_has_been_heard() -> None:
+    import xml.etree.ElementTree as ET
+    fc = conditions.Forecast(get=lambda url: ET.fromstring(HAMQSL)).fetch()
+    nothing = conditions.summary({}, [], NOW)
+    assert conditions.spoken(nothing) is None                                # no forecast either: nothing to say
+    assert conditions.spoken(nothing, None, fc, day=True) == ("The short wave bands. The forecast today: 30 to 20 and 17 to 15 metres good. "
+                                                              "Sporadic E is open on 6 metres across Europe.")
+    assert conditions.spoken(nothing, None, fc, day=False).startswith("The short wave bands. The forecast tonight: 80 to 40 and 30 to 20 metres good.")
+    heard = conditions.summary(_found(), [], NOW)                             # heard for itself: that, not the forecast
+    said = conditions.spoken(heard, None, fc, {"level": "amber"})
+    assert "forecast" not in said and said.endswith("Sporadic E is open on 6 metres across Europe. AuroraWatch UK is at amber.")
+    assert "AuroraWatch" not in conditions.spoken(heard, None, None, {"level": "green"})
+
+
+def test_daytime_by_the_sun_at_the_locator() -> None:
+    from datetime import datetime, timezone
+    utc = lambda *a: datetime(*a, tzinfo=timezone.utc).timestamp()
+    assert conditions.daytime(utc(2026, 10, 18, 12, 0), "IO94") and not conditions.daytime(utc(2026, 10, 18, 0, 0), "IO94")
+    assert not conditions.daytime(utc(2026, 10, 18, 18, 0), "IO94")          # (sunset in Teesside about 17:00 UTC)
+    assert conditions.daytime(utc(2026, 10, 18, 6, 30), "IO94") is False and conditions.daytime(utc(2026, 10, 18, 7, 0), "IO94") is True
+    assert conditions.daytime(utc(2026, 6, 21, 20, 30), "IO94") and not conditions.daytime(utc(2026, 6, 21, 21, 0), "IO94")   # (midsummer: sunset about 20:47 UTC)
+    assert not conditions.daytime(utc(2026, 12, 21, 16, 0), "IO94")
+    assert conditions.daytime(utc(2026, 10, 18, 0, 0), "QF56")               # (Sydney: it's morning there)
+
+
+def test_aurorawatch_uks_alert(tmp_path: Path) -> None:
+    clock, asked = [NOW], []
+    site = "https://aurorawatch-api.lancs.ac.uk/0.2.5/project/awn/sum.xml"
+    answers = {conditions.AURORA_URL: AW_STATUS.format(level="amber"), site: AW_SITE}
+    aw = conditions.Aurora(get=_xml(answers, asked), clock=lambda: clock[0])
+    had = aw.fetch()
+    assert (had["level"], had["site"], had["where"]) == ("amber", "site:AWN:SUM", "Sumburgh Head, UK") and "Lancaster University" in had["credit"]
+    assert asked == [conditions.AURORA_URL, site]                            # (the site asked for over https)
+    assert aw._says(had) == "AuroraWatch UK: amber, possible aurora: likely to be seen by eye from Scotland, northern England and Northern Ireland."
+    answers[conditions.AURORA_URL] = AW_STATUS.format(level="green")
+    assert aw.fetch()["where"] == "Sumburgh Head, UK" and asked[-1] == conditions.AURORA_URL   # the same site: not asked about again
+    answers[conditions.AURORA_URL] = AW_STATUS.format(level="purple")
+    assert aw.fetch() is None and aw.status()["level"] == "green"           # nonsense: what it had stands
+    assert conditions.AURORA_EVERY_S >= 180                                   # (they ask for three minutes at least between requests)
+    clock[0] += conditions.AURORA_OLD_S + 1
+    assert aw.status() is None
+
+
+def test_alerts_said_once_when_they_begin(monkeypatch) -> None:
+    from datetime import datetime
+    now = [NOW]
+    state = {"sun": None, "fc": None, "aw": None}
+
+    class Fake:
+        def __init__(self, key):
+            self.key = key
+
+        def status(self):
+            return state[self.key]
+    monkeypatch.setattr(conditions, "sun", Fake("sun"))
+    monkeypatch.setattr(conditions, "forecast", Fake("fc"))
+    monkeypatch.setattr(conditions, "aurora", Fake("aw"))
+    at = datetime.fromtimestamp(NOW)
+    due = lambda clock_ok=True, quiet=False: conditions.alert_due(at, clock_ok, quiet, now[0])
+    state["aw"] = {"level": "amber"}
+    assert due() is None                                                     # not asked for
+    monkeypatch.setattr(conditions, "ALERTS", True)
+    assert due(quiet=True) is None and due(clock_ok=False) is None          # not in the quiet hours...
+    assert due() == "AuroraWatch UK has gone to amber: possible aurora: likely to be seen by eye from Scotland, northern England and Northern Ireland."
+    assert due() is None                                                     # ...once
+    state["aw"] = {"level": "red"}
+    assert due().startswith("AuroraWatch UK has gone to red")               # higher: said
+    state["aw"] = {"level": "amber"}
+    assert due() is None                                                     # lower again: not
+    state["aw"] = {"level": "yellow"}
+    now[0] += 3600
+    assert due() is None
+    state["aw"] = {"level": "amber"}
+    assert due() is None                                                     # back within three hours of being said: not again
+    state["aw"] = {"level": "green"}
+    now[0] += conditions.ALERT_AGAIN_S
+    assert due() is None
+    state["aw"] = {"level": "amber"}
+    assert due().startswith("AuroraWatch UK has gone to amber")             # a new one, hours later
+    state["fc"] = {"vhf": {"6 m": "50MHz ES", "2 m": "144MHz ES", "4 m": "Band Closed"}}
+    state["sun"] = {"scales": {"R": {"Scale": "3"}, "G": {"Scale": "2"}}}
+    assert due() == ("Sporadic E has opened on 6 metres across Europe. Sporadic E has opened on 2 metres across Europe. "
+                     "NOAA reports a strong radio blackout on the sunlit side: R3.")
+    assert due() is None
+
+
+def test_an_alert_comes_before_the_bands_in_a_gap(tmp_path: Path, monkeypatch) -> None:
+    from datetime import datetime
+    from test_offline import _station
+    st = _station(tmp_path / "st")
+    noon = datetime.fromtimestamp(NOW).replace(hour=12, minute=20)
+    monkeypatch.setattr(conditions, "say_due", lambda *a: "The short wave bands.")
+    monkeypatch.setattr(conditions, "alert_due", lambda at, clock_ok, quiet: "Sporadic E has opened on 6 metres across Europe.")
+    assert st._bands_due(noon) is None                                       # neither asked for
+    monkeypatch.setattr(conditions, "ALERTS", True)
+    assert st._bands_due(noon) == "Sporadic E has opened on 6 metres across Europe."
+    monkeypatch.setattr(conditions, "alert_due", lambda at, clock_ok, quiet: None)
+    assert st._bands_due(noon) == "The short wave bands."

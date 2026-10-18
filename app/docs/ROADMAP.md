@@ -20,8 +20,11 @@ the image README's [Roadmap](../../README.md#roadmap) (keep the two in step).
 - **Band conditions: more of it** — *How the bands are* says it from the
   last survey and the last hour's listening, in the Bands window or by
   the DJ, against the same hour on the days before, with the weather
-  teleprinters' strength as a second yardstick. Still to do: where your
-  own receiver's reports put you among others', once *Report* is on.
+  teleprinters' strength as a second yardstick, N0NBH's forecast,
+  AuroraWatch UK and alerts. Still to do: where your own receiver's
+  reports put you among others', once *Report* is on; more from outside
+  (earthquakes, Met Office and flood warnings, PSK Reporter spots of your
+  own callsign, your QRZ logbook).
 - **A laser-cut wood cathedral** — a real-wood version of the cathedral case:
   - the face and fretwork cut from walnut-veneered plywood, the sides and
     back from plywood or MDF;

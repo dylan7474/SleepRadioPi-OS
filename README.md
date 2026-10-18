@@ -429,7 +429,17 @@ Actions, Sleep timer and Radio folders open:
   listens to them too. Under it, what the sun is doing, from
   NOAA when there's internet: the solar flux, the K index, and any radio
   blackout or geomagnetic storm, each with what it means for the bands.
-  It's how the bands are *here*, with this aerial, not a forecast. It's
+  Then N0NBH's forecast from hamqsl.com (good, fair or poor for 80-40,
+  30-20, 17-15 and 12-10 m, today or tonight by the sun at the radio's
+  locator, with any sporadic E on 6, 4 or 2 m in Europe), and AuroraWatch
+  UK's alert (green, yellow, amber or red, credited and linked as they
+  ask). What the radio has heard is how the bands are *here*, with this
+  aerial; the forecast is for everyone, so the DJ says it only when
+  nothing's been heard lately. **Alerts** (off until you choose them):
+  the DJ says it in the next gap when AuroraWatch UK goes to amber or
+  red, sporadic E opens, or NOAA reports a strong radio blackout or
+  storm -- once, when it starts. With no internet these lines just aren't
+  there. It's
   there when you ask for it and not otherwise: **Bands**, in the menu
   bar, shows it at a click (with a key to survey the bands now), and the
   DJ can say a short version between songs, like the news -- every hour,
@@ -1091,8 +1101,11 @@ What's left to do (everything else described here is built and running):
 - **Band conditions: more of it** — *How the bands are* says it from the
   last survey and the last hour's listening, in the Bands window or by
   the DJ, against the same hour on the days before, with the weather
-  teleprinters' strength as a second yardstick. Still to do: where your
-  own receiver's reports put you among others', once *Report* is on.
+  teleprinters' strength as a second yardstick, N0NBH's forecast,
+  AuroraWatch UK and alerts. Still to do: where your own receiver's
+  reports put you among others', once *Report* is on; more from outside
+  (earthquakes, Met Office and flood warnings, PSK Reporter spots of your
+  own callsign, your QRZ logbook).
 - **A laser-cut wood cathedral** — a real-wood version of the cathedral case:
   - the face and fretwork cut from walnut-veneered plywood, the sides and
     back from plywood or MDF;

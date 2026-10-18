@@ -443,7 +443,8 @@ def make_handler(station: Station, output: Mp3Output, speaker=None,
                 self._send(json.dumps(identify_mod.listener.status()).encode(), "application/json")
             elif path == "/api/rx/conditions":
                 # How the bands are (playback/conditions.py): from that receiver's survey (?base=) and who the FT8
-                # reader has heard in the last hour, a band at a time and in a sentence; and the sun's figures from NOAA.
+                # reader has heard in the last hour, a band at a time and in a sentence; the sun's figures from NOAA,
+                # N0NBH's forecast and AuroraWatch UK's alert. "alerts": whether the DJ says those when they begin.
                 from sleepradiopi.audio import ft8 as ft8_mod
                 from sleepradiopi.playback import conditions as conditions_mod, survey as survey_mod
                 # With no receiver named: the one surveyed latest. "say_every_h": how often the DJ says it (0: never).
@@ -452,9 +453,11 @@ def make_handler(station: Station, output: Mp3Output, speaker=None,
                 if not base:
                     base, found = conditions_mod.freshest(survey_mod.job)
                 out = conditions_mod.summary(found, ft8_mod.reader.heard()["heard"], time.time())
-                sun_now = conditions_mod.sun.status()
-                self._send(json.dumps({**out, "sun": sun_now, "home": ft8_mod.HOME, "base": base or None, "say_every_h": conditions_mod.EVERY_H,
-                                       "spoken": conditions_mod.spoken(out, sun_now)}).encode(), "application/json")
+                sun_now, fc, aurora_now = conditions_mod.sun.status(), conditions_mod.forecast.status(), conditions_mod.aurora.status()
+                day = conditions_mod.daytime(time.time(), ft8_mod.HOME)
+                self._send(json.dumps({**out, "sun": sun_now, "forecast": fc, "aurora": aurora_now, "day": day, "home": ft8_mod.HOME,
+                                       "base": base or None, "say_every_h": conditions_mod.EVERY_H, "alerts": conditions_mod.ALERTS,
+                                       "spoken": conditions_mod.spoken(out, sun_now, fc, aurora_now, day)}).encode(), "application/json")
             elif path == "/api/rx/survey":
                 # The survey run by the radio (playback/survey.py): how far a round has got; with ?base=, what's been
                 # found on that receiver; "itself": the receivers surveyed on the hour.
@@ -809,19 +812,27 @@ def make_handler(station: Station, output: Mp3Output, speaker=None,
                 self._send(json.dumps(self._one_reader("ft8" if body["on"] else None, keep=True)).encode(), "application/json")
             elif path == "/api/rx/conditions":
                 # {"say_every_h": 0 | 1 | 2 | 3 | 6}: the DJ says how the short-wave bands are, that many hours apart
-                # (0: not at all), between songs, like the news. Kept.
+                # (0: not at all), between songs, like the news. {"alerts": true | false}: and says it when an aurora
+                # alert, a sporadic E opening or a strong storm begins. Either or both; kept.
                 from sleepradiopi.playback import conditions as conditions_mod
                 try:
-                    every = self._body().get("say_every_h")
-                    if isinstance(every, bool) or every not in conditions_mod.SAY_HOURS:
+                    body = self._body()
+                    every, alerts = body.get("say_every_h"), body.get("alerts")
+                    if (every is None and alerts is None) or (every is not None and (isinstance(every, bool) or every not in conditions_mod.SAY_HOURS)) \
+                            or (alerts is not None and not isinstance(alerts, bool)):
                         raise ValueError
                 except (ValueError, TypeError, AttributeError):
-                    self._error('send {"say_every_h": 0, 1, 2, 3 or 6}')
+                    self._error('send {"say_every_h": 0, 1, 2, 3 or 6} and/or {"alerts": true or false}')
                     return
-                conditions_mod.EVERY_H = every
-                if config_file is not None:
-                    save_setting(config_file, "conditions_every_h", every)
-                self._send(json.dumps({"say_every_h": every}).encode(), "application/json")
+                if every is not None:
+                    conditions_mod.EVERY_H = every
+                    if config_file is not None:
+                        save_setting(config_file, "conditions_every_h", every)
+                if alerts is not None:
+                    conditions_mod.ALERTS = alerts
+                    if config_file is not None:
+                        save_setting(config_file, "conditions_alerts", alerts)
+                self._send(json.dumps({"say_every_h": conditions_mod.EVERY_H, "alerts": conditions_mod.ALERTS}).encode(), "application/json")
             elif path == "/api/rx/survey":
                 # {"base", "places": [{"key", "mode", "band", "hz"}]}: take that receiver of your own round those places
                 # now and write down what's on each (playback/survey.py). {"stop": true}: the round stopped.

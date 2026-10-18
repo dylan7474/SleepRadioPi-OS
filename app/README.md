@@ -1482,7 +1482,27 @@ The cards:
   asked and more than three hours old, kept in
   `~/.cache/sleepradiopi/sun.json`, not said once twelve hours old), with
   what they mean in words. With no internet there's simply no sun line.
+  `"forecast"` is N0NBH's (`conditions.Forecast`, hamqsl.com's
+  `solarxml.php`, fetched hourly, kept in `forecast.json`, not said once
+  twelve hours old): `"bands"` (`"80m-40m"`... each `{"day", "night"}`),
+  `"vhf"` (`"6 m"`, `"4 m"`, `"2 m"`: sporadic E in Europe; `"aurora"`),
+  `"noise"`, `"xray"`, `"sunspots"`; `"says"` is the one for now,
+  `"day"` the sun at the locator (`conditions.daytime()`; 7 till 7 with
+  no locator). `"aurora"` is AuroraWatch UK's alert (`conditions.Aurora`:
+  `"level"` green / yellow / amber / red, `"site"`, `"where"` and
+  `"credit"` from the site's page, asked for only when the site changes;
+  fetched every 15 minutes at most -- they ask for three at least --
+  kept in `aurora.json`, not said once two hours old; the page credits
+  and links them, as they ask). `spoken()` says the forecast when
+  nothing has been heard to go by, then any sporadic E and the aurora
+  above green.
   With no `base` it's the receiver surveyed latest (`"base"` says which).
+  *Alerts* (`POST /api/rx/conditions {"alerts": true | false}`, the
+  setting `conditions_alerts`, off to begin with; either key or both in
+  one POST): `conditions.alert_due()`, asked first at each such gap, says
+  AuroraWatch UK going to amber or red, sporadic E opening on 6, 4 or 2 m,
+  or NOAA's R or G scale at 3 or more -- once when each starts or goes
+  higher, not again for three hours, and not in the quiet hours.
   *Said by the DJ* (`POST /api/rx/conditions {"say_every_h": 0 | 1 | 2 | 3
   | 6}`, the setting `conditions_every_h`, 0 to begin with): the station
   asks `conditions.say_due()` at each gap between songs where no message
