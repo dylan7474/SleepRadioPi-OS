@@ -151,11 +151,13 @@ Actions, Sleep timer and Radio folders open:
   pulses when it's on air.)
 - **One knob.** Turn for volume; press to pause or play; **hold it for 3
   seconds** and the radio reads out its network address (handy away from
-  home). **Hold it on for 15 seconds** to get back in when its page can't
-  be reached: the Wi-Fi comes back on (if it was set to work without it)
-  and the radio makes its own network to join (from 3 seconds it ticks
-  each second; at 15 a rising tune says let go, and it tells you how to
-  join once its network is up).
+  home). **Hold it down and turn it right, left, then right again** (5
+  clicks each way) to get back in when its page can't be reached: the
+  Wi-Fi comes back on (if it was set to work without it) and the radio
+  makes its own network to join (a tick after each way; at the end a
+  rising tune, and it tells you how to join once its network is up). It
+  used to be a 15-second hold, but a listener who presses and holds the
+  knob a lot set that off by chance.
 - **Four preset buttons** (optional), like a car radio's: each plays what
   it holds — Sleep Radio, an artist or list, an internet station, an album
   straight through, a single track (then the radio pauses) — or does something: say the time, read the news now,
@@ -509,9 +511,10 @@ Actions, Sleep timer and Radio folders open:
   said about Wi-Fi when it's switched on. *Try it for 10 minutes* turns
   the Wi-Fi off and back on by itself, to see that all is well first.
   **To get back in** (to change something, add music, or update it): **hold
-  the knob down for 15 seconds** — from 3 seconds it ticks once a second
-  (keep holding; let go there and the 3-second hold does its usual thing),
-  and at 15 a rising tune and "Turning the Wi-Fi on" say let go. The Wi-Fi
+  the knob down and, still holding it, turn it 5 clicks right, 5 left,
+  then 5 right again** — a tick after each way (start turning within 3
+  seconds, or the 3-second hold does its usual thing first), and at the end
+  a rising tune and "Turning the Wi-Fi on". The Wi-Fi
   comes back on **for good**, and once the radio's own network is up (about
   10 seconds) it says how to join (the service menu's **2** does the same). Nothing is
   forgotten, and from then on it's an ordinary Wi-Fi radio: a network
@@ -865,7 +868,7 @@ Other targets are passed through to Buildroot: `make menuconfig`,
   dnsmasq, 192.168.4.1) only runs when asked for, or with no network set up at
   all. `"offline": true` in `wifi.json` (the page's *Without Wi-Fi*) leaves
   the Wi-Fi down from start-up (`ip link set wlan0 down`; the log says
-  `wifi: off`); the knob held 15 s (or the service menu's 2) sets it back
+  `wifi: off`); the knob held and turned right, left, right (or the service menu's 2) sets it back
   to `false` and asks for the hotspot, and `/boot/wifi-on.txt` overrides the
   setting. If the manager can't run, `S35wifi` joins the card's network directly
   after 20 s.

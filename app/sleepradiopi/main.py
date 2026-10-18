@@ -26,7 +26,7 @@ from sleepradiopi import wifi
 from sleepradiopi.updater import Updates
 from sleepradiopi.voices import STANDARD_NAME, VoiceJobs
 from sleepradiopi.io.announce import Announcer, beep
-from sleepradiopi.io.knob import VERY_LONG_S, Chord, Knob
+from sleepradiopi.io.knob import Chord, Knob, Twist
 from sleepradiopi.io import service as service_mod
 from sleepradiopi.io import presets as presets_mod
 from sleepradiopi.playback import radio as radio_mod
@@ -213,7 +213,7 @@ def _wifi_event(announcer, was: dict | None, st: dict) -> None:
 
 
 def _wifi_back_on() -> None:
-    """The way in to a radio whose page can't be reached -- the knob held on (any
+    """The way in to a radio whose page can't be reached -- the knob held and twisted (any
     radio: one without Wi-Fi, or one moved away from its network), or the service
     menu's 2 on a radio without Wi-Fi: the Wi-Fi back on for good (nothing
     forgotten; the page turns it off again), and the radio's own network to
@@ -232,7 +232,7 @@ def _wifi_back_on() -> None:
 
 
 def _knob_wifi_on(announcer) -> None:
-    """The knob held long enough: say so at once (the radio's own network takes
+    """The knob held and twisted right, left, right: say so at once (the radio's own network takes
     some seconds to come up, and then says how to join), then turn it on."""
     from sleepradiopi.io import announce
     if announcer is not None:
@@ -733,14 +733,14 @@ def main() -> None:
         from sleepradiopi.io.announce import Clip as _Clip
         from sleepradiopi.io.seek import KnobSeek
         station.seeker = KnobSeek(station, control, _Clip)   # (the page's knob uses it too)
+        # held down and turned right, left, right: the Wi-Fi back on, its own network (a tick
+        # after each way; at the end a rising tune and a word at once -- the network takes a while)
+        twist = Twist(lambda: _knob_wifi_on(announcer), on_step=lambda: presets._clip(tick, "Button"))
         knob = Knob(control.knob, control.toggle,
                     devices=Path(os.environ.get("SLEEPRADIOPI_INPUT_DIR", "/dev/input")),
                     on_long_press=presets.knob_long, buttons=buttons, chord=chord, raw_keys=raw_keys,
-                    on_held_turn=station.seeker.turn,
-                    # held on for 15 s: the Wi-Fi back on, its own network (a tick a second from 3 s
-                    # counts you there; at 15 a rising tune and a word at once -- the network takes a while)
-                    very_long=(VERY_LONG_S, lambda: _knob_wifi_on(announcer), lambda: True,
-                               lambda: presets._clip(tick, "Button")))
+                    on_held_turn=lambda clicks: (twist.turn(clicks), station.seeker.turn(clicks)),
+                    on_held_end=twist.end)
         presets.keys = knob.keys         # the page's buttons go down and up through the same timers
         if cathedral:                    # the VU needle and the grille's glow (hardware PWM)
             from sleepradiopi.io.lamps import Lamps

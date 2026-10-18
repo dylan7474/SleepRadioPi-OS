@@ -13,12 +13,12 @@ With a long-press action, a press acts when it's let go (pause/play), and
 holding it for LONG_PRESS_S does the long-press action instead (say the
 radio's address).
 
-Holding the knob on for VERY_LONG_S is the way in to a radio whose page
-can't be reached: the Wi-Fi back on (on a radio set to work without it)
-and the radio's own network to join (a radio with no buttons has no
-service menu, and shouldn't need opening up to be let in). So the long
-press waits: a tick at LONG_PRESS_S says it's been reached, and it acts
-when the knob's let go -- unless it's still held at VERY_LONG_S.
+The knob held down and turned right, left, then right again (Twist) is the
+way in to a radio whose page can't be reached: the Wi-Fi back on (on a
+radio set to work without it) and the radio's own network to join (a radio
+with no buttons has no service menu, and shouldn't need opening up to be
+let in). Not a long hold: a listener who presses and holds the knob a lot
+would do that by chance (it was 15 s held).
 
 Holding two preset buttons together (a chord: 1 and 4 open the service
 menu, io/service.py) cancels both buttons' own press and hold the moment
@@ -44,9 +44,10 @@ EVENT = struct.Struct("llHHi")
 EV_KEY, EV_REL = 1, 2
 KEY_UP, KEY_DOWN = 0, 1
 LONG_PRESS_S = 3.0
-VERY_LONG_S = 15.0    # the knob held this long: the Wi-Fi back on, and the radio's own network
 PRESS_GUARD_S = 0.15  # a preset button pressed again this soon after a press is a bounce, not a press
                       # (short: a real second press steps a button on -- io/presets.py STEP_SETTLE_S)
+TWIST = (1, -1, 1)    # the knob held down and turned right, left, right: the Wi-Fi back on, its own network
+TWIST_CLICKS = 5      # ...this many clicks each way
 RESCAN_S = 10.0   # look for new input devices (modules can load after we start)
 
 
@@ -75,23 +76,13 @@ class PressTimer:
     guard_s: a press that starts this soon after the last short press doesn't
     count as another short one -- a worn or loose switch can open for a few ms
     mid-press, which made two presses of one (and the second would step a
-    button on past the one wanted). Holding it still counts as a hold.
-
-    very_long: (seconds, on_very_long, when, on_mark): while when() says so
-    (checked at each press), the long press waits for the release -- on_mark
-    plays at long_s to say it's been reached, and every tick_s after, so you
-    can hear it counting -- and a press still held at seconds does
-    on_very_long instead."""
+    button on past the one wanted). Holding it still counts as a hold."""
 
     def __init__(self, on_short: Callable[[], None], on_long: Callable[[], None],
-                 long_s: float = LONG_PRESS_S, name: str = "knob", guard_s: float = 0.0,
-                 very_long: tuple | None = None, tick_s: float = 1.0) -> None:
+                 long_s: float = LONG_PRESS_S, name: str = "knob", guard_s: float = 0.0) -> None:
         self.on_short, self.on_long, self.long_s, self.name = on_short, on_long, long_s, name
-        self.tick_s = tick_s
         self.guard_s = guard_s
-        self.very_long = very_long
         self._timer: threading.Timer | str | None = None
-        self._very: threading.Timer | None = None     # (held past long_s, waiting for very_long)
         self._lock = threading.Lock()
         self._last_short = -1e9          # time.monotonic() of the last short press
         self._guarded = False            # this press came too soon after the last: no short press
@@ -106,69 +97,19 @@ class PressTimer:
             self._timer.start()
 
     def _long(self) -> None:
-        very = self._very_long_now()
         with self._lock:
             if not isinstance(self._timer, threading.Timer):
                 return
-            if very is None:
-                self._timer = "fired"     # the release that follows does nothing
-            else:                         # wait: the release does the long press, or it's held on
-                self._timer = "long"
-                self._very = threading.Timer(max(0.0, very[0] - self.long_s), self._very_long)
-                self._very.daemon = True
-                self._very.start()
-        if very is not None:
-            log.info("%s: long press reached (holding on for %.0f s does more)", self.name, very[0])
-            if len(very) > 3 and very[3] is not None:
-                threading.Thread(target=self._ticks, args=(very[3], self._very, very[0] - self.long_s),
-                                 name="knob-ticks", daemon=True).start()
-            return
+            self._timer = "fired"         # the release that follows does nothing
         log.info("%s: long press", self.name)
         self.on_long()
-
-    def _very_long_now(self) -> tuple | None:
-        """very_long, if it's wanted now."""
-        if self.very_long is None:
-            return None
-        try:
-            return self.very_long if self.very_long[2]() else None
-        except Exception:
-            log.exception("%s: very long press check", self.name)
-            return None
-
-    def _ticks(self, mark: Callable[[], None], timer, left_s: float) -> None:
-        """A tick now and every tick_s while it's held, up to (not at) very_long."""
-        end = time.monotonic() + left_s - self.tick_s / 2
-        while self._very is timer:
-            try:
-                mark()
-            except Exception:
-                log.exception("%s: tick", self.name)
-            time.sleep(self.tick_s)
-            if time.monotonic() >= end:
-                return
-
-    def _very_long(self) -> None:
-        with self._lock:
-            if self._timer != "long":
-                return
-            self._timer, self._very = "fired", None
-        log.info("%s: very long press", self.name)
-        self.very_long[1]()
 
     def up(self) -> None:
         with self._lock:
             timer, self._timer = self._timer, None
-            very, self._very = self._very, None
             guarded = self._guarded
             if isinstance(timer, threading.Timer) and not guarded:
                 self._last_short = time.monotonic()
-        if very is not None:
-            very.cancel()
-        if timer == "long":           # let go between the two: the long press, after all
-            log.info("%s: long press", self.name)
-            self.on_long()
-            return
         if isinstance(timer, threading.Timer):
             timer.cancel()
             if guarded:
@@ -181,11 +122,53 @@ class PressTimer:
         with self._lock:
             if isinstance(self._timer, threading.Timer):
                 self._timer.cancel()
-            if self._very is not None:
-                self._very.cancel()
-                self._very = None
             if self._timer is not None:
                 self._timer = "cancelled"
+
+
+class Twist:
+    """The knob held down and turned right, left, then right again, TWIST_CLICKS
+    each way: something nobody does by chance, however much they press and hold
+    the knob. on_step after each way but the last (a tick), on_done at the end,
+    while it's still held. Turning on past a way's clicks is fine; a click the
+    wrong way mid-way is let off (a bouncy switch), a second starts it again.
+    Letting go (end) starts it again too."""
+
+    def __init__(self, on_done: Callable[[], None], on_step: Callable[[], None] | None = None,
+                 clicks: int = TWIST_CLICKS) -> None:
+        self.on_done, self.on_step, self.clicks = on_done, on_step, clicks
+        self._lock = threading.Lock()
+        self.end()
+
+    def end(self) -> None:
+        with self._lock:
+            self._stage, self._count, self._back, self._done = 0, 0, 0, False
+
+    def turn(self, clicks: int) -> None:
+        act = None
+        with self._lock:
+            if self._done or not clicks:
+                return
+            want = TWIST[self._stage]
+            if clicks * want > 0:
+                self._back = 0
+                self._count += abs(clicks)
+                if self._count >= self.clicks:
+                    self._stage, self._count = self._stage + 1, 0
+                    if self._stage == len(TWIST):
+                        self._done, act = True, self.on_done
+                    else:
+                        act = self.on_step
+            elif self._count == 0 and self._stage > 0:
+                pass                         # still going the last way: turned on past it
+            else:
+                self._back += abs(clicks)
+                if self._back > 1:           # really turned back: from the start (this way may be its first)
+                    first = clicks * TWIST[0] > 0
+                    self._stage, self._count, self._back = 0, abs(clicks) if first else 0, 0
+        if act is not None:
+            log.info("knob: twist %s", "done" if act is self.on_done else f"{self._stage} of {len(TWIST)}")
+            act()
 
 
 class Chord:
@@ -249,13 +232,13 @@ class Knob:
                  on_long_press: Callable[[], None] | None = None,
                  buttons: dict | None = None, chord=None, raw_keys: dict | None = None,
                  on_held_turn: Callable[[int], None] | None = None,
-                 very_long: tuple | None = None) -> None:
+                 on_held_end: Callable[[], None] | None = None) -> None:
         """buttons: keycode -> (on_short, on_long[, long_s]) for the preset
         buttons; chord: a Chord (or a list of them): some of them held together;
         raw_keys: keycode -> (on_down, on_up), passed straight through (a rotary
         selector's positions); on_held_turn: the knob turned while pressed (then
-        the press itself does nothing when it's let go); very_long: the knob
-        held on much longer (PressTimer's very_long: seconds, action, when, mark)."""
+        the press itself does nothing when it's let go); on_held_end: the knob
+        let go, after on_held_turn (a Twist's end)."""
         chords = [] if chord is None else (list(chord) if isinstance(chord, (list, tuple)) else [chord])
         self.on_turn = on_turn
         self.keys = {}
@@ -274,7 +257,7 @@ class Knob:
         if on_long_press is None:            # act as soon as it's pressed
             self.on_press, self.on_release = on_press, None
         else:
-            timer = self._press_timer = PressTimer(on_press, on_long_press, very_long=very_long)
+            timer = self._press_timer = PressTimer(on_press, on_long_press)
             self.on_press, self.on_release = timer.down, timer.up
         self.held = False                    # the knob's switch is down
         if on_held_turn is not None and self._press_timer is not None:
@@ -287,6 +270,8 @@ class Knob:
             def released() -> None:
                 self.held = False
                 up()
+                if on_held_end is not None:
+                    on_held_end()
 
             def turned(clicks: int) -> None:
                 if self.held:

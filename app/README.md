@@ -62,15 +62,19 @@ and with no network, and is set up from its web page. See
   remembered). Press (and let go) to pause or play. **Hold it for 3 seconds**
   and the radio beeps and reads out its network address — handy away from
   home, where there's no screen to show where the web page is.
-  **Hold it on for 15 seconds** to get back in to a radio whose page can't
+  **Hold it down and turn it right, left, then right again** (5 clicks
+  each way, `io/knob.py` `Twist`) to get back in to a radio whose page can't
   be reached — set to work without Wi-Fi, or moved away from its network:
   the Wi-Fi comes back on for good (nothing forgotten) and the radio makes
   its own network, saying how to join; with nobody on it, it goes back to
   a saved network in range by itself. The way in for a radio with no
-  buttons. From 3 seconds it ticks once a second (let go there and the
-  3-second hold acts as usual); at 15 a rising tune and "Turning the Wi-Fi
-  on" say let go, and once its network is up (about 10 seconds) it says
-  how to join.
+  buttons. A tick after each way (start turning within 3 seconds, or the
+  3-second hold acts first); at the end a rising tune and "Turning the
+  Wi-Fi on", and once its network is up (about 10 seconds) it says how to
+  join. Turning on past a way's 5 clicks is fine; one stray click back is
+  let off, more starts it again, and so does letting go. Not a long hold
+  (it was 15 s): a listener who presses and holds the knob a lot set that
+  off by chance. Turning while held never changes the volume.
   **Press and turn** to go back or on through what's playing: a book or
   podcast half a minute a click, a song from an album or playlist ten
   seconds a click (a quick spin goes two or four times as far). Playing, it
@@ -981,7 +985,7 @@ The cards:
   (`/boot/wpa_supplicant.conf`) stays, so with nobody on the hotspot the
   radio tries that again every 5 minutes. On a radio set to work without
   Wi-Fi (`"offline"` in `wifi.json`) **2** is "turn the Wi-Fi on" instead,
-  as holding the knob 15 s is: `offline` back to false, nothing deleted,
+  as the knob's right-left-right twist is: `offline` back to false, nothing deleted,
   and the hotspot; the menu's words say so. **3**: a status report (network,
   address, version, songs, free space), then **3** again goes back to the
   previous version: the root helper (`power-request-watch` →
@@ -1709,7 +1713,7 @@ The cards:
   start with); *Try saved networks now* while it's a hotspot; **Without
   Wi-Fi** (a ten-minute trial, or off for good, for a radio that lives
   where there's none: it then starts with the Wi-Fi down; the knob held
-  15 s, or the service menu's 2, turns it back on). See
+  and turned right, left, right, or the service menu's 2, turns it back on). See
   `sleepradiopi/wifi.py` for how the manager decides.
 - **Updates** — the radio's version; *Check for updates* looks at the latest
   GitHub release (`update_source`) and *Install* puts it on (see the

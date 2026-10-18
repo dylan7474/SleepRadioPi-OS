@@ -8,7 +8,7 @@ from pathlib import Path
 import numpy as np
 
 from sleepradiopi.audio import pcm
-from sleepradiopi.io.knob import Knob
+from sleepradiopi.io.knob import Knob, Twist
 from sleepradiopi.io.seek import KnobSeek
 
 from test_albums import _on_air
@@ -201,3 +201,54 @@ def test_the_web_seeks_and_reports_the_position(tmp_path) -> None:
             req({"to_ms": 1, "delta_ms": 1})
     finally:
         httpd.shutdown()
+
+
+def test_a_twist_right_left_right_while_held_is_the_way_in(tmp_path: Path) -> None:
+    done, steps, presses, longs = [], [], [], []
+    twist = Twist(lambda: done.append(1), on_step=lambda: steps.append(1))
+    k = Knob(lambda c: None, lambda: presses.append(1), devices=tmp_path, on_long_press=lambda: longs.append(1),
+             on_held_turn=twist.turn, on_held_end=twist.end)
+    k.on_press()
+    for c in [1] * 7 + [-1] * 5 + [1] * 4:      # (on past the first way is fine)
+        k.on_turn(c)
+    assert steps == [1, 1] and done == []
+    k.on_turn(1)
+    assert done == [1]
+    k.on_turn(-1); k.on_turn(1)                # once is enough
+    k.on_release()
+    assert done == [1] and presses == [] and longs == []
+
+
+def test_presses_holds_and_turns_alone_never_twist(tmp_path: Path) -> None:
+    done = []
+    twist = Twist(lambda: done.append(1))
+    k = Knob(lambda c: None, lambda: None, devices=tmp_path, on_long_press=lambda: None,
+             on_held_turn=twist.turn, on_held_end=twist.end)
+    for _ in range(20):                        # pressed over and over, turned in between
+        k.on_press(); k.on_release()
+        for c in (1, 1, 1, 1, 1, -1, -1, -1, -1, -1):
+            k.on_turn(c)
+    k.on_press()                               # held and turned one way only
+    for _ in range(30):
+        k.on_turn(1)
+    k.on_release()
+    k.on_press()                               # right, left -- let go -- right
+    for c in [1] * 5 + [-1] * 5:
+        k.on_turn(c)
+    k.on_release(); k.on_press()
+    for _ in range(5):
+        k.on_turn(1)
+    k.on_release()
+    assert done == []
+
+
+def test_a_twist_turned_back_too_soon_starts_again_but_a_bounce_doesnt() -> None:
+    done = []
+    twist = Twist(lambda: done.append(1))
+    for c in [1, 1, 1, -1, 1, 1] + [-1] * 5 + [1] * 5:     # one stray click: let off
+        twist.turn(c)
+    assert done == [1]
+    twist.end(); done.clear()
+    for c in [1, 1, 1, -1, -1] + [-1] * 3 + [1] * 5:       # really turned back: from the start
+        twist.turn(c)
+    assert done == []

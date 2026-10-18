@@ -47,51 +47,14 @@ def test_press_timer_tells_short_from_long() -> None:
     assert calls == ["short", "long"]
 
 
-def test_a_very_long_hold_only_when_wanted() -> None:
-    calls, offline = [], [True]
-    t = PressTimer(lambda: calls.append("short"), lambda: calls.append("long"), long_s=0.1,
-                   very_long=(0.3, lambda: calls.append("visit"), lambda: offline[0], lambda: calls.append("tick")))
-    t.down()
-    assert _wait(lambda: calls == ["tick"])          # the long press reached: a tick, nothing done yet
-    t.up()                                           # let go before the very long one: the long press
-    assert calls == ["tick", "long"]
-    calls.clear()
-    t.down()
-    assert _wait(lambda: calls == ["tick", "visit"])  # held on: the visit, and not the long press
-    t.up()
-    time.sleep(0.05)
-    assert calls == ["tick", "visit"]
-    calls.clear()
-    t.down(); t.up()
-    assert calls == ["short"]                        # a press is still a press
-    calls.clear()
-    offline[0] = False                               # on Wi-Fi: as it always was
+def test_holding_on_is_only_ever_the_long_press() -> None:
+    calls = []                                       # (the Wi-Fi way in is a twist, not a hold: test_knob_seek)
+    t = PressTimer(lambda: calls.append("short"), lambda: calls.append("long"), long_s=0.1)
     t.down()
     assert _wait(lambda: calls == ["long"])
-    time.sleep(0.35)
+    time.sleep(0.4)                                  # held on and on
     t.up()
     assert calls == ["long"]
-    calls.clear()
-    offline[0] = True
-    t.down()
-    assert _wait(lambda: calls == ["tick"])
-    t.cancel()                                       # turned while held (seek): nothing more
-    time.sleep(0.35)
-    t.up()
-    assert calls == ["tick"]
-
-
-def test_the_very_long_hold_counts_you_there() -> None:
-    calls = []
-    t = PressTimer(lambda: calls.append("short"), lambda: calls.append("long"), long_s=0.1, tick_s=0.1,
-                   very_long=(0.75, lambda: calls.append("wifi"), lambda: True, lambda: calls.append("tick")))
-    t.down()
-    assert _wait(lambda: "wifi" in calls, 2)
-    t.up()
-    time.sleep(0.25)
-    ticks = calls.count("tick")
-    assert 4 <= ticks <= 7 and calls[-1] == "wifi" and "long" not in calls   # a tick a step, then it
-    assert calls.count("tick") == ticks                                   # (and they stop)
 
 
 def test_handle_passes_key_releases() -> None:

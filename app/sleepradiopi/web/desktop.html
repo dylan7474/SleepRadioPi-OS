@@ -4405,7 +4405,7 @@ const UI = {
             await api("/api/wifi/hotspot", { ssid: $("spot-ssid").value.trim(), password: $("spot-pw").value });
             toast("Saved: used the next time the radio makes its own network.");
           }))),
-          help("It only starts its own network when you ask (below), when the knob's held down for 15 seconds, after a settings reset, or with no network set up."),
+          help("It only starts its own network when you ask (below), when the knob's held down and turned right, left, right, after a settings reset, or with no network set up."),
           line(sbtn("Switch to its own network now…", () => ask("Switch the radio to its own network now? It leaves your Wi-Fi, so this page loses it until you join SleepRadio-Setup.", "Switch", () => act(() => api("/api/wifi/hotspot-now", {})))))),
         grp("Without Wi-Fi", ...(w.offline ? [
           help(w.forced_on ? "This radio is set to work without Wi-Fi, but the file wifi-on.txt on its card keeps the Wi-Fi on."
@@ -4413,14 +4413,14 @@ const UI = {
             : w.mode === "station" ? `On ${w.ssid} for now, but this radio is set to work without Wi-Fi: the Wi-Fi goes off again when it next starts. To keep it, use Wi-Fi again.`
             : "This radio is set to work without Wi-Fi. The Wi-Fi is on for this visit: it goes off again about 15 minutes after the last visitor leaves its own network, or when the radio next starts."),
           line(sbtn("Use Wi-Fi again", () => act(async () => { await api("/api/wifi/offline", { on: false }); toast("The radio uses Wi-Fi again."); }), "primary")),
-          help("To get back in: hold the knob down for 15 seconds (it ticks each second from 3; a rising tune at 15 says let go). The Wi-Fi comes back on for good and the radio makes its own network, saying how to join. Nothing is forgotten; turn the Wi-Fi off here again when you've finished."),
+          help("To get back in: hold the knob down and, still holding it, turn it 5 clicks right, 5 left, then 5 right again (a tick after each way; a rising tune says it's done). The Wi-Fi comes back on for good and the radio makes its own network, saying how to join. Nothing is forgotten; turn the Wi-Fi off here again when you've finished."),
         ] : [
-          help("For a radio that lives where there is no Wi-Fi. It starts with the Wi-Fi off, says nothing about it, and just plays. To get back in, hold the knob down for 15 seconds: the Wi-Fi comes back on and the radio makes its own network, saying how to join."),
+          help("For a radio that lives where there is no Wi-Fi. It starts with the Wi-Fi off, says nothing about it, and just plays. To get back in, hold the knob down and turn it right, left, then right again (5 clicks each way): the Wi-Fi comes back on and the radio makes its own network, saying how to join."),
           line(sbtn("Try it for 10 minutes", () => ask("Turn the Wi-Fi off for 10 minutes? This page loses the radio until it comes back by itself.", "Try it", () => act(() => api("/api/wifi/trial", {})))),
             sbtn("Turn the Wi-Fi off for good…", async () => {
               let voice = true; try { voice = (await api("/api/status")).voices_ready !== false; } catch {}
               ask((voice ? "" : "The DJ's voice isn't on the radio yet, and it needs the internet to fetch it: without it the radio plays with no DJ. ")
-                + "Turn the Wi-Fi off for good? This page loses the radio. To get back in: hold the knob down for 15 seconds.",
+                + "Turn the Wi-Fi off for good? This page loses the radio. To get back in: hold the knob down and turn it right, left, then right again (5 clicks each way).",
                 "Turn it off", () => act(() => api("/api/wifi/offline", { on: true })));
             })),
         ])),
