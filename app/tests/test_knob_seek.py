@@ -252,3 +252,40 @@ def test_a_twist_turned_back_too_soon_starts_again_but_a_bounce_doesnt() -> None
     for c in [1, 1, 1, -1, -1] + [-1] * 3 + [1] * 5:       # really turned back: from the start
         twist.turn(c)
     assert done == []
+
+
+def test_the_twist_says_the_address_then_makes_its_own_network(monkeypatch) -> None:
+    from sleepradiopi import main
+    from sleepradiopi.io import announce
+    calls, mode, now = [], ["station"], [1000.0]
+
+    class Announcer:
+        def text(self): return "My address is ..."
+        def say(self, lines, tune, label): calls.append(("say", [x() if callable(x) else x for x in lines]))
+        def speak(self): calls.append("speak")
+    a, said = Announcer(), [-1e9]
+    monkeypatch.setattr(main.wifi, "status", lambda: {"mode": mode[0]})
+    monkeypatch.setattr(announce, "addresses", lambda: [("wlan0", "192.168.1.9")])
+    monkeypatch.setattr(main.time, "monotonic", lambda: now[0])
+    monkeypatch.setattr(main, "_knob_wifi_on", lambda ann: calls.append("wifi on"))
+    main._knob_twist(a, said)                        # on a network: the address, and how to go further
+    assert calls == [("say", ["My address is ...", announce.TWIST_AGAIN])]
+    now[0] += 30
+    main._knob_twist(a, said)                        # again soon after: its own network
+    assert calls[-1] == "wifi on"
+    now[0] += 30
+    main._knob_twist(a, said)                        # (and a twist after that is a first one again)
+    assert calls[-1][0] == "say"
+    now[0] += 90
+    main._knob_twist(a, said)                        # a minute later: the address again, not the network
+    assert calls[-1][0] == "say" and calls.count("wifi on") == 1
+    mode[0] = "hotspot"
+    main._knob_twist(a, said)                        # its own network already: how to join it
+    assert calls[-1] == "speak"
+    mode[0] = "offline"
+    main._knob_twist(a, said)                        # without Wi-Fi: straight to it
+    assert calls[-1] == "wifi on"
+    mode[0], calls[:] = "connecting", []
+    monkeypatch.setattr(announce, "addresses", lambda: [])
+    main._knob_twist(a, said)                        # no network to be on: the same
+    assert calls == ["wifi on"]

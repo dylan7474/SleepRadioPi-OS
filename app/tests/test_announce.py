@@ -57,6 +57,23 @@ def test_holding_on_is_only_ever_the_long_press() -> None:
     assert calls == ["long"]
 
 
+def test_a_long_press_with_nothing_to_do_is_a_press_when_let_go() -> None:
+    calls = []
+    t = PressTimer(lambda: calls.append("short"), lambda: calls.append("long") or False, long_s=0.1)
+    t.down()
+    assert _wait(lambda: calls == ["long"])
+    time.sleep(0.2)
+    assert calls == ["long"]                         # nothing while it's held...
+    t.up()
+    assert calls == ["long", "short"]                # ...a press when it's let go
+    calls.clear()
+    t.down()
+    assert _wait(lambda: calls == ["long"])
+    t.cancel()                                       # turned while held (the twist): no press
+    t.up()
+    assert calls == ["long"]
+
+
 def test_handle_passes_key_releases() -> None:
     events = []
     data = EVENT.pack(0, 0, EV_KEY, 164, KEY_DOWN) + EVENT.pack(0, 0, EV_KEY, 164, 2) + \

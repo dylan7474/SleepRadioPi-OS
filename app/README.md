@@ -59,22 +59,29 @@ and with no network, and is set up from its web page. See
   is under way and kept in the cache, so it plays from the next start-up.
   It follows the saved volume (0 = silent) and can be turned off.
 - **One knob.** Turn for volume (0–100 in 0.5 dB steps; the level is
-  remembered). Press (and let go) to pause or play. **Hold it for 3 seconds**
-  and the radio beeps and reads out its network address — handy away from
-  home, where there's no screen to show where the web page is.
-  **Hold it down and turn it right, left, then right again** (5 clicks
-  each way, `io/knob.py` `Twist`) to get back in to a radio whose page can't
-  be reached — set to work without Wi-Fi, or moved away from its network:
-  the Wi-Fi comes back on for good (nothing forgotten) and the radio makes
-  its own network, saying how to join; with nobody on it, it goes back to
-  a saved network in range by itself. The way in for a radio with no
-  buttons. A tick after each way (start turning within 3 seconds, or the
-  3-second hold acts first); at the end a rising tune and "Turning the
-  Wi-Fi on", and once its network is up (about 10 seconds) it says how to
-  join. Turning on past a way's 5 clicks is fine; one stray click back is
-  let off, more starts it again, and so does letting go. Not a long hold
-  (it was 15 s): a listener who presses and holds the knob a lot set that
-  off by chance. Turning while held never changes the volume.
+  remembered). Press (and let go) to pause or play. **Hold it down and
+  turn it right, left, then right again** (5 clicks each way, `io/knob.py`
+  `Twist`; `main._knob_twist`) to get in to it. On a network, the radio
+  beeps and reads out its address — handy away from home, where there's
+  no screen to show where the web page is — and says that twisting again
+  makes its own network: **a second twist within a minute**
+  (`TWIST_AGAIN_S`) does that, for a network you can't reach it on (some
+  care homes keep devices apart). Already its own network, it says how to
+  join it. Set to work without Wi-Fi, or with no network to be on, the
+  first twist is the way back in: the Wi-Fi comes back on for good
+  (nothing forgotten) and the radio makes its own network, saying how to
+  join; with nobody on it, it goes back to a saved network in range by
+  itself. The way in for a radio with no buttons. A tick after each way
+  (start turning within 3 seconds, or the 3-second hold acts first); at
+  the end, for its own network, a rising tune and "Turning the Wi-Fi on",
+  and once its network is up (about 10 seconds) it says how to join.
+  Turning on past a way's 5 clicks is fine; one stray click back is let
+  off, more starts it again, and so does letting go. Turning while held
+  never changes the volume. **Hold it for 3 seconds** and it does what's
+  on *Hold the knob* (below); empty, it's just a press (pause or play,
+  when it's let go). None of this is a long hold
+  (the address was 3 s, the Wi-Fi 15 s): a listener who presses and holds
+  the knob a lot set them off by chance.
   **Press and turn** to go back or on through what's playing: a book or
   podcast half a minute a click, a song from an album or playlist ten
   seconds a click (a quick spin goes two or four times as far). Playing, it
@@ -745,9 +752,8 @@ The cards:
   button, a press switches that colour on, and off if it's the one that's on.
   Two more folders hold one thing each (`SLOTS` in `io/presets.py`, saved
   as the settings `knob_long` and `power_on`): **Hold the knob** — what a
-  3-second hold of the knob does (empty: it says the radio's address, which
-  it always does while the radio is its own hotspot, so it can still be
-  found) — and **When switched on** — what the radio plays when it's
+  3-second hold of the knob does (empty: a press, pause or play; the
+  address is the knob's twist) — and **When switched on** — what the radio plays when it's
   powered (something that plays, not an action; empty: what was on last;
   not used in programme mode).
   **Backups** is a folder of saved settings kept on the radio itself
@@ -955,8 +961,8 @@ The cards:
   Boosts lower the overall level so they can't clip. The
   [spectrum analyser](https://dylan7474.github.io/SleepRadioPi-OS/) can suggest the settings (see *Tuning the
   speakers*, below).
-- **Knob switch** — works like the real knob: tap to pause/play, hold 3 s to
-  hear the address. If the radio was paused it speaks, then pauses again.
+- **Knob switch** — works like the real knob: tap to pause/play, hold 3 s for
+  what's on *Hold the knob*. If the radio was paused it speaks, then pauses again.
   **Open the service menu** does what holding buttons 1 and 4 for 5 s does;
   answer it with the buttons on the Radio tab. Those buttons behave like the
   real ones: each sends *down* and *up* to the radio (`/api/buttons/key`),

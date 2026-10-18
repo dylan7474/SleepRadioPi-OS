@@ -18,7 +18,7 @@ else, it picks up at the step it was last on. (The cathedral's selector has
 no second press: it plays a position's first step.)
 
 Two more places hold a preset the same way (SLOTS): **knob_long**, what
-holding the knob for 3 s does (empty: say the radio's address -- which it
+holding the knob for 3 s does (empty: nothing -- which it
 always does while the radio is its own hotspot, so it can be found), and
 **power_on**, what plays when the radio's switched on (empty: what was on
 last).
@@ -324,7 +324,6 @@ class Presets:
         self.config_file = config_file
         self.announcer = announcer       # says the address
         self.names = None                # the steps' spoken names, made ahead (io/button_names.py; main sets it)
-        self.hotspot: Callable[[], object] | None = None      # is the radio its own network now? (main sets it)
         self.slots = {}
         for name in SLOTS:
             try:
@@ -577,16 +576,13 @@ class Presets:
                 self.slots[name] = validate_slot(name, slots[name])
 
     def knob_long(self) -> bool:
-        """The knob held for 3 s: what's been put on it, else the radio's address
-        (always the address while the radio is its own hotspot: that's how it's found)."""
+        """The knob held for 3 s: what's been put on it. False with nothing on it,
+        and the knob takes it as a press (io/knob.py): the address is the knob's
+        twist now (a listener who holds the knob a lot set it off)."""
         preset = self.slots.get("knob_long")
-        alone = False
-        try:
-            alone = bool(self.hotspot()) if self.hotspot is not None else False
-        except Exception:
-            log.exception("knob: hotspot check")
-        if preset is None or alone:
-            return bool(self.announcer.speak()) if self.announcer is not None else False
+        if preset is None:
+            log.info("knob held: nothing on it")
+            return False
         log.info("knob held: %s", self.label(preset))
         self._play(preset, "the knob")
         return True

@@ -693,14 +693,12 @@ def test_the_knob_held_and_what_plays_at_switch_on(tmp_path: Path) -> None:
     class Announcer:
         def speak(self): said.append("address"); return True
     p.announcer = Announcer()
-    assert p.knob_long() and said == ["address"]                 # nothing on it: the address, as it came
+    assert p.knob_long() is False and said == []                 # nothing on it: False (the knob makes it a press)
     assert not p.power_on() and st.source is None
     p.set_slot("knob_long", {"kind": "action", "action": "sleep_45"})
     p.set_slot("power_on", RP)
     assert load(conf).knob_long == {"kind": "action", "action": "sleep_45"} and load(conf).power_on == RP
-    assert p.knob_long() and ctl.sleep == 45 and said == ["address"]
-    p.hotspot = lambda: {"ssid": "SleepRadio"}                   # its own network: the address, so it can be found
-    assert p.knob_long() and said == ["address"] * 2
+    assert p.knob_long() and ctl.sleep == 45 and said == []
     assert p.power_on() and st.source["url"] == "http://rp/"
     assert p.status()["slots"]["power_on"]["label"] == "Radio Paradise"
     with pytest.raises(ValueError, match="plays something"):

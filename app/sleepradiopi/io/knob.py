@@ -76,7 +76,9 @@ class PressTimer:
     guard_s: a press that starts this soon after the last short press doesn't
     count as another short one -- a worn or loose switch can open for a few ms
     mid-press, which made two presses of one (and the second would step a
-    button on past the one wanted). Holding it still counts as a hold."""
+    button on past the one wanted). Holding it still counts as a hold.
+    on_long returning False (nothing to do for a long press): it's a short
+    press after all, when it's let go."""
 
     def __init__(self, on_short: Callable[[], None], on_long: Callable[[], None],
                  long_s: float = LONG_PRESS_S, name: str = "knob", guard_s: float = 0.0) -> None:
@@ -102,7 +104,10 @@ class PressTimer:
                 return
             self._timer = "fired"         # the release that follows does nothing
         log.info("%s: long press", self.name)
-        self.on_long()
+        if self.on_long() is False:
+            with self._lock:
+                if self._timer == "fired":    # (not turned since, which cancels it)
+                    self._timer = "short"
 
     def up(self) -> None:
         with self._lock:
@@ -110,6 +115,10 @@ class PressTimer:
             guarded = self._guarded
             if isinstance(timer, threading.Timer) and not guarded:
                 self._last_short = time.monotonic()
+        if timer == "short":          # a long press with nothing to do: a press
+            log.info("%s: long press with nothing on it: a press", self.name)
+            self.on_short()
+            return
         if isinstance(timer, threading.Timer):
             timer.cancel()
             if guarded:

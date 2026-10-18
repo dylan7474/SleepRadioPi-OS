@@ -149,15 +149,18 @@ Actions, Sleep timer and Radio folders open:
   to Sleep Radio from a station, album, audiobook or podcast, and between
   songs. (An LED flickers while it boots and
   pulses when it's on air.)
-- **One knob.** Turn for volume; press to pause or play; **hold it for 3
-  seconds** and the radio reads out its network address (handy away from
-  home). **Hold it down and turn it right, left, then right again** (5
-  clicks each way) to get back in when its page can't be reached: the
-  Wi-Fi comes back on (if it was set to work without it) and the radio
-  makes its own network to join (a tick after each way; at the end a
-  rising tune, and it tells you how to join once its network is up). It
-  used to be a 15-second hold, but a listener who presses and holds the
-  knob a lot set that off by chance.
+- **One knob.** Turn for volume; press to pause or play. **Hold it down
+  and turn it right, left, then right again** (5 clicks each way; a tick
+  after each way) to get in to it: on a network, the radio reads out its
+  address (handy away from home); **do it again within a minute** and it
+  makes its own network to join instead (for a network whose devices
+  can't reach each other, like some care homes'); set to work without
+  Wi-Fi, or with no network to be on, the first twist turns the Wi-Fi
+  back on and makes its own network (a rising tune, and it tells you how
+  to join once it's up). Nothing is a long hold: these used to be a
+  3-second and a 15-second hold, but a listener who presses and holds the
+  knob a lot set them off by chance. A 3-second hold does only what's put
+  on it (below); empty, it's just a press.
 - **Four preset buttons** (optional), like a car radio's: each plays what
   it holds — Sleep Radio, an artist or list, an internet station, an album
   straight through, a single track (then the radio pauses) — or does something: say the time, read the news now,
@@ -175,8 +178,8 @@ Actions, Sleep timer and Radio folders open:
   Trash to take them off; drag one button onto another to swap them. Three
   more folders work the same way: **Noise** (each colour is a thing: drag
   one onto a button, or double-click it to switch it on), **Hold the knob**
-  (drop one thing in and a 3-second hold of the knob does that instead of
-  saying the address) and **When switched on** (drop a station, theme,
+  (drop one thing in and a 3-second hold of the knob does that; empty, a
+  hold is just a press: pause or play) and **When switched on** (drop a station, theme,
   album or programme in and the radio starts with it; empty, it carries on
   with what was on last). **Backups** keeps saved settings on the radio
   itself: save them now, drag one onto the radio to load it (the settings
@@ -246,7 +249,7 @@ Actions, Sleep timer and Radio folders open:
   put it right, rather than the radio trying for ever out of reach. These
   lines are in a **plain voice** (eSpeak, `tts/plain.py`), not the DJ's: it's
   in the image and makes a sentence in a fraction of a second, so even a new
-  radio that has no DJ's voice yet talks you through it. (Holding the knob
+  radio that has no DJ's voice yet talks you through it. (The knob's twist
   still says the address in the DJ's voice; the plain one only if there's no
   other.) The plain voice also stands in wherever the radio has to say
   something before the DJ can: on a radio with no DJ's voice yet it says the
@@ -618,7 +621,8 @@ computer: Windows, Mac or Linux. Nothing here needs a command line.
    instead and skip this step.
 6. **The first time it's online**, it downloads the standard DJ voice (67 MB,
    a few minutes). Open **http://sleepradiopi.local** to control it, or hold
-   the knob for 3 seconds and it reads out its address.
+   the knob down and turn it right, left, then right again (5 clicks each
+   way) and it reads out its address.
 7. **Add your music**, from the same computer, on the radio's page: open
    **Music** and use *Upload…*, *Upload a folder…* (an album, or an artist's
    folder of albums), or ***Sync a folder…*** -- choose your whole music

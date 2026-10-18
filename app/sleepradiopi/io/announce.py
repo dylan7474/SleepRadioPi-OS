@@ -93,6 +93,7 @@ def announcement(addrs: list[tuple[str, str]], host: str, hotspot: dict | None =
 
 
 JOINING = "Joining your Wi-Fi now."
+TWIST_AGAIN = "To make my own Wi-Fi network instead, twist my knob again."
 OFFLINE = "The Wi-Fi is off now, and stays off. To turn it back on, hold my knob down and turn it right, then left, then right again."
 TRIAL = "The Wi-Fi is off for ten minutes, to try it. Then it comes back by itself."
 

@@ -60,7 +60,7 @@ class Settings:
     buttons_night: list = field(default_factory=list)   # ...the night set
     buttons_bank: str = "day"             # the set in use: "day" or "night"
     buttons_auto: dict = field(default_factory=dict)    # {"on", "night_min", "day_min"}: swap sets by the clock
-    knob_long: dict | None = None         # what holding the knob for 3 s does (a preset, as on a button); None: say the address
+    knob_long: dict | None = None         # what holding the knob for 3 s does (a preset, as on a button); None: nothing
     power_on: dict | None = None          # what plays when the radio's switched on (a preset); None: what was on last
     broadcast_dj: bool = True             # False: the show is music only (no welcome, links, time checks)
     stream_source: dict | None = None     # a station or album playing instead of the show; None = the show

@@ -231,8 +231,34 @@ def _wifi_back_on() -> None:
         logging.warning("no Wi-Fi manager to ask")
 
 
+TWIST_AGAIN_S = 60.0   # a second twist this soon after the address: the radio's own network
+
+
+def _knob_twist(announcer, said: list) -> None:
+    """The knob held and twisted right, left, right: the way in. On a network,
+    the radio's address (and that twisting again makes its own network -- for
+    a network whose radios can't be reached, like some care homes'); its own
+    network already, how to join it; otherwise (without Wi-Fi, or none to be
+    on), the Wi-Fi back on and its own network. said: [when the address was
+    last said]."""
+    from sleepradiopi.io import announce
+    mode = wifi.status().get("mode")
+    if mode == "hotspot":
+        if announcer is not None:
+            announcer.speak()
+        return
+    again = time.monotonic() - said[0] < TWIST_AGAIN_S
+    if mode in ("station", "unknown") and announce.addresses() and not again:
+        said[0] = time.monotonic()
+        if announcer is not None:
+            announcer.say([announcer.text, announce.TWIST_AGAIN], announce.beep(), "Address")
+        return
+    said[0] = -1e9
+    _knob_wifi_on(announcer)
+
+
 def _knob_wifi_on(announcer) -> None:
-    """The knob held and twisted right, left, right: say so at once (the radio's own network takes
+    """The knob twisted with no network to be on (or twice): say so at once (the radio's own network takes
     some seconds to come up, and then says how to join), then turn it on."""
     from sleepradiopi.io import announce
     if announcer is not None:
@@ -692,7 +718,6 @@ def main() -> None:
                                       settings.buttons_night, settings.buttons_bank, settings.buttons_auto,
                                       count=presets_mod.MAX_N if cathedral else presets_mod.N, selector=cathedral,
                                       slots={"knob_long": settings.knob_long, "power_on": settings.power_on})
-        presets.hotspot = _hotspot
         presets.keep_auto()
         if station._has_voice and not cathedral:
             # A button with steps says the one it landed on: the names are made ahead, in the
@@ -733,9 +758,10 @@ def main() -> None:
         from sleepradiopi.io.announce import Clip as _Clip
         from sleepradiopi.io.seek import KnobSeek
         station.seeker = KnobSeek(station, control, _Clip)   # (the page's knob uses it too)
-        # held down and turned right, left, right: the Wi-Fi back on, its own network (a tick
-        # after each way; at the end a rising tune and a word at once -- the network takes a while)
-        twist = Twist(lambda: _knob_wifi_on(announcer), on_step=lambda: presets._clip(tick, "Button"))
+        # held down and turned right, left, right (a tick after each way): the address, or the
+        # Wi-Fi back on and its own network (_knob_twist)
+        said = [-1e9]
+        twist = Twist(lambda: _knob_twist(announcer, said), on_step=lambda: presets._clip(tick, "Button"))
         knob = Knob(control.knob, control.toggle,
                     devices=Path(os.environ.get("SLEEPRADIOPI_INPUT_DIR", "/dev/input")),
                     on_long_press=presets.knob_long, buttons=buttons, chord=chord, raw_keys=raw_keys,

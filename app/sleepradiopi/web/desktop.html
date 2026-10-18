@@ -1179,7 +1179,7 @@ function subOf(o) {
     case "episode": return dur(o.min);
     case "playlist": return `${o.items.length} song${o.items.length === 1 ? "" : "s"}`;
     case "button": { const b = btnOf(o), n = stepsOf(b).length;
-      return !n ? (o.slot === "knob_long" ? "Says the address" : o.slot === "power_on" ? "What was on last" : "Empty") : n === 1 ? b.label : `${n} steps`; }
+      return !n ? (o.slot === "knob_long" ? "Pause / play" : o.slot === "power_on" ? "What was on last" : "Empty") : n === 1 ? b.label : `${n} steps`; }
     case "noise": return noiseOn(o) ? "On now" : o.about;
     case "eqset": return (soundOn(o) ? "On now · " : "") + ["bass", "mid", "treble"].map(b => `${b[0].toUpperCase()} ${db(o.eq[b] || 0)}`).join(" ") + (o.highpass ? ` · cut ${o.highpass} Hz` : "") + (o.mono ? " · mono" : "");
     case "wifi": return o.on ? `Connected${o.ip ? " · " + o.ip : ""}` : o.saved ? "Saved" : "From the card";
@@ -1662,7 +1662,7 @@ function buttonView(o, box) {
           toast(`${o.title}: “${bStatus.now?.label}”${o.slot ? "" : " added"}.`); }
     catch (e) { toast("Not added: " + e.message + "."); } }, "", !o.slot && n >= max);
   nowAdd.title = `${o.slot ? "Put here" : "Add"} what's on now: ${bStatus?.now?.label || ""}`;
-  const note = o.slot === "knob_long" ? "What holding the knob for 3 seconds does · drop one thing here (it takes the place of what's there) · empty: the radio says its address"
+  const note = o.slot === "knob_long" ? "What holding the knob for 3 seconds does · drop one thing here (it takes the place of what's there) · empty: pause or play, like a press (the address is the knob's twist)"
     : o.slot === "power_on" ? "What plays when the radio's switched on · drop one thing here (it takes the place of what's there) · empty: it carries on with what was on last"
     : (n > 1 ? `${n} steps: each press moves on one · ` : n ? "Drop something else in and it becomes step 2 · " : "") + "drop things here · drag one to the Trash to take it off";
   box.append(el("div", { className: "wtools" },
@@ -1684,7 +1684,7 @@ function buttonView(o, box) {
     li.addEventListener("pointerdown", e => press(e, li, src));
     ul.append(li);
   });
-  const empty = o.slot === "knob_long" ? "Nothing here, so holding the knob says the radio's address. Drag an action, a noise, a station… onto this window to change that."
+  const empty = o.slot === "knob_long" ? "Nothing here, so holding the knob pauses or plays, like a press. (The radio's address: hold the knob down and turn it right, left, then right again.) Drag an action, a noise, a station… onto this window to change that."
     : o.slot === "power_on" ? "Nothing here, so the radio carries on with what was on last. Drag a station, a theme, an album, a playlist or a programme onto this window."
     : "Empty. Drag something onto this window: a station, a theme, an album, a podcast, a book, a playlist, an action…";
   box.append(el("div", { className: "wbody" }, n ? ul : el("div", { className: "empty", textContent: empty })));
@@ -4299,7 +4299,7 @@ const UI = {
                                 sbtn("Hold the back button", () => act(() => api("/api/knob", { press: "back_long" }))))] : []),
         line(sbtn("Press and turn: back", () => act(() => api("/api/knob", { press: "turn", clicks: -1 }))),
              sbtn("Press and turn: on", () => act(() => api("/api/knob", { press: "turn", clicks: 1 })))),
-        help("The same as on the radio. Pressing pauses or plays; holding it 3 s says the radio's address; the service menu is read out, and the radio's buttons answer it (1 restart, 2 Wi-Fi reset, 3 status, 4 factory reset). Pressed and turned, the knob moves through a song, book or podcast.")),
+        help("The same as on the radio. Pressing pauses or plays; holding it 3 s does what's on Hold the knob (if that's empty, it pauses or plays like a press); held down and turned right, left, right on the radio itself, it says its address (twisted again within a minute: it makes its own network); the service menu is read out, and the radio's buttons answer it (1 restart, 2 Wi-Fi reset, 3 status, 4 factory reset). Pressed and turned, the knob moves through a song, book or podcast.")),
       ...(sp.lamps && sp.lamps.glow_day != null ? [grp("The grille light and the meter",
         srow("Light by day", ...range("glow-day", 0, 100, 5, sp.lamps.glow_day, v => v + "%", v => act(() => api("/api/lamps", { glow_day: v })))),
         srow("Light at night", ...range("glow-night", 0, 100, 5, sp.lamps.glow_night, v => v + "%", v => act(() => api("/api/lamps", { glow_night: v })))),
@@ -4405,7 +4405,7 @@ const UI = {
             await api("/api/wifi/hotspot", { ssid: $("spot-ssid").value.trim(), password: $("spot-pw").value });
             toast("Saved: used the next time the radio makes its own network.");
           }))),
-          help("It only starts its own network when you ask (below), when the knob's held down and turned right, left, right, after a settings reset, or with no network set up."),
+          help("It only starts its own network when you ask (below), when the knob's twisted twice within a minute (held down and turned right, left, right: the first says its address), after a settings reset, or with no network set up."),
           line(sbtn("Switch to its own network now…", () => ask("Switch the radio to its own network now? It leaves your Wi-Fi, so this page loses it until you join SleepRadio-Setup.", "Switch", () => act(() => api("/api/wifi/hotspot-now", {})))))),
         grp("Without Wi-Fi", ...(w.offline ? [
           help(w.forced_on ? "This radio is set to work without Wi-Fi, but the file wifi-on.txt on its card keeps the Wi-Fi on."

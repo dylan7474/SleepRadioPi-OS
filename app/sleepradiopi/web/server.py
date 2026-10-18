@@ -2219,7 +2219,7 @@ def make_handler(station: Station, output: Mp3Output, speaker=None,
             """/api/knob {"press": "short" | "long" | "service"} or {"press": "turn", "clicks": n}
             (pressed and turned: back or on through a book, podcast or song): the knob's switch, from
             the page (to try it without the hardware). Short = pause/play, long =
-            say the radio's address; "service" = as holding buttons 1 and 4 for 5 s
+            what's on Hold the knob (nothing on it: pause/play, as on the radio); "service" = as holding buttons 1 and 4 for 5 s
             (the service menu; then the page's buttons 1-4 answer it)."""
             try:
                 body = json.loads(self.rfile.read(int(self.headers.get("Content-Length", 0))) or b"{}")
@@ -2248,8 +2248,11 @@ def make_handler(station: Station, output: Mp3Output, speaker=None,
                 if seeker is not None:
                     seeker.turn(clicks, speed_up=False)   # (one step a click)
                 done = seeker is not None
-            elif presets is not None:            # held: what's on the knob, else the address
+            elif presets is not None:            # held: what's on the knob, else a press
                 done = presets.knob_long()
+                if done is False:
+                    speaker.toggle()
+                    done = True
             else:
                 done = announcer.speak() if announcer is not None else False
             self._send(json.dumps({"press": press, "done": done, **speaker.status()}).encode(),
