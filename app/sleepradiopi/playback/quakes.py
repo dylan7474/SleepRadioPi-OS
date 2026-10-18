@@ -10,9 +10,10 @@ sun's figures and the forecast are: conditions.Kept):
     in Scotland, Wales, the old coalfields), so the latest is worth showing
     whatever its size.
 
-The desktop's "The world outside" has a tile for each (conditions.outside()),
-and the Earthquakes window lists them, with how far each is from the radio's
-locator. With ALERTS on (conditions.py), the DJ says a fresh one in the next
+Only the last LATELY_S (12 hours) is shown: the desktop's "The world outside"
+has one Earthquakes tile (conditions.outside()) -- the world's largest, or a
+UK one if there's been one -- and the Earthquakes window lists both, with
+how far each is from the radio's locator. With ALERTS on (conditions.py), the DJ says a fresh one in the next
 gap: magnitude WORLD_ALERT and over anywhere, UK_ALERT and over in the UK, or
 UK_NEAR_ALERT within UK_NEAR_KM of here -- once, while it's news (ALERT_FRESH_S).
 """
@@ -39,6 +40,7 @@ UK_ALERT = 3.0               # ...this big in the UK (one a year or so)...
 UK_NEAR_ALERT, UK_NEAR_KM = 2.0, 100   # ...or this big this near
 ALERT_FRESH_S = 3 * 3600.0   # ...while it's this new: an old one found at start-up isn't news
 STRONG, MAJOR = 6.0, 7.0     # the tile: amber from this, red from this
+LATELY_S = 12 * 3600.0       # what's shown: the last twelve hours
 
 
 def _json(url: str, timeout: float = 12.0):
@@ -144,16 +146,27 @@ class Quakes(Kept):
         return had
 
     def _says(self, had: dict) -> str:
-        now = self._clock()
-        parts = []
-        if had.get("world"):
-            parts.append(_on("The largest earthquake in the last day: ", said(had["world"][0], now)))
-        if had.get("uk"):
-            parts.append(_on("In the UK, the latest: ", said(had["uk"][0], now, True)))
-        return " ".join(parts)
+        return says(had, self._clock())
 
 
 quakes = Quakes()
+
+
+def lately(had: dict | None, which: str, now: float | None = None) -> list[dict]:
+    """The world's or the UK's earthquakes in the last LATELY_S, in the feed's order."""
+    now = time.time() if now is None else now
+    return [q for q in (had or {}).get(which) or [] if now - q["t"] <= LATELY_S]
+
+
+def says(had: dict | None, now: float | None = None) -> str:
+    """The last twelve hours in a sentence or two."""
+    now = time.time() if now is None else now
+    world, uk = lately(had, "world", now), lately(had, "uk", now)
+    parts = [_on("The largest earthquake in the last 12 hours: ", said(world[0], now)) if world
+             else "No earthquake of magnitude 4.5 or more in the last 12 hours."]
+    if uk:
+        parts.append(_on("In the UK: ", said(uk[0], now, True)))
+    return " ".join(parts)
 
 
 def alerts(had: dict | None, now: float | None = None) -> list[tuple[str, int, str, str]]:
@@ -175,20 +188,20 @@ def alerts(had: dict | None, now: float | None = None) -> list[tuple[str, int, s
 
 
 def tiles(had: dict | None, alerted: set[str], now: float | None = None) -> list[dict]:
-    """The world's and the UK's tiles for "The world outside" (conditions.outside())."""
+    """The Earthquakes tile for "The world outside" (conditions.outside()): the world's largest in the last 12
+    hours on its face; under it where that was, or the UK's latest if there's been one."""
     if not had:
         return []
     now = time.time() if now is None else now
-    out = []
-    if "world" in had:
-        top = had["world"][0] if had["world"] else None
-        out.append({"key": "quakes", "title": "Earthquakes", "value": f"M{top['mag']:g}" if top else "none",
-                    "state": "alert" if "quakes" in alerted else "quiet" if not top else "poor" if top["mag"] >= MAJOR else "fair" if top["mag"] >= STRONG else "good",
-                    "sub": f"{top['place'].split(' of ')[-1]} · {datetime.fromtimestamp(top['t']):%H:%M}" if top else "none over 4.5 today",
-                    "says": (_on("The largest in the last day: ", said(top, now)) if top else "No earthquake of magnitude 4.5 or more in the last day.") + " (USGS)"})
-    if had.get("uk"):
-        q = had["uk"][0]
-        out.append({"key": "ukquakes", "title": "UK earthquakes", "value": f"M{q['mag']:g}", "state": "alert" if "ukquakes" in alerted else "quiet",
-                    "sub": f"{q['place'].split(',')[0]} · {datetime.fromtimestamp(q['t']).day} {datetime.fromtimestamp(q['t']):%b}",
-                    "says": _on("The latest in the UK: ", said(q, now, True)) + " (British Geological Survey)"})
-    return out
+    world, uk = lately(had, "world", now), lately(had, "uk", now)
+    top = world[0] if world else None
+    if uk:
+        far = km_from_home(uk[0]["lat"], uk[0]["lon"])
+        sub = f"UK: M{uk[0]['mag']:g} {uk[0]['place'].split(',')[0]}" + (f" · {far:,} km" if far is not None else "")
+    elif top:
+        sub = f"{top['place'].split(' of ')[-1]} · {datetime.fromtimestamp(top['t']):%H:%M}"
+    else:
+        sub = "none over 4.5 in 12 h"
+    return [{"key": "quakes", "title": "Earthquakes", "value": f"M{top['mag']:g}" if top else "none",
+             "state": "alert" if "quakes" in alerted else "quiet" if not top else "poor" if top["mag"] >= MAJOR else "fair" if top["mag"] >= STRONG else "good",
+             "sub": sub, "says": says(had, now) + " (USGS, British Geological Survey)"}]

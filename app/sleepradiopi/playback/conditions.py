@@ -674,7 +674,7 @@ def alert_due(at, clock_ok: bool, quiet: bool, now: float | None = None) -> str 
 
 
 # Which tile an alert belongs to (the desktop's "The world outside": outside())
-ALERT_TILE = {"aurora": "aurora", "es": "vhf", "noaa": "sun", "quake": "quakes", "ukquake": "ukquakes", "met": "warnings", "flood": "warnings"}
+ALERT_TILE = {"aurora": "aurora", "es": "vhf", "noaa": "sun", "quake": "quakes", "ukquake": "quakes", "met": "warnings", "flood": "warnings"}
 
 
 def outside(s: dict, sun_now: dict | None, fc: dict | None, aurora_now: dict | None, day: bool, quakes_now: dict | None = None,

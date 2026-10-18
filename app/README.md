@@ -1468,9 +1468,11 @@ The cards:
   in `quakes.json`, not shown once six hours old): `"world"` the biggest
   first, `"uk"` the latest first, each `{"id", "mag", "place", "t", "lat",
   "lon", "url", "tsunami"?}` and, in `/api/quakes`, `"km"` from the
-  locator. Two tiles in `/api/outside` (`quakes.tiles()`: `"quakes"` amber
-  from 6, red from 7; `"ukquakes"`), opening the Earthquakes window
-  (`set:quakes`). Alerts (`quakes.alerts()`, through `alerts_now()`):
+  locator; only the last `LATELY_S` (12 hours) is shown (`quakes.lately()`;
+  `/api/quakes` gives `"hours"`). One tile in `/api/outside`
+  (`quakes.tiles()`: `"quakes"`, the world's largest on its face, amber
+  from 6, red from 7; its line the UK's latest if there's one, else where
+  the largest was), opening the Earthquakes window (`set:quakes`). Alerts (`quakes.alerts()`, through `alerts_now()`):
   `WORLD_ALERT` 6.5 anywhere, `UK_ALERT` 3.0 in the UK, `UK_NEAR_ALERT`
   2.0 within `UK_NEAR_KM` 100 km, and only within `ALERT_FRESH_S` (three
   hours) of it, so one found at start-up that's old isn't said.

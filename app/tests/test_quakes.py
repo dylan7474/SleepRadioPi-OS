@@ -68,8 +68,8 @@ def test_kept_and_said(tmp_path: Path) -> None:
     had = q.fetch()
     assert len(had["world"]) == 1 and len(had["uk"]) == 2
     says = q._says(had)
-    assert says.startswith("The largest earthquake in the last day: magnitude 6.8, near the east coast of Honshu, Japan, at ") and "A tsunami warning was issued." in says
-    assert "In the UK, the latest: magnitude 2.3, at Guisborough, Redcar and Cleveland" in says
+    assert says.startswith("The largest earthquake in the last 12 hours: magnitude 6.8, near the east coast of Honshu, Japan, at ") and "A tsunami warning was issued." in says
+    assert "In the UK: magnitude 2.3, at Guisborough, Redcar and Cleveland" in says and "Glendaruel" not in says      # (Tuesday's: not in the last 12 hours)
     feeds["world"] = None                                       # the USGS not reached: the BGS's still had
     assert "world" not in q.fetch() and q.status()["uk"]
     feeds["uk"] = "<broken"
@@ -105,14 +105,17 @@ def test_which_are_alerts() -> None:
     assert quakes.alerts({"uk": [{**far["uk"][0], "mag": 3.1}]}, NOW)[0][0].startswith("ukquake:")   # ...unless it's 3 or more
 
 
-def test_the_tiles() -> None:
-    had = {"world": quakes.world(_usgs(("big", 7.2, "Kermadec Islands, New Zealand", NOW - 600, -30.0, -178.0, 0))), "uk": quakes.uk(ET.fromstring(BGS))}
-    t = {x["key"]: x for x in quakes.tiles(had, set(), NOW)}
-    assert (t["quakes"]["value"], t["quakes"]["state"], t["quakes"]["sub"].split(" · ")[0]) == ("M7.2", "poor", "Kermadec Islands, New Zealand")
-    assert t["quakes"]["says"].endswith("(USGS)") and t["ukquakes"]["says"].endswith("(British Geological Survey)")
-    assert (t["ukquakes"]["value"], t["ukquakes"]["sub"]) == ("M2.3", "Guisborough · 18 Oct")
-    assert quakes.tiles({"world": []}, set(), NOW)[0]["value"] == "none" and quakes.tiles(None, set()) == []
+def test_one_tile_for_the_last_twelve_hours() -> None:
+    had = {"world": quakes.world(_usgs(("big", 7.2, "Kermadec Islands, New Zealand", NOW - 600, -30.0, -178.0, 0),
+                                       ("older", 7.5, "Fiji region", NOW - 13 * 3600, -18.0, 178.0, 0))), "uk": quakes.uk(ET.fromstring(BGS))}
+    t = quakes.tiles(had, set(), NOW)
+    assert len(t) == 1 and (t[0]["key"], t[0]["value"], t[0]["state"]) == ("quakes", "M7.2", "poor")       # (Fiji's 7.5 was 13 hours ago: not shown)
+    assert t[0]["sub"].startswith("UK: M2.3 Guisborough · ") and t[0]["says"].endswith("(USGS, British Geological Survey)")   # a UK one lately: under it
+    no_uk = quakes.tiles({**had, "uk": [q for q in had["uk"] if "Glendaruel" in q["place"]]}, set(), NOW)[0]   # (Tuesday's: too old)
+    assert no_uk["sub"].split(" · ")[0] == "Kermadec Islands, New Zealand"
+    assert quakes.tiles({"world": []}, set(), NOW)[0]["sub"] == "none over 4.5 in 12 h" and quakes.tiles(None, set()) == []
     assert quakes.tiles(had, {"quakes"}, NOW)[0]["state"] == "alert"
+    assert [q["id"] for q in quakes.lately(had, "world", NOW)] == ["big"] and len(quakes.lately(had, "uk", NOW)) == 1
 
 
 def test_in_the_world_outside_and_said_once(monkeypatch) -> None:
@@ -137,7 +140,8 @@ def test_the_earthquakes_window_from_the_web(tmp_path: Path, monkeypatch) -> Non
     httpd = ThreadingHTTPServer(("127.0.0.1", 0), make_handler(None, None, None, conf))
     threading.Thread(target=httpd.serve_forever, daemon=True).start()
     base = f"http://127.0.0.1:{httpd.server_address[1]}"
-    q = quakes.Quakes(get_json=lambda url: _usgs(("big", 6.8, "near Honshu", NOW - 600, 38.0, 142.0, 0)), get_xml=lambda url: ET.fromstring(BGS))
+    monkeypatch.setattr(quakes.time, "time", lambda: NOW)          # (the samples' "last 12 hours" is NOW's, whenever this runs)
+    q = quakes.Quakes(get_json=lambda url: _usgs(("big", 6.8, "near Honshu", NOW - 600, 38.0, 142.0, 0)), get_xml=lambda url: ET.fromstring(BGS), clock=lambda: NOW)
     q.fetch()
     monkeypatch.setattr(quakes, "quakes", q)
     try:
@@ -147,7 +151,7 @@ def test_the_earthquakes_window_from_the_web(tmp_path: Path, monkeypatch) -> Non
         assert d["alert_at"] == {"world": 6.5, "uk": 3.0, "near": 2.0, "near_km": 100}
         with urllib.request.urlopen(base + "/api/outside", timeout=5) as r:
             keys = [t["key"] for t in json.loads(r.read())["tiles"]]
-        assert keys == ["quakes", "ukquakes"]
+        assert keys == ["quakes"]
         monkeypatch.setattr(quakes, "quakes", quakes.Quakes(get_json=lambda url: (_ for _ in ()).throw(OSError("offline")),
                                                            get_xml=lambda url: (_ for _ in ()).throw(OSError("offline"))))
         with urllib.request.urlopen(base + "/api/quakes", timeout=5) as r:      # no internet: nothing, and no fuss

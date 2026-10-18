@@ -486,14 +486,14 @@ def make_handler(station: Station, output: Mp3Output, speaker=None,
                 self._send(json.dumps({"call": call, "spots": had.get("spots") or [], "t": had.get("t"), "had": bool(had),
                                        "map": spots_mod.MAP.format(call) if call else None}).encode(), "application/json")
             elif path == "/api/quakes":
-                # The Earthquakes window (playback/quakes.py): the world's in the last day (USGS, 4.5 and over, the
-                # biggest first) and the UK's lately (BGS, the latest first), each with "km" from the radio's locator;
+                # The Earthquakes window (playback/quakes.py): the world's in the last 12 hours (USGS, 4.5 and over, the
+                # biggest first) and the UK's (BGS, the latest first), each with "km" from the radio's locator;
                 # "alerts": whether the DJ says a big one (Band conditions' Alerts), and how big that is.
                 from sleepradiopi.playback import conditions as conditions_mod, quakes as quakes_mod
                 had = quakes_mod.quakes.status() or {}
                 far = lambda q: {**q, "km": quakes_mod.km_from_home(q["lat"], q["lon"])}
-                self._send(json.dumps({"world": [far(q) for q in had.get("world") or []], "uk": [far(q) for q in (had.get("uk") or [])[:25]],
-                                       "t": had.get("t"), "had": bool(had), "alerts": conditions_mod.ALERTS,
+                self._send(json.dumps({"world": [far(q) for q in quakes_mod.lately(had, "world")], "uk": [far(q) for q in quakes_mod.lately(had, "uk")],
+                                       "hours": round(quakes_mod.LATELY_S / 3600), "t": had.get("t"), "had": bool(had), "alerts": conditions_mod.ALERTS,
                                        "alert_at": {"world": quakes_mod.WORLD_ALERT, "uk": quakes_mod.UK_ALERT, "near": quakes_mod.UK_NEAR_ALERT, "near_km": quakes_mod.UK_NEAR_KM}}).encode(), "application/json")
             elif path == "/api/rx/survey":
                 # The survey run by the radio (playback/survey.py): how far a round has got; with ?base=, what's been

@@ -1152,7 +1152,6 @@ const OUTSIDE_PIC = {
   aurora: '<path d="M3 20c2-8 4-12 6-12s2 6 4 6 3-8 8-10"/><path d="M3 20h18"/>',
   vhf: '<path d="M4 18 12 6l8 12"/><path d="M7 14h10"/>',
   quakes: '<path d="M2 12h4l2-6 3 12 3-9 2 3h6"/>',
-  ukquakes: '<path d="M2 12h5l2-4 3 8 2-4h8"/>',
   warnings: '<path d="M12 3 2 20h20L12 3z"/><path d="M12 10v4M12 17v.5"/>',
   signal: '<path d="M12 20V11"/><circle cx="12" cy="9" r="1.5"/><path d="M8.5 5.5a5 5 0 0 0 0 7M15.5 5.5a5 5 0 0 1 0 7M5.5 3a9 9 0 0 0 0 12M18.5 3a9 9 0 0 1 0 12"/>',
 };
@@ -1848,7 +1847,7 @@ async function open(id) {
   if (o.kind === "panel" && o.key === "lists") return open(LISTS.id);
 
   if (o.kind === "calendar") return open(BDAYS.id);
-  if (o.kind === "outside") { outsideSaw(); return open(PANEL[{ quakes: "quakes", ukquakes: "quakes", warnings: "warnings", signal: "signal", sun: "sun", aurora: "aurora", vhf: "vhf" }[o.t?.key] || "conditions"].id); }   // (each tile its own window; Bands: Band conditions)
+  if (o.kind === "outside") { outsideSaw(); return open(PANEL[{ quakes: "quakes", warnings: "warnings", signal: "signal", sun: "sun", aurora: "aurora", vhf: "vhf" }[o.t?.key] || "conditions"].id); }   // (each tile its own window; Bands: Band conditions)
   if (o === OUTSIDE) outsideSaw();
   if (o.kind === "list" && !o.key) o.key = "alist";
   const had = W.find(w => w.id === id);
@@ -4836,9 +4835,9 @@ const UI = {
         ` · ${new Date(x.t * 1000).toLocaleString("en-GB", uk ? { weekday: "short", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" } : { hour: "2-digit", minute: "2-digit" })}`
         + (x.km != null ? ` · ${x.km.toLocaleString("en-GB")} km away` : "") + (x.tsunami ? " · tsunami warning" : ""));
       return [
-        grp("In the world, the last day", ...(q.world.length ? q.world.map(x => row(x)) : [help(q.had ? "No earthquake of magnitude 4.5 or more in the last day." : "Not had yet: the radio asks when it has internet.")]),
+        grp(`In the world, the last ${q.hours} hours`, ...(q.world.length ? q.world.map(x => row(x)) : [help(q.had ? `No earthquake of magnitude 4.5 or more in the last ${q.hours} hours.` : "Not had yet: the radio asks when it has internet.")]),
           help("Magnitude 4.5 and over, the biggest first, from the US Geological Survey.")),
-        grp("In the UK, lately", ...(q.uk.length ? q.uk.slice(0, 12).map(x => row(x, true)) : [help(q.had ? "None lately." : "Not had yet.")]),
+        grp(`In the UK, the last ${q.hours} hours`, ...(q.uk.length ? q.uk.map(x => row(x, true)) : [help(q.had ? "None." : "Not had yet.")]),
           help("From the British Geological Survey: mostly small ones, felt by few if any.")),
         grp("Said by the DJ",
           srow("Alerts", sw(q.alerts, v => act(() => api("/api/rx/conditions", { alerts: v })), "Alerts"), help(q.alerts ? "Said in the next gap" : "Off")),

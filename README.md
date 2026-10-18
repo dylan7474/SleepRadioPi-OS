@@ -455,10 +455,11 @@ Actions, Sleep timer and Radio folders open:
   seen; while an alert lasts, a pill in the menu bar says it ("Aurora:
   amber · possible tonight") and opens the folder. Nothing is ever said
   aloud from here: the DJ says it only as set in Band conditions, and
-  only while the DJ is on. **Earthquakes** are two of its tiles: the
-  world's biggest in the last day (the US Geological Survey, 4.5 and
-  over) and the UK's latest (the British Geological Survey), opening a
-  window that lists them with how far each is from you. With Alerts on,
+  only while the DJ is on. **Earthquakes**: one tile, the last 12 hours
+  -- the world's largest (the US Geological Survey, 4.5 and over) on its
+  face, and under it where that was, or a UK one (the British Geological
+  Survey) if there's been one -- opening a window that lists both with
+  how far each is from you. With Alerts on,
   the DJ says a fresh one once: 6.5 or more anywhere, 3 or more in the
   UK, or 2 or more within 100 km. **Warnings**: the Met Office's
   severe weather warnings for your region (worked out from the locator,
