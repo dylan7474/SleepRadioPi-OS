@@ -1499,6 +1499,21 @@ The cards:
   `set:aurora`, `set:vhf` (from `/api/rx/conditions`, which now gives
   `"aurora_means"` too), `set:quakes`, `set:warnings`, `set:signal`;
   Bands opens Band conditions, which shows N0NBH's day and night table.
+  *QRZ logbook* (`playback/qrzlog.py`, `GET /api/qrz`, `POST /api/qrz
+  {"key": "..."}`, `""` to forget; the setting `qrz_key`, in
+  `backup.LOCAL` so never in a backup file, and never in any answer:
+  `"set"` says whether there is one): `qrzlog.Logbook` POSTs STATUS and
+  FETCH (`MODSINCE` a month ago, `TYPE:ADIF`) to `logbook.qrz.com/api`
+  every 30 minutes at most, with the user agent QRZ asks for
+  (`SleepRadio/VERSION (CALLSIGN)`), kept in `qrz.json` (not the key):
+  `"total"`, `"confirmed"`, `"dxcc"` (`pick()`: QRZ's guide doesn't name
+  STATUS's fields, so the likely names; `"status"` keeps all it said),
+  `"recent"` (from the ADIF: `answer()` takes it whole, plain, escaped or
+  URL-encoded; `adif()` reads it by the fields' lengths), `"grew"` (new
+  country counts, said as alerts for six hours). RESULT AUTH or FAIL:
+  `"refused"`, QRZ's REASON (reading a book needs a QRZ Logbook
+  subscription). The tile's there with no key too (`"key?"`), so its
+  window can be found.
   *How the bands are* (`GET /api/rx/conditions?base=`;
   `playback/conditions.py`): `summary()` takes a receiver's survey (its
   FT8 places no more than two hours old) and who the FT8 reader has heard

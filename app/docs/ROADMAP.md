@@ -23,8 +23,9 @@ the image README's [Roadmap](../../README.md#roadmap) (keep the two in step).
   teleprinters' strength as a second yardstick, N0NBH's forecast,
   AuroraWatch UK and alerts. Still to do: where your own receiver's
   reports put you among others', once *Report* is on; more from outside
-  in The world outside (your QRZ logbook; earthquakes, warnings and PSK
-  Reporter spots of your own callsign are done).
+  in The world outside (lightning from an AS3935 sensor, a barometer;
+  earthquakes, warnings, PSK Reporter spots of your own callsign and
+  your QRZ logbook are done).
 - **A laser-cut wood cathedral** — a real-wood version of the cathedral case:
   - the face and fretwork cut from walnut-veneered plywood, the sides and
     back from plywood or MDF;

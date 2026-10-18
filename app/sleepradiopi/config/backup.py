@@ -43,7 +43,7 @@ VERSION = 1
 # This radio's own set-up: never saved to the file or loaded from one.
 LOCAL = {"hardware", "station_name", "music_folder", "jingles_folder", "audiobooks_folder", "voices_folder", "hooks_file", "http_port",
          "speaker_enabled", "speaker_device", "gpio_pin_mapping", "lcd_panel_type",
-         "web_password", "update_source", "stream_source", "rx_reader", "messages_away"}   # (what's on, not a setting)           # (not a Settings field: kept out of the file on purpose)
+         "web_password", "update_source", "stream_source", "rx_reader", "messages_away", "qrz_key"}   # (what's on, not a setting)           # (not a Settings field: kept out of the file on purpose)
 # Applied while the station runs; any other change needs a restart.
 LIVE = {"speaker_mono", "speaker_eq", "speaker_highpass_hz", "broadcast_artist", "birthdays",
         "profiles", "broadcast_profile", "broadcast_chattiness", "broadcast_dj_hooks",

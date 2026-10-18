@@ -939,6 +939,9 @@ def main() -> None:
     warn_mod.REGION = settings.warnings_region if settings.warnings_region in warn_mod.REGIONS else ""
     warn_mod.warnings.keep_in(Path.home() / ".cache" / "sleepradiopi" / "warnings.json")        # the Met Office's and the EA's warnings
     spots_mod.spots.keep_in(Path.home() / ".cache" / "sleepradiopi" / "spots.json")             # who heard my callsign (PSK Reporter)
+    from sleepradiopi.playback import qrzlog as qrz_mod
+    qrz_mod.KEY = settings.qrz_key or ""
+    qrz_mod.logbook.keep_in(Path.home() / ".cache" / "sleepradiopi" / "qrz.json")               # the owner's QRZ logbook (not the key)
     conditions_mod.EVERY_H = settings.conditions_every_h if settings.conditions_every_h in conditions_mod.SAY_HOURS else 0
     conditions_mod.ALERTS = settings.conditions_alerts is True
     serve(station, stream, args.port or settings.http_port, control, args.config, announcer, jobs, updates,

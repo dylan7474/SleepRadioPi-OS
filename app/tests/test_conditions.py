@@ -488,10 +488,10 @@ def test_the_world_outside_as_tiles_and_alerts() -> None:
     fc = conditions.Forecast(get=lambda url: ET.fromstring(HAMQSL)).fetch()
     sun_now = {"flux": 132.0, "k": 1.67, "scales": {"R": {"Scale": "0"}, "G": {"Scale": "0"}}, "says": "Solar flux 132."}
     nothing = conditions.summary({}, [], NOW)
-    assert conditions.outside(nothing, None, None, None, True) == {"tiles": [], "alerts": []}       # no internet, nothing heard: nothing to show
+    assert [t["key"] for t in conditions.outside(nothing, None, None, None, True)["tiles"]] == ["qrz"]   # no internet, nothing heard: only QRZ's, for its key
     d = conditions.outside(nothing, sun_now, fc, {"level": "amber", "says": "AuroraWatch UK: amber."}, True)
     tiles = {t["key"]: t for t in d["tiles"]}
-    assert list(tiles) == ["bands", "sun", "aurora", "vhf"]
+    assert list(tiles) == ["bands", "sun", "aurora", "vhf", "qrz"]
     assert (tiles["bands"]["value"], tiles["bands"]["state"], tiles["bands"]["sub"]) == ("GOOD", "good", "30–15 m today")    # (nothing heard: the forecast)
     assert "N0NBH" in tiles["bands"]["says"]
     assert (tiles["sun"]["value"], tiles["sun"]["state"], tiles["sun"]["sub"]) == ("K 2", "good", "flux 132 · quiet")
@@ -521,7 +521,7 @@ def test_the_world_outside_from_the_web(tmp_path: Path, monkeypatch) -> None:
     try:
         with urllib.request.urlopen(f"http://127.0.0.1:{httpd.server_address[1]}/api/outside", timeout=5) as r:
             d = json.loads(r.read())
-        assert [t["key"] for t in d["tiles"]] == ["bands", "vhf"] and d["alerts"][0]["key"] == "es:6 m"
+        assert [t["key"] for t in d["tiles"]] == ["bands", "vhf", "qrz"] and d["alerts"][0]["key"] == "es:6 m"
     finally:
         httpd.shutdown()
         httpd.server_close()

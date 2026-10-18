@@ -761,7 +761,7 @@ const PANEL = {};
 for (const [key, title, sym, h, page] of PANELS) PANEL[key] = mk({ id: "set:" + key, kind: "panel", key, title, sym, h, page });
 for (const [key, title, sym, h] of [["messages", "Messages", "✎", 55], ["birthdays", "Birthdays", "✿", 340], ["stations", "Stations", "R", 8],
                                     ["tests", "Test sounds", "▶", 150], ["stream", "Listen in a browser", "◠", 200], ["lists", "Themes", "A", 195],
-                                    ["findstation", "Find a station", "R", 8], ["findreceiver", "Find a receiver", "⌁", 200], ["modes", "Where to listen", "⌖", 215], ["conditions", "Band conditions", "☼", 45], ["quakes", "Earthquakes", "≋", 20], ["sun", "The sun", "☀", 45], ["aurora", "Aurora", "◠", 130], ["vhf", "VHF openings", "⌃", 200], ["warnings", "Warnings", "⚠", 35], ["signal", "My signal", "⌇", 210], ["findroom", "Find a room", "☊", 265], ["findpodcast", "Follow a podcast", "P", 275], ["newlist", "New theme", "A", 195]])
+                                    ["findstation", "Find a station", "R", 8], ["findreceiver", "Find a receiver", "⌁", 200], ["modes", "Where to listen", "⌖", 215], ["conditions", "Band conditions", "☼", 45], ["quakes", "Earthquakes", "≋", 20], ["sun", "The sun", "☀", 45], ["aurora", "Aurora", "◠", 130], ["vhf", "VHF openings", "⌃", 200], ["warnings", "Warnings", "⚠", 35], ["signal", "My signal", "⌇", 210], ["qrz", "QRZ logbook", "Q", 225], ["findroom", "Find a room", "☊", 265], ["findpodcast", "Follow a podcast", "P", 275], ["newlist", "New theme", "A", 195]])
   PANEL[key] = mk({ id: "set:" + key, kind: "panel", key, title, sym, h, page: key });
 const DJ = mk({ id: "dj", kind: "dj", title: "The DJ" });
 const NOTES = mk({ id: "notes", kind: "folder", box: "messages", title: "Messages", kids: [], sym: "✎" });   // a folder of sticky notes
@@ -1153,6 +1153,7 @@ const OUTSIDE_PIC = {
   vhf: '<path d="M4 18 12 6l8 12"/><path d="M7 14h10"/>',
   quakes: '<path d="M2 12h4l2-6 3 12 3-9 2 3h6"/>',
   warnings: '<path d="M12 3 2 20h20L12 3z"/><path d="M12 10v4M12 17v.5"/>',
+  qrz: '<rect x="4" y="3" width="16" height="18" rx="2"/><path d="M8 8h8M8 12h8M8 16h5"/>',
   signal: '<path d="M12 20V11"/><circle cx="12" cy="9" r="1.5"/><path d="M8.5 5.5a5 5 0 0 0 0 7M15.5 5.5a5 5 0 0 1 0 7M5.5 3a9 9 0 0 0 0 12M18.5 3a9 9 0 0 1 0 12"/>',
 };
 const svgPic = d => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${d}</svg>`;
@@ -1847,7 +1848,7 @@ async function open(id) {
   if (o.kind === "panel" && o.key === "lists") return open(LISTS.id);
 
   if (o.kind === "calendar") return open(BDAYS.id);
-  if (o.kind === "outside") { outsideSaw(); return open(PANEL[{ quakes: "quakes", warnings: "warnings", signal: "signal", sun: "sun", aurora: "aurora", vhf: "vhf" }[o.t?.key] || "conditions"].id); }   // (each tile its own window; Bands: Band conditions)
+  if (o.kind === "outside") { outsideSaw(); return open(PANEL[{ quakes: "quakes", warnings: "warnings", signal: "signal", qrz: "qrz", sun: "sun", aurora: "aurora", vhf: "vhf" }[o.t?.key] || "conditions"].id); }   // (each tile its own window; Bands: Band conditions)
   if (o === OUTSIDE) outsideSaw();
   if (o.kind === "list" && !o.key) o.key = "alist";
   const had = W.find(w => w.id === id);
@@ -4927,6 +4928,37 @@ const UI = {
         grp("Said by the DJ",
           srow("Alerts", sw(w.alerts, v => act(() => api("/api/rx/conditions", { alerts: v })), "Alerts"), help(w.alerts ? "Said in the next gap" : "Off")),
           help("An amber or red weather warning, or a flood warning or severe flood warning, once when it's issued (and again if it's raised), in the next gap between songs, with the DJ on, not in the quiet hours. The same switch as Band conditions' alerts."))];
+    },
+  },
+  // QRZ logbook (a tile in The world outside): the book's figures and latest QSOs, and its access key -- typed in
+  // here, kept by the radio, never shown again (QRZ: Logbook, Settings, the API key).
+  qrz: {
+    load: () => api("/api/qrz"),
+    build: (q, act) => {
+      const key = el("input", { type: "password", id: "qrz-key", autocomplete: "off", spellcheck: false, placeholder: q.set ? "A key is set: type a new one to change it" : "The logbook's API access key" });
+      key.setAttribute("aria-label", "QRZ logbook access key");
+      const save = () => key.value.trim() && act(async () => { const r = await api("/api/qrz", { key: key.value.trim() }); key.value = "";
+        toast(r.refused ? `QRZ said no: ${r.refused}` : r.had ? "Kept. QRZ answered: the logbook's in The world outside." : "Kept.");
+        setTimeout(() => fitWin(PANEL.qrz.id), 300); });                  // (it grows once the book's in it)
+      key.onkeydown = e => { if (e.key === "Enter") save(); };
+      const t = x => x.t ? new Date(x.t * 1000).toLocaleString("en-GB", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }) : "";
+      const SHOWN = new Set(["RESULT", "KEY"]);
+      return [
+        q.had ? grp("The logbook",
+          q.total != null ? outKv("QSOs", q.total.toLocaleString("en-GB"), "") : null,
+          q.confirmed != null ? outKv("Confirmed", q.confirmed.toLocaleString("en-GB"), "") : null,
+          q.dxcc != null ? outKv("Countries", q.dxcc, "DXCC entities worked") : null,
+          help(`From QRZ, ${condAge(q.t)}. With Alerts on (Band conditions), the DJ says it when a new country goes in.`)) : null,
+        q.recent.length ? grp("The latest", ...q.recent.map(x => el("p", { className: "note", style: "margin:3px 0" },
+          el("a", { href: `https://www.qrz.com/db/${encodeURIComponent(x.call)}`, target: "_blank", rel: "noopener", textContent: x.call }),
+          ` · ${[x.country, x.km != null ? `${x.km.toLocaleString("en-GB")} km` : x.grid, x.band, x.mode, t(x)].filter(Boolean).join(" · ")}`))) : null,
+        q.had && Object.keys(q.status).length ? grp("Everything QRZ says about the book", ...Object.entries(q.status).filter(([k]) => !SHOWN.has(k))
+          .map(([k, v]) => outKv(k.replace(/_/g, " ").toLowerCase().replace(/^./, m => m.toUpperCase()), v || "–", ""))) : null,
+        grp("The key", srow("Access key", key, sbtn(q.set ? "Change" : "Keep it", save, "primary")),
+          q.refused ? el("p", { className: "note", style: "color:var(--red)", textContent: `QRZ said no: ${q.refused}. Reading a logbook needs a QRZ Logbook subscription, and the key from that logbook's settings.` }) : null,
+          q.set ? line(sbtn("Forget the key", () => act(() => api("/api/qrz", { key: "" })))) : null,
+          help("On QRZ: your Logbook, Settings, the API access key. The radio keeps it in its own settings: it isn't shown here again, isn't in a backup file, and goes nowhere but QRZ. It asks every half an hour at most.")),
+        line(el("a", { href: "https://logbook.qrz.com/", target: "_blank", rel: "noopener", textContent: "Your logbook on QRZ" }))];
     },
   },
   // My signal (a tile in The world outside): who heard the owner's callsign in the last day, from PSK Reporter.

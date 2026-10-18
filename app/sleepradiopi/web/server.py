@@ -464,10 +464,14 @@ def make_handler(station: Station, output: Mp3Output, speaker=None,
                 from sleepradiopi.audio import ft8 as ft8_mod
                 from sleepradiopi.playback import conditions as conditions_mod, survey as survey_mod
                 out = conditions_mod.summary(conditions_mod.freshest(survey_mod.job)[1], ft8_mod.reader.heard()["heard"], time.time())
-                from sleepradiopi.playback import quakes as quakes_mod, spots as spots_mod, ukwarnings as warn_mod
+                from sleepradiopi.playback import qrzlog as qrz_mod, quakes as quakes_mod, spots as spots_mod, ukwarnings as warn_mod
                 self._send(json.dumps(conditions_mod.outside(out, conditions_mod.sun.status(), conditions_mod.forecast.status(), conditions_mod.aurora.status(),
                                                              conditions_mod.daytime(time.time(), ft8_mod.HOME), quakes_mod.quakes.status(),
-                                                             warn_mod.warnings.status(), spots_mod.spots.status())).encode(), "application/json")
+                                                             warn_mod.warnings.status(), spots_mod.spots.status(), qrz_mod.logbook.status())).encode(), "application/json")
+            elif path == "/api/qrz":
+                # The QRZ logbook window (playback/qrzlog.py): whether a key is set (never the key), the book's figures,
+                # everything its STATUS said, the latest QSOs, and QRZ's reason if it said no.
+                self._send(json.dumps(self._qrz()).encode(), "application/json")
             elif path == "/api/warnings":
                 # The Warnings window (playback/ukwarnings.py): the Met Office's for the region ("region": which one, chosen
                 # or nearest the locator; "chosen": "" for nearest), the Environment Agency's floods near here.
@@ -870,6 +874,24 @@ def make_handler(station: Station, output: Mp3Output, speaker=None,
                     if config_file is not None:
                         save_setting(config_file, "conditions_alerts", alerts)
                 self._send(json.dumps({"say_every_h": conditions_mod.EVERY_H, "alerts": conditions_mod.ALERTS}).encode(), "application/json")
+            elif path == "/api/qrz":
+                # {"key": "..."}: the QRZ logbook's access key, kept (never sent back); "" forgets it and what was had.
+                # QRZ is asked at once with a new one.
+                from sleepradiopi.playback import qrzlog as qrz_mod
+                try:
+                    key = self._body().get("key")
+                    if not isinstance(key, str) or len(key) > 64 or any(c.isspace() for c in key.strip()):
+                        raise ValueError
+                except (ValueError, TypeError, AttributeError):
+                    self._error('send {"key": "your QRZ logbook access key"} (or "" to forget it)')
+                    return
+                qrz_mod.KEY = key.strip()
+                if config_file is not None:
+                    save_setting(config_file, "qrz_key", qrz_mod.KEY)
+                qrz_mod.logbook.forget()
+                if qrz_mod.KEY:
+                    qrz_mod.logbook.fetch()
+                self._send(json.dumps(self._qrz()).encode(), "application/json")
             elif path == "/api/warnings":
                 # {"region": "ne" | ...}: the Met Office region for weather warnings, or "" for the one nearest the
                 # locator. Kept; what was had is fetched again at once.
@@ -1513,6 +1535,13 @@ def make_handler(station: Station, output: Mp3Output, speaker=None,
                     log.exception("message preview failed")
             threading.Thread(target=run, name="message-preview", daemon=True).start()
             self._send(json.dumps({"ok": True, "text": words}).encode(), "application/json")
+
+        def _qrz(self) -> dict:
+            """The QRZ logbook window's figures (never the key itself)."""
+            from sleepradiopi.playback import qrzlog as qrz_mod
+            had = qrz_mod.logbook.status() or {}
+            return {"set": bool(qrz_mod.KEY), "had": bool(had), "refused": qrz_mod.logbook.refused, "t": had.get("t"),
+                    **{k: had.get(k) for k in ("total", "confirmed", "dxcc")}, "status": had.get("status") or {}, "recent": had.get("recent") or []}
 
         def _one_reader(self, on: str | None, keep: bool = False) -> dict:
             """The readers for receivers, one at a time: each mode has its own place on a band, so with one switched

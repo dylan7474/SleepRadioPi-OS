@@ -470,7 +470,13 @@ Actions, Sleep timer and Radio folders open:
   and a list with distances, bands and reports. Every tile opens a window
   of its own: the sun's figures explained, the aurora's colours, which
   VHF bands are open; Band conditions has N0NBH's day and night table.
-  More tiles join it as more comes in (your logbook).
+  **QRZ logbook**: type your logbook's API access key into its window
+  (it's kept by the radio, never shown again, never in a backup file,
+  sent only to QRZ) and the tile shows your QSO total, countries and
+  latest contact; the window the figures and your recent QSOs. With
+  Alerts on, the DJ says it when a new country goes in. Reading a
+  logbook needs a QRZ Logbook subscription: without one, the window
+  says what QRZ said.
 - **Receivers with names.** *Name…* in a receiver's window calls it what
   you like -- "Short wave", "VHF" -- in Receivers, on its window and
   wherever it's mentioned: two dongles on one computer are otherwise told
@@ -1128,8 +1134,9 @@ What's left to do (everything else described here is built and running):
   teleprinters' strength as a second yardstick, N0NBH's forecast,
   AuroraWatch UK and alerts. Still to do: where your own receiver's
   reports put you among others', once *Report* is on; more from outside
-  in The world outside (your QRZ logbook; earthquakes, warnings and PSK
-  Reporter spots of your own callsign are done).
+  in The world outside (lightning from an AS3935 sensor, a barometer;
+  earthquakes, warnings, PSK Reporter spots of your own callsign and
+  your QRZ logbook are done).
 - **A laser-cut wood cathedral** — a real-wood version of the cathedral case:
   - the face and fretwork cut from walnut-veneered plywood, the sides and
     back from plywood or MDF;

@@ -127,7 +127,7 @@ def test_in_the_world_outside_and_said_once(monkeypatch) -> None:
     monkeypatch.setattr(quakes, "quakes", Fake())
     monkeypatch.setattr(quakes.time, "time", lambda: NOW)
     d = conditions.outside(conditions.summary({}, [], NOW), None, None, None, True, had)
-    assert [t["key"] for t in d["tiles"]] == ["quakes"] and d["tiles"][0]["alert"] and d["alerts"][0]["tile"] == "quakes"
+    assert [t["key"] for t in d["tiles"]] == ["quakes", "qrz"] and d["tiles"][0]["alert"] and d["alerts"][0]["tile"] == "quakes"
     monkeypatch.setattr(conditions, "ALERTS", True)
     at = datetime.fromtimestamp(NOW)
     assert conditions.alert_due(at, True, False, NOW).startswith("An earthquake: magnitude 6.8")
@@ -151,7 +151,7 @@ def test_the_earthquakes_window_from_the_web(tmp_path: Path, monkeypatch) -> Non
         assert d["alert_at"] == {"world": 6.5, "uk": 3.0, "near": 2.0, "near_km": 100}
         with urllib.request.urlopen(base + "/api/outside", timeout=5) as r:
             keys = [t["key"] for t in json.loads(r.read())["tiles"]]
-        assert keys == ["quakes"]
+        assert keys == ["quakes", "qrz"]                              # (the QRZ tile is always there: where its key goes in)
         monkeypatch.setattr(quakes, "quakes", quakes.Quakes(get_json=lambda url: (_ for _ in ()).throw(OSError("offline")),
                                                            get_xml=lambda url: (_ for _ in ()).throw(OSError("offline"))))
         with urllib.request.urlopen(base + "/api/quakes", timeout=5) as r:      # no internet: nothing, and no fuss
