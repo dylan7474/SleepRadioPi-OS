@@ -476,3 +476,47 @@ def test_an_alert_comes_before_the_bands_in_a_gap(tmp_path: Path, monkeypatch) -
     assert st._bands_due(noon) == "Sporadic E has opened on 6 metres across Europe."
     monkeypatch.setattr(conditions, "alert_due", lambda at, clock_ok, quiet: None)
     assert st._bands_due(noon) == "The short wave bands."
+
+
+def test_the_world_outside_as_tiles_and_alerts() -> None:
+    import xml.etree.ElementTree as ET
+    fc = conditions.Forecast(get=lambda url: ET.fromstring(HAMQSL)).fetch()
+    sun_now = {"flux": 132.0, "k": 1.67, "scales": {"R": {"Scale": "0"}, "G": {"Scale": "0"}}, "says": "Solar flux 132."}
+    nothing = conditions.summary({}, [], NOW)
+    assert conditions.outside(nothing, None, None, None, True) == {"tiles": [], "alerts": []}       # no internet, nothing heard: nothing to show
+    d = conditions.outside(nothing, sun_now, fc, {"level": "amber", "says": "AuroraWatch UK: amber."}, True)
+    tiles = {t["key"]: t for t in d["tiles"]}
+    assert list(tiles) == ["bands", "sun", "aurora", "vhf"]
+    assert (tiles["bands"]["value"], tiles["bands"]["state"], tiles["bands"]["sub"]) == ("GOOD", "good", "30–15 m today")    # (nothing heard: the forecast)
+    assert "N0NBH" in tiles["bands"]["says"]
+    assert (tiles["sun"]["value"], tiles["sun"]["state"], tiles["sun"]["sub"]) == ("K 2", "good", "flux 132 · quiet")
+    assert (tiles["aurora"]["value"], tiles["aurora"]["state"], tiles["aurora"]["alert"]) == ("AMBER", "alert", True)
+    assert (tiles["vhf"]["value"], tiles["vhf"]["state"], tiles["vhf"]["alert"]) == ("6 m Es", "alert", True)
+    assert [(a["key"], a["tile"], a["short"]) for a in d["alerts"]] == [("aurora", "aurora", "Aurora: amber · possible tonight"), ("es:6 m", "vhf", "Sporadic E open on 6 m")]
+    heard = conditions.outside(conditions.summary(_found(), [], NOW), {**sun_now, "k": 5.0}, None, {"level": "yellow"}, False)
+    tiles = {t["key"]: t for t in heard["tiles"]}
+    assert (tiles["bands"]["value"], tiles["bands"]["sub"]) == ("20 m", "good · heard here")                # heard for itself: that
+    assert (tiles["sun"]["state"], tiles["sun"]["sub"]) == ("poor", "flux 132 · storm") and tiles["aurora"]["state"] == "fair"
+    assert "vhf" not in tiles and heard["alerts"] == []                                                     # (no forecast: no VHF tile)
+    storm = conditions.outside(nothing, {**sun_now, "scales": {"G": {"Scale": "3"}}}, None, None, True)
+    assert storm["alerts"][0]["short"] == "Geomagnetic storm G3" and storm["tiles"][0]["state"] == "alert"
+
+
+def test_the_world_outside_from_the_web(tmp_path: Path, monkeypatch) -> None:
+    import xml.etree.ElementTree as ET
+    conf = tmp_path / "config.json"
+    conf.write_text("{}")
+    httpd = ThreadingHTTPServer(("127.0.0.1", 0), make_handler(None, None, None, conf))
+    threading.Thread(target=httpd.serve_forever, daemon=True).start()
+    monkeypatch.setattr(survey, "job", survey.Job())
+    monkeypatch.setattr(conditions, "sun", conditions.Sun(get=_offline))
+    fc = conditions.Forecast(get=lambda url: ET.fromstring(HAMQSL))
+    fc.fetch()
+    monkeypatch.setattr(conditions, "forecast", fc)
+    try:
+        with urllib.request.urlopen(f"http://127.0.0.1:{httpd.server_address[1]}/api/outside", timeout=5) as r:
+            d = json.loads(r.read())
+        assert [t["key"] for t in d["tiles"]] == ["bands", "vhf"] and d["alerts"][0]["key"] == "es:6 m"
+    finally:
+        httpd.shutdown()
+        httpd.server_close()

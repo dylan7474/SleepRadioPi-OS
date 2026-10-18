@@ -628,20 +628,21 @@ def say_due(at, clock_ok: bool, quiet: bool, job, heard: list[dict]) -> str | No
 _alerted: dict[str, tuple[int, float]] = {}       # what's been alerted: {"aurora": (its level, when said), "es:6 m": ...}
 
 
-def alerts_now(sun_now: dict | None, fc: dict | None, aurora_now: dict | None) -> list[tuple[str, int, str]]:
-    """What's worth an alert as things are: [(what, how high, the words)], highest first within each kind."""
+def alerts_now(sun_now: dict | None, fc: dict | None, aurora_now: dict | None) -> list[tuple[str, int, str, str]]:
+    """What's worth an alert as things are: [(what, how high, the words, a few of them for the page)]."""
     out = []
     if aurora_now and aurora_now.get("level") in ("amber", "red"):
         level = aurora_now["level"]
         out.append(("aurora", AURORA_LEVELS.index(level),
-                    f"AuroraWatch UK has gone to {level}: {AURORA_MEANS[level]}."))
+                    f"AuroraWatch UK has gone to {level}: {AURORA_MEANS[level]}.",
+                    f"Aurora: {level} · {'possible' if level == 'amber' else 'likely'} tonight"))
     for kind, band in openings(fc):
         if kind == "es":
-            out.append((f"es:{band}", 1, f"Sporadic E has opened on {band.replace(' m', ' metres')} across Europe."))
-    for letter, what in (("R", "a strong radio blackout on the sunlit side"), ("G", "a strong geomagnetic storm")):
+            out.append((f"es:{band}", 1, f"Sporadic E has opened on {band.replace(' m', ' metres')} across Europe.", f"Sporadic E open on {band}"))
+    for letter, what, short in (("R", "a strong radio blackout on the sunlit side", "Radio blackout"), ("G", "a strong geomagnetic storm", "Geomagnetic storm")):
         level = str((((sun_now or {}).get("scales") or {}).get(letter) or {}).get("Scale") or "0")
         if level.isdigit() and int(level) >= 3:
-            out.append((f"noaa:{letter}", int(level), f"NOAA reports {what}: {letter}{level}."))
+            out.append((f"noaa:{letter}", int(level), f"NOAA reports {what}: {letter}{level}.", f"{short} {letter}{level}"))
     return out
 
 
@@ -653,15 +654,68 @@ def alert_due(at, clock_ok: bool, quiet: bool, now: float | None = None) -> str 
         return None
     now = time.time() if now is None else now
     found = alerts_now(sun.status(), forecast.status(), aurora.status())
-    live = {what for what, _, _ in found}
+    live = {what for what, *_ in found}
     for what in [w for w in _alerted if w not in live and now - _alerted[w][1] > ALERT_AGAIN_S]:
         del _alerted[what]
     if not clock_ok or quiet:
         return None
     said = []
-    for what, level, words in found:
+    for what, level, words, _ in found:
         before = _alerted.get(what)
         if before is None or level > before[0]:
             _alerted[what] = (level, now)
             said.append(words)
     return " ".join(said) or None
+
+
+# Which tile an alert belongs to (the desktop's "The world outside": outside())
+ALERT_TILE = {"aurora": "aurora", "es": "vhf", "noaa": "sun"}
+
+
+def outside(s: dict, sun_now: dict | None, fc: dict | None, aurora_now: dict | None, day: bool) -> dict:
+    """The desktop's "The world outside" folder: a tile for each thing known, and the alerts there are now ->
+    {"tiles": [{"key", "title", "value" (a few letters, on the tile), "state" ("good" | "fair" | "poor" |
+    "alert" | "quiet"), "sub", "says", "alert"}], "alerts": [{"key", "tile", "short", "says"}]}. A tile is
+    left out when there's nothing to go by (no internet and nothing heard)."""
+    alerts = [{"key": what, "tile": ALERT_TILE[what.partition(":")[0]], "short": short, "says": words}
+              for what, _, words, short in alerts_now(sun_now, fc, aurora_now)]
+    alerted = {a["tile"] for a in alerts}
+    tiles = []
+    live = sorted((b for b in s["bands"] if b["n"]), key=lambda b: (-b["n"], -(b.get("km") or 0)))
+    if live:
+        best = live[0]
+        tiles.append({"key": "bands", "title": "Bands", "value": best["band"], "state": {"good": "good", "fair": "fair"}.get(best["state"], "poor"),
+                      "sub": f"{best['state']} · heard here", "says": s["says"]})
+    elif s["bands"]:
+        tiles.append({"key": "bands", "title": "Bands", "value": "quiet", "state": "quiet", "sub": "nothing heard", "says": s["says"]})
+    elif fc:
+        when = "day" if day else "night"
+        by = {}
+        for g in HF_GROUPS:
+            by.setdefault(((fc.get("bands") or {}).get(g) or {}).get(when, "").lower(), []).append(g)
+        state = next((st for st in ("good", "fair", "poor") if by.get(st)), None)
+        if state:
+            tiles.append({"key": "bands", "title": "Bands", "value": state.upper(), "state": state,
+                          "sub": f"{by[state][0].split('m-')[0]}–{by[state][-1].split('m-')[1].rstrip('m')} m {'today' if day else 'tonight'}",
+                          "says": forecast_says(fc, day) + " (N0NBH's forecast: nothing heard here lately.)"})
+    if sun_now:
+        k, flux = sun_now.get("k"), sun_now.get("flux")
+        tiles.append({"key": "sun", "title": "The sun", "value": f"K {round(k)}" if k is not None else f"{round(flux)}",
+                      "state": "alert" if "sun" in alerted else "poor" if (k or 0) >= 5 else "fair" if (k or 0) >= 4 else "good",
+                      "sub": " · ".join(x for x in (f"flux {round(flux)}" if flux is not None else "",
+                                                    "storm" if (k or 0) >= 5 else "unsettled" if (k or 0) >= 4 else "quiet" if k is not None else "") if x),
+                      "says": sun_now.get("says", "")})
+    if aurora_now:
+        level = aurora_now["level"]
+        tiles.append({"key": "aurora", "title": "Aurora", "value": level.upper(),
+                      "state": "alert" if "aurora" in alerted else {"green": "good", "yellow": "fair"}.get(level, "poor"),
+                      "sub": "AuroraWatch UK", "says": aurora_now.get("says", "")})
+    if fc:
+        es = [band for kind, band in openings(fc) if kind == "es"]
+        tiles.append({"key": "vhf", "title": "VHF openings", "value": f"{es[0]} Es" if es else "closed",
+                      "state": "alert" if "vhf" in alerted else "quiet",
+                      "sub": f"sporadic E · {_and(es)}" if es else "nothing open",
+                      "says": f"Sporadic E open on {_and(es)} across Europe (N0NBH)." if es else "No sporadic E or VHF aurora forecast (N0NBH)."})
+    for t in tiles:
+        t["alert"] = t["key"] in alerted
+    return {"tiles": tiles, "alerts": alerts}

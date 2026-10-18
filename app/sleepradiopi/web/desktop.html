@@ -110,6 +110,21 @@
 
   /* glyphs, one look per kind of thing */
   .glyph { width: 60px; height: 60px; position: relative; flex: none; }
+  /* The world outside: a tile per thing known from outside, its live value in the amber window (as a station's name) */
+  .g-live::after { display: none; }
+  .g-live svg { position: absolute; left: 10px; bottom: 6px; width: 40px; height: 30px; color: var(--dim); opacity: .8; }
+  .g-live.fair::before, .g-live.alert::before { background: linear-gradient(180deg, #ffb347, #e07b00); color: #3a1d00; }
+  .g-live.good::before { background: linear-gradient(180deg, #8fd18f, #2a9d3a); color: #0e3311; }
+  .g-live.poor::before { background: linear-gradient(180deg, #ff8a80, #d0312d); color: #fff; }
+  .g-live.quiet::before { background: linear-gradient(180deg, #d8d2c2, #a9a290); color: #3d382c; }
+  .icon .wbadge { position: absolute; top: 2px; right: 16px; min-width: 20px; height: 20px; padding: 0 5px; border-radius: 10px; background: var(--red);
+                  color: #fff; font: 700 11px/20px var(--display); text-align: center; box-shadow: 0 2px 5px #0006; z-index: 3; pointer-events: none; }
+  .menubar .opill { display: inline-flex; align-items: center; gap: 8px; padding: 2px 12px; border-radius: 12px; background: var(--win); border: 1px solid var(--amber);
+                    font: 600 11.5px var(--display); color: var(--ink); cursor: pointer; max-width: 330px; overflow: hidden; text-overflow: ellipsis; transition: opacity .4s; flex-shrink: 1; }
+  .menubar .opill[hidden] { display: none; }
+  .menubar .opill i { width: 8px; height: 8px; border-radius: 50%; background: #e07b00; box-shadow: 0 0 6px #e07b00; flex: none; }
+  .menubar .opill small { color: var(--dim); font-weight: 500; }
+  .menubar .opill span { overflow: hidden; text-overflow: ellipsis; }
   .g-folder { background: linear-gradient(180deg, #f5c46b, #d99a35); border-radius: 4px 8px 8px 8px; margin-top: 6px; height: 50px;
               box-shadow: 0 3px 8px #0008, inset 0 1px 0 #ffe2a4; display: grid; place-items: center; color: #6b4410; font: 700 20px var(--display); }
   .g-folder::before { content: ""; position: absolute; left: 0; top: -7px; width: 26px; height: 9px; background: #e8ad4c; border-radius: 4px 4px 0 0; }
@@ -571,7 +586,7 @@
 
   /* narrow screens: icons flow, windows open full-size one at a time */
   @media (max-width: 720px) {
-    .menubar .m, .proto { display: none; }
+    .menubar .m, .proto, .menubar .opill { display: none; }
     .desktop { overflow-y: auto; }
     .desktop > .icon { position: relative; left: auto !important; top: auto !important; display: inline-flex; }
     .radio { position: relative; left: auto !important; top: auto !important; margin: 20px auto; display: block; }
@@ -626,6 +641,7 @@
   <a class="m classic" href="/?remote" id="classic" title="The phone remote (big keys), here">Phone remote</a>
   <span class="grow"></span>
   <button class="m" type="button" id="nextLine" title="The schedule" style="color:var(--ink);font-weight:600"></button>
+  <button class="opill" type="button" id="outsidePill" hidden title="From The world outside: click to open it"></button>
   <button class="hear" type="button" id="hearHere" title="Hear the radio in this browser instead: its own speaker goes quiet until you press this again">Listen here</button>
   <select class="themebtn" id="theme" title="Light or dark: or dark at night (the Night from / Day from times) and while the radio uses its Night buttons"><option value="radio">Follow the radio</option><option value="light">Light</option><option value="dark">Dark</option></select>
   <button class="wifi" type="button" id="wifiMenu" title="Wi-Fi"><span class="bars"><i class="on" style="height:4px"></i><i class="on" style="height:7px"></i><i class="on" style="height:10px"></i><i class="on" style="height:12px"></i></span><span>Wi-Fi</span></button>
@@ -756,6 +772,13 @@ const VOICES = mk({ id: "box:voices", kind: "folder", box: "voices", title: "Voi
 const ACTION_KIDS = ["box:sleep", "box:noise"];
 const RADIO_KIDS = ["box:buttons", "slot:knob_long", "slot:power_on", "box:sounds", "box:voices", "box:wifi", "box:backups"];
 const RADIO_BOX = mk({ id: "box:radio", kind: "folder", title: "Radio", box: "radio", kids: RADIO_KIDS, sym: "R", loaded: true });
+// The world outside: a tile for each thing the radio knows from outside (the bands, the sun, the aurora, VHF openings),
+// its live value on its face; and, while there's an alert, a pill in the menu bar (/api/outside, every two minutes).
+// The folder's badge counts alerts not seen yet (opening it sees them); a tile's "!" stays while its alert lasts.
+const OUTSIDE = mk({ id: "box:outside", kind: "folder", title: "The world outside", box: "outside", kids: [], sym: "◍" });
+let OUTSIDE_NOW = { tiles: [], alerts: [] }, outsideSeen = {};
+try { outsideSeen = JSON.parse(localStorage.getItem("srd.outsideSeen")) || {}; } catch {}
+const outsideNew = () => OUTSIDE_NOW.alerts.filter(a => !outsideSeen[a.key]);
 const parentOf = id => Object.values(O).find(o => o.kids && o.kids.includes(id));
 
 // ---- loading from the radio ----
@@ -897,6 +920,8 @@ async function loadFolder(f) {
                                                   kids: O["jf:" + pre + x.name]?.kids || [], sym: "J", alt: true }).id),
               ...d.files.filter(x => x.audio).map(x => mk({ id: "j:" + pre + x.name, kind: "jingle", title: cleanName(x.name), root: "jingles",
                                                             path: pre + x.name, mb: x.size / 1e6, bytes: x.size }).id)];
+  } else if (f.box === "outside") {
+    gotOutside(await api("/api/outside"));
   } else if (f.box === "lists") {
     const d = await api("/api/artists");
     const themes = d.profiles.map(p => mk({ id: "ls:" + p.name, kind: "list", name: p.name, title: p.name, count: p.artists.length, all: !!p.all }).id);
@@ -1089,7 +1114,7 @@ function lenIn(props, lo = 1, hi = 1440) {
   return box;
 }
 const KIND = { rx: "Receiver", folder: "Folder", album: "Album", track: "Track", station: "Station", podcast: "Podcast", episode: "Episode", book: "Audiobook",
-               playlist: "Playlist", programme: "Programme", button: "Button", noise: "Noise", backup: "Saved settings", eqset: "Speaker sound", wifi: "Wi-Fi network", list: "Theme", jingle: "Jingle", message: "Message", action: "Action", person: "Birthday", voice: "Voice", show: "The show", trash: "Trash", panel: "Setting", dj: "The DJ", note: "Messages", calendar: "Birthdays", artistref: "Artist" };
+               playlist: "Playlist", programme: "Programme", button: "Button", noise: "Noise", backup: "Saved settings", eqset: "Speaker sound", wifi: "Wi-Fi network", list: "Theme", jingle: "Jingle", message: "Message", action: "Action", person: "Birthday", voice: "Voice", show: "The show", trash: "Trash", panel: "Setting", dj: "The DJ", note: "Messages", calendar: "Birthdays", artistref: "Artist", outside: "From outside" };
 const TINT = { album: 30, track: 45, station: 8, podcast: 275, episode: 265, book: 150, playlist: 215, programme: 40, list: 195, show: 40, folder: 40 };
 function wave(seed) {
   let x = hue(seed), bars = "";
@@ -1119,6 +1144,13 @@ const FOLDER_PIC = {
   buttons: '<circle cx="7" cy="8" r="2.6"/><circle cx="17" cy="8" r="2.6"/><circle cx="7" cy="16.5" r="2.6"/><circle cx="17" cy="16.5" r="2.6"/>',
   jingles: '<path d="M6 16.5V11a6 6 0 0 1 12 0v5.5l1.5 1.5h-15z"/><path d="M10 20.5a2 2 0 0 0 4 0"/>',
   voices: '<path d="M4 5.5h16v10H10l-4.5 4v-4H4z"/><path d="M8 9.5h8M8 12h5"/>',
+  outside: '<circle cx="12" cy="12" r="8.5"/><path d="M3.5 12h17M12 3.5c3 2.6 3 14.4 0 17M12 3.5c-3 2.6-3 14.4 0 17"/>',
+};
+const OUTSIDE_PIC = {
+  bands: '<path d="M2 18c3-9 5-9 7 0s4 9 6 0 4-9 7 0"/>',
+  sun: '<circle cx="12" cy="12" r="4"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M5 5l2 2M17 17l2 2M5 19l2-2M17 7l2-2"/>',
+  aurora: '<path d="M3 20c2-8 4-12 6-12s2 6 4 6 3-8 8-10"/><path d="M3 20h18"/>',
+  vhf: '<path d="M4 18 12 6l8 12"/><path d="M7 14h10"/>',
 };
 const svgPic = d => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${d}</svg>`;
 function glyph(o) {
@@ -1165,6 +1197,7 @@ function glyph(o) {
     case "voice": g.className += " g-dj"; if (!o.current) g.style.filter = "saturate(.35)"; break;
     case "calendar": { g.className += " g-cal"; const d = new Date(); g.dataset.mon = d.toLocaleDateString("en-GB", { month: "short" }).toUpperCase(); g.dataset.day = d.getDate(); break; }
     case "dj": g.className += " g-dj"; break;
+    case "outside": { const t = o.t || {}; g.className += ` g-station g-live ${t.state || "quiet"}`; g.dataset.short = t.value || "…"; g.innerHTML = svgPic(OUTSIDE_PIC[t.key] || FOLDER_PIC.outside); break; }
   }
   return g;
 }
@@ -1207,6 +1240,7 @@ function subOf(o) {
     case "voice": return o.current ? "The DJ's voice now" : "Installed";
     case "action": return o.sleep ? (sleepOn(o) ? `On · ${sleepLeft()} min left` : "") : ACTION_SUB[o.action] || "";
     case "show": return S && S.dj_on === false ? "music only, no DJ" : "with the DJ";
+    case "outside": return o.t?.sub || "";
   }
   return "";
 }
@@ -1240,6 +1274,9 @@ function iconEl(o, ctx) {
   d.append(glyph(o), el("div", { className: "lbl", textContent: o.title }));
   if (sub) d.append(el("div", { className: "sub", textContent: sub }));
   d.title = `${KIND[o.kind]}: ${o.title}${sub ? " · " + sub : ""}` + (o.kind === "show" ? " · double-click to play, like starting an app" : "");
+  if (o.kind === "outside") d.title = `${o.title}: ${o.t?.says || ""}`;
+  const badge = o === OUTSIDE ? outsideNew().length : o.kind === "outside" && OUTSIDE_NOW.alerts.some(a => a.tile === o.t?.key) ? "!" : 0;   // (the folder: alerts not seen yet; a tile: its alert, while it lasts)
+  if (badge) d.append(el("span", { className: "wbadge", textContent: badge }));
   d._src = { id: o.id, ...ctx };
   d.addEventListener("pointerdown", e => press(e, d, { id: o.id, ...ctx }));
   d.addEventListener("keydown", e => { if (e.key === "Enter") open(o.id); });
@@ -1341,12 +1378,12 @@ function loadDesk() {
     radioPos = s.radio || null;
     desk = desk.filter(p => ![SHOW.id, POWER_ON.id, NOTES.id, JINGLES.id].includes(p.id));   // (jingles and messages live in each theme)
     desk = desk.filter(p => p.alias || ![...RADIO_KIDS, ...ACTION_KIDS].includes(p.id));   // (the radio's own folders live in Radio; a shortcut you made stays)
-    for (const f of [ACTIONS_BOX, LISTS, RADIO_BOX])      // (new since the layout was saved: in the first free spot)
+    for (const f of [ACTIONS_BOX, LISTS, RADIO_BOX, OUTSIDE])      // (new since the layout was saved: in the first free spot)
       if (!desk.some(p => p.id === f.id)) desk.push({ id: f.id, ...freeSpot() });
   }
   if (!desk.length) {
     [MUSIC, ONDEMAND, BOOKS, PODCASTS, STATIONS, PLAYLISTS, PROGRAMMES, LISTS, ACTIONS_BOX, RADIO_BOX].forEach((f, i) => desk.push({ id: f.id, x: 18 + Math.floor(i / 8) * 122, y: 14 + (i % 8) * 92 }));
-    [DJ, BDAYS].forEach((o, i) => desk.push({ id: o.id, x: 140, y: 14 + (i + 2) * 92, alias: false }));   // (under Actions and Radio, which head that column)
+    [DJ, BDAYS, OUTSIDE].forEach((o, i) => desk.push({ id: o.id, x: 140, y: 14 + (i + 2) * 92, alias: false }));   // (under Actions and Radio, which head that column)
   }
 }
 function freeSpot() {                  // the first place on the icon grid that nothing is near, column by column
@@ -1807,6 +1844,8 @@ async function open(id) {
   if (o.kind === "panel" && o.key === "lists") return open(LISTS.id);
 
   if (o.kind === "calendar") return open(BDAYS.id);
+  if (o.kind === "outside") { outsideSaw(); return open(PANEL.conditions.id); }      // (all of them are said in full in Band conditions, for now)
+  if (o === OUTSIDE) outsideSaw();
   if (o.kind === "list" && !o.key) o.key = "alist";
   const had = W.find(w => w.id === id);
   if (had) { had.z = ++zTop; drawDesk(); if (o.loaded) refreshOpen(); return; }
@@ -3689,6 +3728,7 @@ function folderView(o, box, win) {
   else if (o.box === "playlists") tools.append(T("New playlist", newPlaylist), el("span", { className: "note", textContent: "Drop songs, albums or folders onto a playlist" }));
   else if (o.box === "programmes") tools.append(T("New programme", newProgramme), el("span", { className: "note", textContent: "A running order the radio plays by itself" }));
   else if (o.box === "stations") tools.append(T("Find a station", () => open(PANEL.findstation.id)), T("Find a receiver", () => open(PANEL.findreceiver.id)), T("Find a room", () => open(PANEL.findroom.id)), el("span", { className: "note", textContent: "Drag a station onto a button to keep it there" }));
+  else if (o.box === "outside") tools.append(T("Band conditions…", () => open(PANEL.conditions.id)), el("span", { className: "note", textContent: "Live from outside · open one for all of it · the DJ says it if you ask, in Band conditions" }));
   else if (o.box === "podcasts") tools.append(T("Follow a podcast", () => open(PANEL.findpodcast.id)), el("span", { className: "note", textContent: "Open a show for its episodes" }));
   else if (o.box === "lists") tools.append(T("New theme", () => open(PANEL.newlist.id)), el("span", { className: "note", textContent: "Double-click a theme to change it · drag one onto the radio to play it" }));
   else if (o.box === "receiver") tools.append(T("Find a receiver", () => open(PANEL.findreceiver.id)), T("Find a room", () => open(PANEL.findroom.id)), el("span", { className: "note", textContent: "Each opens as a rig · they're the receivers your saved stations use · Name… in a rig's window gives it a name of your own" }));
@@ -5582,6 +5622,7 @@ async function drop(src, target, ev) {
     else if (!desk.some(p => p.id === src.id)) { desk.push({ id: src.id, x, y, alias: true }); toast(`A shortcut to “${o.title}” is on the desktop.`); }
     saveDesk(); return drawDesk();
   }
+  if (o.kind === "outside") return kind === "play" ? open(o.id) : toast(`“${o.title}” is news from outside: open it to read it.`);
   if (kind === "play") {
     if (o.kind === "panel") return open(o.id);
     if (o.kind === "person") return api("/api/birthdays/hear", o.b).then(() => toast(`The DJ is wishing ${o.title} a happy birthday.`)).catch(e => toast(e.message));
@@ -5773,6 +5814,7 @@ function trash(src) {
     return toast(`“${o.title}” stays on the desktop.`);
   }
   const from = O[src.parent];
+  if (o.kind === "outside") return toast(`“${o.title}” is news from outside: it can't be thrown away.`);
   if (o.kind === "eqset") { const was = soundList();
     return gone(`Deleted the speaker sound “${o.title}”.`, async () => { await saveSounds(was.filter(x => x.name !== o.name)); return () => saveSounds(was).catch(() => {}); }); }
   if (o.kind === "wifi") {
@@ -6157,6 +6199,7 @@ async function boot() {
       const w = W.find(w => w.id === s.id); if (w) Object.assign(w, { x: s.x, y: s.y, w: s.w, h: s.h, fitted: true });
     }
     booted = true; drawDesk(); setInterval(tick, 10000); setInterval(poll, 2500); setInterval(refreshOpen, 20000);
+    outsidePoll(); setInterval(() => { if (!document.hidden) outsidePoll(); }, 120000);
     // The Receiver folder appears on the desktop once a station says there's a receiver; while one of its
     // windows is open it's asked every few seconds who has the air.
     api("/api/radio").then(d => { if ((rxOrigins(d.stations).length || d.stations.some(x => rxKiwi(x.url) || rxOwrx(x.url) || rxRoom(x.url))) && !desk.some(p => p.id === RECEIVER.id)) { desk.push({ id: RECEIVER.id, ...freeSpot() }); saveDesk(); drawDesk(); } }).catch(() => {});
@@ -6165,6 +6208,37 @@ async function boot() {
     document.addEventListener("visibilitychange", () => { if (!document.hidden) { refreshOpen(); poll(); } }); setInterval(async () => { await loadButtons(); updateRadio(); }, 15000); }
   takeTune();
 }
+// The world outside: what /api/outside says, as tiles in the folder, and the pill in the menu bar while there's an alert
+function gotOutside(d) {
+  OUTSIDE_NOW = { tiles: d.tiles || [], alerts: d.alerts || [] };
+  OUTSIDE.kids = OUTSIDE_NOW.tiles.map(t => mk({ id: "out:" + t.key, kind: "outside", title: t.title, t }).id);
+  OUTSIDE.loaded = true;
+  const live = new Set(OUTSIDE_NOW.alerts.map(a => a.key));        // (an alert that's over is forgotten: if it comes back, it's new)
+  for (const k of Object.keys(outsideSeen)) if (!live.has(k)) delete outsideSeen[k];
+  try { localStorage.setItem("srd.outsideSeen", JSON.stringify(outsideSeen)); } catch {}
+  outsidePill();
+}
+function outsideSaw() {
+  for (const a of OUTSIDE_NOW.alerts) outsideSeen[a.key] = true;
+  try { localStorage.setItem("srd.outsideSeen", JSON.stringify(outsideSeen)); } catch {}
+  setTimeout(drawDesk);
+}
+let pillAt = 0;
+function outsidePill(step) {                          // one alert at a time, the next every eight seconds
+  const p = $("outsidePill"), a = OUTSIDE_NOW.alerts;
+  if (!p) return;
+  if (!a.length) { p.hidden = true; return; }
+  if (step) pillAt++;
+  const one = a[pillAt % a.length];
+  p.hidden = false; p.title = one.says + " · click to open The world outside";
+  p.replaceChildren(el("i"), el("span", { textContent: one.short }), a.length > 1 ? el("small", { textContent: `${pillAt % a.length + 1} of ${a.length}` }) : null);
+}
+async function outsidePoll() {
+  try { const was = JSON.stringify(OUTSIDE_NOW); gotOutside(await api("/api/outside")); if (JSON.stringify(OUTSIDE_NOW) !== was) drawDesk(); } catch (e) { /* the next one will do */ }
+}
+$("outsidePill").onclick = () => open(OUTSIDE.id);
+setInterval(() => { const p = $("outsidePill"); if (!p || p.hidden || OUTSIDE_NOW.alerts.length < 2) return;
+  p.style.opacity = 0; setTimeout(() => { outsidePill(true); p.style.opacity = 1; }, 400); }, 8000);
 // The speaker analyser (/analyser/) hands its suggestion over in the address,
 // #tune=bass,mid,treble,lowcut: the Speakers window offers it; nothing changes until Apply.
 let TUNE = null;

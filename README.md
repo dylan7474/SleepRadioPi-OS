@@ -447,6 +447,16 @@ Actions, Sleep timer and Radio folders open:
   Europe and North America. 40 metres is fair, but only round about. The
   sun is middling and the earth's field is quiet." Off until you choose
   it, in that window. See `app/sleepradiopi/playback/conditions.py`.
+- **The world outside.** A folder on the desktop with a tile for each
+  thing the radio knows from outside -- the bands, the sun, the aurora,
+  VHF openings -- each showing its live value on its face ("20 m",
+  "K 2", "AMBER", "6 m Es") in green, amber or red, as a station's name
+  shows on its tile. A red badge on the folder counts alerts you haven't
+  seen; while an alert lasts, a pill in the menu bar says it ("Aurora:
+  amber · possible tonight") and opens the folder. Nothing is ever said
+  aloud from here: the DJ says it only as set in Band conditions, and
+  only while the DJ is on. More tiles join it as more comes in
+  (earthquakes, warnings, your logbook).
 - **Receivers with names.** *Name…* in a receiver's window calls it what
   you like -- "Short wave", "VHF" -- in Receivers, on its window and
   wherever it's mentioned: two dongles on one computer are otherwise told

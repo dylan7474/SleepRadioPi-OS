@@ -458,6 +458,14 @@ def make_handler(station: Station, output: Mp3Output, speaker=None,
                 self._send(json.dumps({**out, "sun": sun_now, "forecast": fc, "aurora": aurora_now, "day": day, "home": ft8_mod.HOME,
                                        "base": base or None, "say_every_h": conditions_mod.EVERY_H, "alerts": conditions_mod.ALERTS,
                                        "spoken": conditions_mod.spoken(out, sun_now, fc, aurora_now, day)}).encode(), "application/json")
+            elif path == "/api/outside":
+                # The desktop's "The world outside" (playback/conditions.py outside()): a tile for each thing known
+                # from outside -- the bands, the sun, the aurora, VHF openings -- and the alerts there are now.
+                from sleepradiopi.audio import ft8 as ft8_mod
+                from sleepradiopi.playback import conditions as conditions_mod, survey as survey_mod
+                out = conditions_mod.summary(conditions_mod.freshest(survey_mod.job)[1], ft8_mod.reader.heard()["heard"], time.time())
+                self._send(json.dumps(conditions_mod.outside(out, conditions_mod.sun.status(), conditions_mod.forecast.status(), conditions_mod.aurora.status(),
+                                                             conditions_mod.daytime(time.time(), ft8_mod.HOME))).encode(), "application/json")
             elif path == "/api/rx/survey":
                 # The survey run by the radio (playback/survey.py): how far a round has got; with ?base=, what's been
                 # found on that receiver; "itself": the receivers surveyed on the hour.

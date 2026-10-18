@@ -1450,6 +1450,18 @@ The cards:
   night's calibration nobody asked for leaves such a receiver alone). A
   survey and a calibration never run together, and nothing is reported to
   PSK Reporter from a receiver being taken round.
+  *The world outside* (`GET /api/outside`; `conditions.outside()`): a
+  tile for each thing known from outside, `{"key", "title", "value", "state"
+  (good / fair / poor / alert / quiet), "sub", "says", "alert"}` -- the
+  bands (the best heard, or N0NBH's forecast when nothing is), the sun
+  (the K index), the aurora, VHF openings -- each left out with nothing
+  to go by; and `"alerts"`: what `alert_due()` would say, as things are
+  now, with `"short"` words for the page and the `"tile"` it's on. The
+  desktop's "The world outside" folder (`box:outside`) asks every two
+  minutes: the tiles, a badge of alerts not yet seen (kept in the
+  browser; opening the folder sees them), and the menu bar's pill while
+  any alert lasts. Tiles open Band conditions; they can't be thrown away
+  or put on a button.
   *How the bands are* (`GET /api/rx/conditions?base=`;
   `playback/conditions.py`): `summary()` takes a receiver's survey (its
   FT8 places no more than two hours old) and who the FT8 reader has heard
