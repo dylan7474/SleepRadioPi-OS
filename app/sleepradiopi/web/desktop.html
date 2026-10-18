@@ -761,7 +761,7 @@ const PANEL = {};
 for (const [key, title, sym, h, page] of PANELS) PANEL[key] = mk({ id: "set:" + key, kind: "panel", key, title, sym, h, page });
 for (const [key, title, sym, h] of [["messages", "Messages", "✎", 55], ["birthdays", "Birthdays", "✿", 340], ["stations", "Stations", "R", 8],
                                     ["tests", "Test sounds", "▶", 150], ["stream", "Listen in a browser", "◠", 200], ["lists", "Themes", "A", 195],
-                                    ["findstation", "Find a station", "R", 8], ["findreceiver", "Find a receiver", "⌁", 200], ["modes", "Where to listen", "⌖", 215], ["conditions", "Band conditions", "☼", 45], ["quakes", "Earthquakes", "≋", 20], ["findroom", "Find a room", "☊", 265], ["findpodcast", "Follow a podcast", "P", 275], ["newlist", "New theme", "A", 195]])
+                                    ["findstation", "Find a station", "R", 8], ["findreceiver", "Find a receiver", "⌁", 200], ["modes", "Where to listen", "⌖", 215], ["conditions", "Band conditions", "☼", 45], ["quakes", "Earthquakes", "≋", 20], ["sun", "The sun", "☀", 45], ["aurora", "Aurora", "◠", 130], ["vhf", "VHF openings", "⌃", 200], ["warnings", "Warnings", "⚠", 35], ["signal", "My signal", "⌇", 210], ["findroom", "Find a room", "☊", 265], ["findpodcast", "Follow a podcast", "P", 275], ["newlist", "New theme", "A", 195]])
   PANEL[key] = mk({ id: "set:" + key, kind: "panel", key, title, sym, h, page: key });
 const DJ = mk({ id: "dj", kind: "dj", title: "The DJ" });
 const NOTES = mk({ id: "notes", kind: "folder", box: "messages", title: "Messages", kids: [], sym: "✎" });   // a folder of sticky notes
@@ -1153,6 +1153,8 @@ const OUTSIDE_PIC = {
   vhf: '<path d="M4 18 12 6l8 12"/><path d="M7 14h10"/>',
   quakes: '<path d="M2 12h4l2-6 3 12 3-9 2 3h6"/>',
   ukquakes: '<path d="M2 12h5l2-4 3 8 2-4h8"/>',
+  warnings: '<path d="M12 3 2 20h20L12 3z"/><path d="M12 10v4M12 17v.5"/>',
+  signal: '<path d="M12 20V11"/><circle cx="12" cy="9" r="1.5"/><path d="M8.5 5.5a5 5 0 0 0 0 7M15.5 5.5a5 5 0 0 1 0 7M5.5 3a9 9 0 0 0 0 12M18.5 3a9 9 0 0 1 0 12"/>',
 };
 const svgPic = d => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${d}</svg>`;
 function glyph(o) {
@@ -1846,7 +1848,7 @@ async function open(id) {
   if (o.kind === "panel" && o.key === "lists") return open(LISTS.id);
 
   if (o.kind === "calendar") return open(BDAYS.id);
-  if (o.kind === "outside") { outsideSaw(); return open(["quakes", "ukquakes"].includes(o.t?.key) ? PANEL.quakes.id : PANEL.conditions.id); }   // (the rest are said in full in Band conditions)
+  if (o.kind === "outside") { outsideSaw(); return open(PANEL[{ quakes: "quakes", ukquakes: "quakes", warnings: "warnings", signal: "signal", sun: "sun", aurora: "aurora", vhf: "vhf" }[o.t?.key] || "conditions"].id); }   // (each tile its own window; Bands: Band conditions)
   if (o === OUTSIDE) outsideSaw();
   if (o.kind === "list" && !o.key) o.key = "alist";
   const had = W.find(w => w.id === id);
@@ -4810,6 +4812,8 @@ const UI = {
       grp("How the bands are", ...condLines(c),
         help(c.bands.length ? `What the radio has itself heard${c.t ? `, the latest ${condAge(c.t)}` : ""}: it's how the bands are here, with this aerial. The forecast under it is N0NBH's, for everyone.`
           : `Nothing heard to go by yet${c.forecast ? ", so the DJ goes by N0NBH's forecast" : ""}. A survey of FT8 on every band says how the bands are here: it's in a receiver's window, under Modes…, and can go by itself on the hour.`)),
+      c.forecast ? grp("N0NBH's forecast", outFcTable(c.forecast, c.day),
+        help(`Calculated for everyone from the sun's figures, not heard here${c.forecast.updated ? `; updated ${c.forecast.updated}` : ""}. ${c.day ? "It's day here" : "It's night here"}, by the sun at the radio's locator.`)) : null,
       c.base ? grp("Bring it up to date", line(sbtn("Survey FT8 on every band now", async () => {
           try { await api("/api/rx/survey", { base: c.base, places: FT_FREQS.ft8.map(([band, khz]) => ({ key: `ft8:${band}`, mode: "ft8", band, hz: khz * 1000 })) });
             toast("The radio is surveying FT8 on every band: about five minutes. Open Bands again then.", false, null, true); } catch (e) { toast(e.message); } }, "primary")),
@@ -4839,6 +4843,107 @@ const UI = {
         grp("Said by the DJ",
           srow("Alerts", sw(q.alerts, v => act(() => api("/api/rx/conditions", { alerts: v })), "Alerts"), help(q.alerts ? "Said in the next gap" : "Off")),
           help(`A fresh one, once, in the next gap between songs (with the DJ on, not in the quiet hours): magnitude ${q.alert_at.world} or more anywhere, ${q.alert_at.uk} or more in the UK, or ${q.alert_at.near} or more within ${q.alert_at.near_km} km of here. The same switch as Band conditions' alerts.`))];
+    },
+  },
+  // The sun, Aurora and VHF openings (tiles in The world outside): each from /api/rx/conditions, said in full.
+  sun: {
+    load: () => api("/api/rx/conditions"),
+    build: c => {
+      const s = c.sun, f = c.forecast || {};
+      if (!s && !f.xray) return [grp("The sun", help("Not had yet: the radio asks NOAA when it has internet."))];
+      const k = s?.k, flux = s?.flux, xr = (f.xray || "")[0];
+      const SCALE = { R: ["Radio blackout", "HF on the sunlit side of the earth fades out after a flare"], S: ["Solar radiation storm", "high-energy particles: HF over the poles is absorbed"], G: ["Geomagnetic storm", "the earth's field is disturbed: HF suffers, aurora spreads south"] };
+      return [
+        grp("The sun now",
+          flux != null ? outKv("Solar flux", Math.round(flux), flux >= 150 ? "busy: 15, 12 and 10 m should open by day" : flux >= 100 ? "middling: 20 and 17 m by day, 15 m some days" : "quiet: 20 m and below") : null,
+          f.sunspots != null ? outKv("Sunspots", f.sunspots, "more spots, more ionised upper air, higher bands open") : null,
+          xr ? outKv("X-rays", f.xray, { A: "quiet", B: "quiet", C: "small flares", M: "moderate flares: short blackouts on the sunlit side", X: "big flares: HF blackouts on the sunlit side" }[xr] || "") : null),
+        grp("The earth's magnetic field",
+          k != null ? outKv("K index", Math.round(k * 10) / 10, k >= 5 ? "a storm: the bands are disturbed, paths over the poles most of all; aurora further south" : k >= 4 ? "unsettled: the higher latitudes are disturbed" : "quiet: good for the bands") : null,
+          s?.a != null ? outKv("A index", s.a, s.a >= 30 ? "a stormy day" : s.a >= 15 ? "an unsettled day" : "a quiet day (the K index over the whole day)") : null,
+          help("The K index goes from 0 to 9, every three hours; 5 and over is a storm.")),
+        s?.scales ? grp("NOAA's scales", ...["R", "S", "G"].map(L => { const v = String(s.scales[L]?.Scale ?? "0");
+          return outKv(SCALE[L][0], v === "0" ? "none" : L + v, v === "0" ? "" : SCALE[L][1]); }),
+          help("Each from 1 (minor) to 5 (extreme).")) : null,
+        help(`From NOAA's Space Weather Prediction Center${s?.t ? `, ${condAge(s.t)}` : ""}, and N0NBH for the sunspots and X-rays.`),
+        line(el("a", { href: "https://www.swpc.noaa.gov/", target: "_blank", rel: "noopener", textContent: "NOAA's Space Weather Prediction Center" }))];
+    },
+  },
+  aurora: {
+    load: () => api("/api/rx/conditions"),
+    build: c => {
+      const a = c.aurora, COL = { green: "#2a9d3a", yellow: "#d4b106", amber: "#e07b00", red: "#d0312d" }, means = c.aurora_means || {};
+      const vhf = c.forecast?.vhf?.aurora;
+      return [
+        a ? grp("AuroraWatch UK now",
+          el("p", { style: "font-weight:700;margin:4px 0;font-size:15px" }, el("span", { textContent: "● ", style: `color:${COL[a.level]}` }), a.level[0].toUpperCase() + a.level.slice(1)),
+          el("p", { className: "note", textContent: (means[a.level] || "").replace(/^./, m => m.toUpperCase()) + "." }),
+          help(`${a.where ? `Measured at ${a.where}, ` : ""}${condAge(a.t)}.`))
+          : grp("AuroraWatch UK", help("Not had yet: the radio asks when it has internet.")),
+        grp("What the colours mean", ...["green", "yellow", "amber", "red"].map(l => el("p", { className: "note", style: `margin:3px 0${a?.level === l ? ";font-weight:700" : ""}` },
+          el("span", { textContent: "● ", style: `color:${COL[l]}` }), `${l[0].toUpperCase() + l.slice(1)}: ${means[l] || ""}.`))),
+        vhf ? grp("On the radio", outKv("Aurora on VHF", /closed/i.test(vhf) ? "closed" : vhf, /closed/i.test(vhf) ? "" : "signals on 6 and 2 m bounce off the aurora: rough, buzzy, beam north"),
+          outKv("K index", c.sun?.k != null ? Math.round(c.sun.k * 10) / 10 : "–", "5 and over: a storm, and the aurora further south")) : null,
+        help("Alert status by AuroraWatch UK. " + (a?.credit || "")),
+        line(el("a", { href: "https://aurorawatch.lancs.ac.uk/", target: "_blank", rel: "noopener", textContent: "AuroraWatch UK" }))];
+    },
+  },
+  vhf: {
+    load: () => api("/api/rx/conditions"),
+    build: c => {
+      const v = c.forecast?.vhf;
+      if (!v) return [grp("VHF openings", help("Not had yet: the radio asks N0NBH (hamqsl.com) when it has internet."))];
+      const open = x => x && !/closed/i.test(x);
+      const FT8 = { "6 m": "50.313", "4 m": "70.154", "2 m": "144.174" };
+      return [
+        grp("Sporadic E across Europe", ...["6 m", "4 m", "2 m"].map(b => outKv(b, open(v[b]) ? "open" : "closed", open(v[b]) ? `listen on FT8, ${FT8[b]} MHz` : "", open(v[b]) ? "#2a9d3a" : null)),
+          help("Patches of dense ionisation low in the sky bounce VHF 1,000 to 2,000 km: mostly May to August, by day, coming and going in minutes.")),
+        grp("Aurora on VHF", outKv("Northern hemisphere", open(v.aurora) ? v.aurora : "closed", open(v.aurora) ? "beam north: rough, buzzy signals off the aurora" : "", open(v.aurora) ? "#2a9d3a" : null)),
+        help(`N0NBH's calculation (hamqsl.com)${c.forecast.updated ? `, updated ${c.forecast.updated}` : ""}. With Alerts on (Band conditions), the DJ says it when sporadic E opens.`),
+        line(el("a", { href: "https://www.hamqsl.com/solar.html", target: "_blank", rel: "noopener", textContent: "N0NBH's solar page" }))];
+    },
+  },
+  // Warnings (a tile in The world outside): the Met Office's for the region (chosen here, or nearest the locator)
+  // and the Environment Agency's floods near here; and the Alerts switch, with what's said.
+  warnings: {
+    load: () => api("/api/warnings"),
+    build: (w, act) => {
+      const LEVEL = { yellow: "#d4b106", amber: "#e07b00", red: "#d0312d" };
+      const pick = el("select", { id: "warn-region" }, el("option", { value: "", textContent: "Nearest my locator" + (w.chosen ? "" : w.region ? ` (${w.regions[w.region]})` : "") }),
+        ...Object.entries(w.regions).map(([value, textContent]) => el("option", { value, textContent })));
+      pick.value = w.chosen; pick.onchange = () => act(() => api("/api/warnings", { region: pick.value }));
+      return [
+        grp(`The Met Office${w.region ? ": " + w.regions[w.region] : ""}`,
+          ...(w.met.length ? w.met.map(x => el("p", { className: "note", style: "margin:3px 0" },
+              el("b", { textContent: "● ", style: `color:${LEVEL[x.level]}` }), x.url ? el("a", { href: x.url, target: "_blank", rel: "noopener", textContent: x.title }) : x.title,
+              x.valid ? ` · ${x.valid}` : ""))
+            : [help(w.had ? "No weather warnings in force." : w.region ? "Not had yet: the radio asks when it has internet." : "Set the radio's locator (or choose a region) for its warnings.")]),
+          srow("Region", pick)),
+        grp("Floods near here",
+          ...(w.floods.length ? w.floods.map(f => el("p", { className: "note", style: "margin:3px 0" },
+              el("b", { textContent: f.kind[0].toUpperCase() + f.kind.slice(1) + ": " }), f.url ? el("a", { href: f.url, target: "_blank", rel: "noopener", textContent: f.where }) : f.where,
+              f.message ? el("span", { className: "shelp", style: "display:block", textContent: f.message.slice(0, 300) + (f.message.length > 300 ? "…" : "") }) : null))
+            : [help(w.home ? "No flood warnings or alerts in force." : "Set the radio's locator for its flood warnings.")]),
+          help(`From the Environment Agency, within ${w.flood_km} km of the locator: England only (Scotland, Wales and Northern Ireland have their own).`)),
+        grp("Said by the DJ",
+          srow("Alerts", sw(w.alerts, v => act(() => api("/api/rx/conditions", { alerts: v })), "Alerts"), help(w.alerts ? "Said in the next gap" : "Off")),
+          help("An amber or red weather warning, or a flood warning or severe flood warning, once when it's issued (and again if it's raised), in the next gap between songs, with the DJ on, not in the quiet hours. The same switch as Band conditions' alerts."))];
+    },
+  },
+  // My signal (a tile in The world outside): who heard the owner's callsign in the last day, from PSK Reporter.
+  signal: {
+    load: () => api("/api/spots"),
+    build: d => {
+      if (!d.call) return [grp("My signal", help("Set your callsign (Settings, This radio) and the radio asks PSK Reporter who has heard you."))];
+      const t = x => new Date(x.t * 1000).toLocaleString("en-GB", { weekday: "short", hour: "2-digit", minute: "2-digit" });
+      return [
+        grp(`Who heard ${d.call}, the last day`,
+          ...(d.spots.length ? d.spots.slice(0, 60).map(x => el("p", { className: "note", style: "margin:3px 0" },
+              el("a", { href: `https://www.qrz.com/db/${encodeURIComponent(x.call)}`, target: "_blank", rel: "noopener", textContent: x.call }),
+              ` · ${[x.country, x.km != null ? `${x.km.toLocaleString("en-GB")} km` : x.grid, x.band, x.mode, x.snr != null ? `${x.snr > 0 ? "+" : ""}${x.snr} dB` : "", t(x)].filter(Boolean).join(" · ")}`))
+            : [help(d.had ? "Nobody has reported hearing you in the last day: it shows here when you've been on FT8, FT4, WSPR and the like." : "Not had yet: the radio asks PSK Reporter when it has internet.")]),
+          line(el("a", { href: d.map, target: "_blank", rel: "noopener", textContent: "The map on PSK Reporter" })),
+          help("From PSK Reporter: the stations that decoded you and reported it, the latest from each. Asked every quarter of an hour at most."))];
     },
   },
   findreceiver: {
@@ -6228,6 +6333,17 @@ async function boot() {
     setInterval(rigPoll, 350);
     document.addEventListener("visibilitychange", () => { if (!document.hidden) { refreshOpen(); poll(); } }); setInterval(async () => { await loadButtons(); updateRadio(); }, 15000); }
   takeTune();
+}
+// A figure in a tile's window: its name, its value in bold, what it means
+const outKv = (k, v, note, colour) => srow(k, el("b", { textContent: String(v), style: colour ? `color:${colour}` : "" }), help(note || ""));
+// N0NBH's forecast as a table: a row for each pair of bands, day and night, the one it is now in bold
+function outFcTable(f, day) {
+  const COL = { good: "#2a9d3a", fair: "#e07b00", poor: "#d0312d" }, cell = (t, now) => el("td", { textContent: t || "–",
+    style: `padding:2px 12px;color:${COL[(t || "").toLowerCase()] || "inherit"};${now ? "font-weight:700" : ""}` });
+  return el("table", { className: "note", style: "border-collapse:collapse;margin:4px 0" },
+    el("tr", {}, el("th", { textContent: "" }), el("th", { textContent: "Day", style: `padding:2px 12px;${day ? "" : "opacity:.6"}` }), el("th", { textContent: "Night", style: `padding:2px 12px;${day ? "opacity:.6" : ""}` })),
+    ...["80m-40m", "30m-20m", "17m-15m", "12m-10m"].map(g => el("tr", {}, el("td", { textContent: g.replace("m-", "–").replace(/m$/, " m"), style: "padding:2px 12px 2px 0" }),
+      cell(f.bands?.[g]?.day, day), cell(f.bands?.[g]?.night, !day))));
 }
 // The world outside: what /api/outside says, as tiles in the folder, and the pill in the menu bar while there's an alert
 function gotOutside(d) {

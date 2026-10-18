@@ -43,6 +43,9 @@ def _home_and_quiet(monkeypatch):
     monkeypatch.setattr(conditions, "ALERTS", False)
     for name in ("sun", "forecast", "aurora"):
         monkeypatch.setattr(conditions, name, type(getattr(conditions, name))(get=lambda url: (_ for _ in ()).throw(OSError("offline"))))
+    from sleepradiopi.playback import spots, ukwarnings
+    monkeypatch.setattr(ukwarnings, "warnings", ukwarnings.Warnings(get=lambda url: (_ for _ in ()).throw(OSError("offline"))))
+    monkeypatch.setattr(spots, "spots", spots.Spots(get=lambda url: (_ for _ in ()).throw(OSError("offline"))))
 
 
 def test_the_feeds_read() -> None:

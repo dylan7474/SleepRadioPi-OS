@@ -460,8 +460,16 @@ Actions, Sleep timer and Radio folders open:
   over) and the UK's latest (the British Geological Survey), opening a
   window that lists them with how far each is from you. With Alerts on,
   the DJ says a fresh one once: 6.5 or more anywhere, 3 or more in the
-  UK, or 2 or more within 100 km. More tiles join it as more comes in
-  (warnings, your logbook).
+  UK, or 2 or more within 100 km. **Warnings**: the Met Office's
+  severe weather warnings for your region (worked out from the locator,
+  or chosen) and the Environment Agency's flood alerts and warnings
+  within 30 km (England only); with Alerts on, the DJ says a new amber or
+  red warning or a flood warning. **My signal**: who has heard your
+  callsign in the last day, from PSK Reporter -- how many, the farthest,
+  and a list with distances, bands and reports. Every tile opens a window
+  of its own: the sun's figures explained, the aurora's colours, which
+  VHF bands are open; Band conditions has N0NBH's day and night table.
+  More tiles join it as more comes in (your logbook).
 - **Receivers with names.** *Name…* in a receiver's window calls it what
   you like -- "Short wave", "VHF" -- in Receivers, on its window and
   wherever it's mentioned: two dongles on one computer are otherwise told
@@ -1119,8 +1127,8 @@ What's left to do (everything else described here is built and running):
   teleprinters' strength as a second yardstick, N0NBH's forecast,
   AuroraWatch UK and alerts. Still to do: where your own receiver's
   reports put you among others', once *Report* is on; more from outside
-  in The world outside (Met Office and flood warnings, PSK Reporter spots
-  of your own callsign, your QRZ logbook; earthquakes are done).
+  in The world outside (your QRZ logbook; earthquakes, warnings and PSK
+  Reporter spots of your own callsign are done).
 - **A laser-cut wood cathedral** — a real-wood version of the cathedral case:
   - the face and fretwork cut from walnut-veneered plywood, the sides and
     back from plywood or MDF;

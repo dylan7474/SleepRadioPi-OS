@@ -1474,6 +1474,29 @@ The cards:
   `WORLD_ALERT` 6.5 anywhere, `UK_ALERT` 3.0 in the UK, `UK_NEAR_ALERT`
   2.0 within `UK_NEAR_KM` 100 km, and only within `ALERT_FRESH_S` (three
   hours) of it, so one found at start-up that's old isn't said.
+  *Warnings* (`playback/ukwarnings.py`, `GET /api/warnings`, `POST
+  /api/warnings {"region": "ne" | ... | ""}`, the setting
+  `warnings_region`): `ukwarnings.Warnings` fetches the Met Office's RSS
+  for the region (`region_for()`: the chosen one, or the one of 16 whose
+  middle is nearest the locator; none outside the UK) and the EA's
+  `flood-monitoring/id/floods` within `FLOOD_KM` (30) of the locator,
+  every 15 minutes at most, kept in `warnings.json`: `"met"` (`"level"`
+  yellow / amber / red, `"what"`, `"valid"`, `"url"`), `"floods"`
+  (`"severity"` 1 severe, 2 warning, 3 alert; `"where"`, `"message"`,
+  `"url"`). One tile, `"warnings"` (the most serious); alerts for amber,
+  red, flood warning and severe flood warning, the level in the key so a
+  raised one is said again. *My signal* (`playback/spots.py`, `GET
+  /api/spots`): `spots.Spots` asks PSK Reporter
+  (`retrieve.pskreporter.info/query?senderCallsign=`, the last day,
+  reception reports only, `appcontact` the project's page, never the
+  owner's address) about `ft8.own_call()`, every 15 minutes at most
+  (they ask for five), kept in `spots.json`: the latest spot from each
+  station, `{"call", "grid", "km"?, "hz", "band", "mode", "snr", "t",
+  "country"}`; shown only while the callsign is the same. Tile
+  `"signal"`; nothing said. Each tile opens its own window: `set:sun`,
+  `set:aurora`, `set:vhf` (from `/api/rx/conditions`, which now gives
+  `"aurora_means"` too), `set:quakes`, `set:warnings`, `set:signal`;
+  Bands opens Band conditions, which shows N0NBH's day and night table.
   *How the bands are* (`GET /api/rx/conditions?base=`;
   `playback/conditions.py`): `summary()` takes a receiver's survey (its
   FT8 places no more than two hours old) and who the FT8 reader has heard

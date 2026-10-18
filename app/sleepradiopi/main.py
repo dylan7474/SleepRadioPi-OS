@@ -935,6 +935,10 @@ def main() -> None:
     conditions_mod.aurora.keep_in(Path.home() / ".cache" / "sleepradiopi" / "aurora.json")       # AuroraWatch UK's alert
     from sleepradiopi.playback import quakes as quakes_mod
     quakes_mod.quakes.keep_in(Path.home() / ".cache" / "sleepradiopi" / "quakes.json")          # the USGS's and the BGS's earthquakes
+    from sleepradiopi.playback import spots as spots_mod, ukwarnings as warn_mod
+    warn_mod.REGION = settings.warnings_region if settings.warnings_region in warn_mod.REGIONS else ""
+    warn_mod.warnings.keep_in(Path.home() / ".cache" / "sleepradiopi" / "warnings.json")        # the Met Office's and the EA's warnings
+    spots_mod.spots.keep_in(Path.home() / ".cache" / "sleepradiopi" / "spots.json")             # who heard my callsign (PSK Reporter)
     conditions_mod.EVERY_H = settings.conditions_every_h if settings.conditions_every_h in conditions_mod.SAY_HOURS else 0
     conditions_mod.ALERTS = settings.conditions_alerts is True
     serve(station, stream, args.port or settings.http_port, control, args.config, announcer, jobs, updates,

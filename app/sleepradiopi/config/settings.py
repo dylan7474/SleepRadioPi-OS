@@ -45,6 +45,7 @@ class Settings:
     survey_itself: dict = field(default_factory=dict)      # receivers of your own the radio surveys by itself: {"http://192.168.50.4:8075": {"every_h": 3, "places": [...]}} (playback/survey.py)
     conditions_every_h: int = 0           # the DJ says how the short-wave bands are, this many hours apart (0: not at all) (playback/conditions.py)
     conditions_alerts: bool = False       # ...and says it when an aurora alert, a sporadic E opening or a strong storm begins
+    warnings_region: str = ""             # the Met Office region for weather warnings ("ne"...), or "" for the one nearest the locator (playback/ukwarnings.py)
     report_heard: bool = False            # FT8, FT4 and WSPR heard on a receiver of your own reported to PSK Reporter and WSPRnet, under your callsign (audio/report.py)
     room_level: int = 100                 # how loud rooms are, % (25-150): a voice, not levelled like music (playback/room.py)
     noise_reduction: str = "off"          # receivers: the hiss under a voice turned down -- off, light, strong or rig (audio/denoise.py)

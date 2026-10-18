@@ -53,7 +53,8 @@ day, and keeps what it last had. Two more come from outside the same way:
 And with ALERTS on (off to begin with), the DJ says what's just happened
 in the next gap, whatever the hour (alert_due()): AuroraWatch UK going to
 amber or red, sporadic E opening on 6, 4 or 2 m, a strong radio blackout
-or geomagnetic storm (R3 or G3 and over), a big earthquake (quakes.py).
+or geomagnetic storm (R3 or G3 and over), a big earthquake (quakes.py),
+an amber or red weather warning or a flood warning (ukwarnings.py).
 Once each, when it starts.
 
 Nothing here is said or shown unless it's asked for. It can be looked at
@@ -629,10 +630,11 @@ def say_due(at, clock_ok: bool, quiet: bool, job, heard: list[dict]) -> str | No
 _alerted: dict[str, tuple[int, float]] = {}       # what's been alerted: {"aurora": (its level, when said), "es:6 m": ...}
 
 
-def alerts_now(sun_now: dict | None, fc: dict | None, aurora_now: dict | None, quakes_now: dict | None = None) -> list[tuple[str, int, str, str]]:
+def alerts_now(sun_now: dict | None, fc: dict | None, aurora_now: dict | None, quakes_now: dict | None = None,
+               warn_now: dict | None = None) -> list[tuple[str, int, str, str]]:
     """What's worth an alert as things are: [(what, how high, the words, a few of them for the page)]."""
-    from sleepradiopi.playback import quakes        # (it builds on Kept, here)
-    out = quakes.alerts(quakes_now)
+    from sleepradiopi.playback import quakes, ukwarnings        # (they build on Kept, here)
+    out = quakes.alerts(quakes_now) + ukwarnings.alerts(warn_now)
     if aurora_now and aurora_now.get("level") in ("amber", "red"):
         level = aurora_now["level"]
         out.append(("aurora", AURORA_LEVELS.index(level),
@@ -655,8 +657,8 @@ def alert_due(at, clock_ok: bool, quiet: bool, now: float | None = None) -> str 
     if not ALERTS:
         return None
     now = time.time() if now is None else now
-    from sleepradiopi.playback import quakes
-    found = alerts_now(sun.status(), forecast.status(), aurora.status(), quakes.quakes.status())
+    from sleepradiopi.playback import quakes, ukwarnings
+    found = alerts_now(sun.status(), forecast.status(), aurora.status(), quakes.quakes.status(), ukwarnings.warnings.status())
     live = {what for what, *_ in found}
     for what in [w for w in _alerted if w not in live and now - _alerted[w][1] > ALERT_AGAIN_S]:
         del _alerted[what]
@@ -672,16 +674,17 @@ def alert_due(at, clock_ok: bool, quiet: bool, now: float | None = None) -> str 
 
 
 # Which tile an alert belongs to (the desktop's "The world outside": outside())
-ALERT_TILE = {"aurora": "aurora", "es": "vhf", "noaa": "sun", "quake": "quakes", "ukquake": "ukquakes"}
+ALERT_TILE = {"aurora": "aurora", "es": "vhf", "noaa": "sun", "quake": "quakes", "ukquake": "ukquakes", "met": "warnings", "flood": "warnings"}
 
 
-def outside(s: dict, sun_now: dict | None, fc: dict | None, aurora_now: dict | None, day: bool, quakes_now: dict | None = None) -> dict:
+def outside(s: dict, sun_now: dict | None, fc: dict | None, aurora_now: dict | None, day: bool, quakes_now: dict | None = None,
+            warn_now: dict | None = None, spots_now: dict | None = None) -> dict:
     """The desktop's "The world outside" folder: a tile for each thing known, and the alerts there are now ->
     {"tiles": [{"key", "title", "value" (a few letters, on the tile), "state" ("good" | "fair" | "poor" |
     "alert" | "quiet"), "sub", "says", "alert"}], "alerts": [{"key", "tile", "short", "says"}]}. A tile is
     left out when there's nothing to go by (no internet and nothing heard)."""
     alerts = [{"key": what, "tile": ALERT_TILE[what.partition(":")[0]], "short": short, "says": words}
-              for what, _, words, short in alerts_now(sun_now, fc, aurora_now, quakes_now)]
+              for what, _, words, short in alerts_now(sun_now, fc, aurora_now, quakes_now, warn_now)]
     alerted = {a["tile"] for a in alerts}
     tiles = []
     live = sorted((b for b in s["bands"] if b["n"]), key=lambda b: (-b["n"], -(b.get("km") or 0)))
@@ -719,8 +722,8 @@ def outside(s: dict, sun_now: dict | None, fc: dict | None, aurora_now: dict | N
                       "state": "alert" if "vhf" in alerted else "quiet",
                       "sub": f"sporadic E · {_and(es)}" if es else "nothing open",
                       "says": f"Sporadic E open on {_and(es)} across Europe (N0NBH)." if es else "No sporadic E or VHF aurora forecast (N0NBH)."})
-    from sleepradiopi.playback import quakes
-    tiles += quakes.tiles(quakes_now, alerted)
+    from sleepradiopi.playback import quakes, spots, ukwarnings
+    tiles += ukwarnings.tile(warn_now, alerted) + quakes.tiles(quakes_now, alerted) + spots.tile(spots_now)
     for t in tiles:
         t["alert"] = t["key"] in alerted
     return {"tiles": tiles, "alerts": alerts}

@@ -28,6 +28,9 @@ def _no_internet(monkeypatch):
     monkeypatch.setattr(conditions, "aurora", conditions.Aurora(get=_offline))
     from sleepradiopi.playback import quakes
     monkeypatch.setattr(quakes, "quakes", quakes.Quakes(get_json=_offline, get_xml=_offline))
+    from sleepradiopi.playback import spots, ukwarnings
+    monkeypatch.setattr(ukwarnings, "warnings", ukwarnings.Warnings(get=lambda url: (_ for _ in ()).throw(OSError("offline"))))
+    monkeypatch.setattr(spots, "spots", spots.Spots(get=lambda url: (_ for _ in ()).throw(OSError("offline"))))
     monkeypatch.setattr(conditions, "_alerted", {})
     monkeypatch.setattr(conditions, "ALERTS", False)
 

@@ -456,7 +456,7 @@ def make_handler(station: Station, output: Mp3Output, speaker=None,
                 sun_now, fc, aurora_now = conditions_mod.sun.status(), conditions_mod.forecast.status(), conditions_mod.aurora.status()
                 day = conditions_mod.daytime(time.time(), ft8_mod.HOME)
                 self._send(json.dumps({**out, "sun": sun_now, "forecast": fc, "aurora": aurora_now, "day": day, "home": ft8_mod.HOME,
-                                       "base": base or None, "say_every_h": conditions_mod.EVERY_H, "alerts": conditions_mod.ALERTS,
+                                       "base": base or None, "say_every_h": conditions_mod.EVERY_H, "alerts": conditions_mod.ALERTS, "aurora_means": conditions_mod.AURORA_MEANS,
                                        "spoken": conditions_mod.spoken(out, sun_now, fc, aurora_now, day)}).encode(), "application/json")
             elif path == "/api/outside":
                 # The desktop's "The world outside" (playback/conditions.py outside()): a tile for each thing known
@@ -464,9 +464,27 @@ def make_handler(station: Station, output: Mp3Output, speaker=None,
                 from sleepradiopi.audio import ft8 as ft8_mod
                 from sleepradiopi.playback import conditions as conditions_mod, survey as survey_mod
                 out = conditions_mod.summary(conditions_mod.freshest(survey_mod.job)[1], ft8_mod.reader.heard()["heard"], time.time())
-                from sleepradiopi.playback import quakes as quakes_mod
+                from sleepradiopi.playback import quakes as quakes_mod, spots as spots_mod, ukwarnings as warn_mod
                 self._send(json.dumps(conditions_mod.outside(out, conditions_mod.sun.status(), conditions_mod.forecast.status(), conditions_mod.aurora.status(),
-                                                             conditions_mod.daytime(time.time(), ft8_mod.HOME), quakes_mod.quakes.status())).encode(), "application/json")
+                                                             conditions_mod.daytime(time.time(), ft8_mod.HOME), quakes_mod.quakes.status(),
+                                                             warn_mod.warnings.status(), spots_mod.spots.status())).encode(), "application/json")
+            elif path == "/api/warnings":
+                # The Warnings window (playback/ukwarnings.py): the Met Office's for the region ("region": which one, chosen
+                # or nearest the locator; "chosen": "" for nearest), the Environment Agency's floods near here.
+                from sleepradiopi.audio import ft8 as ft8_mod
+                from sleepradiopi.playback import conditions as conditions_mod, ukwarnings as warn_mod
+                had = warn_mod.warnings.status() or {}
+                self._send(json.dumps({"met": had.get("met") or [], "floods": had.get("floods") or [], "t": had.get("t"), "had": bool(had),
+                                       "region": warn_mod.region_for(), "chosen": warn_mod.REGION, "regions": {k: v[0] for k, v in warn_mod.REGIONS.items()},
+                                       "flood_km": warn_mod.FLOOD_KM, "home": ft8_mod.HOME, "alerts": conditions_mod.ALERTS}).encode(), "application/json")
+            elif path == "/api/spots":
+                # The My signal window (playback/spots.py): who heard the owner's callsign in the last day (PSK Reporter).
+                from sleepradiopi.audio import ft8 as ft8_mod
+                from sleepradiopi.playback import spots as spots_mod
+                had = spots_mod.spots.status() or {}
+                call = ft8_mod.own_call()
+                self._send(json.dumps({"call": call, "spots": had.get("spots") or [], "t": had.get("t"), "had": bool(had),
+                                       "map": spots_mod.MAP.format(call) if call else None}).encode(), "application/json")
             elif path == "/api/quakes":
                 # The Earthquakes window (playback/quakes.py): the world's in the last day (USGS, 4.5 and over, the
                 # biggest first) and the UK's lately (BGS, the latest first), each with "km" from the radio's locator;
@@ -852,6 +870,22 @@ def make_handler(station: Station, output: Mp3Output, speaker=None,
                     if config_file is not None:
                         save_setting(config_file, "conditions_alerts", alerts)
                 self._send(json.dumps({"say_every_h": conditions_mod.EVERY_H, "alerts": conditions_mod.ALERTS}).encode(), "application/json")
+            elif path == "/api/warnings":
+                # {"region": "ne" | ...}: the Met Office region for weather warnings, or "" for the one nearest the
+                # locator. Kept; what was had is fetched again at once.
+                from sleepradiopi.playback import ukwarnings as warn_mod
+                try:
+                    region = self._body().get("region")
+                    if not isinstance(region, str) or (region and region not in warn_mod.REGIONS):
+                        raise ValueError
+                except (ValueError, TypeError, AttributeError):
+                    self._error('send {"region": one of ' + ", ".join(warn_mod.REGIONS) + ', or ""}')
+                    return
+                warn_mod.REGION = region
+                if config_file is not None:
+                    save_setting(config_file, "warnings_region", region)
+                warn_mod.warnings.fetch()
+                self._send(json.dumps({"region": warn_mod.region_for(), "chosen": region}).encode(), "application/json")
             elif path == "/api/rx/survey":
                 # {"base", "places": [{"key", "mode", "band", "hz"}]}: take that receiver of your own round those places
                 # now and write down what's on each (playback/survey.py). {"stop": true}: the round stopped.
