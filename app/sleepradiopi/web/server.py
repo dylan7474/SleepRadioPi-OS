@@ -464,8 +464,19 @@ def make_handler(station: Station, output: Mp3Output, speaker=None,
                 from sleepradiopi.audio import ft8 as ft8_mod
                 from sleepradiopi.playback import conditions as conditions_mod, survey as survey_mod
                 out = conditions_mod.summary(conditions_mod.freshest(survey_mod.job)[1], ft8_mod.reader.heard()["heard"], time.time())
+                from sleepradiopi.playback import quakes as quakes_mod
                 self._send(json.dumps(conditions_mod.outside(out, conditions_mod.sun.status(), conditions_mod.forecast.status(), conditions_mod.aurora.status(),
-                                                             conditions_mod.daytime(time.time(), ft8_mod.HOME))).encode(), "application/json")
+                                                             conditions_mod.daytime(time.time(), ft8_mod.HOME), quakes_mod.quakes.status())).encode(), "application/json")
+            elif path == "/api/quakes":
+                # The Earthquakes window (playback/quakes.py): the world's in the last day (USGS, 4.5 and over, the
+                # biggest first) and the UK's lately (BGS, the latest first), each with "km" from the radio's locator;
+                # "alerts": whether the DJ says a big one (Band conditions' Alerts), and how big that is.
+                from sleepradiopi.playback import conditions as conditions_mod, quakes as quakes_mod
+                had = quakes_mod.quakes.status() or {}
+                far = lambda q: {**q, "km": quakes_mod.km_from_home(q["lat"], q["lon"])}
+                self._send(json.dumps({"world": [far(q) for q in had.get("world") or []], "uk": [far(q) for q in (had.get("uk") or [])[:25]],
+                                       "t": had.get("t"), "had": bool(had), "alerts": conditions_mod.ALERTS,
+                                       "alert_at": {"world": quakes_mod.WORLD_ALERT, "uk": quakes_mod.UK_ALERT, "near": quakes_mod.UK_NEAR_ALERT, "near_km": quakes_mod.UK_NEAR_KM}}).encode(), "application/json")
             elif path == "/api/rx/survey":
                 # The survey run by the radio (playback/survey.py): how far a round has got; with ?base=, what's been
                 # found on that receiver; "itself": the receivers surveyed on the hour.

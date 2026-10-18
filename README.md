@@ -455,8 +455,13 @@ Actions, Sleep timer and Radio folders open:
   seen; while an alert lasts, a pill in the menu bar says it ("Aurora:
   amber · possible tonight") and opens the folder. Nothing is ever said
   aloud from here: the DJ says it only as set in Band conditions, and
-  only while the DJ is on. More tiles join it as more comes in
-  (earthquakes, warnings, your logbook).
+  only while the DJ is on. **Earthquakes** are two of its tiles: the
+  world's biggest in the last day (the US Geological Survey, 4.5 and
+  over) and the UK's latest (the British Geological Survey), opening a
+  window that lists them with how far each is from you. With Alerts on,
+  the DJ says a fresh one once: 6.5 or more anywhere, 3 or more in the
+  UK, or 2 or more within 100 km. More tiles join it as more comes in
+  (warnings, your logbook).
 - **Receivers with names.** *Name…* in a receiver's window calls it what
   you like -- "Short wave", "VHF" -- in Receivers, on its window and
   wherever it's mentioned: two dongles on one computer are otherwise told
@@ -1114,8 +1119,8 @@ What's left to do (everything else described here is built and running):
   teleprinters' strength as a second yardstick, N0NBH's forecast,
   AuroraWatch UK and alerts. Still to do: where your own receiver's
   reports put you among others', once *Report* is on; more from outside
-  (earthquakes, Met Office and flood warnings, PSK Reporter spots of your
-  own callsign, your QRZ logbook).
+  in The world outside (Met Office and flood warnings, PSK Reporter spots
+  of your own callsign, your QRZ logbook; earthquakes are done).
 - **A laser-cut wood cathedral** — a real-wood version of the cathedral case:
   - the face and fretwork cut from walnut-veneered plywood, the sides and
     back from plywood or MDF;

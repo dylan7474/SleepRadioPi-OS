@@ -26,6 +26,8 @@ def _no_internet(monkeypatch):
     """No test here goes to N0NBH or AuroraWatch UK for real; and no alert is left over from another."""
     monkeypatch.setattr(conditions, "forecast", conditions.Forecast(get=_offline))
     monkeypatch.setattr(conditions, "aurora", conditions.Aurora(get=_offline))
+    from sleepradiopi.playback import quakes
+    monkeypatch.setattr(quakes, "quakes", quakes.Quakes(get_json=_offline, get_xml=_offline))
     monkeypatch.setattr(conditions, "_alerted", {})
     monkeypatch.setattr(conditions, "ALERTS", False)
 

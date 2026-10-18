@@ -933,6 +933,8 @@ def main() -> None:
     conditions_mod.sun.keep_in(Path.home() / ".cache" / "sleepradiopi" / "sun.json")      # NOAA's figures for the sun, as last had
     conditions_mod.forecast.keep_in(Path.home() / ".cache" / "sleepradiopi" / "forecast.json")   # N0NBH's band conditions
     conditions_mod.aurora.keep_in(Path.home() / ".cache" / "sleepradiopi" / "aurora.json")       # AuroraWatch UK's alert
+    from sleepradiopi.playback import quakes as quakes_mod
+    quakes_mod.quakes.keep_in(Path.home() / ".cache" / "sleepradiopi" / "quakes.json")          # the USGS's and the BGS's earthquakes
     conditions_mod.EVERY_H = settings.conditions_every_h if settings.conditions_every_h in conditions_mod.SAY_HOURS else 0
     conditions_mod.ALERTS = settings.conditions_alerts is True
     serve(station, stream, args.port or settings.http_port, control, args.config, announcer, jobs, updates,

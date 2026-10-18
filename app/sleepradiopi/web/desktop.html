@@ -761,7 +761,7 @@ const PANEL = {};
 for (const [key, title, sym, h, page] of PANELS) PANEL[key] = mk({ id: "set:" + key, kind: "panel", key, title, sym, h, page });
 for (const [key, title, sym, h] of [["messages", "Messages", "✎", 55], ["birthdays", "Birthdays", "✿", 340], ["stations", "Stations", "R", 8],
                                     ["tests", "Test sounds", "▶", 150], ["stream", "Listen in a browser", "◠", 200], ["lists", "Themes", "A", 195],
-                                    ["findstation", "Find a station", "R", 8], ["findreceiver", "Find a receiver", "⌁", 200], ["modes", "Where to listen", "⌖", 215], ["conditions", "Band conditions", "☼", 45], ["findroom", "Find a room", "☊", 265], ["findpodcast", "Follow a podcast", "P", 275], ["newlist", "New theme", "A", 195]])
+                                    ["findstation", "Find a station", "R", 8], ["findreceiver", "Find a receiver", "⌁", 200], ["modes", "Where to listen", "⌖", 215], ["conditions", "Band conditions", "☼", 45], ["quakes", "Earthquakes", "≋", 20], ["findroom", "Find a room", "☊", 265], ["findpodcast", "Follow a podcast", "P", 275], ["newlist", "New theme", "A", 195]])
   PANEL[key] = mk({ id: "set:" + key, kind: "panel", key, title, sym, h, page: key });
 const DJ = mk({ id: "dj", kind: "dj", title: "The DJ" });
 const NOTES = mk({ id: "notes", kind: "folder", box: "messages", title: "Messages", kids: [], sym: "✎" });   // a folder of sticky notes
@@ -1151,6 +1151,8 @@ const OUTSIDE_PIC = {
   sun: '<circle cx="12" cy="12" r="4"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M5 5l2 2M17 17l2 2M5 19l2-2M17 7l2-2"/>',
   aurora: '<path d="M3 20c2-8 4-12 6-12s2 6 4 6 3-8 8-10"/><path d="M3 20h18"/>',
   vhf: '<path d="M4 18 12 6l8 12"/><path d="M7 14h10"/>',
+  quakes: '<path d="M2 12h4l2-6 3 12 3-9 2 3h6"/>',
+  ukquakes: '<path d="M2 12h5l2-4 3 8 2-4h8"/>',
 };
 const svgPic = d => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${d}</svg>`;
 function glyph(o) {
@@ -1844,7 +1846,7 @@ async function open(id) {
   if (o.kind === "panel" && o.key === "lists") return open(LISTS.id);
 
   if (o.kind === "calendar") return open(BDAYS.id);
-  if (o.kind === "outside") { outsideSaw(); return open(PANEL.conditions.id); }      // (all of them are said in full in Band conditions, for now)
+  if (o.kind === "outside") { outsideSaw(); return open(["quakes", "ukquakes"].includes(o.t?.key) ? PANEL.quakes.id : PANEL.conditions.id); }   // (the rest are said in full in Band conditions)
   if (o === OUTSIDE) outsideSaw();
   if (o.kind === "list" && !o.key) o.key = "alist";
   const had = W.find(w => w.id === id);
@@ -4819,6 +4821,25 @@ const UI = {
         srow("Alerts", sw(c.alerts, v => act(() => api("/api/rx/conditions", { alerts: v })), "Alerts"),
           help(c.alerts ? "Said in the next gap, whatever the hour" : "Off")),
         help("When AuroraWatch UK goes to amber or red, sporadic E opens on 6, 4 or 2 m, or NOAA reports a strong radio blackout or geomagnetic storm: once, when it starts, in the next gap between songs (not in the quiet hours)."))],
+  },
+  // Earthquakes (a tile in The world outside): the world's in the last day, the biggest first, and the UK's lately,
+  // each with how far away; and the Alerts switch (the same one as Band conditions'), with what's big enough.
+  quakes: {
+    load: () => api("/api/quakes"),
+    build: (q, act) => {
+      const row = (x, uk) => el("p", { className: "note", style: "margin:3px 0" },
+        el("b", { textContent: `M${x.mag.toFixed(1)} ` }), x.url ? el("a", { href: x.url, target: "_blank", rel: "noopener", textContent: x.place }) : x.place,
+        ` · ${new Date(x.t * 1000).toLocaleString("en-GB", uk ? { weekday: "short", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" } : { hour: "2-digit", minute: "2-digit" })}`
+        + (x.km != null ? ` · ${x.km.toLocaleString("en-GB")} km away` : "") + (x.tsunami ? " · tsunami warning" : ""));
+      return [
+        grp("In the world, the last day", ...(q.world.length ? q.world.map(x => row(x)) : [help(q.had ? "No earthquake of magnitude 4.5 or more in the last day." : "Not had yet: the radio asks when it has internet.")]),
+          help("Magnitude 4.5 and over, the biggest first, from the US Geological Survey.")),
+        grp("In the UK, lately", ...(q.uk.length ? q.uk.slice(0, 12).map(x => row(x, true)) : [help(q.had ? "None lately." : "Not had yet.")]),
+          help("From the British Geological Survey: mostly small ones, felt by few if any.")),
+        grp("Said by the DJ",
+          srow("Alerts", sw(q.alerts, v => act(() => api("/api/rx/conditions", { alerts: v })), "Alerts"), help(q.alerts ? "Said in the next gap" : "Off")),
+          help(`A fresh one, once, in the next gap between songs (with the DJ on, not in the quiet hours): magnitude ${q.alert_at.world} or more anywhere, ${q.alert_at.uk} or more in the UK, or ${q.alert_at.near} or more within ${q.alert_at.near_km} km of here. The same switch as Band conditions' alerts.`))];
+    },
   },
   findreceiver: {
     load: async () => { let near = null; try { near = JSON.parse(localStorage.getItem("srd.rxnear")); } catch {}

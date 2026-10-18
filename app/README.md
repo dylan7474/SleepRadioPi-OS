@@ -1462,6 +1462,18 @@ The cards:
   browser; opening the folder sees them), and the menu bar's pill while
   any alert lasts. Tiles open Band conditions; they can't be thrown away
   or put on a button.
+  *Earthquakes* (`playback/quakes.py`, `GET /api/quakes`): `quakes.Quakes`
+  (a `conditions.Kept`) fetches the USGS's `4.5_day.geojson` and the BGS's
+  `MhSeismology.xml` every 15 minutes at most (either may fail alone; kept
+  in `quakes.json`, not shown once six hours old): `"world"` the biggest
+  first, `"uk"` the latest first, each `{"id", "mag", "place", "t", "lat",
+  "lon", "url", "tsunami"?}` and, in `/api/quakes`, `"km"` from the
+  locator. Two tiles in `/api/outside` (`quakes.tiles()`: `"quakes"` amber
+  from 6, red from 7; `"ukquakes"`), opening the Earthquakes window
+  (`set:quakes`). Alerts (`quakes.alerts()`, through `alerts_now()`):
+  `WORLD_ALERT` 6.5 anywhere, `UK_ALERT` 3.0 in the UK, `UK_NEAR_ALERT`
+  2.0 within `UK_NEAR_KM` 100 km, and only within `ALERT_FRESH_S` (three
+  hours) of it, so one found at start-up that's old isn't said.
   *How the bands are* (`GET /api/rx/conditions?base=`;
   `playback/conditions.py`): `summary()` takes a receiver's survey (its
   FT8 places no more than two hours old) and who the FT8 reader has heard
