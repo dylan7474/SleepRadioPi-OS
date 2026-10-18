@@ -64,13 +64,17 @@ def test_the_logbook_fetched_kept_and_forgotten(tmp_path: Path) -> None:
     lb.keep_in(tmp_path / "qrz.json")
     had = lb.fetch()
     assert (had["total"], had["confirmed"], had["dxcc"]) == (1204, 388, 141) and [q["call"] for q in had["recent"]] == ["DL1ABC", "VK2XYZ"]
-    assert [a["ACTION"] for a in asked] == ["STATUS", "FETCH"] and asked[1]["OPTION"].startswith("MODSINCE:2026-09-") and all(a["KEY"] == KEY for a in asked)
+    assert [a["ACTION"] for a in asked] == ["STATUS", "FETCH"] and asked[1]["OPTION"] == "MODSINCE:2025-10-18,AFTERLOGID:0,MAX:250,TYPE:ADIF"
+    assert all(a["KEY"] == KEY for a in asked) and had["fetched"] == {"result": "OK", "count": "2", "reason": None, "since": "2025-10-18"}
     assert KEY not in (tmp_path / "qrz.json").read_text()                       # (the book kept, never the key)
     assert lb.status()["says"] == "1,204 QSOs in the logbook, 388 confirmed, 141 countries, the latest DL1ABC on 20m (FT8)."
     t = qrzlog.tile(had, set())[0]
     assert (t["value"], t["sub"], t["state"]) == ("1,204", "141 countries · last DL1ABC 20m", "good")
     answers["FETCH"] = None                                                     # the latest not had: the figures still are
-    assert lb.fetch()["recent"] == []
+    again = lb.fetch()
+    assert again["recent"] == [] and again["fetched"]["result"] == "unreachable"
+    answers["FETCH"] = "RESULT=FAIL&REASON=invalid option&COUNT=0"
+    assert lb.fetch()["fetched"] == {"result": "FAIL", "count": "0", "reason": "invalid option", "since": "2025-10-18"}
     key[0] = ""
     assert lb.status() is None                                                  # no key: nothing shown
     lb.forget()
@@ -145,6 +149,22 @@ def test_the_key_from_the_web_and_never_back(tmp_path: Path, monkeypatch) -> Non
     finally:
         httpd.shutdown()
         httpd.server_close()
+
+
+def test_a_big_book_a_page_at_a_time(monkeypatch) -> None:
+    monkeypatch.setattr(qrzlog, "PAGE", 2)
+    pages, asked = {0: ADIF.replace("<eor>", "<app_qrzlog_logid:2>10<eor>", 1).replace("15m<mode", "15m<app_qrzlog_logid:2>11<mode"),
+                    12: "<call:5>G4NEW<band:3>40m<mode:2>CW<qso_date:8>20261018<time_on:4>2000<app_qrzlog_logid:2>12<eor>"}, []
+
+    def post(fields):
+        asked.append(fields)
+        if fields["ACTION"] == "STATUS":
+            return STATUS
+        after = int(fields["OPTION"].split("AFTERLOGID:")[1].split(",")[0])
+        return "RESULT=OK&COUNT=3&ADIF=" + pages[after]
+    had = qrzlog.Logbook(post=post, clock=lambda: NOW, key=lambda: KEY).fetch()
+    assert [q["call"] for q in had["recent"]] == ["G4NEW", "DL1ABC", "VK2XYZ"]           # (all pages, the latest first)
+    assert [a["OPTION"].split(",")[1] for a in asked[1:]] == ["AFTERLOGID:0", "AFTERLOGID:12"]
 
 
 def test_the_tile_is_there_with_no_key(monkeypatch) -> None:

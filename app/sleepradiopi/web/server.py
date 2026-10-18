@@ -1541,7 +1541,8 @@ def make_handler(station: Station, output: Mp3Output, speaker=None,
             from sleepradiopi.playback import qrzlog as qrz_mod
             had = qrz_mod.logbook.status() or {}
             return {"set": bool(qrz_mod.KEY), "had": bool(had), "refused": qrz_mod.logbook.refused, "t": had.get("t"),
-                    **{k: had.get(k) for k in ("total", "confirmed", "dxcc")}, "status": had.get("status") or {}, "recent": had.get("recent") or []}
+                    **{k: had.get(k) for k in ("total", "confirmed", "dxcc")}, "status": had.get("status") or {}, "recent": had.get("recent") or [],
+                    "fetched": had.get("fetched") or {}}
 
         def _one_reader(self, on: str | None, keep: bool = False) -> dict:
             """The readers for receivers, one at a time: each mode has its own place on a band, so with one switched

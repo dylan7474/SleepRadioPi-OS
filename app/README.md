@@ -1503,7 +1503,7 @@ The cards:
   {"key": "..."}`, `""` to forget; the setting `qrz_key`, in
   `backup.LOCAL` so never in a backup file, and never in any answer:
   `"set"` says whether there is one): `qrzlog.Logbook` POSTs STATUS and
-  FETCH (`MODSINCE` a month ago, `TYPE:ADIF`) to `logbook.qrz.com/api`
+  FETCH (`MODSINCE` a year ago, 250 at a time by `AFTERLOGID`, eight pages at most, `TYPE:ADIF`; `"fetched"` keeps QRZ's reply to it, shown when the list is empty) to `logbook.qrz.com/api`
   every 30 minutes at most, with the user agent QRZ asks for
   (`SleepRadio/VERSION (CALLSIGN)`), kept in `qrz.json` (not the key):
   `"total"`, `"confirmed"`, `"dxcc"` (`pick()`: QRZ's guide doesn't name

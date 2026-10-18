@@ -4949,9 +4949,11 @@ const UI = {
           q.confirmed != null ? outKv("Confirmed", q.confirmed.toLocaleString("en-GB"), "") : null,
           q.dxcc != null ? outKv("Countries", q.dxcc, "DXCC entities worked") : null,
           help(`From QRZ, ${condAge(q.t)}. With Alerts on (Band conditions), the DJ says it when a new country goes in.`)) : null,
-        q.recent.length ? grp("The latest", ...q.recent.map(x => el("p", { className: "note", style: "margin:3px 0" },
+        q.had ? grp("The latest", ...q.recent.map(x => el("p", { className: "note", style: "margin:3px 0" },
           el("a", { href: `https://www.qrz.com/db/${encodeURIComponent(x.call)}`, target: "_blank", rel: "noopener", textContent: x.call }),
-          ` · ${[x.country, x.km != null ? `${x.km.toLocaleString("en-GB")} km` : x.grid, x.band, x.mode, t(x)].filter(Boolean).join(" · ")}`))) : null,
+          ` · ${[x.country, x.km != null ? `${x.km.toLocaleString("en-GB")} km` : x.grid, x.band, x.mode, t(x)].filter(Boolean).join(" · ")}`)),
+          q.recent.length ? null : help(q.fetched?.result === "OK" ? `None added or changed since ${q.fetched.since}.`
+            : q.fetched?.result ? `QRZ didn't give them: ${q.fetched.result}${q.fetched.reason ? `, ${q.fetched.reason}` : ""}.` : "Not had yet.")) : null,
         q.had && Object.keys(q.status).length ? grp("Everything QRZ says about the book", ...Object.entries(q.status).filter(([k]) => !SHOWN.has(k))
           .map(([k, v]) => outKv(k.replace(/_/g, " ").toLowerCase().replace(/^./, m => m.toUpperCase()), v || "–", ""))) : null,
         grp("The key", srow("Access key", key, sbtn(q.set ? "Change" : "Keep it", save, "primary")),

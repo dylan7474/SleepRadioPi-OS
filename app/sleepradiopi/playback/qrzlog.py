@@ -22,6 +22,7 @@ for the window to show.
 from __future__ import annotations
 
 import html
+import logging
 import re
 import time
 import urllib.parse
@@ -32,11 +33,14 @@ from typing import Callable
 from sleepradiopi.audio import ft8
 from sleepradiopi.playback.conditions import Kept
 
+log = logging.getLogger(__name__)
+
 URL = "https://logbook.qrz.com/api"
 EVERY_S = 1800.0
 OLD_S = 12 * 3600.0
-RECENT_DAYS = 30             # the latest QSOs: those modified in the last month...
+RECENT_DAYS = 365            # the latest QSOs: from those modified in the last year...
 RECENT_MOST = 25             # ...this many of them
+PAGE, PAGES = 250, 8         # asked for this many at a time (as QRZ suggests), at most this many times
 NEW_FRESH_S = 6 * 3600.0     # a new country is said while it's this new
 KEY = ""                     # the logbook's access key; main.py sets it from the settings (and the web side when it's changed)
 TOTAL = ("QSO_COUNT", "TOTAL_QSOS", "TOTAL_QSO", "TOTAL", "COUNT")
@@ -151,14 +155,24 @@ class Logbook(Kept):
         self.refused = None
         status = {k: v for k, v in st.items() if k not in ("RESULT", "ADIF")}
         since = (datetime.fromtimestamp(self._clock(), timezone.utc) - timedelta(days=RECENT_DAYS)).strftime("%Y-%m-%d")
-        recent = []
-        try:
-            got = answer(self._get({"KEY": key, "ACTION": "FETCH", "OPTION": f"MODSINCE:{since},MAX:{RECENT_MOST * 4},TYPE:ADIF"}))
-            if got.get("RESULT") == "OK" and got.get("ADIF"):
-                recent = sorted((qso(r) for r in adif(got["ADIF"])), key=lambda q: -(q["t"] or 0))[:RECENT_MOST]
-        except (OSError, ValueError):
-            pass                                     # (the figures without the latest: still worth having)
-        had = {"total": pick(status, TOTAL), "confirmed": pick(status, CONFIRMED), "dxcc": pick(status, DXCC), "status": status, "recent": recent}
+        records, fetched, after = [], {}, 0
+        try:                                         # a page at a time, by logid (QRZ gives them oldest first)
+            for _ in range(PAGES):
+                got = answer(self._get({"KEY": key, "ACTION": "FETCH", "OPTION": f"MODSINCE:{since},AFTERLOGID:{after},MAX:{PAGE},TYPE:ADIF"}))
+                fetched = {"result": got.get("RESULT"), "count": got.get("COUNT"), "reason": got.get("REASON"), "since": since}
+                page = adif(got.get("ADIF") or "") if got.get("RESULT") == "OK" else []
+                records += page
+                ids = [int(r["app_qrzlog_logid"]) for r in page if str(r.get("app_qrzlog_logid", "")).isdigit()]
+                if len(page) < PAGE or not ids:
+                    break
+                after = max(ids) + 1
+            if fetched.get("result") != "OK":
+                log.info("qrz: the latest QSOs weren't had: %s %s", fetched.get("result"), fetched.get("reason") or "")
+        except (OSError, ValueError) as e:
+            fetched = {"result": "unreachable", "reason": str(e), "since": since}    # (the figures without the latest: still worth having)
+        recent = sorted((qso(r) for r in records), key=lambda q: -(q["t"] or 0))[:RECENT_MOST]
+        had = {"total": pick(status, TOTAL), "confirmed": pick(status, CONFIRMED), "dxcc": pick(status, DXCC), "status": status, "recent": recent,
+               "fetched": fetched}
         before = self._had or {}
         grew = [g for g in before.get("grew") or [] if self._clock() - g["t"] <= NEW_FRESH_S]
         if had["dxcc"] is not None and before.get("dxcc") is not None and had["dxcc"] > before["dxcc"]:
