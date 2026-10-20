@@ -175,3 +175,25 @@ def test_a_card_that_wont_open_is_retried_ever_more_slowly_then_reported(monkeyp
     assert backoff[:4] == [0.1, 0.2, 0.4, 0.8] and max(backoff) <= 5.0
     assert stuck == [1]                                     # once
     out.stop()
+
+
+def test_a_clip_plays_on_when_the_show_stalls(tmp_path: Path) -> None:
+    """A button's words while the show goes quiet (a book seeking to its place,
+    a station connecting): the pump carries the clip, not waiting for the show."""
+    from sleepradiopi.io.announce import Clip
+    spk, out = _speaker(tmp_path)
+    spk.volume = 100
+    spk.start()
+    clip = Clip(np.full((8192, 2), 5000, dtype=np.int16), "button", "Button")
+    spk.write(np.zeros((1024, 2), dtype=np.int16))
+    spk.play_test(clip)
+    spk.write(np.zeros((2048, 2), dtype=np.int16))            # the show writing: it plays the clip
+    assert clip.pos == 2048
+    assert _wait(lambda: clip.done)                             # then it stalls: the pump finishes it
+    assert _wait(lambda: spk.test is None)
+    time.sleep(0.2)
+    played = np.frombuffer(out.read_bytes(), dtype=np.int16).reshape(-1, 2)
+    assert len(played) == 1024 + 8192                           # no extra silence after the clip
+    assert (played[1024:] == 5000).all()
+    assert spk._pump is None or not spk._pump.is_alive()
+    spk.stop()

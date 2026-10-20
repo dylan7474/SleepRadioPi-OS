@@ -84,7 +84,8 @@ Actions, Sleep timer and Radio folders open:
   but leaves the noise playing. A preset button can switch it on and off.
 - **Audiobooks** — mp3 or m4a folders, or m4b, m4a or mp3 files, in their own folder, read with
   nothing from the DJ; each book remembers its place (a minute back after the
-  sleep timer, for when you drifted off), with a whole-book progress bar and
+  sleep timer, for when you drifted off) and picks up there at once, however
+  far into a long book, with a whole-book progress bar and
   one-minute back / forward on the web page. At the end of a book the radio
   pauses instead of waking you with the show.
 - **Podcasts** — search the directory, follow shows, and play episodes (again
@@ -478,7 +479,7 @@ Actions, Sleep timer and Radio folders open:
   logbook needs a QRZ Logbook subscription: without one, the window
   says what QRZ said. **Lightning**: strikes within 100 km of your
   locator, from Blitzortung.org's live feed of every strike in the world
-  (the radio listens 30 seconds every 10 minutes, and all the time while
+  (off until you switch it on in its window; then the radio listens 30 seconds every 10 minutes, and all the time while
   a storm is near); the tile shows the nearest in the last hour. A real
   bell (a public-domain recording) rings on the radio when a storm first
   comes within 40 km and again within 10 km -- twice a storm at most, not

@@ -38,6 +38,8 @@ KNOB_ACCEL = ((0.05, 5), (0.12, 3), (0.25, 2))
 SLICE_FRAMES = 1024          # ~23 ms: how often the volume can change
 PIPE_BYTES = 16384           # ~93 ms of audio queued in the pipe to aplay
 ALSA_BUFFER_US = 500_000     # aplay's own buffer; 250 / 350 ms under-ran now and then while the voice reloaded
+SHOW_STALL_S = 0.25          # the show hasn't written for this long (a book seeking, a station
+                             # connecting): the pump plays a clip on, so a button's words aren't held up
 STUCK_S = 120.0              # the card won't open for this long: on_stuck() (the radio restarts)
 DB_PER_STEP = 0.5            # volume 100 = full scale, 0 = silent
 F_SETPIPE_SZ = 1031          # fcntl.F_SETPIPE_SZ (Linux), missing from older Pythons
@@ -86,6 +88,7 @@ class SpeakerOutput:
         self._lock = threading.Lock()
         self._io = threading.Lock()      # one writer at a time: the show, or the noise pump
         self._pump: threading.Thread | None = None
+        self._show_at = 0.0              # when the show last came to write (time.monotonic())
         self._opened_once = False
         self.level = 0.0                 # the last slice's mean |sample|, before the volume (io/lamps.py)
         self.level_at = 0.0
@@ -131,13 +134,15 @@ class SpeakerOutput:
 
     def _sync(self) -> None:
         """(Under _lock.) aplay open while the show plays or the noise is on; the
-        pump running while the noise is on and the show isn't."""
-        want = self._show_on or self.noise is not None or self.hold is not None or self.test is not None
+        pump running while the noise is on and the show isn't, or while a clip
+        plays (it carries the clip on if the show stalls)."""
+        clip = self.hold is not None or self.test is not None
+        want = self._show_on or self.noise is not None or clip
         if want and self._proc is None:
             self._open()
         elif not want and self._proc is not None:
             self._close()
-        if (self.noise is not None or self.hold is not None or self.test is not None) and not self._show_on \
+        if (clip or (self.noise is not None and not self._show_on)) \
                 and (self._pump is None or not self._pump.is_alive()):
             self._pump = threading.Thread(target=self._pump_run, name="noise", daemon=True)
             self._pump.start()
@@ -145,10 +150,15 @@ class SpeakerOutput:
     def _pump_run(self) -> None:
         while True:
             with self._lock:
-                if (self.noise is None and self.hold is None and self.test is None) or self._show_on or self._proc is None:
+                clip = self.hold is not None or self.test is not None
+                if (self.noise is None and not clip) or (self._show_on and not clip) or self._proc is None:
                     if not self._show_on:
                         self._sync()         # (a clip over while paused: the speaker off again)
                     return
+                stalled = not self._show_on or time.monotonic() - self._show_at > SHOW_STALL_S
+            if not stalled:                  # the show is writing: it plays the clip
+                time.sleep(0.05)
+                continue
             if not self._emit(None, SLICE_FRAMES):   # blocks on aplay: real time
                 time.sleep(0.1)
 
@@ -163,6 +173,7 @@ class SpeakerOutput:
         if not self.enabled:             # paused: the show's last seconds go nowhere
             return
         for i in range(0, len(block), SLICE_FRAMES):
+            self._show_at = time.monotonic()     # (before waiting for _io: the pump makes way)
             if not self._emit(block[i:i + SLICE_FRAMES]):
                 return
 
@@ -178,6 +189,8 @@ class SpeakerOutput:
                 test, noise, mix = self.test or self.hold, self.noise, self.noise_mix
                 if show is not None and not self._show_on:
                     return False
+                if show is None and test is None and self._show_on:
+                    return True              # (the pump, its clip just over: the show plays on)
             if proc is None:
                 return False
             n = len(show) if show is not None else n

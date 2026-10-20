@@ -730,7 +730,11 @@ The cards:
   file, with no speech to make and no wait. A name not made yet (or made
   for another voice: they're made again) gives the pips that once; with the
   DJ off it's always pips. Files for names no longer on a button are
-  deleted. `GET /api/buttons` has `named` on each such step.
+  deleted. `GET /api/buttons` has `named` on each such step. **The name is
+  heard at once**, even while what the button tuned to is still starting (a
+  book seeking to its place, a station connecting): a clip is played by the
+  speaker's pump thread whenever the show hasn't written for `SHOW_STALL_S`
+  (0.25 s), and by the show's own writes otherwise (`audio/speaker.py`).
   The next press means the step after the one that's playing; coming back
   to a button from something else, the step it was last on (remembered until
   a restart). An action in the steps is done and stepped past: within 30 s
@@ -822,7 +826,17 @@ The cards:
   each is) and searches them; a preset button can hold one (one press
   carries on). Chapter lists are cached (`~/.cache/sleepradiopi/books.json`):
   reading a long m4b takes a Zero a while the first time
-  (`playback/audiobooks.py`, `Station._run_book`).
+  (`playback/audiobooks.py`, `Station._run_book`). **A long MP3 resumes at
+  once**: ffmpeg's `-ss` into an MP3 with no table of contents reads every
+  frame up to the place (on a Zero, 2-6 s three hours into a book). So each
+  MP3 over 20 MB gets an index (`audio/mp3index.py`): after the books are
+  read, a low-priority process of its own scans its frame headers once and
+  keeps the byte where every ~10 s starts (`~/.cache/sleepradiopi/mp3index`,
+  named by a hash of the path, size and time). `pcm.decode` then starts more
+  than a minute in from the entry a second or more before the place
+  (`-skip_initial_bytes`, `-ss` for the rest; within ~25 ms of ffmpeg's own
+  seek) -- for books, On demand, a song or episode resumed, and the knob's
+  press-and-turn. Until a file's index is made it seeks the old way.
 - **Podcasts** (Find → Podcasts) — search the iTunes podcast directory (as the
   Android app does) or paste a feed's address, and **follow** a show (up to 50,
   kept in the settings as `podcasts`). Each show's episode list (the newest
@@ -1516,7 +1530,7 @@ The cards:
   window can be found.
   *Lightning* (`playback/lightning.py`, `GET /api/lightning`, `POST
   /api/lightning {"on"?, "bell"?, "ring"?}`, the settings
-  `lightning_watch`, `lightning_bell`): `lightning.Watch`, a thread of its
+  `lightning_watch` (off to begin with), `lightning_bell`): `lightning.Watch`, a thread of its
   own, connects to `wss://ws1|ws7.blitzortung.org/`, sends `{"a":111}`
   and reads each strike (`decode()`: the site's LZW) for `SAMPLE_S` (30)
   every `EVERY_S` (600), staying while one lands within `AREA_KM` (100):

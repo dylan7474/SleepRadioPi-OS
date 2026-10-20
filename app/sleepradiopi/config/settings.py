@@ -45,7 +45,7 @@ class Settings:
     survey_itself: dict = field(default_factory=dict)      # receivers of your own the radio surveys by itself: {"http://192.168.50.4:8075": {"every_h": 3, "places": [...]}} (playback/survey.py)
     conditions_every_h: int = 0           # the DJ says how the short-wave bands are, this many hours apart (0: not at all) (playback/conditions.py)
     conditions_alerts: bool = False       # ...and says it when an aurora alert, a sporadic E opening or a strong storm begins
-    lightning_watch: bool = True          # listen for lightning near the locator now and then (playback/lightning.py)
+    lightning_watch: bool = False         # listen for lightning near the locator now and then (playback/lightning.py)
     lightning_bell: bool = True           # ...and ring a bell when it comes near (not in the quiet hours)
     qrz_key: str = ""                     # the owner's QRZ logbook access key (playback/qrzlog.py): never in a backup file, never sent to the page
     warnings_region: str = ""             # the Met Office region for weather warnings ("ne"...), or "" for the one nearest the locator (playback/ukwarnings.py)

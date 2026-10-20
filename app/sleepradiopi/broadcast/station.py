@@ -2110,8 +2110,10 @@ class Station:
 
     def _scan_books(self) -> None:
         try:
-            self.books.scan()
+            books = self.books.scan()
             self.kept.scan()
+            from sleepradiopi.audio import mp3index      # (long MP3 books: resumed at once)
+            mp3index.want(sorted({c.path for b in books for c in b.chapters}))
         except Exception:
             log.exception("audiobooks: scan failed")
         finally:

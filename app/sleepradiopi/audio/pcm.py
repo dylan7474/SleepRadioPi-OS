@@ -190,8 +190,16 @@ class ScanCache:
 
 def decode(path: Path, start_ms: int = 0, end_ms: int = 0) -> Iterator[np.ndarray]:
     """Stream a file as int16 blocks of shape (frames, 2) at 44.1 kHz, clipped to
-    [start_ms, end_ms] (0 = no clip). Closing the generator stops ffmpeg."""
+    [start_ms, end_ms] (0 = no clip). Closing the generator stops ffmpeg.
+    Far into a long MP3, it starts from the index's byte (audio/mp3index.py)."""
+    from sleepradiopi.audio import mp3index
     cmd = [*FFMPEG]
+    at = mp3index.lookup(path, start_ms) if start_ms else None
+    if at is not None:
+        skip, base_ms = at
+        cmd += ["-skip_initial_bytes", str(skip), "-f", "mp3"]
+        start_ms -= base_ms
+        end_ms = end_ms - base_ms if end_ms else 0
     if start_ms:
         cmd += ["-ss", f"{start_ms / 1000:.3f}"]
     if end_ms:
