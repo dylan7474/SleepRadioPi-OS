@@ -120,44 +120,77 @@ def test_selector_spaces_artists_and_avoids_repeats():
     pool = [track(f"Song {i}", f"Artist {i % 12}") for i in range(48)]
     sel = BroadcastSelector(pool, random.Random(7))
     picks = [sel.next_track() for _ in range(48 * 4)]
-    close = sum(len({a.artist, b.artist, c.artist}) < 3 for a, b, c in zip(picks, picks[1:], picks[2:]))
-    assert close <= 4                     # (only near a deck's end, when the same artists are all that's left)
-    for i in range(len(picks) - 20):      # and not straight back into what's just played, across decks too
+    for i in range(len(picks) - 5):       # never the same artist within ARTIST_GAP songs
+        assert len({p.artist for p in picks[i:i + 6]}) == 6
+    for i in range(len(picks) - 20):      # nor the same song within 20
         assert len({p.path for p in picks[i:i + 20]}) == 20
 
 
-def test_selector_plays_every_track_once_before_any_again():
+def test_artist_names_that_differ_only_in_case_or_the_are_one_artist():
+    pool = [track(f"A{i}", "The Beatles") for i in range(5)] + [track(f"B{i}", "beatles") for i in range(5)] \
+        + [track(f"C{i}", f"Other {i}") for i in range(10)]
+    picks = [BroadcastSelector(pool, random.Random(s)) for s in range(1)][0]
+    got = [picks.next_track().artist for _ in range(200)]
+    for i in range(len(got) - 1):
+        assert not (got[i] in ("The Beatles", "beatles") and got[i + 1] in ("The Beatles", "beatles"))
+
+
+def test_an_artists_songs_all_play_before_any_plays_again():
     pool = [track(f"Song {i}", f"Artist {i % 7}") for i in range(70)]
     sel = BroadcastSelector(pool, random.Random(3))
-    for _ in range(3):                                   # three whole decks
-        picks = [sel.next_track().path for _ in range(70)]
-        assert sorted(picks) == sorted(t.path for t in pool)
+    seen: dict = {}
+    for _ in range(70 * 3):
+        t = sel.next_track()
+        seen.setdefault(t.artist, []).append(t.path)
+    for plays in seen.values():
+        for k in range(0, len(plays) - 9, 10):           # (10 songs each: every round of ten is all ten)
+            assert len(set(plays[k:k + 10])) == 10
 
 
-def test_the_deck_carries_on_after_a_restart_and_follows_the_library(tmp_path):
+def test_a_big_catalogue_is_heard_more_but_does_not_take_over():
+    pool = [track(f"Big {i}", "Big Act") for i in range(144)] + \
+          [track(f"S{j} {i}", f"Small {j}") for j in range(8) for i in range(4)]
+    sel = BroadcastSelector(pool, random.Random(11))
+    picks = [sel.next_track().artist for _ in range(4000)]
+    big = picks.count("Big Act") / len(picks)
+    small = (1 - big) / 8
+    assert small < big < 0.3                             # (by song count it would be 0.82)
+    longest = run = 0
+    for a, b in zip(picks, picks[1:]):
+        run = run + 1 if a == b else 0
+        longest = max(longest, run)
+    assert longest == 0
+    assert all(picks.count(f"Small {j}") > 100 for j in range(8))
+
+
+def test_a_fresh_selector_is_a_fresh_shuffle():
+    pool = [track(f"Song {i}", f"Artist {i % 5}") for i in range(100)]
+    firsts = {tuple(BroadcastSelector(pool).next_track().path for _ in range(1)) for _ in range(30)}
+    assert len(firsts) > 10                              # (each power-on starts somewhere new)
+
+
+def test_a_theme_carries_on_while_the_radio_is_on_and_follows_the_library():
     pool = [track(f"Song {i}", f"Artist {i % 5}") for i in range(40)]
-    store = DeckStore(tmp_path / "decks.json", save_s=0)
+    store = DeckStore()
     sel = BroadcastSelector(pool, random.Random(1), store, "Carisbrooke Radio")
-    first = [sel.next_track().path for _ in range(15)]
-    again = BroadcastSelector(pool, random.Random(2), DeckStore(tmp_path / "decks.json", save_s=0), "carisbrooke radio")
-    rest = [again.next_track().path for _ in range(25)]   # (a restart: read back from the file)
-    assert sorted(first + rest) == sorted(t.path for t in pool)
-    other = BroadcastSelector(pool, random.Random(4), DeckStore(tmp_path / "decks.json"), "Default")
-    assert len({other.next_track().path for _ in range(40)}) == 40     # each theme has its own deck
+    first = [sel.next_track() for _ in range(15)]
+    again = BroadcastSelector(pool, random.Random(2), store, "carisbrooke radio")   # (back to the theme)
+    plays: dict = {}
+    for t in first + [again.next_track() for _ in range(25)]:
+        plays.setdefault(t.artist, []).append(t.path)
+    for paths in plays.values():                         # (8 songs each: the first round has no repeat, restart or not)
+        assert len(set(paths[:8])) == len(paths[:8])
+    other = BroadcastSelector(pool, random.Random(4), store, "Default")
+    seen = [other.next_track() for _ in range(5)]        # each theme has its own: it starts afresh
+    assert len({t.path for t in seen}) == 5
     new = [track(f"New {i}", f"Newcomer {i}") for i in range(5)]
     mid = BroadcastSelector(pool, random.Random(6), store, "Sunday")
-    played = {mid.next_track().path for _ in range(10)}
+    for _ in range(10):
+        mid.next_track()
     grown = BroadcastSelector(pool[5:] + new, random.Random(5), store, "Sunday")
-    left = {t.path for t in pool[5:] + new} - played      # songs gone drop out; new ones join this deck
-    assert sorted(grown.next_track().path for _ in range(len(left))) == sorted(left)
-    (tmp_path / "decks.json").write_text("{nonsense")     # (and a broken file is just a new deck)
-    assert BroadcastSelector(pool, store=DeckStore(tmp_path / "decks.json"), key="x").next_track() is not None
-    quiet = DeckStore(tmp_path / "quiet.json")             # (written at most every DECK_SAVE_S)
-    sel = BroadcastSelector(pool, random.Random(1), quiet, "a")
-    sel.next_track()
-    written = (tmp_path / "quiet.json").read_text()
-    sel.next_track()
-    assert (tmp_path / "quiet.json").read_text() == written
+    got = {grown.next_track().path for _ in range(30)}
+    assert {t.path for t in new} <= got                  # songs gone drop out; new ones join in
+    assert not got & {t.path for t in pool[:5]}
 
 
 def test_a_track_put_back_still_plays_in_this_deck():
@@ -165,8 +198,8 @@ def test_a_track_put_back_still_plays_in_this_deck():
     sel = BroadcastSelector(pool, random.Random(9))
     lined = sel.next_track()
     sel.put_back(lined)                                  # lined up, then the station changed
-    picks = [sel.next_track().path for _ in range(12)]
-    assert sorted(picks) == sorted(t.path for t in pool)
+    mine = [t.path for t in (sel.next_track() for _ in range(40)) if t.artist == lined.artist]
+    assert len(set(mine[:3])) == 3 and lined.path in mine[:3]   # (3 songs by them: it's in their round)
 
 
 def test_selector_empty_pool():

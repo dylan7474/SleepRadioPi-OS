@@ -129,13 +129,16 @@ SleepRadio:
   and time checks worded for the moment they'll actually be spoken (twice as
   often in the morning; a skip re-words them). How often the DJ talks is up
   to you.
-- **A proper shuffle: a shuffled deck.** Every song on the theme plays once,
-  in a random order, before any plays again; then a new deck, which doesn't
-  open with the last few played. The same artist is spaced out (the next
-  song down the deck by someone else goes first). Each theme has its own
-  deck, kept in `~/.cache/sleepradiopi/decks.json` (written at most every
-  15 minutes), so it carries on after a restart or a power cut; songs added
-  join the deck being played, and songs deleted drop out.
+- **A proper shuffle: artist first.** The next artist is picked at random,
+  weighted by the square root of how many songs they have (a big catalogue is
+  heard more often, but doesn't take over), and never one heard in the last
+  5 songs (fewer on a theme with few artists; "The Beatles" and "Beatles" are
+  one artist). Then one of their songs from their own shuffled bag: all of an
+  artist's songs play once before any plays again, and a new bag doesn't open
+  with a song just played. Each theme keeps its place while the radio is on,
+  but nothing is written to the card: every power-on is a fresh shuffle, so
+  a morning never opens with last night's songs. Songs added join the bag
+  being played, and songs deleted drop out.
 - **Jingles** from a shuffled bag (never the same one twice in a row); a
   short one opens the show. **Each station has its own folder** in the
   jingles folder (`Station.jingles_folder`): `Sleep Radio/` (the radio's name)

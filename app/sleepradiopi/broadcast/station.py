@@ -53,7 +53,7 @@ from . import profiles as profiles_mod
 from .birthdays import BirthdayWishes, wish_text
 from .messages import Messages
 from .script_builder import DjScriptBuilder, ShowClock, artist_station_name
-from .selector import BroadcastSelector, DeckStore, HookPool, parse_hooks
+from .selector import BroadcastSelector, DeckStore, HookPool, artist_key, parse_hooks
 
 log = logging.getLogger(__name__)
 
@@ -168,12 +168,6 @@ def _natural(name: str) -> list:
     return [int(p) if p.isdigit() else p.lower() for p in re.split(r"(\d+)", name)]
 
 
-def artist_key(artist: str) -> str:
-    """"The Beatles", "Beatles", "beatles " -> "beatles"."""
-    key = " ".join(artist.lower().split())
-    return key[4:] if key.startswith("the ") and len(key) > 4 else key
-
-
 def _album_names(tracks: list[BroadcastTrack], rel: str, root: str, deep: bool = False) -> dict:
     """An album's title and artist: from the tags where most tracks agree, else
     the folder. On demand has no set layout, so there it's the folder's own
@@ -256,7 +250,7 @@ class Station:
             log.warning("playlists ignored: %s", e)
             self.playlists = []
         self._path_index: dict | None = None   # (root, path in it) -> track, for playlists
-        self._decks = DeckStore(cfg.get("deck_file"))   # each theme's shuffled deck, kept between starts
+        self._decks = DeckStore()   # each theme's shuffle, kept while the radio is on (never written to the card)
         self.selector = BroadcastSelector(self.tracks)
         self.artist: str | None = None      # artist radio: only this artist's tracks
         self.profile: str | None = None     # ...or only the artists on this list
