@@ -49,6 +49,26 @@ def test_the_hiss_goes_down_and_the_voice_stays() -> None:
     assert 5 < left["light"] < 10 and 12 < left["strong"] < 19                       # the hiss between words: down, to a floor, never gone
 
 
+def test_a_fresh_one_turns_the_hiss_down_from_the_start() -> None:
+    # The first frame is half silence: it once passed for the quietest moment there had ever been, so for the first 2.5 s the hiss was
+    # under-estimated and turned down far less (strong: about 11 dB at first, 17 once settled). A fresh one is now within a few dB.
+    rng = np.random.default_rng(12)
+    t = np.arange(RATE * 6) / RATE
+    hiss = rng.standard_normal(len(t)) * 1500
+    on = np.sin(2 * np.pi * 3 * t)
+    said = (on > 0.2) * (np.sin(2 * np.pi * 400 * t) + 0.6 * np.sin(2 * np.pi * 1100 * t) + 0.4 * np.sin(2 * np.pi * 2300 * t)) * 5000
+    x = np.repeat(np.clip(hiss + said, -32768, 32767).astype(np.int16)[:, None], pcm.CHANNELS, axis=1)
+    gaps = on < -0.3
+    for fresh in (lambda: denoise.Denoiser("light"), lambda: denoise.Denoiser("strong"), denoise.Rig):
+        y = _played(fresh(), x)
+        n = len(y)
+
+        def down(a, b):                                                             # the hiss between words, down by this many dB in a..b seconds
+            m = gaps[:n] & (t[:n] >= a) & (t[:n] < b)
+            return 20 * np.log10(_rms(x[:n, 0][m]) / _rms(y[:n, 0][m]))
+        assert down(0.5, 1.5) > down(4.0, 6.0) - 3.5, (fresh, down(0.5, 1.5), down(4.0, 6.0))
+
+
 def test_the_rig_level_keeps_the_voice_and_takes_out_a_whistle() -> None:
     rng = np.random.default_rng(4)
     t = np.arange(RATE * 10) / RATE

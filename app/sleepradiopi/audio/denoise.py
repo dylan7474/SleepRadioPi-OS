@@ -86,6 +86,7 @@ class Denoiser:
         self.every = max(1, int(LOOK_S * rate / self.hop))
         self.hist = np.zeros((max(1, int(HISTORY_S * rate / self.hop / self.every)), bins), dtype=np.float32)
         self.have = 0
+        self.frames = 0
         self.least = np.full(bins, np.inf, dtype=np.float32)   # the least each band has been in this stretch
         self.count = 0
         self.noise: np.ndarray | None = None
@@ -107,7 +108,9 @@ class Denoiser:
             spec = np.fft.rfft(frame * self.win)
             power = (spec.real ** 2 + spec.imag ** 2).astype(np.float32)
             self.smooth = power if self.smooth is None else 0.7 * self.smooth + 0.3 * power
-            self.least = np.minimum(self.least, self.smooth)
+            if self.frames:                                    # (not the first frame: it's half silence, and would pass for the quietest moment there has ever been:
+                self.least = np.minimum(self.least, self.smooth)   # the hiss was then under-estimated for the first 2.5 s, and turned down far less)
+            self.frames += 1
             self.count += 1
             if self.count >= self.every or self.noise is None:
                 if self.count >= self.every:
@@ -156,6 +159,7 @@ class Rig:
         self.every = max(1, int(LOOK_S * rate / self.hop))
         self.hist = np.zeros((max(1, int(HISTORY_S * rate / self.hop / self.every)), bins), dtype=np.float32)
         self.have = 0
+        self.frames = 0
         self.least = np.full(bins, np.inf, dtype=np.float32)
         self.count = 0
         self.noise: np.ndarray | None = None
@@ -182,7 +186,9 @@ class Rig:
             power = (spec.real ** 2 + spec.imag ** 2).astype(np.float32)
             self.smooth = power if self.smooth is None else 0.7 * self.smooth + 0.3 * power
             self.long = power.copy() if self.long is None else 0.995 * self.long + 0.005 * power
-            self.least = np.minimum(self.least, self.smooth)
+            if self.frames:                                    # (not the first frame: it's half silence, and would pass for the quietest moment there has ever been:
+                self.least = np.minimum(self.least, self.smooth)   # the hiss was then under-estimated for the first 2.5 s, and turned down far less)
+            self.frames += 1
             self.count += 1
             if self.count >= self.every or self.noise is None:
                 if self.count >= self.every:
