@@ -1851,6 +1851,15 @@ The cards:
   station (only where `SLEEPRADIOPI_SUPERVISED` is set, as the service and
   the appliance image do; otherwise at the next start).
 - **Restart** (beside Shut down, Settings → Restart or shut down) — for when something seems stuck: the radio goes quiet, restarts and is back in about a minute; the page waits and reloads itself when it answers again (the same root helper, `power-request-watch`, watching `/run/sleepradiopi/reboot`).
+- **Remote access** (Settings → Remote access, appliance image only) — off until
+  switched on and given a Cloudflare tunnel token (`sleepradiopi/remote.py`:
+  `/data/cloudflared/token` mode 600, never sent back; `enabled` is a file).
+  The root service `remote-access-watch` runs `cloudflared` as user `radio`
+  when both are there, the clock is set and the radio has been up two
+  minutes; its state is in `/run/sleepradiopi/remote-status` and cloudflared
+  answers `/ready` on 127.0.0.1:20241 once connected. A request that carries
+  Cloudflare's headers (`Cf-Connecting-Ip`, `Cf-Ray`, `X-Forwarded-For`) is not
+  "the radio itself", so the web password still applies through the tunnel.
 - **Shut down** — turns the radio off safely before unplugging (appliance
   image only: the station isn't root, so it creates the file named by
   `SLEEPRADIOPI_POWER_REQUEST`, which a root service watches).
@@ -2011,6 +2020,7 @@ everything but the page itself and the login needs the session cookie
 | `POST /api/messages/away` / `/api/messages/away/look` | `{"url", "every_min"}`: the document messages from away are kept in ("" for none), saved, and fetched at once / fetch it now. Both answer as `GET /api/messages`, whose `away` is `{"url", "every_min", "count", "list", "t"?, "error"?, "wrong"?: paragraphs left out}` |
 | `POST /api/messages/hear` | `{"text"}` — the DJ says it now (with the day and date first, if that's on) |
 | `GET` / `POST /api/settings` | Download the settings file / load one (400 with `{"error"}` if it's wrong) |
+| `GET` / `POST /api/remote` | Remote access: status (never the token); `{"token"}` keeps one, `{"enabled": true/false}` switches it, `{"forget": true}` removes the token (404 on POST unless this is the appliance image) |
 | `POST /api/power` | Shut down, or `{"restart": true}` to restart (404 unless the appliance's watcher is there) |
 | `GET /stream` | The MP3 stream (404 while listening in a browser is off) |
 

@@ -754,7 +754,7 @@ const PANELS = [
   ["dj", "The DJ", "DJ", 40, "dj"], ["speakers", "Speakers", "♫", 28, "speakers"], ["buttons", "Buttons", "4", 200, null],
   ["noise", "Noise", "≈", 250, "noise"], ["voices", "Voices", "“", 300, "voices"],
   ["wifi", "Wi-Fi", "⌔", 190, "wifi"], ["identity", "This radio", "R", 40, "identity"], ["updates", "Updates", "↑", 130, "updates"],
-  ["backup", "Save & load", "⇅", 170, "backup"], ["power", "Power", "⏻", 5, "power"], ["library", "Themes", "◎", 30, null],
+  ["backup", "Save & load", "⇅", 170, "backup"], ["remote", "Remote access", "⇄", 100, "remote"], ["power", "Power", "⏻", 5, "power"], ["library", "Themes", "◎", 30, null],
   ["onair", "On air", "♪", 20, null],
 ];
 const PANEL = {};
@@ -4553,6 +4553,28 @@ const UI = {
         grp("Start again", help("To put every setting back as it came (keeping your music, books and voices): hold buttons 1 and 4 on the radio for 5 seconds, then choose 4."))];
     },
   },
+  // Remote access: the radio's page from anywhere, through a Cloudflare Tunnel (outbound only). Off until switched on
+  // here; the token is typed in once, kept by the radio and never shown again.
+  remote: {
+    load: () => api("/api/remote"),
+    build: (r, act) => {
+      if (!r.available) return [grp("Remote access", help("This radio doesn't have the tunnel program, or isn't the appliance image. Nothing to set up."))];
+      const tok = el("input", { type: "password", id: "remote-token", autocomplete: "off", spellcheck: false, placeholder: r.token_set ? "A token is kept: paste a new one to change it" : "The tunnel token (starts eyJ)" });
+      tok.setAttribute("aria-label", "Cloudflare tunnel token");
+      const save = () => tok.value.trim() && act(async () => { await api("/api/remote", { token: tok.value.trim() }); tok.value = ""; toast("Kept. It isn't shown again."); });
+      tok.onkeydown = e => { if (e.key === "Enter") save(); };
+      const state = !r.enabled ? "Off" : !r.token_set ? "Off: no token" : r.connected ? "On, and connected to Cloudflare"
+        : r.state === "running" ? "On: starting up, not connected yet" : "On: " + r.state;
+      return [
+        grp("Remote access", outKv("Now", state, ""),
+          line(r.enabled ? sbtn("Switch off", () => ask("Switch Remote access off? If you are using it from far away, that cuts you off until someone is at the radio.", "Switch off", () => act(() => api("/api/remote", { enabled: false })))) : null,
+            !r.enabled && r.token_set ? sbtn("Switch on", () => act(() => api("/api/remote", { enabled: true })), "primary") : null),
+          help("Off unless you switch it on. When on, the radio makes one outgoing connection to Cloudflare, a couple of minutes after it starts and once its clock is right; nothing is opened on the network it is on. With no network it just plays, and the page here carries on as before.")),
+        grp("The tunnel token", srow("Token", tok, sbtn(r.token_set ? "Change" : "Keep it", save, "primary")),
+          r.token_set ? line(sbtn("Forget the token", () => ask("Forget the token? Remote access switches off, and needs a token again.", "Forget", () => act(() => api("/api/remote", { forget: true }))), "danger")) : null,
+          help("In Cloudflare: Zero Trust, Networks, Tunnels, make a tunnel for this radio, and paste the long token it shows (or the whole install command). Point its public hostname at http://localhost:80, and put an Access policy in front so only you get in. The radio keeps the token to itself: not shown again, not in a backup file."))];
+    },
+  },
   power: {
     load: async () => ({}),
     build: (_, act) => [grp("Power", line(sbtn("Restart", () => ask("Restart the radio? It's back in about half a minute.", "Restart", () => act(() => api("/api/power", { restart: true })))),
@@ -5170,6 +5192,7 @@ const SUMS = {
   buttons: b => b.buttons.map((x, i) => `${i + 1} ${x.label}${x.steps?.length > 1 ? ` +${x.steps.length - 1}` : ""}`).join(" · ") + (b.bank ? ` · ${b.bank} set` : ""),
   updates: u => u.available ? `${niceVersion(u.version)} · an update is ready` : niceVersion(u.version),
   backup: () => "Your settings, in a file you keep",
+  remote: r => !r.available ? "Not on this radio" : r.enabled && r.token_set ? (r.connected ? "On: connected" : "On: " + r.state) : r.token_set ? "Off" : "Off: no token",
   power: () => "Restart it, or shut it down",
   note: () => "",
   person: () => "", alist: d => "", voice: v => "", newlist: () => "",

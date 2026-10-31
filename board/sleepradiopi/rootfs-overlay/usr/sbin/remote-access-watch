@@ -1,0 +1,60 @@
+#!/bin/sh
+# Remote access: run the Cloudflare tunnel (cloudflared) while the web page
+# says to, and never otherwise. The station (user radio, not root) keeps two
+# files in $DIR (sleepradiopi/remote.py): "token" and "enabled". Nothing is
+# started unless both are there, so a fresh image, or a radio nobody has set
+# up, never talks to Cloudflare. Started by init: see the respawn line in
+# /etc/inittab.
+#
+# The tunnel runs as user radio (it only needs to reach out), niced below the
+# music, with a small memory limit, and is held back until
+#  - the clock has been set by NTP (/run/time-synced): the TLS certificates
+#    are checked against it, and
+#  - the radio has been up 2 minutes: the station and its music come first.
+# With no network it simply isn't started; cloudflared itself keeps retrying
+# if the network goes away later. A token Cloudflare turns down makes it exit:
+# it is tried again once a minute, not in a loop.
+# What it is doing goes to $STATE for the page, and to syslog (cloudflared).
+
+DIR=/data/cloudflared
+STATE=/run/sleepradiopi/remote-status
+SYNCED=/run/time-synced
+MIN_UPTIME=120
+RETRY=60
+last=0
+
+say() { [ "$(cat $STATE 2>/dev/null)" = "$1" ] || { echo "$1" > $STATE; logger -t remote-access "$1"; }; }
+running() { pgrep -x cloudflared >/dev/null; }
+now() { awk '{ print int($1) }' /proc/uptime; }
+
+while sleep 5; do
+	[ -d /run/sleepradiopi ] || continue            # (the station makes it)
+	if [ -s $DIR/token ] && [ -e $DIR/enabled ]; then
+		if [ ! -e $SYNCED ]; then
+			running || say "waiting for the clock"
+		elif [ "$(now)" -lt $MIN_UPTIME ]; then
+			running || say "waiting for the radio to start"
+		elif running; then
+			say "running"
+		elif [ $(( $(now) - last )) -ge $RETRY ] || [ $last -eq 0 ]; then
+			last=$(now)
+			say "starting"
+			chown radio:radio $DIR $DIR/token 2>/dev/null
+			(
+				HOME=/tmp GOMAXPROCS=1 GOMEMLIMIT=48MiB \
+					start-stop-daemon -S -N 10 -c radio -x /usr/bin/cloudflared -- \
+					--no-autoupdate tunnel --protocol http2 --metrics 127.0.0.1:20241 \
+					run --token-file $DIR/token 2>&1 | logger -t cloudflared
+			) &
+		else
+			say "trying again shortly"
+		fi
+	else
+		if running; then
+			pkill -x cloudflared
+			logger -t remote-access "stopped"
+		fi
+		say "off"
+		last=0
+	fi
+done

@@ -1,0 +1,2 @@
+# sha256 of the release asset (GitHub API digest, and checked against the download)
+sha256  3df43aedc9ff291d1735b5cb576cb97e0b157488796db2e32b28aecabb445775  cloudflared-linux-arm64

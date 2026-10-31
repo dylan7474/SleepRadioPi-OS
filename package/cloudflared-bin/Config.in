@@ -1,0 +1,11 @@
+config BR2_PACKAGE_CLOUDFLARED_BIN
+	bool "cloudflared-bin"
+	depends on BR2_aarch64
+	help
+	  Cloudflare's tunnel client, installed from the official prebuilt
+	  linux-arm64 release (Buildroot's own cloudflared package builds a
+	  release a year old, which Cloudflare may stop accepting). Nothing
+	  runs it until the radio's web page switches Remote access on and
+	  holds a tunnel token (usr/sbin/remote-access-watch).
+
+	  https://github.com/cloudflare/cloudflared

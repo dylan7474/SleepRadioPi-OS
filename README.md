@@ -953,6 +953,20 @@ Other targets are passed through to Buildroot: `make menuconfig`,
   Settings → Password. Forgotten it? `sleepradio-password clear` on the Pi
   (or `scripts/web-password.sh clear` from the PC) opens the page again at
   once; `set` chooses a new one. The radio itself never needs it.
+- **Remote access** (off by default; Settings → Remote access): the page from
+  anywhere, through a Cloudflare Tunnel, for a radio on a network you can't
+  reach (family, a care home). Make a tunnel in Cloudflare Zero Trust, point
+  its public hostname at `http://localhost:80`, put an Access policy in front
+  so only you get in, and paste the tunnel token into the page. The token is
+  kept in `/data/cloudflared/token` (mode 600; never shown again, never in a
+  settings backup) and the switch is the file `/data/cloudflared/enabled`.
+  `remote-access-watch` (root, from inittab) then runs `cloudflared`, as user
+  `radio`, niced below the music with a small memory limit, once NTP has set
+  the clock (the certificates are checked against it) and the radio has been up
+  two minutes. It only makes one outgoing connection; nothing is opened on the
+  network. With no network it isn't started and the radio plays as always.
+  Requests that come through the tunnel still need the web password if one is
+  set (Cloudflare's headers mark them as not the radio itself).
 - **Shut down** from the web page (http://sleepradiopi.local/, bottom of
   the page): the station creates `/run/sleepradiopi/poweroff`, and
   `power-request-watch` (root, from inittab) runs `poweroff`, which saves the

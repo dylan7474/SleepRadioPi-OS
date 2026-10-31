@@ -39,6 +39,7 @@ from sleepradiopi.io import presets as presets_mod
 from sleepradiopi import media as media_mod
 from sleepradiopi.playback import podcasts as pod_mod
 from sleepradiopi.config.power import can_power_off, request_power_off, request_restart
+from sleepradiopi import remote
 
 from .stream import Mp3Output
 
@@ -110,6 +111,10 @@ def make_handler(station: Station, output: Mp3Output, speaker=None,
         # --- the optional password (config/auth.py) --------------------------------------
 
         def _local(self) -> bool:
+            # (A tunnel to this page -- Remote access -- arrives from 127.0.0.1 too, but Cloudflare's edge adds these
+            # headers to everything it passes on, so that is NOT the radio itself and the password still applies.)
+            if any(self.headers.get(h) for h in ("Cf-Connecting-Ip", "Cf-Ray", "X-Forwarded-For")):
+                return False
             return self.client_address[0] in ("127.0.0.1", "::1", "::ffff:127.0.0.1")
 
         def _token(self) -> str | None:
@@ -474,6 +479,8 @@ def make_handler(station: Station, output: Mp3Output, speaker=None,
                 # hours (the latest first), whether it's listening now, when it last did, and how much of the world it heard.
                 from sleepradiopi.playback import conditions as conditions_mod, lightning as lightning_mod
                 self._send(json.dumps({**lightning_mod.watch.status(), "alerts": conditions_mod.ALERTS}).encode(), "application/json")
+            elif path == "/api/remote":
+                self._send(json.dumps(remote.status()).encode(), "application/json")
             elif path == "/api/qrz":
                 # The QRZ logbook window (playback/qrzlog.py): whether a key is set (never the key), the book's figures,
                 # everything its STATUS said, the latest QSOs, and QRZ's reason if it said no.
@@ -587,6 +594,8 @@ def make_handler(station: Station, output: Mp3Output, speaker=None,
                 self._set_password()
             elif path == "/api/power":
                 self._power()
+            elif path == "/api/remote":
+                self._remote()
             elif path == "/api/seek":
                 try:
                     body = self._body()
@@ -1274,6 +1283,31 @@ def make_handler(station: Station, output: Mp3Output, speaker=None,
                 self._hear_birthday()
             else:
                 self.send_error(404)
+
+        def _remote(self) -> None:
+            """/api/remote: {"token": "..."} keeps a tunnel token (never sent back), {"enabled": true|false} switches
+            Remote access on or off, {"forget": true} takes the token away. (Switching it off over the tunnel cuts that
+            connection off; the page asks first.)"""
+            if not remote.available():
+                self.send_error(404)
+                return
+            try:
+                body = self._body()
+                if not isinstance(body, dict):
+                    raise ValueError
+                if body.get("forget") is True:
+                    remote.forget()
+                if "token" in body:
+                    remote.set_token(body["token"])
+                if "enabled" in body:
+                    if not isinstance(body["enabled"], bool):
+                        raise ValueError("enabled is true or false")
+                    remote.set_enabled(body["enabled"])
+            except ValueError as e:
+                self._error(str(e) or 'send {"token": "..."}, {"enabled": true} or {"forget": true}')
+                return
+            log.info("remote access: %s", {k: (v if k != "token" else "...") for k, v in body.items()})
+            self._send(json.dumps(remote.status()).encode(), "application/json")
 
         def _power(self) -> None:
             """/api/power: shut the radio down, or {"restart": true}: restart it.
