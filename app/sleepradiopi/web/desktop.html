@@ -4232,6 +4232,33 @@ const hostFor = (name, fallback) => (name || "").normalize("NFKD").replace(/[^\x
 const srow = (label, control, extra) => el("div", { className: "srow" }, el("label", { textContent: label }), control, extra || el("span"));
 const grp = (title, ...rows) => el("div", { className: "grp" }, title ? el("h3", { textContent: title }) : null, ...rows);
 const help = t => el("p", { className: "shelp", textContent: t });
+
+// Step by step, in Cloudflare's own words, for someone who has never used it. Open until a token is kept.
+function cloudflareGuide(open) {
+  const part = t => el("p", { className: "shelp", style: "margin-top:10px;color:var(--ink)" }, el("b", {}, t));
+  const step = (n, ...bits) => el("p", { className: "shelp", style: "margin-left:14px" }, (n === "-" ? "\u2022 " : n + ". "), ...bits);
+  const b = t => el("b", {}, t), code = t => el("code", {}, t);
+  const d = el("details", { open }, el("summary", { textContent: "Show the Cloudflare steps" }),
+    part("A. Make the tunnel"),
+    step(1, "Sign in at ", code("dash.cloudflare.com"), " (the account that has your domain). In the left-hand menu open ", b("Networking"), ", then ", b("Tunnels"), ". Tunnels live under Networking, not under Zero Trust."),
+    step(2, "Click ", b("Create Tunnel"), ". Give it a name for this radio, such as the radio's name, then click ", b("Create Tunnel"), " again."),
+    step(3, "Under Setup Environment choose ", b("Debian"), " and then ", b("arm64"), ". That only changes the command Cloudflare shows. Don't run any command anywhere."),
+    step(4, "Further down, under ", b("Install as service"), ", click the little copy icon at the right end of the line that starts ", code("sudo cloudflared service install"), ". The long token is hidden with stars on screen, but the copy takes all of it. Any of the other lines on that page works too."),
+    step(5, "Come back here, paste into the Token box above, press ", b("Keep it"), ", then ", b("Switch on"), ". It says \"On: starting up\" and then \"On, and connected to Cloudflare\" after a couple of minutes (the radio waits for its clock and for two minutes of running)."),
+    part("B. Give it a web address"),
+    step(6, "In Cloudflare go to ", b("Networking, Tunnels"), " and click the tunnel's name. Its Status should say Healthy. Open the ", b("Routes"), " tab, click ", b("Add route"), " and choose ", b("Published application"), "."),
+    step(7, "Subdomain: a name for this radio, such as ", code("carisbrooke"), ". Domain: pick yours from the list. Service URL: type exactly ", code("http://localhost:80"), " (\"localhost\" means the radio itself). Click ", b("Add route"), ". Cloudflare makes the address for you."),
+    part("C. Make sure only you can open it"),
+    step(8, "In the left-hand menu open ", b("Zero Trust"), ", then ", b("Access controls"), ", then ", b("Applications"), ". If you already have an application for your whole domain (named like ", code("*.yourdomain.org"), ") with a policy that allows only your email, the new address is already protected. Nothing more to do."),
+    step(9, "If not: ", b("Create new application"), ", ", b("Self-hosted"), ". Add the radio's full address as its destination (or ", code("*.yourdomain.org"), " to cover every radio at once). Add a policy: Action ", b("Allow"), ", Include ", b("Emails"), ", then your own email address. Save. Without this, anyone who learns the address can reach this page."),
+    part("D. Use it"),
+    step(10, "Open ", code("https://carisbrooke.yourdomain.org"), " (your own address) in a browser. Cloudflare asks you to sign in first, usually by emailing you a code, and then this page appears."),
+    part("If it doesn't work"),
+    step("-", "Cloudflare says the tunnel is Inactive or Down, or the browser shows error 1033: the radio hasn't connected. Check the switch above is on, the radio has been running two minutes, and it can reach the internet. The \"Now\" line above says what it is doing."),
+    step("-", "The browser shows error 502 or Bad gateway: the Service URL in step 7 is wrong. It must be exactly http://localhost:80."),
+    step("-", "To stop it: press Switch off above. To remove it for good, also delete the tunnel under Networking, Tunnels. Keep the token to yourself: anyone with it can run your tunnel."));
+  return grp("Setting it up in Cloudflare", d);
+}
 const sbtn = (t, fn, cls = "") => Object.assign(el("button", { className: "sbtn " + cls, type: "button", textContent: t }), { onclick: fn });
 const line = (...k) => el("div", { className: "line" }, ...k);
 const db = v => (v > 0 ? "+" : v < 0 ? "−" : "") + Math.abs(v) + " dB";
@@ -4573,12 +4600,7 @@ const UI = {
         grp("The tunnel token", srow("Token", tok, sbtn(r.token_set ? "Change" : "Keep it", save, "primary")),
           r.token_set ? line(sbtn("Forget the token", () => ask("Forget the token? Remote access switches off, and needs a token again.", "Forget", () => act(() => api("/api/remote", { forget: true }))), "danger")) : null,
           help("The radio keeps the token to itself: not shown again, not in a backup file.")),
-        grp("Setting it up in Cloudflare",
-          help("1. In Cloudflare: Networks, Tunnels, Create Tunnel. Name it for this radio. Choose Debian and arm64 (that only changes the command it shows; the token is the same)."),
-          help("2. Copy the \"Install as service\" line, or any line that holds the token, and paste it into the box above. Press Keep it, then Switch on."),
-          help("3. Wait for the tunnel to show Connected in Cloudflare (a couple of minutes after the radio starts). Then, in the tunnel, Routes, Add route, Published application: pick a hostname such as phonosphere.yourdomain.org and set the service to http://localhost:80."),
-          help("4. Put an Access policy in front so only you get in (Zero Trust, Access controls, Applications). A wildcard application for the whole domain does it for every radio at once. Without one, anyone who finds the address reaches this page."),
-          help("5. Open the hostname and sign in. This page appears. The radio needs no fixed address and no open ports: it only makes the outgoing connection."))];
+        cloudflareGuide(!r.token_set)];
     },
   },
   power: {
