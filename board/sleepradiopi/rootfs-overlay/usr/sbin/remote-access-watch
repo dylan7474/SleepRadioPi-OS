@@ -22,6 +22,7 @@ SYNCED=/run/time-synced
 MIN_UPTIME=120
 RETRY=60
 last=0
+tsig=
 
 say() { [ "$(cat $STATE 2>/dev/null)" = "$1" ] || { echo "$1" > $STATE; logger -t remote-access "$1"; }; }
 running() { pgrep cloudflared >/dev/null; }          # (busybox pgrep -x never matched it)
@@ -35,9 +36,21 @@ while sleep 5; do
 		elif [ "$(now)" -lt $MIN_UPTIME ]; then
 			running || say "waiting for the radio to start"
 		elif running; then
-			say "running"
+			# A new token written while it runs (the page's Change button): cloudflared keeps the old
+			# one in memory and would be refused at its next reconnect, so restart it on the new one.
+			now_sig=$(cksum < $DIR/token)
+			if [ -n "$tsig" ] && [ "$now_sig" != "$tsig" ]; then
+				logger -t remote-access "new token: restarting the tunnel"
+				pkill cloudflared
+				last=0
+				tsig=
+			else
+				tsig=$now_sig
+				say "running"
+			fi
 		elif [ $(( $(now) - last )) -ge $RETRY ] || [ $last -eq 0 ]; then
 			last=$(now)
+			tsig=$(cksum < $DIR/token)               # (the token this run starts with)
 			say "starting"
 			chown radio:radio $DIR $DIR/token 2>/dev/null
 			(
@@ -56,5 +69,6 @@ while sleep 5; do
 		fi
 		say "off"
 		last=0
+		tsig=
 	fi
 done
