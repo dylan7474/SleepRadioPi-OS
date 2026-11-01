@@ -640,3 +640,21 @@ def test_without_a_copy_the_search_goes_online(tmp_path: Path, monkeypatch) -> N
     rows = [{"name": "Online FM", "url_resolved": "http://o/"}]
     d = radio.Directory(tmp_path / "none.tsv", lambda url, headers=None, timeout=None: _Reply(json.dumps(rows).encode()))
     assert d.search("online") == ([{"name": "Online FM", "url": "http://o/", "info": "Internet radio"}], "online")
+
+
+def test_an_empty_radio_has_nothing_to_play_and_so_can_confirm_an_update(tmp_path: Path) -> None:
+    """With no music and no station tuned nothing can start, so an update would always be rolled back."""
+    from types import SimpleNamespace
+    from sleepradiopi import main
+    st = _station(tmp_path)
+    st.tracks, st.ondemand_tracks = [], []
+    assert st.nothing_to_play and not st.music_started
+    assert not main._can_confirm(st, 0) and not main._can_confirm(st, main.NOTHING_TO_PLAY_CONFIRM_S - 1)
+    assert main._can_confirm(st, main.NOTHING_TO_PLAY_CONFIRM_S)
+    st.tune({"name": "Some FM", "url": "http://some/"})
+    assert not st.nothing_to_play and not main._can_confirm(st, 9999)       # a station is tuned: wait for it
+    st.tune(None)
+    st.tracks = [object()]
+    assert not st.nothing_to_play and not main._can_confirm(st, 9999)       # it has music: it must play
+    playing = SimpleNamespace(music_started=True, nothing_to_play=False)
+    assert main._can_confirm(playing, 0)

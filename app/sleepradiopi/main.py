@@ -354,10 +354,22 @@ def _after_first_song(station: Station, updates: Updates) -> None:
     """Once music is playing after a start-up, confirm a pending update (so the
     boot watchdog doesn't roll it back) and say how it went; and lock the
     station in memory (everything it needs is loaded by then)."""
-    while not station.music_started:      # a song, or an internet radio station
+    waited = 0.0
+    while not _can_confirm(station, waited):
         time.sleep(2)
+        waited += 2
     _lock_in_memory()
     updates.on_air()
+
+
+NOTHING_TO_PLAY_CONFIRM_S = 150           # (the boot watchdog gives the new version 300 s)
+
+
+def _can_confirm(station: Station, waited: float) -> bool:
+    """Music has played (a song, or an internet radio station), or there is none to play (an empty
+    library, no station tuned) and the station has now been up a couple of minutes: with no music a
+    radio could never confirm, and every update to it would be rolled back."""
+    return station.music_started or (station.nothing_to_play and waited >= NOTHING_TO_PLAY_CONFIRM_S)
 
 
 def _fetch_standard_voice(jobs: VoiceJobs, control=None, online=None) -> None:

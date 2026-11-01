@@ -748,6 +748,12 @@ class Station:
                 log.exception("couldn't save the source")
 
     @property
+    def nothing_to_play(self) -> bool:
+        """No music in the library and no station tuned: there is nothing that could start (a new
+        card before its music is added). The update check uses it so such a radio can still confirm."""
+        return not self.tracks and not self.ondemand_tracks and self._source is None
+
+    @property
     def music_started(self) -> bool:
         """Something (a song, or a station) has played since start-up."""
         return self.current_track is not None or self._radio_heard
