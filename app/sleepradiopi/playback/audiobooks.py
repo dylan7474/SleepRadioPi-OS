@@ -74,6 +74,17 @@ class Book:
         return len(self.chapters) - 1, self.chapters[-1].length_ms if self.chapters else 0
 
 
+SIDECAR = ".book.json"     # {"title", "author"} in a book's folder: shown instead of what the files' tags say
+
+
+def _sidecar(folder: Path) -> dict:
+    try:
+        data = json.loads((folder / SIDECAR).read_text())
+    except (OSError, ValueError):
+        return {}
+    return {k: str(data[k]).strip() for k in ("title", "author") if isinstance(data, dict) and isinstance(data.get(k), str) and data[k].strip()}
+
+
 def _tag(tags: dict, *names) -> str:
     for n in names:
         v = tags.get(n)
@@ -205,8 +216,9 @@ class BookLibrary:
                     chapters += [Chapter(p, s, e, t or p.stem) for s, e, t in markers]
                 elif duration:
                     chapters.append(Chapter(p, 0, duration, re.sub(r"^\d+\s*[-._]\s*", "", p.stem) or p.stem))
-            title = (first or {}).get("title") or entry.name
-            author = (first or {}).get("author") or near
+            meta = _sidecar(entry)                    # (a downloaded LibriVox book: its real title, not the series tag's)
+            title = meta.get("title") or (first or {}).get("title") or entry.name
+            author = meta.get("author") or (first or {}).get("author") or near
         chapters = [c for c in chapters if c.length_ms > 0]
         offset = 0
         for c in chapters:

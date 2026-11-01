@@ -4026,9 +4026,41 @@ function albumView(o, box) {
     tagging && tagging.where === o.id ? infoBox(o) : null));
   box.append(el("div", { className: "wbody" }, rowsOf(o.tracks || [], o.id, t => t.n ?? "", false, o)));
 }
+// A followed LibriVox book: keep it on the radio (a folder of its chapters in Audiobooks) to play with no Wi-Fi.
+function bookDownloadTools(o) {
+  const mb = Math.round((o.eps || []).reduce((s, id) => s + (O[id]?.min || 0), 0) * 0.48);   // 64 kbps: 0.48 MB a minute
+  const note = el("span", { className: "note" }), stop = T("Stop", async () => { try { await api("/api/librivox/download", { cancel: true }); } catch (e) { toast(e.message); } });
+  stop.hidden = true;
+  let timer = 0;
+  const show = s => {
+    const mine = s.id === o.pid;
+    stop.hidden = !(mine && s.state === "running");
+    btn.disabled = s.state === "running";
+    note.textContent = !mine && s.state === "running" ? `Downloading “${s.title}”: one at a time`
+      : mine && s.state === "running" ? `Downloading part ${s.chapter} of ${s.chapters} · ${Math.round(s.bytes / 1048576)} of about ${Math.round(s.estimate / 1048576)} MB`
+      : mine && s.state === "error" ? "Stopped: " + s.error + " Press Download to carry on."
+      : mine && s.state === "cancelled" ? "Stopped. Press Download to carry on where it left off." : "";
+  };
+  const poll = async () => {
+    clearTimeout(timer);
+    if (!note.isConnected) return;
+    let s; try { s = await api("/api/librivox/download"); } catch { timer = setTimeout(poll, 4000); return; }
+    show(s);
+    if (s.state === "running") timer = setTimeout(poll, 2000);
+    else if (s.state === "done" && s.id === o.pid) {
+      toast(`“${s.title}” is on the radio now: it plays with no Wi-Fi (in Audiobooks).`);
+      closeFor(o); await loadFolder(BOOKS); drawDesk();
+    } else if (s.state === "error" && s.id === o.pid) toast(s.error);
+  };
+  const btn = T(`Download for offline${mb ? ` (about ${mb} MB)` : ""}`, async () => {
+    try { show(await api("/api/librivox/download", { id: o.pid })); poll(); } catch (e) { toast(e.message); } });
+  btn.title = "Keep the whole book on the radio, to play with no Wi-Fi. It uses the radio's storage, and replaces this streamed copy.";
+  poll();
+  return [btn, stop, note];
+}
 function podcastView(o, box) {
-  box.append(el("div", { className: "wtools" }, T(o.serial ? "▶ Play" : "▶ Latest", () => play(o), "primary"),
-    el("span", { className: "note", textContent: o.serial ? `${o.artist || ""} · plays on from where you left off, part by part · double-click a part to start there` : `${o.artist || ""} · double-click an episode to play it` })));
+  box.append(el("div", { className: "wtools" }, T(o.serial ? "▶ Play" : "▶ Latest", () => play(o), "primary"), ...(o.serial ? bookDownloadTools(o) : []),
+    el("span", { className: "note", textContent: o.serial ? `${o.artist || ""} · plays on from where you left off · double-click a part to start there` : `${o.artist || ""} · double-click an episode to play it` })));
   box.append(el("div", { className: "wbody" }, rowsOf(o.eps || [], o.id, t => t.done ? "✓" : "")));
 }
 function playlistName(o) {

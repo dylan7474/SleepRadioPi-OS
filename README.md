@@ -97,6 +97,13 @@ Actions, Sleep timer and Radio folders open:
   and pauses at the end of the book. Under the hood a followed book is a podcast
   (address `librivox:<id>`), so preset buttons, resuming and the knob's
   press-and-turn all work.
+  **Download for offline** (in the book's window) keeps the whole book on the radio
+  as a folder of its chapters in Audiobooks, so it plays with no Wi-Fi: it shows
+  the size first (about 0.5 MB a minute), says if there isn't room, shows progress
+  with a Stop button, and carries on where it stopped if Wi-Fi or power goes. The
+  place you had reached while streaming comes with it, and the streamed copy is
+  replaced by the downloaded one. It writes to the card only when you press the
+  button, one book at a time, like an upload.
 - **Podcasts** — search the directory, follow shows, and play episodes (again
   with nothing from the DJ), each remembering its place like a book. Put a
   show on a preset button starting from any episode, and the radio plays on

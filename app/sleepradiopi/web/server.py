@@ -37,6 +37,7 @@ from sleepradiopi.config.settings import load as load_settings, save_setting
 from sleepradiopi.playback import radio as radio_mod
 from sleepradiopi.io import presets as presets_mod
 from sleepradiopi import media as media_mod
+from sleepradiopi.playback import bookdl as bookdl_mod
 from sleepradiopi.playback import librivox as lv_mod
 from sleepradiopi.playback import podcasts as pod_mod
 from sleepradiopi.config.power import can_power_off, request_power_off, request_restart
@@ -89,6 +90,8 @@ def make_handler(station: Station, output: Mp3Output, speaker=None,
                  config_file: Path | None = None, announcer=None, voice_jobs=None, updates=None,
                  presets=None, directory=None, media=None, lamps=None):
     auth = Auth(config_file)
+    book_dl = bookdl_mod.BookDownloader(station.podcasts, media, station.book_positions) \
+        if media is not None and hasattr(station, "podcasts") else None      # (a LibriVox book kept on the radio)
     from sleepradiopi.web.hear import HearHere
     hear = HearHere(output, speaker) if output is not None else None      # the menu bar's Listen here
     if hear is not None and speaker is not None:
@@ -353,6 +356,8 @@ def make_handler(station: Station, output: Mp3Output, speaker=None,
                     self._error(str(e))
                     return
                 self._send(json.dumps({"results": found}).encode(), "application/json")
+            elif path == "/api/librivox/download" and book_dl is not None:
+                self._send(json.dumps(book_dl.status()).encode(), "application/json")
             elif path == "/api/librivox/search":
                 q = parse_qs(urlparse(self.path).query)
                 try:
@@ -774,6 +779,8 @@ def make_handler(station: Station, output: Mp3Output, speaker=None,
                 self._send(json.dumps({"done": done}).encode(), "application/json")
             elif path in ("/api/buttons/bank", "/api/buttons/auto") and presets is not None:
                 self._button_bank(path.endswith("auto"))
+            elif path == "/api/librivox/download" and book_dl is not None:
+                self._book_download()
             elif path.startswith("/api/podcasts/") and path.rsplit("/", 1)[1] in ("follow", "unfollow", "play", "heard"):
                 self._podcasts(path.rsplit("/", 1)[1])
             elif path == "/api/ondemand/keep":      # {"path", "keep": true | false}: remember its place, like a book
@@ -2205,6 +2212,18 @@ def make_handler(station: Station, output: Mp3Output, speaker=None,
                     key = pod_mod.episode_key(sid, guid)
                     station.book_positions.set(key, 0, done=bool(body.get("heard", True)))
                     reply = {"ok": True}
+            except (ValueError, AttributeError, TypeError) as e:
+                self._error(str(e) if isinstance(e, ValueError) else "send {\"id\"}")
+                return
+            self._send(json.dumps(reply).encode(), "application/json")
+
+        def _book_download(self) -> None:
+            """POST /api/librivox/download {"id": <the followed book's id>}: keep that LibriVox book on the radio (a
+            folder of its chapters in Audiobooks, played with no Wi-Fi; the streamed copy is replaced) /
+            {"cancel": true}. Progress: GET /api/librivox/download. One at a time."""
+            try:
+                body = self._body()
+                reply = book_dl.cancel() if body.get("cancel") else book_dl.start(str(body.get("id") or ""))
             except (ValueError, AttributeError, TypeError) as e:
                 self._error(str(e) if isinstance(e, ValueError) else "send {\"id\"}")
                 return

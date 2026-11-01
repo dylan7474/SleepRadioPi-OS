@@ -848,6 +848,8 @@ The cards:
   Title search is a prefix match (the feed's `title=` is exact, so the radio sends `^`);
   author search matches the surname; genre is not offered (the feed's genre search is
   unreliable). Streams from archive.org with HTTP Range, so it needs Wi-Fi.
+  *Download for offline* (`playback/bookdl.py`) saves it as an ordinary folder book in Audiobooks
+  (`001 - <chapter>.mp3` ...) through `MediaLibrary.receive()`, so it needs no Wi-Fi to play.
 - **Podcasts** (Find → Podcasts) — search the iTunes podcast directory (as the
   Android app does) or paste a feed's address, and **follow** a show (up to 50,
   kept in the settings as `podcasts`). Each show's episode list (the newest
@@ -1998,6 +2000,7 @@ everything but the page itself and the login needs the session cookie
 | `POST /api/books/play` / `/api/books/seek` | `{"key"}` — that book from where it was left / `{"delta_ms": -60000}` or `{"to_ms": n}` in the book on |
 | `GET /api/podcasts` | The shows followed, each with its number of episodes, how many recent ones are unheard, and the latest |
 | `GET /api/librivox/search?q=&kind=title\|author&offset=` | LibriVox books, 20 a page (`id`, `title`, `author`, `about`, `duration_ms`, `sections`, `cover`, `feed_url` = `librivox:<id>`, to follow it with `/api/podcasts/follow`) |
+| `GET /api/librivox/download` / `POST /api/librivox/download` | Progress (`state` idle/running/done/error/cancelled, `chapter`, `chapters`, `bytes`, `estimate`, `error`) / `{"id": <a followed LibriVox book>}` keeps it on the radio, `{"cancel": true}` stops it. A folder of its chapters in Audiobooks (`playback/bookdl.py`, through the upload path: `.part` files, room checked, card writable only meanwhile), a `.book.json` naming it, the streamed place carried over, the streamed copy unfollowed. One at a time; an interrupted one carries on |
 | `GET /api/podcasts/search?q=` | Shows from the podcast directory (`id`, `feed_url`, `title`, `author`) |
 | `GET /api/podcasts/episodes?id=&refresh=1` | A show's episodes, newest first (`guid`, `gid`, `title`, `pub`, `duration_ms`, `pos_ms`, `done`); `refresh=1` fetches the feed first (`note` if it couldn't) |
 | `POST /api/podcasts/follow` / `/unfollow` | `{"feed_url"}` / `{"id"}` |
