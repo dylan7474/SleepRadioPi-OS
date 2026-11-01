@@ -25,6 +25,7 @@ import base64
 import binascii
 import json
 import os
+import re
 import urllib.error
 import urllib.request
 from pathlib import Path
@@ -47,24 +48,29 @@ def available() -> bool:
     return d is not None and d.parent.is_dir() and BINARY.exists()
 
 
+_TOKEN_WORD = re.compile(r"eyJ[A-Za-z0-9+/]+={0,2}")
+
+
 def parse_token(text: object) -> str:
-    """The token from what was pasted: the token alone, or the whole command
-    Cloudflare shows ("cloudflared service install eyJ...", "sudo cloudflared
-    ..."). A tunnel token is base64 of {"a": account, "t": tunnel, "s": secret}.
-    Raises ValueError (with words for the page) if it isn't one."""
-    if not isinstance(text, str) or len(text) > 2000:
+    """The token from whatever was pasted: the token alone, or any of the
+    commands Cloudflare shows ("sudo cloudflared service install eyJ...",
+    "cloudflared tunnel run --token eyJ...", a docker run line, a
+    TUNNEL_TOKEN=eyJ... line, or the whole page of install steps). A tunnel
+    token is base64 of {"a": account, "t": tunnel, "s": secret}, so it starts
+    eyJ; the first such word that really decodes to one is used.
+    Raises ValueError (with words for the page) if there isn't one."""
+    if not isinstance(text, str) or len(text) > 20000:
         raise ValueError("that isn't a tunnel token")
-    words = text.split()
-    if not words:
+    if not text.strip():
         raise ValueError("paste the tunnel token (it starts eyJ)")
-    token = words[-1]
-    try:
-        info = json.loads(base64.b64decode(token + "=" * (-len(token) % 4), validate=True))
-        if not (isinstance(info, dict) and all(isinstance(info.get(k), str) and info[k] for k in "ats")):
-            raise ValueError
-    except (binascii.Error, ValueError, UnicodeDecodeError):
-        raise ValueError("that isn't a tunnel token: it starts eyJ and is one long word") from None
-    return token
+    for token in _TOKEN_WORD.findall(text):
+        try:
+            info = json.loads(base64.b64decode(token + "=" * (-len(token) % 4), validate=True))
+        except (binascii.Error, ValueError, UnicodeDecodeError):
+            continue
+        if isinstance(info, dict) and all(isinstance(info.get(k), str) and info[k] for k in "ats"):
+            return token
+    raise ValueError("no tunnel token in that: it starts eyJ and is one long word")
 
 
 def token_set() -> bool:

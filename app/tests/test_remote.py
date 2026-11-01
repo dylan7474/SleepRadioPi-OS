@@ -45,6 +45,10 @@ def test_not_available_without_the_variable_or_the_program(tmp_path: Path, monke
 def test_token_is_checked_and_a_pasted_command_is_understood() -> None:
     assert remote.parse_token(TOKEN) == TOKEN
     assert remote.parse_token(f"  sudo cloudflared service install {TOKEN}\n") == TOKEN
+    for pasted in (f"cloudflared tunnel run --token {TOKEN}", f"docker run cloudflare/cloudflared:latest tunnel --no-autoupdate run --token {TOKEN}",
+                   f"TUNNEL_TOKEN={TOKEN}", f'--token="{TOKEN}"', f"# step\nsudo cloudflared service install {TOKEN}\n\nthen restart {TOKEN[:20]}\n",
+                   f"junk eyJhbGciOi and then {TOKEN} and more"):
+        assert remote.parse_token(pasted) == TOKEN
     for bad in ("", "   ", "eyJhbGciOi", "not base64 at all!", base64.b64encode(b"{}").decode(),
                 base64.b64encode(b'{"a": 1, "t": "x", "s": "y"}').decode(), None, 5, "x" * 3000):
         with pytest.raises(ValueError):
@@ -145,3 +149,9 @@ def test_the_password_still_applies_through_the_tunnel(tmp_path: Path, remote_di
             assert _call(base + "/api/remote", {"enabled": False}, headers=h)[0] == 401
     finally:
         httpd.shutdown()
+
+
+def test_the_station_script_makes_the_remote_folder_the_web_page_can_write() -> None:
+    """/data is root's, so the page (user radio) can't create /data/cloudflared itself (it failed on the first Pi)."""
+    script = (Path(__file__).resolve().parents[2] / "board/sleepradiopi/rootfs-overlay/usr/sbin/sleepradiopi-station").read_text()
+    assert "mkdir -p -m 0700 /data/cloudflared" in script and "chown radio:radio /data/cloudflared" in script

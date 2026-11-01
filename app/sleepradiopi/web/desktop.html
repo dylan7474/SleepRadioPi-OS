@@ -4572,7 +4572,7 @@ const UI = {
           help("Off unless you switch it on. When on, the radio makes one outgoing connection to Cloudflare, a couple of minutes after it starts and once its clock is right; nothing is opened on the network it is on. With no network it just plays, and the page here carries on as before.")),
         grp("The tunnel token", srow("Token", tok, sbtn(r.token_set ? "Change" : "Keep it", save, "primary")),
           r.token_set ? line(sbtn("Forget the token", () => ask("Forget the token? Remote access switches off, and needs a token again.", "Forget", () => act(() => api("/api/remote", { forget: true }))), "danger")) : null,
-          help("In Cloudflare: Zero Trust, Networks, Tunnels, make a tunnel for this radio, and paste the long token it shows (or the whole install command). Point its public hostname at http://localhost:80, and put an Access policy in front so only you get in. The radio keeps the token to itself: not shown again, not in a backup file."))];
+          help("In Cloudflare: Zero Trust, Networks, Tunnels, make a tunnel for this radio, and paste the long token it shows, or any command or text that contains it. Point its public hostname at http://localhost:80, and put an Access policy in front so only you get in. The radio keeps the token to itself: not shown again, not in a backup file."))];
     },
   },
   power: {

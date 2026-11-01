@@ -16,6 +16,10 @@ fi
 
 mkdir -p $HOME
 chown -R radio:radio $HOME
+# Remote access keeps its token + switch here; the web page (user radio) writes
+# them, and /data itself is root's, so the folder has to exist and be radio's.
+mkdir -p -m 0700 /data/cloudflared
+chown radio:radio /data/cloudflared
 cd $HOME
 
 # Where the station asks for a shutdown (the web page's button); watched by

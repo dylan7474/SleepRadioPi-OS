@@ -24,7 +24,7 @@ RETRY=60
 last=0
 
 say() { [ "$(cat $STATE 2>/dev/null)" = "$1" ] || { echo "$1" > $STATE; logger -t remote-access "$1"; }; }
-running() { pgrep -x cloudflared >/dev/null; }
+running() { pgrep cloudflared >/dev/null; }          # (busybox pgrep -x never matched it)
 now() { awk '{ print int($1) }' /proc/uptime; }
 
 while sleep 5; do
@@ -51,7 +51,7 @@ while sleep 5; do
 		fi
 	else
 		if running; then
-			pkill -x cloudflared
+			pkill cloudflared
 			logger -t remote-access "stopped"
 		fi
 		say "off"
