@@ -761,7 +761,7 @@ const PANEL = {};
 for (const [key, title, sym, h, page] of PANELS) PANEL[key] = mk({ id: "set:" + key, kind: "panel", key, title, sym, h, page });
 for (const [key, title, sym, h] of [["messages", "Messages", "✎", 55], ["birthdays", "Birthdays", "✿", 340], ["stations", "Stations", "R", 8],
                                     ["tests", "Test sounds", "▶", 150], ["stream", "Listen in a browser", "◠", 200], ["lists", "Themes", "A", 195],
-                                    ["findstation", "Find a station", "R", 8], ["findreceiver", "Find a receiver", "⌁", 200], ["modes", "Where to listen", "⌖", 215], ["conditions", "Band conditions", "☼", 45], ["quakes", "Earthquakes", "≋", 20], ["sun", "The sun", "☀", 45], ["aurora", "Aurora", "◠", 130], ["vhf", "VHF openings", "⌃", 200], ["warnings", "Warnings", "⚠", 35], ["signal", "My signal", "⌇", 210], ["qrz", "QRZ logbook", "Q", 225], ["lightning", "Lightning", "ϟ", 50], ["findroom", "Find a room", "☊", 265], ["findpodcast", "Follow a podcast", "P", 275], ["newlist", "New theme", "A", 195]])
+                                    ["findstation", "Find a station", "R", 8], ["findreceiver", "Find a receiver", "⌁", 200], ["modes", "Where to listen", "⌖", 215], ["conditions", "Band conditions", "☼", 45], ["quakes", "Earthquakes", "≋", 20], ["sun", "The sun", "☀", 45], ["aurora", "Aurora", "◠", 130], ["vhf", "VHF openings", "⌃", 200], ["warnings", "Warnings", "⚠", 35], ["signal", "My signal", "⌇", 210], ["qrz", "QRZ logbook", "Q", 225], ["lightning", "Lightning", "ϟ", 50], ["findroom", "Find a room", "☊", 265], ["findpodcast", "Follow a podcast", "P", 275], ["findbook", "Find a LibriVox book", "B", 150], ["newlist", "New theme", "A", 195]])
   PANEL[key] = mk({ id: "set:" + key, kind: "panel", key, title, sym, h, page: key });
 const DJ = mk({ id: "dj", kind: "dj", title: "The DJ" });
 const NOTES = mk({ id: "notes", kind: "folder", box: "messages", title: "Messages", kids: [], sym: "✎" });   // a folder of sticky notes
@@ -822,9 +822,14 @@ async function loadFolder(f) {
     const d = await api("/api/books");
     f.kids = d.books.map(b => mk({ id: "b:" + b.key, kind: "book", key: b.key, title: b.title, artist: b.author,
       min: Math.max(1, (b.total_ms - (b.pos_ms || 0)) / 60000), left: b.pos_ms ? `${dur((b.total_ms - b.pos_ms) / 60000)} left` : "not started" }).id);
+    try {                                            // LibriVox books you follow (a podcast to the radio; read in order)
+      const lv = await api("/api/podcasts");
+      f.kids.push(...lv.shows.filter(p => p.serial).map(p => mk({ id: "pod:" + p.id, kind: "podcast", pid: p.id, serial: true, title: p.title, artist: p.author,
+        count: p.episodes, eps: O["pod:" + p.id]?.eps || [] }).id));
+    } catch {}
   } else if (f.box === "podcasts") {
     const d = await api("/api/podcasts");
-    f.kids = d.shows.map(p => mk({ id: "pod:" + p.id, kind: "podcast", pid: p.id, title: p.title, artist: p.author, count: p.episodes, fresh: p.new, eps: O["pod:" + p.id]?.eps || [] }).id);
+    f.kids = d.shows.filter(p => !p.serial).map(p => mk({ id: "pod:" + p.id, kind: "podcast", pid: p.id, title: p.title, artist: p.author, count: p.episodes, fresh: p.new, eps: O["pod:" + p.id]?.eps || [] }).id);
   } else if (f.box === "stations") {
     const d = await api("/api/radio");
     f.kids = d.stations.map(s => stationObj(s).id);
@@ -940,6 +945,8 @@ async function loadAlbum(a) {
 }
 async function loadEpisodes(p) {
   const d = await api(`/api/podcasts/episodes?id=${encodeURIComponent(p.pid)}`);
+  p.serial = !!d.show.serial || p.serial;
+  if (p.serial) d.episodes.reverse();                // a book: chapter 1 first
   p.eps = d.episodes.map(e => mk({ id: `ep:${p.pid}:${e.guid}`, kind: "episode", pid: p.pid, guid: e.guid, gid: e.gid, title: e.title, min: e.duration_ms ? e.duration_ms / 60000 : null, h: p.h, done: e.done }).id);
   p.loaded = true;
 }
@@ -3867,7 +3874,7 @@ function folderView(o, box, win) {
     const upDir = el("input", { type: "file", multiple: true, hidden: true });       // a book in chapters: its folder, kept as a folder
     upDir.setAttribute("webkitdirectory", "");
     upDir.onchange = () => { upload(o, [...upDir.files].map(f => [f, f.webkitRelativePath || f.name])); upDir.value = ""; };
-    tools.append(T("Upload a book…", () => up.click()), T("Upload a folder of chapters…", () => upDir.click()), up, upDir,
+    tools.append(T("Upload a book…", () => up.click()), T("Upload a folder of chapters…", () => upDir.click()), T("Find a LibriVox book…", () => open(PANEL.findbook.id)), up, upDir,
       el("span", { className: "note", textContent: "One m4b, m4a or mp3 file is a book; so is a folder of mp3 or m4a chapters (upload the folder, or drop it here) · each remembers its place" }));
   }
   if (o.kids.length) tools.append(viewSwitch(o));
@@ -4020,7 +4027,8 @@ function albumView(o, box) {
   box.append(el("div", { className: "wbody" }, rowsOf(o.tracks || [], o.id, t => t.n ?? "", false, o)));
 }
 function podcastView(o, box) {
-  box.append(el("div", { className: "wtools" }, T("▶ Latest", () => play(o), "primary"), el("span", { className: "note", textContent: `${o.artist || ""} · double-click an episode to play it` })));
+  box.append(el("div", { className: "wtools" }, T(o.serial ? "▶ Play" : "▶ Latest", () => play(o), "primary"),
+    el("span", { className: "note", textContent: o.serial ? `${o.artist || ""} · plays on from where you left off, part by part · double-click a part to start there` : `${o.artist || ""} · double-click an episode to play it` })));
   box.append(el("div", { className: "wbody" }, rowsOf(o.eps || [], o.id, t => t.done ? "✓" : "")));
 }
 function playlistName(o) {
@@ -5192,6 +5200,27 @@ const UI = {
           line(sbtn("Rig", () => open(rxObj("room", r.url, r.name.slice(0, 30), RX_WORD.room).id), "primary"), sbtn("Listen", need(() => play(station(r)))), sbtn("Save as a station", need(() => keep(r))))))];
     },
   },
+  findbook: {
+    load: async () => ({ q: "", kind: "title", results: null }),
+    build: (d) => {
+      const q = el("input", { type: "search", placeholder: d.kind === "author" ? "An author's name, e.g. Jane Austen" : "A title, or its first words, e.g. Pride", id: "book-q", value: d.q });
+      const kind = el("select", { id: "book-kind" }, el("option", { value: "title", textContent: "Title" }), el("option", { value: "author", textContent: "Author" }));
+      kind.value = d.kind; kind.onchange = () => { d.kind = kind.value; q.placeholder = d.kind === "author" ? "An author's name, e.g. Jane Austen" : "A title, or its first words, e.g. Pride"; };
+      const go = async (more) => { if (!more) { d.q = q.value; d.kind = kind.value; d.offset = 0; d.results = []; }
+        try { const r = (await api(`/api/librivox/search?q=${encodeURIComponent(d.q)}&kind=${d.kind}&offset=${d.offset || 0}`)).results || []; d.results = (d.results || []).concat(r); d.more = r.length >= 20; }
+        catch (e) { toast(e.message); } drawDesk(); fitWin(PANEL.findbook.id); };
+      q.onkeydown = e => { if (e.key === "Enter") go(false); };
+      const more = d.more ? sbtn("More…", () => { d.offset = (d.offset || 0) + 20; go(true); }) : null;
+      const hrs = ms => { const m = Math.round(ms / 60000); return m >= 60 ? `${Math.floor(m / 60)} h ${m % 60} min` : `${m} min`; };
+      return [grp("Find a LibriVox book", line(kind, q, sbtn("Search", () => go(false), "primary")),
+        d.results === null ? null : d.results.length ? null : help("None found. A title works from its first words; an author by surname."),
+        ...(d.results || []).map(b => srow(b.title, help(`${b.author || "Unknown"}${b.duration_ms ? " · " + hrs(b.duration_ms) : ""}${b.sections ? " · " + b.sections + " parts" : ""}`), sbtn("Follow", async () => {
+          try { await api("/api/podcasts/follow", { feed_url: b.feed_url }); await loadFolder(BOOKS); toast(`“${b.title}” is in Audiobooks.`); drawDesk(); } catch (e) { toast(e.message); } }))),
+        more,
+        help("Public-domain books from LibriVox, read by volunteers. They play over the internet (the radio needs Wi-Fi for these); each part remembers its place, and the radio plays on from one part to the next.")),
+      ];
+    },
+  },
   findpodcast: {
     load: async () => ({ q: "", results: [] }),
     build: (d) => {
@@ -5233,6 +5262,7 @@ const SUMS = {
   modes: () => { const R = O[MODES.rx]?.rig; return R ? `${R.o.title}: FT8, FT4, WSPR, PSK31, teleprinter, Morse, SSTV and weather fax, band by band` : "FT8, FT4, WSPR, PSK31, teleprinter, Morse, SSTV and weather fax, band by band"; },
   findroom: () => "Radio amateurs' digital voice rooms",
   findpodcast: () => "From Apple's podcast directory",
+  findbook: () => "Free audiobooks read by volunteers",
 };
 function win4(data) { const w = W.find(w => w.data === data); if (w) drawDesk(); }
 async function panelData(win, o) {
@@ -6101,8 +6131,8 @@ function trash(src) {
     const all = STATIONS.kids.map(id => O[id]).map(x => ({ name: x.name, url: x.url, info: x.info }));
     await api("/api/radio/stations", { stations: all.filter(x => x.url !== o.url) }); await loadFolder(STATIONS); drawDesk();
     return async () => { await api("/api/radio/stations", { stations: all }); await loadFolder(STATIONS); drawDesk(); }; });
-  if (o.kind === "podcast" && from === PODCASTS) return ask(`Stop following “${o.title}”?`, "Unfollow", async () => {
-    try { await api("/api/podcasts/unfollow", { id: o.pid }); await loadFolder(PODCASTS); closeFor(o); toast(`No longer following “${o.title}”.`); } catch (e) { toast(e.message); } });
+  if (o.kind === "podcast" && (from === PODCASTS || from === BOOKS)) return ask(`Stop following “${o.title}”?`, "Unfollow", async () => {
+    try { await api("/api/podcasts/unfollow", { id: o.pid }); await loadFolder(from); closeFor(o); toast(`No longer following “${o.title}”.`); } catch (e) { toast(e.message); } });
   if (o.kind === "playlist") return gone(`Deleted the playlist “${o.title}”. The songs stay on the radio.`, async () => {
     const all = PLAYLISTS.kids.map(id => O[id]).map(p => ({ name: p.name, tracks: p.items.map(id => [O[id].root, O[id].path]) }));
     await loadPlaylists(await api("/api/playlists", { playlists: all.filter(p => p.name !== o.name) })); closeFor(o);

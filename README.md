@@ -88,6 +88,15 @@ Actions, Sleep timer and Radio folders open:
   far into a long book, with a whole-book progress bar and
   one-minute back / forward on the web page. At the end of a book the radio
   pauses instead of waking you with the show.
+- **LibriVox books** — free public-domain audiobooks, read by volunteers.
+  *Find a LibriVox book* (in Audiobooks) searches by title or author; **Follow**
+  puts a book in Audiobooks, where its parts read in order. They stream over the
+  internet (the radio needs Wi-Fi for these, like podcasts, and writes nothing
+  to the card but the part list and where you are); each part remembers its
+  place, the radio plays on from one part to the next with nothing from the DJ,
+  and pauses at the end of the book. Under the hood a followed book is a podcast
+  (address `librivox:<id>`), so preset buttons, resuming and the knob's
+  press-and-turn all work.
 - **Podcasts** — search the directory, follow shows, and play episodes (again
   with nothing from the DJ), each remembering its place like a book. Put a
   show on a preset button starting from any episode, and the radio plays on

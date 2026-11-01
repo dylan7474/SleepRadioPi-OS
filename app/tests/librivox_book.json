@@ -1,0 +1,80 @@
+{
+ "id": "253",
+ "title": "Pride and Prejudice",
+ "description": "<em>Pride and Prejudice</em> is the most famous of Jane Austen\u2019s novels, and its opening is one of the most famous lines in English literature - \u201cIt is a truth universally acknowledged, that a single ",
+ "url_text_source": "https://www.gutenberg.org/etext/1342",
+ "language": "English",
+ "copyright_year": "1813",
+ "num_sections": "37",
+ "url_rss": "https://librivox.org/rss/253",
+ "url_zip_file": "https://archive.org/compress/pride_and_prejudice_librivox/formats=64KBPS MP3&file=/pride_and_prejudice_librivox.zip",
+ "url_project": "https://en.wikipedia.org/wiki/Pride_and_Prejudice",
+ "url_librivox": "https://librivox.org/pride-and-prejudice-by-jane-austen/",
+ "url_other": "",
+ "totaltime": "13:06:44",
+ "totaltimesecs": 47204,
+ "authors": [
+  {
+   "id": "155",
+   "first_name": "Jane",
+   "last_name": "Austen",
+   "dob": "1775",
+   "dod": "1817"
+  }
+ ],
+ "url_iarchive": "https://www.archive.org/details/pride_and_prejudice_librivox",
+ "sections": [
+  {
+   "id": "124135",
+   "section_number": "1",
+   "title": "Chapters 1-3",
+   "listen_url": "https://www.archive.org/download/pride_and_prejudice_librivox/prideandprejudice_01-03_austen_64kb.mp3",
+   "language": "English",
+   "playtime": "1132",
+   "file_name": null,
+   "readers": [
+    {
+     "reader_id": "168",
+     "display_name": "Chris Goringe"
+    }
+   ]
+  },
+  {
+   "id": "124136",
+   "section_number": "2",
+   "title": "Chapters 4-5",
+   "listen_url": "https://www.archive.org/download/pride_and_prejudice_librivox/prideandprejudice_04-05_austen_64kb.mp3",
+   "language": "English",
+   "playtime": "865",
+   "file_name": null,
+   "readers": [
+    {
+     "reader_id": "19",
+     "display_name": "Kara Shallenberg (1969-2023)"
+    }
+   ]
+  },
+  {
+   "id": "124137",
+   "section_number": "3",
+   "title": "Chapter 6",
+   "listen_url": "https://www.archive.org/download/pride_and_prejudice_librivox/prideandprejudice_06_austen_64kb.mp3",
+   "language": "English",
+   "playtime": "777",
+   "file_name": null,
+   "readers": [
+    {
+     "reader_id": "89",
+     "display_name": "Kristen McQuillin"
+    }
+   ]
+  }
+ ],
+ "genres": [
+  {
+   "id": "27",
+   "name": "Romance"
+  }
+ ],
+ "translators": []
+}

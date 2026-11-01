@@ -37,6 +37,7 @@ from sleepradiopi.config.settings import load as load_settings, save_setting
 from sleepradiopi.playback import radio as radio_mod
 from sleepradiopi.io import presets as presets_mod
 from sleepradiopi import media as media_mod
+from sleepradiopi.playback import librivox as lv_mod
 from sleepradiopi.playback import podcasts as pod_mod
 from sleepradiopi.config.power import can_power_off, request_power_off, request_restart
 from sleepradiopi import remote
@@ -352,6 +353,15 @@ def make_handler(station: Station, output: Mp3Output, speaker=None,
                     self._error(str(e))
                     return
                 self._send(json.dumps({"results": found}).encode(), "application/json")
+            elif path == "/api/librivox/search":
+                q = parse_qs(urlparse(self.path).query)
+                try:
+                    found = lv_mod.search(q.get("q", [""])[0][:200], q.get("kind", ["title"])[0],
+                                          int(q.get("offset", ["0"])[0] or 0))
+                except (lv_mod.LibriVoxError, ValueError) as e:
+                    self._error(str(e))
+                    return
+                self._send(json.dumps({"results": found}).encode(), "application/json")
             elif path == "/api/podcasts/episodes":
                 q = parse_qs(urlparse(self.path).query)
                 sid = q.get("id", [""])[0]
@@ -364,7 +374,8 @@ def make_handler(station: Station, output: Mp3Output, speaker=None,
                         station.podcasts.refresh(sid)
                     except pod_mod.PodcastError as e:
                         note = str(e)
-                self._send(json.dumps({"show": station.podcasts.show(sid), "episodes": station.podcasts.episodes(sid),
+                show = station.podcasts.show(sid)
+                self._send(json.dumps({"show": {**show, "serial": lv_mod.is_book(show["feed_url"])}, "episodes": station.podcasts.episodes(sid),
                                        "note": note}).encode(), "application/json")
             elif path == "/api/radio":
                 self._send(json.dumps(self._radio_state()).encode(), "application/json")

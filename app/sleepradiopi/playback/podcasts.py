@@ -29,6 +29,7 @@ from pathlib import Path
 from urllib.parse import quote, urlparse
 
 from sleepradiopi.config.atomic import write_atomic
+from sleepradiopi.playback import librivox as lv_mod
 from sleepradiopi.playback import radio as radio_mod
 
 log = logging.getLogger(__name__)
@@ -176,12 +177,13 @@ class Podcasts:
     """The shows subscribed to (in the settings), their cached episode lists,
     and which episode to play."""
 
-    def __init__(self, shows: list | None, cache_dir: Path | None, positions, save=None, fetch=_get) -> None:
+    def __init__(self, shows: list | None, cache_dir: Path | None, positions, save=None, fetch=_get, book_fetch=lv_mod._get) -> None:
         self.shows: list[dict] = validate_shows(shows or [])
         self.cache_dir = Path(cache_dir) if cache_dir is not None else None
         self.positions = positions            # audiobooks.Positions: {key: {"pos_ms", "at", "done"}}
         self.save = save                      # save(shows): writes them to the settings
         self.fetch = fetch
+        self.book_fetch = book_fetch
         self._feeds: dict[str, dict] = {}
         self._lock = threading.Lock()
 
@@ -193,7 +195,7 @@ class Podcasts:
     def subscribe(self, feed_url: str) -> dict:
         if len(self.shows) >= MAX_SHOWS:
             raise PodcastError(f"at most {MAX_SHOWS} podcasts")
-        if urlparse(feed_url.strip()).scheme not in ("http", "https"):
+        if not lv_mod.is_book(feed_url) and urlparse(feed_url.strip()).scheme not in ("http", "https"):
             raise PodcastError("a feed's address starts http:// or https://")
         sid = feed_id(feed_url)
         feed = self.refresh(sid, feed_url.strip())            # (checks it's a feed)
@@ -238,14 +240,19 @@ class Podcasts:
         if not url:
             raise PodcastError("that podcast isn't subscribed to")
         try:
-            data = self.fetch(url, MAX_FEED_BYTES)
-        except (OSError, ValueError) as e:
+            if lv_mod.is_book(url):                  # a LibriVox book: its chapters are the episodes
+                feed = lv_mod.feed(lv_mod.book_id(url), self.book_fetch)
+            else:
+                feed = parse_feed(self.fetch(url, MAX_FEED_BYTES), url)
+        except (OSError, ValueError) as e:           # (LibriVoxError and PodcastError are ValueErrors)
             cached = self.feed(sid)
             if cached is not None:
                 log.info("podcasts: %s: using the saved list (%s)", sid, e)
                 return cached
-            raise PodcastError("couldn't reach that podcast (is the radio online?)") from None
-        feed = parse_feed(data, url)
+            if isinstance(e, PodcastError):
+                raise
+            raise PodcastError(str(e) if isinstance(e, lv_mod.LibriVoxError)
+                               else "couldn't reach that podcast (is the radio online?)") from None
         feed["fetched"] = time.time()
         with self._lock:
             self._feeds[sid] = feed
@@ -260,6 +267,8 @@ class Podcasts:
 
     def refresh_all(self) -> None:
         for s in list(self.shows):
+            if lv_mod.is_book(s["feed_url"]):         # (a finished book doesn't change)
+                continue
             try:
                 self.refresh(s["id"])
             except Exception as e:
@@ -303,6 +312,8 @@ class Podcasts:
         going = [e for e in eps if not e["done"] and e["pos_ms"] > 0]
         if going:
             return max(going, key=lambda e: e["at"])
+        if (self.feed(sid) or {}).get("serial"):      # a book: the first chapter not heard, else from the start
+            return next((e for e in eps[::-1] if not e["done"]), eps[-1])
         return next((e for e in eps if not e["done"]), eps[0])
 
     def next_after(self, sid: str, guid: str) -> dict | None:
@@ -316,7 +327,7 @@ class Podcasts:
         for s in self.shows:
             eps = self.episodes(s["id"])
             latest = eps[0] if eps else None
-            out.append({**s, "episodes": len(eps), "new": sum(1 for e in eps[:20] if not e["done"] and not e["pos_ms"]),
+            out.append({**s, "serial": lv_mod.is_book(s["feed_url"]), "episodes": len(eps), "new": sum(1 for e in eps[:20] if not e["done"] and not e["pos_ms"]),
                         "latest": {k: latest[k] for k in ("title", "pub", "duration_ms")} if latest else None,
                         "playing_at": max((e["at"] for e in eps), default=0)})
         return out
@@ -328,7 +339,7 @@ def validate_shows(shows) -> list[dict]:
     out = []
     for s in shows:
         if not isinstance(s, dict) or not isinstance(s.get("feed_url"), str) \
-                or urlparse(s["feed_url"]).scheme not in ("http", "https"):
+                or not (lv_mod.is_book(s["feed_url"]) or urlparse(s["feed_url"]).scheme in ("http", "https")):
             raise ValueError("a podcast needs its feed's address")
         out.append({"id": feed_id(s["feed_url"]), "feed_url": s["feed_url"].strip(),
                     "title": html.unescape(str(s.get("title") or s["feed_url"]))[:200], "author": str(s.get("author") or "")[:200]})
