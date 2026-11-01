@@ -4572,7 +4572,13 @@ const UI = {
           help("Off unless you switch it on. When on, the radio makes one outgoing connection to Cloudflare, a couple of minutes after it starts and once its clock is right; nothing is opened on the network it is on. With no network it just plays, and the page here carries on as before.")),
         grp("The tunnel token", srow("Token", tok, sbtn(r.token_set ? "Change" : "Keep it", save, "primary")),
           r.token_set ? line(sbtn("Forget the token", () => ask("Forget the token? Remote access switches off, and needs a token again.", "Forget", () => act(() => api("/api/remote", { forget: true }))), "danger")) : null,
-          help("In Cloudflare: Zero Trust, Networks, Tunnels, make a tunnel for this radio, and paste the long token it shows, or any command or text that contains it. Point its public hostname at http://localhost:80, and put an Access policy in front so only you get in. The radio keeps the token to itself: not shown again, not in a backup file."))];
+          help("The radio keeps the token to itself: not shown again, not in a backup file.")),
+        grp("Setting it up in Cloudflare",
+          help("1. In Cloudflare: Networks, Tunnels, Create Tunnel. Name it for this radio. Choose Debian and arm64 (that only changes the command it shows; the token is the same)."),
+          help("2. Copy the \"Install as service\" line, or any line that holds the token, and paste it into the box above. Press Keep it, then Switch on."),
+          help("3. Wait for the tunnel to show Connected in Cloudflare (a couple of minutes after the radio starts). Then, in the tunnel, Routes, Add route, Published application: pick a hostname such as phonosphere.yourdomain.org and set the service to http://localhost:80."),
+          help("4. Put an Access policy in front so only you get in (Zero Trust, Access controls, Applications). A wildcard application for the whole domain does it for every radio at once. Without one, anyone who finds the address reaches this page."),
+          help("5. Open the hostname and sign in. This page appears. The radio needs no fixed address and no open ports: it only makes the outgoing connection."))];
     },
   },
   power: {
