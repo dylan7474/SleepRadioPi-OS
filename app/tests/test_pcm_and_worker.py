@@ -1,4 +1,7 @@
+import shutil
 import time
+
+import pytest
 import numpy as np
 
 from sleepradiopi.audio import pcm
@@ -109,3 +112,20 @@ def test_an_idle_worker_goes_to_sleep_and_the_next_line_wakes_it() -> None:
     assert w._asleep and not w._ready.is_set() and w._proc is None and None in sent
     w.synth("v", "Again.", 1.0)                      # the next line wakes it
     assert starts == [1, 1] and not w._asleep and w.ready
+
+
+@pytest.mark.skipif(not shutil.which("ffmpeg"), reason="no ffmpeg")
+@pytest.mark.parametrize("rate", [16000, 22050, 24000])
+def test_the_voice_filter_makes_no_tone_at_any_voice_rate(rate) -> None:
+    """The 16 kHz stock voice used to grow an 8 kHz tone (the EQ's 8 kHz shelf is unstable at that rate's Nyquist)."""
+    rng = np.random.default_rng(1)
+    seconds = 6
+    x = (rng.standard_normal(rate * seconds) * 0.05).astype(np.float32)      # speech-like broadband sound
+    out = pcm.speech_pcm(x, rate, 1.0)[:, 0].astype(np.float32) / 32768
+    n = 8192
+    f = np.fft.rfftfreq(n, 1 / pcm.SAMPLE_RATE)
+    near8k = (f > 7800) & (f < 8200)
+    floor = (f > 1000) & (f < 7000)
+    for start in (0.5, 2.0, 4.0, 5.5):                                       # early and late in the line: the tone grew with time
+        X = np.abs(np.fft.rfft(out[int(start * pcm.SAMPLE_RATE):][:n] * np.hanning(n)))
+        assert X[near8k].max() < 3 * np.median(X[floor]), f"a tone at 8 kHz at {start}s for a {rate} Hz voice"

@@ -45,6 +45,10 @@ GAIN_LIMIT_KNEE = 0.85
 # --- DjVoicePlayer.kt / VoiceEq.kt -----------------------------------------------------
 SPEECH_TARGET_RMS = 0.30  # ~ -10 dBFS, before the announcer volume
 SPEECH_MAX_GAIN = 8.0
+# The EQ is run AFTER the voice is brought up to 44.1 kHz. Run at the voice's own rate its 8 kHz shelf is unstable
+# for the 16 kHz stock voice (8 kHz is that rate's Nyquist): an 8 kHz tone grew ~10,000-fold within each line
+# (a whine that built up and reset at every sentence, and clicked where it was cut off).
+RESAMPLE = f"aresample={SAMPLE_RATE},"
 VOICE_EQ = ("highpass=f=120,"
             "equalizer=f=250:t=q:w=1:g=-5,"
             "equalizer=f=3500:t=q:w=1:g=4,"
@@ -225,7 +229,7 @@ def speech_pcm(samples: np.ndarray, sample_rate: int, volume: float) -> np.ndarr
     scaled by the announcer volume, as int16 stereo at 44.1 kHz."""
     proc = subprocess.run(
         [*FFMPEG, "-f", "f32le", "-ar", str(sample_rate), "-ac", "1", "-i", "-",
-         "-af", VOICE_EQ, "-ac", str(CHANNELS), "-ar", str(SAMPLE_RATE), "-f", "f32le", "-"],
+         "-af", RESAMPLE + VOICE_EQ, "-ac", str(CHANNELS), "-ar", str(SAMPLE_RATE), "-f", "f32le", "-"],
         input=np.asarray(samples, dtype=np.float32).tobytes(), capture_output=True, timeout=60,
     )
     if proc.returncode != 0:
