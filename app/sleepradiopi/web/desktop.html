@@ -574,6 +574,12 @@
   .toast { position: fixed; left: 50%; bottom: calc(env(safe-area-inset-bottom, 0px) + 18px); transform: translateX(-50%); z-index: 3000;
            background: var(--toast); color: var(--toast-ink); border: 1px solid var(--line); border-radius: 10px; padding: 8px 14px; max-width: min(560px, calc(100% - 32px));
            box-shadow: 0 10px 30px var(--shadow); font-size: 13px; pointer-events: none; }   /* (a click goes through it to what's under) */
+  .dlpill { position: fixed; left: 18px; bottom: calc(env(safe-area-inset-bottom, 0px) + 18px); z-index: 2900; max-width: min(460px, calc(100vw - 36px)); padding: 9px 13px 11px;
+    border-radius: 10px; background: var(--win); color: var(--ink, inherit); border: 1px solid var(--line); box-shadow: 0 6px 22px rgba(0,0,0,.28); font-size: 12.5px; }
+  .dlpill[hidden] { display: none; }
+  .dlbar { height: 5px; border-radius: 99px; background: var(--line); overflow: hidden; margin-top: 7px; }
+  .dlbar > i { display: block; height: 100%; width: 0; background: var(--amber); border-radius: 99px; transition: width .6s linear; }
+  .wtools .dlbar { width: 110px; margin: 0 4px; }
   .toast.high { bottom: auto; top: calc(env(safe-area-inset-top, 0px) + 46px); }   /* (said from the top: a key pressed again and again isn't hidden) */
   .toast .undo { margin-left: 12px; border: 1px solid var(--amber); background: none; color: var(--amber); border-radius: 99px; padding: 1px 10px; font: 600 12px var(--body); cursor: pointer; pointer-events: auto; }
   .toast:has(.undo) { pointer-events: auto; }
@@ -4043,18 +4049,46 @@ function albumView(o, box) {
     tagging && tagging.where === o.id ? infoBox(o) : null));
   box.append(el("div", { className: "wbody" }, rowsOf(o.tracks || [], o.id, t => t.n ?? "", false, o)));
 }
+// The download's progress, in words and as a bar: in the book's window, and (below) in a pill at the corner of the
+// screen that stays while a download runs, whatever window is open (the size is an estimate: never 100% before it's done).
+const dlPercent = s => s.state === "done" ? 100 : s.estimate > 0 ? Math.min(99, Math.round(s.bytes / s.estimate * 100)) : 0;
+const dlText = s => `Downloading part ${s.chapter} of ${s.chapters} · ${(s.bytes / 1048576).toFixed(1)} of about ${Math.round(s.estimate / 1048576)} MB · ${dlPercent(s)}%`;
+let dlPill = null, dlWatch = 0, dlSeen = "";
+async function watchDownload() {
+  clearTimeout(dlWatch);
+  let s; try { s = await api("/api/librivox/download"); } catch { dlWatch = setTimeout(watchDownload, 5000); return; }
+  if (!dlPill) { dlPill = el("div", { className: "dlpill", hidden: true }, el("div"), el("div", { className: "dlbar" }, el("i"))); document.body.append(dlPill); }
+  if (s.state === "running") {
+    dlSeen = s.started + ":running";
+    dlPill.hidden = false;
+    dlPill.firstChild.textContent = `“${s.title}”: ${dlText(s)}`;
+    dlPill.lastChild.firstChild.style.width = dlPercent(s) + "%";
+    dlWatch = setTimeout(watchDownload, 1500);
+    return;
+  }
+  dlPill.hidden = true;
+  if (dlSeen === s.started + ":running" && (s.state === "done" || s.state === "error" || s.state === "cancelled")) {      // (it ended while we watched)
+    dlSeen = s.started + ":" + s.state;
+    if (s.state === "done") { toast(`“${s.title}” is on the radio now: it plays with no Wi-Fi (in Audiobooks).`); try { await loadFolder(BOOKS); drawDesk(); } catch {} }
+    else if (s.state === "error") toast(`The download of “${s.title}” stopped: ${s.error} Open the book and press Download to carry on.`);
+  }
+}
+
 // A followed LibriVox book: keep it on the radio (a folder of its chapters in Audiobooks) to play with no Wi-Fi.
 function bookDownloadTools(o) {
   const mb = Math.round((o.eps || []).reduce((s, id) => s + (O[id]?.min || 0), 0) * 0.48);   // 64 kbps: 0.48 MB a minute
   const note = el("span", { className: "note" }), stop = T("Stop", async () => { try { await api("/api/librivox/download", { cancel: true }); } catch (e) { toast(e.message); } });
   stop.hidden = true;
+  const bar = el("div", { className: "dlbar" }, el("i")); bar.hidden = true;
   let timer = 0;
   const show = s => {
     const mine = s.id === o.pid;
     stop.hidden = !(mine && s.state === "running");
     btn.disabled = s.state === "running";
+    bar.hidden = !(mine && s.state === "running");
+    bar.firstChild.style.width = dlPercent(s) + "%";
     note.textContent = !mine && s.state === "running" ? `Downloading “${s.title}”: one at a time`
-      : mine && s.state === "running" ? `Downloading part ${s.chapter} of ${s.chapters} · ${Math.round(s.bytes / 1048576)} of about ${Math.round(s.estimate / 1048576)} MB`
+      : mine && s.state === "running" ? dlText(s)
       : mine && s.state === "error" ? "Stopped: " + s.error + " Press Download to carry on."
       : mine && s.state === "cancelled" ? "Stopped. Press Download to carry on where it left off." : "";
   };
@@ -4070,10 +4104,10 @@ function bookDownloadTools(o) {
     } else if (s.state === "error" && s.id === o.pid) toast(s.error);
   };
   const btn = T(`Download for offline${mb ? ` (about ${mb} MB)` : ""}`, async () => {
-    try { show(await api("/api/librivox/download", { id: o.pid })); poll(); } catch (e) { toast(e.message); } });
+    try { show(await api("/api/librivox/download", { id: o.pid })); poll(); watchDownload(); } catch (e) { toast(e.message); } });
   btn.title = "Keep the whole book on the radio, to play with no Wi-Fi. It uses the radio's storage, and replaces this streamed copy.";
-  poll();
-  return [btn, stop, note];
+  setTimeout(poll, 0);                  // (once the buttons are in the window: poll() gives up on a note that is not on the page yet)
+  return [btn, stop, bar, note];
 }
 function podcastView(o, box) {
   box.append(el("div", { className: "wtools" }, T(o.serial ? "▶ Play" : "▶ Latest", () => play(o), "primary"), ...(o.serial ? bookDownloadTools(o) : []),
@@ -6514,6 +6548,7 @@ async function boot() {
   await Promise.all([poll(), loadButtons(), loadProgrammes().catch(() => {}), loadPlaylists().catch(() => {})]);
   document.title = radioName; SHOW.title = radioName;
   drawDesk();
+  watchDownload();                 // (a download that was running: its progress is back)
   if (!booted) {
     let was = []; try { was = JSON.parse(localStorage.getItem("srd.wins")) || []; } catch {}
     for (const s of was.sort((a, b) => a.z - b.z)) {
