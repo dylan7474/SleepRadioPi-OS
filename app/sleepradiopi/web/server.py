@@ -88,6 +88,9 @@ def _quietly(job) -> None:
         pass
 
 
+NO_EBOOKS = "this radio hasn't the memory to read ebooks aloud (a Pi 3 or better can)"
+
+
 def make_handler(station: Station, output: Mp3Output, speaker=None,
                  config_file: Path | None = None, announcer=None, voice_jobs=None, updates=None,
                  presets=None, directory=None, media=None, lamps=None):
@@ -360,13 +363,17 @@ def make_handler(station: Station, output: Mp3Output, speaker=None,
                     return
                 self._send(json.dumps({"results": found}).encode(), "application/json")
             elif path == "/api/ebooks":                 # the ebooks the voice can read (play one with /api/books/play {"key"})
-                self._send(json.dumps({"ebooks": station.ebook_list(), "can_read": station._has_voice}).encode(), "application/json")
+                self._send(json.dumps({"ebooks": station.ebook_list(), "can_read": station._has_voice and station.ebooks_on,
+                                       "enabled": station.ebooks_on}).encode(), "application/json")
             elif path == "/api/librivox/download" and book_dl is not None:
                 self._send(json.dumps(book_dl.status()).encode(), "application/json")
             elif path == "/api/ebooks/download" and ebook_dl is not None:
                 self._send(json.dumps(ebook_dl.status()).encode(), "application/json")
             elif path == "/api/ebooks/search":
                 q = parse_qs(urlparse(self.path).query)
+                if not station.ebooks_on:
+                    self._error(NO_EBOOKS)
+                    return
                 try:
                     found = gb_mod.search(q.get("q", [""])[0][:200], int(q.get("offset", ["0"])[0] or 0))
                 except (gb_mod.GutenbergError, ValueError) as e:
@@ -2256,6 +2263,9 @@ def make_handler(station: Station, output: Mp3Output, speaker=None,
             """POST /api/ebooks/download {"id": <Project Gutenberg number>, "title", "confirm"}: fetch that book into the
             Ebooks folder (a normal novel is under 2 MB; a bigger one answers {"state": "confirm", "bytes"} and waits
             for the same call with "confirm": true) / {"cancel": true}. Progress: GET /api/ebooks/download."""
+            if not station.ebooks_on:
+                self._error(NO_EBOOKS)
+                return
             try:
                 body = self._body()
                 reply = ebook_dl.cancel() if body.get("cancel") else ebook_dl.start(

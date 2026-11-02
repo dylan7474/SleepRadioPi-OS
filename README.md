@@ -123,7 +123,9 @@ Actions, Sleep timer and Radio folders open:
   the first sound comes about 20 s after pressing play. Known limits: there can still be
   a gap of a few seconds now and again, the loudness and intonation vary from sentence
   to sentence (each is spoken on its own), and the personal voice is unusable here (its
-  worker reloads every 20-40 s, ~18 s of silence each time). Needs the broadcast voice on.
+  worker reloads every 20-40 s, ~18 s of silence each time). Reading aloud needs the memory of a **Pi 3 or better**: a Pi Zero 2 W (about 470 MB) hasn't room
+  for the voice beside the station and ran out of memory, so there the Ebooks folder is hidden and ebooks
+  are refused (setting `ebooks`: `auto` by default, or `on` / `off` in the config to force it). Needs the broadcast voice on.
 - **Podcasts** — search the directory, follow shows, and play episodes (again
   with nothing from the DJ), each remembering its place like a book. Put a
   show on a preset button starting from any episode, and the radio plays on

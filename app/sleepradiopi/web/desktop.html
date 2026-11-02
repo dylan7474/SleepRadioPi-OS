@@ -1428,7 +1428,7 @@ function drawDesk() {
   const scrolls = {};                                // each window keeps its scroll position
   d.querySelectorAll(".win[data-win]").forEach(win => { const b = win.querySelector(".wbody"); if (b) scrolls[win.dataset.win] = b.scrollTop; });
   if (!radioPos) radioPos = { x: Math.max(300, w - 330), y: 40 };
-  const kids = desk.filter(p => O[p.id]).map(p => { const i = iconEl(O[p.id], { where: "desk", alias: p.alias }); i.style.left = p.x + "px"; i.style.top = p.y + "px"; return i; });
+  const kids = desk.filter(p => O[p.id] && !(p.id === EBOOKS.id && S?.ebooks === false)).map(p => { const i = iconEl(O[p.id], { where: "desk", alias: p.alias }); i.style.left = p.x + "px"; i.style.top = p.y + "px"; return i; });
   kids.push(radioEl());
   const tr = iconEl(TRASH, { where: "desk" }); tr.style.left = (w - 110) + "px"; tr.style.top = (h - 110) + "px"; kids.push(tr);
   for (const win of W) kids.push(winEl(win));
@@ -1833,7 +1833,7 @@ function buttonChoices() {
   return [["Actions", Object.values(ACTION).filter(a => !FLIP[a.action] && !a.sleep)], ["Sleep timer", kids(SLEEP_BOX)],
           ["Themes", kids(LISTS).filter(o => o.kind === "list")],
           ["Stations", kids(STATIONS)], ["Playlists", kids(PLAYLISTS)], ["Programmes", kids(PROGRAMMES)],
-          ["Podcasts", kids(PODCASTS)], ["Audiobooks", kids(BOOKS)], ["Ebooks", kids(EBOOKS)],
+          ["Podcasts", kids(PODCASTS)], ["Audiobooks", kids(BOOKS)], ...(S?.ebooks === false ? [] : [["Ebooks", kids(EBOOKS)]]),
           ["Messages", kids(NOTES).filter(o => o.kind === "note")], ["Jingles", kids(JINGLES)], ["Birthdays", kids(BDAYS).filter(o => o.kind === "person")]];
 }
 // something (or several things) dropped on a button, or picked for it: on an empty button it's what

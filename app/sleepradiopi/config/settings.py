@@ -84,6 +84,7 @@ class Settings:
     news_speed: float = 0.70
     ebook_voice: str = "stock"         # the voice an ebook is read in (the personal one is too slow to read aloud on a Pi Zero 2 W)
     ebook_pause: float = 1.0          # x the pauses between sentences and paragraphs when reading
+    ebooks: str = "auto"              # read ebooks aloud: "auto" (a Pi 3 or better: enough memory), "on" or "off"
     ebook_speed: float = 0.85         # the pace an ebook is read at (x the voice's own; the DJ's is broadcast_announcer_speed)
     news_quiet_hours: bool = True
     news_quiet_start_min: int = 23 * 60

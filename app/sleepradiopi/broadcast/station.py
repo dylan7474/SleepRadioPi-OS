@@ -337,6 +337,7 @@ class Station:
         self.kept = KeptLibrary(cfg.get("ondemand_folder") or Path("/nonexistent"),
                                 Path(cache).with_name("kept.json") if cache else None, cfg.get("ondemand_keep") or [])
         # Ebooks (epub / text read aloud): their own folder; played as books (keys start with EBOOK), same places
+        self.ebooks_on = ebooks_mod.enabled(cfg.get("ebooks", "auto"))     # (a Zero 2 W hasn't the memory: see ebooks.MIN_MEMORY_KB)
         self.ebooks = ebooks_mod.EbookLibrary(cfg.get("ebooks_folder") or Path("/nonexistent"),
                                               Path(cache).with_name("ebooks.json") if cache else None)
         self.books_scanning = True
@@ -610,6 +611,8 @@ class Station:
             key = source.get("key")
             book = self._book(key) if isinstance(key, str) else None
             if isinstance(key, str) and key.startswith(ebooks_mod.EBOOK):
+                if not self.ebooks_on:
+                    raise ValueError("this radio hasn't the memory to read ebooks aloud (a Pi 3 or better can)")
                 if not self._has_voice:
                     raise ValueError("the radio has no voice to read with (the broadcast voice is off)")
                 at = self.ebooks.root / key[len(ebooks_mod.EBOOK):]
@@ -2096,6 +2099,8 @@ class Station:
     def _book(self, key: str):
         """A book by its key: one of the audiobooks, or an On demand thing that remembers its place."""
         if key.startswith(ebooks_mod.EBOOK):
+            if not self.ebooks_on:
+                return None
             ebook = self.ebooks.get(key[len(ebooks_mod.EBOOK):])
             return ebooks_mod.EbookView(ebook) if ebook is not None else None
         return self.kept.get(key) if key.startswith(KEPT) else self.books.get(key)
@@ -2143,7 +2148,8 @@ class Station:
         try:
             books = self.books.scan()
             self.kept.scan()
-            self.ebooks.scan()
+            if self.ebooks_on:
+                self.ebooks.scan()
             from sleepradiopi.audio import mp3index      # (long MP3 books: resumed at once)
             mp3index.want(sorted({c.path for b in books for c in b.chapters}))
         except Exception:
@@ -2520,7 +2526,7 @@ class Station:
     def ebook_list(self) -> list[dict]:
         """Every ebook, with where it was left; the most recently read first."""
         out = []
-        for e in self.ebooks.all():
+        for e in (self.ebooks.all() if self.ebooks_on else []):
             key = ebooks_mod.EBOOK + e.key
             out.append({"key": key, "title": e.title, "author": e.author, "chapters": e.chapters, "total_ms": e.total_ms,
                         "pos_ms": self.book_positions.get(key), "at": self.book_positions.when(key), "error": e.error})
@@ -2650,7 +2656,7 @@ class Station:
         songs = bool(kinds & {"music", "ondemand"})
         tracks = scan_music(self.music_dir, self._tag_cache) if "music" in kinds else self.tracks
         ondemand = self._scan_ondemand() if "ondemand" in kinds else self.ondemand_tracks
-        if "ebooks" in kinds:
+        if "ebooks" in kinds and self.ebooks_on:
             self.ebooks.scan()
         if "audiobooks" in kinds:
             self._scan_books()
@@ -3019,6 +3025,7 @@ class Station:
         from sleepradiopi.config import brand
         return {
             "radio_name": brand.name,
+            "ebooks": self.ebooks_on,         # reads ebooks aloud (the page hides Ebooks where it can't)
             "on_air": self.is_on_air,
             "dj_on": self.dj_on,
             "listeners": self._listeners,

@@ -854,6 +854,13 @@ The cards:
   (`tts/worker.py`, sentence by sentence, in the `ebook_voice` (default STOCK; `ebook_speed` 0.85, `ebook_pause` 1.0): `use_voice()`
   switches the worker for the book and back afterwards); `station._run_ebook` plays it. Measured on a Zero 2 W: 20 minutes, no underruns, worker
   at most 248 MB.
+- **Ebooks need memory** (`playback/ebooks.enabled`, `Station.ebooks_on`): the voice worker is 150-260 MB beside a
+  station of 60-200 MB, so on a Pi Zero 2 W (MemTotal ~478 MB) the radio ran out of memory and the kernel killed the
+  station (2026-11-02, twice in five minutes, swap full). Setting `ebooks`: `auto` (default: on when MemTotal is at least
+  800 MB, i.e. a Pi 3 or better), `on`, `off`. Off: the page hides the Ebooks folder (`/api/status` carries `ebooks`),
+  `/api/ebooks` says `enabled: false`, the search and download refuse, an ebook can't be played (a saved source of that kind
+  is dropped) and the folder isn't scanned. The voice worker also sets its own `oom_score_adj` to 800, so if memory
+  does run out it is the worker that is killed (a line reloaded), not the station.
 - **Find an ebook** (Ebooks → Find an ebook...) -- Project Gutenberg's catalogue search (`playback/gutenberg.py`: its OPDS
   feed, 25 a page) and a download into the Ebooks folder (`playback/ebookdl.py`): `pg<number>.txt` (or `.epub` where
   there is no text), through `MediaLibrary.receive()` like an upload. A connection that ends early carries on where it

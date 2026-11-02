@@ -65,6 +65,7 @@ def st(tmp_path, monkeypatch):
     s.ebooks = eb.EbookLibrary(tmp_path / "ebooks")
     s.ebooks.scan()
     s.tts = Voice(tmp_path)
+    s.ebooks_on = True                         # (whatever the machine running the tests has)
     s.dj_voice = "personal"
     s.output = Out()
     real = rd.Reader
@@ -161,3 +162,19 @@ def test_the_reading_voice_speed_and_pauses_are_settings(st, tmp_path):
     st._switch.clear()
     st._run_book(st.source)
     assert st.tts.calls[0] == "stock"                                   # (it reads in the voice chosen)
+
+
+def test_ebooks_are_on_by_memory_unless_the_setting_says_otherwise():
+    assert eb.enabled("auto", 478_084) is False and eb.enabled("auto", 949_000) is True      # a Zero 2 W; a Pi 3
+    assert eb.enabled("on", 478_084) is True and eb.enabled("off", 949_000) is False
+    assert eb.enabled("auto", 0) is False                                                    # (memory unknown: leave it off)
+
+
+def test_a_radio_without_the_memory_has_no_ebooks(st):
+    st.ebooks_on = False
+    assert st.status()["ebooks"] is False and st.ebook_list() == []
+    with pytest.raises(ValueError, match="memory"):
+        st.play_book(KEY)
+    assert st._book(KEY) is None
+    st.ebooks_on = True
+    assert st.status()["ebooks"] is True and [b["key"] for b in st.ebook_list()] == [KEY]

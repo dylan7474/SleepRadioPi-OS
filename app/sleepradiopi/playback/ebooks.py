@@ -36,6 +36,29 @@ from sleepradiopi.config.atomic import write_atomic
 log = logging.getLogger(__name__)
 
 EBOOK_FILES = {".epub", ".txt", ".html", ".htm"}
+MIN_MEMORY_KB = 800_000          # a Pi 3 (~950 MB) or better can read aloud; a Zero 2 W (~470 MB) cannot: the voice (150-260 MB)
+                                 # beside the station ran it out of memory (2026-11-02)
+
+
+def memory_kb() -> int:
+    try:
+        for line in open("/proc/meminfo"):
+            if line.startswith("MemTotal:"):
+                return int(line.split()[1])
+    except (OSError, ValueError, IndexError):
+        pass
+    return 0
+
+
+def enabled(setting="auto", memory: int | None = None) -> bool:
+    """Whether this radio reads ebooks: "on" / "off", or "auto" (the default) = when it has the memory for it."""
+    if setting in ("on", True):
+        return True
+    if setting in ("off", False):
+        return False
+    return (memory_kb() if memory is None else memory) >= MIN_MEMORY_KB
+
+
 EBOOK = "@ebook/"                # the keys of ebooks, in the places an audiobook's key goes (positions, sources, presets)
 MS_PER_CHAR = 67                 # ~15 characters a second: the estimate behind positions (the voices run 13-16)
 MAX_BYTES = 40_000_000           # an epub or text bigger than this isn't read
