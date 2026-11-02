@@ -34,14 +34,19 @@ log = logging.getLogger(__name__)
 KIND = "audiobooks"
 KBPS = 64                     # LibriVox's files are 64 kbps mp3: the size is worked out from the lengths
 TRIES = 3                     # a chapter cut off part-way is fetched again this many times
+RESUMES = 30                  # ...and a connection that ends early is picked up again where it stopped this many times
 
 
 class DownloadError(ValueError):
     """Couldn't start the download: the text is for the page."""
 
 
-def _open(url: str, timeout: float = 30):
-    req = urllib.request.Request(url, headers={"User-Agent": radio_mod.USER_AGENT})
+def _open(url: str, start: int = 0, timeout: float = 30):
+    """The file at url (from byte `start` on: a Range request, answered 206)."""
+    headers = {"User-Agent": radio_mod.USER_AGENT}
+    if start:
+        headers["Range"] = f"bytes={start}-"
+    req = urllib.request.Request(url, headers=headers)
     return urllib.request.urlopen(req, timeout=timeout)
 
 
@@ -132,15 +137,39 @@ class BookDownloader:
                     length = int(resp.headers.get("Content-Length") or 0)
                     if length <= 0:
                         raise MediaError(f"{name}: the server didn't say how big it is")
+                    got, resumes, cur = 0, 0, [resp]
 
                     def read(n: int) -> bytes:
+                        nonlocal got, resumes
                         if self._cancel.is_set():
                             raise MediaError("cancelled")
-                        data = resp.read(n)
+                        data = cur[-1].read(n)
+                        while not data and got < length and resumes < RESUMES:
+                            # archive.org ends some connections early (the radio got 12-14 MB of a 19 MB part, every
+                            # time): carry on from where it stopped, with a Range request, not from the start
+                            resumes += 1
+                            log.info("librivox download: %s: the connection ended at %d of %d bytes; carrying on (%d)",
+                                     name, got, length, resumes)
+                            if self._cancel.is_set():
+                                raise MediaError("cancelled")
+                            nxt = self.open_url(ch["url"], got)
+                            if getattr(nxt, "status", 206) != 206:        # (it ignored the Range: can't carry on)
+                                nxt.close()
+                                break
+                            cur.append(nxt)
+                            data = nxt.read(n)
+                        got += len(data)
                         self._set(bytes=self.state["bytes"] + len(data))
                         return data
 
-                    res = self.media.receive(KIND, folder, name, length, read)
+                    try:
+                        res = self.media.receive(KIND, folder, name, length, read)
+                    finally:
+                        for extra in cur[1:]:
+                            try:
+                                extra.close()
+                            except OSError:
+                                pass
                     if res["status"] == "same":                     # (already there: count its bytes as done)
                         self._set(bytes=self.state["bytes"] + length)
                     return
