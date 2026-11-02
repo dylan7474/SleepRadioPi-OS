@@ -1,0 +1,107 @@
+<?xml version="1.0" encoding="utf-8"?>
+<feed xmlns="http://www.w3.org/2005/Atom" xmlns:opds="http://opds-spec.org/2010/catalog" xmlns:dcterms="http://purl.org/dc/terms/" xmlns:opensearch="http://a9.com/-/spec/opensearch/1.1/" xmlns:relevance="http://a9.com/-/opensearch/extensions/relevance/1.0/">
+<id>http://www.gutenberg.org/ebooks/search.opds/?query=pride+prejudice</id>
+<updated>2026-11-02T19:04:35Z</updated>
+<title>Books: pride prejudice</title>
+<subtitle>Free eBooks since 1971.</subtitle>
+<author>
+<name>Project Gutenberg</name>
+<uri>https://www.gutenberg.org</uri>
+<email>webmaster@gutenberg.org</email>
+</author>
+<icon>https://www.gutenberg.org/gutenberg/favicon.ico</icon>
+<link rel="search" type="application/opensearchdescription+xml" title="Project Gutenberg Catalog Search" href="https://www.gutenberg.org/catalog/osd-books.xml"/>
+<link rel="self" title="This Page" type="application/atom+xml;profile=opds-catalog" href="/ebooks/search.opds/?query=pride+prejudice"/>
+<link rel="alternate" type="text/html" title="HTML Page" href="/ebooks/search/?query=pride+prejudice"/>
+<link rel="start" title="Start Page" type="application/atom+xml;profile=opds-catalog" href="/ebooks.opds/"/>
+<opensearch:itemsPerPage>25</opensearch:itemsPerPage>
+<opensearch:startIndex>1</opensearch:startIndex>
+<entry>
+<updated>2026-11-02T19:04:35Z</updated>
+<id>https://www.gutenberg.org/ebooks/1342.opds</id>
+<title>Pride and Prejudice</title>
+<content type="text">Jane Austen</content>
+<link type="application/atom+xml;profile=opds-catalog" rel="subsection" href="/ebooks/1342.opds"/>
+<link type="image/png" rel="http://opds-spec.org/image/thumbnail" href="data:image/png;base64,AAAA"/>
+</entry>
+<entry>
+<updated>2026-11-02T19:04:35Z</updated>
+<id>https://www.gutenberg.org/ebooks/42671.opds</id>
+<title>Pride and Prejudice</title>
+<content type="text">Jane Austen</content>
+<link type="application/atom+xml;profile=opds-catalog" rel="subsection" href="/ebooks/42671.opds"/>
+<link type="image/png" rel="http://opds-spec.org/image/thumbnail" href="data:image/png;base64,AAAA"/>
+</entry>
+<entry>
+<updated>2026-11-02T19:04:35Z</updated>
+<id>https://www.gutenberg.org/ebooks/26301.opds</id>
+<title>Pride and Prejudice</title>
+<content type="text">Jane Austen</content>
+<link type="application/atom+xml;profile=opds-catalog" rel="subsection" href="/ebooks/26301.opds"/>
+<link type="image/png" rel="http://opds-spec.org/image/thumbnail" href="data:image/png;base64,AAAA"/>
+</entry>
+<entry>
+<updated>2026-11-02T19:04:35Z</updated>
+<id>https://www.gutenberg.org/ebooks/20687.opds</id>
+<title>Pride and Prejudice</title>
+<content type="text">Jane Austen</content>
+<link type="application/atom+xml;profile=opds-catalog" rel="subsection" href="/ebooks/20687.opds"/>
+<link type="image/png" rel="http://opds-spec.org/image/thumbnail" href="data:image/png;base64,AAAA"/>
+</entry>
+<entry>
+<updated>2026-11-02T19:04:35Z</updated>
+<id>https://www.gutenberg.org/ebooks/20686.opds</id>
+<title>Pride and Prejudice</title>
+<content type="text">Jane Austen</content>
+<link type="application/atom+xml;profile=opds-catalog" rel="subsection" href="/ebooks/20686.opds"/>
+<link type="image/png" rel="http://opds-spec.org/image/thumbnail" href="data:image/png;base64,AAAA"/>
+</entry>
+<entry>
+<updated>2026-11-02T19:04:35Z</updated>
+<id>https://www.gutenberg.org/ebooks/31100.opds</id>
+<title>The Complete Project Gutenberg Works of Jane Austen</title>
+<content type="text">Jane Austen</content>
+<link type="application/atom+xml;profile=opds-catalog" rel="subsection" href="/ebooks/31100.opds"/>
+<link type="image/png" rel="http://opds-spec.org/image/thumbnail" href="data:image/png;base64,AAAA"/>
+</entry>
+<entry>
+<updated>2026-11-02T19:04:35Z</updated>
+<id>https://www.gutenberg.org/ebooks/37431.opds</id>
+<title>Pride and Prejudice, a play founded on Jane Austen's novel</title>
+<content type="text">Jane Austen and Mrs. Steele MacKaye</content>
+<link type="application/atom+xml;profile=opds-catalog" rel="subsection" href="/ebooks/37431.opds"/>
+<link type="image/png" rel="http://opds-spec.org/image/thumbnail" href="data:image/png;base64,AAAA"/>
+</entry>
+<entry>
+<updated>2026-11-02T19:04:35Z</updated>
+<id>https://www.gutenberg.org/ebooks/10471.opds</id>
+<title>The World's Greatest Books — Volume 01 — Fiction</title>
+<content type="text">1239 downloads</content>
+<link type="application/atom+xml;profile=opds-catalog" rel="subsection" href="/ebooks/10471.opds"/>
+<link type="image/png" rel="http://opds-spec.org/image/thumbnail" href="data:image/png;base64,AAAA"/>
+</entry>
+<entry>
+<updated>2026-11-02T19:04:35Z</updated>
+<id>https://www.gutenberg.org/ebooks/78656.opds</id>
+<title>Duologues and scenes from the novels of Jane Austen :  Arranged and adapted for drawing-room performance</title>
+<content type="text">Jane Austen and Rosina Filippi</content>
+<link type="application/atom+xml;profile=opds-catalog" rel="subsection" href="/ebooks/78656.opds"/>
+<link type="image/png" rel="http://opds-spec.org/image/thumbnail" href="data:image/png;base64,AAAA"/>
+</entry>
+<entry>
+<updated>2026-11-02T19:04:35Z</updated>
+<id>https://www.gutenberg.org/ebooks/72848.opds</id>
+<title>Masterpieces of the masters of fiction</title>
+<content type="text">William Dudley Foulke</content>
+<link type="application/atom+xml;profile=opds-catalog" rel="subsection" href="/ebooks/72848.opds"/>
+<link type="image/png" rel="http://opds-spec.org/image/thumbnail" href="data:image/png;base64,AAAA"/>
+</entry>
+<entry>
+<updated>2026-11-02T19:04:35Z</updated>
+<id>https://www.gutenberg.org/ebooks/45186.opds</id>
+<title>Ylpeys ja ennakkoluulo (Finnish)</title>
+<content type="text">Jane Austen</content>
+<link type="application/atom+xml;profile=opds-catalog" rel="subsection" href="/ebooks/45186.opds"/>
+<link type="image/png" rel="http://opds-spec.org/image/thumbnail" href="data:image/png;base64,AAAA"/>
+</entry>
+</feed>

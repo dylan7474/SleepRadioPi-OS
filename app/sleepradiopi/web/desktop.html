@@ -770,7 +770,7 @@ const PANEL = {};
 for (const [key, title, sym, h, page] of PANELS) PANEL[key] = mk({ id: "set:" + key, kind: "panel", key, title, sym, h, page });
 for (const [key, title, sym, h] of [["messages", "Messages", "✎", 55], ["birthdays", "Birthdays", "✿", 340], ["stations", "Stations", "R", 8],
                                     ["tests", "Test sounds", "▶", 150], ["stream", "Listen in a browser", "◠", 200], ["lists", "Themes", "A", 195],
-                                    ["findstation", "Find a station", "R", 8], ["findreceiver", "Find a receiver", "⌁", 200], ["modes", "Where to listen", "⌖", 215], ["conditions", "Band conditions", "☼", 45], ["quakes", "Earthquakes", "≋", 20], ["sun", "The sun", "☀", 45], ["aurora", "Aurora", "◠", 130], ["vhf", "VHF openings", "⌃", 200], ["warnings", "Warnings", "⚠", 35], ["signal", "My signal", "⌇", 210], ["qrz", "QRZ logbook", "Q", 225], ["lightning", "Lightning", "ϟ", 50], ["findroom", "Find a room", "☊", 265], ["findpodcast", "Follow a podcast", "P", 275], ["findbook", "Find a LibriVox book", "B", 150], ["newlist", "New theme", "A", 195]])
+                                    ["findstation", "Find a station", "R", 8], ["findreceiver", "Find a receiver", "⌁", 200], ["modes", "Where to listen", "⌖", 215], ["conditions", "Band conditions", "☼", 45], ["quakes", "Earthquakes", "≋", 20], ["sun", "The sun", "☀", 45], ["aurora", "Aurora", "◠", 130], ["vhf", "VHF openings", "⌃", 200], ["warnings", "Warnings", "⚠", 35], ["signal", "My signal", "⌇", 210], ["qrz", "QRZ logbook", "Q", 225], ["lightning", "Lightning", "ϟ", 50], ["findroom", "Find a room", "☊", 265], ["findpodcast", "Follow a podcast", "P", 275], ["findbook", "Find a LibriVox book", "B", 150], ["findebook", "Find an ebook", "E", 160], ["newlist", "New theme", "A", 195]])
   PANEL[key] = mk({ id: "set:" + key, kind: "panel", key, title, sym, h, page: key });
 const DJ = mk({ id: "dj", kind: "dj", title: "The DJ" });
 const NOTES = mk({ id: "notes", kind: "folder", box: "messages", title: "Messages", kids: [], sym: "✎" });   // a folder of sticky notes
@@ -3896,7 +3896,7 @@ function folderView(o, box, win) {
   else if (o.box === "ebooks") {
     const up = el("input", { type: "file", multiple: true, hidden: true, accept: ".epub,.txt,.html,.htm" });
     up.onchange = () => { upload(o, [...up.files].map(f => [f, f.name])); up.value = ""; };
-    tools.append(T("Upload an ebook…", () => up.click()), T("Reading voice and speed…", () => open(DJ.id)), up,
+    tools.append(T("Upload an ebook…", () => up.click()), T("Find an ebook…", () => open(PANEL.findebook.id)), T("Reading voice and speed…", () => open(DJ.id)), up,
       el("span", { className: "note", textContent: o.canRead === false ? "The radio's voice is off, so it can't read these aloud (Settings → The DJ)"
         : "epub, text or html files (drop them here) · the radio reads them aloud in its stock voice, no DJ, and remembers its place" }));
   }
@@ -4052,11 +4052,15 @@ function albumView(o, box) {
 // The download's progress, in words and as a bar: in the book's window, and (below) in a pill at the corner of the
 // screen that stays while a download runs, whatever window is open (the size is an estimate: never 100% before it's done).
 const dlPercent = s => s.state === "done" ? 100 : s.estimate > 0 ? Math.min(99, Math.round(s.bytes / s.estimate * 100)) : 0;
-const dlText = s => `Downloading part ${s.chapter} of ${s.chapters} · ${(s.bytes / 1048576).toFixed(1)} of about ${Math.round(s.estimate / 1048576)} MB · ${dlPercent(s)}%`;
+const dlText = s => `Downloading${s.kind === "ebook" ? "" : ` part ${s.chapter} of ${s.chapters}`} · ${(s.bytes / 1048576).toFixed(1)} of about ${s.kind === "ebook" ? (s.estimate / 1048576).toFixed(1) : Math.round(s.estimate / 1048576)} MB · ${dlPercent(s)}%`;
 let dlPill = null, dlWatch = 0, dlSeen = "";
 async function watchDownload() {
   clearTimeout(dlWatch);
-  let s; try { s = await api("/api/librivox/download"); } catch { dlWatch = setTimeout(watchDownload, 5000); return; }
+  let s;
+  try {                                            // (a LibriVox book or a Project Gutenberg one: whichever is running, else the last to end)
+    const [b, e] = await Promise.all([api("/api/librivox/download"), api("/api/ebooks/download").catch(() => ({ state: "idle" }))]);
+    s = e.state === "running" ? e : b.state === "running" ? b : (e.started || 0) > (b.started || 0) ? e : b;
+  } catch { dlWatch = setTimeout(watchDownload, 5000); return; }
   if (!dlPill) { dlPill = el("div", { className: "dlpill", hidden: true }, el("div"), el("div", { className: "dlbar" }, el("i"))); document.body.append(dlPill); }
   if (s.state === "running") {
     dlSeen = s.started + ":running";
@@ -4069,8 +4073,9 @@ async function watchDownload() {
   dlPill.hidden = true;
   if (dlSeen === s.started + ":running" && (s.state === "done" || s.state === "error" || s.state === "cancelled")) {      // (it ended while we watched)
     dlSeen = s.started + ":" + s.state;
-    if (s.state === "done") { toast(`“${s.title}” is on the radio now: it plays with no Wi-Fi (in Audiobooks).`); try { await loadFolder(BOOKS); drawDesk(); } catch {} }
-    else if (s.state === "error") toast(`The download of “${s.title}” stopped: ${s.error} Open the book and press Download to carry on.`);
+    const ebook = s.kind === "ebook";
+    if (s.state === "done") { toast(ebook ? `“${s.title}” is in Ebooks now: open it and press play.` : `“${s.title}” is on the radio now: it plays with no Wi-Fi (in Audiobooks).`); try { await loadFolder(ebook ? EBOOKS : BOOKS); drawDesk(); } catch {} }
+    else if (s.state === "error") toast(ebook ? `The download of “${s.title}” stopped: ${s.error}` : `The download of “${s.title}” stopped: ${s.error} Open the book and press Download to carry on.`);
   }
 }
 
@@ -5309,6 +5314,30 @@ const UI = {
       ];
     },
   },
+  findebook: {
+    load: async () => ({ q: "", results: null }),
+    build: (d) => {
+      const q = el("input", { type: "search", placeholder: "A title or an author, e.g. Emma, or Jane Austen", id: "ebook-q", value: d.q });
+      const go = async (more) => { if (!more) { d.q = q.value; d.offset = 0; d.results = []; }
+        try { const r = await api(`/api/ebooks/search?q=${encodeURIComponent(d.q)}&offset=${d.offset || 0}`); d.results = (d.results || []).concat(r.results || []); d.more = (r.results || []).length >= (r.page || 25); }
+        catch (e) { toast(e.message); } drawDesk(); fitWin(PANEL.findebook.id); };
+      q.onkeydown = e => { if (e.key === "Enter") go(false); };
+      const more = d.more ? sbtn("More…", () => { d.offset = (d.offset || 0) + 25; go(true); }) : null;
+      const mb = n => (n / 1048576).toFixed(1);
+      const add = async (b, confirm) => {
+        try {
+          const r = await api("/api/ebooks/download", { id: b.id, title: b.title, confirm: !!confirm });
+          if (r.state === "confirm") return ask(`“${b.title}” is a big book (about ${mb(r.bytes)} MB; a novel is usually under 2 MB). Download it?`, "Download", () => add(b, true));
+          toast(`Downloading “${b.title}”…`); watchDownload();
+        } catch (e) { toast(e.message); } };
+      return [grp("Find an ebook", line(q, sbtn("Search", () => go(false), "primary")),
+        d.results === null ? null : d.results.length ? null : help("None found. Try fewer words, or just the author's surname."),
+        ...(d.results || []).map(b => srow(b.title, help(b.author || "Unknown author"), sbtn("Add to Ebooks", () => add(b)))),
+        more,
+        help("Free public-domain books from Project Gutenberg. The radio needs Wi-Fi to search and download; a downloaded book is kept in Ebooks and is read aloud with no Wi-Fi. Some results are in other languages: the title says so.")),
+      ];
+    },
+  },
   findpodcast: {
     load: async () => ({ q: "", results: [] }),
     build: (d) => {
@@ -5351,6 +5380,7 @@ const SUMS = {
   findroom: () => "Radio amateurs' digital voice rooms",
   findpodcast: () => "From Apple's podcast directory",
   findbook: () => "Free audiobooks read by volunteers",
+  findebook: () => "Free books from Project Gutenberg, for the radio to read aloud",
 };
 function win4(data) { const w = W.find(w => w.data === data); if (w) drawDesk(); }
 async function panelData(win, o) {

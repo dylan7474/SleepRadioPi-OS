@@ -106,7 +106,8 @@ Actions, Sleep timer and Radio folders open:
   button, one book at a time, like an upload.
 - **Ebooks** — the radio reads text books aloud. Upload epub, text (Project
   Gutenberg's) or html files to the **Ebooks** folder on the desktop (or drop them
-  there); open it and press play. The radio's voice reads them with no DJ, a chapter
+  there), or press **Find an ebook...** to search Project Gutenberg's free books and add one
+  (it downloads straight away, and asks first for a big one: over 3 MB); open it and press play. The radio's voice reads them with no DJ, a chapter
   at a time, and remembers its place (a few seconds back to the start of the sentence
   after a pause; a minute back after the sleep timer, like a book), with the usual
   back / forward a minute and progress bar. The progress is an estimate (the real

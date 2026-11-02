@@ -50,6 +50,43 @@ def _open(url: str, start: int = 0, timeout: float = 30):
     return urllib.request.urlopen(req, timeout=timeout)
 
 
+def resumable_read(open_url, url: str, resp, length: int, cancel: threading.Event, on_bytes, name: str = ""):
+    """A read(n) for MediaLibrary.receive() that carries on where the connection stopped. archive.org (and
+    others) hang up on the radio part-way through a file: when the data ends before `length`, it asks again from
+    the byte reached (a Range request, answered 206) instead of starting over. Returns (read, close): close()
+    shuts the extra connections it opened. A server that ignores the Range ends the data early as before."""
+    got, resumes, cur = 0, 0, [resp]
+
+    def read(n: int) -> bytes:
+        nonlocal got, resumes
+        if cancel.is_set():
+            raise MediaError("cancelled")
+        data = cur[-1].read(n)
+        while not data and got < length and resumes < RESUMES:
+            resumes += 1
+            log.info("download: %s: the connection ended at %d of %d bytes; carrying on (%d)", name, got, length, resumes)
+            if cancel.is_set():
+                raise MediaError("cancelled")
+            nxt = open_url(url, got)
+            if getattr(nxt, "status", 206) != 206:        # (it ignored the Range: can't carry on)
+                nxt.close()
+                break
+            cur.append(nxt)
+            data = nxt.read(n)
+        got += len(data)
+        on_bytes(len(data))
+        return data
+
+    def close() -> None:
+        for extra in cur[1:]:
+            try:
+                extra.close()
+            except OSError:
+                pass
+
+    return read, close
+
+
 def _clean(text: str) -> str:
     """A name safe as a file or folder name (no slashes or other marks files can't have)."""
     text = re.sub(r'[\\/:*?"<>|\x00-\x1f]+', " ", str(text))
@@ -137,39 +174,12 @@ class BookDownloader:
                     length = int(resp.headers.get("Content-Length") or 0)
                     if length <= 0:
                         raise MediaError(f"{name}: the server didn't say how big it is")
-                    got, resumes, cur = 0, 0, [resp]
-
-                    def read(n: int) -> bytes:
-                        nonlocal got, resumes
-                        if self._cancel.is_set():
-                            raise MediaError("cancelled")
-                        data = cur[-1].read(n)
-                        while not data and got < length and resumes < RESUMES:
-                            # archive.org ends some connections early (the radio got 12-14 MB of a 19 MB part, every
-                            # time): carry on from where it stopped, with a Range request, not from the start
-                            resumes += 1
-                            log.info("librivox download: %s: the connection ended at %d of %d bytes; carrying on (%d)",
-                                     name, got, length, resumes)
-                            if self._cancel.is_set():
-                                raise MediaError("cancelled")
-                            nxt = self.open_url(ch["url"], got)
-                            if getattr(nxt, "status", 206) != 206:        # (it ignored the Range: can't carry on)
-                                nxt.close()
-                                break
-                            cur.append(nxt)
-                            data = nxt.read(n)
-                        got += len(data)
-                        self._set(bytes=self.state["bytes"] + len(data))
-                        return data
-
+                    read, close = resumable_read(self.open_url, ch["url"], resp, length, self._cancel,
+                                                 lambda n: self._set(bytes=self.state["bytes"] + n), name)
                     try:
                         res = self.media.receive(KIND, folder, name, length, read)
                     finally:
-                        for extra in cur[1:]:
-                            try:
-                                extra.close()
-                            except OSError:
-                                pass
+                        close()
                     if res["status"] == "same":                     # (already there: count its bytes as done)
                         self._set(bytes=self.state["bytes"] + length)
                     return

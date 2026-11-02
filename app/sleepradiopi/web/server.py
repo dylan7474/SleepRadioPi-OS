@@ -39,6 +39,8 @@ from sleepradiopi.io import presets as presets_mod
 from sleepradiopi import media as media_mod
 from sleepradiopi.playback import bookdl as bookdl_mod
 from sleepradiopi.playback import librivox as lv_mod
+from sleepradiopi.playback import gutenberg as gb_mod
+from sleepradiopi.playback import ebookdl as ebookdl_mod
 from sleepradiopi.playback import podcasts as pod_mod
 from sleepradiopi.config.power import can_power_off, request_power_off, request_restart
 from sleepradiopi import remote
@@ -92,6 +94,7 @@ def make_handler(station: Station, output: Mp3Output, speaker=None,
     auth = Auth(config_file)
     book_dl = bookdl_mod.BookDownloader(station.podcasts, media, station.book_positions) \
         if media is not None and hasattr(station, "podcasts") else None      # (a LibriVox book kept on the radio)
+    ebook_dl = ebookdl_mod.EbookDownloader(media) if media is not None else None      # (a Project Gutenberg book)
     from sleepradiopi.web.hear import HearHere
     hear = HearHere(output, speaker) if output is not None else None      # the menu bar's Listen here
     if hear is not None and speaker is not None:
@@ -360,6 +363,16 @@ def make_handler(station: Station, output: Mp3Output, speaker=None,
                 self._send(json.dumps({"ebooks": station.ebook_list(), "can_read": station._has_voice}).encode(), "application/json")
             elif path == "/api/librivox/download" and book_dl is not None:
                 self._send(json.dumps(book_dl.status()).encode(), "application/json")
+            elif path == "/api/ebooks/download" and ebook_dl is not None:
+                self._send(json.dumps(ebook_dl.status()).encode(), "application/json")
+            elif path == "/api/ebooks/search":
+                q = parse_qs(urlparse(self.path).query)
+                try:
+                    found = gb_mod.search(q.get("q", [""])[0][:200], int(q.get("offset", ["0"])[0] or 0))
+                except (gb_mod.GutenbergError, ValueError) as e:
+                    self._error(str(e))
+                    return
+                self._send(json.dumps({"results": found, "page": gb_mod.PAGE}).encode(), "application/json")
             elif path == "/api/librivox/search":
                 q = parse_qs(urlparse(self.path).query)
                 try:
@@ -783,6 +796,8 @@ def make_handler(station: Station, output: Mp3Output, speaker=None,
                 self._button_bank(path.endswith("auto"))
             elif path == "/api/librivox/download" and book_dl is not None:
                 self._book_download()
+            elif path == "/api/ebooks/download" and ebook_dl is not None:
+                self._ebook_download()
             elif path.startswith("/api/podcasts/") and path.rsplit("/", 1)[1] in ("follow", "unfollow", "play", "heard"):
                 self._podcasts(path.rsplit("/", 1)[1])
             elif path == "/api/ondemand/keep":      # {"path", "keep": true | false}: remember its place, like a book
@@ -2232,6 +2247,19 @@ def make_handler(station: Station, output: Mp3Output, speaker=None,
             try:
                 body = self._body()
                 reply = book_dl.cancel() if body.get("cancel") else book_dl.start(str(body.get("id") or ""))
+            except (ValueError, AttributeError, TypeError) as e:
+                self._error(str(e) if isinstance(e, ValueError) else "send {\"id\"}")
+                return
+            self._send(json.dumps(reply).encode(), "application/json")
+
+        def _ebook_download(self) -> None:
+            """POST /api/ebooks/download {"id": <Project Gutenberg number>, "title", "confirm"}: fetch that book into the
+            Ebooks folder (a normal novel is under 2 MB; a bigger one answers {"state": "confirm", "bytes"} and waits
+            for the same call with "confirm": true) / {"cancel": true}. Progress: GET /api/ebooks/download."""
+            try:
+                body = self._body()
+                reply = ebook_dl.cancel() if body.get("cancel") else ebook_dl.start(
+                    body.get("id"), str(body.get("title") or ""), body.get("confirm") is True)
             except (ValueError, AttributeError, TypeError) as e:
                 self._error(str(e) if isinstance(e, ValueError) else "send {\"id\"}")
                 return

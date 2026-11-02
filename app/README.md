@@ -854,6 +854,12 @@ The cards:
   (`tts/worker.py`, sentence by sentence, in the `ebook_voice` (default STOCK; `ebook_speed` 0.85, `ebook_pause` 1.0): `use_voice()`
   switches the worker for the book and back afterwards); `station._run_ebook` plays it. Measured on a Zero 2 W: 20 minutes, no underruns, worker
   at most 248 MB.
+- **Find an ebook** (Ebooks → Find an ebook...) -- Project Gutenberg's catalogue search (`playback/gutenberg.py`: its OPDS
+  feed, 25 a page) and a download into the Ebooks folder (`playback/ebookdl.py`): `pg<number>.txt` (or `.epub` where
+  there is no text), through `MediaLibrary.receive()` like an upload. A connection that ends early carries on where it
+  stopped (`bookdl.resumable_read`, shared with the LibriVox download). It asks the server the size first; a book over 3 MB
+  (`LARGE_BYTES`: a collected works) is only fetched once the page says again with `confirm`. Progress is the same corner pill
+  as a LibriVox download's.
 - **LibriVox books** (Audiobooks → Find a LibriVox book) — public-domain audiobooks from
   LibriVox's free feed (`playback/librivox.py`). A followed book is stored as a podcast
   whose address is `librivox:<id>` and whose chapters are its episodes (chapter 1 the
@@ -2016,6 +2022,8 @@ everything but the page itself and the login needs the session cookie
 | `GET /api/librivox/search?q=&kind=title\|author&offset=` | LibriVox books, 20 a page (`id`, `title`, `author`, `about`, `duration_ms`, `sections`, `cover`, `feed_url` = `librivox:<id>`, to follow it with `/api/podcasts/follow`) |
 | `GET /api/librivox/download` / `POST /api/librivox/download` | Progress (`state` idle/running/done/error/cancelled, `chapter`, `chapters`, `bytes`, `estimate`, `error`) / `{"id": <a followed LibriVox book>}` keeps it on the radio, `{"cancel": true}` stops it. A folder of its chapters in Audiobooks (`playback/bookdl.py`, through the upload path: `.part` files, room checked, card writable only meanwhile), a `.book.json` naming it, the streamed place carried over, the streamed copy unfollowed. One at a time; an interrupted one carries on |
 | `GET /api/ebooks` | The ebooks the voice can read (`key` = `@ebook/<file>`, `title`, `author`, `chapters`, `total_ms` (estimated), `pos_ms`, `at`, `error`) and `can_read` (the broadcast voice is on). Play one with `POST /api/books/play {"key"}` and move in it with `/api/books/seek`, like an audiobook; upload / delete with `/api/media/upload` and `/delete` and `kind=ebooks` (epub, txt, html) |
+| `GET /api/ebooks/search?q=&offset=` | Search Project Gutenberg (title or author words): `results` (`id`, `title`, `author`), `page` (25: fewer back means no more) |
+| `POST /api/ebooks/download` | `{"id": <Gutenberg number>, "title", "confirm"}`: fetch that book into Ebooks (a book over 3 MB answers `{"state": "confirm", "bytes"}` and waits for the same call with `"confirm": true`); `{"cancel": true}`. Progress: `GET /api/ebooks/download` (`state` running / done / error / cancelled / idle, `bytes`, `estimate`, `title`, `error`). One at a time |
 | `GET /api/podcasts/search?q=` | Shows from the podcast directory (`id`, `feed_url`, `title`, `author`) |
 | `GET /api/podcasts/episodes?id=&refresh=1` | A show's episodes, newest first (`guid`, `gid`, `title`, `pub`, `duration_ms`, `pos_ms`, `done`); `refresh=1` fetches the feed first (`note` if it couldn't) |
 | `POST /api/podcasts/follow` / `/unfollow` | `{"feed_url"}` / `{"id"}` |
