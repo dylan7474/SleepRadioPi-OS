@@ -1239,6 +1239,8 @@ What's left to do (everything else described here is built and running):
 
 ## Licence
 
+See [`LICENSE`](LICENSE) and [`NOTICE`](NOTICE).
+
 Build scripts, configs and the case design: GPL-2.0-or-later, the same as Buildroot. The radio
 software in `app/` is GPL-3.0-or-later (`app/LICENSE`; its offline voice engine links eSpeak-NG,
 which is GPL; the image also has eSpeak itself, GPL-3.0-or-later, as the plain voice for setting up). The standard voice, downloaded by the radio when it has none, is Piper's

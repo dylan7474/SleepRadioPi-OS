@@ -1,0 +1,15 @@
+SleepRadioPi-OS
+Copyright (C) 2026 Dylan Jones
+
+The build scripts, configs, packages and case design in this repository are
+free software: you can redistribute them and/or modify them under the terms of
+the GNU General Public License as published by the Free Software Foundation,
+either version 2 of the License, or (at your option) any later version. See the
+LICENSE file for the full text. This matches Buildroot, which this project
+builds on.
+
+The radio software in app/ is a separate work under GPL-3.0-or-later; see
+app/LICENSE and app/NOTICE.
+
+The built image contains many third-party packages under their own licences;
+run `make legal-info` to list them.
