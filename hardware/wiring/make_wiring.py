@@ -151,7 +151,7 @@ for term, pin, colour, dip in ((amp_t["LRCLK (GPIO19)"], 35, YELLOW, 18), (amp_t
     wire([(tx - 5, ty), (lane_r, ty), (lane_r, low), (lane_l, low), (lane_l, py), (px, py)], colour)
 
 # Preset buttons: gold rings on their pins (wired as in the box below the header)
-BUTTONS = {29: "B1", 31: "B2", 36: "B3", 24: "B4"}
+BUTTONS = {29: "B1", 31: "B2", 26: "B3", 24: "B4"}
 GOLD = "#c99a06"
 for n, tag in BUTTONS.items():
     x, y = pin_xy(n)

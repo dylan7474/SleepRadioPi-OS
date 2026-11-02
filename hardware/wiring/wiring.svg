@@ -78,8 +78,8 @@
 <text x="544" y="490" font-size="11" font-weight="bold" fill="#c99a06" text-anchor="end">B1</text>
 <circle cx="560" cy="510" r="11" fill="none" stroke="#c99a06" stroke-width="3"/>
 <text x="544" y="514" font-size="11" font-weight="bold" fill="#c99a06" text-anchor="end">B2</text>
-<circle cx="740" cy="558" r="11" fill="none" stroke="#c99a06" stroke-width="3"/>
-<text x="756" y="562" font-size="11" font-weight="bold" fill="#c99a06" text-anchor="start">B3</text>
+<circle cx="740" cy="438" r="11" fill="none" stroke="#c99a06" stroke-width="3"/>
+<text x="756" y="442" font-size="11" font-weight="bold" fill="#c99a06" text-anchor="start">B3</text>
 <circle cx="740" cy="414" r="11" fill="none" stroke="#c99a06" stroke-width="3"/>
 <text x="756" y="418" font-size="11" font-weight="bold" fill="#c99a06" text-anchor="start">B4</text>
 <circle cx="560" cy="150" r="7" fill="#e8a33d" stroke="#fff" stroke-width="1.5"/>
@@ -233,7 +233,7 @@
 <text x="587" y="761" font-size="12.5" fill="#444">to its pin, the other to any GND pin.</text>
 <text x="587" y="778" font-size="12.5" fill="#444">B1 → pin 29 (GPIO5)</text>
 <text x="587" y="795" font-size="12.5" fill="#444">B2 → pin 31 (GPIO6)</text>
-<text x="587" y="812" font-size="12.5" fill="#444">B3 → pin 36 (GPIO16)</text>
+<text x="587" y="812" font-size="12.5" fill="#444">B3 → pin 26 (GPIO7)</text>
 <text x="587" y="829" font-size="12.5" fill="#444">B4 → pin 24 (GPIO8)</text>
 <text x="587" y="846" font-size="12.5" fill="#444">GND: pin 30, 34, 39 or 25 (one wire can</text>
 <text x="587" y="863" font-size="12.5" fill="#444">loop from button to button).</text>
