@@ -68,7 +68,8 @@ class SpeakerOutput:
 
     def __init__(self, device: str = "default", volume: int = 30,
                  command: list[str] | None = None, mono: bool = False,
-                 eq: Equalizer | None = None) -> None:
+                 eq: Equalizer | None = None, amp=None) -> None:
+        self.amp = amp                   # an ampmute.AmpMute: the amp's MUTE pin, low while the card is closed
         self.command = command or [
             "aplay", "-q", "-D", device, "-t", "raw", "-f", "S16_LE",
             "-r", str(pcm.SAMPLE_RATE), "-c", str(pcm.CHANNELS),
@@ -112,12 +113,16 @@ class SpeakerOutput:
             fcntl.fcntl(self._proc.stdin, F_SETPIPE_SZ, PIPE_BYTES)
         except OSError:
             pass
+        if self.amp is not None:
+            self.amp.unmute_soon()       # (a moment after the card opens: its pop goes unheard)
         log.info("speaker on")
 
     def _close(self) -> None:
         proc, self._proc = self._proc, None
         if proc is None:
             return
+        if self.amp is not None:
+            self.amp.mute()              # (before the card closes: the amp hisses while it idles)
         try:
             proc.stdin.close()
         except OSError:

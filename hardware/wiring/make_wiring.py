@@ -197,7 +197,7 @@ box(BX, BY, 290, 190, "Preset buttons (optional)", [
     "to its pin, the other to any GND pin.",
     "B1 → pin 29 (GPIO5)",
     "B2 → pin 31 (GPIO6)",
-    "B3 → pin 36 (GPIO16)",
+    "B3 → pin 26 (GPIO7)",
     "B4 → pin 24 (GPIO8)",
     "GND: pin 30, 34, 39 or 25 (one wire can",
     "loop from button to button)."], "#fffbea")

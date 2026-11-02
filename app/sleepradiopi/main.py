@@ -17,6 +17,7 @@ from dataclasses import asdict
 from pathlib import Path
 
 from sleepradiopi.audio import pcm
+from sleepradiopi.audio.ampmute import AmpMute
 from sleepradiopi.audio.eq import Equalizer
 from sleepradiopi.audio.speaker import SpeakerControl, SpeakerOutput, TeeOutput
 from sleepradiopi.broadcast.station import Station
@@ -713,7 +714,8 @@ def main() -> None:
     speaker = control = announcer = lamps = None
     if settings.speaker_enabled:
         # (the start-up sound chimes, then ticks, until the speaker first opens: SpeakerOutput._open)
-        speaker = SpeakerOutput(settings.speaker_device, mono=settings.speaker_mono,
+        amp = AmpMute() if settings.amp_mute_gpio else None
+        speaker = SpeakerOutput(settings.speaker_device, mono=settings.speaker_mono, amp=amp,
                                 eq=Equalizer(pcm.SAMPLE_RATE, pcm.CHANNELS, settings.speaker_eq,
                                              settings.speaker_highpass_hz))
         station = Station(cfg, tts, TeeOutput(speaker, stream))

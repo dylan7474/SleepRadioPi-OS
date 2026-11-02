@@ -193,7 +193,7 @@ a stacking header between the Pi and the amp.
 | RTC VCC | 3.3 V | 1 |
 | RTC SDA / SCL | GPIO2 / GPIO3 | 3 / 5 |
 | RTC ground | GND | 9 |
-| Preset buttons 1 / 2 / 3 / 4 (each to GND) | GPIO5 / 6 / 16 / 8 | 29 / 31 / 36 / 24 |
+| Preset buttons 1 / 2 / 3 / 4 (each to GND) | GPIO5 / 6 / 7 / 8 | 29 / 31 / 26 / 24 |
 | *Cathedral:* selector positions 1–4 | GPIO5 / 6 / 7 / 8 (3 not on GPIO16: the MiniAmp's mute) | 29 / 31 / 26 / 24 |
 | *Cathedral:* selector positions 5 / 6 | GPIO23 / 24 | 16 / 18 |
 | *Cathedral:* selector common, back button's other side | GND | 30, 34 or 39 |
@@ -210,7 +210,13 @@ a stacking header between the Pi and the amp.
   remove its resistor (often marked 201) or diode.
 - The MiniAmp doesn't use I2C, and none of the knob/RTC pins are its I2S
   pins. Check HiFiBerry's MiniAmp documentation in case your board uses
-  GPIO16/26 for mute or shutdown; nothing else here uses them.
+  GPIO16/26 for mute or shutdown; nothing else here uses them. GPIO16 is its
+  MUTE (low = muted): with `amp_mute_gpio` set to 16 in config.json the
+  station mutes the amp whenever the sound card is closed (paused, nothing
+  playing), which stops the amp's idle hiss, and unmutes a moment after the
+  card opens (`audio/ampmute.py`). Keep buttons off GPIO16 and GPIO26 (preset
+  button 3 is on GPIO7, pin 26). Off by default: a radio without the amp is
+  untouched.
 
 ### config.txt
 

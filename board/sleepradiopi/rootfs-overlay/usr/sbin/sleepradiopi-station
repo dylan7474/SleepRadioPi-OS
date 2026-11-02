@@ -41,6 +41,28 @@ if [ -d $PWM ]; then
 	done
 fi
 
+# The amp's MUTE pin (setting amp_mute_gpio; MiniAmp: GPIO16, low = muted),
+# so the station can silence the amp while nothing plays (audio/ampmute.py).
+# Exported high (the amp plays: the start-up chime needs it) and linked at
+# /run/sleepradiopi/amp-mute for the station's user. A pin something else
+# already owns (a button on it) can't be exported: skipped, the amp left alone.
+AMPPIN=$(python3 -c 'import json,sys; print(int(json.load(open(sys.argv[1])).get("amp_mute_gpio") or 0))' \
+	$HOME/.config/sleepradiopi/config.json 2>/dev/null)
+rm -f /run/sleepradiopi/amp-mute
+if [ "${AMPPIN:-0}" -gt 0 ] 2>/dev/null; then
+	for chip in /sys/class/gpio/gpiochip*; do
+		[ "$(cat $chip/ngpio 2>/dev/null)" = 54 ] && BASE=$(cat $chip/base) && break
+	done
+	if [ -n "$BASE" ]; then
+		N=$((BASE + AMPPIN))
+		[ -d /sys/class/gpio/gpio$N ] || echo $N > /sys/class/gpio/export 2>/dev/null
+		if [ -d /sys/class/gpio/gpio$N ] && echo high > /sys/class/gpio/gpio$N/direction 2>/dev/null; then
+			chown radio:radio /sys/class/gpio/gpio$N/value 2>/dev/null
+			ln -s /sys/class/gpio/gpio$N/value /run/sleepradiopi/amp-mute
+		fi
+	fi
+fi
+
 # The start-up chime (then the DJ: "Sleep Radio is warming up..."), played
 # while the station loads, so a slow start doesn't look like a broken radio.
 # It holds /run/sleepradiopi/startup-sound.lock; the station waits for it
