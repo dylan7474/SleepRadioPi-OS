@@ -57,3 +57,28 @@ def test_a_line_that_kills_every_worker_fails_but_the_next_one_works(make_worker
         w.synth("v", "die", 1.0)
     samples, _ = w.synth("v", "fine", 1.0)
     assert len(samples) == 10
+
+
+def test_switching_voice_loads_one_worker_and_a_wake_up_cannot_load_a_second(make_worker, tmp_path, monkeypatch) -> None:
+    log = tmp_path / "loads.txt"
+    real = worker_mod._serve
+
+    def serve(conn, voice_dir, voice):             # (a child process: it records its loads in a file)
+        with open(log, "a") as f:
+            f.write(voice + "\n")
+        real(conn, voice_dir, voice)
+    monkeypatch.setattr(worker_mod, "_serve", serve)
+    loads = lambda: log.read_text().split()        # noqa: E731
+    w = make_worker()
+    assert w.synth("v", "hello", 1.0)[1] == 22050 and loads() == ["v"]
+    (tmp_path / "other").mkdir()
+    (tmp_path / "other" / "model.onnx").write_bytes(b"x")
+    (tmp_path / "v" / "model.onnx").write_bytes(b"x")
+    assert w.use_voice("v") is True and w.use_voice("missing") is False
+    assert w.use_voice("other") is True
+    for _ in range(3):                             # lines asked for at once while it switches: still ONE load
+        w.synth("other", "hello", 1.0)
+    assert loads() == ["v", "other"] and w._loaded == "other"
+    assert w.use_voice("v") is True
+    w.synth("v", "again", 1.0)
+    assert loads() == ["v", "other", "v"]

@@ -41,6 +41,8 @@ import numpy as np
 from sleepradiopi.audio import denoise, ft8, identify, keyboard, morse, pcm, pictures
 from sleepradiopi.config.clock import clock_trusted
 from sleepradiopi.playback import radio as radio_mod
+from sleepradiopi.playback import ebooks as ebooks_mod
+from sleepradiopi.playback import reader as reader_mod
 from sleepradiopi.playback.audiobooks import KEPT, BookLibrary, KeptLibrary, Positions
 from sleepradiopi.playback import podcasts as pod_mod
 from sleepradiopi.tts.worker import TtsWorker
@@ -85,6 +87,7 @@ SPEED_MIN, SPEED_MAX = 0.5, 1.5   # DJ / news speech speed (x the voice's own pa
 RADIO_PREBUFFER_S = 1.0   # internet radio: audio in hand before it plays (and after a stall)
 RADIO_GIVE_UP_S = 45.0    # no sound from a station this long: back to the show (Wi-Fi can be slow at boot)
 RADIO_RETRY_S = 3.0       # wait between reconnects
+TTS_IDLE_S = 30.0         # (tts.worker.IDLE_S: the voice is let go after this long unused; held up while an ebook reads)
 BOOK_SAVE_S = 30.0        # an audiobook's place is saved this often while it plays (and on pause)
 BOOK_BACK_SLEEP_MS = 60_000   # resuming after the sleep timer: a minute back (you'd dozed off)
 BOOK_BACK_PAUSE_MS = 5_000    # ...after an ordinary pause: a few seconds
@@ -201,6 +204,9 @@ class Station:
             announce_every_track=chattiness == Chattiness.MAXIMUM,
             announcer_speed=cfg["broadcast_announcer_speed"],
             news_speed=cfg["news_speed"],
+            ebook_speed=cfg.get("ebook_speed", 0.85),
+            ebook_voice=cfg.get("ebook_voice", "stock"),
+            ebook_pause=cfg.get("ebook_pause", 1.0),
             jingle_every=cfg["broadcast_jingle_every"] if cfg["broadcast_jingle_enabled"] else 0,
             dj_hooks_enabled=cfg["broadcast_dj_hooks"],
             news_enabled=cfg["news_enabled"],
@@ -330,6 +336,9 @@ class Station:
         cache = cfg.get("book_cache")
         self.kept = KeptLibrary(cfg.get("ondemand_folder") or Path("/nonexistent"),
                                 Path(cache).with_name("kept.json") if cache else None, cfg.get("ondemand_keep") or [])
+        # Ebooks (epub / text read aloud): their own folder; played as books (keys start with EBOOK), same places
+        self.ebooks = ebooks_mod.EbookLibrary(cfg.get("ebooks_folder") or Path("/nonexistent"),
+                                              Path(cache).with_name("ebooks.json") if cache else None)
         self.books_scanning = True
         threading.Thread(target=self._scan_books, name="books-scan", daemon=True).start()
         self._book_seek: int | None = None
@@ -600,10 +609,16 @@ class Station:
         if source["kind"] == "book":
             key = source.get("key")
             book = self._book(key) if isinstance(key, str) else None
-            at = (self.kept.root / key[len(KEPT):]) if isinstance(key, str) and key.startswith(KEPT) else \
-                (self.books.root / key) if isinstance(key, str) and key else None
+            if isinstance(key, str) and key.startswith(ebooks_mod.EBOOK):
+                if not self._has_voice:
+                    raise ValueError("the radio has no voice to read with (the broadcast voice is off)")
+                at = self.ebooks.root / key[len(ebooks_mod.EBOOK):]
+            else:
+                at = (self.kept.root / key[len(KEPT):]) if isinstance(key, str) and key.startswith(KEPT) else \
+                    (self.books.root / key) if isinstance(key, str) and key else None
             if book is None and not (at is not None and ".." not in key.split("/") and at.exists()):
-                raise ValueError("that book isn't in the audiobooks folder")
+                raise ValueError("that book isn't in the ebooks folder" if isinstance(key, str) and key.startswith(ebooks_mod.EBOOK)
+                                 else "that book isn't in the audiobooks folder")
             return {"kind": "book", "key": key, "title": book.title if book else Path(key).stem,
                     "author": book.author if book else ""}
         raise ValueError(f"unknown kind of source {source.get('kind')!r}")
@@ -1654,6 +1669,7 @@ class Station:
                 "jingle_every": b["jingle_every"], "jingles_available": self._jingles_available(),
                 "news_enabled": b["news"], "time_checks": b["time_checks"], "dj_on": self.dj_on,
                 "dj_speed": self.config.announcer_speed, "news_speed": self.config.news_speed,
+                "ebook_speed": self.config.ebook_speed, "ebook_voice": self.config.ebook_voice, "ebook_pause": self.config.ebook_pause,
                 "quiet_on": self.config.news_quiet_hours, "quiet_start_min": self.config.news_quiet_start_min,
                 "quiet_end_min": self.config.news_quiet_end_min}
 
@@ -1700,13 +1716,14 @@ class Station:
 
     def set_dj(self, chattiness: str | None = None, dj_hooks: bool | None = None,
                jingle_every: int | None = None, news_enabled: bool | None = None,
-               dj_speed: float | None = None, news_speed: float | None = None,
+               dj_speed: float | None = None, news_speed: float | None = None, ebook_speed: float | None = None,
+               ebook_voice: str | None = None, ebook_pause: float | None = None,
                dj_on: bool | None = None, time_checks: bool | None = None) -> None:
         """Change the DJ live (from the next gap on): the radio-wide settings (a theme
         playing may set its own chattiness, time checks, news, jingles and hooks). ValueError if a value is wrong.
         The speeds (1 = the voice's own pace, higher = faster) apply to lines made
         from now on; one or two may already be made at the old speed."""
-        for name, speed in (("dj_speed", dj_speed), ("news_speed", news_speed)):
+        for name, speed in (("dj_speed", dj_speed), ("news_speed", news_speed), ("ebook_speed", ebook_speed)):
             if speed is not None and (isinstance(speed, bool) or not isinstance(speed, (int, float))
                                       or not SPEED_MIN <= speed <= SPEED_MAX):
                 raise ValueError(f"{name} must be {SPEED_MIN}-{SPEED_MAX}")
@@ -1714,6 +1731,17 @@ class Station:
             self.config.announcer_speed = round(float(dj_speed), 2)
         if news_speed is not None:
             self.config.news_speed = round(float(news_speed), 2)
+        if ebook_pause is not None and (isinstance(ebook_pause, bool) or not isinstance(ebook_pause, (int, float))
+                                        or not 0.5 <= ebook_pause <= 2.5):
+            raise ValueError("ebook_pause must be 0.5-2.5")
+        if ebook_voice is not None and ebook_voice not in self.voices():
+            raise ValueError(f"no voice called {ebook_voice!r}")
+        if ebook_pause is not None:
+            self.config.ebook_pause = round(float(ebook_pause), 2)
+        if ebook_voice is not None:
+            self.config.ebook_voice = ebook_voice
+        if ebook_speed is not None:
+            self.config.ebook_speed = round(float(ebook_speed), 2)       # (an ebook being read takes it from its next sentence)
         if chattiness is not None and chattiness not in [c.ident for c in Chattiness]:
             raise ValueError(f"chattiness must be one of {[c.ident for c in Chattiness]}")
         if jingle_every is not None and not 0 <= jingle_every <= 50:
@@ -2067,6 +2095,9 @@ class Station:
 
     def _book(self, key: str):
         """A book by its key: one of the audiobooks, or an On demand thing that remembers its place."""
+        if key.startswith(ebooks_mod.EBOOK):
+            ebook = self.ebooks.get(key[len(ebooks_mod.EBOOK):])
+            return ebooks_mod.EbookView(ebook) if ebook is not None else None
         return self.kept.get(key) if key.startswith(KEPT) else self.books.get(key)
 
     def set_keep(self, path: str, keep: bool) -> list[str]:
@@ -2112,6 +2143,7 @@ class Station:
         try:
             books = self.books.scan()
             self.kept.scan()
+            self.ebooks.scan()
             from sleepradiopi.audio import mp3index      # (long MP3 books: resumed at once)
             mp3index.want(sorted({c.path for b in books for c in b.chapters}))
         except Exception:
@@ -2251,6 +2283,8 @@ class Station:
         """Read a book from where it was left, chapter by chapter, with no DJ.
         Paused, it stops at once and keeps its place (a minute back after the
         sleep timer); at the end it pauses the radio rather than waking anyone."""
+        if source["key"].startswith(ebooks_mod.EBOOK):
+            return self._run_ebook(source)
         deadline = time.monotonic() + 120
         book = self._book(source["key"])
         while book is None and self.books_scanning and time.monotonic() < deadline and not self._halted():
@@ -2483,6 +2517,114 @@ class Station:
                 self.book_positions.set(key, int(pos))
             self.book_now = None
 
+    def ebook_list(self) -> list[dict]:
+        """Every ebook, with where it was left; the most recently read first."""
+        out = []
+        for e in self.ebooks.all():
+            key = ebooks_mod.EBOOK + e.key
+            out.append({"key": key, "title": e.title, "author": e.author, "chapters": e.chapters, "total_ms": e.total_ms,
+                        "pos_ms": self.book_positions.get(key), "at": self.book_positions.when(key), "error": e.error})
+        out.sort(key=lambda b: (-b["at"], b["title"].lower()))
+        return out
+
+    def _reading_voice(self, reading: bool) -> str:
+        """The voice that reads, and the worker made ready for it. The personal voice makes speech only as fast
+        as it plays on a Zero (too slow to read aloud without gaps), so reading uses the stock voice: the worker
+        switches to it (~15 s, hidden in the reader's first seconds) and back to the DJ's afterwards; and it
+        isn't let go while the reader works in bursts."""
+        tts = self.tts
+        if reading:
+            tts.idle_s = 3600
+            return self.config.ebook_voice if tts.use_voice(self.config.ebook_voice) else tts.voice
+        tts.idle_s = TTS_IDLE_S
+        if self.dj_voice:
+            tts.use_voice(self.dj_voice)
+        return self.dj_voice or tts.voice
+
+    def _run_ebook(self, source: dict) -> None:
+        """Read an ebook aloud from where it was left, with no DJ: the voice works ahead into a buffer
+        (playback/reader.py) and this plays it. Paused, it keeps the place at the start of the sentence it
+        was in (the sleep timer: a minute back more); at the end it pauses the radio, as a book does."""
+        book = self._book(source["key"])
+        if book is None or not self._has_voice:
+            with self._lock:
+                if self._source is source:
+                    self._source = None
+                    self.source_error = f"{source.get('title') or source['key']}: can't be read (not in the ebooks folder, or no voice)"
+            return
+        key, ebook = book.key, book.ebook
+        pos = self.book_positions.get(key)
+        if pos >= book.total_ms - 500:
+            pos = 0                              # finished last time: from the start
+        self._book_seek = None
+        voice = self._reading_voice(True)
+        reader = reader_mod.Reader(self.tts, voice, volume=self.announcer_volume, speed=self.config.ebook_speed,
+                                    pause_scale=self.config.ebook_pause)
+        on_air = self.on_air = OnAir("book", book.title, book.author)
+        self.next_track = None
+        self.gap_plan = []
+        self.history.appendleft({"kind": "book", "text": f"{book.title}" + (f" — {book.author}" if book.author else ""),
+                                 "at": time.time()})
+        saved_at = time.monotonic()
+        try:
+            reader.start(ebook, pos)
+            pos = reader.position()
+            self.book_now = self._book_state(book, pos)
+            on_air.duration_s = book.total_ms / 1000
+            on_air.started = time.time() - pos / 1000
+            while not self._halted():
+                reader.speed, reader.pause_scale = self.config.ebook_speed, self.config.ebook_pause
+                if self._book_seek is not None:
+                    pos = reader.seek(self._book_seek)
+                    self._book_seek = None
+                    self.book_now = self._book_state(book, pos)
+                    on_air.started = time.time() - pos / 1000
+                    continue
+                if self._listeners == 0:         # paused: keep the place (the sentence's start), and wait
+                    back = BOOK_BACK_SLEEP_MS if self.paused_by_sleep() else 0
+                    pos = reader.seek(max(0, reader.position() - back))
+                    self.book_positions.set(key, pos)
+                    self.book_now = self._book_state(book, pos)
+                    log.info("ebook paused: %s, resumes at %d:%02d", book.title, pos // 60000, pos // 1000 % 60)
+                    while self._listeners == 0 and not self._halted():
+                        time.sleep(0.2)
+                    continue
+                block = reader.read(0.05)
+                if block is None:
+                    if reader.finished:
+                        log.info("ebook finished: %s", book.title)
+                        pos = book.total_ms               # (the whole book: not the last block's place)
+                        self.book_positions.set(key, book.total_ms)
+                        self.book_now = self._book_state(book, book.total_ms)
+                        if self.on_book_end is not None:
+                            self.on_book_end()
+                        while not self._halted() and self._listeners > 0:
+                            self._write(pcm.silence(0.2))
+                        return
+                    if reader.error:
+                        with self._lock:
+                            if self._source is source:
+                                self._source = None
+                                self.source_error = f"{book.title}: {reader.error}"
+                        return
+                    self._write(pcm.silence(0.05))      # (the voice is a little behind: a moment's quiet)
+                    continue
+                self._radio_heard = True            # (music_started: confirms an update)
+                self._write(block)
+                pos = reader.position()
+                self.book_now = self._book_state(book, pos)
+                if time.monotonic() - saved_at > BOOK_SAVE_S:
+                    self.book_positions.set(key, pos)
+                    saved_at = time.monotonic()
+        finally:
+            reader.close()
+            if self.book_now and self.book_now["key"] == key and pos < book.total_ms:
+                self.book_positions.set(key, pos)
+            self.book_now = None
+            self._reading_voice(False)            # (the DJ's voice comes back, whatever is next: it would otherwise speak in this one)
+            if self._opening is None and not self._source_is_ebook():
+                self._prepare_opening()           # (ready for the show again: held back while the voice was reading)
+
     def play_book(self, key: str) -> dict:
         self.tune({"kind": "book", "key": key})
         return self._source
@@ -2504,10 +2646,12 @@ class Station:
         "audiobooks", "jingles"; None: all (only new or changed files' tags are
         read) -- keeping the artist or list playing; songs lined up whose files
         have gone are dropped. The song on air carries on."""
-        kinds = set(kinds) if kinds else {"music", "ondemand", "audiobooks", "jingles"}
+        kinds = set(kinds) if kinds else {"music", "ondemand", "audiobooks", "jingles", "ebooks"}
         songs = bool(kinds & {"music", "ondemand"})
         tracks = scan_music(self.music_dir, self._tag_cache) if "music" in kinds else self.tracks
         ondemand = self._scan_ondemand() if "ondemand" in kinds else self.ondemand_tracks
+        if "ebooks" in kinds:
+            self.ebooks.scan()
         if "audiobooks" in kinds:
             self._scan_books()
         elif "ondemand" in kinds:
@@ -2550,7 +2694,8 @@ class Station:
         try:
             if src["kind"] == "book":
                 kept = src["key"].startswith(KEPT)
-                if ("ondemand" if kept else "audiobooks") in kinds and self._book(src["key"]) is None:
+                kind = "ebooks" if src["key"].startswith(ebooks_mod.EBOOK) else "ondemand" if kept else "audiobooks"
+                if kind in kinds and self._book(src["key"]) is None:
                     return src.get("title") or src["key"]
             elif src["kind"] == "album" and src.get("root", "music") in kinds:
                 if self._album_by_folder(src["folder"], src.get("root", "music"), src.get("deep", False)) is None:
@@ -2802,8 +2947,8 @@ class Station:
     def _prepare_opening(self) -> None:
         """Pick the first track and synthesise the welcome while idle, so tuning in
         starts at once. Rebuilt if the greeting's time of day has changed."""
-        if not self.tracks:
-            return
+        if not self.tracks or self._source_is_ebook():
+            return                      # (an ebook has the voice worker to itself; _run_ebook makes it when it ends)
         first = self._take_next()
         self._opening_requested = self._took_request
         greeting = self.builder.welcome_greeting(time_known=clock_trusted())
@@ -2821,6 +2966,10 @@ class Station:
         elif startup:
             steps = [Step("jingle", jingle=random.choice(startup))]
         self._opening = (greeting, steps, first)
+
+    def _source_is_ebook(self) -> bool:
+        src = self._source
+        return bool(src and src.get("kind") == "book" and str(src.get("key", "")).startswith(ebooks_mod.EBOOK))
 
     def _take_opening(self) -> tuple[list[Step], BroadcastTrack]:
         opening = self._opening

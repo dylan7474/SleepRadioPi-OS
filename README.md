@@ -104,6 +104,25 @@ Actions, Sleep timer and Radio folders open:
   place you had reached while streaming comes with it, and the streamed copy is
   replaced by the downloaded one. It writes to the card only when you press the
   button, one book at a time, like an upload.
+- **Ebooks** — the radio reads text books aloud. Upload epub, text (Project
+  Gutenberg's) or html files to the **Ebooks** folder on the desktop (or drop them
+  there); open it and press play. The radio's voice reads them with no DJ, a chapter
+  at a time, and remembers its place (a few seconds back to the start of the sentence
+  after a pause; a minute back after the sleep timer, like a book), with the usual
+  back / forward a minute and progress bar. The progress is an estimate (the real
+  length of speech isn't known until it's spoken). Abbreviations are said in full
+  ("Mr. Bennet" is *Mister Bennet*) and footnote marks, picture captions and licence
+  text are left out. It reads in the **stock voice** unless you choose another with
+  **Reading voice and speed...** on the Ebooks folder (the same window sets the pace,
+  0.85 of the voice's own by default, and the pause between sentences): the personal
+  voice makes speech only as fast as it plays on a Pi Zero 2 W, so it can stutter
+  there. The radio switches to the book's voice (about 15 s at the start) and back to
+  the DJ's afterwards. A Pi Zero 2 W makes speech only a little faster than it plays, so
+  the voice works ahead (a 45 s buffer; measured over 20 minutes with no gaps), and
+  the first sound comes about 20 s after pressing play. Known limits: there can still be
+  a gap of a few seconds now and again, the loudness and intonation vary from sentence
+  to sentence (each is spoken on its own), and the personal voice is unusable here (its
+  worker reloads every 20-40 s, ~18 s of silence each time). Needs the broadcast voice on.
 - **Podcasts** — search the directory, follow shows, and play episodes (again
   with nothing from the DJ), each remembering its place like a book. Put a
   show on a preset button starting from any episode, and the radio plays on

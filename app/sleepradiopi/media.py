@@ -45,6 +45,7 @@ import mutagen
 from sleepradiopi.broadcast.library import AUDIO_EXTENSIONS
 from sleepradiopi.config.atomic import write_atomic
 from sleepradiopi.playback.audiobooks import BOOK_FILES
+from sleepradiopi.playback.ebooks import EBOOK_FILES
 
 log = logging.getLogger(__name__)
 
@@ -514,7 +515,7 @@ class MediaLibrary:
         if not parts:
             raise MediaError("the file has no name")
         ext = Path(parts[-1]).suffix.lower()
-        playable = BOOK_FILES if kind == "audiobooks" else AUDIO_EXTENSIONS
+        playable = BOOK_FILES if kind == "audiobooks" else EBOOK_FILES if kind == "ebooks" else AUDIO_EXTENSIONS
         if ext not in playable and not (kind != "jingles" and ext in IMAGES):
             raise MediaError(f"{parts[-1]}: the radio plays {', '.join(sorted(playable))} files here")
         if length <= 0 or length > MAX_FILE:

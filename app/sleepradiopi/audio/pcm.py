@@ -224,9 +224,8 @@ def decode(path: Path, start_ms: int = 0, end_ms: int = 0) -> Iterator[np.ndarra
         proc.wait()
 
 
-def speech_pcm(samples: np.ndarray, sample_rate: int, volume: float) -> np.ndarray:
-    """TTS output (mono float) -> broadcast-voice EQ, levelled like DjVoicePlayer,
-    scaled by the announcer volume, as int16 stereo at 44.1 kHz."""
+def speech_filter(samples: np.ndarray, sample_rate: int) -> np.ndarray:
+    """TTS output (mono float) -> the broadcast-voice EQ, as float32 stereo at 44.1 kHz (not yet levelled)."""
     proc = subprocess.run(
         [*FFMPEG, "-f", "f32le", "-ar", str(sample_rate), "-ac", "1", "-i", "-",
          "-af", RESAMPLE + VOICE_EQ, "-ac", str(CHANNELS), "-ar", str(SAMPLE_RATE), "-f", "f32le", "-"],
@@ -234,10 +233,25 @@ def speech_pcm(samples: np.ndarray, sample_rate: int, volume: float) -> np.ndarr
     )
     if proc.returncode != 0:
         raise RuntimeError(f"voice EQ failed: {proc.stderr.decode(errors='replace')[-200:]}")
-    x = np.frombuffer(proc.stdout, dtype=np.float32)
-    rms = float(np.sqrt(np.mean(x ** 2))) if x.size else 0.0
-    gain = float(np.clip(SPEECH_TARGET_RMS / rms, 1.0, SPEECH_MAX_GAIN)) if rms > 1e-5 else 1.0
+    return np.frombuffer(proc.stdout, dtype=np.float32)
+
+
+def speech_rms(x: np.ndarray) -> float:
+    return float(np.sqrt(np.mean(x ** 2))) if x.size else 0.0
+
+
+def speech_level(x: np.ndarray, volume: float, gain: float) -> np.ndarray:
+    """Filtered speech x gain x the announcer volume, as int16 stereo."""
     return soft_limit(x * (gain * volume * 32767.0)).reshape(-1, CHANNELS)
+
+
+def speech_pcm(samples: np.ndarray, sample_rate: int, volume: float) -> np.ndarray:
+    """TTS output (mono float) -> broadcast-voice EQ, levelled like DjVoicePlayer (each line to the same loudness),
+    scaled by the announcer volume, as int16 stereo at 44.1 kHz."""
+    x = speech_filter(samples, sample_rate)
+    rms = speech_rms(x)
+    gain = float(np.clip(SPEECH_TARGET_RMS / rms, 1.0, SPEECH_MAX_GAIN)) if rms > 1e-5 else 1.0
+    return speech_level(x, volume, gain)
 
 
 def silence(seconds: float) -> np.ndarray:

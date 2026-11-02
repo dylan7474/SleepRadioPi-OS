@@ -82,6 +82,9 @@ class Settings:
     broadcast_time_checks: bool = True    # the DJ says the time in some links (a theme may set its own)
     news_voice: str = "same"          # "same" = the DJ voice (one voice fits a Pi Zero 2 W's RAM)
     news_speed: float = 0.70
+    ebook_voice: str = "stock"         # the voice an ebook is read in (the personal one is too slow to read aloud on a Pi Zero 2 W)
+    ebook_pause: float = 1.0          # x the pauses between sentences and paragraphs when reading
+    ebook_speed: float = 0.85         # the pace an ebook is read at (x the voice's own; the DJ's is broadcast_announcer_speed)
     news_quiet_hours: bool = True
     news_quiet_start_min: int = 23 * 60
     news_quiet_end_min: int = 6 * 60
@@ -95,10 +98,10 @@ class Settings:
     startup_sound: bool = True        # a chime (and "warming up") at power-on, while the station loads
     speaker_enabled: bool = False
     speaker_device: str = "default"   # ALSA device for aplay
+    amp_mute_gpio: int = 0            # the amp's MUTE pin (MiniAmp: 16), muted while the card is closed; 0 = off. Needs that pin free of a button
     speaker_volume: int = 30          # 0-100 on first start; after that the knob's last setting
     speaker_mono: bool = False        # mix left and right so both speakers play the same
     speaker_eq: dict = field(default_factory=dict)  # {"bass", "mid", "treble"}: dB, -12..12
-    amp_mute_gpio: int = 0            # the amp's MUTE pin (MiniAmp: 16), muted while the card is closed; 0 = off. Needs that pin free of a button
     noise_on: bool = False            # the noise layer (audio/noise.py), on top of whatever plays
     noise_kind: str = "pink"          # white, pink, brown, deep, blue, violet, ambient
     noise_mix: int = 50               # balance: 0 programme only, 50 both full, 100 noise only

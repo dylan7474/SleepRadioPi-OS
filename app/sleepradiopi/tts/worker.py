@@ -139,6 +139,8 @@ class TtsWorker:
     the next synth() wakes it (a fresh load, ~17 s on a Zero -- lines are made
     well ahead). Kept loaded, it squeezed the Zero's memory all the time, and
     each reload then stalled the music for a moment (a blip)."""
+    _loaded: str | None = None           # the voice of the worker that is running (self.voice is the one wanted)
+
 
     def __init__(self, voices_dir: Path, voice: str, recycle_mb: int = RECYCLE_MB, hard_mb: int = HARD_MB,
                  idle_s: float = IDLE_S) -> None:
@@ -150,6 +152,7 @@ class TtsWorker:
         self._wake_lock = threading.Lock()
         self._ready = threading.Event()
         self._ok = False                     # the voice has loaded (at least once)
+        self._loaded: str | None = None      # the voice of the worker that's running (self.voice is the one wanted)
         self._asleep = False
         self._idle: threading.Timer | None = None
         self._old_proc = None                # one going to sleep: gone before a new one starts
@@ -159,6 +162,7 @@ class TtsWorker:
         threading.Thread(target=self._start, name="tts-start", daemon=True).start()
 
     def _start(self) -> None:
+        voice = self.voice                   # (use_voice() may change it while this loads: see _ensure_voice)
         old = self._old_proc
         if old is not None:                  # (never two voices in memory at once)
             old.join(timeout=10)
@@ -166,7 +170,7 @@ class TtsWorker:
                 old.kill()
             self._old_proc = None
         conn, child = self._ctx.Pipe()
-        proc = self._ctx.Process(target=_serve, args=(child, str(self.voices_dir / self.voice), self.voice),
+        proc = self._ctx.Process(target=_serve, args=(child, str(self.voices_dir / voice), voice),
                                  name="tts-worker", daemon=True)
         proc.start()
         try:
@@ -181,9 +185,33 @@ class TtsWorker:
             log.error("voice pack %r is missing or incomplete in %s", self.voice, self.voices_dir)
             return
         self._conn, self._proc, self.last_rss_mb = conn, proc, rss
+        self._loaded = voice
         self._ok = True
         log.info("TTS worker ready: %s loaded in %.1fs (%d MB)", self.voice, load_s, rss)
         self._ready.set()
+
+    def use_voice(self, voice: str) -> bool:
+        """Switch to another voice pack, loaded in the background (synth() waits for it: ~15 s on a Zero). False if
+        there's no such pack here; True if it's loading or already the voice. For the ebook reader: the personal
+        voice is too slow to read aloud, so it reads in the stock one. Every load goes through _wake(), so a switch
+        and a wake-up never load two voices at once (memory for two doesn't exist on a Zero)."""
+        if voice == self.voice:
+            return True
+        if not (self.voices_dir / voice / "model.onnx").is_file():
+            return False
+        self.voice = voice
+        threading.Thread(target=self._ensure_voice, name="tts-voice", daemon=True).start()
+        return True
+
+    def _ensure_voice(self) -> None:
+        """Make the worker the voice that's wanted: let a different one go (after the line in progress), then load."""
+        with self._lock:
+            if self._loaded is not None and self._loaded != self.voice and not self._asleep:
+                self._sleep("voice change")
+        try:
+            self._wake()
+        except RuntimeError:
+            pass                              # (it died loading: the next synth() tries again)
 
     def _recycle(self) -> None:
         """Replace the worker with a fresh one (in the background; synth() waits)."""
@@ -261,6 +289,8 @@ class TtsWorker:
         pieces, rate = [], 22050
         deaths = 0
         for _ in range(20):                      # (a very long text: a few fresh workers at most)
+            if self._loaded is not None and self._loaded != self.voice:
+                self._ensure_voice()             # (a voice change that the loader had missed)
             self._wake()
             if not self._ready.wait(timeout=120):
                 raise RuntimeError("TTS worker not ready")

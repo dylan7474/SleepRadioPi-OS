@@ -699,6 +699,8 @@ def main() -> None:
     cfg["audiobooks_folder"] = Path(settings.audiobooks_folder or cfg["music_folder"].parent / "audiobooks").expanduser()
     # On demand: played only when asked for, never in the show (/media/ondemand on the radio)
     cfg["ondemand_folder"] = cfg["music_folder"].parent / "ondemand"
+    # Ebooks (epub / text the voice reads aloud): /media/ebooks on the radio
+    cfg["ebooks_folder"] = cfg["music_folder"].parent / "ebooks"
     cfg["book_cache"] = Path.home() / ".cache" / "sleepradiopi" / "books.json"
     cfg["book_positions"] = Path.home() / ".local" / "state" / "sleepradiopi" / "book-positions.json"
     cfg["podcast_cache"] = Path.home() / ".cache" / "sleepradiopi" / "podcasts"
@@ -903,7 +905,8 @@ def main() -> None:
     directory.keep_fresh()
     # The web page's music library manager (upload / delete); the library is rescanned after.
     media = MediaLibrary({"music": cfg["music_folder"], "jingles": cfg["jingles_folder"],
-                          "audiobooks": cfg["audiobooks_folder"], "ondemand": cfg["ondemand_folder"]},
+                          "audiobooks": cfg["audiobooks_folder"], "ondemand": cfg["ondemand_folder"],
+                          "ebooks": cfg["ebooks_folder"]},
                          on_changed=station.reload_library,
                          tag_log=Path.home() / ".local" / "state" / "sleepradiopi" / "original-tags.json")
     # Every station has its jingles folder: made a minute after start-up (not to slow it), and

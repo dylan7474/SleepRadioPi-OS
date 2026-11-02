@@ -49,7 +49,7 @@ log = logging.getLogger(__name__)
 
 DEVICE = Path("/dev/mmcblk0")
 NOTE = Path("/data/media-partition.json")
-FOLDERS = ("music", "jingles", "voices", "ondemand", "audiobooks")      # what a new music partition begins with
+FOLDERS = ("music", "jingles", "voices", "ondemand", "audiobooks", "ebooks")      # what a new music partition begins with
 CONFIG = Path("/data/radio/.config/sleepradiopi/config.json")           # the station's settings (its home is /data/radio)
 STARTER = {"music_folder": "/media/music", "voices_folder": "/media/voices", "jingles_folder": "/media/jingles"}
 RESTART = 10                 # (the exit code that asks for one)

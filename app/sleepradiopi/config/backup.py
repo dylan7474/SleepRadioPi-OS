@@ -48,7 +48,7 @@ LOCAL = {"hardware", "station_name", "music_folder", "jingles_folder", "audioboo
 LIVE = {"speaker_mono", "speaker_eq", "speaker_highpass_hz", "broadcast_artist", "birthdays",
         "profiles", "broadcast_profile", "broadcast_chattiness", "broadcast_dj_hooks",
         "broadcast_jingle_enabled", "broadcast_jingle_every", "news_enabled", "startup_sound", "web_stream",
-        "broadcast_announcer_speed", "news_speed", "radio_stations", "buttons", "noise_on", "noise_kind", "noise_mix",
+        "broadcast_announcer_speed", "news_speed", "ebook_speed", "ebook_voice", "ebook_pause", "radio_stations", "buttons", "noise_on", "noise_kind", "noise_mix",
         "podcasts", "messages", "buttons_night", "buttons_bank", "buttons_auto", "broadcast_dj",
         "glow_day", "glow_night", "meter_trim_db", "playlists", "knob_mode", "programmes", "programme_mode",
         "knob_long", "power_on", "speaker_sounds", "ondemand_keep"}
@@ -58,6 +58,7 @@ CHOICES = {
     "hardware": {"box", "cathedral"},
     "broadcast_voice": {None, "stock", "personal"},
     "news_voice": {"same", "stock", "personal"},
+    "ebook_voice": {"stock", "personal"},
     "broadcast_chattiness": {c.ident for c in Chattiness},
     "noise_kind": {"white", "pink", "brown", "deep", "blue", "violet", "ambient"},
     "knob_mode": {"auto", "fine", "normal", "coarse"},
@@ -67,6 +68,8 @@ RANGES = {
     "broadcast_announcer_volume": (0, 4),
     "broadcast_announcer_speed": (0.5, 1.5),     # station.SPEED_MIN/MAX
     "news_speed": (0.5, 1.5),
+    "ebook_speed": (0.5, 1.5),
+    "ebook_pause": (0.5, 2.5),
     "news_quiet_start_min": (0, 24 * 60 - 1),
     "news_quiet_end_min": (0, 24 * 60 - 1),
     "listener_grace_s": (0, 3600),

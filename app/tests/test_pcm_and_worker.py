@@ -121,7 +121,7 @@ def test_the_voice_filter_makes_no_tone_at_any_voice_rate(rate) -> None:
     rng = np.random.default_rng(1)
     seconds = 6
     x = (rng.standard_normal(rate * seconds) * 0.05).astype(np.float32)      # speech-like broadband sound
-    out = pcm.speech_pcm(x, rate, 1.0)[:, 0].astype(np.float32) / 32768
+    out = pcm.speech_filter(x, rate).reshape(-1, 2)[:, 0]
     n = 8192
     f = np.fft.rfftfreq(n, 1 / pcm.SAMPLE_RATE)
     near8k = (f > 7800) & (f < 8200)
@@ -129,3 +129,4 @@ def test_the_voice_filter_makes_no_tone_at_any_voice_rate(rate) -> None:
     for start in (0.5, 2.0, 4.0, 5.5):                                       # early and late in the line: the tone grew with time
         X = np.abs(np.fft.rfft(out[int(start * pcm.SAMPLE_RATE):][:n] * np.hanning(n)))
         assert X[near8k].max() < 3 * np.median(X[floor]), f"a tone at 8 kHz at {start}s for a {rate} Hz voice"
+    assert np.abs(out).max() < 1.0                                           # (and nothing blew up)
