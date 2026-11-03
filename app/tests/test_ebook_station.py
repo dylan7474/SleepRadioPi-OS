@@ -178,3 +178,109 @@ def test_a_radio_without_the_memory_has_no_ebooks(st):
     assert st._book(KEY) is None
     st.ebooks_on = True
     assert st.status()["ebooks"] is True and [b["key"] for b in st.ebook_list()] == [KEY]
+
+
+# --- the Flite voices (tts/flite.py): small, steady, ebooks only ------------------------------------------------------
+
+class FakeFlite:
+    """Stands in for tts.flite.FliteTts: 0.05 s of silence a character, and a note of the voice and stretch it was asked for."""
+    calls: list = []
+
+    def synth(self, voice, text, speed):
+        FakeFlite.calls.append((voice, speed, text))
+        return np.zeros(int(len(text) * 0.05 * 16000), np.float32), 16000
+
+
+@pytest.fixture
+def with_flite(monkeypatch):
+    FakeFlite.calls = []
+    monkeypatch.setattr(station_mod.flite_mod, "available", lambda: True)
+    monkeypatch.setattr(station_mod.flite_mod, "FliteTts", FakeFlite)
+
+
+def test_a_flite_voice_reads_the_book_without_waking_the_neural_worker(st, with_flite):
+    st.config.ebook_voice, st.config.ebook_pace = "flite-awb", "fast"
+    ended = []
+    st._listeners = 1
+    st.on_book_end = lambda: (ended.append(True), st._stop.set())
+    st.play_book(KEY)
+    st._switch.clear()
+    st._run_book(st.source)
+    assert ended == [True]
+    assert st.book_positions.get(KEY) == st.ebooks.get("small.txt").total_ms
+    assert set(st.tts.calls) <= {"personal"} and st.tts.said == []   # (the neural worker said nothing, and was never told to load the stock voice)
+    voices = {c[0] for c in FakeFlite.calls}
+    speeds = {c[1] for c in FakeFlite.calls}
+    assert voices == {"flite-awb"} and speeds == {station_mod.flite_mod.stretch("flite-awb", "fast")}
+    assert "Mister Bennet agrees." in " ".join(c[2] for c in FakeFlite.calls)
+    assert st.output.blocks > 50
+
+
+def test_the_pace_is_read_again_for_each_sentence_and_the_neural_speed_is_for_the_neural_voice(st, with_flite):
+    flite = station_mod.flite_mod
+    st.config.ebook_voice, st.config.ebook_pace, st.config.ebook_speed = "flite-rms", "slow", 0.6
+    assert st._ebook_speed() == flite.stretch("flite-rms", "slow")
+    st.config.ebook_pace = "fast"
+    assert st._ebook_speed() == flite.stretch("flite-rms", "fast") < flite.stretch("flite-rms", "slow")
+    st.config.ebook_voice = "stock"
+    assert st._ebook_speed() == 0.6                                    # (the neural voice keeps its own speed)
+
+
+def test_a_flite_voice_without_flite_is_not_used_and_cant_be_chosen(st, monkeypatch):
+    monkeypatch.setattr(station_mod.flite_mod, "available", lambda: False)
+    st.config.ebook_voice = "flite-awb"
+    assert not st._ebook_uses_flite()
+    assert not any(v.startswith("flite-") for v in st.ebook_voices())
+    with pytest.raises(ValueError):
+        st.set_dj(ebook_voice="flite-slt")
+
+
+def test_set_dj_takes_flite_voices_and_a_pace_and_rejects_bad_ones(st, with_flite):
+    assert {"flite-awb", "flite-rms", "flite-slt"} <= set(st.ebook_voices())
+    assert not any(v.startswith("flite-") for v in st.voices())          # (the DJ's voice can't be a Flite one)
+    st.set_dj(ebook_voice="flite-rms", ebook_pace="normal")
+    assert (st.config.ebook_voice, st.config.ebook_pace) == ("flite-rms", "normal")
+    with pytest.raises(ValueError):
+        st.set_dj(ebook_pace="warp")
+    with pytest.raises(ValueError):
+        st.set_dj(ebook_voice="flite-nobody")
+    assert (st.config.ebook_voice, st.config.ebook_pace) == ("flite-rms", "normal")
+
+
+def test_the_api_lists_the_flite_voices_with_names_and_saves_voice_and_pace(st, with_flite, tmp_path):
+    (tmp_path / "voices" / "stock").mkdir(parents=True)
+    (tmp_path / "voices" / "stock" / "model.onnx").write_bytes(b"x")
+    st.voices_dir = tmp_path / "voices"
+    httpd = ThreadingHTTPServer(("127.0.0.1", 0), make_handler(st, None))
+    threading.Thread(target=httpd.serve_forever, daemon=True).start()
+    base = f"http://127.0.0.1:{httpd.server_address[1]}"
+
+    def call(path, body=None):
+        req = urllib.request.Request(base + path, data=None if body is None else json.dumps(body).encode(), method="GET" if body is None else "POST")
+        try:
+            with urllib.request.urlopen(req, timeout=10) as r:
+                return r.status, json.loads(r.read())
+        except urllib.error.HTTPError as e:
+            return e.code, json.loads(e.read() or b"{}")
+    try:
+        code, d = call("/api/dj")
+        assert code == 200 and d["ebook_pace"] == "medium" and d["ebook_paces"] == ["slow", "medium", "normal", "fast"]
+        ids = [v["id"] for v in d["ebook_voices"]]
+        assert ids == ["stock", "flite-awb", "flite-rms", "flite-slt"]
+        assert [v["label"] for v in d["ebook_voices"] if v["id"] == "flite-awb"] == ["Flite: Scottish man"]
+        assert d["voices"] == ["stock"]                              # (the DJ's list has no Flite voice in it)
+        code, d = call("/api/dj", {"ebook_voice": "flite-rms", "ebook_pace": "slow"})
+        assert code == 200 and d["ebook_voice"] == "flite-rms" and d["ebook_pace"] == "slow"
+        code, d = call("/api/dj", {"ebook_pace": "ludicrous"})
+        assert code == 400 and "ebook_pace" in d["error"]
+        code, d = call("/api/dj", {"voice": "flite-awb"})            # (not the DJ's voice)
+        assert code == 400
+    finally:
+        httpd.shutdown()
+
+
+def test_a_flite_voice_chosen_but_the_program_missing_reads_in_the_neural_voice(st, monkeypatch):
+    monkeypatch.setattr(station_mod.flite_mod, "available", lambda: False)
+    st.config.ebook_voice = "flite-awb"
+    assert st._reading_voice(True) in ("flite-awb", "personal")           # (whatever the worker settles on: never a crash)
+    assert st.tts.calls and st.tts.idle_s == 3600

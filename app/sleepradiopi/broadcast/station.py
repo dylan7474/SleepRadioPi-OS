@@ -45,6 +45,7 @@ from sleepradiopi.playback import ebooks as ebooks_mod
 from sleepradiopi.playback import reader as reader_mod
 from sleepradiopi.playback.audiobooks import KEPT, BookLibrary, KeptLibrary, Positions
 from sleepradiopi.playback import podcasts as pod_mod
+from sleepradiopi.tts import flite as flite_mod
 from sleepradiopi.tts.worker import TtsWorker
 
 from .library import scan_jingles, scan_music
@@ -206,6 +207,7 @@ class Station:
             news_speed=cfg["news_speed"],
             ebook_speed=cfg.get("ebook_speed", 0.85),
             ebook_voice=cfg.get("ebook_voice", "stock"),
+            ebook_pace=cfg.get("ebook_pace", flite_mod.DEFAULT_PACE),
             ebook_pause=cfg.get("ebook_pause", 1.0),
             jingle_every=cfg["broadcast_jingle_every"] if cfg["broadcast_jingle_enabled"] else 0,
             dj_hooks_enabled=cfg["broadcast_dj_hooks"],
@@ -613,7 +615,7 @@ class Station:
             if isinstance(key, str) and key.startswith(ebooks_mod.EBOOK):
                 if not self.ebooks_on:
                     raise ValueError("this radio hasn't the memory to read ebooks aloud (a Pi 3 or better can)")
-                if not self._has_voice:
+                if not (self._has_voice or self._ebook_uses_flite()):
                     raise ValueError("the radio has no voice to read with (the broadcast voice is off)")
                 at = self.ebooks.root / key[len(ebooks_mod.EBOOK):]
             else:
@@ -1647,6 +1649,21 @@ class Station:
             return []
         return sorted(d.name for d in Path(self.voices_dir).iterdir() if (d / "model.onnx").is_file())
 
+    def ebook_voices(self) -> list[str]:
+        """The voices an ebook can be read in: the voice packs, and Flite's (when this image has Flite). Flite's are
+        for ebooks only: the DJ and the news keep the neural voice."""
+        return self.voices() + (list(flite_mod.VOICES) if flite_mod.available() else [])
+
+    def _ebook_uses_flite(self) -> bool:
+        return flite_mod.is_flite(self.config.ebook_voice) and flite_mod.available()
+
+    def _ebook_speed(self) -> float:
+        """What the reader's 'speed' is now: a Flite voice's duration_stretch for the pace chosen, or the neural
+        voice's speed."""
+        if self._ebook_uses_flite():
+            return flite_mod.stretch(self.config.ebook_voice, self.config.ebook_pace)
+        return self.config.ebook_speed
+
     def set_quiet(self, on: bool | None = None, start_min: int | None = None, end_min: int | None = None) -> None:
         """The quiet hours (the radio's do-not-disturb): no news, birthday wishes, alerts or lightning bell in them.
         Live: the news schedule and the birthdays take them at once (the alerts and the bell read the config)."""
@@ -1673,6 +1690,8 @@ class Station:
                 "news_enabled": b["news"], "time_checks": b["time_checks"], "dj_on": self.dj_on,
                 "dj_speed": self.config.announcer_speed, "news_speed": self.config.news_speed,
                 "ebook_speed": self.config.ebook_speed, "ebook_voice": self.config.ebook_voice, "ebook_pause": self.config.ebook_pause,
+                "ebook_pace": self.config.ebook_pace, "ebook_paces": list(flite_mod.PACES),
+                "ebook_voices": [{"id": v, "label": flite_mod.label(v)} for v in self.ebook_voices()],
                 "quiet_on": self.config.news_quiet_hours, "quiet_start_min": self.config.news_quiet_start_min,
                 "quiet_end_min": self.config.news_quiet_end_min}
 
@@ -1720,7 +1739,7 @@ class Station:
     def set_dj(self, chattiness: str | None = None, dj_hooks: bool | None = None,
                jingle_every: int | None = None, news_enabled: bool | None = None,
                dj_speed: float | None = None, news_speed: float | None = None, ebook_speed: float | None = None,
-               ebook_voice: str | None = None, ebook_pause: float | None = None,
+               ebook_voice: str | None = None, ebook_pause: float | None = None, ebook_pace: str | None = None,
                dj_on: bool | None = None, time_checks: bool | None = None) -> None:
         """Change the DJ live (from the next gap on): the radio-wide settings (a theme
         playing may set its own chattiness, time checks, news, jingles and hooks). ValueError if a value is wrong.
@@ -1737,12 +1756,16 @@ class Station:
         if ebook_pause is not None and (isinstance(ebook_pause, bool) or not isinstance(ebook_pause, (int, float))
                                         or not 0.5 <= ebook_pause <= 2.5):
             raise ValueError("ebook_pause must be 0.5-2.5")
-        if ebook_voice is not None and ebook_voice not in self.voices():
+        if ebook_voice is not None and ebook_voice not in self.ebook_voices():
             raise ValueError(f"no voice called {ebook_voice!r}")
+        if ebook_pace is not None and ebook_pace not in flite_mod.PACES:
+            raise ValueError(f"ebook_pace must be one of {list(flite_mod.PACES)}")
         if ebook_pause is not None:
             self.config.ebook_pause = round(float(ebook_pause), 2)
         if ebook_voice is not None:
             self.config.ebook_voice = ebook_voice
+        if ebook_pace is not None:
+            self.config.ebook_pace = ebook_pace                           # (read again for each sentence)
         if ebook_speed is not None:
             self.config.ebook_speed = round(float(ebook_speed), 2)       # (an ebook being read takes it from its next sentence)
         if chattiness is not None and chattiness not in [c.ident for c in Chattiness]:
@@ -2539,6 +2562,10 @@ class Station:
         switches to it (~15 s, hidden in the reader's first seconds) and back to the DJ's afterwards; and it
         isn't let go while the reader works in bursts."""
         tts = self.tts
+        if reading and self._ebook_uses_flite():
+            return self.config.ebook_voice       # Flite is its own program: the neural worker isn't touched (it sleeps, freeing its memory)
+        if tts is None:                          # (no neural voice at all: nothing to hand back)
+            return self.dj_voice or ""
         if reading:
             tts.idle_s = 3600
             return self.config.ebook_voice if tts.use_voice(self.config.ebook_voice) else tts.voice
@@ -2552,7 +2579,7 @@ class Station:
         (playback/reader.py) and this plays it. Paused, it keeps the place at the start of the sentence it
         was in (the sleep timer: a minute back more); at the end it pauses the radio, as a book does."""
         book = self._book(source["key"])
-        if book is None or not self._has_voice:
+        if book is None or not (self._has_voice or self._ebook_uses_flite()):
             with self._lock:
                 if self._source is source:
                     self._source = None
@@ -2564,7 +2591,8 @@ class Station:
             pos = 0                              # finished last time: from the start
         self._book_seek = None
         voice = self._reading_voice(True)
-        reader = reader_mod.Reader(self.tts, voice, volume=self.announcer_volume, speed=self.config.ebook_speed,
+        speaker = flite_mod.FliteTts() if flite_mod.is_flite(voice) else self.tts
+        reader = reader_mod.Reader(speaker, voice, volume=self.announcer_volume, speed=self._ebook_speed(),
                                     pause_scale=self.config.ebook_pause)
         on_air = self.on_air = OnAir("book", book.title, book.author)
         self.next_track = None
@@ -2579,7 +2607,7 @@ class Station:
             on_air.duration_s = book.total_ms / 1000
             on_air.started = time.time() - pos / 1000
             while not self._halted():
-                reader.speed, reader.pause_scale = self.config.ebook_speed, self.config.ebook_pause
+                reader.speed, reader.pause_scale = self._ebook_speed(), self.config.ebook_pause
                 if self._book_seek is not None:
                     pos = reader.seek(self._book_seek)
                     self._book_seek = None

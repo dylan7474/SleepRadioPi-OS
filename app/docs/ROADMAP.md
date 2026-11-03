@@ -4,6 +4,11 @@ What's built is described in the [app README](../README.md) and the
 [appliance image's README](../../README.md); this is what's left, the same list as
 the image README's [Roadmap](../../README.md#roadmap) (keep the two in step).
 
+- **Ebooks on a Pi Zero 2 W** — the Flite voices need 20-25 MB, so a Zero may be able to read
+  ebooks after all (the neural voice ran it out of memory). Still to do: read a long book for an hour
+  on a Zero with the station running (watch free memory, the first sound, the gaps), then let
+  `ebooks: auto` turn on for a Zero when a Flite voice is the reading voice; and see whether a
+  more natural small voice (a better Flite voice, MBROLA) is worth the work.
 - **A needle VU meter** — a physical meter driven from a PWM pin, with the
   Android app's ballistics; one meter first.
 - **A dongle inside the radio** — the bigger radios (a Pi 3 inside) have

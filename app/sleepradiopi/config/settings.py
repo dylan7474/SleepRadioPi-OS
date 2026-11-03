@@ -86,6 +86,7 @@ class Settings:
     ebook_pause: float = 1.0          # x the pauses between sentences and paragraphs when reading
     ebooks: str = "auto"              # read ebooks aloud: "auto" (a Pi 3 or better: enough memory), "on" or "off"
     ebook_speed: float = 0.85         # the pace an ebook is read at (x the voice's own; the DJ's is broadcast_announcer_speed)
+    ebook_pace: str = "medium"        # the pace for the Flite voices (flite-awb/rms/slt): "slow", "medium", "normal" or "fast"
     news_quiet_hours: bool = True
     news_quiet_start_min: int = 23 * 60
     news_quiet_end_min: int = 6 * 60

@@ -117,7 +117,13 @@ Actions, Sleep timer and Radio folders open:
   **Reading voice and speed...** on the Ebooks folder (the same window sets the pace,
   0.85 of the voice's own by default, and the pause between sentences): the personal
   voice makes speech only as fast as it plays on a Pi Zero 2 W, so it can stutter
-  there. The radio switches to the book's voice (about 15 s at the start) and back to
+  there. **Three Flite voices** can read instead (a Scottish man, an American man, an American
+  woman: *Reading voice*): small and robotic, but the same voice every sentence (the neural
+  voice drifts from sentence to sentence), using 20-25 MB while speaking instead of 230-260,
+  and about seven times faster than real time on a Zero 2 W. With one of them, **Reading speed**
+  is Slow, Medium, Normal or Fast (about 150, 175, 200 and 230 words a minute, whichever
+  voice). They read ebooks only: the DJ and the news keep the neural voice, and the neural
+  voice's worker is left asleep (its memory freed) while a Flite voice reads. The radio switches to the book's voice (about 15 s at the start) and back to
   the DJ's afterwards. A Pi Zero 2 W makes speech only a little faster than it plays, so
   the voice works ahead (a 45 s buffer; measured over 20 minutes with no gaps), and
   the first sound comes about 20 s after pressing play. Known limits: there can still be
@@ -1179,6 +1185,11 @@ v1.9.7).
 
 What's left to do (everything else described here is built and running):
 
+- **Ebooks on a Pi Zero 2 W** — the Flite voices need 20-25 MB, so a Zero may be able to read
+  ebooks after all (the neural voice ran it out of memory). Still to do: read a long book for an hour
+  on a Zero with the station running (watch free memory, the first sound, the gaps), then let
+  `ebooks: auto` turn on for a Zero when a Flite voice is the reading voice; and see whether a
+  more natural small voice (a better Flite voice, MBROLA) is worth the work.
 - **A needle VU meter** — a physical meter driven from a PWM pin, with the
   Android app's ballistics; one meter first.
 - **A dongle inside the radio** — the bigger radios (a Pi 3 inside) have

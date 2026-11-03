@@ -1479,7 +1479,7 @@ def make_handler(station: Station, output: Mp3Output, speaker=None,
                 self._error(str(e))
                 return
             dj_keys = {"broadcast_chattiness", "broadcast_dj_hooks", "broadcast_jingle_enabled",
-                       "broadcast_jingle_every", "news_enabled", "broadcast_announcer_speed", "news_speed", "ebook_speed", "ebook_voice", "ebook_pause"}
+                       "broadcast_jingle_every", "news_enabled", "broadcast_announcer_speed", "news_speed", "ebook_speed", "ebook_voice", "ebook_pace", "ebook_pause"}
             if changed & dj_keys:
                 # (a file from before themes had their own settings: its DJ values are Default's,
                 # and any theme's in it that has none)
@@ -1492,7 +1492,7 @@ def make_handler(station: Station, output: Mp3Output, speaker=None,
                         station.base[key] = value
                 station.set_dj(dj_speed=settings.get("broadcast_announcer_speed"), news_speed=settings.get("news_speed"),
                                    ebook_speed=settings.get("ebook_speed"), ebook_voice=settings.get("ebook_voice"),
-                                   ebook_pause=settings.get("ebook_pause"))
+                                   ebook_pause=settings.get("ebook_pause"), ebook_pace=settings.get("ebook_pace"))
             if "profiles" in changed:
                 station.set_profiles(settings["profiles"])
             if changed & {"broadcast_artist", "broadcast_profile", "profiles"}:
@@ -1770,7 +1770,7 @@ def make_handler(station: Station, output: Mp3Output, speaker=None,
         def _set_dj(self) -> None:
             """POST /api/dj with any of {"voice", "chattiness", "dj_hooks",
             "jingle_every" (0 = off), "news_enabled", "dj_speed", "news_speed", "ebook_speed", "ebook_voice", "ebook_pause"
-            (0.5-1.5, 1 = the voice's own pace), "quiet_on", "quiet_start_min",
+            (0.5-1.5, 1 = the voice's own pace), "ebook_pace" ("slow", "medium", "normal", "fast": for the Flite voices), "quiet_on", "quiet_start_min",
             "quiet_end_min" (the quiet hours: the radio's do-not-disturb)}. All saved; all live except
             the voice, which restarts the station (only one voice fits in RAM)."""
             try:
@@ -1792,7 +1792,7 @@ def make_handler(station: Station, output: Mp3Output, speaker=None,
                                jingle_every=every, news_enabled=body.get("news_enabled"),
                                dj_speed=body.get("dj_speed"), news_speed=body.get("news_speed"), ebook_speed=body.get("ebook_speed"),
                                ebook_voice=body.get("ebook_voice"), ebook_pause=body.get("ebook_pause"),
-                               dj_on=body.get("dj_on"), time_checks=body.get("time_checks"))
+                               ebook_pace=body.get("ebook_pace"), dj_on=body.get("dj_on"), time_checks=body.get("time_checks"))
             except (ValueError, TypeError, AttributeError) as e:
                 self._error(str(e))
                 return
@@ -1811,7 +1811,7 @@ def make_handler(station: Station, output: Mp3Output, speaker=None,
                     save_setting(config_file, "broadcast_announcer_speed", station.config.announcer_speed)
                 if "news_speed" in body:
                     save_setting(config_file, "news_speed", station.config.news_speed)
-                for key in ("ebook_speed", "ebook_voice", "ebook_pause"):
+                for key in ("ebook_speed", "ebook_voice", "ebook_pace", "ebook_pause"):
                     if key in body:
                         save_setting(config_file, key, getattr(station.config, key))
                 if voice is not None and voice != station.dj_voice:

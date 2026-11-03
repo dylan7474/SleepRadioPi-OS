@@ -852,7 +852,16 @@ The cards:
   `EbookView` makes one look like a book to the station (keys start `@ebook/`, so places, seek, presets and
   `/api/books/play` all work). `playback/reader.py` keeps a 45 s buffer of speech made ahead by the voice worker
   (`tts/worker.py`, sentence by sentence, in the `ebook_voice` (default STOCK; `ebook_speed` 0.85, `ebook_pause` 1.0): `use_voice()`
-  switches the worker for the book and back afterwards); `station._run_ebook` plays it. Measured on a Zero 2 W: 20 minutes, no underruns, worker
+  switches the worker for the book and back afterwards); `station._run_ebook` plays it. **Flite voices** (`tts/flite.py`,
+  `ebook_voice` = `flite-awb` / `flite-rms` / `flite-slt`, ebooks only: `Station.ebook_voices()` lists them, `voices()` (the
+  DJ's) never does): one `flite -voice X --setf duration_stretch=S -t TEXT -o /dev/stdout` process per sentence (text as
+  one argument, no shell; `-f -` with a pipe hangs), WAV read back from the pipe; `FliteTts.synth(voice, text, stretch)` has
+  the worker's face so `Reader` is unchanged. Pace is `ebook_pace` (`slow` / `medium` / `normal` / `fast` = 150 / 175 / 200 /
+  230 wpm; `flite.stretch()` divides each voice's natural wpm (awb 221, rms 190, slt 230) by the target). Measured on a
+  Zero 2 W 2026-11-03: 7.2-7.3x real time, peak 21-23 MB, against stock Piper x1.4 at 245 MB (and its voice drifting
+  between clauses: pitch sd 1.37 semitones for 12-word clauses vs 1.05 for a paragraph). The neural worker is not touched
+  while a Flite voice reads. The image enables Buildroot's `flite` package (`BR2_PACKAGE_FLITE=y`); a build without it
+  (`flite.available()` false) hides the voices and falls back to the stock voice. Measured on a Zero 2 W: 20 minutes, no underruns, worker
   at most 248 MB.
 - **Ebooks need memory** (`playback/ebooks.enabled`, `Station.ebooks_on`): the voice worker is 150-260 MB beside a
   station of 60-200 MB, so on a Pi Zero 2 W (MemTotal ~478 MB) the radio ran out of memory and the kernel killed the

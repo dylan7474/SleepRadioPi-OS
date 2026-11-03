@@ -4524,10 +4524,13 @@ const UI = {
           srow("Speaking speed", ...range("dj-speed", 0.5, 1.5, 0.05, d.dj_speed, v => v.toFixed(2) + "×", v => set({ dj_speed: v })))),
         grp("The news", srow("News speed", ...range("news-speed", 0.5, 1.5, 0.05, d.news_speed, v => v.toFixed(2) + "×", v => set({ news_speed: v })))),
         grp("Ebooks",
-          srow("Reading voice", seg(d.voices.map(v => [v, VOICE(v)]), d.ebook_voice || "stock", v => set({ ebook_voice: v }))),
-          srow("Reading speed", ...range("ebook-speed", 0.5, 1.5, 0.05, d.ebook_speed ?? 0.85, v => v.toFixed(2) + "×", v => set({ ebook_speed: v }))),
+          srow("Reading voice", seg((d.ebook_voices || d.voices.map(v => ({ id: v, label: VOICE(v) }))).map(v => [v.id, v.label.startsWith("Flite: ") ? v.label.slice(7) : VOICE(v.id)]), d.ebook_voice || "stock", v => set({ ebook_voice: v })),
+            help((d.ebook_voice || "").startsWith("flite-") ? "A small, steady voice: robotic, but the same every time, and light enough for any radio" : "")),
+          (d.ebook_voice || "").startsWith("flite-")
+            ? srow("Reading speed", seg([["slow", "Slow"], ["medium", "Medium"], ["normal", "Normal"], ["fast", "Fast"]], d.ebook_pace || "medium", v => set({ ebook_pace: v })), help("About 150, 175, 200 and 230 words a minute"))
+            : srow("Reading speed", ...range("ebook-speed", 0.5, 1.5, 0.05, d.ebook_speed ?? 0.85, v => v.toFixed(2) + "×", v => set({ ebook_speed: v }))),
           srow("Pauses", ...range("ebook-pause", 0.5, 2.5, 0.1, d.ebook_pause ?? 1.0, v => v.toFixed(1) + "×", v => set({ ebook_pause: v }))),
-          help("The radio reads an ebook aloud with no DJ. The standard voice is the safe one on a Pi Zero 2 W; the personal voice is slower to make and may gap. A new voice applies the next time a book starts; speed and pauses from the next sentence. Pauses are the gaps between sentences, paragraphs and chapters (longer gives the voice time to work ahead).")),
+          help("The radio reads an ebook aloud with no DJ. The Flite voices (Scottish man, American man, American woman) are small and steady, and use little memory; the standard voice sounds more natural but varies from sentence to sentence and needs a lot of memory; the personal voice is slower to make and may gap. A new voice applies the next time a book starts; speed and pauses from the next sentence. Pauses are the gaps between sentences, paragraphs and chapters (longer gives the voice time to work ahead).")),
         (() => { const from = timeIn({ value: hhmm(d.quiet_start_min ?? 1380), id: "quiet-from" }), until = timeIn({ value: hhmm(d.quiet_end_min ?? 360), id: "quiet-until" });
           from.onchange = () => set({ quiet_start_min: minsOf(from.value) }); until.onchange = () => set({ quiet_end_min: minsOf(until.value) });
           return grp("Quiet hours (do not disturb)", srow("Quiet hours", sw(d.quiet_on, v => set({ quiet_on: v }), "Quiet hours")), srow("From", from), srow("Until", until),

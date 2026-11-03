@@ -67,6 +67,7 @@ class BroadcastConfig:
     news_speed: float = 0.75
     ebook_speed: float = 0.85
     ebook_voice: str = "stock"
+    ebook_pace: str = "medium"
     ebook_pause: float = 1.0
     jingle_every: int = 0  # 0 = off
     dj_hooks_enabled: bool = False

@@ -76,6 +76,9 @@ BR2_PACKAGE_ALSA_UTILS_APLAY=y
 BR2_PACKAGE_ALSA_UTILS_SPEAKER_TEST=y
 # The plain voice for setting up (Wi-Fi), before the DJ's voice is there: instant, and in the image.
 BR2_PACKAGE_ESPEAK=y
+# The ebook reader's small, steady voices (flite -voice awb/rms/slt): 20-25 MB while speaking, 7x real time on a
+# Zero 2 W, the same voice every sentence. The neural voice (sherpa-onnx) stays the DJ's and the news's.
+BR2_PACKAGE_FLITE=y
 BR2_PACKAGE_FFMPEG=y
 BR2_PACKAGE_FFMPEG_GPL=y
 BR2_PACKAGE_LAME=y
