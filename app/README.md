@@ -312,6 +312,7 @@ Most of these are set from the web page; the rest are in the config file.
 | `web_stream` | `false` | Listen in a browser too (always on without a speaker). |
 | `speaker_mono` | `false` | Both speakers play left + right mixed (the web stream stays stereo). |
 | `speaker_eq` | flat | `{"g31", "g62", "g125", "g250", "g500", "g1k", "g2k", "g4k", "g8k", "g16k"}` in dB, -12 to 12 (any may be missing). The old `bass` / `mid` / `treble` of earlier versions still load: each sets the bands it used to cover. |
+| `eq_slots` | `["Speech", "Warm", "Rock", "Late night"]` | The sound each of buttons 1 to 4 picks in EQ mode (hold button 1 for 3 s): a ready-made sound's name, one saved in `speaker_sounds`, or `null`. |
 | `noise_on`, `noise_kind`, `noise_mix` | off, `pink`, `50` | The noise layer: on/off, its colour, and the balance with the programme (0 programme only, 50 both full, 100 noise only). |
 | `speaker_highpass_hz` | `0` | Low cut for the speaker (~140 with the case's bass port); 0 = off. |
 | `knob_step` | `2` | Volume steps per click (1 dB) in the knob's Normal mode. |
@@ -1026,6 +1027,17 @@ The cards:
   Boosts lower the overall level so they can't clip. The
   [spectrum analyser](https://dylan7474.github.io/SleepRadioPi-OS/) can suggest the settings (see *Tuning the
   speakers*, below).
+- **EQ mode on the case** (box radio): hold **button 1 for 3 seconds** and the
+  radio says "EQ mode" (or two rising beeps); now a short press of buttons 1 to
+  4 picks the sound set for that button (Settings → Speakers → *Buttons in EQ
+  mode*: any ready-made sound, or one you saved; default Speech, Warm, Rock,
+  Late night). It's said by name and heard at once on whatever is playing;
+  buttons 2 to 4 held are just presses, as ever. Hold **button 1 for 3 seconds
+  again** and the sound that's on is kept ("EQ saved"). Nothing is written to
+  the card until then, and 60 s of nothing does the same, so the buttons can't
+  stay stuck in it. Setting the sounds is on the page only (`eq_slots`; the
+  case has no hold-to-store). The service menu chord (1 + 4) ends it too.
+  (`io/presets.py`: `eq_enter`, `eq_press`, `eq_leave`.)
 - **Knob switch** — works like the real knob: tap to pause/play, hold 3 s for
   what's on *Hold the knob*. If the radio was paused it speaks, then pauses again.
   **Open the service menu** does what holding buttons 1 and 4 for 5 s does;
@@ -1994,7 +2006,7 @@ everything but the page itself and the login needs the session cookie
 | `POST /api/login` / `/api/logout` | `{"password"}` → a session cookie (401 if wrong) / forget it |
 | `POST /api/password` | `{"password": "..." \| null}` — set, change or remove (needs to be logged in) |
 | `GET /api/status` | What's on air, next, history, the library, the voice, the speaker (volume, playing, mono, EQ, low cut, sleep timer, test sound), artist/list playing |
-| `POST /api/speaker` | Any of `{"volume": 0-100}`, `{"step": n}`, `{"knob_mode": "auto" \| "fine" \| "normal" \| "coarse"}`, `{"pause": true \| false \| "toggle"}`, `{"sleep": minutes}` (0 = off), `{"mono": bool}`, `{"noise": true \| false \| "toggle", "noise_kind": "pink", "noise_mix": 0-100}`, `{"eq": {"bass": dB, ...}}`, `{"highpass": Hz}`, `{"test": "bass" \| "sweep" \| "pink" \| "left" \| "right" \| "sides" \| "phase" \| "tune" \| "stop"}` |
+| `POST /api/speaker` | Any of `{"volume": 0-100}`, `{"step": n}`, `{"knob_mode": "auto" \| "fine" \| "normal" \| "coarse"}`, `{"pause": true \| false \| "toggle"}`, `{"sleep": minutes}` (0 = off), `{"mono": bool}`, `{"noise": true \| false \| "toggle", "noise_kind": "pink", "noise_mix": 0-100}`, `{"eq": {"bass": dB, ...}}`, `{"eq_slots": [name \| null, x4]}` (the sound each button picks in EQ mode), `{"highpass": Hz}`, `{"test": "bass" \| "sweep" \| "pink" \| "left" \| "right" \| "sides" \| "phase" \| "tune" \| "stop"}` |
 | `POST /api/stream` | `{"enabled": bool}` — listening in a browser on/off (saved as `web_stream`) |
 | `POST /api/knob` | `{"press": "short" \| "long" \| "service"}` — the knob's switch; `service` opens the service menu (then `/api/buttons/press` answers it; `GET /api/buttons` has its `service` state); `{"press": "turn", "clicks": n}`: pressed and turned |
 | `GET` / `POST /api/identity` | `{"hardware", "station_name"}` — which radio this is and its name; a POST saves and restarts the station |

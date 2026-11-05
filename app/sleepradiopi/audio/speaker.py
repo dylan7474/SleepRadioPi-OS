@@ -23,7 +23,7 @@ from pathlib import Path
 import numpy as np
 
 from sleepradiopi.audio import pcm
-from sleepradiopi.audio.eq import Equalizer, clamp, expand
+from sleepradiopi.audio.eq import DEFAULT_SLOTS, PRESETS, Equalizer, clamp, expand, preset_bands, validate_slots
 from sleepradiopi.audio.noise import KINDS as NOISE_KINDS, NoiseGen
 from sleepradiopi.audio.testsignal import KINDS, SIDE_WORDS, TestSignal
 from sleepradiopi.config.atomic import write_atomic
@@ -332,6 +332,7 @@ class SpeakerControl:
         self.knob_mode = knob_mode if knob_mode in KNOB_MODES else "auto"
         self.knob_step = max(1, int(knob_step))
         self._knob_last = (0.0, 0)       # (when, direction) of the last click
+        self.eq_slots = list(DEFAULT_SLOTS)   # the four buttons in EQ mode (main sets it from the settings)
         self._join, self._leave = join, leave
         self.state_file = state_file
         self.config_file = config_file
@@ -385,19 +386,21 @@ class SpeakerControl:
             self._save_timer.daemon = True
             self._save_timer.start()
 
-    def set_mono(self, mono: bool) -> None:
+    def set_mono(self, mono: bool, save: bool = True) -> None:
         """Switch between mono and stereo at once, and save it in the config.
         Other keys in the file are kept as they are."""
         with self._lock:
             if self.speaker.mono == mono:
                 return
             self.speaker.mono = mono
-            self._save_setting("speaker_mono", mono)
+            if save:
+                self._save_setting("speaker_mono", mono)
         log.info("speaker: %s", "mono" if mono else "stereo")
 
-    def set_eq(self, gains: dict) -> None:
-        """Bass/mid/treble in dB (-12..12; missing bands keep their setting).
-        Heard at once, and saved in the config."""
+    def set_eq(self, gains: dict, save: bool = True) -> None:
+        """Band gains in dB (-12..12; missing bands keep their setting).
+        Heard at once, and saved in the config (save=False: not yet: EQ mode on the
+        buttons saves once, when it's left, so trying sounds doesn't write the card)."""
         eq = self.speaker.eq
         if eq is None:
             return
@@ -406,10 +409,11 @@ class SpeakerControl:
             if new == eq.gains:
                 return
             eq.set(new)
-            self._save_setting("speaker_eq", new)
+            if save:
+                self._save_setting("speaker_eq", new)
         log.info("speaker EQ: %s", new)
 
-    def set_highpass(self, hz: float) -> None:
+    def set_highpass(self, hz: float, save: bool = True) -> None:
         """Low cut for the speaker in Hz (0 = off), e.g. ~140 Hz with the
         bass port. Heard at once, and saved in the config."""
         eq = self.speaker.eq
@@ -420,8 +424,53 @@ class SpeakerControl:
             eq.set(eq.gains, hz)
             if eq.highpass == before:
                 return
-            self._save_setting("speaker_highpass_hz", eq.highpass)
+            if save:
+                self._save_setting("speaker_highpass_hz", eq.highpass)
         log.info("speaker low cut: %s", f"{eq.highpass} Hz" if eq.highpass else "off")
+
+    # --- the buttons' EQ mode (io/presets.py): the sound on each button -----------------------
+
+    def set_eq_slots(self, slots) -> list:
+        """Which sound each of the four buttons picks in EQ mode. Saved."""
+        self.eq_slots = validate_slots(slots)
+        self._save_setting("eq_slots", self.eq_slots)
+        log.info("EQ mode buttons: %s", self.eq_slots)
+        return self.eq_slots
+
+    def find_sound(self, name: str | None) -> dict | None:
+        """A sound by name: a ready-made one, else one saved on the page
+        ({"eq", "highpass", "mono"}); None if there's no such thing."""
+        if not name:
+            return None
+        for preset in PRESETS:
+            if preset.lower() == name.lower():
+                return {"name": preset, "eq": preset_bands(preset)}
+        if self.config_file is not None:
+            try:
+                from sleepradiopi.config.settings import load
+                for s in load(self.config_file).speaker_sounds:
+                    if s.get("name", "").lower() == name.lower():
+                        return s
+            except Exception:
+                log.exception("EQ mode: couldn't read the saved sounds")
+        return None
+
+    def try_sound(self, sound: dict) -> None:
+        """Hear a sound now, without saving it (persist_sound does, later)."""
+        self.set_eq(sound["eq"], save=False)
+        if "highpass" in sound:
+            self.set_highpass(sound["highpass"], save=False)
+        if "mono" in sound:
+            self.set_mono(bool(sound["mono"]), save=False)
+
+    def persist_sound(self) -> None:
+        """Save the EQ, low cut and mono as they are now (once, leaving EQ mode)."""
+        eq = self.speaker.eq
+        if eq is None:
+            return
+        self._save_setting("speaker_eq", dict(eq.gains))
+        self._save_setting("speaker_highpass_hz", eq.highpass)
+        self._save_setting("speaker_mono", bool(self.speaker.mono))
 
     def _save_setting(self, key: str, value) -> None:
         """Set one key in the config file, keeping the others as they are."""
@@ -617,5 +666,6 @@ class SpeakerControl:
             status["sleep_left_s"] = max(0, round(end - time.monotonic()))
         if self.speaker.eq is not None:
             status["eq"] = dict(self.speaker.eq.gains)
+            status["eq_slots"] = list(self.eq_slots)
             status["highpass_hz"] = self.speaker.eq.highpass
         return status

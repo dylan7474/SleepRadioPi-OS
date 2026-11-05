@@ -26,7 +26,7 @@ import typing
 from dataclasses import asdict, fields
 from pathlib import Path
 
-from sleepradiopi.audio.eq import MAX_DB, known, validate_sounds
+from sleepradiopi.audio.eq import MAX_DB, known, validate_slots, validate_sounds
 from sleepradiopi.broadcast import birthdays, messages, profiles
 from sleepradiopi.broadcast import playlists as playlists_mod
 from sleepradiopi.broadcast import programmes as programmes_mod
@@ -51,7 +51,7 @@ LIVE = {"speaker_mono", "speaker_eq", "speaker_highpass_hz", "broadcast_artist",
         "broadcast_announcer_speed", "news_speed", "ebook_speed", "ebook_voice", "ebook_pace", "ebook_pause", "radio_stations", "buttons", "noise_on", "noise_kind", "noise_mix",
         "podcasts", "messages", "buttons_night", "buttons_bank", "buttons_auto", "broadcast_dj",
         "glow_day", "glow_night", "meter_trim_db", "playlists", "knob_mode", "programmes", "programme_mode",
-        "knob_long", "power_on", "speaker_sounds", "ondemand_keep"}
+        "knob_long", "power_on", "speaker_sounds", "eq_slots", "ondemand_keep"}
 
 CHOICES = {
     "buttons_bank": {"day", "night"},
@@ -183,6 +183,11 @@ def _check(name: str, value):
             return validate_sounds(value)
         except ValueError as e:
             raise BadSettings(f"speaker_sounds: {e}") from None
+    if name == "eq_slots":
+        try:
+            return validate_slots(value)
+        except ValueError as e:
+            raise BadSettings(f"eq_slots: {e}") from None
     if name == "speaker_eq":
         if not all(known(k) and isinstance(v, (int, float)) and not isinstance(v, bool)
                    and -MAX_DB <= v <= MAX_DB for k, v in value.items()):

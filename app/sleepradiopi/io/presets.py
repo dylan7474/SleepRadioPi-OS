@@ -6,6 +6,7 @@ straight through, or one track on its own (then the radio pauses) -- or does an 
 a sleep time (5 to 90 minutes), or say the radio's address. A button only ever plays:
 pausing is the knob's job. The desktop page sets them (drag things onto a
 button, or the Buttons window); there's no hold-to-store on the case.
+Button 1 held for 3 s is **EQ mode** (below): the buttons pick a sound instead.
 
 A button can hold several **steps** (up to MAX_STEPS): stations on one,
 podcasts on the next, audiobooks on a third. Pressing it again moves on a
@@ -16,6 +17,13 @@ to wait for -- or, until that's ready (or with the DJ off), gives one pip
 for step one, two for step two... Coming back to a button from something
 else, it picks up at the step it was last on. (The cathedral's selector has
 no second press: it plays a position's first step.)
+
+**EQ mode** (`eq_enter`/`eq_press`/`eq_leave`): hold button 1 for 3 s and it says "EQ
+mode"; now a short press of 1 to 4 picks the sound the page put on that button (`eq_slots`
+on the speaker control: a ready-made sound or one saved on the page), said by name, heard at
+once on whatever's playing; hold button 1 for 3 s again and the sound that's on is kept
+("EQ saved"). Nothing is written to the card until then (one write, leaving), and 60 s
+of nothing (EQ_IDLE_S) does the same, so the buttons can't stay stuck in it. A box radio only.
 
 Two more places hold a preset the same way (SLOTS): **knob_long**, what
 holding the knob for 3 s does (empty: nothing -- which it
@@ -74,6 +82,8 @@ AUTO_DEFAULT = {"on": False, "night_min": 21 * 60, "day_min": 7 * 60}
 MAX_TEXT = 200
 MAX_STEPS = 6               # what one button can hold, stepped through by pressing it again
 STEP_SETTLE_S = 0.8         # a button with steps plays this long after its last press
+EQ_IDLE_S = 60.0            # EQ mode left alone this long keeps what's on and ends, so buttons never stay stuck in it
+EQ_ENTER, EQ_LEAVE = "EQ mode", "EQ saved"     # spoken (made ahead, with the names of the sounds on the buttons)
 STEP_RESET_S = 30.0         # an action step done this long ago: the next press isn't "the one after it"
 
 
@@ -345,6 +355,8 @@ class Presets:
         self._pending: tuple | None = None
         self._at: dict = {}
         self._last: tuple | None = None
+        self.eq_active = False           # EQ mode: hold button 1 for 3 s; 1-4 pick a sound; hold button 1 again to save and leave
+        self._eq_timer: threading.Timer | None = None
 
     @staticmethod
     def _safe(presets, n: int = N) -> list:
@@ -515,7 +527,8 @@ class Presets:
                 "sets": {b: [self._button(x, now if b == self.bank else None) for x in self.banks[b][:self.count]]
                          for b in BANKS},
                 "slots": {name: self._button(p, None) for name, p in self.slots.items()},
-                "service": self.menu.state if self.menu is not None else None}
+                "service": self.menu.state if self.menu is not None else None,
+                "eq_mode": self.eq_active}
 
     def _button(self, button, now: dict | None) -> dict:
         """A button for the page: its steps, and (as "preset" and "label") the one
@@ -636,7 +649,8 @@ class Presets:
             return
         try:
             self.names.want([spoken(p, self.label(p)) for bank in self.banks.values() for button in bank
-                             if isinstance(button, list) for p in button if p["kind"] not in INSTANT])
+                             if isinstance(button, list) for p in button if p["kind"] not in INSTANT]
+                            + (self.eq_words() if not self.selector else []))
         except Exception:
             log.exception("button names")
 
@@ -749,6 +763,9 @@ class Presets:
             return
         if self.selector:
             self._choose(index)
+            return
+        if self.eq_active:
+            self.eq_press(index)
             return
         chain = steps(self.presets[index])
         if not chain:
@@ -868,7 +885,89 @@ class Presets:
             return
         if self.selector:
             return                           # (a switch has no hold)
+        if index == 0 and (self.eq_active or self._eq_possible()):
+            self.eq_leave() if self.eq_active else self.eq_enter()     # button 1 held: in to EQ mode, and out
+            return
         self.press(index)
+
+    # --- EQ mode ---------------------------------------------------------------------------------
+
+    def _eq_possible(self) -> bool:
+        return self.control is not None and getattr(getattr(self.control, "speaker", None), "eq", None) is not None
+
+    def eq_enter(self) -> None:
+        """Button 1 held for 3 s: the four buttons now pick a sound (set on the page) instead of
+        playing, until button 1 is held again. What's playing carries on, so the change is heard."""
+        if self.eq_active or not self._eq_possible():
+            return
+        with self._lock:
+            self._drop_pending()
+        self.eq_active = True
+        log.info("EQ mode on")
+        self._eq_say(EQ_ENTER, beep((523.0, 784.0), 0.14))
+        self._eq_touch()
+
+    def eq_leave(self, say: bool = True) -> None:
+        """Keep the sound that's on (saved once, here) and go back to normal."""
+        if not self.eq_active:
+            return
+        self.eq_active = False
+        if self._eq_timer is not None:
+            self._eq_timer.cancel()
+            self._eq_timer = None
+        try:
+            self.control.persist_sound()
+        except Exception:
+            log.exception("EQ mode: couldn't save the sound")
+        log.info("EQ mode off: saved")
+        if say:
+            self._eq_say(EQ_LEAVE, beep((784.0, 523.0), 0.14))
+
+    def eq_press(self, index: int) -> None:
+        """In EQ mode a button picks the sound the page put on it."""
+        self._eq_touch()
+        slots = getattr(self.control, "eq_slots", None) or []
+        name = slots[index] if index < len(slots) else None
+        sound = self.control.find_sound(name)
+        if sound is None:
+            log.info("EQ mode: button %d has no sound (%s)", index + 1, name)
+            self._clip(beep((440.0, 330.0)), "Button")
+            return
+        try:
+            self.control.try_sound(sound)
+        except Exception:
+            log.exception("EQ mode: couldn't use %s", name)
+            return
+        log.info("EQ mode: button %d: %s", index + 1, sound["name"])
+        self._eq_say(sound["name"], step_pips(index + 1))
+
+    def _eq_touch(self) -> None:
+        if self._eq_timer is not None:
+            self._eq_timer.cancel()
+        self._eq_timer = threading.Timer(EQ_IDLE_S, self.eq_leave)
+        self._eq_timer.daemon = True
+        self._eq_timer.start()
+
+    def _eq_say(self, text: str, fallback: np.ndarray) -> None:
+        """The words if they've been made ahead (and the DJ's on), else the beeps or pips."""
+        audio = None
+        if self.names is not None and getattr(self.station, "_has_voice", False) and getattr(self.station, "dj_on", True):
+            try:
+                audio = self.names.clip(text)
+            except Exception:
+                log.exception("button names")
+        self._clip(audio if audio is not None and len(audio) else fallback, "Button")
+
+    def eq_words(self) -> list:
+        """The lines EQ mode says, to be made ahead: its two and the sounds on the buttons."""
+        if not self._eq_possible():
+            return []
+        names = []
+        for s in getattr(self.control, "eq_slots", None) or []:
+            sound = self.control.find_sound(s)
+            if sound:
+                names.append(sound["name"])
+        return [EQ_ENTER, EQ_LEAVE, *names]
 
     def apply(self, preset: dict) -> None:
         """Play a (non-action) preset. ValueError if it can't be played here."""

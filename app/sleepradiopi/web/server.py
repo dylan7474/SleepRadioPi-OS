@@ -1529,6 +1529,8 @@ def make_handler(station: Station, output: Mp3Output, speaker=None,
                     speaker.set_mono(settings["speaker_mono"])
                 if "speaker_eq" in settings:
                     speaker.set_eq(settings["speaker_eq"])
+                if "eq_slots" in settings:
+                    speaker.set_eq_slots(settings["eq_slots"])
                 if "speaker_highpass_hz" in settings:
                     speaker.set_highpass(settings["speaker_highpass_hz"])
                 if volume is not None:
@@ -2509,6 +2511,8 @@ def make_handler(station: Station, output: Mp3Output, speaker=None,
             {"mono": true | false} or
             {"eq": {"g31": dB ... "g16k": dB}} (any of the ten bands; the old
             "bass"/"mid"/"treble" are still accepted and set the bands they covered),
+            {"eq_slots": [name|null x4]} (the sound each button picks in EQ mode: a ready-made
+            one or one saved with /api/speaker/sounds),
             {"highpass": Hz} (the low cut; 0 = off) or
             {"test": "bass" | "sweep" | "pink" | "left" | "right" | "sides" | "phase" | "tune" | "stop"}
             (a test sound on the speaker; see audio/testsignal.py).
@@ -2532,6 +2536,10 @@ def make_handler(station: Station, output: Mp3Output, speaker=None,
                             and not isinstance(v, bool) for k, v in eq.items()):
                         raise ValueError("eq must map band names (g31..g16k) to numbers")
                     speaker.set_eq(eq)
+                if "eq_slots" in body:         # the sound each button picks in EQ mode (hold button 1 for 3 s)
+                    speaker.set_eq_slots(body["eq_slots"])
+                    if presets is not None:
+                        presets.bake()         # have the new names said ahead
                 if "highpass" in body:
                     hz = body["highpass"]
                     if isinstance(hz, bool) or not isinstance(hz, (int, float)) or not 0 <= hz <= 300:

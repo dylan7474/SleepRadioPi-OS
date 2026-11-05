@@ -53,6 +53,42 @@ LEGACY = {
 }
 
 
+# Ready-made sounds, shared by the page and the buttons' EQ mode (web/desktop.html
+# keeps a copy for its buttons; tests/test_eq.py checks they agree).
+PRESETS = {                 # name: gain in dB for each of GRAPHIC
+    "Flat":       [0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+    "Speech":     [0, 0, -3, -2, 0, 2, 4, 3, 0, -2],
+    "Warm":       [0, 2, 3, 2, 1, 0, -1, -2, -3, -4],
+    "Bright":     [0, 0, 0, 0, 0, 1, 2, 4, 5, 4],
+    "Late night": [0, 0, -2, -1, 0, 0, -1, -3, -5, -6],
+    "Rock":       [0, 2, 4, 2, -1, -2, 0, 3, 4, 4],
+    "Pop":        [0, 0, 2, 3, 1, 0, 1, 2, 3, 2],
+    "Classical":  [0, 0, 0, 0, 0, 0, 0, -1, 2, 3],
+    "Jazz":       [0, 0, 2, 2, 1, 0, 0, 1, 2, 2],
+    "Acoustic":   [0, 0, 1, 2, 2, 1, 1, 2, 3, 2],
+    "Dance":      [0, 2, 4, 3, 0, -1, 0, 2, 3, 2],
+}
+SLOTS = 4                                   # the box's buttons
+DEFAULT_SLOTS = ["Speech", "Warm", "Rock", "Late night"]
+
+
+def preset_bands(name: str) -> dict:
+    return dict(zip(GRAPHIC, PRESETS[name]))
+
+
+def validate_slots(slots) -> list:
+    """What each button picks in EQ mode: a sound's name (a ready-made one, or one
+    saved on the page) or None (nothing)."""
+    if not isinstance(slots, list) or len(slots) != SLOTS:
+        raise ValueError(f"EQ mode has {SLOTS} buttons: send a list of {SLOTS} sound names (or null)")
+    out = []
+    for s in slots:
+        if s is not None and (not isinstance(s, str) or len(s) > 40):
+            raise ValueError("a button's sound is a name (up to 40 letters), or null")
+        out.append(" ".join(s.split()) or None if isinstance(s, str) else None)
+    return out
+
+
 def known(name: str) -> bool:
     return name in BANDS or name in LEGACY
 

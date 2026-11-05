@@ -27,6 +27,7 @@ from sleepradiopi import wifi
 from sleepradiopi.updater import Updates
 from sleepradiopi.voices import STANDARD_NAME, VoiceJobs
 from sleepradiopi.io.announce import Announcer, beep
+from sleepradiopi.audio.eq import validate_slots
 from sleepradiopi.io.knob import Chord, Knob, Twist
 from sleepradiopi.io import service as service_mod
 from sleepradiopi.io import presets as presets_mod
@@ -729,6 +730,10 @@ def main() -> None:
             default_volume=settings.speaker_volume, config_file=args.config,
             noise=(settings.noise_on, settings.noise_kind, settings.noise_mix),
             knob_mode=settings.knob_mode, knob_step=settings.knob_step)
+        try:
+            control.eq_slots = validate_slots(settings.eq_slots)      # the buttons in EQ mode
+        except ValueError as e:                                       # a hand-edited config: keep the defaults
+            logging.getLogger(__name__).warning("eq_slots ignored: %s", e)
         # A long press says the radio's address (for finding the web page away from home).
         # Made only once the show is playing music, so it never holds up the opening.
         on_air = lambda: bool(tts and tts.ready) and station.music_started
@@ -778,7 +783,7 @@ def main() -> None:
             buttons = {code: (lambda i=i: presets.press(i), lambda i=i: presets.hold(i))
                        for code, i in presets_mod.KEYCODES.items() if i < presets.count}
             # The service menu: hold buttons 1 and 4 together for 5 s.
-            chord = [Chord({2, 5}, service_mod.HOLD_S, on_start=menu.holding, on_fire=menu.open,
+            chord = [Chord({2, 5}, service_mod.HOLD_S, on_start=menu.holding, on_fire=lambda: (presets.eq_leave(), menu.open()),
                            on_tick=lambda: presets._clip(tick, "Button")),   # a tick a second, counting down
                      # buttons 2 and 3 held: swap the day and night sets of buttons
                      Chord(set(presets_mod.BANK_KEYS), presets_mod.BANK_HOLD_S, on_start=lambda: None,

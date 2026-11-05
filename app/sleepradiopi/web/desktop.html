@@ -4452,8 +4452,9 @@ const UI = {
   },
   speakers: {
     load: async () => {
-      const [st, lamps, btns] = await Promise.all([api("/api/status"), api("/api/lamps").catch(() => ({})), api("/api/buttons").catch(() => ({}))]);
-      return { ...st.speaker, lamps, selector: !!btns.selector };
+      const [st, lamps, btns, saved] = await Promise.all([api("/api/status"), api("/api/lamps").catch(() => ({})), api("/api/buttons").catch(() => ({})),
+                                                          api("/api/speaker/sounds").catch(() => ({ sounds: [] }))]);
+      return { ...st.speaker, lamps, selector: !!btns.selector, eqMode: !!btns.eq_mode, saved: (saved.sounds || []).map(x => x.name) };
     },
     build: (sp, act) => [
       ...(TUNE ? [grp("Speaker settings from the analyser",
@@ -4483,6 +4484,17 @@ const UI = {
                act(() => api("/api/speaker", { test: "tune" }));
              })),
         help("Ten bands an octave apart; the speakers are small, so 31 and 62 Hz do little. A boost lowers the overall level a little so it never distorts. With the bass port back panel, set the low cut to 140 Hz.")),
+      ...(sp.selector || !sp.eq_slots ? [] : [grp("Buttons in EQ mode",
+        help("Hold button 1 for 3 seconds: the radio says “EQ mode”, and buttons 1 to 4 pick the sound set here (said by name, heard on whatever's playing). Hold button 1 for 3 seconds again to keep it and go back to normal." + (sp.eqMode ? " EQ mode is on now." : "")),
+        ...sp.eq_slots.map((cur, i) => {
+          const pick = el("select", { id: "eqslot-" + i, "aria-label": "Button " + (i + 1) },
+            el("option", { value: "", textContent: "Nothing", selected: !cur }),
+            ...Object.keys(EQ_PRESETS).map(n => el("option", { value: n, textContent: n, selected: n === cur })),
+            ...sp.saved.filter(n => !(n in EQ_PRESETS)).map(n => el("option", { value: n, textContent: n + " (saved)", selected: n === cur })));
+          pick.onchange = () => act(() => api("/api/speaker", { eq_slots: sp.eq_slots.map((x, k) => k === i ? (pick.value || null) : x) }));
+          return srow("Button " + (i + 1), pick);
+        }),
+        help("Your own sounds appear here once you save them (the Speaker sounds folder)."))]),
       testsGrp(sp, act),
       grp("The knob and buttons",
         line(sbtn("Press the knob", () => act(() => api("/api/knob", { press: "short" }))),
