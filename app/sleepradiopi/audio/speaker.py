@@ -23,7 +23,7 @@ from pathlib import Path
 import numpy as np
 
 from sleepradiopi.audio import pcm
-from sleepradiopi.audio.eq import Equalizer, clamp
+from sleepradiopi.audio.eq import Equalizer, clamp, expand
 from sleepradiopi.audio.noise import KINDS as NOISE_KINDS, NoiseGen
 from sleepradiopi.audio.testsignal import KINDS, SIDE_WORDS, TestSignal
 from sleepradiopi.config.atomic import write_atomic
@@ -402,7 +402,7 @@ class SpeakerControl:
         if eq is None:
             return
         with self._lock:
-            new = clamp({**eq.gains, **gains})
+            new = clamp({**eq.gains, **expand(gains)})
             if new == eq.gains:
                 return
             eq.set(new)

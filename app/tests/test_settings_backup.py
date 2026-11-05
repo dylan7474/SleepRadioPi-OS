@@ -115,7 +115,7 @@ def test_web_load_applies_live_settings_without_a_restart(radio, monkeypatch) ->
     reply = _load(base, json.dumps(body).encode())
     assert reply["ok"] and not reply["needs_restart"] and not restarts
     assert reply["changed"] == ["speaker_eq", "speaker_mono", "volume"]
-    assert ctl.speaker.mono and ctl.speaker.eq.gains["bass"] == 5 and ctl.volume == 20
+    assert ctl.speaker.mono and ctl.speaker.eq.gains["g125"] == 5 and ctl.volume == 20
     assert json.loads((conf.parent / "speaker.json").read_text())["volume"] == 20
 
 

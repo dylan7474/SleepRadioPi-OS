@@ -1,8 +1,8 @@
-"""A 3-band EQ (bass, mid, treble) for the Pi's own speakers.
+"""A 10-band graphic EQ (31 Hz to 16 kHz) for the Pi's own speakers.
 
 The MiniAmp is a plain DAC with no controls, so the EQ is done here, in
-numpy (the image has no scipy). The three bands are the usual RBJ biquads --
-a low shelf, a peak and a high shelf -- but instead of running them sample by
+numpy (the image has no scipy). The ten bands are the usual RBJ peaking
+biquads, but instead of running them sample by
 sample (far too slow in Python on a Zero 2 W) their combined response is
 turned into one linear-phase FIR filter and applied block by block with an
 FFT (overlap-save). A new setting only rebuilds the filter; the next block
@@ -33,24 +33,48 @@ NFFT = 4096                 # holds TAPS - 1 frames of history + a block of up t
 MAX_DB = 12
 MAX_HIGHPASS_HZ = 300
 
-# The bass shelf sits at 200 Hz, not the usual ~100: the box's 40 mm drivers
-# resonate at ~250 Hz and its vent props them up only down to ~150 Hz, so
-# there's next to nothing below that to boost (a 120 Hz shelf mostly pushed
-# the cones at notes they can't play). Keep web/analyser in step.
-BANDS = {                   # name: (kind, frequency Hz)
-    "bass": ("lowshelf", 200.0),
-    "mid": ("peak", 1000.0),
-    "treble": ("highshelf", 6000.0),
+# The EQ is ten octave-spaced peaks (Q 1.4), 31 Hz to 16 kHz. All of them go
+# into the one FIR filter, so ten cost the same CPU as one. The box's 40 mm
+# drivers resonate at ~250 Hz and its vent props them up only down to ~150 Hz,
+# so the lowest two bands do little. Keep web/analyser in step.
+GRAPHIC = ("g31", "g62", "g125", "g250", "g500", "g1k", "g2k", "g4k", "g8k", "g16k")
+BANDS = {}                  # name: (kind, frequency Hz, Q for a peak)
+for _name in GRAPHIC:
+    _hz = _name[1:]
+    BANDS[_name] = ("peak", float(_hz[:-1]) * 1000 if _hz.endswith("k") else float(_hz), 1.4)
+
+# The old bass / mid / treble controls are gone, but settings saved by an older
+# radio, the analyser's suggestion and old backups still use them: each one
+# sets the graphic bands it used to cover (name: {band: share of the dB}).
+LEGACY = {
+    "bass": {"g31": 1, "g62": 1, "g125": 1, "g250": 0.5},
+    "mid": {"g500": 0.6, "g1k": 1, "g2k": 0.6},
+    "treble": {"g4k": 0.5, "g8k": 1, "g16k": 1},
 }
 
 
-def _biquad(kind: str, f0: float, db: float, rate: int) -> tuple[np.ndarray, np.ndarray]:
-    """RBJ Audio EQ Cookbook coefficients (b, a); shelves with S = 1, peak Q = 0.7."""
+def known(name: str) -> bool:
+    return name in BANDS or name in LEGACY
+
+
+def expand(gains: dict) -> dict:
+    """Gains with any old bass/mid/treble turned into graphic bands (a graphic
+    band given in the same dict wins)."""
+    out = {}
+    for name, db in gains.items():
+        for band, share in LEGACY.get(name, {}).items():
+            out[band] = db * share
+    out.update({k: v for k, v in gains.items() if k in BANDS})
+    return out
+
+
+def _biquad(kind: str, f0: float, db: float, rate: int, q: float = 0.7) -> tuple[np.ndarray, np.ndarray]:
+    """RBJ Audio EQ Cookbook coefficients (b, a); shelves with S = 1, peak Q = q."""
     A = 10 ** (db / 40)
     w0 = 2 * math.pi * f0 / rate
     cw, sw = math.cos(w0), math.sin(w0)
     if kind == "peak":
-        alpha = sw / (2 * 0.7)
+        alpha = sw / (2 * q)
         b = [1 + alpha * A, -2 * cw, 1 - alpha * A]
         a = [1 + alpha / A, -2 * cw, 1 - alpha / A]
     else:
@@ -73,10 +97,10 @@ def response(gains: dict, rate: int, freqs: np.ndarray, highpass: float = 0) -> 
     """The EQ's gain (linear magnitude) at each frequency, before headroom."""
     z1 = np.exp(-2j * np.pi * freqs / rate)          # z^-1 on the unit circle
     mag = np.ones(len(freqs))
-    for name, (kind, f0) in BANDS.items():
+    for name, (kind, f0, q) in BANDS.items():
         db = gains.get(name, 0)
         if db:
-            b, a = _biquad(kind, f0, db, rate)
+            b, a = _biquad(kind, f0, db, rate, q)
             mag *= np.abs((b[0] + b[1] * z1 + b[2] * z1 ** 2) / (a[0] + a[1] * z1 + a[2] * z1 ** 2))
     if highpass:
         with np.errstate(divide="ignore"):
@@ -85,6 +109,7 @@ def response(gains: dict, rate: int, freqs: np.ndarray, highpass: float = 0) -> 
 
 
 def clamp(gains: dict) -> dict:
+    gains = expand(gains)
     return {name: max(-MAX_DB, min(MAX_DB, int(round(gains.get(name, 0))))) for name in BANDS}
 
 
@@ -155,7 +180,7 @@ MAX_SOUNDS = 20
 
 def validate_sounds(sounds) -> list[dict]:
     """Saved speaker set-ups (the desktop's Speaker sounds folder) -> clean copies:
-    [{"name", "eq": {"bass", "mid", "treble"}, "highpass": Hz, "mono": bool}]."""
+    [{"name", "eq": {"g31".."g16k"}, "highpass": Hz, "mono": bool}]."""
     if not isinstance(sounds, list) or len(sounds) > MAX_SOUNDS:
         raise ValueError(f"send a list of up to {MAX_SOUNDS} sounds")
     out, names = [], set()
@@ -169,13 +194,13 @@ def validate_sounds(sounds) -> list[dict]:
             raise ValueError(f"there's a sound called {name!r} already")
         names.add(name.lower())
         eq = s.get("eq") or {}
-        if not isinstance(eq, dict) or not all(k in BANDS and isinstance(v, (int, float)) and not isinstance(v, bool)
+        if not isinstance(eq, dict) or not all(known(k) and isinstance(v, (int, float)) and not isinstance(v, bool)
                                                and -MAX_DB <= v <= MAX_DB for k, v in eq.items()):
-            raise ValueError(f"{name}: eq is bass/mid/treble in dB (-{MAX_DB} to {MAX_DB})")
+            raise ValueError(f"{name}: eq is band names in dB (-{MAX_DB} to {MAX_DB})")
         hz = s.get("highpass", 0)
         if isinstance(hz, bool) or not isinstance(hz, int) or not 0 <= hz <= 300:
             raise ValueError(f"{name}: highpass is 0-300 Hz")
         if not isinstance(s.get("mono", False), bool):
             raise ValueError(f"{name}: mono is true or false")
-        out.append({"name": name, "eq": {b: eq.get(b, 0) for b in BANDS}, "highpass": hz, "mono": s.get("mono", False)})
+        out.append({"name": name, "eq": clamp(eq), "highpass": hz, "mono": s.get("mono", False)})
     return out

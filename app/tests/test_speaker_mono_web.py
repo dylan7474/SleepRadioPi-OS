@@ -79,11 +79,18 @@ def test_web_api_sets_the_eq(tmp_path: Path) -> None:
     threading.Thread(target=httpd.serve_forever, daemon=True).start()
     base = f"http://127.0.0.1:{httpd.server_address[1]}"
     try:
-        assert _post(base + "/api/speaker", {"eq": {"bass": 3, "treble": -2}})["eq"] == \
-            {"bass": 3, "mid": 0, "treble": -2}
+        got = _post(base + "/api/speaker", {"eq": {"g125": 3, "g8k": -2, "g1k": 5}})["eq"]
+        assert (got["g125"], got["g8k"], got["g1k"], got["g31"]) == (3, -2, 5, 0)
+        old = _post(base + "/api/speaker", {"eq": {"bass": 4}})["eq"]       # the old names still work
+        assert (old["g31"], old["g125"], old["g250"], old["g1k"]) == (4, 4, 2, 5)
+        try:
+            _post(base + "/api/speaker", {"eq": {"loud": 3}})
+            raise AssertionError("an unknown band was accepted")
+        except urllib.error.HTTPError as e:
+            assert e.code == 400
         with urllib.request.urlopen(base + "/api/status") as r:
-            assert json.load(r)["speaker"]["eq"]["bass"] == 3
-        assert json.loads(conf.read_text())["speaker_eq"]["treble"] == -2
+            assert json.load(r)["speaker"]["eq"]["g125"] == 4
+        assert json.loads(conf.read_text())["speaker_eq"]["g8k"] == -2
         for bad in ({"eq": {"volume": 3}}, {"eq": {"bass": "loud"}}, {"eq": 5},
                     {"eq": {"bass": True}}):
             with pytest.raises(urllib.error.HTTPError) as err:

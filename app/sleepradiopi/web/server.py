@@ -22,6 +22,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlencode, urlparse
 
+from sleepradiopi.audio.eq import known as known_band
 from sleepradiopi.broadcast import away as away_mod
 from sleepradiopi.broadcast import birthdays, messages, profiles
 from sleepradiopi.broadcast import playlists as playlists_mod
@@ -2506,7 +2507,8 @@ def make_handler(station: Station, output: Mp3Output, speaker=None,
             """/api/speaker with a JSON body: {"volume": 0-100}, {"step": n},
             {"pause": true | false | "toggle"}, {"sleep": minutes (0 = off)},
             {"mono": true | false} or
-            {"eq": {"bass": dB, "mid": dB, "treble": dB}} (any of the three),
+            {"eq": {"g31": dB ... "g16k": dB}} (any of the ten bands; the old
+            "bass"/"mid"/"treble" are still accepted and set the bands they covered),
             {"highpass": Hz} (the low cut; 0 = off) or
             {"test": "bass" | "sweep" | "pink" | "left" | "right" | "sides" | "phase" | "tune" | "stop"}
             (a test sound on the speaker; see audio/testsignal.py).
@@ -2526,9 +2528,9 @@ def make_handler(station: Station, output: Mp3Output, speaker=None,
                 if "eq" in body:
                     eq = body["eq"]
                     if not isinstance(eq, dict) or not all(
-                            k in ("bass", "mid", "treble") and isinstance(v, (int, float))
+                            known_band(k) and isinstance(v, (int, float))
                             and not isinstance(v, bool) for k, v in eq.items()):
-                        raise ValueError("eq must map bass/mid/treble to numbers")
+                        raise ValueError("eq must map band names (g31..g16k) to numbers")
                     speaker.set_eq(eq)
                 if "highpass" in body:
                     hz = body["highpass"]

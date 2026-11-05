@@ -311,7 +311,7 @@ Most of these are set from the web page; the rest are in the config file.
 | `update_source` | `github:dylan7474/SleepRadioPi-OS` | Where updates come from, or a manifest.json URL (for testing). |
 | `web_stream` | `false` | Listen in a browser too (always on without a speaker). |
 | `speaker_mono` | `false` | Both speakers play left + right mixed (the web stream stays stereo). |
-| `speaker_eq` | flat | `{"bass", "mid", "treble"}` in dB, -12 to 12. |
+| `speaker_eq` | flat | `{"g31", "g62", "g125", "g250", "g500", "g1k", "g2k", "g4k", "g8k", "g16k"}` in dB, -12 to 12 (any may be missing). The old `bass` / `mid` / `treble` of earlier versions still load: each sets the bands it used to cover. |
 | `noise_on`, `noise_kind`, `noise_mix` | off, `pink`, `50` | The noise layer: on/off, its colour, and the balance with the programme (0 programme only, 50 both full, 100 noise only). |
 | `speaker_highpass_hz` | `0` | Low cut for the speaker (~140 with the case's bass port); 0 = off. |
 | `knob_step` | `2` | Volume steps per click (1 dB) in the knob's Normal mode. |
@@ -1015,11 +1015,13 @@ The cards:
   1½ h; on the desktop, the Sleep timer folder in Actions) runs on the radio: it fades the speakers (and the page's own stream)
   over the last minute, then pauses; every open page shows the same
   countdown, and a pause cancels it.
-- **Speaker EQ** — bass / mid / treble (±12 dB; shelves at 200 Hz and 6 kHz,
-  a peak at 1 kHz) and a **Low cut** (Off / 100–160 Hz, 24 dB/octave) that
+- **Speaker EQ** — a 10-band graphic EQ (31 Hz to 16 kHz, an octave apart,
+  ±12 dB) on the Speakers window, with presets (Flat, Speech, Warm, Bright,
+  Late night, and for music: Rock, Pop, Classical, Jazz, Acoustic, Dance), and
+  a **Low cut** (Off / 100–160 Hz, 24 dB/octave) that
   keeps the deepest bass out of small speakers (~140 Hz with the case's bass
   port). The MiniAmp has no EQ of its own, so it's done in software
-  (`audio/eq.py`: one linear-phase FIR from the biquads, FFT per block, ~11%
+  (`audio/eq.py`: one linear-phase FIR from the ten peaking biquads, FFT per block, ~11%
   of one Zero 2 W core when not flat; changes are crossfaded, so no clicks).
   Boosts lower the overall level so they can't clip. The
   [spectrum analyser](https://dylan7474.github.io/SleepRadioPi-OS/) can suggest the settings (see *Tuning the
@@ -1947,7 +1949,7 @@ If it starts listening in the middle of a burst, it waits for the next.
 2. Press **Pink noise** on the radio's page (Settings → Test sounds and the knob; it
    bypasses the EQ and low cut, so it's the bare box), then **Measure the
    radio**.
-3. It suggests bass / mid / treble and a low cut, and draws the curve it
+3. It suggests an EQ setting (applied to the ten bands) and a low cut, and draws the curve it
    predicts with them.
 4. **Send to radio** opens the radio's page (at the address you give it,
    `sleepradiopi.local` by default) with the suggestion in the address,
@@ -2056,7 +2058,7 @@ everything but the page itself and the login needs the session cookie
 | `POST /api/buttons/key` | `{"button": 1-4, "down": bool}` — the page's button going down / up, through the real buttons' timers (tap, 1+4 for 5 s); one held over 30 s is let go |
 | `GET /api/buttons` | The four preset buttons (`steps`: each `preset`, `label`, `playing`; `step`: the one playing; and, for the step playing or else the first, `preset`, `label`, `playing`), `max_steps`, what's playing now as a preset, and the actions |
 | `POST /api/buttons` | `{"button": 1-4, "preset": {...} \| null, "bank"?: "day" \| "night"}` (bank: programme that set without swapping; `GET` has both in `sets`), `{"button", "steps": [{...}, ...]}` (up to six, stepped through by pressing it again), `{"button", "preset", "add": true}` (one more step on the end) or `{"button", "now": true, "add"?}` (what's playing, on it); a podcast preset is `{"kind": "podcast", "show", "title", "start": gid, "start_title"}` |
-| `GET` / `POST /api/speaker/sounds` | The saved speaker set-ups: `{"sounds": [{"name", "eq": {"bass", "mid", "treble"}, "highpass", "mono"}]}` (POST: the whole list, up to 20; applying one is `POST /api/speaker`) |
+| `GET` / `POST /api/speaker/sounds` | The saved speaker set-ups: `{"sounds": [{"name", "eq": {"g31", ... "g16k"}, "highpass", "mono"}]}` (POST: the whole list, up to 20; applying one is `POST /api/speaker`) |
 | `GET /api/backups` | The settings files kept on the radio: `{"backups": [{"name", "saved", "bytes"}], "max"}`; `GET /api/backups/file?name=N` downloads one |
 | `POST /api/backups/save` / `/load` / `/delete` / `/upload?name=N` | `{"name"?}` keeps the settings as they are now (no name: the date and time) / `{"name"}` loads one (as `POST /api/settings`; the settings as they were are kept as "Before the last load") / `{"name"}` deletes one / a settings file as the body is kept (not loaded) |
 | `POST /api/buttons/slot` | `{"slot": "knob_long" \| "power_on", "preset": {...} \| null}` — what holding the knob does / what plays at switch-on (null: as it came); `GET /api/buttons` has them in `slots` |

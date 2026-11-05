@@ -666,7 +666,7 @@ it beeps and reads out its network address.
 **Tuning the speakers:** on the radio's page, from a phone, Settings →
 Speakers → **Tune speakers…**. The radio plays bursts of hiss, and the
 [spectrum analyser](https://dylan7474.github.io/SleepRadioPi-OS/) opens and listens to them through the
-phone's mic. It suggests the bass / mid / treble and low cut, and
+phone's mic. It suggests an EQ setting (it sets the ten bands) and a low cut, and
 **Apply on the radio** brings them back to the radio's page, ready to
 **Apply**, with **Undo** to compare by ear (details in
 [the app's README](app/README.md#tuning-the-speakers)).
@@ -1020,7 +1020,7 @@ Other targets are passed through to Buildroot: `make menuconfig`,
   stereo): the **Speakers** buttons on the web page switch it at once and
   save it. `scripts/speaker-mode.sh mono|stereo` from the PC does the same
   but restarts the station; with no argument it shows the current mode.
-- Speaker EQ (`speaker_eq`, bass / mid / treble, ±12 dB) and low cut
+- Speaker EQ (`speaker_eq`, ten bands, ±12 dB) and low cut
   (`speaker_highpass_hz`): the **Speaker EQ** card on the web page. The
   MiniAmp has no EQ, so the app does it in software; it's heard at once and
   saved on `/data`. With the case's bass port back panel, set the low cut

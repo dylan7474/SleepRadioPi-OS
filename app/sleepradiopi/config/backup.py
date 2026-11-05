@@ -26,7 +26,7 @@ import typing
 from dataclasses import asdict, fields
 from pathlib import Path
 
-from sleepradiopi.audio.eq import BANDS, MAX_DB, validate_sounds
+from sleepradiopi.audio.eq import MAX_DB, known, validate_sounds
 from sleepradiopi.broadcast import birthdays, messages, profiles
 from sleepradiopi.broadcast import playlists as playlists_mod
 from sleepradiopi.broadcast import programmes as programmes_mod
@@ -184,9 +184,9 @@ def _check(name: str, value):
         except ValueError as e:
             raise BadSettings(f"speaker_sounds: {e}") from None
     if name == "speaker_eq":
-        if not all(k in BANDS and isinstance(v, (int, float)) and not isinstance(v, bool)
+        if not all(known(k) and isinstance(v, (int, float)) and not isinstance(v, bool)
                    and -MAX_DB <= v <= MAX_DB for k, v in value.items()):
-            raise BadSettings(f"speaker_eq: {value!r} isn't bass/mid/treble in dB")
+            raise BadSettings(f"speaker_eq: {value!r} isn't band names in dB")
     return value
 
 

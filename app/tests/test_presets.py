@@ -732,9 +732,9 @@ def test_a_programme_can_put_the_night_buttons_on_for_a_stretch(tmp_path: Path) 
 
 
 def test_saved_speaker_sounds_are_checked() -> None:
-    from sleepradiopi.audio.eq import validate_sounds
+    from sleepradiopi.audio.eq import BANDS, validate_sounds
     assert validate_sounds([{"name": " Bass  port ", "eq": {"bass": 4}, "highpass": 140}]) == \
-        [{"name": "Bass port", "eq": {"bass": 4, "mid": 0, "treble": 0}, "highpass": 140, "mono": False}]
+        [{"name": "Bass port", "eq": {**dict.fromkeys(BANDS, 0), "g31": 4, "g62": 4, "g125": 4, "g250": 2}, "highpass": 140, "mono": False}]
     for bad in ([{"name": ""}], [{"name": "A"}, {"name": "a"}], [{"name": "A", "eq": {"bass": 99}}],
                 [{"name": "A", "highpass": 999}], [{"name": "A", "mono": "yes"}], "x", [{"name": "A"}] * 21):
         with pytest.raises(ValueError):

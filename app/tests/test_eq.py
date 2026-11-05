@@ -38,28 +38,28 @@ def test_flat_is_the_input_delayed() -> None:
 
 def test_blocks_of_any_size_give_the_same_result() -> None:
     x = np.random.default_rng(2).uniform(-20000, 20000, (9000, 2)).astype(np.float32)
-    gains = {"bass": 6, "mid": -3, "treble": 4}
+    gains = {"g125": 6, "g1k": -3, "g8k": 4}
     whole = _run(Equalizer(RATE, 2, gains), x, block=len(x))
     for size in (1, 100, 1024, 2050, 3000):
         assert np.allclose(_run(Equalizer(RATE, 2, gains), x, block=size), whole, atol=1)
 
 
 def test_bands_shape_the_sound_with_headroom_for_boosts() -> None:
-    eq = Equalizer(RATE, 2, {"bass": 12})       # lowered 12 dB so nothing clips
-    assert abs(_level_db(eq, 40)) < 1           # +12 boost - 12 headroom
+    eq = Equalizer(RATE, 2, {"g250": 12})       # lowered 12 dB so nothing clips
+    assert abs(_level_db(eq, 250)) < 1          # +12 boost - 12 headroom
     assert abs(_level_db(eq, 5000) + 12) < 0.5
-    eq.set({"treble": -6})
-    assert abs(_level_db(eq, 16000) + 6) < 1
-    assert abs(_level_db(eq, 100)) < 0.5
-    eq.set({"mid": -9})
+    eq.set({"g8k": -6})
+    assert abs(_level_db(eq, 8000) + 6) < 1
+    assert abs(_level_db(eq, 500)) < 0.5
+    eq.set({"g1k": -9})
     assert abs(_level_db(eq, 1000) + 9) < 0.5
-    assert abs(_level_db(eq, 60)) < 1
+    assert abs(_level_db(eq, 100)) < 1
 
 
 def test_fir_matches_the_biquads() -> None:
-    gains = {"bass": 5, "mid": -4, "treble": 7}
+    gains = {"g125": 5, "g1k": -4, "g8k": 7}
     eq = Equalizer(RATE, 2, gains)
-    for f in (80, 400, 1000, 3000, 10000):
+    for f in (250, 400, 1000, 3000, 8000, 12000):
         want = 20 * np.log10(response(gains, RATE, np.array([f]))[0]) - 7
         assert abs(_level_db(eq, f) - want) < 0.5, f
 
@@ -84,13 +84,14 @@ def test_control_sets_and_saves_the_eq(tmp_path: Path) -> None:
     conf.write_text(json.dumps({"speaker_mono": True}))
     spk = SpeakerOutput(command=["sh", "-c", "cat > /dev/null"], eq=Equalizer(RATE, 2))
     ctl = SpeakerControl(spk, lambda: None, lambda: None, config_file=conf)
-    assert ctl.status()["eq"] == {"bass": 0, "mid": 0, "treble": 0}
-    ctl.set_eq({"bass": 4})
-    ctl.set_eq({"treble": 40})                  # clamped, and bass is kept
-    assert ctl.status()["eq"] == {"bass": 4, "mid": 0, "treble": 12}
+    assert not any(ctl.status()["eq"].values())
+    ctl.set_eq({"g125": 4})
+    ctl.set_eq({"g8k": 40})                     # clamped, and the 125 Hz band is kept
+    assert {k: v for k, v in ctl.status()["eq"].items() if v} == {"g125": 4, "g8k": 12}
     saved = json.loads(conf.read_text())
-    assert saved == {"speaker_mono": True, "speaker_eq": {"bass": 4, "mid": 0, "treble": 12}}
-    assert load(conf).speaker_eq == {"bass": 4, "mid": 0, "treble": 12}
+    want = {"g125": 4, "g8k": 12}
+    assert saved["speaker_mono"] is True and {k: v for k, v in saved["speaker_eq"].items() if v} == want
+    assert {k: v for k, v in load(conf).speaker_eq.items() if v} == want
 
 
 def test_switching_the_eq_doesnt_click() -> None:
@@ -98,7 +99,7 @@ def test_switching_the_eq_doesnt_click() -> None:
     eq = Equalizer(RATE, 2)
     out = []
     for i, start in enumerate(range(0, len(x), 1024)):
-        eq.set({"bass": 12, "treble": -12} if i % 2 else {})   # a big change every block
+        eq.set({"g125": 12, "g8k": -12} if i % 2 else {})   # a big change every block
         out.append(eq.process(x[start:start + 1024]))
     y = np.concatenate(out)
     # no step bigger than the sine itself makes (a click was 10x that)
@@ -115,8 +116,8 @@ def test_low_cut_rolls_off_the_deep_bass() -> None:
 
 def test_low_cut_leaves_room_for_the_bass_boost() -> None:
     # With the low cut the bass shelf peaks lower, so less overall level is given up.
-    boosted = Equalizer(RATE, 2, {"bass": 8})
-    with_cut = Equalizer(RATE, 2, {"bass": 8}, highpass=140)
+    boosted = Equalizer(RATE, 2, {"g62": 8})
+    with_cut = Equalizer(RATE, 2, {"g62": 8}, highpass=140)
     assert _level_db(with_cut, 3000) > _level_db(boosted, 3000) + 1
     assert _level_db(with_cut, 60) < _level_db(boosted, 60) - 10
 
@@ -128,8 +129,47 @@ def test_control_sets_and_saves_the_low_cut(tmp_path: Path) -> None:
     ctl = SpeakerControl(spk, lambda: None, lambda: None, config_file=conf)
     assert ctl.status()["highpass_hz"] == 0
     ctl.set_highpass(140)
-    ctl.set_eq({"bass": 3})                          # the EQ keeps the low cut
+    ctl.set_eq({"g125": 3})                          # the EQ keeps the low cut
     assert spk.eq.highpass == 140 and ctl.status()["highpass_hz"] == 140
     assert load(conf).speaker_highpass_hz == 140
     ctl.set_highpass(0)
-    assert load(conf).speaker_highpass_hz == 0 and spk.eq._spectrum is not None   # bass 3 still on
+    assert load(conf).speaker_highpass_hz == 0 and spk.eq._spectrum is not None   # the 125 Hz band is still on
+
+
+def test_graphic_bands_each_move_their_own_octave() -> None:
+    for band, hz in (("g125", 125), ("g1k", 1000), ("g4k", 4000), ("g16k", 16000)):
+        eq = Equalizer(RATE, 2, {band: -9})
+        assert abs(_level_db(eq, hz) + 9) < 1.5, band   # the 2047-tap filter blurs the lowest bands a little
+        assert abs(_level_db(eq, hz / 8)) < 1.5, band      # three octaves away: barely touched
+        assert abs(_level_db(eq, min(hz * 8, 20000))) < 1.5, band
+
+
+def test_neighbouring_bands_add_up_and_keep_headroom() -> None:
+    eq = Equalizer(RATE, 2, {"g500": 6, "g1k": 6})
+    gain = _level_db(eq, 1000)
+    assert gain <= 0.5                                   # never louder than the input
+    assert abs(_level_db(eq, 100) - gain) > 6            # the 1 kHz boost is still 12 dB above 100 Hz
+
+
+def test_old_bass_mid_treble_settings_still_load_as_graphic_bands() -> None:
+    from sleepradiopi.audio.eq import clamp
+    got = clamp({"bass": 8, "mid": -1, "treble": 5})          # a radio's saved EQ before the graphic one
+    assert got["g31"] == got["g62"] == got["g125"] == 8 and got["g250"] == 4
+    assert got["g500"] == got["g1k"] == got["g2k"] == -1
+    assert got["g4k"] == 2 and got["g8k"] == got["g16k"] == 5
+    assert clamp({"bass": 4, "g62": -2})["g62"] == -2           # a graphic band in the same dict wins
+    assert not any(clamp({}).values())
+
+
+def test_music_presets_are_ten_bands_within_range_and_distinct() -> None:
+    import re
+    html = (Path(__file__).parent.parent / "sleepradiopi" / "web" / "desktop.html").read_text()
+    block = html[html.index("const EQ_PRESETS = {"):html.index("const eqPresetBands")]
+    rows = re.findall(r'"([^"]+)":\s*\[([^\]]+)\]', block)
+    assert {n for n, _ in rows} >= {"Flat", "Speech", "Rock", "Pop", "Classical", "Jazz", "Acoustic", "Dance"}
+    seen = set()
+    for name, vals in rows:
+        v = tuple(int(x) for x in vals.split(","))
+        assert len(v) == 10 and all(-12 <= x <= 12 for x in v), name
+        assert v not in seen, name
+        seen.add(v)
