@@ -508,9 +508,10 @@ def _service_menu(station: Station, control, presets, config_file: Path, ready=l
     can_speak = station._has_voice or plain_voice.available()
 
     def make_fixed_lines():
-        """Once per voice: the fixed lines, made while the show plays; then the
-        status report, remade whenever what it says changes (checked every
-        10 minutes), so pressing 3 answers at once."""
+        """Once per voice: the fixed lines, made while the show plays. (The status report is NOT made ahead: it
+        says the free space, which wobbles on a nearly full card, so it was being remade every 10 minutes --
+        loading a 156 MB voice on a 512 MB radio, which ran it out of memory and cut the sound. It is made when
+        asked for: quick() says it in the plain voice at once.)"""
         while not ready():
             time.sleep(10)
         for text in service_mod.FIXED:
@@ -521,14 +522,6 @@ def _service_menu(station: Station, control, presets, config_file: Path, ready=l
                 except Exception:
                     logging.exception("service menu: couldn't make a line")
                     return
-        while True:
-            try:
-                text = f"{status()} {menu_ref[0].rollback_ask if menu_ref else service_mod.ROLLBACK_ASK}"
-                if not kept(text).is_file():
-                    render(text)
-            except Exception:
-                logging.exception("service menu: couldn't make the status report")
-            time.sleep(600)
 
     def say(text):
         logging.info("service menu: %s", text)
