@@ -1050,7 +1050,12 @@ The cards:
   holds until the kind of audio changes; then that kind's sound takes over, and
   a kind with no sound gives your own sound back. The sound a kind gives is
   never written to the card, so a restart begins with your own. Automatic can be
-  turned off (`eq_auto`); the sounds are `eq_by_type`. (`SpeakerControl.set_audio_type`,
+  **A button can carry a sound of its own**: in a button's window each step has a *Sound* menu
+  (Automatic by default). Pressing it plays the thing and gives it that sound, even between two radio
+  stations, and it beats the kind's sound; Automatic goes back to the kind's rule. Day and night
+  buttons have their own, so night can be quieter. It's saved in the preset (`"sound"`) and works for
+  anything that plays (station, theme, album, track, playlist, programme, podcast, book); anything
+  played from the page uses the kind's sound. Turned off with `eq_auto`; the kind sounds are `eq_by_type`. (`SpeakerControl.set_audio_type`,
   `Station.audio_type_of`.)
 - **Knob switch** — works like the real knob: tap to pause/play, hold 3 s for
   what's on *Hold the knob*. If the radio was paused it speaks, then pauses again.

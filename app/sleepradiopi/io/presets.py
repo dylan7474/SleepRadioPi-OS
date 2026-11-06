@@ -58,6 +58,7 @@ from sleepradiopi.config.settings import save_setting
 from sleepradiopi.io.announce import Clip, beep, pip, pips
 from sleepradiopi.playback import radio as radio_mod
 from sleepradiopi.playback.audiobooks import KEPT
+from sleepradiopi.playback.ebooks import EBOOK
 
 log = logging.getLogger(__name__)
 
@@ -95,8 +96,38 @@ def _text(value, name: str, required: bool = False) -> str | None:
     return value.strip() or None
 
 
+SOUND_KINDS = {"show", "radio", "album", "track", "playlist", "programme", "podcast", "book"}   # what can carry a sound
+
+
 def validate(preset) -> dict | None:
-    """One button's preset (None = empty) -> a clean copy; ValueError if wrong."""
+    """One button's preset (None = empty) -> a clean copy; ValueError if wrong.
+    A preset that plays something may carry "sound": the name of the EQ sound it gets
+    (a ready-made one or one saved on the page); without it the kind of audio decides."""
+    out = _validate(preset)
+    if out is not None and out["kind"] in SOUND_KINDS:
+        sound = preset.get("sound")
+        if sound is not None:
+            if not isinstance(sound, str) or len(sound) > 40:
+                raise ValueError("a button's sound is a name (up to 40 letters)")
+            sound = " ".join(sound.split())
+            if sound:
+                out["sound"] = sound
+    return out
+
+
+def audio_type_of(preset: dict) -> str:
+    """The kind of audio a preset plays (audio/eq.py AUDIO_TYPES), as Station.audio_type_of will see it."""
+    kind = preset["kind"]
+    if kind == "radio":
+        return "radio"
+    if kind == "podcast":
+        return "podcast"
+    if kind == "book":
+        return "ebook" if str(preset.get("key", "")).startswith(EBOOK) else "audiobook"
+    return "music"
+
+
+def _validate(preset) -> dict | None:
     if preset is None:
         return None
     if not isinstance(preset, dict):
@@ -992,6 +1023,12 @@ class Presets:
             self.station.play_episode(preset["show"], start=preset.get("start"))   # on through, in order
         else:
             raise ValueError("not something to play")
+        setter = getattr(self.control, "set_button_sound", None)
+        if setter is not None and preset["kind"] in SOUND_KINDS:
+            try:
+                setter(preset.get("sound"), audio_type_of(preset))
+            except Exception:
+                log.exception("button sound")
 
     # --- actions and speech -------------------------------------------------------------------
 

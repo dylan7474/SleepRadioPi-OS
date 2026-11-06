@@ -338,7 +338,8 @@ class SpeakerControl:
         self.eq_auto = True
         self.eq_by_type = dict(DEFAULT_BY_TYPE)
         self.audio_type: str | None = None
-        self._auto_on = False             # the sound now playing came from eq_by_type
+        self._explicit = False            # ... because a button asked for it (set_button_sound)
+        self._auto_on = False             # the sound now playing came from eq_by_type or a button
         self._baseline: dict | None = None   # the listener's own sound, to go back to
         self._mine = threading.local()    # (this thread is applying a type's sound, not the listener changing it)
         self._join, self._leave = join, leave
@@ -490,6 +491,7 @@ class SpeakerControl:
         until the kind of audio changes."""
         if not getattr(self._mine, "on", False):
             self._auto_on = False
+            self._explicit = False
             self._baseline = None
 
     def set_eq_auto(self, on: bool, by_type: dict | None = None) -> None:
@@ -533,6 +535,7 @@ class SpeakerControl:
         if kind == self.audio_type:
             return
         self.audio_type = kind
+        self._explicit = False            # a new kind: the kind's rule, not the last button's sound
         if not self.eq_auto or self.speaker.eq is None or kind is None:
             return
         name = self.eq_by_type.get(kind)
@@ -555,6 +558,32 @@ class SpeakerControl:
                 log.info("sound for %s: back to yours", kind)
         except Exception:
             log.exception("sound for %s", kind)
+
+    def set_button_sound(self, name: str | None, kind: str) -> None:
+        """A button was pressed: name is the sound on it (None = Automatic), kind what it plays.
+        A sound on the button is heard now, whatever was on, and the kind's rule steps aside until the
+        kind changes or the listener changes it. A button with none goes back to the kind's rule if the
+        last button's sound was on. Never saved."""
+        if not self.eq_auto or self.speaker.eq is None:
+            return
+        sound = self.find_sound(name) if name else None
+        if name and sound is None:
+            log.info("button sound: no sound called %r", name)
+        if sound is not None:
+            if not self._auto_on:
+                self._baseline = self._now_sound()
+            self._mine.on = True
+            try:
+                self.try_sound(sound)
+            finally:
+                self._mine.on = False
+            self._auto_on = True
+            self._explicit = True
+            self.audio_type = kind
+            log.info("button sound: %s", sound["name"])
+        elif self._explicit:
+            self.audio_type = None
+            self.set_audio_type(kind)
 
     def _save_setting(self, key: str, value) -> None:
         """Set one key in the config file, keeping the others as they are."""

@@ -320,6 +320,8 @@
   .row b { font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .row b small { color: var(--dim); font-weight: 400; margin-left: 6px; }
   .row .len { color: var(--dim); font-variant-numeric: tabular-nums; }
+  .row.hasSound { grid-template-columns: 28px minmax(0, 1fr) auto auto auto; }
+  .row .stepsound { max-width: 150px; font-size: 12px; }
   .row .play { border: 0; background: none; color: var(--amber); width: 26px; height: 22px; border-radius: 5px; }
   .row .play:hover { background: #f2b24a22; }
 
@@ -1742,9 +1744,23 @@ function buttonView(o, box) {
     li.dataset.drop = "bstep"; li.dataset.target = o.id; li.dataset.k = k;
     const p = el("button", { className: "play", type: "button", textContent: "▶", title: o.slot ? "Try it now" : "Play this one now" });
     p.onclick = () => tryIt(k); p.onpointerdown = e => e.stopPropagation();
+    const canSound = S?.speaker?.eq && ["show", "radio", "album", "track", "playlist", "programme", "podcast", "book"].includes(st.preset.kind);
+    let snd = null;
+    if (canSound) {      // the EQ sound this step gets when it plays; Automatic leaves it to the kind of audio (Settings -> Speakers)
+      snd = el("select", { className: "stepsound", "aria-label": "Sound for " + st.label, title: "The speaker sound this gets when it plays" },
+        el("option", { value: "", textContent: "Sound: automatic", selected: !st.preset.sound }),
+        ...Object.keys(EQ_PRESETS).map(n => el("option", { value: n, textContent: n, selected: n === st.preset.sound })),
+        ...soundList().map(x => x.name).filter(n => !(n in EQ_PRESETS)).map(n => el("option", { value: n, textContent: n + " (saved)", selected: n === st.preset.sound })));
+      if (st.preset.sound && ![...snd.options].some(op => op.selected && op.value === st.preset.sound))
+        snd.append(el("option", { value: st.preset.sound, textContent: st.preset.sound + " (missing)", selected: true }));
+      snd.onpointerdown = e => e.stopPropagation(); snd.onkeydown = e => e.stopPropagation();
+      snd.onchange = () => saveBox(o, stepsOf(b).map((x, j) => j === k ? (({ sound, ...rest }) => snd.value ? { ...rest, sound: snd.value } : rest)(x) : x));
+      if (!SOUNDS.loaded) loadFolder(SOUNDS).then(() => { if (W.some(w => w.id === o.id)) drawDesk(); }).catch(() => {});
+    }
+    if (snd) li.classList.add("hasSound");
     li.append(el("span", { className: "n", textContent: o.slot ? "" : k + 1 }),
               el("b", { className: st.playing ? "playing" : "" }, st.label, el("small", { textContent: KIND[it.kind] + (st.playing ? (S?.speaker?.playing === false ? " · tuned, paused" : " · playing") : "") })),
-              el("span", { className: "len", textContent: st.named === false ? "pips, until its name is made" : "", title: st.named === false ? "The radio is making its spoken name; until then it gives pips" : "" }), p);
+              el("span", { className: "len", textContent: st.named === false ? "pips, until its name is made" : "", title: st.named === false ? "The radio is making its spoken name; until then it gives pips" : "" }), ...(snd ? [snd] : []), p);
     li._src = src;
     li.addEventListener("pointerdown", e => press(e, li, src));
     ul.append(li);

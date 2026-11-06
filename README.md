@@ -1186,9 +1186,9 @@ v1.9.7).
 What's left to do (everything else described here is built and running):
 
 - **More ways to pick the sound** — the sound by kind of audio is built (music, radio, audiobook,
-  ebook, podcast). Still open: a different sound by day and by night (the day/night button sets could
-  carry one), a sound per music genre (needs reliable tags), and the same on the cathedral radio (its
-  selector would pick the sound in EQ mode).
+  ebook, podcast). Buttons can carry a sound too (day and night sets each have their own). Still open: a sound per
+  music genre (needs reliable tags), a Music/Talk tag for stations played from the page, and the same on
+  the cathedral radio (its selector would pick the sound).
 - **Ebooks on a Pi Zero 2 W** — the Flite voices need 20-25 MB, so a Zero may be able to read
   ebooks after all (the neural voice ran it out of memory). Still to do: read a long book for an hour
   on a Zero with the station running (watch free memory, the first sound, the gaps), then let

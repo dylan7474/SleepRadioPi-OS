@@ -142,3 +142,75 @@ def test_validate_by_type() -> None:
     with pytest.raises(BadSettings):
         _check("eq_by_type", {"karaoke": "Rock"})
     assert _check("eq_by_type", {"music": "Rock"})["music"] == "Rock"
+
+
+# --- a sound on a button ---------------------------------------------------------------------
+
+from sleepradiopi.io import presets as presets_mod
+
+
+def test_a_preset_can_carry_a_sound_only_if_it_plays_something() -> None:
+    p = presets_mod.validate({"kind": "radio", "name": "R4", "url": "http://x/y", "sound": "  Speech "})
+    assert p["sound"] == "Speech"
+    assert "sound" not in presets_mod.validate({"kind": "radio", "name": "R4", "url": "http://x/y"})
+    assert "sound" not in presets_mod.validate({"kind": "radio", "name": "R4", "url": "http://x/y", "sound": ""})
+    assert "sound" not in presets_mod.validate({"kind": "action", "action": "time", "sound": "Speech"})
+    with pytest.raises(ValueError):
+        presets_mod.validate({"kind": "radio", "name": "R4", "url": "http://x/y", "sound": 5})
+    assert presets_mod.audio_type_of({"kind": "book", "key": EBOOK + "a"}) == "ebook"
+    assert presets_mod.audio_type_of({"kind": "book", "key": "a"}) == "audiobook"
+    assert presets_mod.audio_type_of({"kind": "show"}) == "music"
+
+
+def test_a_buttons_sound_beats_the_kind_and_holds_over_the_station_starting(tmp_path: Path) -> None:
+    ctl, conf = _rig(tmp_path)
+    ctl.set_eq(eq_mod.preset_bands("Warm"))
+    saved = conf.read_text()
+    ctl.set_audio_type("radio")                                   # radio: keep mine
+    ctl.set_button_sound("Rock", "radio")                         # a button: Rock on this radio station
+    assert _gains(ctl) == _bands("Rock")
+    ctl.set_audio_type("radio")                                   # (the station starting: same kind)
+    assert _gains(ctl) == _bands("Rock")
+    ctl.set_button_sound("Speech", "radio")                       # another radio button: its own sound
+    assert _gains(ctl) == _bands("Speech")
+    ctl.set_button_sound(None, "radio")                           # a radio button with none: back to the kind (mine)
+    assert _gains(ctl) == _bands("Warm")
+    assert conf.read_text() == saved
+
+
+def test_a_button_with_no_sound_changes_nothing_if_none_was_on(tmp_path: Path) -> None:
+    ctl, conf = _rig(tmp_path)
+    ctl.set_audio_type("music")
+    ctl.set_eq(eq_mod.preset_bands("Jazz"))                       # a hand pick
+    ctl.set_button_sound(None, "music")
+    assert _gains(ctl) == _bands("Jazz")
+
+
+def test_a_hand_pick_beats_a_buttons_sound_until_the_next_press(tmp_path: Path) -> None:
+    ctl, conf = _rig(tmp_path)
+    ctl.set_button_sound("Rock", "music")
+    ctl.set_eq(eq_mod.preset_bands("Late night"), save=False)
+    ctl.set_audio_type("music")
+    assert _gains(ctl) == _bands("Late night")
+    ctl.set_button_sound(None, "music")                           # (the hand pick is now theirs: stays)
+    assert _gains(ctl) == _bands("Late night")
+    ctl.set_button_sound("Rock", "music")
+    assert _gains(ctl) == _bands("Rock")
+
+
+def test_a_buttons_sound_ends_when_the_kind_changes_and_the_kind_rule_returns(tmp_path: Path) -> None:
+    ctl, conf = _rig(tmp_path)
+    ctl.set_eq(eq_mod.preset_bands("Warm"))
+    ctl.set_button_sound("Rock", "music")
+    ctl.set_audio_type("audiobook")                               # a book from the page: Speech by kind
+    assert _gains(ctl) == _bands("Speech")
+    ctl.set_audio_type("music")                                   # music from the page: none -> mine
+    assert _gains(ctl) == _bands("Warm")
+
+
+def test_button_sounds_are_off_with_automatic_off(tmp_path: Path) -> None:
+    ctl, conf = _rig(tmp_path)
+    ctl.set_eq(eq_mod.preset_bands("Warm"))
+    ctl.set_eq_auto(False)
+    ctl.set_button_sound("Rock", "music")
+    assert _gains(ctl) == _bands("Warm")
