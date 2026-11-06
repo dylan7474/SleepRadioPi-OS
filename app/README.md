@@ -313,6 +313,8 @@ Most of these are set from the web page; the rest are in the config file.
 | `speaker_mono` | `false` | Both speakers play left + right mixed (the web stream stays stereo). |
 | `speaker_eq` | flat | `{"g31", "g62", "g125", "g250", "g500", "g1k", "g2k", "g4k", "g8k", "g16k"}` in dB, -12 to 12 (any may be missing). The old `bass` / `mid` / `treble` of earlier versions still load: each sets the bands it used to cover. |
 | `eq_slots` | `["Speech", "Warm", "Rock", "Late night"]` | The sound each of buttons 1 to 4 picks in EQ mode (hold button 1 for 3 s): a ready-made sound's name, one saved in `speaker_sounds`, or `null`. |
+| `eq_auto` | `true` | Give each kind of audio its own sound (see *Sound by what's playing*). |
+| `eq_by_type` | `{"music": null, "radio": null, "audiobook": "Speech", "ebook": "Speech", "podcast": "Speech"}` | The sound each kind of audio gets: a ready-made sound's name, one saved in `speaker_sounds`, or `null` (keep yours). |
 | `noise_on`, `noise_kind`, `noise_mix` | off, `pink`, `50` | The noise layer: on/off, its colour, and the balance with the programme (0 programme only, 50 both full, 100 noise only). |
 | `speaker_highpass_hz` | `0` | Low cut for the speaker (~140 with the case's bass port); 0 = off. |
 | `knob_step` | `2` | Volume steps per click (1 dB) in the knob's Normal mode. |
@@ -1038,6 +1040,18 @@ The cards:
   stay stuck in it. Setting the sounds is on the page only (`eq_slots`; the
   case has no hold-to-store). The service menu chord (1 + 4) ends it too.
   (`io/presets.py`: `eq_enter`, `eq_press`, `eq_leave`.)
+- **Sound by what's playing** — each kind of audio can have its own sound
+  (Settings → Speakers → *Sound by what's playing*): music (the theme, albums,
+  playlists), internet radio, audiobooks, ebooks read aloud and podcasts. Any
+  ready-made sound or one you saved; default Speech for audiobooks, ebooks and
+  podcasts, and *Keep my sound* for music and radio. It's chosen when the kind
+  of audio changes, not per track, so DJ lines in the middle of music never flip
+  it. A sound you pick yourself (the sliders, a preset, EQ mode on the buttons)
+  holds until the kind of audio changes; then that kind's sound takes over, and
+  a kind with no sound gives your own sound back. The sound a kind gives is
+  never written to the card, so a restart begins with your own. Automatic can be
+  turned off (`eq_auto`); the sounds are `eq_by_type`. (`SpeakerControl.set_audio_type`,
+  `Station.audio_type_of`.)
 - **Knob switch** — works like the real knob: tap to pause/play, hold 3 s for
   what's on *Hold the knob*. If the radio was paused it speaks, then pauses again.
   **Open the service menu** does what holding buttons 1 and 4 for 5 s does;
@@ -2006,7 +2020,7 @@ everything but the page itself and the login needs the session cookie
 | `POST /api/login` / `/api/logout` | `{"password"}` → a session cookie (401 if wrong) / forget it |
 | `POST /api/password` | `{"password": "..." \| null}` — set, change or remove (needs to be logged in) |
 | `GET /api/status` | What's on air, next, history, the library, the voice, the speaker (volume, playing, mono, EQ, low cut, sleep timer, test sound), artist/list playing |
-| `POST /api/speaker` | Any of `{"volume": 0-100}`, `{"step": n}`, `{"knob_mode": "auto" \| "fine" \| "normal" \| "coarse"}`, `{"pause": true \| false \| "toggle"}`, `{"sleep": minutes}` (0 = off), `{"mono": bool}`, `{"noise": true \| false \| "toggle", "noise_kind": "pink", "noise_mix": 0-100}`, `{"eq": {"bass": dB, ...}}`, `{"eq_slots": [name \| null, x4]}` (the sound each button picks in EQ mode), `{"highpass": Hz}`, `{"test": "bass" \| "sweep" \| "pink" \| "left" \| "right" \| "sides" \| "phase" \| "tune" \| "stop"}` |
+| `POST /api/speaker` | Any of `{"volume": 0-100}`, `{"step": n}`, `{"knob_mode": "auto" \| "fine" \| "normal" \| "coarse"}`, `{"pause": true \| false \| "toggle"}`, `{"sleep": minutes}` (0 = off), `{"mono": bool}`, `{"noise": true \| false \| "toggle", "noise_kind": "pink", "noise_mix": 0-100}`, `{"eq": {"bass": dB, ...}}`, `{"eq_slots": [name \| null, x4]}` (the sound each button picks in EQ mode), `{"eq_auto": bool, "eq_by_type": {"music" \| "radio" \| "audiobook" \| "ebook" \| "podcast": name \| null}}` (the sound each kind of audio gets), `{"highpass": Hz}`, `{"test": "bass" \| "sweep" \| "pink" \| "left" \| "right" \| "sides" \| "phase" \| "tune" \| "stop"}` |
 | `POST /api/stream` | `{"enabled": bool}` — listening in a browser on/off (saved as `web_stream`) |
 | `POST /api/knob` | `{"press": "short" \| "long" \| "service"}` — the knob's switch; `service` opens the service menu (then `/api/buttons/press` answers it; `GET /api/buttons` has its `service` state); `{"press": "turn", "clicks": n}`: pressed and turned |
 | `GET` / `POST /api/identity` | `{"hardware", "station_name"}` — which radio this is and its name; a POST saves and restarts the station |

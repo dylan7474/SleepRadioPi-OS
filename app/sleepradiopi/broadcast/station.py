@@ -331,6 +331,7 @@ class Station:
         # Called with the source (or None) when it changes, so it can be saved
         # and resumed after a restart (an album at the track it was on).
         self.on_source: Callable[[dict | None], None] | None = None
+        self.on_audio_type: Callable[[str], None] | None = None     # told when the kind of audio changes (see audio_type)
         # Audiobooks: their own folder; each book's place kept on the writable storage.
         self.books = BookLibrary(cfg.get("audiobooks_folder") or Path("/nonexistent"), cfg.get("book_cache"))
         self.book_positions = Positions(cfg.get("book_positions"))
@@ -431,6 +432,7 @@ class Station:
             while not self._stop.is_set():
                 self._switch.clear()
                 source = self._source
+                self._tell_audio_type(source)
                 if source is None:
                     back, self._retune = back or self._retune, False
                     self._run_music(back)
@@ -759,6 +761,29 @@ class Station:
             src["url"] = url                 # (in place: the stream playing it reconnects to it, see _run_radio)
         self._notify_source()
         return True
+
+    @staticmethod
+    def audio_type_of(source: dict | None) -> str:
+        """The kind of audio a source is, for the sound that goes with it (audio/eq.py AUDIO_TYPES):
+        music (the show, albums, playlists), radio, audiobook (also On demand files that keep their
+        place), ebook (read aloud) or podcast."""
+        if source is None:
+            return "music"
+        kind = source.get("kind", "radio")
+        if kind == "book":
+            return "ebook" if str(source.get("key", "")).startswith(ebooks_mod.EBOOK) else "audiobook"
+        return {"episode": "podcast", "radio": "radio"}.get(kind, "music")
+
+    @property
+    def audio_type(self) -> str:
+        return self.audio_type_of(self._source)
+
+    def _tell_audio_type(self, source: dict | None) -> None:
+        if self.on_audio_type is not None:
+            try:
+                self.on_audio_type(self.audio_type_of(source))
+            except Exception:
+                log.exception("couldn't give the audio its sound")
 
     def _notify_source(self) -> None:
         if self.on_source is not None:

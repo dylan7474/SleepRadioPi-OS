@@ -27,7 +27,7 @@ from sleepradiopi import wifi
 from sleepradiopi.updater import Updates
 from sleepradiopi.voices import STANDARD_NAME, VoiceJobs
 from sleepradiopi.io.announce import Announcer, beep
-from sleepradiopi.audio.eq import validate_slots
+from sleepradiopi.audio.eq import validate_by_type, validate_slots
 from sleepradiopi.io.knob import Chord, Knob, Twist
 from sleepradiopi.io import service as service_mod
 from sleepradiopi.io import presets as presets_mod
@@ -734,6 +734,12 @@ def main() -> None:
             control.eq_slots = validate_slots(settings.eq_slots)      # the buttons in EQ mode
         except ValueError as e:                                       # a hand-edited config: keep the defaults
             logging.getLogger(__name__).warning("eq_slots ignored: %s", e)
+        try:
+            control.eq_by_type = validate_by_type(settings.eq_by_type)     # the sound by what's playing
+        except ValueError as e:
+            logging.getLogger(__name__).warning("eq_by_type ignored: %s", e)
+        control.eq_auto = bool(settings.eq_auto)
+        station.on_audio_type = control.set_audio_type
         # A long press says the radio's address (for finding the web page away from home).
         # Made only once the show is playing music, so it never holds up the opening.
         on_air = lambda: bool(tts and tts.ready) and station.music_started

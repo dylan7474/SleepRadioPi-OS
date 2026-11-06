@@ -109,6 +109,8 @@ class Settings:
     noise_mix: int = 50               # balance: 0 programme only, 50 both full, 100 noise only
     ondemand_keep: list = field(default_factory=list)    # On demand files and folders that remember their place, like a book
     eq_slots: list = field(default_factory=lambda: ["Speech", "Warm", "Rock", "Late night"])   # the 4 buttons in EQ mode: sound names
+    eq_auto: bool = True              # pick the sound by what's playing (eq_by_type); a sound you pick by hand holds until the kind of audio changes
+    eq_by_type: dict = field(default_factory=lambda: {"music": None, "radio": None, "audiobook": "Speech", "ebook": "Speech", "podcast": "Speech"})   # kind of audio -> sound name (None = keep yours)
     speaker_sounds: list = field(default_factory=list)   # saved speaker set-ups: [{"name", "eq", "highpass", "mono"}]
     speaker_highpass_hz: int = 0      # low cut for the speaker (~140 with the box's bass port); 0 = off
     knob_step: int = 2                # volume change per click of the knob ("normal")

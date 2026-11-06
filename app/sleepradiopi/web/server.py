@@ -1531,6 +1531,8 @@ def make_handler(station: Station, output: Mp3Output, speaker=None,
                     speaker.set_eq(settings["speaker_eq"])
                 if "eq_slots" in settings:
                     speaker.set_eq_slots(settings["eq_slots"])
+                if changed & {"eq_by_type", "eq_auto"}:
+                    speaker.set_eq_auto(settings.get("eq_auto", speaker.eq_auto), settings.get("eq_by_type"))
                 if "speaker_highpass_hz" in settings:
                     speaker.set_highpass(settings["speaker_highpass_hz"])
                 if volume is not None:
@@ -2511,6 +2513,8 @@ def make_handler(station: Station, output: Mp3Output, speaker=None,
             {"mono": true | false} or
             {"eq": {"g31": dB ... "g16k": dB}} (any of the ten bands; the old
             "bass"/"mid"/"treble" are still accepted and set the bands they covered),
+            {"eq_auto": true | false, "eq_by_type": {"music"|"radio"|"audiobook"|"ebook"|"podcast": sound name|null}}
+            (the sound each kind of audio gets; a sound picked by hand holds until the kind changes),
             {"eq_slots": [name|null x4]} (the sound each button picks in EQ mode: a ready-made
             one or one saved with /api/speaker/sounds),
             {"highpass": Hz} (the low cut; 0 = off) or
@@ -2540,6 +2544,11 @@ def make_handler(station: Station, output: Mp3Output, speaker=None,
                     speaker.set_eq_slots(body["eq_slots"])
                     if presets is not None:
                         presets.bake()         # have the new names said ahead
+                if "eq_auto" in body or "eq_by_type" in body:    # the sound by what's playing
+                    on = body.get("eq_auto", speaker.eq_auto)
+                    if not isinstance(on, bool):
+                        raise ValueError("eq_auto must be true or false")
+                    speaker.set_eq_auto(on, body.get("eq_by_type"))
                 if "highpass" in body:
                     hz = body["highpass"]
                     if isinstance(hz, bool) or not isinstance(hz, (int, float)) or not 0 <= hz <= 300:

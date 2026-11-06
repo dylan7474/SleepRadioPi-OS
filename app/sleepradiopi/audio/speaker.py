@@ -23,7 +23,7 @@ from pathlib import Path
 import numpy as np
 
 from sleepradiopi.audio import pcm
-from sleepradiopi.audio.eq import DEFAULT_SLOTS, PRESETS, Equalizer, clamp, expand, preset_bands, validate_slots
+from sleepradiopi.audio.eq import DEFAULT_BY_TYPE, DEFAULT_SLOTS, PRESETS, Equalizer, clamp, expand, preset_bands, validate_by_type, validate_slots
 from sleepradiopi.audio.noise import KINDS as NOISE_KINDS, NoiseGen
 from sleepradiopi.audio.testsignal import KINDS, SIDE_WORDS, TestSignal
 from sleepradiopi.config.atomic import write_atomic
@@ -333,6 +333,14 @@ class SpeakerControl:
         self.knob_step = max(1, int(knob_step))
         self._knob_last = (0.0, 0)       # (when, direction) of the last click
         self.eq_slots = list(DEFAULT_SLOTS)   # the four buttons in EQ mode (main sets it from the settings)
+        # The sound by what's playing (main sets these from the settings): a sound picked by hand holds
+        # until the kind of audio changes; then that kind's sound (if it has one) takes over.
+        self.eq_auto = True
+        self.eq_by_type = dict(DEFAULT_BY_TYPE)
+        self.audio_type: str | None = None
+        self._auto_on = False             # the sound now playing came from eq_by_type
+        self._baseline: dict | None = None   # the listener's own sound, to go back to
+        self._mine = threading.local()    # (this thread is applying a type's sound, not the listener changing it)
         self._join, self._leave = join, leave
         self.state_file = state_file
         self.config_file = config_file
@@ -389,6 +397,7 @@ class SpeakerControl:
     def set_mono(self, mono: bool, save: bool = True) -> None:
         """Switch between mono and stereo at once, and save it in the config.
         Other keys in the file are kept as they are."""
+        self._by_hand()
         with self._lock:
             if self.speaker.mono == mono:
                 return
@@ -404,6 +413,7 @@ class SpeakerControl:
         eq = self.speaker.eq
         if eq is None:
             return
+        self._by_hand()
         with self._lock:
             new = clamp({**eq.gains, **expand(gains)})
             if new == eq.gains:
@@ -419,6 +429,7 @@ class SpeakerControl:
         eq = self.speaker.eq
         if eq is None:
             return
+        self._by_hand()
         with self._lock:
             before = eq.highpass
             eq.set(eq.gains, hz)
@@ -471,6 +482,79 @@ class SpeakerControl:
         self._save_setting("speaker_eq", dict(eq.gains))
         self._save_setting("speaker_highpass_hz", eq.highpass)
         self._save_setting("speaker_mono", bool(self.speaker.mono))
+
+    # --- the sound by what's playing ----------------------------------------------------------
+
+    def _by_hand(self) -> None:
+        """The listener changed the sound (page, knob-side EQ mode...): it's theirs now, and holds
+        until the kind of audio changes."""
+        if not getattr(self._mine, "on", False):
+            self._auto_on = False
+            self._baseline = None
+
+    def set_eq_auto(self, on: bool, by_type: dict | None = None) -> None:
+        """Switch the sound-by-audio-type on or off and/or change which sound each type has. Saved.
+        Takes effect at once for what's playing now."""
+        if by_type is not None:
+            self.eq_by_type = validate_by_type(by_type)
+            self._save_setting("eq_by_type", self.eq_by_type)
+        if on != self.eq_auto:
+            self.eq_auto = bool(on)
+            self._save_setting("eq_auto", self.eq_auto)
+        current, self.audio_type = self.audio_type, None
+        if not self.eq_auto:
+            self._leave_auto()
+        elif current is not None:
+            self.set_audio_type(current)
+            return
+        self.audio_type = current
+
+    def _leave_auto(self) -> None:
+        """Back to the listener's own sound if a type's sound is on."""
+        if self._auto_on and self._baseline is not None:
+            self._mine.on = True
+            try:
+                self.try_sound(self._baseline)
+            finally:
+                self._mine.on = False
+        self._auto_on = False
+        self._baseline = None
+
+    def _now_sound(self) -> dict | None:
+        eq = self.speaker.eq
+        if eq is None:
+            return None
+        return {"eq": dict(eq.gains), "highpass": eq.highpass, "mono": bool(self.speaker.mono)}
+
+    def set_audio_type(self, kind: str | None) -> None:
+        """What's playing changed kind (music, radio, audiobook, ebook, podcast): give it its sound.
+        A kind with no sound gets the listener's own back if a type's sound was on. Heard at once and
+        never saved (the config keeps the listener's own sound, so a restart starts with it)."""
+        if kind == self.audio_type:
+            return
+        self.audio_type = kind
+        if not self.eq_auto or self.speaker.eq is None or kind is None:
+            return
+        name = self.eq_by_type.get(kind)
+        sound = self.find_sound(name) if name else None
+        if name and sound is None:
+            log.info("sound for %s: no sound called %r", kind, name)
+        try:
+            if sound is not None:
+                if not self._auto_on:
+                    self._baseline = self._now_sound()
+                self._mine.on = True
+                try:
+                    self.try_sound(sound)
+                finally:
+                    self._mine.on = False
+                self._auto_on = True
+                log.info("sound for %s: %s", kind, sound["name"])
+            elif self._auto_on:
+                self._leave_auto()
+                log.info("sound for %s: back to yours", kind)
+        except Exception:
+            log.exception("sound for %s", kind)
 
     def _save_setting(self, key: str, value) -> None:
         """Set one key in the config file, keeping the others as they are."""
@@ -667,5 +751,9 @@ class SpeakerControl:
         if self.speaker.eq is not None:
             status["eq"] = dict(self.speaker.eq.gains)
             status["eq_slots"] = list(self.eq_slots)
+            status["eq_auto"] = self.eq_auto
+            status["eq_by_type"] = dict(self.eq_by_type)
+            status["audio_type"] = self.audio_type
+            status["eq_from_type"] = self._auto_on
             status["highpass_hz"] = self.speaker.eq.highpass
         return status

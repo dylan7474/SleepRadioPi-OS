@@ -72,6 +72,27 @@ SLOTS = 4                                   # the box's buttons
 DEFAULT_SLOTS = ["Speech", "Warm", "Rock", "Late night"]
 
 
+# What is playing, for the sound that goes with it (station.audio_type). A type with no sound
+# ("Keep my sound") leaves the EQ as the listener has it.
+AUDIO_TYPES = {"music": "Music (the theme, albums, playlists)", "radio": "Internet radio",
+               "audiobook": "Audiobooks", "ebook": "Ebooks read aloud", "podcast": "Podcasts"}
+DEFAULT_BY_TYPE = {"music": None, "radio": None, "audiobook": "Speech", "ebook": "Speech", "podcast": "Speech"}
+
+
+def validate_by_type(value) -> dict:
+    """The sound each kind of audio gets: {type: a sound's name or None}. Types left out are None."""
+    if not isinstance(value, dict):
+        raise ValueError("send an object of audio type -> sound name (or null)")
+    out = {t: None for t in AUDIO_TYPES}
+    for t, name in value.items():
+        if t not in AUDIO_TYPES:
+            raise ValueError(f"no such kind of audio: {t!r} (one of {', '.join(AUDIO_TYPES)})")
+        if name is not None and (not isinstance(name, str) or len(name) > 40):
+            raise ValueError("a sound is a name (up to 40 letters), or null")
+        out[t] = (" ".join(name.split()) or None) if isinstance(name, str) else None
+    return out
+
+
 def preset_bands(name: str) -> dict:
     return dict(zip(GRAPHIC, PRESETS[name]))
 

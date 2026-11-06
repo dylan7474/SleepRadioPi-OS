@@ -4484,6 +4484,18 @@ const UI = {
                act(() => api("/api/speaker", { test: "tune" }));
              })),
         help("Ten bands an octave apart; the speakers are small, so 31 and 62 Hz do little. A boost lowers the overall level a little so it never distorts. With the bass port back panel, set the low cut to 140 Hz.")),
+      ...(sp.eq_by_type ? [grp("Sound by what's playing",
+        srow("Automatic", seg([[true, "On"], [false, "Off"]], sp.eq_auto, v => act(() => api("/api/speaker", { eq_auto: v })))),
+        ...[["music", "Music"], ["radio", "Internet radio"], ["audiobook", "Audiobooks"], ["ebook", "Ebooks read aloud"], ["podcast", "Podcasts"]].map(([kind, label]) => {
+          const cur = sp.eq_by_type[kind];
+          const pick = el("select", { id: "eqtype-" + kind, "aria-label": label, disabled: !sp.eq_auto },
+            el("option", { value: "", textContent: "Keep my sound", selected: !cur }),
+            ...Object.keys(EQ_PRESETS).map(n => el("option", { value: n, textContent: n, selected: n === cur })),
+            ...sp.saved.filter(n => !(n in EQ_PRESETS)).map(n => el("option", { value: n, textContent: n + " (saved)", selected: n === cur })));
+          pick.onchange = () => act(() => api("/api/speaker", { eq_by_type: { ...sp.eq_by_type, [kind]: pick.value || null } }));
+          return srow(label + (sp.audio_type === kind ? " (playing now)" : ""), pick);
+        }),
+        help("Each kind of audio can have its own sound, picked when it starts: spoken word on Speech, music on Rock, and so on. “Keep my sound” leaves the EQ as you have it. A sound you pick yourself (the sliders, a preset, or EQ mode on the buttons) stays until the kind of audio changes; then that kind's sound takes over, and a kind with none gives you your own sound back. The sound a kind gives is not saved, so after a restart the radio starts with yours." + (sp.eq_from_type ? " Right now the sound is the one for what's playing." : "")))] : []),
       ...(sp.selector || !sp.eq_slots ? [] : [grp("Buttons in EQ mode",
         help("Hold button 1 for 3 seconds: the radio says “EQ mode”, and buttons 1 to 4 pick the sound set here (said by name, heard on whatever's playing). Hold button 1 for 3 seconds again to keep it and go back to normal." + (sp.eqMode ? " EQ mode is on now." : "")),
         ...sp.eq_slots.map((cur, i) => {
