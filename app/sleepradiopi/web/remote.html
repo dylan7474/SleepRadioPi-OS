@@ -202,15 +202,27 @@
   .mvol b { font: 700 clamp(28px, 5vh, 52px)/1 var(--display); font-variant-numeric: tabular-nums; }
   .mseek { flex: none; transition: opacity .3s; }
   .mseek.off { opacity: .35; }
-  .mseek.off #pos { cursor: default; }
   .mtimes { display: flex; justify-content: space-between; padding: 0 4px; font: 700 clamp(15px, 2.2vh, 20px) var(--display); color: #6b6558; font-variant-numeric: tabular-nums; }
-  #pos { -webkit-appearance: none; appearance: none; width: 100%; height: clamp(40px, 5.4vh, 54px); background: transparent; margin: 0; }
-  #pos::-webkit-slider-runnable-track { height: 12px; border-radius: 6px; background: #d8d2c4; box-shadow: inset 0 1px 2px #0003; }
-  #pos::-moz-range-track { height: 12px; border-radius: 6px; background: #d8d2c4; }
-  #pos::-moz-range-progress { height: 12px; border-radius: 6px; background: #c98522; }
-  #pos::-webkit-slider-thumb { -webkit-appearance: none; width: 36px; height: 36px; margin-top: -12px; border-radius: 50%;
-                               background: radial-gradient(circle at 40% 35%, #fff, #c8ccd2 70%, #9aa0a8); box-shadow: 0 3px 6px #0005; border: 0; }
-  #pos::-moz-range-thumb { width: 32px; height: 32px; border-radius: 50%; border: 0; background: radial-gradient(circle at 40% 35%, #fff, #c8ccd2 70%, #9aa0a8); box-shadow: 0 3px 6px #0005; }
+  /* the position bar: our own, so a drag keeps hold of the finger (touch-action: none: the phone never takes it for a
+     page scroll and cancels it), with a taller touch area, a time bubble while dragging, and -1 / +1 minute keys */
+  .scrub { position: relative; width: 100%; height: clamp(48px, 6.4vh, 60px); touch-action: none; -webkit-user-select: none; user-select: none;
+           -webkit-touch-callout: none; -webkit-tap-highlight-color: transparent; cursor: pointer; outline: none; }
+  .scrub .track { position: absolute; left: 0; right: 0; top: 50%; height: 12px; margin-top: -6px; border-radius: 6px; background: #d8d2c4; box-shadow: inset 0 1px 2px #0003; overflow: hidden; }
+  .scrub .fill { height: 100%; width: 0; background: #c98522; }
+  .scrub .thumb { position: absolute; top: 50%; left: 0; width: 36px; height: 36px; margin: -18px 0 0 -18px; border-radius: 50%;
+                  background: radial-gradient(circle at 40% 35%, #fff, #c8ccd2 70%, #9aa0a8); box-shadow: 0 3px 6px #0005; transition: transform .12s; }
+  .scrub.drag .thumb { transform: scale(1.25); }
+  .scrub:focus-visible .thumb { box-shadow: 0 0 0 3px #c98522, 0 3px 6px #0005; }
+  .scrub .bubble { position: absolute; bottom: 100%; left: 0; transform: translateX(-50%); padding: 4px 10px; border-radius: 10px; white-space: nowrap;
+                   font: 700 18px var(--display); font-variant-numeric: tabular-nums; background: #2b2a26; color: #fff; box-shadow: 0 3px 8px #0005; pointer-events: none; }
+  .scrub .bubble small { font-size: 12px; font-weight: 600; margin-left: 6px; opacity: .75; }
+  .mseek.off .scrub { cursor: default; }
+  .mtimes { align-items: center; gap: 6px; }
+  .mtimes .at { flex: 1; text-align: center; }
+  .mtimes .fine { flex: none; min-width: 64px; min-height: 40px; border: 0; border-radius: 12px; font: 700 14px var(--display); color: #4a463c;
+                  background: #0000000f; box-shadow: inset 0 1px 3px #0002; touch-action: manipulation; }
+  .mtimes .fine:active { background: #00000026; }
+  .mtimes .fine:disabled { opacity: .5; }
   /* night (dark): the same radio with the lights down -- a dark case, dark keys, the dial glowing low */
   :root[data-theme="dark"] .mcase { background: #232838; color: #ddd6c6; box-shadow: 0 22px 50px #000a, 0 0 0 1px #000, inset 0 -4px 0 #0005, inset 0 1px 0 #ffffff14; }
   :root[data-theme="dark"] .mcase .handle { border-color: #3a4158; }
@@ -221,10 +233,10 @@
   :root[data-theme="dark"] .pkey.tog[aria-pressed="true"] { box-shadow: 0 0 0 4px #c98522, 0 3px 6px #000a; color: #f2b24a; }
   :root[data-theme="dark"] .mvol { background: #00000033; box-shadow: inset 0 1px 3px #0006; color: #ddd6c6; }
   :root[data-theme="dark"] .mvol span, :root[data-theme="dark"] .mtimes { color: #8e8878; }
-  :root[data-theme="dark"] #pos::-webkit-slider-runnable-track { background: #151925; box-shadow: inset 0 1px 2px #000a; }
-  :root[data-theme="dark"] #pos::-moz-range-track { background: #151925; }
-  :root[data-theme="dark"] #pos::-webkit-slider-thumb { background: radial-gradient(circle at 40% 35%, #6a7290, #3a4160 70%, #2a2f45); box-shadow: 0 3px 6px #000a; }
-  :root[data-theme="dark"] #pos::-moz-range-thumb { background: radial-gradient(circle at 40% 35%, #6a7290, #3a4160 70%, #2a2f45); }
+  :root[data-theme="dark"] .scrub .track { background: #151925; box-shadow: inset 0 1px 2px #000a; }
+  :root[data-theme="dark"] .scrub .thumb { background: radial-gradient(circle at 40% 35%, #6a7290, #3a4160 70%, #2a2f45); box-shadow: 0 3px 6px #000a; }
+  :root[data-theme="dark"] .scrub .bubble { background: #ddd6c6; color: #1a1003; }
+  :root[data-theme="dark"] .mtimes .fine { color: #ddd6c6; background: #00000033; box-shadow: inset 0 1px 3px #0006; }
   @media (max-height: 600px) { .mtimes { display: none; } }
   @media (max-height: 660px) { .mnow .handle { display: none; } .mnow { margin-top: 0; } .mremote { padding-top: 1vh; } }
   @media (max-width: 380px) { .menubar .bars { display: none; } .menubar { gap: 8px; } }
@@ -265,8 +277,12 @@
   <section class="mcase mctl">
     <div class="mbody">
       <div class="mseek" id="seekRow">
-        <input type="range" id="pos" min="0" max="1000" value="0" aria-label="Position">
-        <div class="mtimes"><span id="posNow">0:00</span><span id="posLen">0:00</span></div>
+        <div class="scrub" id="pos" role="slider" tabindex="0" aria-label="Position" aria-valuemin="0" aria-valuemax="1000" aria-valuenow="0">
+          <div class="track"><div class="fill"></div></div><div class="thumb"></div><div class="bubble" hidden></div>
+        </div>
+        <div class="mtimes"><button type="button" class="fine" id="back1" aria-label="Back one minute">−1 min</button>
+          <span class="at"><span id="posNow">0:00</span> / <span id="posLen">0:00</span></span>
+          <button type="button" class="fine" id="fwd1" aria-label="On one minute">+1 min</button></div>
       </div>
       <div class="mrow3">
         <button class="pkey" type="button" id="prev" aria-label="Back: tap for the start or the one before, hold to rewind"><svg viewBox="0 0 24 24" fill="currentColor"><rect x="3" y="5" width="2.6" height="14" rx="1"/><path d="M13 5v14L6 12z"/><path d="M21 5v14l-7-7z"/></svg></button>
@@ -395,11 +411,15 @@ function render() {
   const p = s.position, can = !!(p && p.total_ms);
   CAN_SEEK = can;
   // always there (the layout never shifts): greyed out when there's nothing to move through
-  $("seekRow").classList.toggle("off", !can); $("pos").disabled = !can;
-  if (!can) { $("pos").value = 0; $("posNow").textContent = "–:––"; $("posLen").textContent = "–:––"; }
+  $("seekRow").classList.toggle("off", !can); scrub.disabled = !can; $("back1").disabled = $("fwd1").disabled = !can;
+  if (!can) { scrub.show(0, 1000); $("posNow").textContent = "–:––"; $("posLen").textContent = "–:––"; }
   else if (!seeking) {
-    $("pos").max = p.total_ms; $("pos").value = Math.min(p.pos_ms, p.total_ms);
-    $("posNow").textContent = mmss(p.pos_ms); $("posLen").textContent = mmss(p.total_ms);
+    // just after a seek the radio may still answer with the old place (a book seeks slowly, and an ebook lands
+    // up to a sentence early): keep showing where it was sent until it catches up, for a few seconds at most
+    let at = Math.min(p.pos_ms, p.total_ms);
+    if (hold && Date.now() < hold.until && Math.abs(at - hold.to) > 60000) at = hold.to; else hold = null;
+    scrub.show(at, p.total_ms);
+    $("posNow").textContent = mmss(at); $("posLen").textContent = mmss(p.total_ms);
   }
   $("needle").style.left = (can ? 4 + 92 * Math.min(1, p.pos_ms / p.total_ms) : 20) + "%";
   $("prev").disabled = !s.can_previous && !can; $("skip").disabled = !s.can_skip && !can;
@@ -434,8 +454,62 @@ function sleepTick() {
 setInterval(sleepTick, 1000);
 $("sleepBtn").onclick = () => act("/api/speaker", { sleep: SLEEP_ON ? 0 : 30 }, () => toast(SLEEP_ON ? "Sleep timer off." : "Sleep in 30 minutes."));
 $("noiseBtn").onclick = () => act("/api/speaker", { noise: !NOISE_ON });
-$("pos").oninput = e => { seeking = true; $("posNow").textContent = mmss(+e.target.value); };
-$("pos").onchange = async e => { await act("/api/seek", { to_ms: +e.target.value }); seeking = false; };
+// The position bar. A press, drag and let go: the radio is asked once, on letting go. While the finger is down the
+// bar and a time bubble follow it; if the touch is taken away (a call, a system gesture) nothing is sent. `seeking`
+// (which stops the radio's answers moving the bar) is always cleared again, whatever happens.
+let hold = null;                       // {to, until}: where the last seek was sent, for render()
+const scrub = (() => {
+  const el = $("pos"), fill = el.querySelector(".fill"), thumb = el.querySelector(".thumb"), bubble = el.querySelector(".bubble");
+  const PAD = 18;                       // (half the thumb: the ends of the bar are where its centre can go)
+  const api_ = { max: 1000, value: 0, disabled: true };
+  const x = v => PAD + (el.clientWidth - 2 * PAD) * (api_.max ? v / api_.max : 0);
+  const draw = () => {
+    const px = x(api_.value); thumb.style.left = px + "px"; fill.style.width = px + "px";
+    el.setAttribute("aria-valuemax", api_.max); el.setAttribute("aria-valuenow", Math.round(api_.value));
+    el.setAttribute("aria-valuetext", mmss(api_.value) + " of " + mmss(api_.max));
+  };
+  api_.show = (v, max) => { api_.max = max || 1000; api_.value = Math.max(0, Math.min(api_.max, v)); draw(); };
+  Object.defineProperty(api_, "disabled", { get: () => el.getAttribute("aria-disabled") === "true", set: v => el.setAttribute("aria-disabled", String(!!v)) });
+  api_.disabled = true;
+  let drag = null;
+  const at = e => { const r = el.getBoundingClientRect(); return Math.max(0, Math.min(1, (e.clientX - r.left - PAD) / Math.max(1, r.width - 2 * PAD))) * api_.max; };
+  const move = e => {
+    const v = at(e); api_.value = v; draw();
+    $("posNow").textContent = mmss(v);
+    const d = v - drag.from;
+    bubble.hidden = false; bubble.style.left = Math.max(46, Math.min(el.clientWidth - 46, x(v))) + "px";
+    bubble.textContent = mmss(v); const sm = document.createElement("small");
+    sm.textContent = (d < 0 ? "−" : "+") + mmss(Math.abs(d)); bubble.append(sm);
+  };
+  const end = () => { drag = null; seeking = false; el.classList.remove("drag"); bubble.hidden = true; };
+  el.addEventListener("pointerdown", e => {
+    if (api_.disabled || drag || (e.pointerType === "mouse" && e.button !== 0)) return;
+    e.preventDefault(); el.focus({ preventScroll: true }); el.setPointerCapture?.(e.pointerId);
+    drag = { id: e.pointerId, from: api_.value }; seeking = true; el.classList.add("drag"); move(e);
+  });
+  el.addEventListener("pointermove", e => { if (drag && e.pointerId === drag.id) move(e); });
+  el.addEventListener("pointerup", async e => {
+    if (!drag || e.pointerId !== drag.id) return;
+    const to = Math.round(api_.value); draw(); end();       // (where the finger last was: a lifted finger's own position can't be trusted)
+    if (!Number.isFinite(to)) { poll(); return; }
+    $("posNow").textContent = mmss(to); hold = { to, until: Date.now() + 6000 };
+    seeking = true; try { await act("/api/seek", { to_ms: to }); } finally { seeking = false; }
+  });
+  const cancel = e => { if (drag && e.pointerId === drag.id) { end(); poll(); } };      // (nothing sent)
+  el.addEventListener("pointercancel", cancel);
+  el.addEventListener("lostpointercapture", cancel);
+  el.addEventListener("contextmenu", e => e.preventDefault());
+  // keys: arrows 30 s, page up / down 5 minutes
+  el.addEventListener("keydown", e => {
+    const d = { ArrowLeft: -30000, ArrowDown: -30000, ArrowRight: 30000, ArrowUp: 30000, PageDown: -300000, PageUp: 300000 }[e.key];
+    if (d == null || api_.disabled) return;
+    e.preventDefault(); act("/api/seek", { delta_ms: d });
+  });
+  window.addEventListener("resize", draw);
+  return api_;
+})();
+$("back1").onclick = () => act("/api/seek", { delta_ms: -60000 });
+$("fwd1").onclick = () => act("/api/seek", { delta_ms: 60000 });
 // CD-player keys: a tap goes to the next (or back: the start, or the one before); held, it winds
 // through the song, book or podcast -- faster the longer it's held -- until let go.
 const HOLD_MS = 450;
@@ -445,7 +519,7 @@ function cdKey(btn, dir, tap) {
     while (!stop) {
       const step = (steps < 6 ? 5000 : steps < 14 ? 15000 : 30000) * dir;
       steps++;
-      try { const d = await api("/api/seek", { delta_ms: step }); if (d.position) { $("pos").value = d.position.pos_ms; $("posNow").textContent = mmss(d.position.pos_ms); } } catch { break; }
+      try { const d = await api("/api/seek", { delta_ms: step }); if (d.position) { scrub.show(d.position.pos_ms, d.position.total_ms); $("posNow").textContent = mmss(d.position.pos_ms); } } catch { break; }
       await new Promise(r => setTimeout(r, 250));
     }
   };

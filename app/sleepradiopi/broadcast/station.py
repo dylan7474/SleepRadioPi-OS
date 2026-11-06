@@ -2256,7 +2256,8 @@ class Station:
         if src is not None and src["kind"] in ("book", "episode"):
             st = self.book_seek(delta_ms=delta_ms, to_ms=to_ms)
             total = st.get("total_ms", 0)
-            if src["kind"] == "episode":
+            if src["kind"] == "episode" or str(src.get("key", "")).startswith(ebooks_mod.EBOOK):
+                # (streamed, or read aloud from text: no file to take a snatch of while paused)
                 return {"pos_ms": st["pos_ms"], "total_ms": total, "path": None, "ms": st["pos_ms"]}
             book = self._book(src["key"])
             i, into = book.at(st["pos_ms"])

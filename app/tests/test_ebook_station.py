@@ -106,6 +106,9 @@ def test_it_can_be_listed_sought_and_paused_where_it_is(st):
     target = book.ebook.units[10].start_ms + 3
     got = st.book_seek(to_ms=target)
     assert got["pos_ms"] == target and got["chapters"] == 2
+    moved = st.seek(delta_ms=-1000)                         # (what /api/seek calls: an ebook has no file, so path is None)
+    assert moved["path"] is None and moved["pos_ms"] == target - 1000 and moved["total_ms"] == book.total_ms
+    st.book_seek(to_ms=target)
     time.sleep(0.3)
     st._listeners = 0                                       # paused
     time.sleep(0.5)
