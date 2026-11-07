@@ -89,4 +89,6 @@ def test_quick_runs_pick_the_test_files_for_what_changed() -> None:
     assert "tests/test_conditions.py" in got and "tests/test_quakes.py" in got      # (the by-name one, and one that imports it)
     assert "tests/test_page_ids.py" in mod.tests_for(["sleepradiopi/web/desktop.html"])
     assert mod.tests_for(["tests/test_health.py"]) == ["tests/test_health.py"]
+    web = mod.tests_for(["sleepradiopi/web/routes_outside.py"])                                 # (an area of the web handler: the tests that name its API paths)
+    assert "tests/test_health.py" in web and "tests/test_lightning.py" in web and len(web) < 20
     assert mod.tests_for(["README.md", "sleepradiopi/__init__.py"]) == []           # (docs and the package marker: nothing to run)

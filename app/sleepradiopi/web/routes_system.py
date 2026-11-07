@@ -1,7 +1,7 @@
-"""System: settings and backups, identity, lamps, power, Wi-Fi, voices, the Mp3 stream.
+"""System: settings and backups, identity, lamps, power, Wi-Fi, voices, updates and the Mp3 stream.
 
-Methods of the web handler, moved out of server.py as they were: build(ctx) unpacks what they use of what
-make_handler holds and returns them for make_handler to attach to Handler.
+Methods of the web handler and its routes, moved out of server.py as they were: build(ctx) unpacks what they use of
+what make_handler holds and returns them (and the GET / POST branches of this area) for make_handler to attach.
 """
 
 from __future__ import annotations
@@ -29,7 +29,7 @@ log = logging.getLogger("sleepradiopi.web.server")
 
 
 def build(ctx):
-    backups, config_file, lamps, output, presets, speaker, station, voice_jobs = ctx.backups, ctx.config_file, ctx.lamps, ctx.output, ctx.presets, ctx.speaker, ctx.station, ctx.voice_jobs
+    backups, config_file, lamps, output, presets, speaker, station, updates, voice_jobs = ctx.backups, ctx.config_file, ctx.lamps, ctx.output, ctx.presets, ctx.speaker, ctx.station, ctx.updates, ctx.voice_jobs
 
     def _remote(self) -> None:
         """/api/remote: {"token": "..."} keeps a tunnel token (never sent back), {"enabled": true|false} switches
@@ -396,4 +396,101 @@ def build(ctx):
             output.remove_client(q)
             station.listener_left()
 
-    return {"_remote": _remote, "_power": _power, "_save_settings": _save_settings, "_send_settings": _send_settings, "_load_settings": _load_settings, "_backups": _backups, "_apply_settings": _apply_settings, "_set_lamps": _set_lamps, "_identity": _identity, "_set_identity": _set_identity, "_wifi_state": _wifi_state, "_wifi": _wifi, "_voices_state": _voices_state, "_upload_voice": _upload_voice, "_set_stream": _set_stream, "_stream": _stream}
+    def get(self, path) -> bool:
+        if path == "/api/settings" and config_file is not None:
+            self._save_settings()
+            return True
+        if path == "/api/backups" and config_file is not None:
+            self._send(json.dumps({"backups": backups.list(), "max": backup.MAX_KEPT}).encode(), "application/json")
+            return True
+        if path == "/api/backups/file" and config_file is not None:
+            try:
+                name = backups.name(parse_qs(urlparse(self.path).query).get("name", [""])[0])
+                self._send_settings(backups.read(name), f"{name}.json")
+            except backup.BadSettings as e:
+                self._error(str(e))
+            return True
+        if path == "/api/identity":
+            self._send(json.dumps(self._identity()).encode(), "application/json")
+            return True
+        if path == "/api/lamps":
+            self._send(json.dumps(lamps.settings() if lamps is not None else {"needle": False, "glow": False}).encode(),
+                       "application/json")
+            return True
+        if path == "/api/voices":
+            self._send(json.dumps(self._voices_state()).encode(), "application/json")
+            return True
+        if path == "/api/wifi":
+            self._send(json.dumps(self._wifi_state()).encode(), "application/json")
+            return True
+        if path == "/api/update" and updates is not None:
+            self._send(json.dumps(updates.status()).encode(), "application/json")
+            return True
+        if path == "/api/remote":
+            self._send(json.dumps(remote.status()).encode(), "application/json")
+            return True
+        return False
+
+    def post(self, path) -> bool:
+        if path == "/api/power":
+            self._power()
+            return True
+        if path == "/api/remote":
+            self._remote()
+            return True
+        if path == "/api/settings" and config_file is not None:
+            self._load_settings()
+            return True
+        if path.startswith("/api/backups/") and config_file is not None:
+            self._backups(path.rsplit("/", 1)[1])
+            return True
+        if path == "/api/identity":
+            self._set_identity()
+            return True
+        if path in ("/api/lamps", "/api/lamps/sweep") and lamps is not None:
+            self._set_lamps(path.endswith("sweep"))
+            return True
+        if path == "/api/stream":
+            self._set_stream()
+            return True
+        if path == "/api/voices/standard" and voice_jobs is not None:
+            self._body()
+            try:
+                voice_jobs.download_standard()
+            except ValueError as e:
+                self._error(str(e))
+                return True
+            self._send(json.dumps(self._voices_state()).encode(), "application/json")
+            return True
+        if path == "/api/voices/upload" and voice_jobs is not None:
+            self._upload_voice()
+            return True
+        if path.startswith("/api/wifi/"):
+            self._wifi(path.rsplit("/", 1)[1])
+            return True
+        if path == "/api/update/file" and updates is not None:
+            # the release's .update file as the body: for a radio with no internet
+            length = int(self.headers.get("Content-Length", 0) or 0)
+            try:
+                reply = updates.take_file(length, self.rfile.read)
+            except (ValueError, OSError) as e:
+                if length and not self.rfile.closed:
+                    self.close_connection = True       # don't read a big body we've refused
+                self._error(str(e) or e.__class__.__name__)
+                return True
+            log.info("update file from %s", self.address_string())
+            self._send(json.dumps(reply).encode(), "application/json")
+            return True
+        if path in ("/api/update/check", "/api/update/install") and updates is not None:
+            self._body()
+            try:
+                reply = updates.check() if path.endswith("check") else updates.install()
+            except (ValueError, OSError) as e:          # incl. no network / GitHub errors
+                self._error(str(e) or e.__class__.__name__)
+                return True
+            self._send(json.dumps(reply).encode(), "application/json")
+            return True
+        return False
+
+    return {"methods": {"_remote": _remote, "_power": _power, "_save_settings": _save_settings, "_send_settings": _send_settings, "_load_settings": _load_settings, "_backups": _backups, "_apply_settings": _apply_settings, "_set_lamps": _set_lamps, "_identity": _identity, "_set_identity": _set_identity, "_wifi_state": _wifi_state, "_wifi": _wifi, "_voices_state": _voices_state, "_upload_voice": _upload_voice, "_set_stream": _set_stream, "_stream": _stream},
+            "get": get, "post": post}

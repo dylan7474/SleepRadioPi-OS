@@ -2134,7 +2134,15 @@ sleepradiopi/
   audio/       PCM via ffmpeg (decode, loudness, voice EQ); speaker.py (aplay, volume, mono, sleep fade),
                eq.py (3-band EQ + low cut), testsignal.py (sweeps, noise, left/right, phase check)
   tts/         sherpa-onnx voice, run in a recycled worker process
-  web/         MP3 stream, the web page (page.html) and the JSON API (server.py)
+  web/         MP3 stream, the desktop and phone pages (desktop.html, remote.html) and the JSON API:
+               server.py (the handler: pages, login, status, and the dispatch), then the API by area,
+               each a routes_*.py whose build(ctx) gives the handler its helper methods and its GET and
+               POST routes -- routes_system (settings, backups, Wi-Fi, voices, updates), routes_controls
+               (transport, knob, speaker, buttons), routes_messages (the DJ, messages, birthdays),
+               routes_library (albums, playlists, programmes, books, podcasts, media), routes_receivers
+               (stations, receivers, the ham readers, rooms), routes_outside (conditions, lightning,
+               quakes, warnings, QRZ, health); common.py holds the limits they share. A new endpoint is
+               a branch in the area it belongs to: route conditions must not overlap
   config/      Settings (JSON), atomic file writes, settings backup (backup.py), the web password
                (auth.py), "is the clock right?"
   io/          knob.py (rotary encoder + push switch, short/long press, two-button chord), announce.py

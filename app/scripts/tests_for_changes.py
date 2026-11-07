@@ -40,6 +40,14 @@ def tests_for(names: list[str]) -> list[str]:
         if p.parts[:1] == ("tests",) and p.name.startswith("test_") and (APP / p).exists():
             found.add(APP / p)
         elif p.suffix == ".py" and p.parts[:1] == ("sleepradiopi",) and p.stem != "__init__":
+            if p.parts[:2] == ("sleepradiopi", "web") and p.stem.startswith("routes_"):
+                # an area of the web handler: reached through server.make_handler (nearly every test builds that), so the
+                # tests that name one of this area's own API paths ("/api/dj", ...)
+                apis = set(re.findall(r'"(/api/[A-Za-z0-9_/-]+?)/?"', (APP / p).read_text()))
+                for t in tests:
+                    if any(a in texts[t] for a in apis) or re.search(rf"\b{re.escape(p.stem)}\b", imports(texts[t])):
+                        found.add(t)
+                continue
             for t in tests:
                 if t.stem == f"test_{p.stem}" or re.search(rf"\b{re.escape(p.stem)}\b", imports(texts[t])):
                     found.add(t)

@@ -1,7 +1,7 @@
 """The library: albums, playlists, programmes, books, podcasts, downloads, the media folders, profiles.
 
-Methods of the web handler, moved out of server.py as they were: build(ctx) unpacks what they use of what
-make_handler holds and returns them for make_handler to attach to Handler.
+Methods of the web handler and its routes, moved out of server.py as they were: build(ctx) unpacks what they use of
+what make_handler holds and returns them (and the GET / POST branches of this area) for make_handler to attach.
 """
 
 from __future__ import annotations
@@ -13,6 +13,8 @@ from sleepradiopi import media as media_mod
 from sleepradiopi.broadcast import playlists as playlists_mod
 from sleepradiopi.broadcast import profiles
 from sleepradiopi.config.settings import save_setting
+from sleepradiopi.playback import gutenberg as gb_mod
+from sleepradiopi.playback import librivox as lv_mod
 from sleepradiopi.playback import podcasts as pod_mod
 from urllib.parse import parse_qs
 from urllib.parse import urlparse
@@ -439,4 +441,242 @@ def build(ctx):
             return
         self._send(json.dumps({**reply, "requests": station.requests()}).encode(), "application/json")
 
-    return {"_selection": _selection, "_save_selection": _save_selection, "_station": _station, "_playlists": _playlists, "_programmes": _programmes, "_programmes_post": _programmes_post, "_save_playlists": _save_playlists, "_set_playlists": _set_playlists, "_rename_playlist": _rename_playlist, "_playlist_add": _playlist_add, "_playlist_play": _playlist_play, "_album_args": _album_args, "_album": _album, "_media": _media, "_download": _download, "_podcasts": _podcasts, "_book_download": _book_download, "_ebook_download": _ebook_download, "_books": _books, "_play_album": _play_album, "_set_profiles": _set_profiles, "_rename_profile": _rename_profile, "_request": _request}
+    def get(self, path) -> bool:
+        if path == "/api/search":
+            q = parse_qs(urlparse(self.path).query).get("q", [""])[0][:200]
+            self._send(json.dumps({"results": station.search(q), "albums": station.search_albums(q)}).encode(),
+                       "application/json")
+            return True
+        if path == "/api/playlists":
+            self._send(json.dumps(self._playlists()).encode(), "application/json")
+            return True
+        if path == "/api/programmes" and getattr(station, "scheduler", None) is not None:
+            self._send(json.dumps(self._programmes()).encode(), "application/json")
+            return True
+        if path == "/api/albums":
+            self._send(json.dumps({"albums": station.all_albums()}).encode(), "application/json")
+            return True
+        if path == "/api/browse":
+            qs = parse_qs(urlparse(self.path).query)
+            try:
+                reply = station.browse(qs.get("root", ["music"])[0], qs.get("path", [""])[0][:1000])
+            except ValueError as e:
+                self._error(str(e))
+                return True
+            self._send(json.dumps(reply).encode(), "application/json")
+            return True
+        if path == "/api/artists":
+            self._send(json.dumps({**self._selection(), "artists": station.artists(),
+                                   "profiles": station.profiles}).encode(), "application/json")
+            return True
+        if path == "/api/media" and media is not None:
+            q = parse_qs(urlparse(self.path).query)
+            try:
+                listing = media.list(q.get("kind", ["music"])[0], q.get("path", [""])[0])
+            except media_mod.MediaError as e:
+                self._error(str(e))
+                return True
+            self._send(json.dumps(listing).encode(), "application/json")
+            return True
+        if path == "/api/media/tree" and media is not None:
+            # Every file under a folder with its size, in one answer: for syncing a whole library (media.tree()).
+            q = parse_qs(urlparse(self.path).query)
+            try:
+                listing = media.tree(q.get("kind", ["music"])[0], q.get("path", [""])[0])
+            except media_mod.MediaError as e:
+                self._error(str(e))
+                return True
+            self._send(json.dumps(listing).encode(), "application/json")
+            return True
+        if path == "/api/media/download" and media is not None:
+            self._download()
+            return True
+        if path == "/api/books":
+            self._send(json.dumps({"books": station.book_list(), "scanning": station.books_scanning}).encode(),
+                       "application/json")
+            return True
+        if path == "/api/tags" and media is not None:     # a track's tags, or those of every track in a folder
+            qs = parse_qs(urlparse(self.path).query)
+            try:
+                reply = media.tags(qs.get("kind", ["music"])[0], qs.get("path", [""])[0][:1000])
+            except media_mod.MediaError as e:
+                self._error(str(e))
+                return True
+            self._send(json.dumps(reply).encode(), "application/json")
+            return True
+        if path == "/api/ondemand/kept":      # the On demand things that remember their place
+            self._send(json.dumps({"kept": station.kept_list()}).encode(), "application/json")
+            return True
+        if path == "/api/podcasts":
+            self._send(json.dumps({"shows": station.podcasts.summary()}).encode(), "application/json")
+            return True
+        if path == "/api/podcasts/search":
+            q = parse_qs(urlparse(self.path).query).get("q", [""])[0][:200]
+            try:
+                found = pod_mod.search(q)
+            except pod_mod.PodcastError as e:
+                self._error(str(e))
+                return True
+            self._send(json.dumps({"results": found}).encode(), "application/json")
+            return True
+        if path == "/api/ebooks":                 # the ebooks the voice can read (play one with /api/books/play {"key"})
+            self._send(json.dumps({"ebooks": station.ebook_list(), "can_read": station._has_voice and station.ebooks_on,
+                                   "enabled": station.ebooks_on}).encode(), "application/json")
+            return True
+        if path == "/api/librivox/download" and book_dl is not None:
+            self._send(json.dumps(book_dl.status()).encode(), "application/json")
+            return True
+        if path == "/api/ebooks/download" and ebook_dl is not None:
+            self._send(json.dumps(ebook_dl.status()).encode(), "application/json")
+            return True
+        if path == "/api/ebooks/search":
+            q = parse_qs(urlparse(self.path).query)
+            if not station.ebooks_on:
+                self._error(NO_EBOOKS)
+                return True
+            try:
+                found = gb_mod.search(q.get("q", [""])[0][:200], int(q.get("offset", ["0"])[0] or 0))
+            except (gb_mod.GutenbergError, ValueError) as e:
+                self._error(str(e))
+                return True
+            self._send(json.dumps({"results": found, "page": gb_mod.PAGE}).encode(), "application/json")
+            return True
+        if path == "/api/librivox/search":
+            q = parse_qs(urlparse(self.path).query)
+            try:
+                found = lv_mod.search(q.get("q", [""])[0][:200], q.get("kind", ["title"])[0],
+                                      int(q.get("offset", ["0"])[0] or 0))
+            except (lv_mod.LibriVoxError, ValueError) as e:
+                self._error(str(e))
+                return True
+            self._send(json.dumps({"results": found}).encode(), "application/json")
+            return True
+        if path == "/api/podcasts/episodes":
+            q = parse_qs(urlparse(self.path).query)
+            sid = q.get("id", [""])[0]
+            if station.podcasts.show(sid) is None:
+                self._error("that podcast isn't followed")
+                return True
+            note = ""
+            if q.get("refresh", ["0"])[0] == "1":
+                try:
+                    station.podcasts.refresh(sid)
+                except pod_mod.PodcastError as e:
+                    note = str(e)
+            show = station.podcasts.show(sid)
+            self._send(json.dumps({"show": {**show, "serial": lv_mod.is_book(show["feed_url"])}, "episodes": station.podcasts.episodes(sid),
+                                   "note": note}).encode(), "application/json")
+            return True
+        return False
+
+    def post(self, path) -> bool:
+        if path == "/api/playlists":
+            self._set_playlists()
+            return True
+        if path == "/api/programmes/mode" and getattr(station, "scheduler", None) is not None:
+            try:
+                on = self._body()["on"]
+                if not isinstance(on, bool):
+                    raise ValueError("on is true or false")
+            except (ValueError, TypeError, KeyError, AttributeError) as e:
+                self._error(str(e) if isinstance(e, ValueError) else "send {\"on\": true | false}")
+                return True
+            station.scheduler.set_quiet(on)
+            if config_file is not None:
+                save_setting(config_file, "programme_mode", on)
+            self._send(json.dumps(self._programmes()).encode(), "application/json")
+            return True
+        if path in ("/api/programmes", "/api/programmes/play", "/api/programmes/stop") \
+                and getattr(station, "scheduler", None) is not None:
+            self._programmes_post(path)
+            return True
+        if path == "/api/playlists/rename":
+            self._rename_playlist()
+            return True
+        if path == "/api/playlists/add":
+            self._playlist_add()
+            return True
+        if path == "/api/playlists/play":
+            self._playlist_play()
+            return True
+        if path == "/api/playlists/stop":
+            self.rfile.read(int(self.headers.get("Content-Length", 0)))
+            self._send(json.dumps({"stopped": station.stop_playlist(), **self._playlists()}).encode(),
+                       "application/json")
+            return True
+        if path == "/api/station":
+            self._station()
+            return True
+        if path == "/api/profiles":
+            self._set_profiles()
+            return True
+        if path == "/api/profiles/rename":
+            self._rename_profile()
+            return True
+        if path == "/api/request":
+            self._request()
+            return True
+        if path == "/api/album":
+            self._album()
+            return True
+        if path in ("/api/tags", "/api/tags/restore") and media is not None:
+            # {"kind", "path", "tags": {"title", "artist", "album", "track"}}: change one track's tags;
+            # restore {"kind", "path"}: as they were before they were first changed here
+            try:
+                body = self._body()
+                was = None                       # (a song in the music: its artist as the themes know it)
+                if body.get("kind") == "music" and isinstance(body.get("path"), str):
+                    was = station._by_ref("music", "/".join(p for p in body["path"].split("/") if p))
+                reply = media.untag(body.get("kind"), body.get("path")) if path.endswith("restore") \
+                    else media.retag(body.get("kind"), body.get("path"), body.get("tags"))
+            except media_mod.MediaError as e:
+                self._error(str(e))
+                return True
+            except (ValueError, TypeError, KeyError, AttributeError):
+                self._error("send {\"kind\", \"path\", \"tags\"}")
+                return True
+            # themes choose songs by the artist's name: one that played the old name plays the new one too
+            if was is not None and station.follow_artist(was.artist, reply["artist"]) and config_file is not None:
+                save_setting(config_file, "profiles", station.profiles)
+            self._send(json.dumps({"tags": reply}).encode(), "application/json")
+            return True
+        if path.startswith("/api/media/") and media is not None:
+            self._media(path.rsplit("/", 1)[1])
+            return True
+        if path == "/api/librivox/download" and book_dl is not None:
+            self._book_download()
+            return True
+        if path == "/api/ebooks/download" and ebook_dl is not None:
+            self._ebook_download()
+            return True
+        if path.startswith("/api/podcasts/") and path.rsplit("/", 1)[1] in ("follow", "unfollow", "play", "heard"):
+            self._podcasts(path.rsplit("/", 1)[1])
+            return True
+        if path == "/api/ondemand/keep":      # {"path", "keep": true | false}: remember its place, like a book
+            try:
+                body = self._body()
+                if not isinstance(body.get("keep"), bool):
+                    raise ValueError("keep is true or false")
+                paths = station.set_keep(body.get("path"), body["keep"])
+            except (ValueError, TypeError, KeyError, AttributeError) as e:
+                self._error(str(e) if isinstance(e, ValueError) else "send {\"path\", \"keep\": true | false}")
+                return True
+            if config_file is not None:
+                save_setting(config_file, "ondemand_keep", paths)
+            self._send(json.dumps({"kept": station.kept_list()}).encode(), "application/json")
+            return True
+        if path in ("/api/books/play", "/api/books/seek"):
+            self._books(path.rsplit("/", 1)[1])
+            return True
+        if path == "/api/album/play":
+            self._play_album()
+            return True
+        if path == "/api/album/stop":
+            self._body()
+            self._send(json.dumps({"stopped": station.stop_album(), "requests": station.requests()}).encode(),
+                       "application/json")
+            return True
+        return False
+
+    return {"methods": {"_selection": _selection, "_save_selection": _save_selection, "_station": _station, "_playlists": _playlists, "_programmes": _programmes, "_programmes_post": _programmes_post, "_save_playlists": _save_playlists, "_set_playlists": _set_playlists, "_rename_playlist": _rename_playlist, "_playlist_add": _playlist_add, "_playlist_play": _playlist_play, "_album_args": _album_args, "_album": _album, "_media": _media, "_download": _download, "_podcasts": _podcasts, "_book_download": _book_download, "_ebook_download": _ebook_download, "_books": _books, "_play_album": _play_album, "_set_profiles": _set_profiles, "_rename_profile": _rename_profile, "_request": _request},
+            "get": get, "post": post}

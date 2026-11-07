@@ -1,7 +1,7 @@
 """The DJ and what it says: messages, birthdays, the DJ's settings, and the on-demand 'hear it' lines.
 
-Methods of the web handler, moved out of server.py as they were: build(ctx) unpacks what they use of what
-make_handler holds and returns them for make_handler to attach to Handler.
+Methods of the web handler and its routes, moved out of server.py as they were: build(ctx) unpacks what they use of
+what make_handler holds and returns them (and the GET / POST branches of this area) for make_handler to attach.
 """
 
 from __future__ import annotations
@@ -178,4 +178,53 @@ def build(ctx):
         if restarting:
             server_mod._restart_soon(speaker)
 
-    return {"_birthdays_state": _birthdays_state, "_set_birthdays": _set_birthdays, "_hear_birthday": _hear_birthday, "_messages_state": _messages_state, "_set_messages": _set_messages, "_hear_message": _hear_message, "_dj_state": _dj_state, "_set_dj": _set_dj}
+    def get(self, path) -> bool:
+        if path == "/api/birthdays":
+            self._send(json.dumps(self._birthdays_state()).encode(), "application/json")
+            return True
+        if path == "/api/messages":
+            self._send(json.dumps(self._messages_state()).encode(), "application/json")
+            return True
+        if path == "/api/dj":
+            self._send(json.dumps(self._dj_state()).encode(), "application/json")
+            return True
+        return False
+
+    def post(self, path) -> bool:
+        if path == "/api/birthdays":
+            self._set_birthdays()
+            return True
+        if path == "/api/messages":
+            self._set_messages()
+            return True
+        if path in ("/api/messages/away", "/api/messages/away/look"):
+            # {"url", "every_min"}: the document the messages from away are kept in (broadcast/away.py), and how
+            # often it's looked at; saved. /look: fetch it now. Either way the answer waits for the fetch.
+            try:
+                if path.endswith("/look"):
+                    self._body()
+                else:
+                    cfg = away_mod.validate(self._body())
+                    away_mod.remote.set(cfg)
+                    if config_file is not None:
+                        save_setting(config_file, "messages_away", cfg)
+                    log.info("messages from away: %s, every %d min", "a link" if cfg["url"] else "no link", cfg["every_min"])
+            except (ValueError, TypeError, AttributeError) as e:
+                self._error(str(e) if isinstance(e, ValueError) else 'send {"url", "every_min"}')
+                return True
+            away_mod.remote.look()
+            self._send(json.dumps(self._messages_state()).encode(), "application/json")
+            return True
+        if path == "/api/messages/hear":
+            self._hear_message()
+            return True
+        if path == "/api/dj":
+            self._set_dj()
+            return True
+        if path == "/api/birthdays/hear":
+            self._hear_birthday()
+            return True
+        return False
+
+    return {"methods": {"_birthdays_state": _birthdays_state, "_set_birthdays": _set_birthdays, "_hear_birthday": _hear_birthday, "_messages_state": _messages_state, "_set_messages": _set_messages, "_hear_message": _hear_message, "_dj_state": _dj_state, "_set_dj": _set_dj},
+            "get": get, "post": post}

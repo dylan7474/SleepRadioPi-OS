@@ -1,7 +1,7 @@
-"""Controls: the volume knob, the speaker (volume, EQ, noise, sleep), the preset buttons and the keys.
+"""Controls: playback transport, the volume knob, the speaker (volume, EQ, noise, sleep), the preset buttons and keys.
 
-Methods of the web handler, moved out of server.py as they were: build(ctx) unpacks what they use of what
-make_handler holds and returns them for make_handler to attach to Handler.
+Methods of the web handler and its routes, moved out of server.py as they were: build(ctx) unpacks what they use of
+what make_handler holds and returns them (and the GET / POST branches of this area) for make_handler to attach.
 """
 
 from __future__ import annotations
@@ -10,6 +10,8 @@ import logging
 import json
 import threading
 from sleepradiopi.audio.eq import known as known_band
+from sleepradiopi.config.settings import load as load_settings
+from sleepradiopi.config.settings import save_setting
 from sleepradiopi.io import presets as presets_mod
 from sleepradiopi.web import server as server_mod          # (read at call time: tests patch these there)
 
@@ -17,7 +19,7 @@ log = logging.getLogger("sleepradiopi.web.server")
 
 
 def build(ctx):
-    announcer, presets, speaker, station = ctx.announcer, ctx.presets, ctx.speaker, ctx.station
+    announcer, config_file, hear, output, presets, speaker, station = ctx.announcer, ctx.config_file, ctx.hear, ctx.output, ctx.presets, ctx.speaker, ctx.station
 
     _held: dict = {}                  # the page's buttons held down: keycode -> auto let-go timer
     _held_lock = threading.Lock()
@@ -232,4 +234,127 @@ def build(ctx):
             presets.keys[code][1]()
         self._send(json.dumps(presets.status()).encode(), "application/json")
 
-    return {"_knob": _knob, "_speaker": _speaker, "_buttons": _buttons, "_button_bank": _button_bank, "_button_key": _button_key}
+    def get(self, path) -> bool:
+        if path == "/api/speaker/sounds" and config_file is not None:
+            self._send(json.dumps({"sounds": load_settings(config_file).speaker_sounds}).encode(), "application/json")
+            return True
+        if path == "/api/buttons" and presets is not None:
+            self._send(json.dumps(presets.status()).encode(), "application/json")
+            return True
+        return False
+
+    def post(self, path) -> bool:
+        if path == "/api/seek":
+            try:
+                body = self._body()
+                to_ms, delta_ms = body.get("to_ms"), body.get("delta_ms")
+                for v in (to_ms, delta_ms):
+                    if v is not None and (isinstance(v, bool) or not isinstance(v, (int, float))):
+                        raise ValueError("send {\"to_ms\": n} or {\"delta_ms\": n}")
+                if (to_ms is None) == (delta_ms is None):
+                    raise ValueError("send {\"to_ms\": n} or {\"delta_ms\": n}")
+                moved = station.seek(to_ms=None if to_ms is None else int(to_ms),
+                                     delta_ms=None if delta_ms is None else int(delta_ms))
+            except (ValueError, TypeError, AttributeError) as e:
+                self._error(str(e) if isinstance(e, ValueError) else "send {\"to_ms\": n} or {\"delta_ms\": n}")
+                return True
+            self._send(json.dumps({"moved": moved is not None, "position": station.position()}).encode(),
+                       "application/json")
+            return True
+        if path == "/api/skip":
+            self.rfile.read(int(self.headers.get("Content-Length", 0)))  # no body needed
+            self._send(json.dumps({"skipped": station.skip()}).encode(), "application/json")
+            return True
+        if path == "/api/previous":
+            self.rfile.read(int(self.headers.get("Content-Length", 0)))
+            self._send(json.dumps({"previous": station.previous()}).encode(), "application/json")
+            return True
+        if path == "/api/track/play":
+            try:
+                body = self._body()
+                reply = station.play_track(body.get("root") or "music", body.get("path"),
+                                           then="pause" if body.get("then") == "pause" else None)
+            except (ValueError, TypeError, KeyError, AttributeError) as e:
+                self._error(str(e) if isinstance(e, ValueError) else "send {\"root\", \"path\"}")
+                return True
+            if speaker is not None:
+                speaker.play()
+            self._send(json.dumps(reply).encode(), "application/json")
+            return True
+        if path == "/api/lengths":
+            try:
+                items = self._body()["items"]
+                if not isinstance(items, list) or len(items) > 200:
+                    raise ValueError("send up to 200 items")
+                reply = {"minutes": [station.minutes_of(it) for it in items]}
+            except (ValueError, TypeError, KeyError, AttributeError) as e:
+                self._error(str(e) if isinstance(e, ValueError) else "send {\"items\": [...]}")
+                return True
+            self._send(json.dumps(reply).encode(), "application/json")
+            return True
+        if path == "/api/speaker" and speaker is not None:
+            self._speaker()
+            return True
+        if path == "/api/speaker/sounds" and config_file is not None:
+            try:                             # {"sounds": [...]}: the saved speaker set-ups, the whole list
+                from sleepradiopi.audio.eq import validate_sounds
+                sounds = validate_sounds(self._body().get("sounds"))
+            except (ValueError, TypeError, AttributeError) as e:
+                self._error(str(e))
+                return True
+            save_setting(config_file, "speaker_sounds", sounds)
+            self._send(json.dumps({"sounds": sounds}).encode(), "application/json")
+            return True
+        if path == "/api/knob" and speaker is not None:
+            self._knob()
+            return True
+        if path in ("/api/buttons", "/api/buttons/press") and presets is not None:
+            self._buttons(path.endswith("press"))
+            return True
+        if path == "/api/buttons/slot" and presets is not None:
+            try:                             # {"slot": "knob_long" | "power_on", "preset": {...} | null}
+                body = self._body()
+                presets.set_slot(body["slot"], body["preset"])
+            except (ValueError, TypeError, KeyError, AttributeError) as e:
+                self._error(str(e) if isinstance(e, ValueError) else "send {\"slot\", \"preset\"}")
+                return True
+            self._send(json.dumps(presets.status()).encode(), "application/json")
+            return True
+        if path == "/api/buttons/key" and presets is not None and presets.keys:
+            self._button_key()
+            return True
+        if path == "/api/instant" and presets is not None:
+            try:
+                done = presets.instant(self._body().get("preset"))
+            except (ValueError, TypeError, AttributeError) as e:
+                self._error(str(e) if isinstance(e, ValueError) else "send {\"preset\": {...}}")
+                return True
+            self._send(json.dumps({"done": done}).encode(), "application/json")
+            return True
+        if path in ("/api/buttons/bank", "/api/buttons/auto") and presets is not None:
+            self._button_bank(path.endswith("auto"))
+            return True
+        if path == "/api/hear":
+            # {"here": true}: a browser is about to tune in (the stream is made for it); {"here": "quiet"}: it's
+            # heard there, so the speaker goes quiet; {"here": false}: back to the speaker. See web/hear.py.
+            try:
+                here = self._body()["here"]
+                if hear is None:
+                    raise ValueError("this radio makes no stream to listen to")
+                if here is True:
+                    hear.start()
+                elif here == "quiet":
+                    hear.hush()
+                elif here is False:
+                    hear.stop()
+                else:
+                    raise ValueError
+            except (ValueError, TypeError, KeyError, AttributeError) as e:
+                self._error(str(e) if isinstance(e, ValueError) and str(e) else 'send {"here": true | "quiet" | false}')
+                return True
+            self._send(json.dumps({"hear": hear.on, "held": hear.held, "stream": output.enabled}).encode(), "application/json")
+            return True
+        return False
+
+    return {"methods": {"_knob": _knob, "_speaker": _speaker, "_buttons": _buttons, "_button_bank": _button_bank, "_button_key": _button_key},
+            "get": get, "post": post}
