@@ -1,0 +1,16 @@
+#!/bin/sh
+#
+# /etc/resolv.conf (a link to /run/resolv.conf) is written by the DHCP client when the lease arrives, a few
+# seconds after avahi has started; avahi reads it once at start-up, and warned "Failed to open /etc/resolv.conf"
+# on every boot. Have an empty one there before anything starts. The DHCP script is written for a file that is
+# already there (it drops its own interface's lines, then adds the lease's), so this changes nothing else.
+#
+RESOLV=${RESOLV_CONF:-/run/resolv.conf}
+
+case "$1" in
+	start)
+		[ -e "$RESOLV" ] || : > "$RESOLV"
+		;;
+	stop) ;;
+	*) echo "Usage: $0 {start|stop}"; exit 1 ;;
+esac
