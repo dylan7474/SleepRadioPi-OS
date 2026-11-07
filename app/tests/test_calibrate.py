@@ -141,10 +141,12 @@ class _Receiver:
 
 def _run(rx: _Receiver, monkeypatch) -> dict:
     monkeypatch.setattr(calibrate.time, "sleep", lambda s: None)
-    job = calibrate.Job(get=rx.get, post=rx.post, sound=rx.sound)
+    gate = threading.Event()                         # (the job's first ask of the receiver waits for this, so that it is certainly
+    job = calibrate.Job(get=lambda url: (gate.wait(30), rx.get(url))[1], post=rx.post, sound=rx.sound)   # still running when the second start is tried)
     job.start("http://receiver:8074")
     with pytest.raises(ValueError):
         job.start("http://receiver:8074")            # (one at a time)
+    gate.set()
     job._thread.join(timeout=60)
     return job.status()
 
