@@ -12,41 +12,31 @@ import json
 import logging
 from http.cookies import SimpleCookie
 import os
-import queue
-import re
 import threading
 import time
-import urllib.error
-import urllib.request
-from datetime import date, datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from urllib.parse import parse_qs, urlencode, urlparse
+from urllib.parse import parse_qs, urlparse
 
-from sleepradiopi.audio.eq import known as known_band
 from sleepradiopi.broadcast import away as away_mod
-from sleepradiopi.broadcast import birthdays, messages, profiles
-from sleepradiopi.broadcast import playlists as playlists_mod
 from sleepradiopi.broadcast.station import Station
 from sleepradiopi.config.auth import COOKIE, SESSION_S, Auth
 from sleepradiopi.config.clock import clock_trusted
-from sleepradiopi.io.announce import Clip
-from sleepradiopi import voices as voices_mod
 from sleepradiopi import updater as updater_mod
 from sleepradiopi import wifi as wifi_mod
 from sleepradiopi.config import backup
 from sleepradiopi.config.settings import load as load_settings, save_setting
 from sleepradiopi.playback import radio as radio_mod
-from sleepradiopi.io import presets as presets_mod
 from sleepradiopi import media as media_mod
 from sleepradiopi.playback import bookdl as bookdl_mod
 from sleepradiopi.playback import librivox as lv_mod
 from sleepradiopi.playback import gutenberg as gb_mod
 from sleepradiopi.playback import ebookdl as ebookdl_mod
 from sleepradiopi.playback import podcasts as pod_mod
-from sleepradiopi.config.power import can_power_off, request_power_off, request_restart
+from sleepradiopi.config.power import can_power_off
 from sleepradiopi import remote
 
+from .common import MAX_SETTINGS_BYTES, NO_EBOOKS, RESTART_ENV, _quietly     # (MAX_SETTINGS_BYTES, RESTART_ENV: main.py and the tests ask for them here)
 from .stream import Mp3Output
 
 log = logging.getLogger(__name__)
@@ -67,16 +57,6 @@ ANALYSER = (Path(__file__).parent / "analyser" / "index.html").read_bytes()
 # The world's coastlines, for the map of who's been heard (Natural Earth's 110 m land, public domain, to half a degree)
 LAND = (Path(__file__).parent / "land.json").read_bytes()
 KEY_HELD_MAX_S = 30  # a page's button held longer than this is let go (a lost "up")
-IDLE_CLOSE_S = 30  # close a stream connection that has had no audio for this long
-MAX_SETTINGS_BYTES = 512 * 1024   # room for a long list of internet radio stations
-# A receiver of your own, asked through the radio (/api/rx/own/...): whose it is (the address a saved station plays
-# from) and what may be asked of one -- what the page asks, no more (receiver/sleepradio_receiver.py answers it).
-OWN_RX = re.compile(r"(https?://[^/\s]+)/audio\?(?:.*&)?(?:band|freq)=")
-OWN_RX_ASKS = {"GET": ("status", "bands", "spectrum"), "POST": ("skip", "tune", "hold", "bands")}
-# Set where something restarts the station when it exits (init's respawn on the
-# appliance image, systemd's Restart= on Raspberry Pi OS). Without it, e.g. on
-# a desktop, loaded settings that need a restart wait for the next start.
-RESTART_ENV = "SLEEPRADIOPI_SUPERVISED"
 RESTART_EXIT = 75  # EX_TEMPFAIL: "on-failure" restarts it too
 
 
@@ -91,14 +71,8 @@ def _restart_soon(speaker) -> None:
     threading.Thread(target=go, daemon=True).start()
 
 
-def _quietly(job) -> None:
-    try:
-        job()
-    except Exception:            # (logged where it failed)
-        pass
 
 
-NO_EBOOKS = "this radio hasn't the memory to read ebooks aloud (a Pi 3 or better can)"
 
 
 def make_handler(station: Station, output: Mp3Output, speaker=None,
@@ -115,15 +89,7 @@ def make_handler(station: Station, output: Mp3Output, speaker=None,
     backups = backup.Store(config_file.parent / "backups") if config_file is not None else None
     open_paths = {"/", "/index.html", "/desktop", "/classic", "/api/auth", "/api/login", "/analyser", "/analyser/", "/analyser/index.html"}
 
-    _held: dict = {}                  # the page's buttons held down: keycode -> auto let-go timer
-    _held_lock = threading.Lock()
 
-    def _let_go(code: int) -> None:
-        with _held_lock:
-            if _held.pop(code, None) is None:
-                return
-        log.info("button key %d: let go (the page never said)", code)
-        presets.keys[code][1]()
 
     class Handler(BaseHTTPRequestHandler):
         protocol_version = "HTTP/1.1"
@@ -1374,83 +1340,10 @@ def make_handler(station: Station, output: Mp3Output, speaker=None,
             else:
                 self.send_error(404)
 
-        def _remote(self) -> None:
-            """/api/remote: {"token": "..."} keeps a tunnel token (never sent back), {"enabled": true|false} switches
-            Remote access on or off, {"forget": true} takes the token away. (Switching it off over the tunnel cuts that
-            connection off; the page asks first.)"""
-            if not remote.available():
-                self.send_error(404)
-                return
-            try:
-                body = self._body()
-                if not isinstance(body, dict):
-                    raise ValueError
-                if body.get("forget") is True:
-                    remote.forget()
-                if "token" in body:
-                    remote.set_token(body["token"])
-                if "enabled" in body:
-                    if not isinstance(body["enabled"], bool):
-                        raise ValueError("enabled is true or false")
-                    remote.set_enabled(body["enabled"])
-            except ValueError as e:
-                self._error(str(e) or 'send {"token": "..."}, {"enabled": true} or {"forget": true}')
-                return
-            log.info("remote access: %s", {k: (v if k != "token" else "...") for k, v in body.items()})
-            self._send(json.dumps(remote.status()).encode(), "application/json")
 
-        def _power(self) -> None:
-            """/api/power: shut the radio down, or {"restart": true}: restart it.
-            Saves the volume and silences the speaker first, so it goes quiet at once."""
-            try:
-                restart = self._body().get("restart") is True
-            except (ValueError, AttributeError):
-                restart = False
-            if not can_power_off():
-                self.send_error(404)
-                return
-            log.info("%s requested from %s", "restart" if restart else "shutdown", self.address_string())
-            if speaker is not None:
-                speaker.save_now()
-                speaker.pause()
-            if restart:
-                self._send(json.dumps({"restarting": request_restart()}).encode(), "application/json")
-            else:
-                self._send(json.dumps({"shutting_down": request_power_off()}).encode(), "application/json")
 
-        def _save_settings(self) -> None:
-            """GET /api/settings: the settings as a file to download."""
-            data = backup.export(config_file, speaker.volume if speaker is not None else None)
-            self._send_settings(data, f'sleepradio-settings-{time.strftime("%Y-%m-%d")}.json')
 
-        def _send_settings(self, data: dict, filename: str) -> None:
-            body = (json.dumps(data, indent=2) + "\n").encode()
-            self.send_response(200)
-            self.send_header("Content-Type", "application/json")
-            self.send_header("Content-Disposition", f'attachment; filename="{filename}"')
-            self.send_header("Content-Length", str(len(body)))
-            self.send_header("Cache-Control", "no-store")
-            self.end_headers()
-            self.wfile.write(body)
 
-        def _load_settings(self) -> None:
-            """POST /api/settings with a saved settings file as the body.
-            Volume, mono and EQ change at once; anything else restarts the
-            station (if it's supervised). Replies {"ok", "restarting"} or
-            {"error"} with status 400."""
-            length = int(self.headers.get("Content-Length", 0))
-            try:
-                if length > MAX_SETTINGS_BYTES:
-                    self._drain(length)
-                    raise backup.BadSettings("that file is far too big to be a settings file")
-                try:
-                    data = json.loads(self.rfile.read(length))
-                except ValueError:
-                    raise backup.BadSettings("this isn't a Sleep Radio settings file") from None
-            except backup.BadSettings as e:
-                self._error(str(e))
-                return
-            self._apply_settings(data)
 
         def _drain(self, length: int, most: int = 16 * 1024 * 1024) -> None:
             """Read and throw away a body that's being refused. Answering while
@@ -1469,270 +1362,17 @@ def make_handler(station: Station, output: Mp3Output, speaker=None,
             if length > most:
                 self.close_connection = True
 
-        def _backups(self, action: str) -> None:
-            """The settings files the radio keeps (the desktop's Backups folder):
-            POST /api/backups/save {"name"?} (the settings as they are now; no
-            name: the date and time), /delete {"name"}, /load {"name"} (as
-            POST /api/settings does; the settings as they were are kept as
-            "Before the last load"), /upload?name=N with a settings file as the
-            body (kept, not loaded). GET /api/backups lists them;
-            /api/backups/file?name=N downloads one."""
-            now = lambda: backup.export(config_file, speaker.volume if speaker is not None else None)
-            try:
-                if action == "upload":
-                    length = int(self.headers.get("Content-Length", 0))
-                    if length > MAX_SETTINGS_BYTES:
-                        self._drain(length)
-                        raise backup.BadSettings("that file is far too big to be a settings file")
-                    try:
-                        data = json.loads(self.rfile.read(length))
-                    except ValueError:
-                        raise backup.BadSettings("this isn't a Sleep Radio settings file") from None
-                    name = backups.save(data, parse_qs(urlparse(self.path).query).get("name", [""])[0] or None)
-                else:
-                    body = self._body()
-                    if not isinstance(body, dict):
-                        raise backup.BadSettings("send a JSON object")
-                    if action == "save":
-                        name = backups.save(now(), body.get("name"))
-                    elif action == "delete":
-                        name = backups.name(body.get("name"))
-                        backups.delete(name)
-                    elif action == "load":
-                        name = backups.name(body.get("name"))
-                        data = backups.read(name)
-                        backup.parse(data)
-                        if name != backup.BEFORE:
-                            backups.save(now(), backup.BEFORE, replace=True)
-                        self._apply_settings(data)
-                        return
-                    else:
-                        self.send_error(404)
-                        return
-            except (backup.BadSettings, ValueError, TypeError) as e:
-                self._error(str(e))
-                return
-            self._send(json.dumps({"ok": True, "name": name, "backups": backups.list()}).encode(), "application/json")
 
-        def _apply_settings(self, data: dict) -> None:
-            """Take up a settings file's contents (already read): see _load_settings."""
-            try:
-                settings, volume = backup.parse(data)
-            except backup.BadSettings as e:
-                self._error(str(e))
-                return
-            try:
-                changed = backup.apply(config_file, settings)     # before the live ones save theirs
-            except ValueError as e:                               # (the settings file can't be read: nothing written)
-                self._error(str(e))
-                return
-            dj_keys = {"broadcast_chattiness", "broadcast_dj_hooks", "broadcast_jingle_enabled",
-                       "broadcast_jingle_every", "news_enabled", "broadcast_announcer_speed", "news_speed", "ebook_speed", "ebook_voice", "ebook_pace", "ebook_pause"}
-            if changed & dj_keys:
-                # (a file from before themes had their own settings: its DJ values are Default's,
-                # and any theme's in it that has none)
-                every = settings.get("broadcast_jingle_every", station.base["jingle_every"] or 4)
-                for key, value in (("chattiness", settings.get("broadcast_chattiness")),
-                                   ("dj_hooks", settings.get("broadcast_dj_hooks")),
-                                   ("jingle_every", every if settings.get("broadcast_jingle_enabled", True) else 0),
-                                   ("news", settings.get("news_enabled")), ("time_checks", settings.get("broadcast_time_checks"))):
-                    if value is not None:
-                        station.base[key] = value
-                station.set_dj(dj_speed=settings.get("broadcast_announcer_speed"), news_speed=settings.get("news_speed"),
-                                   ebook_speed=settings.get("ebook_speed"), ebook_voice=settings.get("ebook_voice"),
-                                   ebook_pause=settings.get("ebook_pause"), ebook_pace=settings.get("ebook_pace"))
-            if "profiles" in changed:
-                station.set_profiles(settings["profiles"])
-            if changed & {"broadcast_artist", "broadcast_profile", "profiles"}:
-                if settings.get("broadcast_profile"):
-                    station.set_profile(settings["broadcast_profile"])
-                else:                         # (an old file's artist radio: its one-artist theme)
-                    station.set_artist(settings.get("broadcast_artist"))
-                    if config_file is not None:
-                        save_setting(config_file, "profiles", station.profiles)
-                self._save_selection()
-            if "birthdays" in changed:
-                station.set_birthdays(settings["birthdays"])
-            if "playlists" in changed:
-                station.set_playlists(settings["playlists"])
-            if "programmes" in changed and getattr(station, "scheduler", None) is not None:
-                station.scheduler.set_programmes(settings["programmes"])
-            if "programme_mode" in changed and getattr(station, "scheduler", None) is not None:
-                station.scheduler.set_quiet(settings["programme_mode"])
-            if "knob_mode" in changed and speaker is not None:
-                speaker.set_knob_mode(settings["knob_mode"])
-            if "messages" in changed:
-                station.set_messages(settings["messages"])
-            if changed & set(presets_mod.SLOTS) and presets is not None:
-                presets.load_slots({k: settings.get(k) for k in presets_mod.SLOTS if k in changed})
-            if changed & {"buttons", "buttons_night", "buttons_bank", "buttons_auto"} and presets is not None:
-                presets.load_all(settings.get("buttons"), settings.get("buttons_night"),
-                                 settings.get("buttons_bank"), settings.get("buttons_auto"))
-            if speaker is not None:
-                if changed & {"noise_on", "noise_kind", "noise_mix"}:
-                    speaker.set_noise(on=settings.get("noise_on"), kind=settings.get("noise_kind"),
-                                      mix=settings.get("noise_mix"))
-                if "speaker_mono" in settings:
-                    speaker.set_mono(settings["speaker_mono"])
-                if "speaker_eq" in settings:
-                    speaker.set_eq(settings["speaker_eq"])
-                if "eq_slots" in settings:
-                    speaker.set_eq_slots(settings["eq_slots"])
-                if changed & {"eq_by_type", "eq_auto"}:
-                    speaker.set_eq_auto(settings.get("eq_auto", speaker.eq_auto), settings.get("eq_by_type"))
-                if "speaker_highpass_hz" in settings:
-                    speaker.set_highpass(settings["speaker_highpass_hz"])
-                if volume is not None:
-                    if volume != speaker.volume:
-                        changed.add("volume")
-                    speaker.set_volume(volume)
-                    speaker.save_now()
-            needs_restart = bool(changed - backup.LIVE - {"volume"})
-            restarting = needs_restart and bool(os.environ.get(RESTART_ENV))
-            log.info("settings loaded from %s; changed: %s", self.address_string(),
-                     ", ".join(sorted(changed)) or "nothing")
-            self._send(json.dumps({"ok": True, "changed": sorted(changed),
-                                   "needs_restart": needs_restart,
-                                   "restarting": restarting}).encode(), "application/json")
-            if restarting:
-                _restart_soon(speaker)
 
-        def _birthdays_state(self) -> dict:
-            trusted = clock_trusted()
-            return {"birthdays": station.birthdays.entries,
-                    "today": station.birthdays.today(datetime.now()) if trusted else [],
-                    "clock_trusted": trusted,
-                    "can_hear": speaker is not None and station._has_voice}
 
-        def _set_lamps(self, sweep: bool) -> None:
-            """POST /api/lamps {"glow_day", "glow_night" (0-100 %), "meter_trim_db" (-12..12)}:
-            saved; /api/lamps/sweep: the needle up to full scale and back (to set its trimmer)."""
-            try:
-                if sweep:
-                    lamps.sweep()
-                    reply = lamps.settings()
-                else:
-                    body = self._body()
-                    reply = lamps.set(body.get("glow_day"), body.get("glow_night"), body.get("meter_trim_db"))
-                    if config_file is not None:
-                        for k in ("glow_day", "glow_night", "meter_trim_db"):
-                            if k in body:
-                                save_setting(config_file, k, reply[k])
-            except (ValueError, TypeError, AttributeError) as e:
-                self._error(str(e) if isinstance(e, ValueError) else "send {\"glow_day\", ...}")
-                return
-            self._send(json.dumps(reply).encode(), "application/json")
 
-        def _identity(self) -> dict:
-            from sleepradiopi.config import brand
-            try:
-                saved = json.loads(config_file.read_text()) if config_file is not None else {}
-            except (OSError, ValueError):
-                saved = {}
-            return {"hardware": saved.get("hardware", "box"), "station_name": saved.get("station_name") or "",
-                    "name": brand.name, "default_names": {"box": brand.DEFAULT, **brand.BY_HARDWARE},
-                    "host": brand.hostname_for(saved), "default_host": brand.DEFAULT_HOST,
-                    "can_restart": bool(os.environ.get(RESTART_ENV))}
 
-        def _set_identity(self) -> None:
-            """POST /api/identity {"hardware": "box" | "cathedral", "station_name": "..." | ""}:
-            which radio this is, and its name (empty: the hardware's own). Saved; the
-            station restarts to take it up."""
-            try:
-                body = self._body()
-                hw = body.get("hardware", "box")
-                name = body.get("station_name") or None
-                if hw not in ("box", "cathedral"):
-                    raise ValueError("hardware is box or cathedral")
-                if name is not None and (not isinstance(name, str) or len(name.strip()) > 40):
-                    raise ValueError("a name is up to 40 characters")
-            except (ValueError, TypeError, AttributeError) as e:
-                self._error(str(e) if isinstance(e, ValueError) else "send {\"hardware\", \"station_name\"}")
-                return
-            if config_file is not None:
-                save_setting(config_file, "hardware", hw)
-                save_setting(config_file, "station_name", name.strip() if name else None)
-            restarting = bool(os.environ.get(RESTART_ENV))
-            self._send(json.dumps({**self._identity(), "restarting": restarting}).encode(), "application/json")
-            if restarting:
-                _restart_soon(speaker)
 
-        def _messages_state(self) -> dict:
-            trusted = clock_trusted()
-            nxt = station.messages.next_slot(datetime.now(), station.profile) if trusted else None
-            return {**station.messages.cfg, "next": nxt.strftime("%H:%M") if nxt else None,
-                    "next_day": nxt.date() != date.today() if nxt else False,
-                    "due_now": bool(nxt and nxt <= datetime.now()),
-                    "clock_trusted": trusted, "can_hear": speaker is not None and station._has_voice,
-                    "away": away_mod.remote.status()}
 
-        def _set_messages(self) -> None:
-            """POST /api/messages {"on", "every_min", "offset_min", "start_min", "end_min",
-            "date_first", "list": [{"text", "until"?, "off"?}]}: replace them. Saved."""
-            try:
-                cfg = messages.validate(self._body())
-            except (ValueError, TypeError, AttributeError) as e:
-                self._error(str(e) if isinstance(e, ValueError) else "send the messages' settings")
-                return
-            station.set_messages(cfg)
-            if config_file is not None:
-                save_setting(config_file, "messages", cfg)
-            self._send(json.dumps(self._messages_state()).encode(), "application/json")
 
-        def _hear_message(self) -> None:
-            """POST /api/messages/hear {"text"}: the DJ says it on the speaker now
-            (with the day and date first, if that's on)."""
-            try:
-                text = messages.validate({"list": [{"text": self._body().get("text")}]})["list"][0]["text"]
-            except (ValueError, TypeError, AttributeError) as e:
-                self._error(str(e) if isinstance(e, ValueError) else "send {\"text\"}")
-                return
-            if speaker is None or not station._has_voice:
-                self._error("this radio has no speaker or no voice")
-                return
-            words = station.messages.words(text, date.today())
 
-            def run():
-                try:
-                    speaker.play_clip(Clip(station.render_speech(words), "message", "Message"))
-                except Exception:
-                    log.exception("message preview failed")
-            threading.Thread(target=run, name="message-preview", daemon=True).start()
-            self._send(json.dumps({"ok": True, "text": words}).encode(), "application/json")
 
-        def _qrz(self) -> dict:
-            """The QRZ logbook window's figures (never the key itself)."""
-            from sleepradiopi.playback import qrzlog as qrz_mod
-            had = qrz_mod.logbook.status() or {}
-            return {"set": bool(qrz_mod.KEY), "had": bool(had), "refused": qrz_mod.logbook.refused, "t": had.get("t"),
-                    **{k: had.get(k) for k in ("total", "confirmed", "dxcc")}, "status": had.get("status") or {}, "recent": had.get("recent") or [],
-                    "fetched": had.get("fetched") or {}}
 
-        def _one_reader(self, on: str | None, keep: bool = False) -> dict:
-            """The readers for receivers, one at a time: each mode has its own place on a band, so with one switched
-            on ("cw", "ft8", "keyboard" or "pictures") the others go off. -> {"cw", "ft8", "keyboard", "pictures"}:
-            which is on, and how. keep: one was switched: which is on is kept, for after a restart (audio/readers.py)."""
-            from sleepradiopi.audio import ft8 as ft8_mod, keyboard as keyboard_mod, morse as morse_mod, pictures as pictures_mod
-            from sleepradiopi.audio import readers as readers_mod
-            if on is not None:
-                if on != "cw":
-                    morse_mod.reader.switch(False)
-                if on != "ft8":
-                    ft8_mod.reader.switch(False)
-                if on != "keyboard":
-                    keyboard_mod.reader.switch(False)
-                if on != "pictures":
-                    pictures_mod.reader.switch(False)
-            if keep and config_file is not None:
-                save_setting(config_file, "rx_reader", readers_mod.state())
-            return {"cw": morse_mod.reader.on, "ft8": ft8_mod.reader.mode if ft8_mod.reader.on else None,
-                    "keyboard": keyboard_mod.reader.mode if keyboard_mod.reader.on else None,
-                    "pictures": pictures_mod.reader.mode if pictures_mod.reader.on else None}
-
-        def _heard_list(self) -> dict:
-            from sleepradiopi.audio import ft8 as ft8_mod, heard as heard_mod
-            return {"home": ft8_mod.HOME, "call": ft8_mod.own_call(), "where": heard_mod.store.where,
-                    "heard": [ft8_mod._far(h) for h in heard_mod.store.list()]}
 
         def _body(self):
             return json.loads(self.rfile.read(int(self.headers.get("Content-Length", 0))) or b"{}")
@@ -1745,917 +1385,57 @@ def make_handler(station: Station, output: Mp3Output, speaker=None,
             self.end_headers()
             self.wfile.write(body)
 
-        def _set_birthdays(self) -> None:
-            """POST /api/birthdays {"birthdays": [...]}: replace the list. Saved."""
-            try:
-                entries = birthdays.validate(self._body()["birthdays"])
-            except (ValueError, TypeError, KeyError, AttributeError) as e:
-                self._error(str(e) if isinstance(e, ValueError) else "send {\"birthdays\": [...]}")
-                return
-            station.set_birthdays(entries)
-            if config_file is not None:
-                save_setting(config_file, "birthdays", entries)
-            self._send(json.dumps(self._birthdays_state()).encode(), "application/json")
 
-        def _hear_birthday(self) -> None:
-            """POST /api/birthdays/hear {"name", "day", "month", "year"?}: say
-            that person's wish on the speaker now, as if it were their day."""
-            try:
-                person = birthdays.validate([self._body()])[0]
-            except (ValueError, TypeError, AttributeError) as e:
-                self._error(str(e) if isinstance(e, ValueError) else "send a name, day and month")
-                return
-            if speaker is None or not station._has_voice:
-                self._error("this radio has no speaker or no voice")
-                return
-            age = date.today().year - person["year"] if person.get("year") else None
-            text = birthdays.wish_text([{"name": person["name"], "age": age if age and 1 <= age <= 120 else None}],
-                                       station.builder.station)
 
-            def run():
-                try:
-                    speaker.play_clip(Clip(station.render_speech(text), "birthday", "Birthday wish"))
-                except Exception:
-                    log.exception("birthday preview failed")
-            threading.Thread(target=run, name="birthday-preview", daemon=True).start()
-            self._send(json.dumps({"ok": True, "text": text}).encode(), "application/json")
 
-        def _selection(self) -> dict:
-            return {"artist": station.artist, "profile": station.profile,
-                    "station_name": station.builder.station}
 
-        def _save_selection(self) -> None:
-            if config_file is not None:
-                save_setting(config_file, "broadcast_artist", None)    # (artist radio is retired)
-                save_setting(config_file, "broadcast_profile", station.profile)
 
-        def _station(self) -> None:
-            """/api/station {"profile": "Carisbrooke"}: play that theme; {"profile": null}
-            or {"artist": null}: the theme last played, else Default. Saved. (Artist radio,
-            {"artist": "The Beatles"}, is retired: make a theme with the artist.)"""
-            try:
-                body = self._body()
-                value = body.get("profile")
-                if body.get("artist"):
-                    self._error("artist radio has gone: make a theme with the artist in it")
-                    return
-                if value is not None and (not isinstance(value, str) or len(value) > 200):
-                    raise ValueError("a name or null")
-            except (ValueError, TypeError, KeyError, AttributeError):
-                self.send_error(400)
-                return
-            value = value.strip() if value else None
-            found = station.set_profile(value)
-            self._save_selection()
-            self._send(json.dumps({"found": found, **self._selection()}).encode(), "application/json")
 
-        def _dj_state(self) -> dict:
-            startup = True
-            if config_file is not None:
-                try:
-                    startup = bool(json.loads(config_file.read_text()).get("startup_sound", True))
-                except (OSError, ValueError):
-                    pass
-            return {**station.dj_settings(), "startup_sound": startup,
-                    "can_restart": bool(os.environ.get(RESTART_ENV))}
 
-        def _set_dj(self) -> None:
-            """POST /api/dj with any of {"voice", "chattiness", "dj_hooks",
-            "jingle_every" (0 = off), "news_enabled", "dj_speed", "news_speed", "ebook_speed", "ebook_voice", "ebook_pause"
-            (0.5-1.5, 1 = the voice's own pace), "ebook_pace" ("slow", "medium", "normal", "fast": for the Flite voices), "quiet_on", "quiet_start_min",
-            "quiet_end_min" (the quiet hours: the radio's do-not-disturb)}. All saved; all live except
-            the voice, which restarts the station (only one voice fits in RAM)."""
-            try:
-                body = self._body()
-                if not isinstance(body, dict):
-                    raise ValueError("send a JSON object")
-                for key in ("dj_hooks", "news_enabled", "startup_sound", "dj_on", "time_checks", "quiet_on"):
-                    if key in body and not isinstance(body[key], bool):
-                        raise ValueError(f"{key} must be true or false")
-                every = body.get("jingle_every")
-                if every is not None and (isinstance(every, bool) or not isinstance(every, int)):
-                    raise ValueError("jingle_every must be a number")
-                voice = body.get("voice")
-                if voice is not None and voice not in station.voices():
-                    raise ValueError(f"no voice called {voice!r}")
-                if any(k in body for k in ("quiet_on", "quiet_start_min", "quiet_end_min")):
-                    station.set_quiet(body.get("quiet_on"), body.get("quiet_start_min"), body.get("quiet_end_min"))
-                station.set_dj(chattiness=body.get("chattiness"), dj_hooks=body.get("dj_hooks"),
-                               jingle_every=every, news_enabled=body.get("news_enabled"),
-                               dj_speed=body.get("dj_speed"), news_speed=body.get("news_speed"), ebook_speed=body.get("ebook_speed"),
-                               ebook_voice=body.get("ebook_voice"), ebook_pause=body.get("ebook_pause"),
-                               ebook_pace=body.get("ebook_pace"), dj_on=body.get("dj_on"), time_checks=body.get("time_checks"))
-            except (ValueError, TypeError, AttributeError) as e:
-                self._error(str(e))
-                return
-            restarting = False
-            if config_file is not None:
-                if any(k in body for k in ("chattiness", "time_checks", "news_enabled", "jingle_every", "dj_hooks")):
-                    save_setting(config_file, "profiles", station.profiles)   # (the theme playing's settings)
-                if "dj_on" in body:
-                    save_setting(config_file, "broadcast_dj", body["dj_on"])
-                if "startup_sound" in body:
-                    save_setting(config_file, "startup_sound", body["startup_sound"])
-                for key, setting in (("quiet_on", "news_quiet_hours"), ("quiet_start_min", "news_quiet_start_min"), ("quiet_end_min", "news_quiet_end_min")):
-                    if key in body:
-                        save_setting(config_file, setting, getattr(station.config, setting))
-                if "dj_speed" in body:
-                    save_setting(config_file, "broadcast_announcer_speed", station.config.announcer_speed)
-                if "news_speed" in body:
-                    save_setting(config_file, "news_speed", station.config.news_speed)
-                for key in ("ebook_speed", "ebook_voice", "ebook_pace", "ebook_pause"):
-                    if key in body:
-                        save_setting(config_file, key, getattr(station.config, key))
-                if voice is not None and voice != station.dj_voice:
-                    save_setting(config_file, "broadcast_voice", voice)
-                    restarting = bool(os.environ.get(RESTART_ENV))
-                    log.info("voice changed to %s from %s", voice, self.address_string())
-            self._send(json.dumps({**self._dj_state(), "saved_voice": voice or station.dj_voice,
-                                   "restarting": restarting}).encode(), "application/json")
-            if restarting:
-                _restart_soon(speaker)
 
-        def _playlists(self) -> dict:
-            return {"playlists": [station.playlist_view(p) for p in station.playlists],
-                    "playing": station.playlist_status()}
 
-        def _programmes(self) -> dict:
-            sched = station.scheduler
-            return {"programmes": sched.programmes, "playing": sched.status(), "programme_mode": sched.quiet}
 
-        def _programmes_post(self, path: str) -> None:
-            """POST /api/programmes {"programmes": [...]} (the whole list, saved),
-            /api/programmes/play {"name"}, /api/programmes/stop {"name"?}."""
-            sched = station.scheduler
-            try:
-                body = self._body()
-                if path == "/api/programmes":
-                    sched.set_programmes(body["programmes"])
-                    if config_file is not None:
-                        save_setting(config_file, "programmes", sched.programmes)
-                elif path == "/api/programmes/play":
-                    sched.play(body["name"])
-                    if speaker is not None and sched.run is not None:   # (only moments and switches: over what's on)
-                        speaker.play()
-                else:
-                    sched.stop(name=body.get("name") if isinstance(body.get("name"), str) else None)
-            except (ValueError, TypeError, KeyError, AttributeError) as e:
-                self._error(str(e) if isinstance(e, ValueError) else "send {\"name\"} or {\"programmes\": [...]}")
-                return
-            self._send(json.dumps(self._programmes()).encode(), "application/json")
 
-        def _save_playlists(self) -> None:
-            if config_file is not None:
-                save_setting(config_file, "playlists", station.playlists)
 
-        def _set_playlists(self) -> None:
-            """POST /api/playlists {"playlists": [{"name", "tracks": [[root, path], ...]}]}:
-            the whole list (new, renamed, reordered, removed), saved."""
-            try:
-                station.set_playlists(self._body()["playlists"])
-            except (ValueError, TypeError, KeyError, AttributeError) as e:
-                self._error(str(e) if isinstance(e, ValueError) else "send {\"playlists\": [...]}")
-                return
-            self._save_playlists()
-            self._send(json.dumps(self._playlists()).encode(), "application/json")
 
-        def _rename_playlist(self) -> None:
-            """POST /api/playlists/rename {"old", "new"}: buttons and programmes that
-            play it follow it. Saved."""
-            try:
-                body = self._body()
-                old, new = body["old"], body["new"]
-                if not isinstance(old, str) or not isinstance(new, str):
-                    raise ValueError("send {\"old\", \"new\"}")
-                was = playlists_mod.find(station.playlists, old)
-                new = station.rename_playlist(old, new)
-            except (ValueError, TypeError, KeyError, AttributeError) as e:
-                self._error(str(e) if isinstance(e, ValueError) else "send {\"old\", \"new\"}")
-                return
-            old = was["name"]
-            if presets is not None:
-                presets.rename_playlist(old, new)
-            sched = getattr(station, "scheduler", None)
-            renamed = bool(sched and sched.rename_playlist(old, new))
-            self._save_playlists()
-            if renamed and config_file is not None:
-                save_setting(config_file, "programmes", sched.programmes)
-            self._send(json.dumps({"name": new, **self._playlists()}).encode(), "application/json")
 
-        def _playlist_add(self) -> None:
-            """POST /api/playlists/add {"name", and "root" + "path" (a track), "root" +
-            "folder" (+ "deep") (a folder), or "now": true (the song playing)}."""
-            try:
-                body = self._body()
-                refs = station.refs_for(root=body.get("root"), path=body.get("path"), folder=body.get("folder"),
-                                        deep=body.get("deep") is True, now=body.get("now") is True)
-                p = station.add_to_playlist(body["name"], refs)
-            except (ValueError, TypeError, KeyError, AttributeError) as e:
-                self._error(str(e) if isinstance(e, ValueError) else "send {\"name\", ...}")
-                return
-            self._save_playlists()
-            self._send(json.dumps({"name": p["name"], "added": len(refs), "tracks": len(p["tracks"]),
-                                   **self._playlists()}).encode(), "application/json")
 
-        def _playlist_play(self) -> None:
-            """POST /api/playlists/play {"name", "shuffle": bool}: now, then the show."""
-            try:
-                body = self._body()
-                reply = station.play_playlist(body["name"], body.get("shuffle") is True,
-                                              then="pause" if body.get("then") == "pause" else None)
-            except (ValueError, TypeError, KeyError, AttributeError) as e:
-                self._error(str(e) if isinstance(e, ValueError) else "send {\"name\"}")
-                return
-            if speaker is not None:
-                speaker.play()
-            self._send(json.dumps({**reply, **self._playlists()}).encode(), "application/json")
 
-        def _album_args(self, body: dict | None = None) -> dict:
-            """{"id": n} (from /api/search or /api/albums) or {"root", "folder", "deep"}
-            (from /api/browse)."""
-            body = self._body() if body is None else body
-            if "id" in body:
-                return {"album_id": body["id"]}
-            if not isinstance(body.get("folder"), str):
-                raise ValueError("send {\"id\": n} or {\"root\", \"folder\"}")
-            out = {"root": body.get("root") or "music", "folder": body["folder"], "deep": body.get("deep") is True}
-            if "track" in body:
-                if isinstance(body["track"], bool) or not isinstance(body["track"], int):
-                    raise ValueError("track is a number")
-                out["track"] = body["track"]
-            return out
 
-        def _album(self) -> None:
-            """POST /api/album: play it next. Music goes into the show, introduced by
-            the DJ; On demand plays with no DJ when the song (or album) playing ends."""
-            try:
-                reply = station.play_next(**self._album_args())
-            except (ValueError, TypeError, KeyError, AttributeError) as e:
-                self._error(str(e) if isinstance(e, ValueError) else "send {\"id\": n}")
-                return
-            if reply.get("now") and speaker is not None:
-                speaker.play()
-            self._send(json.dumps({**reply, "album": station.album_status(),
-                                   "up_next_source": station.next_source_status(),
-                                   "requests": station.requests()}).encode(), "application/json")
 
-        def _receiver_names(self) -> dict:
-            """The names given to receivers on the desktop: {its address as the desktop has it: name}."""
-            names = load_settings(config_file).receiver_names if config_file is not None else {}
-            return {str(k): str(v) for k, v in names.items()} if isinstance(names, dict) else {}
 
-        def _own_receiver(self, path: str, body: bytes | None = None) -> None:
-            """/api/rx/own/WHAT?base=http://the-receiver:8074 (and whatever else WHAT takes): asked of that receiver
-            of your own by the radio, its answer passed back as it came. The page asks only the radio, so a rig
-            works wherever the radio's page is reached from -- away from home, or over https, where a browser can't
-            ask a receiver at home itself. Only the receivers the saved stations play from, and only what the
-            page asks of one: the radio fetches nothing else for anybody."""
-            what = path[len("/api/rx/own/"):]
-            query = parse_qs(urlparse(self.path).query, keep_blank_values=True)
-            base = query.pop("base", [""])[0].rstrip("/")
-            own = {m.group(1) for m in (OWN_RX.match(str(s.get("url", ""))) for s in self._radio_stations()) if m}
-            if what not in OWN_RX_ASKS["GET" if body is None else "POST"]:
-                self._error("that isn't asked of a receiver")
-                return
-            if base not in own:
-                self._error("that isn't a receiver of your own (a saved station makes it one)")
-                return
-            req = urllib.request.Request(f"{base}/{what}" + (f"?{urlencode(query, doseq=True)}" if query else ""), data=body,
-                                         headers={"Content-Type": "application/json"} if body is not None else {})
-            try:
-                try:
-                    with urllib.request.urlopen(req, timeout=8 if body is None else 15) as r:
-                        code, said = r.status, r.read()
-                except urllib.error.HTTPError as e:        # (its own no, and its reason: passed back as they are)
-                    code, said = e.code, e.read()
-            except (OSError, ValueError) as e:
-                code, said = 502, json.dumps({"error": f"the receiver isn't answering ({str(getattr(e, 'reason', e))[:60]})"}).encode()
-            if what == "tune" and code == 200 and station is not None:
-                # (tuned from its window: if the radio is playing it, it keeps where -- a restart comes back there)
-                try:
-                    now = json.loads(said).get("receiving") or {}
-                    station.retuned(base, now.get("freq"), now.get("mode"))
-                except (ValueError, AttributeError):
-                    pass
-            self.send_response(code)
-            self.send_header("Content-Type", "application/json")
-            self.send_header("Content-Length", str(len(said)))
-            self.send_header("Cache-Control", "no-store")
-            self.end_headers()
-            try:
-                self.wfile.write(said)
-            except (BrokenPipeError, ConnectionResetError):
-                pass  # the browser went away mid-reply; nothing to do
 
-        def _radio_stations(self) -> list[dict]:
-            saved = load_settings(config_file).radio_stations if config_file is not None else None
-            if saved is None:
-                return [dict(s) for s in radio_mod.DEFAULT_STATIONS]
-            try:
-                return radio_mod.validate_stations(saved)
-            except ValueError:
-                return []
 
-        def _radio_state(self) -> dict:
-            st = station.status()
-            return {"stations": self._radio_stations(), "source": st.get("source"),
-                    "source_error": st.get("source_error"), "receiver_names": self._receiver_names(),
-                    "directory": directory.status() if directory is not None else None}
 
-        def _radio(self, action: str) -> None:
-            """POST /api/radio/play {"name", "url"}: play that internet radio station
-            instead of the show; /api/radio/stop: back to the show (from a station or
-            an album); /api/radio/stations {"stations": [...]}: the saved list. All saved."""
-            try:
-                body = self._body()
-                if action == "play":
-                    tuned = radio_mod.validate_station(body)
-                elif action == "stations":
-                    stations = radio_mod.validate_stations(body["stations"])
-            except (ValueError, TypeError, KeyError, AttributeError) as e:
-                self._error(str(e) if isinstance(e, ValueError) else "send a station or {\"stations\": [...]}")
-                return
-            if action == "stations":
-                if config_file is not None:
-                    save_setting(config_file, "radio_stations", stations)
-            else:
-                tuned = tuned if action == "play" else None
-                station.tune(tuned)                  # (the station saves it: on_source)
-                if tuned is not None and speaker is not None:
-                    speaker.play()               # choosing a station means "play it"
-            self._send(json.dumps(self._radio_state()).encode(), "application/json")
 
-        def _media(self, action: str) -> None:
-            """The music library manager: POST /api/media/upload?kind=&dir=&name= with
-            the file as the body (name may include folders, for a folder upload;
-            &replace=1: a different file of that name is replaced, not kept beside it);
-            /api/media/mkdir {"kind", "path", "name"}; /api/media/delete {"kind",
-            "path", "prune"?: true (the folders it leaves empty go too)}; /api/media/done {} (changes finished: read-only again, and
-            the library is rescanned)."""
-            if action == "upload":
-                q = parse_qs(urlparse(self.path).query)
-                length = int(self.headers.get("Content-Length", 0) or 0)
-                try:
-                    reply = media.receive(q.get("kind", ["music"])[0], q.get("dir", [""])[0],
-                                          q.get("name", [""])[0], length, self.rfile.read, q.get("replace", [""])[0] == "1")
-                except media_mod.MediaError as e:
-                    self.close_connection = True          # (the rest of the body wasn't read)
-                    self._error(str(e))
-                    return
-                self._send(json.dumps(reply).encode(), "application/json")
-                return
-            try:
-                body = self._body()
-                kind = body.get("kind", "music")
-                if action == "mkdir":
-                    reply = {"path": media.mkdir(kind, body.get("path", ""), body.get("name", ""))}
-                elif action == "delete":
-                    media.delete(kind, body.get("path", ""), body.get("prune") is True)
-                    reply = {"deleted": body.get("path")}
-                elif action in ("move", "rename"):
-                    old = body.get("path", "")
-                    to_kind = body.get("to_kind", kind) if action == "move" else kind
-                    new = media.move(kind, old, to_kind, body.get("to", "")) if action == "move" \
-                        else media.rename(kind, old, body.get("name", ""))
-                    reply = {"path": new, "kind": to_kind}
-                    old_root, new_root = kind, to_kind          # playlists, programmes and buttons follow it
-                    if old_root in ("music", "ondemand") and new_root in ("music", "ondemand"):
-                        old_rel = "/".join(p for p in old.split("/") if p)
-                        kept_before = list(station.kept.paths) if hasattr(station, "kept") else None
-                        if station.rename_refs(old_root, old_rel, new_root, new) and config_file is not None:
-                            save_setting(config_file, "playlists", station.playlists)
-                        if kept_before is not None and station.kept.paths != kept_before and config_file is not None:
-                            save_setting(config_file, "ondemand_keep", station.kept.paths)
-                        sched = getattr(station, "scheduler", None)
-                        if sched and sched.rename_refs(old_root, old_rel, new_root, new) and config_file is not None:
-                            save_setting(config_file, "programmes", sched.programmes)
-                        if presets is not None:
-                            presets.rename_refs(old_root, old_rel, new_root, new)
-                elif action == "done":
-                    changed = media.done()
-                    if station.retire_artists() and config_file is not None:    # (an artist's old name, if no song has it now)
-                        save_setting(config_file, "profiles", station.profiles)
-                    if presets is not None:
-                        presets.bake()                   # (a button's spoken name follows a tag that was changed)
-                    reply = {"changed": changed,
-                             "library": {"tracks": len(station.tracks), "jingles": len(station.jingles),
-                                         "books": len(station.books.all()) if hasattr(station, "books") else 0,
-                                         "ondemand": len(getattr(station, "ondemand_tracks", []))}}
-                else:
-                    self.send_error(404)
-                    return
-            except (media_mod.MediaError, AttributeError, TypeError) as e:
-                self._error(str(e) if isinstance(e, media_mod.MediaError) else "send {\"kind\", \"path\"}")
-                return
-            self._send(json.dumps(reply).encode(), "application/json")
 
-        def _download(self) -> None:
-            """GET /api/media/download?kind=&path=: a file as it is, or a folder as a
-            zip (stored, not squeezed: audio doesn't shrink), streamed."""
-            import zipfile
-            q = parse_qs(urlparse(self.path).query)
-            try:
-                target = media.resolve(q.get("kind", ["music"])[0], q.get("path", [""])[0])
-            except media_mod.MediaError as e:
-                self._error(str(e))
-                return
-            if not target.exists() or target == media._root(q.get("kind", ["music"])[0]):
-                self._error("that isn't there to download")
-                return
-            name = target.name.replace('"', "'")
-            from urllib.parse import quote
-            self.send_response(200)
-            self.send_header("Cache-Control", "no-store")
-            if target.is_file():
-                self.send_header("Content-Type", "application/octet-stream")
-                self.send_header("Content-Length", str(target.stat().st_size))
-                self.send_header("Content-Disposition", f"attachment; filename*=UTF-8''{quote(target.name)}")
-                self.end_headers()
-                with open(target, "rb") as f:
-                    while chunk := f.read(1 << 16):
-                        self.wfile.write(chunk)
-                return
-            self.send_header("Content-Type", "application/zip")
-            self.send_header("Content-Disposition", f"attachment; filename*=UTF-8''{quote(target.name + '.zip')}")
-            self.send_header("Connection", "close")
-            self.end_headers()
-            self.close_connection = True
 
-            class Out:                                   # zipfile writes to a stream it can't seek
-                def __init__(self, w): self.w, self.n = w, 0
-                def write(self, b): self.w.write(b); self.n += len(b); return len(b)
-                def tell(self): return self.n
-                def flush(self): self.w.flush()
-            try:
-                with zipfile.ZipFile(Out(self.wfile), "w", zipfile.ZIP_STORED) as z:
-                    for f in sorted(target.rglob("*")):
-                        if f.is_file() and not any(part.startswith(".") for part in f.relative_to(target).parts):
-                            z.write(f, str(Path(name) / f.relative_to(target)))
-            except (BrokenPipeError, ConnectionResetError):
-                pass
 
-        def _buttons(self, press: bool) -> None:
-            """POST /api/buttons {"button": 1-4, "preset": {...} | null} (null
-            empties it), {"button", "steps": [{...}, ...]} (several, stepped through
-            by pressing it again), {"button", "preset", "add": true} (one more step
-            on the end) or {"button", "now": true, "add"?} (what's playing, on it);
-            each takes "bank"? (day or night). /api/buttons/press {"button",
-            "step"?: 1-6}: as if pressed on the case (step: that one, at once)."""
-            try:
-                body = self._body()
-                n = body["button"]
-                if isinstance(n, bool) or not isinstance(n, int) or not 1 <= n <= presets.count:
-                    raise ValueError(f"button is 1 to {presets.count}")
-                if press:
-                    step = body.get("step")
-                    if step is not None and (isinstance(step, bool) or not isinstance(step, int)):
-                        raise ValueError("step is a number")
-                    if body.get("hold"):
-                        presets.hold(n - 1)
-                    else:
-                        presets.press(n - 1, None if step is None else step - 1)
-                elif "steps" in body:
-                    if not isinstance(body["steps"], list):
-                        raise ValueError("steps is a list of presets")
-                    presets.set(n - 1, body["steps"], body.get("bank"))
-                else:
-                    preset = presets.current() if body.get("now") else body["preset"]
-                    (presets.add if body.get("add") else presets.set)(n - 1, preset, body.get("bank"))
-            except (ValueError, TypeError, KeyError, AttributeError) as e:
-                self._error(str(e) if isinstance(e, ValueError) else
-                            "send {\"button\": 1-4, \"preset\": ... | \"steps\": [...] | \"now\": true, \"add\"?, \"bank\"?}")
-                return
-            self._send(json.dumps(presets.status()).encode(), "application/json")
 
-        def _button_bank(self, auto: bool) -> None:
-            """POST /api/buttons/bank {"bank": "day" | "night"} (or {} to swap): the
-            set of buttons in use (announced on the radio); /api/buttons/auto
-            {"on", "night_min", "day_min"}: the timetable that swaps them. Saved."""
-            try:
-                body = self._body()
-                if auto:
-                    presets.set_auto(body)
-                elif body.get("bank") is None:
-                    presets.toggle_bank()
-                else:
-                    presets.set_bank(body["bank"])
-            except (ValueError, TypeError, AttributeError) as e:
-                self._error(str(e) if isinstance(e, ValueError) else "send {\"bank\": \"day\" | \"night\"}")
-                return
-            self._send(json.dumps(presets.status()).encode(), "application/json")
 
-        def _button_key(self) -> None:
-            """POST /api/buttons/key {"button": 1-4, "down": bool}: the page's button
-            going down or up, through the same timers as the real ones -- a tap
-            plays (or steps on), 1 and 4 held for 5 s open the service
-            menu. A button the page never lets go of is let go after KEY_HELD_MAX_S."""
-            try:
-                body = self._body()
-                n, down = body["button"], body["down"]
-                if isinstance(n, bool) or not isinstance(n, int) or not 1 <= n <= presets.count \
-                        or not isinstance(down, bool):
-                    raise ValueError(f"send {{\"button\": 1-{presets.count}, \"down\": true | false}}")
-            except (ValueError, TypeError, KeyError, AttributeError) as e:
-                self._error(str(e) if isinstance(e, ValueError) else "send {\"button\", \"down\"}")
-                return
-            code = next(c for c, i in presets_mod.KEYCODES.items() if i == n - 1)
-            with _held_lock:
-                was = _held.pop(code, None)
-                if was is not None:
-                    was.cancel()
-                if down:
-                    t = _held[code] = threading.Timer(KEY_HELD_MAX_S, lambda: _let_go(code))
-                    t.daemon = True
-                    t.start()
-            if down and was is None:
-                presets.keys[code][0]()
-            elif not down and was is not None:
-                presets.keys[code][1]()
-            self._send(json.dumps(presets.status()).encode(), "application/json")
 
-        def _podcasts(self, action: str) -> None:
-            """POST /api/podcasts/follow {"feed_url"}, /unfollow {"id"}, /play {"id", "guid"?}
-            (no guid: the one part-heard, else the newest unheard), /heard {"id", "guid", "heard": bool}."""
-            try:
-                body = self._body()
-                pods = station.podcasts
-                if action == "follow":
-                    reply = {"show": pods.subscribe(str(body.get("feed_url") or ""))}
-                elif action == "unfollow":
-                    pods.unsubscribe(str(body.get("id") or ""))
-                    reply = {"ok": True}
-                elif action == "play":
-                    station.play_episode(str(body.get("id") or ""), body.get("guid"))
-                    if speaker is not None:
-                        speaker.play()
-                    reply = {"source": station.status()["source"]}
-                else:
-                    sid, guid = str(body.get("id") or ""), str(body.get("guid") or "")
-                    key = pod_mod.episode_key(sid, guid)
-                    station.book_positions.set(key, 0, done=bool(body.get("heard", True)))
-                    reply = {"ok": True}
-            except (ValueError, AttributeError, TypeError) as e:
-                self._error(str(e) if isinstance(e, ValueError) else "send {\"id\"}")
-                return
-            self._send(json.dumps(reply).encode(), "application/json")
 
-        def _book_download(self) -> None:
-            """POST /api/librivox/download {"id": <the followed book's id>}: keep that LibriVox book on the radio (a
-            folder of its chapters in Audiobooks, played with no Wi-Fi; the streamed copy is replaced) /
-            {"cancel": true}. Progress: GET /api/librivox/download. One at a time."""
-            try:
-                body = self._body()
-                reply = book_dl.cancel() if body.get("cancel") else book_dl.start(str(body.get("id") or ""))
-            except (ValueError, AttributeError, TypeError) as e:
-                self._error(str(e) if isinstance(e, ValueError) else "send {\"id\"}")
-                return
-            self._send(json.dumps(reply).encode(), "application/json")
 
-        def _ebook_download(self) -> None:
-            """POST /api/ebooks/download {"id": <Project Gutenberg number>, "title", "confirm"}: fetch that book into the
-            Ebooks folder (a normal novel is under 2 MB; a bigger one answers {"state": "confirm", "bytes"} and waits
-            for the same call with "confirm": true) / {"cancel": true}. Progress: GET /api/ebooks/download."""
-            if not station.ebooks_on:
-                self._error(NO_EBOOKS)
-                return
-            try:
-                body = self._body()
-                reply = ebook_dl.cancel() if body.get("cancel") else ebook_dl.start(
-                    body.get("id"), str(body.get("title") or ""), body.get("confirm") is True)
-            except (ValueError, AttributeError, TypeError) as e:
-                self._error(str(e) if isinstance(e, ValueError) else "send {\"id\"}")
-                return
-            self._send(json.dumps(reply).encode(), "application/json")
 
-        def _books(self, action: str) -> None:
-            """POST /api/books/play {"key"}: that audiobook, from where it was left;
-            /api/books/seek {"delta_ms": -60000} or {"to_ms": n}: move in the book on."""
-            try:
-                body = self._body()
-                if action == "play":
-                    if not isinstance(body.get("key"), str):
-                        raise ValueError("send {\"key\"} from /api/books")
-                    station.play_book(body["key"])
-                    if speaker is not None:
-                        speaker.play()
-                    reply = {"source": station.status()["source"]}
-                else:
-                    delta, to = body.get("delta_ms"), body.get("to_ms")
-                    for v in (delta, to):
-                        if v is not None and (isinstance(v, bool) or not isinstance(v, (int, float))):
-                            raise ValueError("delta_ms / to_ms are milliseconds")
-                    reply = station.book_seek(None if delta is None else int(delta), None if to is None else int(to))
-            except (ValueError, AttributeError, TypeError) as e:
-                self._error(str(e) if isinstance(e, ValueError) else "send {\"key\"} or {\"delta_ms\"}")
-                return
-            self._send(json.dumps(reply).encode(), "application/json")
 
-        def _play_album(self) -> None:
-            """POST /api/album/play {"id": n} or {"root", "folder", "deep"} (+ "shuffle",
-            "then": "pause"): play it straight through instead of the show -- no DJ --
-            then back to the show (or pause)."""
-            try:
-                body = self._body()
-                station.play_album(**self._album_args(body), shuffle=body.get("shuffle") is True,
-                                   then="pause" if body.get("then") == "pause" else None)
-            except (ValueError, TypeError, KeyError, AttributeError) as e:
-                self._error(str(e) if isinstance(e, ValueError) else "send {\"id\": n}")
-                return
-            if speaker is not None:
-                speaker.play()
-            self._send(json.dumps(self._radio_state()).encode(), "application/json")
 
-        def _wifi_state(self) -> dict:
-            st = wifi_mod.status()
-            saved = wifi_mod.load()
-            return {**st, "saved": [n["ssid"] for n in saved["networks"]],
-                    "on_card": wifi_mod.card_networks(), "hotspot_settings": {"ssid": saved["hotspot"]["ssid"]},
-                    "offline": saved["offline"]}
 
-        def _wifi(self, action: str) -> None:
-            """POST /api/wifi/add {"ssid", "password"}, /remove {"ssid"}, /scan,
-            /hotspot {"ssid", "password"} (the radio's own network's details),
-            /try (leave the hotspot and try the saved networks now), /hotspot-now
-            (switch to the radio's own network now: the only way it does, besides a reset),
-            /offline {"on": bool} (work without Wi-Fi: off from now on, the service menu's 2
-            lets you back in), /trial (off for ten minutes, then back, to try it)."""
-            try:
-                body = self._body()
-                if action == "add":
-                    wifi_mod.add_network(body.get("ssid"), body.get("password", ""))
-                    wifi_mod.ask("reload")
-                elif action == "remove":
-                    wifi_mod.remove_network(body.get("ssid", ""))
-                    wifi_mod.ask("reload")
-                elif action == "scan":
-                    wifi_mod.ask("scan")
-                elif action == "hotspot":
-                    wifi_mod.set_hotspot(body.get("ssid"), body.get("password", ""))
-                elif action == "try":
-                    wifi_mod.ask("station")
-                elif action == "hotspot-now":
-                    wifi_mod.ask("hotspot")
-                elif action == "offline":
-                    if not isinstance(body.get("on"), bool):
-                        raise ValueError('send {"on": true|false}')
-                    wifi_mod.set_offline(body["on"])
-                    wifi_mod.ask("offline")
-                elif action == "trial":
-                    wifi_mod.ask("trial")
-                else:
-                    self.send_error(404)
-                    return
-            except (ValueError, TypeError, AttributeError, OSError) as e:
-                self._error(str(e))
-                return
-            log.info("wifi %s from %s", action, self.address_string())
-            self._send(json.dumps(self._wifi_state()).encode(), "application/json")
 
-        def _voices_state(self) -> dict:
-            there = station.voices()
-            return {"voices": there, "current": station.dj_voice,
-                    "job": voice_jobs.status() if voice_jobs is not None else {"state": "idle"},
-                    "standard_name": voices_mod.STANDARD_NAME,
-                    "has_standard": voices_mod.STANDARD_NAME in there,
-                    "credit": voices_mod.STANDARD_CREDIT}
 
-        def _upload_voice(self) -> None:
-            """POST /api/voices/upload?name=N&file=F with the archive as the body."""
-            q = parse_qs(urlparse(self.path).query)
-            length = int(self.headers.get("Content-Length", 0) or 0)
-            try:
-                voice_jobs.receive(q.get("name", [""])[0], q.get("file", [""])[0], length, self.rfile.read)
-            except ValueError as e:
-                if length and not self.rfile.closed:
-                    self.close_connection = True       # don't read a big body we've refused
-                self._error(str(e))
-                return
-            self._send(json.dumps(self._voices_state()).encode(), "application/json")
 
-        def _set_stream(self) -> None:
-            """POST /api/stream {"enabled": bool}: listening in a browser. Saved."""
-            try:
-                enabled = self._body()["enabled"]
-                if not isinstance(enabled, bool):
-                    raise ValueError("enabled must be true or false")
-                if not enabled and speaker is None:
-                    raise ValueError("this radio has no speaker: the browser is the only way to listen")
-            except (ValueError, TypeError, KeyError, AttributeError) as e:
-                self._error(str(e) if isinstance(e, ValueError) else "send {\"enabled\": true|false}")
-                return
-            if output is not None:
-                output.set_enabled(enabled)
-            if config_file is not None:
-                save_setting(config_file, "web_stream", enabled)
-            log.info("listening in a browser %s", "on" if enabled else "off")
-            self._send(json.dumps({"stream": output is not None and output.enabled}).encode(), "application/json")
 
-        def _request(self) -> None:
-            """POST /api/request {"id": n} (from /api/search): play that track next."""
-            try:
-                track_id = self._body()["id"]
-                if isinstance(track_id, bool) or not isinstance(track_id, int):
-                    raise ValueError("id must be a number from /api/search")
-                reply = station.request(track_id)
-            except (ValueError, TypeError, KeyError, AttributeError) as e:
-                self._error(str(e) if isinstance(e, ValueError) else "send {\"id\": n}")
-                return
-            self._send(json.dumps({**reply, "requests": station.requests()}).encode(), "application/json")
 
-        def _set_profiles(self) -> None:
-            """POST /api/profiles {"profiles": [{"name", "artists": [...]}, ...]}:
-            replace the lists. Saved; the one playing follows the edit."""
-            try:
-                entries = profiles.validate(self._body()["profiles"])
-                if not any(p["name"].lower() == profiles.DEFAULT.lower() for p in entries):
-                    raise ValueError(f"{profiles.DEFAULT} is always there: it can't be deleted or renamed")
-            except (ValueError, TypeError, KeyError, AttributeError) as e:
-                self._error(str(e) if isinstance(e, ValueError) else "send {\"profiles\": [...]}")
-                return
-            station.set_profiles(entries)
-            if config_file is not None:
-                save_setting(config_file, "profiles", station.profiles)
-            self._save_selection()
-            self._send(json.dumps({**self._selection(), "profiles": station.profiles}).encode(),
-                       "application/json")
 
-        def _rename_profile(self) -> None:
-            """POST /api/profiles/rename {"old", "new"}: rename a theme. Everything of its
-            own follows it: its jingles folder, its messages, buttons and programmes that
-            play it, and (playing) the station. Saved."""
-            try:
-                body = self._body()
-                old, new = body["old"], body["new"]
-                if not isinstance(old, str) or not isinstance(new, str):
-                    raise ValueError("send {\"old\", \"new\"}")
-                new = station.rename_profile(old, new)
-            except (ValueError, TypeError, KeyError, AttributeError) as e:
-                self._error(str(e) if isinstance(e, ValueError) else "send {\"old\", \"new\"}")
-                return
-            if media is not None and (Path(station.jingles_dir) / old).is_dir() and old != new:
-                try:
-                    media.rename("jingles", old, new)
-                except media_mod.MediaError as e:
-                    log.warning("theme rename: jingles folder: %s", e)
-                finally:
-                    media.done()
-            if presets is not None:
-                presets.rename_theme(old, new)
-            sched = getattr(station, "scheduler", None)
-            renamed = bool(sched and sched.rename_theme(old, new))
-            if config_file is not None:
-                save_setting(config_file, "profiles", station.profiles)
-                save_setting(config_file, "messages", station.messages.cfg)
-                if renamed:
-                    save_setting(config_file, "programmes", sched.programmes)
-            self._save_selection()
-            self._send(json.dumps({"name": new, "profiles": station.profiles}).encode(), "application/json")
 
-        def _knob(self) -> None:
-            """/api/knob {"press": "short" | "long" | "service"} or {"press": "turn", "clicks": n}
-            (pressed and turned: back or on through a book, podcast or song): the knob's switch, from
-            the page (to try it without the hardware). Short = pause/play, long =
-            what's on Hold the knob (nothing on it: pause/play, as on the radio); "service" = as holding buttons 1 and 4 for 5 s
-            (the service menu; then the page's buttons 1-4 answer it)."""
-            try:
-                body = json.loads(self.rfile.read(int(self.headers.get("Content-Length", 0))) or b"{}")
-                press = body.get("press")
-                if press not in ("short", "long", "service", "back", "back_long", "turn"):
-                    raise ValueError("press must be short, long, service, back, back_long or turn")
-                clicks = body.get("clicks", 0)
-                if press == "turn" and (isinstance(clicks, bool) or not isinstance(clicks, int) or not -50 <= clicks <= 50):
-                    raise ValueError("clicks is -50 to 50")
-            except (ValueError, TypeError, AttributeError):
-                self.send_error(400)
-                return
-            if press in ("back", "back_long") and presets is not None:   # the cathedral's back button
-                (presets.back_press if press == "back" else presets.back_hold)()
-                done = True
-            elif press == "service":
-                menu = getattr(presets, "menu", None)
-                if menu is not None:
-                    menu.open()
-                done = menu is not None
-            elif press == "short":
-                speaker.toggle()
-                done = True
-            elif press == "turn":                # pressed and turned: back or on through what's playing
-                seeker = getattr(station, "seeker", None)
-                if seeker is not None:
-                    seeker.turn(clicks, speed_up=False)   # (one step a click)
-                done = seeker is not None
-            elif presets is not None:            # held: what's on the knob, else a press
-                done = presets.knob_long()
-                if done is False:
-                    speaker.toggle()
-                    done = True
-            else:
-                done = announcer.speak() if announcer is not None else False
-            self._send(json.dumps({"press": press, "done": done, **speaker.status()}).encode(),
-                       "application/json")
 
-        def _speaker(self) -> None:
-            """/api/speaker with a JSON body: {"volume": 0-100}, {"step": n},
-            {"pause": true | false | "toggle"}, {"sleep": minutes (0 = off)},
-            {"mono": true | false} or
-            {"eq": {"g31": dB ... "g16k": dB}} (any of the ten bands; the old
-            "bass"/"mid"/"treble" are still accepted and set the bands they covered),
-            {"eq_auto": true | false, "eq_by_type": {"music"|"radio"|"audiobook"|"ebook"|"podcast": sound name|null}}
-            (the sound each kind of audio gets; a sound picked by hand holds until the kind changes),
-            {"eq_slots": [name|null x4]} (the sound each button picks in EQ mode: a ready-made
-            one or one saved with /api/speaker/sounds),
-            {"highpass": Hz} (the low cut; 0 = off) or
-            {"test": "bass" | "sweep" | "pink" | "left" | "right" | "sides" | "phase" | "tune" | "stop"}
-            (a test sound on the speaker; see audio/testsignal.py).
-            Replies with the speaker's status."""
-            try:
-                body = json.loads(self.rfile.read(int(self.headers.get("Content-Length", 0))) or b"{}")
-                if "volume" in body:
-                    speaker.set_volume(int(body["volume"]))
-                if "step" in body:
-                    speaker.step(int(body["step"]))
-                if "knob_mode" in body:
-                    speaker.set_knob_mode(body["knob_mode"])
-                if "mono" in body:
-                    if not isinstance(body["mono"], bool):
-                        raise ValueError("mono must be true or false")
-                    speaker.set_mono(body["mono"])
-                if "eq" in body:
-                    eq = body["eq"]
-                    if not isinstance(eq, dict) or not all(
-                            known_band(k) and isinstance(v, (int, float))
-                            and not isinstance(v, bool) for k, v in eq.items()):
-                        raise ValueError("eq must map band names (g31..g16k) to numbers")
-                    speaker.set_eq(eq)
-                if "eq_slots" in body:         # the sound each button picks in EQ mode (hold button 1 for 3 s)
-                    speaker.set_eq_slots(body["eq_slots"])
-                    if presets is not None:
-                        presets.bake()         # have the new names said ahead
-                if "eq_auto" in body or "eq_by_type" in body:    # the sound by what's playing
-                    on = body.get("eq_auto", speaker.eq_auto)
-                    if not isinstance(on, bool):
-                        raise ValueError("eq_auto must be true or false")
-                    speaker.set_eq_auto(on, body.get("eq_by_type"))
-                if "highpass" in body:
-                    hz = body["highpass"]
-                    if isinstance(hz, bool) or not isinstance(hz, (int, float)) or not 0 <= hz <= 300:
-                        raise ValueError("highpass must be 0-300 Hz")
-                    speaker.set_highpass(hz)
-                if "sleep" in body:
-                    minutes = body["sleep"]
-                    if isinstance(minutes, bool) or not isinstance(minutes, (int, float)) \
-                            or not 0 <= minutes <= 600:
-                        raise ValueError("sleep must be 0-600 minutes")
-                    speaker.set_sleep(minutes)
-                if "noise" in body or "noise_kind" in body or "noise_mix" in body:
-                    on = body.get("noise")
-                    if on == "toggle":
-                        on = speaker.speaker.noise is None
-                    kind, mix = body.get("noise_kind"), body.get("noise_mix")
-                    if on is not None and not isinstance(on, bool):
-                        raise ValueError("noise: true, false or \"toggle\"")
-                    if mix is not None and (isinstance(mix, bool) or not isinstance(mix, (int, float)) or not 0 <= mix <= 100):
-                        raise ValueError("noise_mix: 0-100")
-                    speaker.set_noise(on=on, kind=kind, mix=None if mix is None else int(mix))
-                if "test" in body:
-                    if body["test"] == "stop":
-                        speaker.stop_test()
-                    elif isinstance(body["test"], str):
-                        speaker.start_test(body["test"])   # ValueError if unknown
-                    else:
-                        raise ValueError("test must be a name")
-                if body.get("pause") == "toggle":
-                    speaker.toggle()
-                elif body.get("pause") is True:
-                    speaker.pause()
-                elif body.get("pause") is False:
-                    speaker.play()
-            except (ValueError, TypeError, AttributeError, OverflowError):
-                self.send_error(400)
-                return
-            self._send(json.dumps(speaker.status()).encode(), "application/json")
-
-        def _stream(self) -> None:
-            self.send_response(200)
-            self.send_header("Content-Type", "audio/mpeg")
-            self.send_header("Cache-Control", "no-store")
-            self.send_header("Connection", "close")
-            self.end_headers()
-            self.close_connection = True
-            q = output.add_client()
-            station.listener_joined()
-            try:
-                while True:
-                    chunk = q.get(timeout=IDLE_CLOSE_S)
-                    if chunk is None:
-                        break
-                    self.wfile.write(chunk)
-            except (queue.Empty, BrokenPipeError, ConnectionResetError, TimeoutError):
-                pass
-            finally:
-                output.remove_client(q)
-                station.listener_left()
-
+    from types import SimpleNamespace
+    from . import routes_system, routes_controls, routes_messages, routes_library, routes_receivers
+    ctx = SimpleNamespace(station=station, output=output, speaker=speaker, config_file=config_file, announcer=announcer,
+                          voice_jobs=voice_jobs, updates=updates, presets=presets, directory=directory, media=media, lamps=lamps,
+                          auth=auth, book_dl=book_dl, ebook_dl=ebook_dl, hear=hear, backups=backups, open_paths=open_paths)
+    for area in (routes_system, routes_controls, routes_messages, routes_library, routes_receivers):          # (the handler's helpers, by area: web/routes_*.py)
+        for name, method in area.build(ctx).items():
+            setattr(Handler, name, method)
     return Handler
 
 
