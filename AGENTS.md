@@ -7,8 +7,10 @@ information in anything committed (`local/` is git-ignored for those).
 
 ## Commands
 
-- Tests: `cd app && python -m pytest -q` (about 4 min). Run them, and
-  start the program for real, before any release.
+- Tests: `cd app && scripts/test.sh` (all of them; about 1.5 min with `pytest-xdist`
+  installed, 3.5 min without). Run them, and start the program for real, before
+  any release. While working, `scripts/test.sh quick` runs only the test files
+  for what has changed since the last commit (seconds): a guide, not a gate.
 - Build the image: `make` (after changing a package, `make sleepradiopi-dirclean` first).
 - Try an UNRELEASED change on a radio: `scripts/update.sh <ssh-host>`.
 - Release: commit everything, then `scripts/release.sh X.Y.Z --sdcard --notes "..."`.

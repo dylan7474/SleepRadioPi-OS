@@ -78,3 +78,15 @@ def test_the_pages_are_sent_compressed_and_not_again_when_unchanged(tmp_path: Pa
     finally:
         httpd.shutdown()
         httpd.server_close()
+
+
+def test_quick_runs_pick_the_test_files_for_what_changed() -> None:
+    import importlib.util
+    spec = importlib.util.spec_from_file_location("tests_for_changes", Path(__file__).parent.parent / "scripts" / "tests_for_changes.py")
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    got = mod.tests_for(["sleepradiopi/playback/conditions.py"])
+    assert "tests/test_conditions.py" in got and "tests/test_quakes.py" in got      # (the by-name one, and one that imports it)
+    assert "tests/test_page_ids.py" in mod.tests_for(["sleepradiopi/web/desktop.html"])
+    assert mod.tests_for(["tests/test_health.py"]) == ["tests/test_health.py"]
+    assert mod.tests_for(["README.md", "sleepradiopi/__init__.py"]) == []           # (docs and the package marker: nothing to run)

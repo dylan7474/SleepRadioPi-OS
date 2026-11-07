@@ -254,8 +254,9 @@ There are two ways:
 
   ```bash
   python3 -m venv .venv
-  .venv/bin/pip install numpy mutagen pytest sherpa-onnx
-  .venv/bin/python -m pytest
+  .venv/bin/pip install numpy mutagen pytest pytest-xdist sherpa-onnx
+  PYTHON=.venv/bin/python scripts/test.sh          # all the tests, in parallel (without xdist: one at a time)
+  PYTHON=.venv/bin/python scripts/test.sh quick    # only the tests for what has changed since the last commit
   ```
 
 ```bash

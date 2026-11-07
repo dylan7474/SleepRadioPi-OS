@@ -379,11 +379,11 @@ class Kept:
         old_ok (for a tile): figures come back up to SHOWN_OLD_S old, marked "old": True once they're more than two
         intervals old (the feed has missed a refresh: stagnant), and "gone": True past OLD_S (no longer how things
         are: never for an alert or what the DJ says)."""
-        if refresh:
-            self.refresh()
         now = self._clock()
         with self._lock:
-            had = self._had
+            had = self._had                          # (what is kept now: a fetch begun below answers the next time)
+        if refresh:
+            self.refresh()
         if had is None or now - had["t"] > (max(self.OLD_S, SHOWN_OLD_S) if old_ok else self.OLD_S):
             return None
         return {**had, "says": self._says(had), **({"old": True} if old_ok and now - had["t"] > 2 * self.EVERY_S else {}),
