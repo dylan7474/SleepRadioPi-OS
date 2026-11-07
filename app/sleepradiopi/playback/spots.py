@@ -93,8 +93,8 @@ class Spots(Kept):
         if (self._call() or "").strip():             # (no callsign: nothing to ask)
             super().refresh()
 
-    def status(self, refresh: bool = True) -> dict | None:
-        had = super().status(refresh)
+    def status(self, refresh: bool = True, old_ok: bool = False) -> dict | None:
+        had = super().status(refresh, old_ok)
         if had and had.get("call") != (self._call() or "").upper():      # (the callsign's changed: those were someone else's)
             return None
         return had

@@ -301,6 +301,7 @@ def _get(url: str, timeout: float = 12.0):
         return json.loads(r.read())
 
 
+SHOWN_OLD_S = 24 * 3600.0     # a tile's figures, past their OLD_S, are still shown (marked old) until they're this old
 FILE_EVERY_S = 3 * 3600.0     # figures that haven't changed are written to the card no more often than this
 OUTSIDE_TICK_S = 30.0         # how often Outside looks at which feeds are stale
 OUTSIDE_FIRST_S = 45.0        # ...and how long after the radio starts before it first does (the network may not be up yet)
@@ -363,17 +364,21 @@ class Kept:
                 self._busy, self._tried = True, now
                 threading.Thread(target=self._refresh, name=f"conditions-{type(self).__name__.lower()}", daemon=True).start()
 
-    def status(self, refresh: bool = True) -> dict | None:
+    def status(self, refresh: bool = True, old_ok: bool = False) -> dict | None:
         """What was last had, with "says", or None if there's nothing recent; a fetch is begun if it's stale
-        (refresh=False: just what's kept -- the desktop's page reads it so, and Outside keeps it fresh)."""
+        (refresh=False: just what's kept -- the desktop's page reads it so, and Outside keeps it fresh).
+        old_ok (for a tile): figures come back up to SHOWN_OLD_S old, marked "old": True once they're more than two
+        intervals old (the feed has missed a refresh: stagnant), and "gone": True past OLD_S (no longer how things
+        are: never for an alert or what the DJ says)."""
         if refresh:
             self.refresh()
         now = self._clock()
         with self._lock:
             had = self._had
-        if had is None or now - had["t"] > self.OLD_S:
+        if had is None or now - had["t"] > (max(self.OLD_S, SHOWN_OLD_S) if old_ok else self.OLD_S):
             return None
-        return {**had, "says": self._says(had)}
+        return {**had, "says": self._says(had), **({"old": True} if old_ok and now - had["t"] > 2 * self.EVERY_S else {}),
+                **({"gone": True} if old_ok and now - had["t"] > self.OLD_S else {})}
 
     def _refresh(self) -> None:
         try:
@@ -704,10 +709,13 @@ def outside(s: dict, sun_now: dict | None, fc: dict | None, aurora_now: dict | N
     {"tiles": [{"key", "title", "value" (a few letters, on the tile), "state" ("good" | "fair" | "poor" |
     "alert" | "quiet"), "sub", "says", "alert"}], "alerts": [{"key", "tile", "short", "says"}]}. A tile is
     left out when there's nothing to go by (no internet and nothing heard)."""
+    def current(had):                                # (figures marked old are for their tile to show, never for an alert)
+        return None if had and had.get("gone") else had
     alerts = [{"key": what, "tile": ALERT_TILE[what.partition(":")[0]], "short": short, "says": words}
-              for what, _, words, short in alerts_now(sun_now, fc, aurora_now, quakes_now, warn_now, qrz_now, light_now)]
+              for what, _, words, short in alerts_now(current(sun_now), current(fc), current(aurora_now), current(quakes_now), current(warn_now),
+                                                      current(qrz_now), light_now)]
     alerted = {a["tile"] for a in alerts}
-    tiles = []
+    tiles, from_fc = [], False
     live = sorted((b for b in s["bands"] if b["n"]), key=lambda b: (-b["n"], -(b.get("km") or 0)))
     if live:
         best = live[0]
@@ -722,6 +730,7 @@ def outside(s: dict, sun_now: dict | None, fc: dict | None, aurora_now: dict | N
             by.setdefault(((fc.get("bands") or {}).get(g) or {}).get(when, "").lower(), []).append(g)
         state = next((st for st in ("good", "fair", "poor") if by.get(st)), None)
         if state:
+            from_fc = True
             tiles.append({"key": "bands", "title": "Bands", "value": state.upper(), "state": state,
                           "sub": f"{by[state][0].split('m-')[0]}–{by[state][-1].split('m-')[1].rstrip('m')} m {'today' if day else 'tonight'}",
                           "says": forecast_says(fc, day) + " (N0NBH's forecast: nothing heard here lately.)"})
@@ -744,11 +753,30 @@ def outside(s: dict, sun_now: dict | None, fc: dict | None, aurora_now: dict | N
                       "sub": f"sporadic E · {_and(es)}" if es else "nothing open",
                       "says": f"Sporadic E open on {_and(es)} across Europe (N0NBH)." if es else "No sporadic E or VHF aurora forecast (N0NBH)."})
     from sleepradiopi.playback import lightning, qrzlog, quakes, spots, ukwarnings
-    tiles += (lightning.tile(light_now, alerted) + ukwarnings.tile(warn_now, alerted) + quakes.tiles(quakes_now, alerted)
+    tiles += (lightning.tile(light_now, alerted) + ukwarnings.tile(warn_now, alerted) + quakes.tiles(quakes_now, alerted, quakes_now["t"] if (quakes_now or {}).get("gone") else None)
               + spots.tile(spots_now) + qrzlog.tile(qrz_now, alerted))
+    now = time.time()
+    source = {"sun": sun_now, "aurora": aurora_now, "vhf": fc, "warnings": warn_now, "quakes": quakes_now, "signal": spots_now, "qrz": qrz_now,
+              "bands": fc if from_fc else None}
     for t in tiles:
         t["alert"] = t["key"] in alerted
+        had = source.get(t["key"])
+        if had and had.get("old"):                   # (the feed has missed refreshes: these are its last figures, said to be old)
+            ago = _ago(now - had["t"])
+            t.update(old=True, sub=f"{ago} old · can't reach it" if had.get("gone") else f"{ago} old · {t['sub']}",
+                     says=f"Last had {ago} ago, and the site hasn't been reachable since: {t['says']}")
+            if had.get("gone"):                      # (too old to be how things are: greyed, and no alert)
+                t.update(state="quiet", alert=False)
     return {"tiles": tiles, "alerts": alerts}
+
+
+def _ago(seconds: float) -> str:
+    """"40 min", "5 h", "1 day"."""
+    if seconds < 3600:
+        return f"{max(1, round(seconds / 60))} min"
+    if seconds < 86400:
+        return f"{round(seconds / 3600)} h"
+    return "1 day"
 
 
 class Outside:

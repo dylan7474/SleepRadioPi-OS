@@ -614,3 +614,37 @@ def test_no_callsign_or_key_means_nothing_is_asked_for() -> None:
     q.refresh()
     time.sleep(0.05)
     assert asked == [] and not s._busy and not q._busy
+
+
+def test_figures_are_marked_stagnant_after_two_missed_refreshes_and_dropped_after_a_day() -> None:
+    clock = [NOW]
+    feed = _Feed(lambda: clock[0])                   # EVERY_S 900, OLD_S 3600
+    feed.fetch()
+    assert "old" not in feed.status(False, True)
+    clock[0] += 2 * 900 - 1
+    assert "old" not in feed.status(False, True)     # (one refresh late is only slow)
+    clock[0] += 2
+    st = feed.status(False, True)
+    assert st["old"] and "gone" not in st and feed.status(False)["v"] == 1       # stagnant: shown, marked; still how things are for the DJ
+    clock[0] += 3600
+    st = feed.status(False, True)
+    assert st["old"] and st["gone"] and feed.status(False) is None                # too old to say or alert on, but a tile still has it
+    clock[0] = NOW + conditions.SHOWN_OLD_S + 1
+    assert feed.status(False, True) is None                                       # a day: gone from the folder
+
+
+def test_a_stagnant_tile_is_marked_and_a_gone_one_is_greyed_with_no_alert() -> None:
+    nothing = conditions.summary({}, [], NOW)
+    t = time.time()
+    aurora = {"level": "red", "says": "AuroraWatch UK: red.", "t": t - 3000, "old": True}      # stagnant, still how things are: its alert stands
+    d = conditions.outside(nothing, None, None, aurora, True)
+    tile = next(x for x in d["tiles"] if x["key"] == "aurora")
+    assert tile["old"] and tile["state"] == "alert" and tile["alert"] and "old" in tile["sub"] and tile["says"].startswith("Last had 50 min ago")
+    assert [a["tile"] for a in d["alerts"]] == ["aurora"]
+    gone = {**aurora, "t": t - 5 * 3600, "gone": True}                                           # past its cutoff: shown, but grey, and no alert
+    d = conditions.outside(nothing, None, None, gone, True)
+    tile = next(x for x in d["tiles"] if x["key"] == "aurora")
+    assert tile["old"] and tile["state"] == "quiet" and not tile["alert"] and tile["sub"] == "5 h old · can't reach it"
+    assert d["alerts"] == []
+    fresh = conditions.outside(nothing, None, None, {"level": "green", "says": "ok", "t": t}, True)
+    assert not next(x for x in fresh["tiles"] if x["key"] == "aurora").get("old")

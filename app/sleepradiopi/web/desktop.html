@@ -116,6 +116,8 @@
   .g-live.fair::before, .g-live.alert::before { background: linear-gradient(180deg, #ffb347, #e07b00); color: #3a1d00; }
   .g-live.good::before { background: linear-gradient(180deg, #8fd18f, #2a9d3a); color: #0e3311; }
   .g-live.poor::before { background: linear-gradient(180deg, #ff8a80, #d0312d); color: #fff; }
+  .g-live.old::before { opacity: .6; }
+  .g-live.old svg { opacity: .45; }
   .g-live.quiet::before { background: linear-gradient(180deg, #d8d2c2, #a9a290); color: #3d382c; }
   .icon .wbadge { position: absolute; top: 2px; right: 16px; min-width: 20px; height: 20px; padding: 0 5px; border-radius: 10px; background: var(--red);
                   color: #fff; font: 700 11px/20px var(--display); text-align: center; box-shadow: 0 2px 5px #0006; z-index: 3; pointer-events: none; }
@@ -1227,7 +1229,7 @@ function glyph(o) {
     case "voice": g.className += " g-dj"; if (!o.current) g.style.filter = "saturate(.35)"; break;
     case "calendar": { g.className += " g-cal"; const d = new Date(); g.dataset.mon = d.toLocaleDateString("en-GB", { month: "short" }).toUpperCase(); g.dataset.day = d.getDate(); break; }
     case "dj": g.className += " g-dj"; break;
-    case "outside": { const t = o.t || {}; g.className += ` g-station g-live ${t.state || "quiet"}`; g.dataset.short = t.value || "…"; g.innerHTML = svgPic(OUTSIDE_PIC[t.key] || FOLDER_PIC.outside); break; }
+    case "outside": { const t = o.t || {}; g.className += ` g-station g-live ${t.state || "quiet"}${t.old ? " old" : ""}`; g.dataset.short = t.value || "…"; g.innerHTML = svgPic(OUTSIDE_PIC[t.key] || FOLDER_PIC.outside); break; }
   }
   return g;
 }
