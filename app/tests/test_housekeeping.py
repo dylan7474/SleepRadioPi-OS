@@ -92,3 +92,31 @@ def test_quick_runs_pick_the_test_files_for_what_changed() -> None:
     web = mod.tests_for(["sleepradiopi/web/routes_outside.py"])                                 # (an area of the web handler: the tests that name its API paths)
     assert "tests/test_health.py" in web and "tests/test_lightning.py" in web and len(web) < 20
     assert mod.tests_for(["README.md", "sleepradiopi/__init__.py"]) == []           # (docs and the package marker: nothing to run)
+
+
+def test_the_tab_icon_is_served_open_and_linked_from_the_pages(tmp_path: Path) -> None:
+    from sleepradiopi.config.auth import Auth
+    conf = tmp_path / "config.json"
+    conf.write_text("{}")
+    Auth(conf).set_password("letmein1")                                        # (a password set: the icon is still open, like the pages)
+    httpd = ThreadingHTTPServer(("127.0.0.1", 0), make_handler(None, None, None, conf))
+    threading.Thread(target=httpd.serve_forever, daemon=True).start()
+    url = f"http://127.0.0.1:{httpd.server_address[1]}"
+    try:
+        def get(path, **headers):
+            req = urllib.request.Request(url + path, headers={"Cf-Ray": "abc", **headers})       # (as if from outside: through the tunnel)
+            try:
+                with urllib.request.urlopen(req, timeout=10) as r:
+                    return r.status, dict(r.headers), r.read()
+            except urllib.error.HTTPError as e:
+                return e.code, dict(e.headers), e.read()
+        code, h, body = get("/favicon.ico")
+        assert code == 200 and h["Content-Type"] == "image/svg+xml" and body == server.FAVICON and body.startswith(b"<svg")
+        assert "max-age=86400" in h["Cache-Control"]
+        assert get("/api/status")[0] == 401                                    # (from outside, the password is still wanted)
+        for page in ("/desktop", "/", "/analyser/"):
+            code, h, body = get(page, **{"Accept-Encoding": "identity"})
+            assert code == 200 and b'rel="icon" type="image/svg+xml" href="/favicon.ico"' in body, page
+    finally:
+        httpd.shutdown()
+        httpd.server_close()

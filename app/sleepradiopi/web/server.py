@@ -37,6 +37,12 @@ REMOTE = (Path(__file__).parent / "remote.html").read_bytes()   # the phone remo
 DESKTOP = (Path(__file__).parent / "desktop.html").read_bytes()   # the new desktop page (for computers)
 DESKTOP_TAG = hashlib.sha1(DESKTOP).hexdigest()[:12]   # an open desktop page that sees this change reloads itself
 REMOTE_TAG = hashlib.sha1(REMOTE).hexdigest()[:12]
+# The little icon in a browser's tab (a dial in the desktop's amber), for /favicon.ico: the pages link to it; without one a
+# browser asks for it anyway and the radio answered 404, on every page load, in its log
+FAVICON = (b'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32"><rect width="32" height="32" rx="7" fill="#d99a35"/>'
+           b'<circle cx="16" cy="18" r="9" fill="none" stroke="#3a1d00" stroke-width="2.4"/>'
+           b'<path d="M16 18l5-7" stroke="#3a1d00" stroke-width="2.4" stroke-linecap="round"/>'
+           b'<path d="M8 7.5h16" stroke="#3a1d00" stroke-width="2.2" stroke-linecap="round" opacity=".55"/></svg>')
 _GZIPPED: dict[str, bytes] = {}                          # a page, compressed once (the first time a browser that takes it asks)
 
 
@@ -79,7 +85,7 @@ def make_handler(station: Station, output: Mp3Output, speaker=None,
     if hear is not None and speaker is not None:
         speaker.elsewhere = hear          # (play and pause are about the listening there, while it's on)
     backups = backup.Store(config_file.parent / "backups") if config_file is not None else None
-    open_paths = {"/", "/index.html", "/desktop", "/classic", "/api/auth", "/api/login", "/analyser", "/analyser/", "/analyser/index.html"}
+    open_paths = {"/", "/index.html", "/desktop", "/classic", "/api/auth", "/api/login", "/analyser", "/analyser/", "/analyser/index.html", "/favicon.ico"}
 
 
 
@@ -163,6 +169,18 @@ def make_handler(station: Station, output: Mp3Output, speaker=None,
             if not self.path.startswith("/api/"):
                 log.info("%s %s", self.address_string(), fmt % args)
 
+        def _icon(self) -> None:
+            """/favicon.ico: the tab icon (an SVG, which is what every current browser takes at that address), kept a day."""
+            self.send_response(200)
+            self.send_header("Content-Type", "image/svg+xml")
+            self.send_header("Content-Length", str(len(FAVICON)))
+            self.send_header("Cache-Control", "public, max-age=86400")
+            self.end_headers()
+            try:
+                self.wfile.write(FAVICON)
+            except (BrokenPipeError, ConnectionResetError):
+                pass
+
         def _page(self, body: bytes, tag: str) -> None:
             """A page of the radio's own (the desktop, the phone remote): kept by the browser until it changes (an ETag
             -- "not modified" is a few bytes, not 590 KB over Wi-Fi), and compressed for a browser that takes it."""
@@ -204,7 +222,7 @@ def make_handler(station: Station, output: Mp3Output, speaker=None,
 
         def do_GET(self) -> None:
             path = urlparse(self.path).path
-            if (not path.startswith("/api/") and path not in ("/", "/index.html", "/desktop", "/classic", "/stream")
+            if (not path.startswith("/api/") and path not in ("/", "/index.html", "/desktop", "/classic", "/stream", "/favicon.ico")
                     and not path.startswith("/analyser")
                     and wifi_mod.status().get("mode") == "hotspot"):
                 # The radio's own network: a phone checking for internet
@@ -262,6 +280,8 @@ def make_handler(station: Station, output: Mp3Output, speaker=None,
                 status["version"] = updater_mod.this_version()
                 status["desktop"] = DESKTOP_TAG
                 self._send(json.dumps(status).encode(), "application/json")
+            elif path == "/favicon.ico":
+                self._icon()
             elif path == "/stream":
                 if output is None or not output.enabled:
                     self.send_error(404, "listening in a browser is switched off")
