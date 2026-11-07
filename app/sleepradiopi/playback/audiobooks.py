@@ -139,11 +139,13 @@ class BookLibrary:
         self._lock = threading.Lock()
         self._books: dict[str, Book] = {}
         self._cache: dict = {}
+        self._filed: str | None = None       # the cache file's text, as last read or written (not rewritten when it would be the same)
         if cache_path is not None:
             try:
-                data = json.loads(Path(cache_path).read_text())
+                text = Path(cache_path).read_text()
+                data = json.loads(text)
                 if data.get("version") == CACHE_VERSION:
-                    self._cache = data.get("files", {})
+                    self._cache, self._filed = data.get("files", {}), text
             except (OSError, ValueError):
                 pass
 
@@ -167,10 +169,13 @@ class BookLibrary:
             self._books = books
             self._cache = {k: v for k, v in self._cache.items() if k in seen}
         if self.cache_path is not None:
-            try:
-                write_atomic(Path(self.cache_path), json.dumps({"version": CACHE_VERSION, "files": self._cache}))
-            except OSError:
-                pass
+            text = json.dumps({"version": CACHE_VERSION, "files": self._cache})
+            if text != self._filed:              # (every scan used to rewrite it, at each start, whatever had changed)
+                try:
+                    write_atomic(Path(self.cache_path), text)
+                    self._filed = text
+                except OSError:
+                    pass
         log.info("audiobooks: %d in %s", len(books), self.root)
         return list(books.values())
 

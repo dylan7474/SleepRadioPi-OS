@@ -21,6 +21,7 @@ from sleepradiopi.audio.ampmute import AmpMute
 from sleepradiopi.audio.eq import Equalizer
 from sleepradiopi.audio.speaker import SpeakerControl, SpeakerOutput, TeeOutput
 from sleepradiopi.broadcast.station import Station
+from sleepradiopi.config import atomic
 from sleepradiopi.config.settings import DEFAULT_PATH, load, save, save_setting
 from sleepradiopi import startup_sound
 from sleepradiopi import wifi
@@ -695,6 +696,9 @@ def main() -> None:
     cfg["ondemand_folder"] = cfg["music_folder"].parent / "ondemand"
     # Ebooks (epub / text the voice reads aloud): /media/ebooks on the radio
     cfg["ebooks_folder"] = cfg["music_folder"].parent / "ebooks"
+    for folder in (Path.home() / ".cache" / "sleepradiopi", Path.home() / ".local" / "state" / "sleepradiopi"):
+        for name in atomic.sweep_tmp(folder):        # (what a write left when the radio died part-way through it)
+            logging.getLogger(__name__).info("removed a leftover temp file: %s/%s", folder.name, name)
     cfg["book_cache"] = Path.home() / ".cache" / "sleepradiopi" / "books.json"
     cfg["book_positions"] = Path.home() / ".local" / "state" / "sleepradiopi" / "book-positions.json"
     cfg["podcast_cache"] = Path.home() / ".cache" / "sleepradiopi" / "podcasts"

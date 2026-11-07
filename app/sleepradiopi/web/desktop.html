@@ -6651,14 +6651,17 @@ async function boot() {
       await open(s.id);
       const w = W.find(w => w.id === s.id); if (w) Object.assign(w, { x: s.x, y: s.y, w: s.w, h: s.h, fitted: true });
     }
-    booted = true; drawDesk(); setInterval(tick, 10000); setInterval(poll, 2500); setInterval(refreshOpen, 20000);
+    booted = true; drawDesk(); setInterval(tick, 10000);
+    // (a tab nobody is looking at asks the radio -- a small Zero -- every 15 s, not every 2.5 s; unless it is the one playing the radio, "Listen here", which must follow a pause at once; coming back to it asks at once)
+    let hiddenTicks = 0; setInterval(() => { if (!document.hidden || hearing || ++hiddenTicks % 6 === 0) poll(); }, 2500);
+    setInterval(() => { if (!document.hidden) refreshOpen(); }, 20000);
     setInterval(() => { if (!document.hidden) outsidePoll(); }, 120000);
     // The Receiver folder appears on the desktop once a station says there's a receiver; while one of its
     // windows is open it's asked every few seconds who has the air.
     api("/api/radio").then(d => { if ((rxOrigins(d.stations).length || d.stations.some(x => rxKiwi(x.url) || rxOwrx(x.url) || rxRoom(x.url))) && !desk.some(p => p.id === RECEIVER.id)) { desk.push({ id: RECEIVER.id, ...freeSpot() }); saveDesk(); drawDesk(); } }).catch(() => {});
     setInterval(() => { if (!document.hidden && W.some(w => ["rxbands", "rxband"].includes(O[w.id]?.box))) refreshOpen(); }, 4000);
     setInterval(rigPoll, 350);
-    document.addEventListener("visibilitychange", () => { if (!document.hidden) { refreshOpen(); poll(); } }); setInterval(async () => { await loadButtons(); updateRadio(); }, 15000); }
+    document.addEventListener("visibilitychange", () => { if (!document.hidden) { refreshOpen(); poll(); } }); setInterval(async () => { if (document.hidden) return; await loadButtons(); updateRadio(); }, 15000); }
   takeTune();
 }
 // A figure in a tile's window: its name, its value in bold, what it means

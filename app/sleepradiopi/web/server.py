@@ -6,6 +6,7 @@ nothing more. No auth: meant for a trusted LAN only.
 
 from __future__ import annotations
 
+import gzip
 import hashlib
 import json
 import logging
@@ -53,6 +54,14 @@ log = logging.getLogger(__name__)
 REMOTE = (Path(__file__).parent / "remote.html").read_bytes()   # the phone remote (/), and the Wi-Fi set-up on the hotspot
 DESKTOP = (Path(__file__).parent / "desktop.html").read_bytes()   # the new desktop page (for computers)
 DESKTOP_TAG = hashlib.sha1(DESKTOP).hexdigest()[:12]   # an open desktop page that sees this change reloads itself
+REMOTE_TAG = hashlib.sha1(REMOTE).hexdigest()[:12]
+_GZIPPED: dict[str, bytes] = {}                          # a page, compressed once (the first time a browser that takes it asks)
+
+
+def _gzipped(tag: str, body: bytes) -> bytes:
+    if tag not in _GZIPPED:
+        _GZIPPED[tag] = gzip.compress(body, 9, mtime=0)
+    return _GZIPPED[tag]
 # The speaker analyser (also on GitHub Pages): served here too, for tuning with no internet.
 ANALYSER = (Path(__file__).parent / "analyser" / "index.html").read_bytes()
 # The world's coastlines, for the map of who's been heard (Natural Earth's 110 m land, public domain, to half a degree)
@@ -196,6 +205,32 @@ def make_handler(station: Station, output: Mp3Output, speaker=None,
             if not self.path.startswith("/api/"):
                 log.info("%s %s", self.address_string(), fmt % args)
 
+        def _page(self, body: bytes, tag: str) -> None:
+            """A page of the radio's own (the desktop, the phone remote): kept by the browser until it changes (an ETag
+            -- "not modified" is a few bytes, not 590 KB over Wi-Fi), and compressed for a browser that takes it."""
+            etag = f'"{tag}"'
+            if etag in [t.strip().removeprefix("W/") for t in self.headers.get("If-None-Match", "").split(",")]:
+                self.send_response(304)
+                self.send_header("ETag", etag)
+                self.send_header("Cache-Control", "no-cache")
+                self.end_headers()
+                return
+            gz = "gzip" in self.headers.get("Accept-Encoding", "")
+            out = _gzipped(tag, body) if gz else body
+            self.send_response(200)
+            self.send_header("Content-Type", "text/html; charset=utf-8")
+            self.send_header("Content-Length", str(len(out)))
+            self.send_header("ETag", etag)
+            self.send_header("Cache-Control", "no-cache")     # (ask each time, but only take it again if it changed)
+            self.send_header("Vary", "Accept-Encoding")
+            if gz:
+                self.send_header("Content-Encoding", "gzip")
+            self.end_headers()
+            try:
+                self.wfile.write(out)
+            except (BrokenPipeError, ConnectionResetError):
+                pass
+
         def _send(self, body: bytes, ctype: str, headers: list[tuple[str, str]] = ()) -> None:
             self.send_response(200)
             self.send_header("Content-Type", ctype)
@@ -226,14 +261,14 @@ def make_handler(station: Station, output: Mp3Output, speaker=None,
             if path == "/api/auth":
                 self._send(json.dumps(self._auth_state()).encode(), "application/json")
             elif path in ("/", "/index.html"):
-                self._send(REMOTE, "text/html; charset=utf-8")
+                self._page(REMOTE, REMOTE_TAG)
             elif path == "/classic":          # (the classic page is retired: everything is on the desktop)
                 self.send_response(302)
                 self.send_header("Location", "/desktop")
                 self.send_header("Content-Length", "0")
                 self.end_headers()
             elif path == "/desktop":
-                self._send(DESKTOP, "text/html; charset=utf-8")
+                self._page(DESKTOP, DESKTOP_TAG)
             elif path == "/desktop/land.json":
                 self._send(LAND, "application/json")
             elif path == "/analyser":

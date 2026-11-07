@@ -9,8 +9,32 @@ new one, never half of either.
 """
 
 import os
+import re
 import tempfile
+import time
 from pathlib import Path
+
+
+_TMP = re.compile(r"\.[A-Za-z0-9_]{8}\.tmp$")      # (what tempfile.mkstemp makes below: name.XXXXXXXX.tmp)
+
+
+def sweep_tmp(folder: Path, older_than_s: float = 600.0, now: float | None = None) -> list[str]:
+    """Remove the temp files a write left behind when the radio died part-way through it (an out-of-memory kill, a
+    power cut), in folder only; -> their names. Only those older than older_than_s, so a write going on now is safe."""
+    now = time.time() if now is None else now
+    gone = []
+    try:
+        entries = list(os.scandir(folder))
+    except OSError:
+        return gone
+    for e in entries:
+        try:
+            if e.is_file(follow_symlinks=False) and _TMP.search(e.name) and now - e.stat().st_mtime > older_than_s:
+                os.unlink(e.path)
+                gone.append(e.name)
+        except OSError:
+            pass
+    return gone
 
 
 def write_atomic(path: Path, text: str, mode: int = 0o644) -> None:
