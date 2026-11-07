@@ -397,6 +397,21 @@ def build(ctx):
             station.listener_left()
 
     def get(self, path) -> bool:
+        if path == "/api/log":
+            # The Log window (logview.py): the newest lines of the radio's log, which is in memory on the appliance (nothing
+            # is written to the card); ?level=problems | all, ?q=text, ?lines=n; and how long the radio and its program have run.
+            from sleepradiopi import health as health_mod
+            from sleepradiopi import logview
+            qs = parse_qs(urlparse(self.path).query)
+            try:
+                want = int(qs.get("lines", [logview.DEFAULT_LINES])[0])
+            except ValueError:
+                want = logview.DEFAULT_LINES
+            out = logview.read_log("problems" if qs.get("level", [""])[0] == "problems" else "all", qs.get("q", [""])[0], want)
+            out["system_up_s"] = health_mod.system_uptime()
+            out["program_up_s"] = time.time() - health_mod.health.started if health_mod.health.appliance else None      # (a desktop has been up for days: nothing to say of the program)
+            self._send(json.dumps(out).encode(), "application/json")
+            return True
         if path == "/api/settings" and config_file is not None:
             self._save_settings()
             return True

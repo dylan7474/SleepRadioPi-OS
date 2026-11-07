@@ -128,6 +128,13 @@
   .menubar .hpill i { background: #e07b00; box-shadow: 0 0 6px #e07b00; }
   .menubar .hpill.bad { border-color: var(--red); }
   .menubar .hpill.bad i { background: #d0312d; box-shadow: 0 0 6px #d0312d; }
+  .logbar { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin: 6px 0; }
+  .logpre { font: 11.5px/1.45 ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace; height: 320px; overflow: auto; background: var(--win-2);
+            border: 1px solid var(--line); border-radius: 6px; padding: 6px 8px; user-select: text; }
+  .logpre .ll { white-space: pre-wrap; word-break: break-word; }
+  .logpre .ll .lt, .logpre .ll .lw { color: var(--dim); }
+  .logpre .ll.error, .logpre .ll.critical { color: var(--red); }
+  .logpre .ll.warning { color: var(--amber); }
   .hpop { position: fixed; top: 34px; right: 12px; z-index: 9000; width: min(420px, calc(100vw - 24px)); background: var(--win); color: var(--ink);
           border: 1px solid var(--line, #0003); border-radius: 10px; box-shadow: 0 10px 30px #0005; padding: 10px 12px; font: 13px/1.4 var(--display); }
   .hpop h4 { margin: 0 0 6px; font: 700 13px var(--display); }
@@ -781,6 +788,7 @@ const PANELS = [
   ["dj", "The DJ", "DJ", 40, "dj"], ["speakers", "Speakers", "♫", 28, "speakers"], ["buttons", "Buttons", "4", 200, null],
   ["noise", "Noise", "≈", 250, "noise"], ["voices", "Voices", "“", 300, "voices"],
   ["wifi", "Wi-Fi", "⌔", 190, "wifi"], ["identity", "This radio", "R", 40, "identity"], ["updates", "Updates", "↑", 130, "updates"],
+  ["log", "Log", "≣", 215, null],
   ["backup", "Save & load", "⇅", 170, "backup"], ["remote", "Remote access", "⇄", 100, "remote"], ["power", "Power", "⏻", 5, "power"], ["library", "Themes", "◎", 30, null],
   ["onair", "On air", "♪", 20, null],
 ];
@@ -5060,6 +5068,11 @@ const UI = {
           help(c.alerts ? "Said in the next gap, whatever the hour" : "Off")),
         help("When AuroraWatch UK goes to amber or red, sporadic E opens on 6, 4 or 2 m, or NOAA reports a strong radio blackout or geomagnetic storm: once, when it starts, in the next gap between songs (not in the quiet hours)."))],
   },
+  // Log: the radio's log, newest at the bottom (logView below keeps its own state: it refreshes itself while Follow is on)
+  log: {
+    load: () => api("/api/log?level=problems&lines=500"),
+    build: (d, act, win) => [win.logView || (win.logView = logView(win, d))],
+  },
   // Earthquakes (a tile in The world outside): the world's in the last day, the biggest first, and the UK's lately,
   // each with how far away; and the Alerts switch (the same one as Band conditions'), with what's big enough.
   quakes: {
@@ -5433,6 +5446,7 @@ const UI = {
 // "v1.0.4-107-g8d88d15-dirty" (a build between releases) -> "1.0.4, build 107"; "v1.0.4" -> "1.0.4"
 const niceVersion = v => { const m = /^v?(\d+(?:\.\d+)*)(?:-(\d+)-g[0-9a-f]+)?/.exec(v || ""); return m ? m[1] + (m[2] ? `, build ${m[2]}` : "") : v || "unknown"; };
 const SUMS = {
+  log: d => d.exists ? "What the radio has logged since it started: in its memory, so nothing is written to the card" : "This isn't the radio's own system: there is no log file here",
   speakers: sp => [sp.mono ? "Mono" : "Stereo", `EQ ${eqWords(sp.eq).toLowerCase()}`, sp.highpass_hz ? `low cut ${sp.highpass_hz} Hz` : "no low cut",
                    `knob ${({ auto: "automatic", fine: "fine", normal: "normal", coarse: "coarse" })[sp.knob_mode] || sp.knob_mode}`].join(" · "),
   dj: d => d.dj_on ? [VOICE(d.voice), ({ maximum: "talks every song", chatty: "chatty", balanced: "balanced", minimal: "talks rarely" })[d.chattiness], d.news_enabled ? "the news on the hour" : "no news",
@@ -6714,6 +6728,52 @@ function outsidePill(step) {                          // one alert at a time, th
   const one = a[pillAt % a.length];
   p.hidden = false; p.title = one.says + " · click to open The world outside";
   p.replaceChildren(el("i"), el("span", { textContent: one.short }), a.length > 1 ? el("small", { textContent: `${pillAt % a.length + 1} of ${a.length}` }) : null);
+}
+// The Log window's view: the radio's log (in its memory: reading it writes nothing to the card), problems only to begin with,
+// searchable, following the newest line every few seconds while the window is open and the tab is looked at.
+function logView(win, first) {
+  const st = { level: "problems", q: "", follow: true, busy: false, d: first };
+  const dur = s => s < 90 ? (s >= 30 ? "a minute" : "a few seconds") : s < 5400 ? `${Math.round(s / 60)} min` : s < 172800 ? `${Math.round(s / 3600)} h` : `${Math.round(s / 86400)} days`;
+  const note = el("p", { className: "shelp" }), pre = el("div", { className: "logpre", tabIndex: 0, "aria-label": "The radio's log" });
+  const level = el("select", { "aria-label": "What to show", title: "Problems only, or everything the radio logged" },
+    el("option", { value: "problems", textContent: "Problems only" }), el("option", { value: "all", textContent: "Everything" }));
+  const q = el("input", { type: "text", maxLength: 100, placeholder: "Search", "aria-label": "Search the log", style: "flex:1;min-width:90px" });
+  const follow = el("input", { type: "checkbox", checked: true, id: "log-follow" });
+  const render = d => {
+    st.d = d;
+    const up = d.system_up_s != null ? `The radio has been on for ${dur(d.system_up_s)}` + (d.program_up_s != null && d.system_up_s - d.program_up_s > 120 ? `; its program restarted itself ${dur(d.program_up_s)} ago` : "") + ". " : "";
+    note.textContent = up + (!d.exists ? "There is no log file here: this isn't the radio's own system."
+      : d.truncated ? `Showing the last ${d.shown} of ${d.matched} lines.` : `${d.matched} line${d.matched === 1 ? "" : "s"}.`)
+      + " It lives in the radio's memory, so a restart clears it and nothing is written to the card.";
+    const empty = !d.lines.length ? (!d.exists ? "" : st.q ? "No line has that in it." : st.level === "problems" ? "Nothing wrong has been logged since the radio started." : "Nothing logged yet.") : "";
+    pre.replaceChildren(...(empty ? [el("div", { className: "ll", textContent: empty })] : d.lines.map(l => el("div", { className: "ll " + l.level.toLowerCase() },
+      el("span", { className: "lt", textContent: l.t.replace(/\s+/, " ") + "  " }), l.level === "INFO" ? "" : l.level + " ", el("span", { className: "lw", textContent: l.who ? l.who + ": " : "" }), l.text))));
+    if (st.follow) pre.scrollTop = pre.scrollHeight;
+  };
+  const url = (lv, n) => `/api/log?level=${lv}&lines=${n}&q=${encodeURIComponent(st.q)}`;
+  const fetchLog = async () => {
+    if (st.busy) return;
+    st.busy = true;
+    try { render(await api(url(st.level, 500))); } catch (e) { note.textContent = "Couldn't ask the radio: " + e.message; }
+    st.busy = false;
+  };
+  let typing; q.oninput = () => { clearTimeout(typing); typing = setTimeout(() => { st.q = q.value; fetchLog(); }, 300); };
+  level.onchange = () => { st.level = level.value; fetchLog(); };
+  follow.onchange = () => { st.follow = follow.checked; if (st.follow) fetchLog(); };
+  const download = T("Download", async () => {
+    try {
+      const d = await api("/api/log?level=all&lines=1000");
+      const text = d.lines.map(l => `${l.t.replace(/\s+/, " ")} ${l.level} ${l.who ? l.who + ": " : ""}${l.text}`).join("\n") + "\n";
+      const a = el("a", { href: URL.createObjectURL(new Blob([text], { type: "text/plain" })), download: `radio-log-${new Date().toISOString().slice(0, 16).replace(/[:T]/g, "-")}.txt` });
+      document.body.append(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+    } catch (e) { toast("Couldn't get the log: " + e.message); }
+  }, "", false);
+  const timer = setInterval(() => {
+    if (!W.includes(win)) { clearInterval(timer); win.logView = null; return; }   // (the window was closed)
+    if (st.follow && !document.hidden) fetchLog();
+  }, 3000);
+  render(first);
+  return el("div", {}, note, el("div", { className: "logbar" }, level, q, el("label", { style: "white-space:nowrap" }, follow, " Follow"), T("Refresh", fetchLog), download), pre);
 }
 // Something wrong? (/api/health): a light in the menu bar only while there is something; click for each thing in a sentence
 let HEALTH = { level: "ok", issues: [] };

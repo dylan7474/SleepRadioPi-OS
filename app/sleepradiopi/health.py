@@ -98,7 +98,7 @@ class Health:
                  ooms: Callable = oom_kills, uptime: Callable = system_uptime, space: Callable = disk,
                  appliance: bool | None = None) -> None:
         self._dir = data_dir or Path.home()
-        self._appliance = Path("/etc/sleepradiopi-version").exists() if appliance is None else appliance      # (a desktop has been up for days: it says nothing of the program restarting)
+        self.appliance = Path("/etc/sleepradiopi-version").exists() if appliance is None else appliance      # (a desktop has been up for days: it says nothing of the program restarting)
         self._clock, self._mem, self._temp, self._volt, self._ooms, self._uptime, self._space = clock, mem, temp, volt, ooms, uptime, space
         self._lock = threading.Lock()
         self._samples: list[tuple[float, float | None, float | None]] = []      # (when, MB available, °C)
@@ -173,7 +173,7 @@ class Health:
         # the program restarting itself (not the whole radio: an update or a reboot starts the system's clock again too)
         up_now, up_then = self._uptime(), self._sys_up_at_start
         app_up = now - self.started
-        if self._appliance and up_now is not None and up_then is not None and app_up < RESTART_SHOWN_S and up_then > 120:
+        if self.appliance and up_now is not None and up_then is not None and app_up < RESTART_SHOWN_S and up_then > 120:
             add("restart", "warn", f"Restarted {ago(app_up)} ago", f"The radio's program restarted itself {ago(app_up)} ago, without the radio being switched off (a crash, or the system stopping it for memory).")
         # the clock
         if not clock_ok:

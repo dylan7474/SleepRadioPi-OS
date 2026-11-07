@@ -12,6 +12,7 @@ import json
 import logging
 from http.cookies import SimpleCookie
 import os
+import sys
 import threading
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -396,11 +397,24 @@ def make_handler(station: Station, output: Mp3Output, speaker=None,
     return Handler
 
 
+class RadioServer(ThreadingHTTPServer):
+    daemon_threads = True
+
+    def handle_error(self, request, client_address) -> None:
+        """A browser or phone that drops its connection mid-request (a tab closed, a phone asleep) is one short line,
+        not the traceback socketserver prints for every error; anything else is reported as it always was."""
+        exc = sys.exc_info()[1]
+        if isinstance(exc, (ConnectionResetError, ConnectionAbortedError, BrokenPipeError)):
+            log.info("%s: the client dropped its connection (%s)", client_address[0], type(exc).__name__)
+            return
+        super().handle_error(request, client_address)
+
+
 def serve(station: Station, output: Mp3Output, port: int, speaker=None,
           config_file: Path | None = None, announcer=None, voice_jobs=None, updates=None,
           presets=None, directory=None, media=None, lamps=None) -> None:
     from sleepradiopi.config import brand
-    server = ThreadingHTTPServer(("0.0.0.0", port),
+    server = RadioServer(("0.0.0.0", port),
                                  make_handler(station, output, speaker, config_file, announcer, voice_jobs,
                                               updates, presets, directory, media, lamps))
     server.daemon_threads = True
