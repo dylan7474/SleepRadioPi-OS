@@ -22,6 +22,7 @@ SAMPLE_S = 10.0
 WINDOW_S = 300.0                    # the lowest memory and the highest temperature are of the last five minutes
 UNDERVOLT_SHOWN_S = 24 * 3600.0     # a dip in the power supply is shown for a day
 RESTART_SHOWN_S = 3600.0            # the program restarting itself, for an hour
+FEEDS_GRACE_S = 5 * 60.0            # after a start the feeds are not judged: what they kept in files may be an hour old, and the first fetch is under way
 FEEDS_QUIET_S = 20 * 60.0           # feeds that never had anything are only a problem once the radio has run this long
 DISK_WARN_MB, DISK_BAD_MB, DISK_WARN_PCT = 40.0, 15.0, 85.0      # (the data partition is small: 230 MB on the radio)
 MEM_WARN_MB, MEM_BAD_MB = 30.0, 15.0
@@ -178,7 +179,7 @@ class Health:
         if not clock_ok:
             add("clock", "warn", "Clock not set", "The radio doesn't know the time yet (no internet or clock chip yet): the time, programmes and alarms can't be trusted.")
         # the outside feeds
-        if not offline:
+        if not offline and now - self.started > FEEDS_GRACE_S:
             stale = []
             for f in feeds:
                 if not f.wanted():

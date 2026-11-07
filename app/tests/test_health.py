@@ -109,6 +109,9 @@ def test_the_clock() -> None:
 def test_feeds_that_stopped_updating() -> None:
     clock = [NOW]
     h = _health(lambda: clock[0])
+    old = [_Feed("a", 7200.0), _Feed("b", 7200.0), _Feed("c", 7200.0)]
+    assert h.issues(old)["issues"] == []                                       # (just started: what they kept in files is old, the first fetch is under way)
+    clock[0] += health.FEEDS_GRACE_S + 1
     fresh = _Feed("NOAA's figures", 300.0)
     one = _Feed("the earthquakes", 3 * 3600.0)
     out = h.issues([fresh, one])
@@ -119,7 +122,7 @@ def test_feeds_that_stopped_updating() -> None:
     assert h.issues(three, offline=True)["issues"] == []                       # a radio set to work without Wi-Fi expects none
     assert h.issues([_Feed("PSK Reporter's spots", None, wanted=False)])["issues"] == []   # (no callsign set: not asked for)
     never = [_Feed("a", None), _Feed("b", None), _Feed("c", None)]
-    assert h.issues(never)["issues"] == []                                     # (just started: they haven't had time)
+    assert h.issues(never)["issues"] == []                                     # (a few minutes in: they haven't had time)
     clock[0] += health.FEEDS_QUIET_S + 1
     assert [i["key"] for i in h.issues(never)["issues"]] == ["feeds"]
 
