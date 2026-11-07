@@ -550,6 +550,16 @@ def make_handler(station: Station, output: Mp3Output, speaker=None,
                                                              conditions_mod.daytime(time.time(), ft8_mod.HOME), quakes_mod.quakes.status(False, True),
                                                              warn_mod.warnings.status(False, True), spots_mod.spots.status(False, True), qrz_mod.logbook.status(False, True),
                                                              lightning_mod.watch.status())).encode(), "application/json")
+            elif path == "/api/health":
+                # The menu-bar light (health.py): is something wrong? Quiet things that go wrong on a small radio, in a sentence each.
+                from sleepradiopi import health as health_mod
+                from sleepradiopi.config.clock import clock_trusted
+                from sleepradiopi.playback import conditions as conditions_mod
+                try:
+                    offline = bool(wifi_mod.load()["offline"])
+                except Exception:
+                    offline = False
+                self._send(json.dumps(health_mod.health.issues(conditions_mod.outside_feeds(), offline, clock_trusted())).encode(), "application/json")
             elif path == "/api/lightning":
                 # The Lightning window (playback/lightning.py): strikes within "area_km" of the locator in the last three
                 # hours (the latest first), whether it's listening now, when it last did, and how much of the world it heard.

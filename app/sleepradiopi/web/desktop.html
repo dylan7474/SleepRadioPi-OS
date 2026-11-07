@@ -124,6 +124,19 @@
   .menubar .opill { display: inline-flex; align-items: center; gap: 8px; padding: 2px 12px; border-radius: 12px; background: var(--win); border: 1px solid var(--amber);
                     font: 600 11.5px var(--display); color: var(--ink); cursor: pointer; max-width: 330px; overflow: hidden; text-overflow: ellipsis; transition: opacity .4s; flex-shrink: 1; }
   .menubar .opill[hidden] { display: none; }
+  .menubar .hpill { flex-shrink: 0; max-width: 280px; }
+  .menubar .hpill i { background: #e07b00; box-shadow: 0 0 6px #e07b00; }
+  .menubar .hpill.bad { border-color: var(--red); }
+  .menubar .hpill.bad i { background: #d0312d; box-shadow: 0 0 6px #d0312d; }
+  .hpop { position: fixed; top: 34px; right: 12px; z-index: 9000; width: min(420px, calc(100vw - 24px)); background: var(--win); color: var(--ink);
+          border: 1px solid var(--line, #0003); border-radius: 10px; box-shadow: 0 10px 30px #0005; padding: 10px 12px; font: 13px/1.4 var(--display); }
+  .hpop h4 { margin: 0 0 6px; font: 700 13px var(--display); }
+  .hpop .hi { display: flex; gap: 9px; padding: 7px 0; border-top: 1px solid #0001; }
+  .hpop .hi:first-of-type { border-top: 0; }
+  .hpop .hi i { flex: none; width: 9px; height: 9px; margin-top: 5px; border-radius: 50%; background: #e07b00; }
+  .hpop .hi.bad i { background: #d0312d; }
+  .hpop .hi b { display: block; }
+  .hpop .hi span { color: var(--dim); font-size: 12.5px; }
   .menubar .opill i { width: 8px; height: 8px; border-radius: 50%; background: #e07b00; box-shadow: 0 0 6px #e07b00; flex: none; }
   .menubar .opill small { color: var(--dim); font-weight: 500; }
   .menubar .opill span { overflow: hidden; text-overflow: ellipsis; }
@@ -651,6 +664,7 @@
   <a class="m classic" href="/?remote" id="classic" title="The phone remote (big keys), here">Phone remote</a>
   <span class="grow"></span>
   <button class="m" type="button" id="nextLine" title="The schedule" style="color:var(--ink);font-weight:600"></button>
+  <button class="opill hpill" type="button" id="healthPill" hidden title="Something's wrong: click to see what"></button>
   <button class="opill" type="button" id="outsidePill" hidden title="From The world outside: click to open it"></button>
   <button class="hear" type="button" id="hearHere" title="Hear the radio in this browser instead: its own speaker goes quiet until you press this again">Listen here</button>
   <select class="themebtn" id="theme" title="Light or dark: or dark at night (the Night from / Day from times) and while the radio uses its Night buttons"><option value="radio">Follow the radio</option><option value="light">Light</option><option value="dark">Dark</option></select>
@@ -6638,7 +6652,7 @@ window.addEventListener("resize", () => drawDesk());
 let booted = false;
 async function boot() {
   tick();
-  if (!booted) { loadDesk(); outsidePoll(); }      // (The world outside asked for at once, not after the rest has loaded)
+  if (!booted) { loadDesk(); outsidePoll(); healthPoll(); }      // (The world outside asked for at once, not after the rest has loaded)
   await Promise.all([poll(), loadButtons(), loadProgrammes().catch(() => {}), loadPlaylists().catch(() => {})]);
   document.title = radioName; SHOW.title = radioName;
   drawDesk();
@@ -6656,6 +6670,7 @@ async function boot() {
     let hiddenTicks = 0; setInterval(() => { if (!document.hidden || hearing || ++hiddenTicks % 6 === 0) poll(); }, 2500);
     setInterval(() => { if (!document.hidden) refreshOpen(); }, 20000);
     setInterval(() => { if (!document.hidden) outsidePoll(); }, 120000);
+    setInterval(() => { if (!document.hidden) healthPoll(); }, 60000);
     // The Receiver folder appears on the desktop once a station says there's a receiver; while one of its
     // windows is open it's asked every few seconds who has the air.
     api("/api/radio").then(d => { if ((rxOrigins(d.stations).length || d.stations.some(x => rxKiwi(x.url) || rxOwrx(x.url) || rxRoom(x.url))) && !desk.some(p => p.id === RECEIVER.id)) { desk.push({ id: RECEIVER.id, ...freeSpot() }); saveDesk(); drawDesk(); } }).catch(() => {});
@@ -6700,6 +6715,28 @@ function outsidePill(step) {                          // one alert at a time, th
   p.hidden = false; p.title = one.says + " · click to open The world outside";
   p.replaceChildren(el("i"), el("span", { textContent: one.short }), a.length > 1 ? el("small", { textContent: `${pillAt % a.length + 1} of ${a.length}` }) : null);
 }
+// Something wrong? (/api/health): a light in the menu bar only while there is something; click for each thing in a sentence
+let HEALTH = { level: "ok", issues: [] };
+function healthDraw() {
+  const p = $("healthPill"), n = HEALTH.issues.length;
+  if (!p) return;
+  p.hidden = !n; p.classList.toggle("bad", HEALTH.level === "bad");
+  if (n) p.replaceChildren(el("i"), el("span", { textContent: n === 1 ? HEALTH.issues[0].short : `${n} problems` }));
+  const pop = document.querySelector(".hpop"); if (pop) { if (n) healthPop(true); else pop.remove(); }
+}
+function healthPop(redraw) {
+  document.querySelector(".hpop")?.remove();
+  if (!HEALTH.issues.length) return;
+  const pop = el("div", { className: "hpop" }, el("h4", { textContent: HEALTH.issues.length === 1 ? "Something's wrong" : "Things that are wrong" }),
+    ...HEALTH.issues.map(i => el("div", { className: "hi " + i.level }, el("i"), el("div", {}, el("b", { textContent: i.short }), el("span", { textContent: i.says })))));
+  document.body.append(pop);
+  if (!redraw) setTimeout(() => { const off = e => { if (!pop.contains(e.target) && e.target.id !== "healthPill" && !$("healthPill").contains(e.target)) { pop.remove(); document.removeEventListener("pointerdown", off, true); } };
+                                  document.addEventListener("pointerdown", off, true); }, 0);
+}
+async function healthPoll() {
+  try { HEALTH = await api("/api/health"); healthDraw(); } catch (e) { /* the radio itself not answering is plain enough */ }
+}
+$("healthPill").onclick = () => { document.querySelector(".hpop") ? document.querySelector(".hpop").remove() : healthPop(); };
 async function outsidePoll() {
   try { const was = JSON.stringify(OUTSIDE_NOW); gotOutside(await api("/api/outside")); if (JSON.stringify(OUTSIDE_NOW) !== was) drawDesk(); }
   catch (e) { if (!OUTSIDE.loaded) setTimeout(outsidePoll, 5000); }     // (nothing yet: try again soon, not in two minutes; what's shown stays)

@@ -354,6 +354,15 @@ class Kept:
                 pass
         return had
 
+    def age(self) -> float | None:
+        """Seconds since the figures were last had, or None if never."""
+        with self._lock:
+            return None if self._had is None else self._clock() - self._had["t"]
+
+    def wanted(self) -> bool:
+        """Whether this feed is asked for at all (one with no callsign or key set isn't)."""
+        return True
+
     def refresh(self) -> None:
         """Begin a fetch, in a thread of its own, if what's kept is stale (and none is going, or was tried lately)."""
         now = self._clock()

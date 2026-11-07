@@ -988,6 +988,8 @@ def main() -> None:
         lightning_mod.watch.on_bell = lambda: _lightning_bell(station, control)
     lightning_mod.watch.keep_in(Path.home() / ".cache" / "sleepradiopi" / "lightning.json")    # strikes near here, from Blitzortung
     lightning_mod.watch.start()
+    from sleepradiopi import health as health_mod
+    health_mod.health.start()                                 # (the light in the desktop's menu bar: something wrong?)
     conditions_mod.keeper._offline = lambda: wifi.load()["offline"]                  # (the feeds behind The world outside are kept fresh all day, unless the radio works without Wi-Fi)
     conditions_mod.keeper.start()
     conditions_mod.EVERY_H = settings.conditions_every_h if settings.conditions_every_h in conditions_mod.SAY_HOURS else 0

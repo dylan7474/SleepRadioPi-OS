@@ -182,8 +182,11 @@ class Logbook(Kept):
         had["grew"] = grew
         return had
 
+    def wanted(self) -> bool:
+        return bool((self._key() or "").strip())
+
     def refresh(self) -> None:
-        if (self._key() or "").strip():              # (no key: nothing to ask)
+        if self.wanted():                            # (no key: nothing to ask)
             super().refresh()
 
     def status(self, refresh: bool = True, old_ok: bool = False) -> dict | None:
