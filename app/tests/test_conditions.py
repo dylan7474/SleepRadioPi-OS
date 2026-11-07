@@ -525,3 +525,92 @@ def test_the_world_outside_from_the_web(tmp_path: Path, monkeypatch) -> None:
     finally:
         httpd.shutdown()
         httpd.server_close()
+
+
+def _wait(feed) -> None:
+    for _ in range(200):
+        if not feed._busy:
+            return
+        time.sleep(0.01)
+
+
+class _Feed(conditions.Kept):
+    EVERY_S, RETRY_S, OLD_S, NAME = 900.0, 900.0, 3600.0, "test figures"
+
+    def __init__(self, clock, **kw) -> None:
+        super().__init__(get=None, clock=clock)
+        self.asked, self.value = 0, 1
+
+    def _fetch(self) -> dict:
+        self.asked += 1
+        return {"v": self.value}
+
+    def _says(self, had: dict) -> str:
+        return f"v {had['v']}"
+
+
+def test_a_page_only_reads_what_is_kept_and_the_keeper_has_it_fetched_when_stale() -> None:
+    clock = [NOW]
+    feed = _Feed(lambda: clock[0])
+    assert feed.status(False) is None and feed.asked == 0 and not feed._busy      # reading starts nothing
+    keeper = conditions.Outside(lambda: [feed])
+    keeper.once()
+    _wait(feed)
+    assert feed.asked == 1 and feed.status(False)["v"] == 1
+    keeper.once()                                                                  # fresh: not asked again
+    _wait(feed)
+    assert feed.asked == 1
+    clock[0] += 901                                                                # stale: the keeper has it asked, nobody opens a page
+    feed.value = 2
+    keeper.once()
+    _wait(feed)
+    assert feed.asked == 2 and feed.status(False)["v"] == 2
+
+
+def test_the_keeper_is_idle_when_the_radio_works_without_wifi_and_one_feed_failing_stops_none() -> None:
+    clock = [NOW]
+    a, b = _Feed(lambda: clock[0]), _Feed(lambda: clock[0])
+    conditions.Outside(lambda: [a, b], offline=lambda: True).once()
+    _wait(a)
+    assert a.asked == 0 and b.asked == 0
+
+    def broken():
+        raise RuntimeError("boom")
+    a.refresh = broken
+    conditions.Outside(lambda: [a, b]).once()
+    _wait(b)
+    assert b.asked == 1
+
+
+def test_unchanged_figures_are_not_written_to_the_card_every_fetch(tmp_path: Path) -> None:
+    clock = [NOW]
+    feed = _Feed(lambda: clock[0])
+    feed.keep_in(tmp_path / "f.json")
+    writes = []
+    real = conditions.write_atomic
+    conditions.write_atomic = lambda p, d: (writes.append(d), real(p, d))
+    try:
+        assert feed.fetch() and len(writes) == 1
+        clock[0] += 900
+        assert feed.fetch() and len(writes) == 1                                   # the same figures: no write
+        feed.value = 2
+        clock[0] += 900
+        assert feed.fetch() and len(writes) == 2                                   # changed: written
+        clock[0] += conditions.FILE_EVERY_S
+        assert feed.fetch() and len(writes) == 3                                   # the same, but the file is old: refreshed
+    finally:
+        conditions.write_atomic = real
+    again = _Feed(lambda: clock[0])
+    again.keep_in(tmp_path / "f.json")
+    assert again.status(False)["v"] == 2
+
+
+def test_no_callsign_or_key_means_nothing_is_asked_for() -> None:
+    from sleepradiopi.playback import qrzlog, spots
+    asked = []
+    s = spots.Spots(get=lambda url: asked.append(url) or "", call=lambda: "")
+    s.refresh()
+    q = qrzlog.Logbook(post=lambda body: asked.append(body) or "", key=lambda: "")
+    q.refresh()
+    time.sleep(0.05)
+    assert asked == [] and not s._busy and not q._busy

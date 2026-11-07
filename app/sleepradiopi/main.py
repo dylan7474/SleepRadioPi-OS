@@ -984,6 +984,8 @@ def main() -> None:
         lightning_mod.watch.on_bell = lambda: _lightning_bell(station, control)
     lightning_mod.watch.keep_in(Path.home() / ".cache" / "sleepradiopi" / "lightning.json")    # strikes near here, from Blitzortung
     lightning_mod.watch.start()
+    conditions_mod.keeper._offline = lambda: wifi.load()["offline"]                  # (the feeds behind The world outside are kept fresh all day, unless the radio works without Wi-Fi)
+    conditions_mod.keeper.start()
     conditions_mod.EVERY_H = settings.conditions_every_h if settings.conditions_every_h in conditions_mod.SAY_HOURS else 0
     conditions_mod.ALERTS = settings.conditions_alerts is True
     serve(station, stream, args.port or settings.http_port, control, args.config, announcer, jobs, updates,

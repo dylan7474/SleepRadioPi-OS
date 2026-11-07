@@ -182,10 +182,14 @@ class Logbook(Kept):
         had["grew"] = grew
         return had
 
-    def status(self) -> dict | None:
+    def refresh(self) -> None:
+        if (self._key() or "").strip():              # (no key: nothing to ask)
+            super().refresh()
+
+    def status(self, refresh: bool = True) -> dict | None:
         if not (self._key() or "").strip():          # (no key, or it's been forgotten: nothing of the book shown)
             return None
-        return super().status()
+        return super().status(refresh)
 
     def forget(self) -> None:
         """What was had, gone (a new key, or none: it was someone's book)."""

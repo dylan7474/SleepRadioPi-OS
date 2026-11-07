@@ -301,6 +301,11 @@ def _get(url: str, timeout: float = 12.0):
         return json.loads(r.read())
 
 
+FILE_EVERY_S = 3 * 3600.0     # figures that haven't changed are written to the card no more often than this
+OUTSIDE_TICK_S = 30.0         # how often Outside looks at which feeds are stale
+OUTSIDE_FIRST_S = 45.0        # ...and how long after the radio starts before it first does (the network may not be up yet)
+
+
 class Kept:
     """Figures from a site, fetched now and then (in a thread of its own, when asked for and they're stale) and
     kept, in memory and in a file, for when the radio starts again or the internet goes. A kind of it gives
@@ -315,6 +320,7 @@ class Kept:
         self._had: dict | None = None
         self._tried = 0.0
         self._busy = False
+        self._filed: float | None = None             # when the file was last written
 
     def keep_in(self, file: Path | None) -> None:
         self._file = file
@@ -323,7 +329,7 @@ class Kept:
         try:
             had = json.loads(file.read_text())
             if isinstance(had, dict) and isinstance(had.get("t"), (int, float)):
-                self._had = had
+                self._had, self._filed = had, had["t"]
         except (OSError, ValueError):
             pass
 
@@ -335,16 +341,20 @@ class Kept:
             log.info("conditions: %s weren't had (%s)", self.NAME, e)
             return None
         with self._lock:
-            self._had = had
-        if self._file is not None:
+            before, self._had = self._had, had
+        # (the file is for a restart: rewritten when the figures changed, or every FILE_EVERY_S, not at every fetch --
+        # the feeds are asked all day now, and the card needn't be written to for the same figures)
+        same = before is not None and {k: v for k, v in before.items() if k != "t"} == {k: v for k, v in had.items() if k != "t"}
+        if self._file is not None and (not same or self._filed is None or had["t"] - self._filed >= FILE_EVERY_S):
             try:
                 write_atomic(self._file, json.dumps(had))
+                self._filed = had["t"]
             except OSError:
                 pass
         return had
 
-    def status(self) -> dict | None:
-        """What was last had, with "says", or None if there's nothing recent; a fetch is begun if it's stale."""
+    def refresh(self) -> None:
+        """Begin a fetch, in a thread of its own, if what's kept is stale (and none is going, or was tried lately)."""
         now = self._clock()
         with self._lock:
             had = self._had
@@ -352,6 +362,15 @@ class Kept:
             if stale and not self._busy and now - self._tried > self.RETRY_S:
                 self._busy, self._tried = True, now
                 threading.Thread(target=self._refresh, name=f"conditions-{type(self).__name__.lower()}", daemon=True).start()
+
+    def status(self, refresh: bool = True) -> dict | None:
+        """What was last had, with "says", or None if there's nothing recent; a fetch is begun if it's stale
+        (refresh=False: just what's kept -- the desktop's page reads it so, and Outside keeps it fresh)."""
+        if refresh:
+            self.refresh()
+        now = self._clock()
+        with self._lock:
+            had = self._had
         if had is None or now - had["t"] > self.OLD_S:
             return None
         return {**had, "says": self._says(had)}
@@ -730,3 +749,52 @@ def outside(s: dict, sun_now: dict | None, fc: dict | None, aurora_now: dict | N
     for t in tiles:
         t["alert"] = t["key"] in alerted
     return {"tiles": tiles, "alerts": alerts}
+
+
+class Outside:
+    """Keeps the feeds behind "The world outside" fresh, each on its own interval (EVERY_S), whether or not anyone has the
+    desktop open or the show has a gap: a thread looks every OUTSIDE_TICK_S at which are stale and has them fetched
+    (each in a thread of its own: Kept.refresh()). The page and the DJ only read what's kept, so an alert is known
+    soon after it begins, even while the radio is paused. Idle while the radio is set to work without Wi-Fi."""
+
+    def __init__(self, feeds: Callable[[], list], offline: Callable[[], bool] = lambda: False,
+                 tick_s: float = OUTSIDE_TICK_S, first_s: float = OUTSIDE_FIRST_S) -> None:
+        self._feeds, self._offline, self._tick_s, self._first_s = feeds, offline, tick_s, first_s
+        self._stop = threading.Event()
+        self._thread: threading.Thread | None = None
+
+    def once(self) -> None:
+        """One look: the stale feeds begin their fetches."""
+        try:
+            if self._offline():
+                return
+        except Exception:                                    # (not knowing is no reason to stop)
+            pass
+        for feed in self._feeds():
+            try:
+                feed.refresh()
+            except Exception:                                # (one feed's trouble is not another's)
+                log.exception("outside: %s not refreshed", getattr(feed, "NAME", feed))
+
+    def start(self) -> None:
+        if self._thread is None:
+            self._thread = threading.Thread(target=self._run, name="outside", daemon=True)
+            self._thread.start()
+
+    def stop(self) -> None:
+        self._stop.set()
+
+    def _run(self) -> None:
+        wait = self._first_s
+        while not self._stop.wait(wait):
+            self.once()
+            wait = self._tick_s
+
+
+def outside_feeds() -> list:
+    """The Kept feeds in The world outside (lightning has a thread of its own)."""
+    from sleepradiopi.playback import qrzlog, quakes, spots, ukwarnings
+    return [sun, forecast, aurora, quakes.quakes, ukwarnings.warnings, spots.spots, qrzlog.logbook]
+
+
+keeper = Outside(outside_feeds)

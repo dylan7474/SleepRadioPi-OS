@@ -6636,7 +6636,7 @@ window.addEventListener("resize", () => drawDesk());
 let booted = false;
 async function boot() {
   tick();
-  if (!booted) loadDesk();
+  if (!booted) { loadDesk(); outsidePoll(); }      // (The world outside asked for at once, not after the rest has loaded)
   await Promise.all([poll(), loadButtons(), loadProgrammes().catch(() => {}), loadPlaylists().catch(() => {})]);
   document.title = radioName; SHOW.title = radioName;
   drawDesk();
@@ -6650,7 +6650,7 @@ async function boot() {
       const w = W.find(w => w.id === s.id); if (w) Object.assign(w, { x: s.x, y: s.y, w: s.w, h: s.h, fitted: true });
     }
     booted = true; drawDesk(); setInterval(tick, 10000); setInterval(poll, 2500); setInterval(refreshOpen, 20000);
-    outsidePoll(); setInterval(() => { if (!document.hidden) outsidePoll(); }, 120000);
+    setInterval(() => { if (!document.hidden) outsidePoll(); }, 120000);
     // The Receiver folder appears on the desktop once a station says there's a receiver; while one of its
     // windows is open it's asked every few seconds who has the air.
     api("/api/radio").then(d => { if ((rxOrigins(d.stations).length || d.stations.some(x => rxKiwi(x.url) || rxOwrx(x.url) || rxRoom(x.url))) && !desk.some(p => p.id === RECEIVER.id)) { desk.push({ id: RECEIVER.id, ...freeSpot() }); saveDesk(); drawDesk(); } }).catch(() => {});
@@ -6696,7 +6696,8 @@ function outsidePill(step) {                          // one alert at a time, th
   p.replaceChildren(el("i"), el("span", { textContent: one.short }), a.length > 1 ? el("small", { textContent: `${pillAt % a.length + 1} of ${a.length}` }) : null);
 }
 async function outsidePoll() {
-  try { const was = JSON.stringify(OUTSIDE_NOW); gotOutside(await api("/api/outside")); if (JSON.stringify(OUTSIDE_NOW) !== was) drawDesk(); } catch (e) { /* the next one will do */ }
+  try { const was = JSON.stringify(OUTSIDE_NOW); gotOutside(await api("/api/outside")); if (JSON.stringify(OUTSIDE_NOW) !== was) drawDesk(); }
+  catch (e) { if (!OUTSIDE.loaded) setTimeout(outsidePoll, 5000); }     // (nothing yet: try again soon, not in two minutes; what's shown stays)
 }
 $("outsidePill").onclick = () => open(OUTSIDE.id);
 setInterval(() => { const p = $("outsidePill"); if (!p || p.hidden || OUTSIDE_NOW.alerts.length < 2) return;

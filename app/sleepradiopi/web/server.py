@@ -504,14 +504,15 @@ def make_handler(station: Station, output: Mp3Output, speaker=None,
                                        "spoken": conditions_mod.spoken(out, sun_now, fc, aurora_now, day)}).encode(), "application/json")
             elif path == "/api/outside":
                 # The desktop's "The world outside" (playback/conditions.py outside()): a tile for each thing known
-                # from outside -- the bands, the sun, the aurora, VHF openings -- and the alerts there are now.
+                # from outside -- the bands, the sun, the aurora, VHF openings -- and the alerts there are now. It only
+                # reads what's kept: conditions.keeper (a thread, started in main.py) keeps the feeds fresh.
                 from sleepradiopi.audio import ft8 as ft8_mod
                 from sleepradiopi.playback import conditions as conditions_mod, survey as survey_mod
                 out = conditions_mod.summary(conditions_mod.freshest(survey_mod.job)[1], ft8_mod.reader.heard()["heard"], time.time())
                 from sleepradiopi.playback import lightning as lightning_mod, qrzlog as qrz_mod, quakes as quakes_mod, spots as spots_mod, ukwarnings as warn_mod
-                self._send(json.dumps(conditions_mod.outside(out, conditions_mod.sun.status(), conditions_mod.forecast.status(), conditions_mod.aurora.status(),
-                                                             conditions_mod.daytime(time.time(), ft8_mod.HOME), quakes_mod.quakes.status(),
-                                                             warn_mod.warnings.status(), spots_mod.spots.status(), qrz_mod.logbook.status(),
+                self._send(json.dumps(conditions_mod.outside(out, conditions_mod.sun.status(False), conditions_mod.forecast.status(False), conditions_mod.aurora.status(False),
+                                                             conditions_mod.daytime(time.time(), ft8_mod.HOME), quakes_mod.quakes.status(False),
+                                                             warn_mod.warnings.status(False), spots_mod.spots.status(False), qrz_mod.logbook.status(False),
                                                              lightning_mod.watch.status())).encode(), "application/json")
             elif path == "/api/lightning":
                 # The Lightning window (playback/lightning.py): strikes within "area_km" of the locator in the last three

@@ -89,8 +89,12 @@ class Spots(Kept):
             raise ValueError("no callsign set")
         return {"call": call, "spots": read(self._get(URL.format(urllib.parse.quote(call), urllib.parse.quote(CONTACT, safe=""))))}
 
-    def status(self) -> dict | None:
-        had = super().status()
+    def refresh(self) -> None:
+        if (self._call() or "").strip():             # (no callsign: nothing to ask)
+            super().refresh()
+
+    def status(self, refresh: bool = True) -> dict | None:
+        had = super().status(refresh)
         if had and had.get("call") != (self._call() or "").upper():      # (the callsign's changed: those were someone else's)
             return None
         return had
