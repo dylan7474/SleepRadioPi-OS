@@ -171,6 +171,7 @@ def plane(a: dict, at: tuple[float, float] | None) -> dict | None:
     if at and isinstance(a.get("lat"), (int, float)) and isinstance(a.get("lon"), (int, float)):
         nm, deg = distance(at[0], at[1], a["lat"], a["lon"])
         out["nm"], out["deg"] = round(nm, 1), round(deg)
+        out["lat"], out["lon"] = round(a["lat"], 3), round(a["lon"], 3)         # (the scope's map puts it over the right place)
     return out if len(out) > 1 else None
 
 
@@ -263,7 +264,7 @@ class Aircraft(Kept):
         far_nm = placed[-1]["nm"] if placed else None
         extra = self._watched_over(now, [(a, plane(a, at)) for a in raw if isinstance(a, dict)], placed, far_nm, len(raw))
         return {"n": len(raw), "placed": len(placed), "planes": placed[:NEAREST] + rest[:LIST_MOST], "emergency": emergency,
-                "low": low, "watch": watch, "far_nm": far_nm, "aerial": bool(at), "from": src, **extra}
+                "low": low, "watch": watch, "far_nm": far_nm, "aerial": bool(at), "from": src, "at": [round(at[0], 3), round(at[1], 3)] if at else None, **extra}
 
     def _watched_over(self, now: float, pairs: list, placed: list[dict], far_nm: float | None, n: int) -> dict:
         """What the picture says over time, kept in memory: tracks (circling), climb rates (falling fast), the day's counts and ranges

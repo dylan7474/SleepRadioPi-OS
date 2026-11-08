@@ -24,7 +24,7 @@ def build(ctx):
                 "alerts": [{"what": w, "short": sh, "says": words} for w, _, words, sh in air_mod.alerts(had) if w.split(":")[-1] not in air_mod.EMERGENCY],
                 "flagged": air_mod.flagged(had), "off": sorted(air_mod.OFF), "kinds": {k: list(v) for k, v in air_mod.KINDS.items()},
                 "planes": (had or {}).get("planes") or [], "emergency": (had or {}).get("emergency") or [], "far_nm": had and had["far_nm"],
-                "aerial": bool(had and had["aerial"]), "from": had and had["from"], "says": had and had["says"], "low_ft": air_mod.LOW_FT}
+                "aerial": bool(had and had["aerial"]), "at": had and had.get("at"), "from": had and had["from"], "says": had and had["says"], "low_ft": air_mod.LOW_FT}
 
     def r433_state() -> dict:
         from sleepradiopi.playback import radio433 as r_mod

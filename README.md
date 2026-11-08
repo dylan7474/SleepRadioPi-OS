@@ -551,6 +551,11 @@ Actions, Sleep timer and Radio folders open:
   **heavy jets low** (for the aircraft that send their category), and a
   **busy sky** (twice the usual). The radio works out "usual" and "circling"
   from what it has seen since it started (nothing is kept on the card).
+  **The scope** has four labelled distance rings in round numbers, and a map
+  of the ground under it (Esri's dark grey tiles, fetched by your browser, not
+  the radio, so it needs internet there; with none, or with the *Map* switch
+  under the scope off, it's the rings alone). An aircraft with an alert gets a
+  flashing ring and a ▲ by its name.
   And if the receiver answers but has heard no aircraft at all for an hour,
   or its best range over the last hour is far below its usual, the
   "something's wrong" light says to check its aerial.

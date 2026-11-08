@@ -74,6 +74,17 @@ def test_fetch_keeps_the_nearest_and_the_emergency() -> None:
     assert asked.count("http://192.0.2.10:8080/data/receiver.json") == 1                                  # (the aerial is asked once)
 
 
+def test_the_scope_gets_the_aerials_place_and_each_aircrafts_for_its_map() -> None:
+    a = _air()
+    a.fetch()
+    had = a.status(False)
+    assert had["at"] == [54.532, -1.088]                                  # (the receiver's own place, to about 100 m: all the map needs)
+    placed = [p for p in had["planes"] if "nm" in p]
+    assert placed and all(isinstance(p["lat"], float) and isinstance(p["lon"], float) for p in placed)
+    assert next(p for p in placed if p["hex"] == "440096")["lat"] == 55.364
+    assert not any("lat" in p for p in had["planes"] if "nm" not in p)    # (no position, none shown)
+
+
 def test_without_receiver_json_the_radios_own_locator_is_used(monkeypatch) -> None:
     monkeypatch.setattr(ft8, "HOME", "IO94")
     had = _air(answers={"/data/aircraft.json": SKY, "/data/receiver.json": None}).fetch()

@@ -597,18 +597,22 @@
   .shelp { color: var(--dim); font-size: 12px; margin: 0; }
   /* Aircraft: a radar scope (dark glass in either theme), figures beside it, a table under it */
   .air { display: flex; flex-wrap: wrap; gap: 16px; align-items: center; justify-content: center; padding: 4px 2px 2px; }
-  .air-scope { position: relative; width: 290px; height: 290px; flex: none; border-radius: 50%; overflow: hidden;
+  .air-scopebox { flex: none; width: min(420px, 100%); }
+  .air-scope { position: relative; width: 100%; aspect-ratio: 1; border-radius: 50%; overflow: hidden;
     background: radial-gradient(circle at 50% 45%, #1b2b2a 0%, #101a1d 62%, #0a1013 100%);
     box-shadow: 0 0 0 1px #000a, 0 0 0 5px #2c3036, 0 0 0 6px #00000080, inset 0 0 28px #000c, 0 8px 22px var(--shadow); }
-  .air-sweep { position: absolute; inset: 0; border-radius: 50%; background: conic-gradient(from 0deg, transparent 0 292deg, #6fe0a824 340deg, #6fe0a84d 360deg); animation: air-spin 8s linear infinite; }
-  .air-scope svg { position: absolute; inset: 0; width: 100%; height: 100%; }
-  .air-scope text { font: 8.5px var(--mono); fill: #d8efe3; paint-order: stroke; stroke: #0a1013; stroke-width: 2.4px; stroke-linejoin: round; }
-  .air-scope .rng { fill: #6fe0a8; opacity: .55; font-size: 7.5px; stroke-width: 2px; }
+  .air-map { position: absolute; inset: 0; z-index: 0; }
+  .air-tile { position: absolute; display: block; max-width: none; pointer-events: none; user-select: none; }
+  .air-scope::after { content: ""; position: absolute; inset: 0; z-index: 1; border-radius: 50%; pointer-events: none; background: radial-gradient(circle, transparent 58%, #0a1013b8 100%); }
+  .air-scope svg { position: absolute; inset: 0; z-index: 2; width: 100%; height: 100%; }
+  .air-scope text { font: 11px var(--mono); fill: #d8efe3; paint-order: stroke; stroke: #0a1013; stroke-width: 3px; stroke-linejoin: round; }
+  .air-scope .rng { fill: #d7fbe8; font-size: 11px; font-weight: 600; }
   .air-scope .pulse { animation: air-pulse 1.4s ease-out infinite; transform-box: fill-box; transform-origin: center; }
-  @keyframes air-spin { to { transform: rotate(360deg); } }
   @keyframes air-pulse { from { opacity: .9; transform: scale(.6); } to { opacity: 0; transform: scale(2.6); } }
-  @media (prefers-reduced-motion: reduce) { .air-sweep, .air-scope .pulse { animation: none; } }
-  .air-figs { display: grid; grid-template-columns: 1fr 1fr; gap: 9px; flex: 1 1 210px; min-width: 210px; max-width: 250px; }
+  @media (prefers-reduced-motion: reduce) { .air-scope .pulse { animation: none; } }
+  .air-attr { text-align: center; margin: 8px 0 0; font-size: 10.5px; line-height: 1.4; }
+  .air-attr label { white-space: nowrap; font-weight: 600; }
+  .air-figs { display: grid; grid-template-columns: 1fr 1fr; gap: 9px; flex: 1 1 210px; min-width: 210px; max-width: 420px; }
   .air-fig { background: var(--win-2); border: 1px solid var(--plate-line); border-radius: 10px; padding: 8px 10px 7px; min-width: 0; }
   .air-fig b { display: block; font: 600 22px/1.1 var(--display); letter-spacing: .01em; color: var(--ink); white-space: nowrap; }
   .air-fig b small { font-size: 11px; font-weight: 500; color: var(--dim); margin-left: 3px; }
@@ -5322,31 +5326,79 @@ const UI = {
       const KIND_MARK = { low: "↓", watch: "◎", inbound: "➜", loiter: "↻", descent: "⤓", long: "⌁", night: "☾", heli: "✚", heavy: "▣", busy: "≋" };
       const placed = a.planes.filter(p => p.nm != null), marks = new Set((a.flagged || []).map(p => p.hex)),
             plot = placed.concat((a.flagged || []).filter(w => w.nm != null && !placed.some(p => p.hex === w.hex)));
-      const scope = a => {
-        const sorted = placed.map(p => p.nm).sort((x, y) => x - y), far = sorted.length ? sorted[Math.min(sorted.length - 1, Math.floor(sorted.length * 0.85))] : 0, flagFar = Math.max(0, ...(a.flagged || []).filter(p => p.nm != null).map(p => p.nm)), range = [10, 25, 50, 100, 150, 200, 250, 300].find(r => r >= Math.max(far, flagFar)) || 300, C = 145, R = 128;
-        const g = sv("svg", { viewBox: "0 0 290 290", "aria-label": `Radar: ${placed.length} aircraft within ${range} nautical miles` });
-        for (const f of [1 / 3, 2 / 3, 1]) g.append(sv("circle", { cx: C, cy: C, r: R * f, fill: "none", stroke: "#6fe0a8", "stroke-opacity": f === 1 ? .38 : .2, "stroke-width": f === 1 ? 1.1 : .8, "stroke-dasharray": f === 1 ? "" : "2 3" }));
+      // The scope: 420 units drawn at up to 420 px. Four rings in round numbers, each labelled; a map of the ground under it (Esri's dark grey tiles,
+      // loaded by THIS BROWSER, never by the radio: with no internet, or the switch off, it's the rings alone); the aircraft where they are on that map.
+      const SZ = 420, C = SZ / 2, R = 188;
+      const RANGES = [[8, 2], [20, 5], [40, 10], [80, 20], [120, 30], [160, 40], [200, 50], [320, 80]];        // [the range in nm, a ring every...]
+      const MAP_URL = (z, x, y) => `https://services.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/${z}/${y}/${x}`;
+      const mapOn = () => { try { return localStorage.getItem("srd.airmap") !== "off"; } catch { return true; } };
+      const pick = a => {
+        const sorted = placed.map(p => p.nm).sort((x, y) => x - y), far = sorted.length ? sorted[Math.min(sorted.length - 1, Math.floor(sorted.length * 0.85))] : 0,
+              flagFar = Math.max(0, ...(a.flagged || []).filter(p => p.nm != null).map(p => p.nm));
+        return RANGES.find(([r]) => r >= Math.max(far, flagFar)) || RANGES[RANGES.length - 1];
+      };
+      const scope = (a, noMap, skipMap) => {
+        const [range, step] = pick(a), at = a.at, lat0 = at ? at[0] * Math.PI / 180 : 0, kpm = R / (range * 1852);          // (units per metre, at the aerial)
+        const Z = at ? Math.max(2, Math.min(14, Math.round(Math.log2(156543.03392 * Math.cos(lat0) * kpm)))) : 0;
+        const k = at ? kpm * 156543.03392 * Math.cos(lat0) / 2 ** Z : 1;                                                   // (one tile pixel is k units)
+        const wx = lon => (lon + 180) / 360 * 256 * 2 ** Z, wy = lat => (1 - Math.asinh(Math.tan(lat * Math.PI / 180)) / Math.PI) / 2 * 256 * 2 ** Z;
+        const px0 = at ? wx(at[1]) : 0, py0 = at ? wy(at[0]) : 0;
+        const spot = p => {                         // where on the scope: over its place on the map; one beyond the range (or with no map) on the rim at its bearing
+          if (at && p.lat != null && p.nm <= range) return [C + (wx(p.lon) - px0) * k, C + (wy(p.lat) - py0) * k];
+          const r = p.deg * Math.PI / 180, d = Math.min(p.nm / range, 1);
+          return [C + Math.sin(r) * d * R, C - Math.cos(r) * d * R];
+        };
+        const map = el("div", { className: "air-map" });
+        if (at && mapOn() && !skipMap) {
+          const n = 2 ** Z, half = C / k;
+          let left = 0;
+          for (let ty = Math.floor((py0 - half) / 256); ty <= Math.floor((py0 + half) / 256); ty++) for (let tx = Math.floor((px0 - half) / 256); tx <= Math.floor((px0 + half) / 256); tx++) {
+            if (ty < 0 || ty >= n) continue;
+            const img = el("img", { className: "air-tile", src: MAP_URL(Z, ((tx % n) + n) % n, ty), alt: "", draggable: false, referrerPolicy: "no-referrer",
+              style: `left:${((C + (tx * 256 - px0) * k) / SZ * 100).toFixed(3)}%;top:${((C + (ty * 256 - py0) * k) / SZ * 100).toFixed(3)}%;width:${(256 * k / SZ * 100 + .1).toFixed(3)}%` });
+            img.onerror = () => { img.remove(); if (--left === 0 && noMap) noMap(); };       // (no internet, or the provider said no: the scope is the rings alone, and it says so)
+            map.append(img); left++;
+          }
+        }
+        const g = sv("svg", { viewBox: `0 0 ${SZ} ${SZ}`, "aria-label": `Radar: ${placed.length} aircraft within ${range} nautical miles, rings every ${step}` });
+        for (let i = 1; i <= 4; i++) {                // (the rings, each said: 4 of them, in round numbers)
+          const r = R * i / 4;
+          g.append(sv("circle", { cx: C, cy: C, r, fill: "none", stroke: "#8fe8bd", "stroke-opacity": i === 4 ? .75 : .45, "stroke-width": i === 4 ? 1.5 : 1.1, "stroke-dasharray": i === 4 ? "" : "4 4" }),
+                   sv("text", { x: C + r * .7071, y: C - r * .7071 - 4, "text-anchor": "end", class: "rng" }, `${step * i} nm`));
+        }
         for (let d = 0; d < 360; d += 30) { const r = d * Math.PI / 180, big = d % 90 === 0;
-          g.append(sv("line", { x1: C + Math.sin(r) * (R - (big ? 9 : 5)), y1: C - Math.cos(r) * (R - (big ? 9 : 5)), x2: C + Math.sin(r) * R, y2: C - Math.cos(r) * R, stroke: "#6fe0a8", "stroke-opacity": big ? .5 : .28, "stroke-width": 1 })); }
-        g.append(sv("line", { x1: C, y1: C - R, x2: C, y2: C + R, stroke: "#6fe0a8", "stroke-opacity": .1 }), sv("line", { x1: C - R, y1: C, x2: C + R, y2: C, stroke: "#6fe0a8", "stroke-opacity": .1 }));
-        g.append(sv("text", { x: C, y: 11, "text-anchor": "middle", class: "rng" }, "N"), sv("text", { x: C + R * 2 / 3 * .71 + 3, y: C - R * 2 / 3 * .71 - 2, class: "rng" }, `${Math.round(range * 2 / 3)} nm`),
-               sv("text", { x: C + R * .71 + 3, y: C - R * .71 - 2, class: "rng" }, `${range} nm`));
+          g.append(sv("line", { x1: C + Math.sin(r) * (R - (big ? 12 : 7)), y1: C - Math.cos(r) * (R - (big ? 12 : 7)), x2: C + Math.sin(r) * R, y2: C - Math.cos(r) * R, stroke: "#8fe8bd", "stroke-opacity": big ? .7 : .4, "stroke-width": 1.1 })); }
+        g.append(sv("line", { x1: C, y1: C - R, x2: C, y2: C + R, stroke: "#8fe8bd", "stroke-opacity": .14 }), sv("line", { x1: C - R, y1: C, x2: C + R, y2: C, stroke: "#8fe8bd", "stroke-opacity": .14 }));
+        for (const [t, d] of [["N", 0], ["E", 90], ["S", 180], ["W", 270]]) { const r = d * Math.PI / 180; g.append(sv("text", { x: C + Math.sin(r) * (R - 22), y: C - Math.cos(r) * (R - 22) + 4, "text-anchor": "middle", class: "rng" }, t)); }
         const order = plot.slice().sort((p, q) => q.nm - p.nm);                  // (the nearest drawn last: on top)
         for (const p of order) {
-          const r = p.deg * Math.PI / 180, d = Math.min(p.nm / range, 1), x = C + Math.sin(r) * d * R, y = C - Math.cos(r) * d * R, col = p.squawk ? "#ff6a55" : altCol(p), big = p.squawk ? 1.35 : 1;
-          if (p.squawk) g.append(sv("circle", { cx: x, cy: y, r: 9, fill: "none", stroke: "#ff6a55", "stroke-width": 1.5, class: "pulse" }));
-          else if (marks.has(p.hex)) g.append(sv("circle", { cx: x, cy: y, r: 11, fill: "none", stroke: "#fff6c8", "stroke-width": 1.8, class: "pulse" }), sv("circle", { cx: x, cy: y, r: 8, fill: "none", stroke: "#f2b24a", "stroke-width": 1.5, "stroke-dasharray": "2.5 2" }));
+          const [x, y] = spot(p), col = p.squawk ? "#ff6a55" : altCol(p), big = (p.squawk ? 1.35 : 1) * 1.35;
+          if (p.squawk) g.append(sv("circle", { cx: x, cy: y, r: 13, fill: "none", stroke: "#ff6a55", "stroke-width": 1.8, class: "pulse" }));
+          else if (marks.has(p.hex)) g.append(sv("circle", { cx: x, cy: y, r: 15, fill: "none", stroke: "#fff6c8", "stroke-width": 2, class: "pulse" }), sv("circle", { cx: x, cy: y, r: 11, fill: "none", stroke: "#f2b24a", "stroke-width": 1.7, "stroke-dasharray": "3 2.5" }));
           g.append(p.track != null && !p.ground
             ? sv("path", { d: "M0 -6.5 L3.6 5 L0 2.8 L-3.6 5 Z", fill: col, stroke: "#0a1013", "stroke-width": .8, "stroke-linejoin": "round", transform: `translate(${x.toFixed(1)} ${y.toFixed(1)}) rotate(${p.track}) scale(${big})` })
-            : sv("circle", { cx: x, cy: y, r: 2.6 * big, fill: col, stroke: "#0a1013", "stroke-width": .8 }));
+            : sv("circle", { cx: x, cy: y, r: 3.3 * big, fill: col, stroke: "#0a1013", "stroke-width": .8 }));
         }
         const taken = [];
         placed.slice(0, 8).concat(plot.filter(p => !placed.slice(0, 8).includes(p) && (p.squawk || marks.has(p.hex)))).forEach(p => {
-          const r = p.deg * Math.PI / 180, d = Math.min(p.nm / range, 1), x = Math.min(C + Math.sin(r) * d * R + 7, 232), y = C - Math.cos(r) * d * R + 3;
-          if (!p.squawk && !marks.has(p.hex) && taken.some(t => Math.abs(t[1] - y) < 10 && Math.abs(t[0] - x) < 44)) return;
+          const [px, py] = spot(p), x = Math.min(px + 11, SZ - 78), y = py + 4;
+          if (!p.squawk && !marks.has(p.hex) && taken.some(t => Math.abs(t[1] - y) < 13 && Math.abs(t[0] - x) < 60)) return;
           taken.push([x, y]); g.append(sv("text", { x, y }, (marks.has(p.hex) ? "▲ " : "") + (p.call || p.hex))); });
-        g.append(sv("circle", { cx: C, cy: C, r: 2.4, fill: "#fff" }), sv("circle", { cx: C, cy: C, r: 5.5, fill: "none", stroke: "#fff", "stroke-opacity": .5 }));
-        return el("div", { className: "air-scope" }, el("div", { className: "air-sweep" }), g);
+        g.append(sv("circle", { cx: C, cy: C, r: 3, fill: "#fff" }), sv("circle", { cx: C, cy: C, r: 7, fill: "none", stroke: "#fff", "stroke-opacity": .6 }));
+        return el("div", { className: "air-scope" }, map, g);
+      };
+      const scopeBox = a => {                       // (the scope, and under it: the switch for the map, what the rings are, whose map)
+        const box = el("div", { className: "air-scopebox" }), step = pick(a)[1];
+        let failed = false;
+        const draw = () => {
+          const cb = el("input", { type: "checkbox", id: "air-map", checked: mapOn() });
+          cb.onchange = () => { try { localStorage.setItem("srd.airmap", cb.checked ? "on" : "off"); } catch {} draw(); };
+          box.replaceChildren(scope(a, failed ? null : () => { failed = true; draw(); }, failed), el("p", { className: "shelp air-attr" },
+            ...(a.at ? [el("label", {}, cb, " Map"), ` · rings every ${step} nm from the aerial${mapOn() ? (failed ? " · the map couldn't be fetched (is this browser online?): rings only" : " · map tiles from Esri, fetched by this browser (Esri, HERE, Garmin, FAO, NOAA, USGS, © OpenStreetMap contributors)") : ""}`]
+                     : [`Rings every ${step} nm from the aerial. No map: the receiver didn't say where its aerial is, and the radio has no locator.`])));
+        };
+        draw();
+        return box;
       };
       const figures = a => {
         const near = placed[0], far = placed[placed.length - 1], lowest = a.planes.filter(p => p.ft != null && !p.ground).sort((p, q) => p.ft - q.ft)[0];
@@ -5381,7 +5433,7 @@ const UI = {
       return [
         a.emergency?.length ? el("div", { className: "air-alarm", role: "alert", textContent: "⚠ " + a.emergency.map(p => `${p.call || p.hex} squawking ${p.squawk}`).join(" · ") }) : null,
         ...(a.alerts || []).map(x => el("div", { className: "air-alarm air-note", role: "alert", textContent: `▲ ALERT · ${x.says || x.short}` })),
-        a.up ? el("div", { className: "air" }, scope(a), figures(a)) : null,
+        a.up ? el("div", { className: "air" }, scopeBox(a), figures(a)) : null,
         a.up ? line(el("p", { className: "air-key" }, ...ALT_BANDS.map(([, col, txt]) => el("span", {}, el("i", { style: `background:${col}` }), txt)))) : null,
         a.up ? grp("Nearest first", table(a), help((a.from === "receiver" ? "Distances are from the receiver's aerial, where the receiver says it is." : a.from === "locator" ? "The receiver didn't say where its aerial is, so distances are from the middle of this radio's locator square: approximate (a longer locator in Settings is closer)." : "The receiver didn't say where its aerial is and the radio has no locator, so there are no distances or plot.") + " Callsigns are what the aircraft transmits; ones with no position yet are listed last.")) :
           grp("Aircraft", help(a.address ? "The receiver isn't answering. That's normal away from home: the Aircraft tile is in The world outside only while it does." : "No receiver set. The tile shows once one is.")),
