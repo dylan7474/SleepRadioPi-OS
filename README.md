@@ -556,8 +556,13 @@ Actions, Sleep timer and Radio folders open:
   codes), drawn by the radio from public-domain data it carries itself
   (Natural Earth and OurAirports), in the same projection as the rings, so
   aircraft are exactly where the map says. Nothing is fetched from anyone, so
-  it works with no internet; the *Map* switch under the scope hides it. An
-  aircraft with an alert gets a flashing ring and a ▲ by its name.
+  it works with no internet; the *Map* switch under the scope hides it. The
+  **range** buttons under the scope (Auto, 8, 20, 40, 80, 160, 320 nm) fix how
+  far it shows, to keep to local traffic: the choice is kept in the radio's
+  settings (it survives a restart and applies to every browser), and aircraft
+  beyond it are counted below the scope and listed in the table, not drawn. An
+  aircraft with an alert gets a flashing ring and a ▲ by its name, and is
+  never hidden by the range: out of range, it sits on the rim with its distance.
   And if the receiver answers but has heard no aircraft at all for an hour,
   or its best range over the last hour is far below its usual, the
   "something's wrong" light says to check its aerial.

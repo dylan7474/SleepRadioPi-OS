@@ -29,6 +29,8 @@ from sleepradiopi.playback.lightning import compass
 
 log = logging.getLogger(__name__)
 
+SCOPE_RANGES = (8, 20, 40, 80, 160, 320)      # the ranges the scope can be set to (nm): four rings each, 2, 5, 10, 20, 40 and 80 nm apart
+RANGE = 0                    # the range it is set to, 0 = automatic (the nearest 85% of what is heard); main.py sets it from the settings (aircraft_range)
 MAP_FILE = Path(__file__).resolve().parent.parent / "data" / "map.json"      # the scope's built-in map (tools/build_mapdata.py): coast, towns, airfields
 ADDRESS = ""                 # the receiver's address; main.py sets it from the settings (and the web side when it's changed)
 EVERY_S = 20.0               # (Outside looks every 30 s, so about that)

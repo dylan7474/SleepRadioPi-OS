@@ -82,6 +82,44 @@ def test_the_scope_gets_the_aerials_place_for_its_map() -> None:
     assert not any("lat" in p or "lon" in p for p in had["planes"])       # (aircraft are drawn by distance and bearing: no positions are sent on)
 
 
+def test_the_scope_range_is_a_setting_that_is_kept(tmp_path: Path, monkeypatch) -> None:
+    from sleepradiopi.config import settings as settings_mod
+    conf = tmp_path / "config.json"
+    conf.write_text("{}")
+    assert settings_mod.load(conf).aircraft_range == 0                       # (automatic to begin with)
+    httpd = ThreadingHTTPServer(("127.0.0.1", 0), make_handler(None, None, None, conf))
+    threading.Thread(target=httpd.serve_forever, daemon=True).start()
+    base = f"http://127.0.0.1:{httpd.server_address[1]}"
+    monkeypatch.setattr(aircraft, "RANGE", 0)
+    monkeypatch.setattr(aircraft, "ADDRESS", "")
+    monkeypatch.setattr(aircraft, "WATCH", "")                                  # (the web side rebinds these: put them back after)
+
+    def post(body):
+        req = urllib.request.Request(base + "/api/aircraft", data=json.dumps(body).encode(), method="POST")
+        try:
+            with urllib.request.urlopen(req, timeout=5) as r:
+                return r.status, json.loads(r.read())
+        except urllib.error.HTTPError as e:
+            return e.code, json.loads(e.read() or b"{}")
+    try:
+        with urllib.request.urlopen(base + "/api/aircraft", timeout=5) as r:
+            d = json.loads(r.read())
+        assert d["range"] == 0 and d["ranges"] == [8, 20, 40, 80, 160, 320]
+        for bad in ({"range": 15}, {"range": "20"}, {"range": -20}, {"range": True}, {"range": 999}, {"range": None}):
+            assert post(bad)[0] == 400
+        assert json.loads(conf.read_text()) == {}                            # (a refused range changes nothing)
+        code, d = post({"range": 20})
+        assert code == 200 and d["range"] == 20 and aircraft.RANGE == 20
+        assert json.loads(conf.read_text())["aircraft_range"] == 20
+        assert settings_mod.load(conf).aircraft_range == 20                  # (what main.py reads at the next start: it survives a reboot)
+        assert post({"range": 0})[1]["range"] == 0 and json.loads(conf.read_text())["aircraft_range"] == 0
+        assert post({"range": 320, "watch": "RRR"})[1]["range"] == 320       # (with the other settings, in one go)
+        assert json.loads(conf.read_text())["aircraft_watch"] == "RRR"
+    finally:
+        httpd.shutdown()
+        httpd.server_close()
+
+
 def test_the_built_in_map_is_there_and_sound() -> None:
     d = json.loads(aircraft.MAP_FILE.read_text())
     assert d["v"] == 1 and "public domain" in d["credit"] and aircraft.MAP_FILE.stat().st_size < 1_000_000

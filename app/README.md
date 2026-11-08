@@ -1657,6 +1657,10 @@ The cards:
   the service stops answering) and adds the time since the look to each `ago_s`. `state_word()` says what the dongle
   is doing in words (Scanning / Paused: the VHF receiver is in use / Paused: listening for radiosondes / Starting
   again). Tile `"r433"`; the window is `UI.r433` in desktop.html (signal = a bar and a word, never colour alone).
+  The scope's range: the setting `aircraft_range` (0 = automatic, else one of `aircraft.SCOPE_RANGES` 8, 20, 40, 80, 160, 320 nm: every one has
+  four rings, range/4 apart), `POST /api/aircraft {"range": N}` (others are refused, nothing changes), returned by `GET /api/aircraft` as
+  `"range"` and `"ranges"`; main.py reads it into `aircraft.RANGE` (an unknown value in the file means automatic). The page does the rest:
+  at a set range an aircraft beyond it isn't drawn unless it has an alert (`flagged`) or squawks, which sit on the rim labelled with their distance.
   The Aircraft scope's map is `data/map.json` (made by `tools/build_mapdata.py` from Natural Earth and OurAirports, both public
   domain; ~570 KB: the coast as whole-number delta-coded rings in two layers, towns, airfields), served by `GET /api/mapdata` with
   `Cache-Control: max-age=604800` (read from the image each time, not held in memory; `_send()` no longer adds `no-store` when a

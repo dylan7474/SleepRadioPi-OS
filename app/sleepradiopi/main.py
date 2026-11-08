@@ -983,6 +983,7 @@ def main() -> None:
     qrz_mod.logbook.keep_in(Path.home() / ".cache" / "sleepradiopi" / "qrz.json")               # the owner's QRZ logbook (not the key)
     from sleepradiopi.playback import aircraft as aircraft_mod
     aircraft_mod.WATCH = settings.aircraft_watch or ""
+    aircraft_mod.RANGE = settings.aircraft_range if settings.aircraft_range in (0, *aircraft_mod.SCOPE_RANGES) else 0
     aircraft_mod.OFF = {k for k in (settings.aircraft_off or []) if k in aircraft_mod.KINDS}
 
     def _quiet_now() -> bool:                                 # (the news's quiet hours: the night-flights alert is for those)

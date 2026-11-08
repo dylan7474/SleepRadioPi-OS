@@ -24,7 +24,7 @@ def build(ctx):
                 "alerts": [{"what": w, "short": sh, "says": words} for w, _, words, sh in air_mod.alerts(had) if w.split(":")[-1] not in air_mod.EMERGENCY],
                 "flagged": air_mod.flagged(had), "off": sorted(air_mod.OFF), "kinds": {k: list(v) for k, v in air_mod.KINDS.items()},
                 "planes": (had or {}).get("planes") or [], "emergency": (had or {}).get("emergency") or [], "far_nm": had and had["far_nm"],
-                "aerial": bool(had and had["aerial"]), "at": had and had.get("at"), "from": had and had["from"], "says": had and had["says"], "low_ft": air_mod.LOW_FT}
+                "aerial": bool(had and had["aerial"]), "at": had and had.get("at"), "range": air_mod.RANGE, "ranges": list(air_mod.SCOPE_RANGES), "from": had and had["from"], "says": had and had["says"], "low_ft": air_mod.LOW_FT}
 
     def r433_state() -> dict:
         from sleepradiopi.playback import radio433 as r_mod
@@ -238,10 +238,12 @@ def build(ctx):
             from sleepradiopi.playback import aircraft as air_mod
             try:
                 body = self._body()
-                address, watch, off = body.get("address"), body.get("watch"), body.get("off")
+                address, watch, off, rng = body.get("address"), body.get("watch"), body.get("off"), body.get("range")
+                if rng is not None and (isinstance(rng, bool) or rng not in (0, *air_mod.SCOPE_RANGES)):
+                    raise ValueError
                 if off is not None and (not isinstance(off, list) or any(k not in air_mod.KINDS for k in off)):
                     raise ValueError
-                if (address is None and watch is None and off is None) or (address is not None and (not isinstance(address, str) or (address.strip() and air_mod.base(address) is None))):
+                if (address is None and watch is None and off is None and rng is None) or (address is not None and (not isinstance(address, str) or (address.strip() and air_mod.base(address) is None))):
                     raise ValueError
                 if watch is not None:
                     if not isinstance(watch, str) or len(watch) > 200:
@@ -250,12 +252,17 @@ def build(ctx):
             except (ValueError, TypeError, AttributeError):
                 self._error('send {"address": "host:port" of the receiver (the one that serves /data/aircraft.json), or ""} and/or '
                             '{"watch": "RRR, ASCOT, #43C0A1, #43C000-43CFFF, mil" (callsign starts, # addresses, mil), or ""} and/or '
-                            '{"off": [kinds of alert switched off: ' + ", ".join(air_mod.KINDS) + ']}')
+                            '{"off": [kinds of alert switched off: ' + ", ".join(air_mod.KINDS) + ']} and/or '
+                            '{"range": the scope\'s range in nm: ' + ", ".join(map(str, air_mod.SCOPE_RANGES)) + ', or 0 for automatic}')
                 return True
             if address is not None:
                 air_mod.ADDRESS = address.strip()
                 if config_file is not None:
                     save_setting(config_file, "aircraft_url", air_mod.ADDRESS)
+            if rng is not None:
+                air_mod.RANGE = int(rng)
+                if config_file is not None:
+                    save_setting(config_file, "aircraft_range", air_mod.RANGE)
             if off is not None:
                 air_mod.OFF = set(off)
                 if config_file is not None:

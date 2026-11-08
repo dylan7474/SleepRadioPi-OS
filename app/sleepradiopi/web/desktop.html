@@ -5338,6 +5338,7 @@ const UI = {
       const MAPDATA = (UI.aircraft.mapdata ||= { data: null, failed: false, asked: null });
       const getMap = () => MAPDATA.asked ||= fetch("/api/mapdata").then(r => r.ok ? r.json() : Promise.reject()).then(d => { MAPDATA.data = d; return d; }, () => { MAPDATA.failed = true; return null; });
       const pick = a => {
+        if (a.range) return [a.range, a.range / 4];                      // (set on the radio: kept in its settings; every range has four round rings)
         const sorted = placed.map(p => p.nm).sort((x, y) => x - y), far = sorted.length ? sorted[Math.min(sorted.length - 1, Math.floor(sorted.length * 0.85))] : 0,
               flagFar = Math.max(0, ...(a.flagged || []).filter(p => p.nm != null).map(p => p.nm));
         return RANGES.find(([r]) => r >= Math.max(far, flagFar)) || RANGES[RANGES.length - 1];
@@ -5385,6 +5386,8 @@ const UI = {
       };
       const scope = a => {
         const [range, step] = pick(a), at = a.at;
+        // At a range that is set, what is beyond it isn't drawn (it's in the table, and counted below the scope): but an aircraft with an alert is never hidden, it sits on the rim.
+        const shown = a.range ? plot.filter(p => p.nm <= range || p.squawk || marks.has(p.hex)) : plot;
         const g = sv("svg", { viewBox: `0 0 ${SZ} ${SZ}`, "aria-label": `Radar: ${placed.length} aircraft within ${range} nautical miles, rings every ${step}` });
         if (at && mapOn() && MAPDATA.data) g.append(groundLayer(MAPDATA.data, at, range));
         for (let i = 1; i <= 4; i++) {                // (the rings, each said: 4 of them, in round numbers)
@@ -5397,7 +5400,7 @@ const UI = {
         g.append(sv("line", { x1: C, y1: C - R, x2: C, y2: C + R, stroke: "#8fe8bd", "stroke-opacity": .14 }), sv("line", { x1: C - R, y1: C, x2: C + R, y2: C, stroke: "#8fe8bd", "stroke-opacity": .14 }));
         for (const [t, d] of [["N", 0], ["E", 90], ["S", 180], ["W", 270]]) { const r = d * Math.PI / 180; g.append(sv("text", { x: C + Math.sin(r) * (R - 22), y: C - Math.cos(r) * (R - 22) + 4, "text-anchor": "middle", class: "rng" }, t)); }
         const spot = p => { const r = p.deg * Math.PI / 180, d = Math.min(p.nm / range, 1); return [C + Math.sin(r) * d * R, C - Math.cos(r) * d * R]; };   // (beyond the range: on the rim)
-        const order = plot.slice().sort((p, q) => q.nm - p.nm);                  // (the nearest drawn last: on top)
+        const order = shown.slice().sort((p, q) => q.nm - p.nm);                 // (the nearest drawn last: on top)
         for (const p of order) {
           const [x, y] = spot(p), col = p.squawk ? "#ff6a55" : altCol(p), big = (p.squawk ? 1.35 : 1) * 1.35;
           if (p.squawk) g.append(sv("circle", { cx: x, cy: y, r: 13, fill: "none", stroke: "#ff6a55", "stroke-width": 1.8, class: "pulse" }));
@@ -5407,10 +5410,10 @@ const UI = {
             : sv("circle", { cx: x, cy: y, r: 3.3 * big, fill: col, stroke: "#0a1013", "stroke-width": .8 }));
         }
         const taken = [];
-        placed.slice(0, 8).concat(plot.filter(p => !placed.slice(0, 8).includes(p) && (p.squawk || marks.has(p.hex)))).forEach(p => {
+        shown.slice(0, 8).concat(shown.filter(p => !shown.slice(0, 8).includes(p) && (p.squawk || marks.has(p.hex)))).forEach(p => {
           const [px, py] = spot(p), x = Math.min(px + 11, SZ - 78), y = py + 4;
           if (!p.squawk && !marks.has(p.hex) && taken.some(t => Math.abs(t[1] - y) < 13 && Math.abs(t[0] - x) < 60)) return;
-          taken.push([x, y]); g.append(sv("text", { x, y, class: "air-ac" }, (marks.has(p.hex) ? "▲ " : "") + (p.call || p.hex))); });
+          taken.push([x, y]); g.append(sv("text", { x, y, class: "air-ac" }, (marks.has(p.hex) ? "▲ " : "") + (p.call || p.hex) + (p.nm > range ? ` ${Math.round(p.nm)} nm` : ""))); });
         g.append(sv("circle", { cx: C, cy: C, r: 3, fill: "#fff" }), sv("circle", { cx: C, cy: C, r: 7, fill: "none", stroke: "#fff", "stroke-opacity": .6 }));
         return el("div", { className: "air-scope" }, g);
       };
@@ -5421,7 +5424,16 @@ const UI = {
           cb.onchange = () => { try { localStorage.setItem("srd.airmap", cb.checked ? "on" : "off"); } catch {} if (cb.checked) getMap().then(draw); else draw(); };
           const note = !a.at ? "No map: the receiver didn't say where its aerial is, and the radio has no locator."
             : !mapOn() ? "" : MAPDATA.failed ? "the map data couldn't be loaded: rings only" : MAPDATA.data ? "◆ airfield · ● town · drawn by the radio from Natural Earth and OurAirports (public domain): nothing is fetched" : "loading the map…";
-          box.replaceChildren(scope(a), el("p", { className: "shelp air-attr" }, ...(a.at ? [el("label", {}, cb, " Map"), ` · rings every ${step} nm from the aerial${note ? " · " + note : ""}`] : [`Rings every ${step} nm from the aerial. ${note}`])));
+          const [rng] = pick(a), beyond = a.range ? placed.filter(p => p.nm > rng && !p.squawk && !marks.has(p.hex)).length : 0;
+          const sel = (v, label) => {
+            const on = (a.range || 0) === v, b = el("button", { className: "pill", type: "button", textContent: (on ? "✓ " : "") + label, title: v ? `Show ${v} nm across (kept on the radio)` : "Choose the range from what is heard" });
+            b.setAttribute("aria-pressed", String(on));
+            b.onclick = () => act(() => api("/api/aircraft", { range: v }));
+            return b;
+          };
+          const ranges = el("div", { className: "line", style: "justify-content:center;margin-top:10px" }, el("span", { className: "shelp", textContent: "Range" }), sel(0, "Auto"), ...(a.ranges || []).map(v => sel(v, `${v} nm`)));
+          ranges.setAttribute("role", "group"); ranges.setAttribute("aria-label", "Scope range");
+          box.replaceChildren(scope(a), ranges, beyond ? el("p", { className: "shelp air-attr", textContent: `${beyond} more beyond ${rng} nm: in the table below.` }) : null, el("p", { className: "shelp air-attr" }, ...(a.at ? [el("label", {}, cb, " Map"), ` · rings every ${step} nm from the aerial${note ? " · " + note : ""}`] : [`Rings every ${step} nm from the aerial. ${note}`])));
         };
         draw();
         if (a.at && mapOn() && !MAPDATA.data && !MAPDATA.failed) getMap().then(draw);

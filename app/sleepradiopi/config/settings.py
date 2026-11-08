@@ -50,6 +50,7 @@ class Settings:
     qrz_key: str = ""                     # the owner's QRZ logbook access key (playback/qrzlog.py): never in a backup file, never sent to the page
     aircraft_url: str = ""                # a dump1090 / readsb receiver on the local network ("192.168.1.5:8080"): the Aircraft tile; empty = off (playback/aircraft.py)
     background_url: str = ""             # the receiver Pi's background service ("192.168.50.4:8076"): the 433 MHz tile; empty = off (playback/radio433.py)
+    aircraft_range: int = 0               # the Aircraft scope's range in nm (playback/aircraft.py SCOPE_RANGES: 8, 20, 40, 80, 160, 320), 0 = automatic
     aircraft_off: list = field(default_factory=list)   # kinds of aircraft alert switched off (playback/aircraft.py KINDS): "low", "inbound"...
     aircraft_watch: str = ""              # aircraft to watch for, shown as an alert on the Aircraft tile: "RRR, ASCOT, #43C0A1, mil" (playback/aircraft.py)
     warnings_region: str = ""             # the Met Office region for weather warnings ("ne"...), or "" for the one nearest the locator (playback/ukwarnings.py)
