@@ -1646,6 +1646,17 @@ The cards:
   averages, from `BUSY_NEED` of them). All of it (`_tracks`, `_rates`, `_descents`, `_hist`) is in
   memory under `Aircraft._mem`, cleared by `forget()`; `flagged()` gives the scope the aircraft
   with an alert. `GET /api/aircraft` also returns `alerts`, `flagged`, `off`, `kinds`.
+  *433 MHz* (`playback/radio433.py`, `GET /api/radio433`, `POST /api/radio433
+  {"address": "host:port"}`, `""` to forget; the setting `background_url`, empty to begin with): `radio433.Radio433`
+  (a `Kept` in `outside_feeds()`, `EVERY_S` 20, `LAN = True`, no `keep_in`: nothing on the card) GETs
+  `<base>/433` and `<base>/status` of the receiver's background service (`receiver/sleepradio_background.py`).
+  The devices come with made-up IDs and, only for those named in the receiver's `known.json`, `name` and
+  `readings`. In memory under `_mem`, cleared by `forget()`: the messages per quarter hour for a day (the
+  difference of the service's running total between looks; a smaller total = it restarted: counted as none) and
+  the named devices' readings every five minutes (`SERIES_S`). `status()` is never "old" (the tile goes `OLD_S` after
+  the service stops answering) and adds the time since the look to each `ago_s`. `state_word()` says what the dongle
+  is doing in words (Scanning / Paused: the VHF receiver is in use / Paused: listening for radiosondes / Starting
+  again). Tile `"r433"`; the window is `UI.r433` in desktop.html (signal = a bar and a word, never colour alone).
   *Lightning* (`playback/lightning.py`, `GET /api/lightning`, `POST
   /api/lightning {"on"?, "bell"?, "ring"?}`, the settings
   `lightning_watch` (off to begin with), `lightning_bell`): `lightning.Watch`, a thread of its

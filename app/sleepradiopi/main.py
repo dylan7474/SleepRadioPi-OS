@@ -992,6 +992,8 @@ def main() -> None:
         cfg = station.config
         return bool(cfg.news_quiet_hours and _trusted() and _dt.now().time() in _QH.of_minutes(cfg.news_quiet_start_min, cfg.news_quiet_end_min))
     aircraft_mod.QUIET = _quiet_now
+    from sleepradiopi.playback import radio433 as radio433_mod
+    radio433_mod.ADDRESS = settings.background_url or ""             # 433 MHz devices, from the receiver's background service (nothing kept on the card)
     aircraft_mod.ADDRESS = settings.aircraft_url or ""               # aircraft overhead, from a receiver on the local network (nothing kept on the card)
     from sleepradiopi.playback import lightning as lightning_mod
     lightning_mod.ON = settings.lightning_watch is not False

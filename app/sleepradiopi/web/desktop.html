@@ -625,6 +625,22 @@
   .air-tab .f i { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 7px; }
   .air-tab .d { color: var(--dim); }
   .air-tab .r { text-align: right; }
+  /* 433 MHz: what the state is (in words), the figures, your own devices with a day of readings, the activity, a table of what's out there */
+  .r4-state { display: flex; align-items: center; gap: 8px; margin: 0 0 10px; padding: 8px 12px; border-radius: 9px; background: var(--win-2); border: 1px solid var(--plate-line); font-weight: 600; }
+  .r4-state.paused { border-style: dashed; font-weight: 500; }
+  .r4-mine { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 2px 14px; align-items: center; padding: 8px 10px; border: 1px solid var(--plate-line); border-radius: 10px; background: var(--win-2); margin-bottom: 8px; }
+  .r4-mine b { font: 600 24px/1.1 var(--display); white-space: nowrap; }
+  .r4-mine span { font-size: 11px; letter-spacing: .09em; text-transform: uppercase; color: var(--dim); }
+  .r4-mine svg { grid-column: 1 / -1; width: 100%; height: 44px; color: var(--ink); }
+  .r4-mine em { grid-column: 1 / -1; font: normal 10.5px var(--mono); color: var(--faint); }
+  .r4-bars { color: var(--ink); }
+  .r4-bars rect { fill: var(--amber-deep); }
+  .r4-tab { display: grid; grid-template-columns: minmax(0, 1.5fr) minmax(0, .8fr) minmax(0, 1.1fr) minmax(0, .6fr); gap: 4px 10px; font-size: 12.5px; align-items: baseline; }
+  .r4-tab .h { font-size: 10px; letter-spacing: .09em; text-transform: uppercase; color: var(--faint); padding-bottom: 4px; border-bottom: 1px solid var(--plate-line); }
+  .r4-tab .c { padding: 4px 0; border-bottom: 1px solid color-mix(in srgb, var(--plate-line) 55%, transparent); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-variant-numeric: tabular-nums; }
+  .r4-tab .d { color: var(--dim); }
+  .r4-tab .r { text-align: right; }
+  .r4-sig { display: inline-block; height: 6px; border-radius: 3px; background: var(--ink); opacity: .6; vertical-align: middle; margin-right: 6px; }
   @media (max-width: 560px) { .srow { grid-template-columns: minmax(0, 1fr); } }
   .netrow { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; gap: 10px; align-items: center; padding: 5px 8px; border-radius: 6px; }
   .netrow:nth-child(odd) { background: var(--zebra); }
@@ -839,7 +855,7 @@ const PANEL = {};
 for (const [key, title, sym, h, page] of PANELS) PANEL[key] = mk({ id: "set:" + key, kind: "panel", key, title, sym, h, page });
 for (const [key, title, sym, h] of [["messages", "Messages", "✎", 55], ["birthdays", "Birthdays", "✿", 340], ["stations", "Stations", "R", 8],
                                     ["tests", "Test sounds", "▶", 150], ["stream", "Listen in a browser", "◠", 200], ["lists", "Themes", "A", 195],
-                                    ["findstation", "Find a station", "R", 8], ["findreceiver", "Find a receiver", "⌁", 200], ["modes", "Where to listen", "⌖", 215], ["conditions", "Band conditions", "☼", 45], ["quakes", "Earthquakes", "≋", 20], ["sun", "The sun", "☀", 45], ["aurora", "Aurora", "◠", 130], ["vhf", "VHF openings", "⌃", 200], ["warnings", "Warnings", "⚠", 35], ["signal", "My signal", "⌇", 210], ["qrz", "QRZ logbook", "Q", 225], ["lightning", "Lightning", "ϟ", 50], ["aircraft", "Aircraft", "✈", 215], ["findroom", "Find a room", "☊", 265], ["findpodcast", "Follow a podcast", "P", 275], ["findbook", "Find a LibriVox book", "B", 150], ["findebook", "Find an ebook", "E", 160], ["newlist", "New theme", "A", 195]])
+                                    ["findstation", "Find a station", "R", 8], ["findreceiver", "Find a receiver", "⌁", 200], ["modes", "Where to listen", "⌖", 215], ["conditions", "Band conditions", "☼", 45], ["quakes", "Earthquakes", "≋", 20], ["sun", "The sun", "☀", 45], ["aurora", "Aurora", "◠", 130], ["vhf", "VHF openings", "⌃", 200], ["warnings", "Warnings", "⚠", 35], ["signal", "My signal", "⌇", 210], ["qrz", "QRZ logbook", "Q", 225], ["lightning", "Lightning", "ϟ", 50], ["aircraft", "Aircraft", "✈", 215], ["r433", "433 MHz", "∿", 280], ["findroom", "Find a room", "☊", 265], ["findpodcast", "Follow a podcast", "P", 275], ["findbook", "Find a LibriVox book", "B", 150], ["findebook", "Find an ebook", "E", 160], ["newlist", "New theme", "A", 195]])
   PANEL[key] = mk({ id: "set:" + key, kind: "panel", key, title, sym, h, page: key });
 const DJ = mk({ id: "dj", kind: "dj", title: "The DJ" });
 const NOTES = mk({ id: "notes", kind: "folder", box: "messages", title: "Messages", kids: [], sym: "✎" });   // a folder of sticky notes
@@ -1248,6 +1264,7 @@ const OUTSIDE_PIC = {
   qrz: '<rect x="4" y="3" width="16" height="18" rx="2"/><path d="M8 8h8M8 12h8M8 16h5"/>',
   lightning: '<path d="M13 2.5 5 13.5h6l-1 8 8-11h-6z"/>',
   aircraft: '<path d="M21 15.5 13.5 11V5a1.5 1.5 0 0 0-3 0v6L3 15.5V17l7.5-2v4L8.5 20.5V22l3.5-1 3.5 1v-1.5l-2-1.5v-4l7.5 2z"/>',
+  r433: '<path d="M12 20V10"/><circle cx="12" cy="8" r="1.6"/><path d="M7.5 12.5a6 6 0 0 1 0-9M16.5 12.5a6 6 0 0 0 0-9M4.5 15a10 10 0 0 1 0-14M19.5 15a10 10 0 0 0 0-14"/>',
   signal: '<path d="M12 20V11"/><circle cx="12" cy="9" r="1.5"/><path d="M8.5 5.5a5 5 0 0 0 0 7M15.5 5.5a5 5 0 0 1 0 7M5.5 3a9 9 0 0 0 0 12M18.5 3a9 9 0 0 1 0 12"/>',
 };
 const svgPic = d => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${d}</svg>`;
@@ -3845,7 +3862,7 @@ function folderView(o, box, win) {
   else if (o.box === "playlists") tools.append(T("New playlist", newPlaylist), el("span", { className: "note", textContent: "Drop songs, albums or folders onto a playlist" }));
   else if (o.box === "programmes") tools.append(T("New programme", newProgramme), el("span", { className: "note", textContent: "A running order the radio plays by itself" }));
   else if (o.box === "stations") tools.append(T("Find a station", () => open(PANEL.findstation.id)), T("Find a receiver", () => open(PANEL.findreceiver.id)), T("Find a room", () => open(PANEL.findroom.id)), el("span", { className: "note", textContent: "Drag a station onto a button to keep it there" }));
-  else if (o.box === "outside") tools.append(T("Band conditions…", () => open(PANEL.conditions.id)), T("Aircraft…", () => open(PANEL.aircraft.id)), el("span", { className: "note", textContent: "Live from outside · open one for all of it · the DJ says it if you ask, in Band conditions" }));
+  else if (o.box === "outside") tools.append(T("Band conditions…", () => open(PANEL.conditions.id)), T("Aircraft…", () => open(PANEL.aircraft.id)), T("433 MHz…", () => open(PANEL.r433.id)), el("span", { className: "note", textContent: "Live from outside · open one for all of it · the DJ says it if you ask, in Band conditions" }));
   else if (o.box === "podcasts") tools.append(T("Follow a podcast", () => open(PANEL.findpodcast.id)), el("span", { className: "note", textContent: "Open a show for its episodes" }));
   else if (o.box === "lists") tools.append(T("New theme", () => open(PANEL.newlist.id)), el("span", { className: "note", textContent: "Double-click a theme to change it · drag one onto the radio to play it" }));
   else if (o.box === "receiver") tools.append(T("Find a receiver", () => open(PANEL.findreceiver.id)), T("Find a room", () => open(PANEL.findroom.id)), el("span", { className: "note", textContent: "Each opens as a rig · they're the receivers your saved stations use · Name… in a rig's window gives it a name of your own" }));
@@ -5370,6 +5387,67 @@ const UI = {
       ];
     },
   },
+  // 433 MHz (a tile in The world outside, only while the receiver's background service answers): the devices its scan hears. Device
+  // models come from the air: DOM calls only, never HTML. Signal strength is a bar AND a word; the state is words, never colour alone.
+  r433: {
+    load: () => api("/api/radio433"),
+    build: (a, act) => {
+      const NS = "http://www.w3.org/2000/svg", sv = (t, at = {}, txt) => { const n = document.createElementNS(NS, t); for (const k in at) n.setAttribute(k, at[k]); if (txt != null) n.textContent = txt; return n; };
+      const ago = s => s < 90 ? `${s} s ago` : s < 5400 ? `${Math.round(s / 60)} min ago` : `${Math.round(s / 3600)} h ago`;
+      const sig = d => d.snr == null ? ["", "–"] : d.snr >= 15 ? [Math.min(d.snr, 30) / 30, "strong"] : d.snr >= 8 ? [d.snr / 30, "fair"] : [Math.max(d.snr, 2) / 30, "weak"];
+      const fmt = (x, u) => x == null ? "–" : `${+x.toFixed(1)}${u}`;
+      const mine = a.devices.filter(d => d.name);
+      const spark = (name, col) => {
+        const pts = ((a.series || {})[name] || []).filter(p => p[col] != null);
+        if (pts.length < 2) return null;
+        const t0 = pts[0][0], t1 = pts[pts.length - 1][0], lo = Math.min(...pts.map(p => p[col])), hi = Math.max(...pts.map(p => p[col])), span = (hi - lo) || 1;
+        const g = sv("svg", { viewBox: "0 0 240 44", preserveAspectRatio: "none", "aria-label": `${name} over the last ${ago(Math.round(t1 - t0)).replace(" ago", "")}: ${fmt(lo, "°C")} to ${fmt(hi, "°C")}` });
+        g.append(sv("polyline", { points: pts.map(p => `${(((p[0] - t0) / ((t1 - t0) || 1)) * 236 + 2).toFixed(1)},${(40 - ((p[col] - lo) / span) * 36).toFixed(1)}`).join(" "), fill: "none", stroke: "currentColor", "stroke-width": 1.6, "vector-effect": "non-scaling-stroke" }));
+        return [g, `${ago(Math.round(t1 - t0)).replace(" ago", "")} of readings · lowest ${fmt(lo, "°C")} · highest ${fmt(hi, "°C")}`];
+      };
+      const yours = d => {
+        const r = d.readings || {}, sp = spark(d.name, 1);
+        return el("div", { className: "r4-mine" }, el("div", {}, el("span", { textContent: d.name }), el("div", {}, el("b", { textContent: [r.temperature_C != null ? `${r.temperature_C}°C` : "", r.humidity != null ? `${r.humidity}%` : ""].filter(Boolean).join(" · ") || "no readings" }))),
+          el("span", { textContent: ago(d.ago_s) }), sp ? sp[0] : null, sp ? el("em", { textContent: sp[1] }) : null);
+      };
+      const bars = () => {
+        const act = a.activity || [], max = Math.max(1, ...act.map(x => x[1])), g = sv("svg", { viewBox: `0 0 ${act.length * 3} 40`, preserveAspectRatio: "none", class: "r4-bars", style: "width:100%;height:46px", "aria-label": `Messages per quarter hour over the last day, most ${max}` });
+        g.append(sv("line", { x1: 0, y1: 39.5, x2: act.length * 3, y2: 39.5, stroke: "currentColor", "stroke-opacity": .35, "stroke-width": 1, "vector-effect": "non-scaling-stroke" }));
+        act.forEach((x, i) => { const h = x[1] ? Math.max(1.5, (x[1] / max) * 38) : 0; if (h) g.append(sv("rect", { x: i * 3, y: 40 - h, width: 2.2, height: h })); });
+        return [g, `Messages heard per quarter hour, the last day (most: ${max}). Only what this radio has seen since it started.`];
+      };
+      const table = () => {
+        const rows = a.devices.filter(d => !d.name).slice(0, 14), cells = [];
+        for (const [t, c] of [["Device", ""], ["Heard", ""], ["Signal", ""], ["Messages", "r"]]) cells.push(el("div", { className: "h " + c, textContent: t }));
+        for (const d of rows) {
+          const [w, word] = sig(d);
+          cells.push(el("div", { className: "c", textContent: d.model, title: `Made-up ID ${d.id}` }), el("div", { className: "c d", textContent: ago(d.ago_s) }),
+                     el("div", { className: "c d" }, w === "" ? null : el("i", { className: "r4-sig", style: `width:${Math.round(w * 44)}px` }), word),
+                     el("div", { className: "c r", textContent: d.count.toLocaleString("en-GB") }));
+        }
+        return el("div", { className: "r4-tab" }, ...cells, a.devices.filter(d => !d.name).length > rows.length ? el("p", { className: "shelp", style: "grid-column:1/-1;margin:6px 0 0", textContent: `and ${a.devices.filter(d => !d.name).length - rows.length} more` }) : null);
+      };
+      const addr = el("input", { type: "text", id: "r433-addr", autocomplete: "off", spellcheck: false, value: a.address, placeholder: "The receiver's background service, like 192.168.50.4:8076" });
+      addr.setAttribute("aria-label", "433 MHz receiver address");
+      const save = () => act(async () => { const r = await api("/api/radio433", { address: addr.value.trim() });
+        toast(!r.address ? "Forgotten." : r.up ? "Kept. It answered: 433 MHz is in The world outside." : "Kept, but it didn't answer: check the address and the port.");
+        setTimeout(() => fitWin(PANEL.r433.id), 300); });
+      addr.onkeydown = e => { if (e.key === "Enter") save(); };
+      const recent = a.devices.filter(d => d.ago_s < 3600).length;
+      return [
+        a.up ? el("div", { className: "r4-state" + (a.paused ? " paused" : ""), role: "status", textContent: (a.paused ? "⏸ " : "● ") + a.now + (a.paused && a.windows?.length ? ` (radiosonde hours, UTC: ${a.windows.join(", ")})` : "") }) : null,
+        a.up ? grp("Heard", el("p", { className: "shelp", style: "margin:0 0 8px", textContent: `${recent} device${recent === 1 ? "" : "s"} in the last hour · ${a.devices.length} since the scan began · ${(a.messages || 0).toLocaleString("en-GB")} messages` })) : null,
+        a.up && mine.length ? grp("Yours", ...mine.map(yours)) : null,
+        a.up ? grp("Activity", ...(() => { const [g, t] = bars(); return [g, help(t)]; })()) : null,
+        a.up ? grp("Out there", a.devices.some(d => !d.name) ? table() : help("Nothing but your own devices heard yet."),
+          help("Other people's devices are counted under made-up IDs, with no readings: the receiver never keeps or shows who they are. A device of yours is named on the receiver (known.json there) and shows its readings.")) :
+          grp("433 MHz", help(a.address ? "The receiver isn't answering. That's normal away from home: the 433 MHz tile is in The world outside only while it does." : "No receiver set. The tile shows once one is.")),
+        grp("The receiver", srow("Address", addr, sbtn(a.address ? "Change" : "Keep it", save, "primary")),
+          a.address ? line(sbtn("Forget it", () => act(() => api("/api/radio433", { address: "" })))) : null,
+          help("The background service on the receiver Pi (receiver/sleepradio_background.py, port 8076), like 192.168.50.4:8076. It scans 433.92 MHz whenever nobody is using that dongle (and listens for radiosondes in the launch hours); the VHF receiver always comes first. This radio asks it every half a minute or so; nothing is written to the card, and the history here starts again when the radio does.")),
+      ];
+    },
+  },
   // My signal (a tile in The world outside): who heard the owner's callsign in the last day, from PSK Reporter.
   signal: {
     load: () => api("/api/spots"),
@@ -6854,7 +6932,7 @@ function outsideSaw() {
   try { localStorage.setItem("srd.outsideSeen", JSON.stringify(outsideSeen)); } catch {}
   setTimeout(drawDesk); outsidePill();
 }
-const outsidePanel = key => PANEL[{ quakes: "quakes", warnings: "warnings", signal: "signal", qrz: "qrz", lightning: "lightning", aircraft: "aircraft", sun: "sun", aurora: "aurora", vhf: "vhf" }[key] || "conditions"].id;
+const outsidePanel = key => PANEL[{ quakes: "quakes", warnings: "warnings", signal: "signal", qrz: "qrz", lightning: "lightning", aircraft: "aircraft", r433: "r433", sun: "sun", aurora: "aurora", vhf: "vhf" }[key] || "conditions"].id;
 let pillAt = 0, pillOne = null;
 function outsidePill(step) {                          // one alert at a time, the next every eight seconds
   const p = $("outsidePill"), a = OUTSIDE_NOW.alerts;

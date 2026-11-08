@@ -33,7 +33,7 @@ the image README's [Roadmap](../../README.md#roadmap) (keep the two in step).
   AuroraWatch UK and alerts. Still to do: where your own receiver's
   reports put you among others', once *Report* is on; more from outside
   in The world outside (a barometer; earthquakes, warnings, PSK Reporter
-  spots of your own callsign, your QRZ logbook, lightning and aircraft from a local dump1090 are done).
+  spots of your own callsign, your QRZ logbook, lightning, aircraft from a local dump1090 and the 433 MHz devices from the receiver's background scan are done).
 - **A laser-cut wood cathedral** — a real-wood version of the cathedral case:
   - the face and fretwork cut from walnut-veneered plywood, the sides and
     back from plywood or MDF;

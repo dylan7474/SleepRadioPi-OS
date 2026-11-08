@@ -554,6 +554,20 @@ Actions, Sleep timer and Radio folders open:
   And if the receiver answers but has heard no aircraft at all for an hour,
   or its best range over the last hour is far below its usual, the
   "something's wrong" light says to check its aerial.
+- **433 MHz.** If a receiver of yours runs the background service
+  (`receiver/sleepradio_background.py`: it scans 433.92 MHz with `rtl_433`
+  whenever nobody is using its dongle, and listens for radiosondes in the
+  launch hours), type its address (like `192.168.50.4:8076`) into the 433 MHz
+  window (the *433 MHz...* button in The world outside) and a tile shows how
+  many devices -- thermometers, weather stations, doorbells -- it has heard in
+  the last hour. The window says what the scan is doing in words (scanning, or
+  paused because the VHF receiver is in use, or for radiosondes), draws a day of
+  messages, and lists what is out there with a signal bar and a word. Other
+  people's devices are only a model, a count and a signal, under an ID the
+  receiver made up; a device **of yours**, named in `known.json` on the receiver,
+  shows its readings and a day of them as a line. The radio asks the receiver
+  (it never sends), nothing is written to the card, and the history is in memory:
+  it begins again when the radio does. Away from home there is simply no tile.
 - **Quiet hours (do not disturb).** In The DJ's window: from and until
   (23:00 to 06:00 to begin with), or off. No news, birthday wishes, alerts
   or lightning bell in them; music and programmes play as usual.
@@ -1238,7 +1252,7 @@ What's left to do (everything else described here is built and running):
   AuroraWatch UK and alerts. Still to do: where your own receiver's
   reports put you among others', once *Report* is on; more from outside
   in The world outside (a barometer; earthquakes, warnings, PSK Reporter
-  spots of your own callsign, your QRZ logbook, lightning and aircraft from a local dump1090 are done).
+  spots of your own callsign, your QRZ logbook, lightning, aircraft from a local dump1090 and the 433 MHz devices from the receiver's background scan are done).
 - **A laser-cut wood cathedral** — a real-wood version of the cathedral case:
   - the face and fretwork cut from walnut-veneered plywood, the sides and
     back from plywood or MDF;
