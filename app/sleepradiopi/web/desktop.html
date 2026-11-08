@@ -605,7 +605,11 @@
   .air-key { display: flex; gap: 12px; flex-wrap: wrap; justify-content: center; font-size: 10.5px; color: var(--dim); margin: 2px 0 0; }
   .air-key i { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 5px; vertical-align: -0.5px; }
   .air-alarm { display: flex; align-items: center; gap: 8px; margin: 0 0 10px; padding: 8px 12px; border-radius: 9px; background: color-mix(in srgb, var(--red) 14%, var(--win)); border: 1px solid var(--red); color: var(--ink); font-weight: 600; }
-  .air-alarm.air-note { background: color-mix(in srgb, var(--amber) 16%, var(--win)); border-color: var(--amber-deep); font-weight: 500; }
+  .air-kind { display: flex; align-items: center; justify-content: space-between; gap: 14px; padding: 7px 0; border-bottom: 1px solid color-mix(in srgb, var(--plate-line) 55%, transparent); }
+  .air-kind b { font-weight: 600; font-size: 13px; }
+  .air-kind small { display: block; color: var(--dim); font-size: 11.5px; margin-top: 1px; }
+  .air-chips { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 12px; }
+  .air-chip { padding: 4px 11px; border-radius: 999px; font-size: 12px; background: color-mix(in srgb, var(--amber) 18%, var(--win)); border: 1px solid var(--amber-deep); color: var(--ink); white-space: nowrap; }
   .air-tab { display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr) minmax(0, 1.05fr) minmax(0, .7fr); gap: 4px 10px; font-size: 12.5px; align-items: baseline; }
   .air-tab .h { font-size: 10px; letter-spacing: .09em; text-transform: uppercase; color: var(--faint); padding-bottom: 4px; border-bottom: 1px solid var(--plate-line); }
   .air-tab .c { padding: 4px 0; border-bottom: 1px solid color-mix(in srgb, var(--plate-line) 55%, transparent); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-variant-numeric: tabular-nums; }
@@ -5276,8 +5280,9 @@ const UI = {
       const ALT_BANDS = [[3000, "#f2b24a", "under 3,000 ft"], [10000, "#e6dc78", "to 10,000"], [25000, "#7cd6a2", "to 25,000"], [Infinity, "#6fb7e8", "above"]];
       const altCol = p => p.ground ? "#9aa3a8" : p.ft == null ? "#9aa3a8" : ALT_BANDS.find(b => p.ft < b[0])[1];
       const NS = "http://www.w3.org/2000/svg", sv = (t, at = {}, txt) => { const n = document.createElementNS(NS, t); for (const k in at) n.setAttribute(k, at[k]); if (txt != null) n.textContent = txt; return n; };
-      const placed = a.planes.filter(p => p.nm != null), marks = new Set([...(a.low || []), ...(a.watching || [])].map(p => p.hex)),
-            plot = placed.concat((a.watching || []).filter(w => w.nm != null && !placed.some(p => p.hex === w.hex)));
+      const KIND_MARK = { low: "↓", watch: "◎", inbound: "➜", loiter: "↻", descent: "⤓", long: "⌁", night: "☾", heli: "✚", heavy: "▣", busy: "≋" };
+      const placed = a.planes.filter(p => p.nm != null), marks = new Set((a.flagged || []).map(p => p.hex)),
+            plot = placed.concat((a.flagged || []).filter(w => w.nm != null && !placed.some(p => p.hex === w.hex)));
       const scope = a => {
         const sorted = placed.map(p => p.nm).sort((x, y) => x - y), far = sorted.length ? sorted[Math.min(sorted.length - 1, Math.floor(sorted.length * 0.85))] : 0, range = [10, 25, 50, 100, 150, 200, 250, 300].find(r => r >= far) || 300, C = 145, R = 128;
         const g = sv("svg", { viewBox: "0 0 290 290", "aria-label": `Radar: ${placed.length} aircraft within ${range} nautical miles` });
@@ -5336,15 +5341,17 @@ const UI = {
       watchIn.onkeydown = e => { if (e.key === "Enter") saveWatch(); };
       return [
         a.emergency?.length ? el("div", { className: "air-alarm", role: "alert", textContent: "⚠ " + a.emergency.map(p => `${p.call || p.hex} squawking ${p.squawk}`).join(" · ") }) : null,
-        a.low?.length ? el("div", { className: "air-alarm air-note", textContent: "↓ Low and close: " + a.low.map(p => `${p.call || p.hex} ${p.ft.toLocaleString("en-GB")} ft, ${p.nm} nm ${dir(p.deg)}`).join(" · ") }) : null,
-        a.watching?.length ? el("div", { className: "air-alarm air-note", textContent: "◎ Watching: " + a.watching.map(p => `${p.call || p.hex}${p.nm != null ? `, ${p.nm} nm ${dir(p.deg)}` : ""}${p.ft != null ? `, ${p.ft.toLocaleString("en-GB")} ft` : ""}`).join(" · ") }) : null,
+        a.alerts?.length ? el("div", { className: "air-chips" }, ...a.alerts.map(x => el("span", { className: "air-chip", textContent: `${KIND_MARK[x.what.split(":")[1]] || "•"} ${x.short}` }))) : null,
         a.up ? el("div", { className: "air" }, scope(a), figures(a)) : null,
         a.up ? line(el("p", { className: "air-key" }, ...ALT_BANDS.map(([, col, txt]) => el("span", {}, el("i", { style: `background:${col}` }), txt)))) : null,
         a.up ? grp("Nearest first", table(a), help((a.from === "receiver" ? "Distances are from the receiver's aerial, where the receiver says it is." : a.from === "locator" ? "The receiver didn't say where its aerial is, so distances are from the middle of this radio's locator square: approximate (a longer locator in Settings is closer)." : "The receiver didn't say where its aerial is and the radio has no locator, so there are no distances or plot.") + " Callsigns are what the aircraft transmits; ones with no position yet are listed last.")) :
           grp("Aircraft", help(a.address ? "The receiver isn't answering. That's normal away from home: the Aircraft tile is in The world outside only while it does." : "No receiver set. The tile shows once one is.")),
+        grp("Alerts", ...Object.entries(a.kinds || {}).map(([k, [name, what]]) => el("div", { className: "air-kind" }, el("div", {}, el("b", { textContent: name }), el("small", { textContent: what })),
+            sw(!a.off.includes(k), v => act(() => api("/api/aircraft", { off: Object.keys(a.kinds).filter(x => (x === k ? !v : a.off.includes(x))) })), name))),
+          help("Shown on the tile, in this window and on the scope, never spoken. An emergency squawk (7500, 7600, 7700) is always on, and the DJ says it with Alerts on.")),
         grp("The receiver", srow("Address", addr, sbtn(a.address ? "Change" : "Keep it", save, "primary")),
           srow("Watch for", watchIn, sbtn("Keep", saveWatch)),
-          help("Shown on the tile (and the scope) while one is in the air, never spoken: callsigns starting so (RRR, ASCOT), # then an address (#43C0A1) or a range (#43C000-43CFFF), or mil for UK and US military. Commas between. Also marked: any aircraft under 2,000 ft within 3 nm."),
+          help("For the Watch list alert: callsigns starting so (RRR, ASCOT), # then an address (#43C0A1) or a range (#43C000-43CFFF), or mil for UK and US military. Commas between."),
           a.address ? line(sbtn("Forget it", () => act(() => api("/api/aircraft", { address: "" })))) : null,
           help("A dump1090 or readsb receiver on your network: the address of the page it serves, like 192.168.1.5:8080 (the radio reads its /data/aircraft.json). Only this address is asked, every half a minute or so, and nothing is written to the card. With Alerts on (Band conditions), the DJ says it when one squawks 7500, 7600 or 7700.")),
       ];

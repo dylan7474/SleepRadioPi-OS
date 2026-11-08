@@ -1,5 +1,6 @@
 """Aircraft overhead from a dump1090 / readsb receiver on the local network (playback/aircraft.py)."""
 import json
+import math
 import threading
 import urllib.error
 import urllib.request
@@ -246,13 +247,13 @@ def test_a_deaf_receiver_is_said_once_it_has_been_an_hour() -> None:
     answers = {"/data/aircraft.json": {"aircraft": []}, "/data/receiver.json": RECEIVER}
     a = aircraft.Aircraft(get=_get(answers), clock=lambda: now[0], address=lambda: "pi:8080")
     a.fetch()
-    assert a.trouble() is None
+    assert a.trouble() == []
     now[0] += aircraft.DEAF_S - 1
     a.fetch()
-    assert a.trouble() is None
+    assert a.trouble() == []
     now[0] += 2
     a.fetch()
-    t = a.trouble()
+    t = a.trouble()[0]
     assert t["key"] == "aircraft-deaf" and t["level"] == "warn" and "no aircraft for 1 h" in t["text"]
     clock = [NOW]
     h = health_mod.Health(Path("/x"), lambda: clock[0], lambda: 200.0, lambda: 45.0, lambda: False, lambda: 0, lambda: 30.0, lambda p: (160.0, 30.0), True)
@@ -260,13 +261,13 @@ def test_a_deaf_receiver_is_said_once_it_has_been_an_hour() -> None:
     assert [i["key"] for i in h.issues([a])["issues"]] == ["aircraft-deaf"]
     answers["/data/aircraft.json"] = SKY                                                                             # it hears again
     a.fetch()
-    assert a.trouble() is None
+    assert a.trouble() == []
     answers["/data/aircraft.json"] = {"aircraft": []}
     a.fetch()
     answers["/data/aircraft.json"] = None
     now[0] += 10 * aircraft.DEAF_S
     a.fetch()                                                                                                       # (it stopped answering: no claim about what it hears)
-    assert a.trouble() is None
+    assert a.trouble() == []
 
 
 def test_the_watch_list_from_the_web(tmp_path: Path, monkeypatch) -> None:
@@ -279,6 +280,7 @@ def test_the_watch_list_from_the_web(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setattr(aircraft, "aircraft", a)
     monkeypatch.setattr(aircraft, "ADDRESS", "pi:8080")
     monkeypatch.setattr(aircraft, "WATCH", "")
+    monkeypatch.setattr(aircraft, "OFF", set())                                              # (the web side rebinds it: put it back after)
 
     def post(body):
         req = urllib.request.Request(base + "/api/aircraft", data=json.dumps(body).encode(), method="POST")
@@ -291,9 +293,157 @@ def test_the_watch_list_from_the_web(tmp_path: Path, monkeypatch) -> None:
         for bad in ({}, {"watch": 3}, {"watch": "#nope"}, {"watch": "x" * 201}):
             assert post(bad)[0] == 400
         code, d = post({"watch": "RRR, mil"})
-        assert code == 200 and d["watch"] == "RRR, mil" and [p["call"] for p in d["watching"]] == ["RRR123"] and [p["call"] for p in d["low"]] == ["RRR123"]
+        assert code == 200 and d["watch"] == "RRR, mil" and [x["what"] for x in d["alerts"]] == ["aircraft:low:43c0a1", "aircraft:watch:43c0a1"] and d["flagged"][0]["kinds"] == ["low", "watch"]
         assert json.loads(conf.read_text())["aircraft_watch"] == "RRR, mil" and d["address"] == "pi:8080"
-        assert post({"watch": ""})[1]["watching"] == []
+        assert [x["what"] for x in post({"watch": ""})[1]["alerts"]] == ["aircraft:low:43c0a1"]
+        assert post({"off": ["nonsense"]})[0] == 400 and post({"off": "low"})[0] == 400
+        code, d = post({"off": ["low", "inbound"]})
+        assert code == 200 and d["off"] == ["inbound", "low"] and d["alerts"] == [] and json.loads(conf.read_text())["aircraft_off"] == ["inbound", "low"]
+        assert d["kinds"]["low"][0] == "Low and close" and d["address"] == "pi:8080"
     finally:
         httpd.shutdown()
         httpd.server_close()
+
+
+LAT0, LON0 = RECEIVER["lat"], RECEIVER["lon"]
+
+
+def spot(nm: float, deg: float) -> dict:
+    """Where a place nm nautical miles from the aerial, on a bearing, is."""
+    r = math.radians(deg)
+    return {"lat": LAT0 + nm * math.cos(r) / 60, "lon": LON0 + nm * math.sin(r) / (60 * math.cos(math.radians(LAT0)))}
+
+
+class Sky:
+    """A receiver whose picture and clock the test moves."""
+    def __init__(self, planes=(), **kw) -> None:
+        self.now, self.planes = NOW, list(planes)
+        self.a = aircraft.Aircraft(get=self.get, clock=lambda: self.now, address=lambda: "pi:8080", **kw)
+
+    def get(self, url, timeout=6.0):
+        if url.endswith("receiver.json"):
+            return RECEIVER
+        return {"aircraft": self.planes}
+
+    def step(self, s: float = 0.0, planes=None):
+        self.now += s
+        if planes is not None:
+            self.planes = list(planes)
+        return self.a.fetch()
+
+
+def _plane(hex_, call, nm, deg, ft=30000, kt=400, track=0, **kw) -> dict:
+    return {"hex": hex_, "flight": call, "alt_baro": ft, "gs": kt, "track": track, **spot(nm, deg), **kw}
+
+
+def test_heading_for_you() -> None:
+    sky = Sky([_plane("a00001", "INB1", 6, 90, track=270, kt=300),                        # 6 nm east, flying west at 5 nm/min: over you in 1.2 min
+               _plane("a00002", "AWAY1", 6, 90, track=90, kt=300),                        # ...flying away
+               _plane("a00003", "MISS1", 10, 90, track=270, kt=300, **spot(0, 0))])        # (position replaced just below)
+    sky.planes[2].update(spot(5, 0))                                                      # 5 nm north, flying west: passes 5 nm off
+    sky.planes[2]["lon"] += 10 / 60 / math.cos(math.radians(LAT0))
+    had = sky.step()
+    assert [(p["call"], p["eta"]) for p in had["inbound"]] == [("INB1", 1.2)] and had["inbound"][0]["miss"] <= 0.2
+    assert [x[3] for x in aircraft.alerts(had)] == ["Inbound: INB1 · 1.2 min"]
+    aircraft.OFF.add("inbound")
+    try:
+        assert aircraft.alerts(had) == []
+    finally:
+        aircraft.OFF.clear()
+
+
+def test_circling_is_noticed_after_a_quarter_of_an_hour_and_not_a_straight_line() -> None:
+    sky = Sky()
+    circler = lambda k: _plane("c00001", "HELI1", 12 + 2 * math.cos(k / 5), 40 + 7 * math.sin(k / 5), ft=1500, kt=80, track=(k * 20) % 360)
+    runner = lambda k: _plane("c00002", "RUN1", 20 + k * 0.5, 200, kt=480, track=20)
+    for k in range(41):                                                                    # 30 s apart: 20 minutes
+        had = sky.step(30 if k else 0, [circler(k), runner(k)])
+        if k == 20:
+            assert had["loiter"] == []                                                     # (ten minutes in: not yet)
+    assert [(p["call"], p["mins"]) for p in had["loiter"]] == [("HELI1", 20)]
+    assert had["loiter"][0]["radius"] <= aircraft.LOITER_NM
+    assert [x[3] for x in aircraft.alerts(had) if ":loiter:" in x[0]][0].startswith("Circling: HELI1 · 20 min")
+    sky.step(600, [])                                                                       # it goes out of range: the track ends with it
+    had = sky.step(30, [circler(1)])
+    assert had["loiter"] == []
+
+
+def test_falling_fast_twice_running_and_it_is_kept_for_a_while() -> None:
+    sky = Sky()
+    plane = lambda rate: _plane("d00001", "DROP1", 30, 10, ft=30000, baro_rate=rate)
+    assert sky.step(0, [plane(-5000)])["descent"] == []                                    # (once: could be a blip)
+    had = sky.step(30, [plane(-5200)])
+    assert [(p["call"], p["rate"]) for p in had["descent"]] == [("DROP1", -5200)]
+    assert "5,200 ft/min" in aircraft.alerts(had)[0][3] and aircraft.alerts(had)[0][1] == 2
+    assert sky.step(30, [plane(-500)])["descent"]                                          # (it has levelled off: still shown)
+    assert sky.step(aircraft.DESCENT_SHOWN_S + 1, [plane(-500)])["descent"] == []          # ...for ten minutes
+    low = _plane("d00002", "DESC2", 30, 10, ft=5000, baro_rate=-6000)                      # (a normal approach: low already)
+    sky.step(0, [low])
+    assert sky.step(30, [low])["descent"] == []
+
+
+def test_long_range_near_night_helicopters_and_heavies() -> None:
+    sky = Sky()
+    had = sky.step(0, [_plane("e00001", "FAR1", 280, 300), _plane("e00002", "FAKE1", 290, 300, mlat=["lat", "lon"]),
+                       _plane("e00003", "NEAR1", 3, 100, ft=4000), _plane("e00004", "HELI2", 8, 10, ft=800, kt=70, category="A7"),
+                       _plane("e00005", "HEAVY1", 7, 20, ft=6000, category="A5"), _plane("e00006", "HEAVY2", 7, 20, ft=36000, category="A5")])
+    assert [p["call"] for p in had["long"]] == ["FAR1"]                                    # (a multilateration position is not trusted that far)
+    assert [p["call"] for p in had["near"]] == ["NEAR1"] and [p["call"] for p in had["heli"]] == ["HELI2"] and [p["call"] for p in had["heavy"]] == ["HEAVY1"]
+    kinds = lambda: [w.split(":")[1] for w, *_ in aircraft.alerts(had)]
+    assert kinds() == ["long", "heli", "heavy"] and "night" not in kinds()                  # (it is daytime: no night flights)
+    aircraft.QUIET = lambda: True
+    try:
+        assert kinds() == ["long", "night", "heli", "heavy"]
+        aircraft.QUIET = lambda: 1 / 0                                                      # (a hook that fails is "not quiet")
+        assert "night" not in kinds()
+    finally:
+        aircraft.QUIET = lambda: False
+    assert sorted(p["call"] for p in aircraft.flagged(had)) == ["FAR1", "HEAVY1", "HELI2"]
+    assert aircraft.flagged(None) == []
+
+
+def test_a_busy_sky_needs_three_hours_of_watching() -> None:
+    quiet = [_plane(f"b{k:05d}", f"Q{k}", 10 + k, 90) for k in range(10)]
+    busy = [_plane(f"b{k:05d}", f"B{k}", 10 + k, 90) for k in range(30)]
+    sky = Sky()
+    for k in range(5):
+        assert sky.step(1800 if k else 0, quiet)["busy"] is None
+    assert sky.step(1800, busy)["busy"] is None                                             # (only five half hours behind it: not enough to know)
+    sky.step(1800, quiet)
+    had = sky.step(1800, busy)
+    assert had["busy"] == {"n": 30, "usual": 10}
+    assert aircraft.alerts(had)[0][:1] + aircraft.alerts(had)[0][3:] == ("aircraft:busy", "Busy: 30 aircraft (usually 10)")
+    assert sky.step(1800, quiet)["busy"] is None
+
+
+def test_range_that_has_dropped_tells_the_light() -> None:
+    far, near = [_plane("f00001", "FAR", 100, 90)], [_plane("f00002", "NEAR", 20, 90)]
+    sky = Sky()
+    for k in range(26):                                                                     # a day's worth (13 h) at its usual 100 nm
+        sky.step(1800 if k else 0, far)
+    assert sky.a.trouble() == []
+    for k in range(40):
+        sky.step(100, near)                                                                 # the last hour and more: 20 nm
+    t = sky.a.trouble()
+    assert [x["key"] for x in t] == ["aircraft-range"] and "usually about 100 nm" in t[0]["text"]
+    for k in range(22):                                                                     # it hears far again
+        sky.step(100, far)
+    assert sky.a.trouble() == []
+    thin = Sky()
+    for k in range(5):
+        thin.step(1800 if k else 0, far)
+    for k in range(22):
+        thin.step(100, near)
+    assert thin.a.trouble() == []                                                           # (too little history to say what is usual)
+
+
+def test_alert_kinds_are_all_named_and_switchable() -> None:
+    assert list(aircraft.KINDS) == ["low", "watch", "inbound", "loiter", "descent", "long", "night", "heli", "heavy", "busy"]
+    assert all(len(v) == 2 and v[0] and v[1] for v in aircraft.KINDS.values())
+    had = {"low": [{"hex": "x", "call": "L", "ft": 500, "nm": 1.0, "deg": 0}], "emergency": [{"hex": "y", "call": "E", "squawk": "7700"}]}
+    assert [w.split(":")[1] for w, *_ in aircraft.alerts(had)] == ["y", "low"]
+    aircraft.OFF.add("low")
+    try:
+        assert [w.split(":")[1] for w, *_ in aircraft.alerts(had)] == ["y"]                  # (an emergency squawk cannot be switched off)
+    finally:
+        aircraft.OFF.clear()

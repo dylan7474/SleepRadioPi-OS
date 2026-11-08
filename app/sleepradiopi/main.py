@@ -983,6 +983,15 @@ def main() -> None:
     qrz_mod.logbook.keep_in(Path.home() / ".cache" / "sleepradiopi" / "qrz.json")               # the owner's QRZ logbook (not the key)
     from sleepradiopi.playback import aircraft as aircraft_mod
     aircraft_mod.WATCH = settings.aircraft_watch or ""
+    aircraft_mod.OFF = {k for k in (settings.aircraft_off or []) if k in aircraft_mod.KINDS}
+
+    def _quiet_now() -> bool:                                 # (the news's quiet hours: the night-flights alert is for those)
+        from sleepradiopi.broadcast.news import QuietHours as _QH
+        from sleepradiopi.config.clock import clock_trusted as _trusted
+        from datetime import datetime as _dt
+        cfg = station.config
+        return bool(cfg.news_quiet_hours and _trusted() and _dt.now().time() in _QH.of_minutes(cfg.news_quiet_start_min, cfg.news_quiet_end_min))
+    aircraft_mod.QUIET = _quiet_now
     aircraft_mod.ADDRESS = settings.aircraft_url or ""               # aircraft overhead, from a receiver on the local network (nothing kept on the card)
     from sleepradiopi.playback import lightning as lightning_mod
     lightning_mod.ON = settings.lightning_watch is not False

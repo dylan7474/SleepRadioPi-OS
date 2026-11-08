@@ -1630,8 +1630,22 @@ The cards:
   2000 within `LOW_ALERT_NM` 3, in the air) and `aircraft:watch:<hex>` (`"watch"`: matches
   the setting `aircraft_watch` / `POST /api/aircraft {"watch"}`, parsed by `parse_watch()`:
   a callsign prefix, `#hex`, `#lo-hi`, `mil`; a bad one is a 400). `Aircraft.trouble()`
-  (`"aircraft-deaf"`) is a feed's own message to the health light (health.py asks any feed that
-  has `trouble()`): it answered, but with no aircraft at all for `DEAF_S` (an hour).
+  (a list of `"aircraft-deaf"`, `"aircraft-range"`) is a feed's own message to the health light
+  (health.py asks any feed that has `trouble()`): it answered, but with no aircraft at all for
+  `DEAF_S` (an hour); or the last hour's best range is under `DRIFT_RATIO` (35%) of the median of
+  the day's half-hour bests (12 h of them needed, 60 nm or more, 20 samples in the last hour).
+  The other visual-only kinds (`KINDS`: name + what it is, shown in the window with a switch each;
+  switched off = the setting `aircraft_off`, `POST /api/aircraft {"off": [...]}`; `aircraft.OFF`):
+  `inbound` (`cpa()`: closest approach from position, track and speed: within `INBOUND_NM` 2 inside
+  `INBOUND_MIN` 8 min), `loiter` (`circling()` on the in-memory tracks: `LOITER_S` 15 min within
+  `LOITER_NM` 5 of the track's middle; a gap over `GAP_S` ends a track), `descent` (baro rate under
+  `DESCENT_RATE` twice running from `DESCENT_FT` less 2,000; kept `DESCENT_SHOWN_S`), `long`
+  (`LONG_NM` 250, not from an mlat/TIS-B position), `night` (`near` list under `NIGHT_FT` within
+  `NIGHT_NM`, only while `aircraft.QUIET()`, which main.py points at the news quiet hours), `heli`
+  (category A7) and `heavy` (A5 low), `busy` (count over `BUSY_X` times the median of the half-hour
+  averages, from `BUSY_NEED` of them). All of it (`_tracks`, `_rates`, `_descents`, `_hist`) is in
+  memory under `Aircraft._mem`, cleared by `forget()`; `flagged()` gives the scope the aircraft
+  with an alert. `GET /api/aircraft` also returns `alerts`, `flagged`, `off`, `kinds`.
   *Lightning* (`playback/lightning.py`, `GET /api/lightning`, `POST
   /api/lightning {"on"?, "bell"?, "ring"?}`, the settings
   `lightning_watch` (off to begin with), `lightning_bell`): `lightning.Watch`, a thread of its

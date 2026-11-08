@@ -542,9 +542,18 @@ Actions, Sleep timer and Radio folders open:
   (under 2,000 ft within 3 nm) and any on your **watch list** (callsigns
   starting so, like `RRR`; `#43C0A1` an address; `#43C000-43CFFF` a range;
   `mil` the UK and US military) turn the tile red, say what and where in it,
-  ring it on the scope and badge the folder. And if the receiver answers but
-  has heard no aircraft at all for an hour, the "something's wrong" light
-  says to check its aerial.
+  ring it on the scope and badge the folder. So do these (each with its own
+  switch in the window): one **heading for you** (on course to pass within
+  2 nm in the next 8 minutes), one **circling** (within 5 nm of a spot for
+  15 minutes: helicopters, survey flights), an **emergency descent**
+  (over 4,000 ft/min, from high up), **long range** (heard beyond 250 nm),
+  **night flights** (low and near in the quiet hours), **helicopters** and
+  **heavy jets low** (for the aircraft that send their category), and a
+  **busy sky** (twice the usual). The radio works out "usual" and "circling"
+  from what it has seen since it started (nothing is kept on the card).
+  And if the receiver answers but has heard no aircraft at all for an hour,
+  or its best range over the last hour is far below its usual, the
+  "something's wrong" light says to check its aerial.
 - **Quiet hours (do not disturb).** In The DJ's window: from and until
   (23:00 to 06:00 to begin with), or off. No news, birthday wishes, alerts
   or lightning bell in them; music and programmes play as usual.

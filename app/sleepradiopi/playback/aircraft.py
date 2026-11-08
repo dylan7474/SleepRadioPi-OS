@@ -15,6 +15,8 @@ from __future__ import annotations
 import logging
 import math
 import re
+import statistics
+import threading
 import time
 import urllib.parse
 import urllib.request
@@ -39,6 +41,29 @@ WATCH = ""                   # what to watch for ("RRR, ASCOT, #43C0A1, mil"); m
 WATCH_MOST = 10
 MIL = ((0x43C000, 0x43CFFF), (0xAE0000, 0xAFFFFF))      # UK and US military addresses
 SPEAK_EXTRAS = False         # low-and-close and watched aircraft are for the eye only (the tile, the folder's badge) until this is True
+OFF: set[str] = set()        # kinds of alert switched off (KINDS); main.py sets it from the settings (aircraft_off)
+QUIET: Callable[[], bool] = lambda: False       # whether it's the quiet hours now; main.py sets it
+KINDS = {                    # the eye-only alerts: {kind: (name, what it is)}; the emergency squawk is always on
+    "low": ("Low and close", f"Under {LOW_ALERT_FT:,} ft within {LOW_ALERT_NM:g} nm"),
+    "watch": ("Watch list", "An aircraft matching Watch for"),
+    "inbound": ("Heading for you", "On course to pass within 2 nm in the next 8 minutes"),
+    "loiter": ("Circling", "Within 5 nm of one spot for 15 minutes: helicopters, survey flights, orbits"),
+    "descent": ("Emergency descent", "Falling faster than 4,000 ft/min from over 10,000 ft"),
+    "long": ("Long range", "Heard beyond 250 nm: a lift in conditions, or a good aerial day"),
+    "night": ("Night flights", "Under 10,000 ft within 5 nm in the quiet hours"),
+    "heli": ("Helicopters", "A helicopter within 10 nm (those that send their category)"),
+    "heavy": ("Heavy jets low", "A heavy jet under 10,000 ft within 10 nm (those that send their category)"),
+    "busy": ("Busy sky", "Twice as many aircraft as usual (once it has watched for three hours)"),
+}
+INBOUND_MIN, INBOUND_NM, INBOUND_FAR_NM = 8.0, 2.0, 80.0
+LOITER_S, LOITER_NM, LOITER_MOST, LOITER_SAMPLES = 900.0, 5.0, 3, 8
+TRACK_S, GAP_S = 1500.0, 300.0                   # a track is kept this long; a gap this long ends it (a new aircraft, or out of range)
+DESCENT_RATE, DESCENT_AGAIN, DESCENT_FT, DESCENT_SHOWN_S = -4000, -3000, 10000, 600.0
+LONG_NM = 250.0
+NIGHT_FT, NIGHT_NM, NEAR_MOST = 10000, 5.0, 5
+HELI_NM, HEAVY_NM, HEAVY_FT = 10.0, 10.0, 10000
+BUSY_X, BUSY_MIN, BUCKET_S, HIST_S, BUSY_NEED = 2.0, 25, 1800.0, 86400.0, 6      # (buckets of half an hour, kept a day; 6 of them before "usual" means anything)
+DRIFT_RATIO, DRIFT_MIN_NM, DRIFT_NEED, DRIFT_SAMPLES = 0.35, 60.0, 24, 20        # (the last hour's best range under 35% of the day's usual best, from 12 h of watching)
 EMERGENCY = {"7500": "hijack", "7600": "radio failure", "7700": "a general emergency"}
 M_TO_NM = 1 / 1852
 SHORT = ("N", "NE", "E", "SE", "S", "SW", "W", "NW")
@@ -136,6 +161,10 @@ def plane(a: dict, at: tuple[float, float] | None) -> dict | None:
     rate = a.get("baro_rate", a.get("geom_rate"))
     if isinstance(rate, (int, float)) and abs(rate) >= 300:
         out["climb"] = "up" if rate > 0 else "down"
+    if isinstance(rate, (int, float)) and not isinstance(rate, bool):
+        out["rate"] = round(rate)
+    if isinstance(a.get("category"), str) and len(a["category"]) == 2:
+        out["cat"] = a["category"].upper()
     sq = str(a.get("squawk") or "")
     if sq in EMERGENCY:
         out["squawk"] = sq
@@ -143,6 +172,30 @@ def plane(a: dict, at: tuple[float, float] | None) -> dict | None:
         nm, deg = distance(at[0], at[1], a["lat"], a["lon"])
         out["nm"], out["deg"] = round(nm, 1), round(deg)
     return out if len(out) > 1 else None
+
+
+def cpa(p: dict) -> tuple[float, float] | None:
+    """Heading for the aerial: (minutes until it's nearest, how near in nm) if it will pass within INBOUND_NM of it in the next
+    INBOUND_MIN minutes, else None. From where it is now (nm, deg), its track and its speed."""
+    if p.get("ground") or "nm" not in p or "track" not in p or p.get("kt", 0) < 60 or p["nm"] > INBOUND_FAR_NM:
+        return None
+    e, n = p["nm"] * math.sin(math.radians(p["deg"])), p["nm"] * math.cos(math.radians(p["deg"]))
+    v = p["kt"] / 60.0
+    ve, vn = v * math.sin(math.radians(p["track"])), v * math.cos(math.radians(p["track"]))
+    t = -(e * ve + n * vn) / (ve * ve + vn * vn)
+    if not 0.5 <= t <= INBOUND_MIN:
+        return None
+    miss = math.hypot(e + ve * t, n + vn * t)
+    return (round(t, 1), round(miss, 1)) if miss <= INBOUND_NM else None
+
+
+def circling(track: list, now: float) -> tuple[float, float] | None:
+    """A track [(t, lat, lon, ft)] that has stayed within LOITER_NM of its own middle for LOITER_S: (minutes, radius in nm)."""
+    if len(track) < LOITER_SAMPLES or now - track[-1][0] > 120 or track[-1][0] - track[0][0] < LOITER_S:
+        return None
+    lat0, lon0 = sum(t[1] for t in track) / len(track), sum(t[2] for t in track) / len(track)
+    far = max(distance(lat0, lon0, t[1], t[2])[0] for t in track)
+    return (round((track[-1][0] - track[0][0]) / 60), round(far, 1)) if far <= LOITER_NM else None
 
 
 class Aircraft(Kept):
@@ -158,6 +211,11 @@ class Aircraft(Kept):
         super().__init__(get, clock)
         self._address, self._watch = address, watch
         self._empty_since: float | None = None       # since when it has heard no aircraft at all (while it answered)
+        self._mem = threading.Lock()                 # (what's below is for the fetching thread and the health thread)
+        self._tracks: dict[str, list] = {}           # each aircraft's recent positions: {hex: [(t, lat, lon, ft)]}; memory only, never the card
+        self._rates: dict[str, int] = {}             # the last climb rate of each, for "falling fast, twice running"
+        self._descents: dict[str, tuple[float, dict]] = {}
+        self._hist: dict[int, list] = {}             # {half hour: [farthest nm, sum of counts, samples]}, a day of it, for "usual"
         self._where: tuple[str, tuple[float, float] | None, str | None] | None = None      # (the base it was for, the aerial's place, where that came from)
 
     def _aerial(self, url: str) -> tuple[tuple[float, float] | None, str | None]:
@@ -202,8 +260,72 @@ class Aircraft(Kept):
         watch = [p for p in sorted(planes, key=lambda p: p.get("nm", 1e9)) if watched(p, matchers)][:WATCH_MOST]
         now = self._clock()
         self._empty_since = (self._empty_since if self._empty_since is not None else now) if not raw else None
+        far_nm = placed[-1]["nm"] if placed else None
+        extra = self._watched_over(now, [(a, plane(a, at)) for a in raw if isinstance(a, dict)], placed, far_nm, len(raw))
         return {"n": len(raw), "placed": len(placed), "planes": placed[:NEAREST] + rest[:LIST_MOST], "emergency": emergency,
-                "low": low, "watch": watch, "far_nm": placed[-1]["nm"] if placed else None, "aerial": bool(at), "from": src}
+                "low": low, "watch": watch, "far_nm": far_nm, "aerial": bool(at), "from": src, **extra}
+
+    def _watched_over(self, now: float, pairs: list, placed: list[dict], far_nm: float | None, n: int) -> dict:
+        """What the picture says over time, kept in memory: tracks (circling), climb rates (falling fast), the day's counts and ranges
+        (busy, and the range drifting), and the rest that is a look at one picture."""
+        by_hex = {p["hex"]: p for p in placed}
+        raw_of = {p["hex"]: a for a, p in pairs if p}
+        inbound = []
+        for p in placed:
+            c = cpa(p)
+            if c:
+                inbound.append({**p, "eta": c[0], "miss": c[1]})
+        inbound.sort(key=lambda p: p["eta"])
+        with self._mem:
+            for a, p in pairs:
+                if not p:
+                    continue
+                h = p["hex"]
+                if isinstance(a.get("lat"), (int, float)) and isinstance(a.get("lon"), (int, float)) and not p.get("ground"):
+                    tr = self._tracks.setdefault(h, [])
+                    if tr and now - tr[-1][0] > GAP_S:
+                        tr.clear()
+                    tr.append((now, a["lat"], a["lon"], p.get("ft")))
+            for h in [h for h, tr in self._tracks.items() if not tr or now - tr[-1][0] > GAP_S]:
+                del self._tracks[h]
+            for tr in self._tracks.values():
+                while tr and now - tr[0][0] > TRACK_S:
+                    tr.pop(0)
+            loiter = []
+            for h, tr in self._tracks.items():
+                c = circling(tr, now)
+                if c and h in by_hex:
+                    loiter.append({**by_hex[h], "mins": c[0], "radius": c[1]})
+            loiter.sort(key=lambda p: -p["mins"])
+            for a, p in pairs:                                                           # falling fast twice running, from high up
+                if p and p.get("rate") is not None:
+                    prev = self._rates.get(p["hex"])
+                    if p["rate"] <= DESCENT_RATE and prev is not None and prev <= DESCENT_AGAIN and (p.get("ft") or 0) >= DESCENT_FT - 2000 and not p.get("ground"):
+                        self._descents[p["hex"]] = (now, p)
+                    self._rates[p["hex"]] = p["rate"]
+            for h in [h for h in self._rates if h not in raw_of]:
+                del self._rates[h]
+            for h in [h for h, (t, _) in self._descents.items() if now - t > DESCENT_SHOWN_S]:
+                del self._descents[h]
+            descent = [p for _, p in self._descents.values()]
+            b = int(now // BUCKET_S)
+            rec = self._hist.setdefault(b, [0.0, 0, 0])
+            rec[0], rec[1], rec[2] = max(rec[0], far_nm or 0.0), rec[1] + n, rec[2] + 1
+            for old in [k for k in self._hist if now - k * BUCKET_S > HIST_S]:
+                del self._hist[old]
+            usual = [r[1] / r[2] for k, r in self._hist.items() if k < b and r[2]]
+            busy = None
+            if len(usual) >= BUSY_NEED:
+                med = statistics.median(usual)
+                if med > 0 and n >= BUSY_MIN and n >= BUSY_X * med:
+                    busy = {"n": n, "usual": round(med)}
+        trusted = lambda p: not any("lat" in (raw_of[p["hex"]].get(k) or []) for k in ("mlat", "tisb")) if p["hex"] in raw_of else True
+        grounded = lambda p: p.get("ground")
+        return {"inbound": inbound[:NEAREST // 6], "loiter": loiter[:LOITER_MOST], "descent": descent[:3], "busy": busy,
+                "long": sorted((p for p in placed if p["nm"] >= LONG_NM and trusted(p)), key=lambda p: -p["nm"])[:3],
+                "near": [p for p in placed if p.get("ft") is not None and p["ft"] < NIGHT_FT and p["nm"] <= NIGHT_NM and not grounded(p)][:NEAR_MOST],
+                "heli": [p for p in placed if p.get("cat") == "A7" and p["nm"] <= HELI_NM and not grounded(p)][:NEAR_MOST],
+                "heavy": [p for p in placed if p.get("cat") == "A5" and p["nm"] <= HEAVY_NM and p.get("ft") is not None and p["ft"] < HEAVY_FT and not grounded(p)][:NEAR_MOST]}
 
     def fetch(self) -> dict | None:
         had = super().fetch()
@@ -211,13 +333,25 @@ class Aircraft(Kept):
             self._empty_since = None                 # (it didn't answer: nothing is known about what it hears)
         return had
 
-    def trouble(self) -> dict | None:
-        """Something for the "something's wrong" light: a receiver that answers but has heard no aircraft at all for DEAF_S."""
+    def trouble(self) -> list[dict]:
+        """Things for the "something's wrong" light: a receiver that answers but has heard no aircraft at all for DEAF_S; and one
+        whose best range over the last hour is far below its usual (a loose aerial lead, a failing dongle)."""
+        out = []
+        now = self._clock()
         since = self._empty_since
-        if since is None or not self.wanted() or self._clock() - since < DEAF_S:
-            return None
-        return {"key": "aircraft-deaf", "level": "warn", "title": "Aircraft receiver hears nothing",
-                "text": f"The aircraft receiver answers but has heard no aircraft for {int((self._clock() - since) // 3600)} h or more: check its aerial and dongle."}
+        if since is not None and self.wanted() and now - since >= DEAF_S:
+            out.append({"key": "aircraft-deaf", "level": "warn", "title": "Aircraft receiver hears nothing",
+                        "text": f"The aircraft receiver answers but has heard no aircraft for {int((now - since) // 3600)} h or more: check its aerial and dongle."})
+        with self._mem:
+            b = int(now // BUCKET_S)
+            older = [r[0] for k, r in self._hist.items() if k < b - 1 and r[2] and r[0] > 0]
+            recent = [self._hist[k] for k in (b, b - 1) if k in self._hist]
+        if self.wanted() and len(older) >= DRIFT_NEED and sum(r[2] for r in recent) >= DRIFT_SAMPLES and self._empty_since is None:
+            usual, best = statistics.median(older), max(r[0] for r in recent)
+            if usual >= DRIFT_MIN_NM and best < DRIFT_RATIO * usual:
+                out.append({"key": "aircraft-range", "level": "warn", "title": "Aircraft range has dropped",
+                            "text": f"The aircraft receiver's best range in the last hour was {best:.0f} nm; it is usually about {usual:.0f} nm. A loose or damaged aerial lead is the likely cause (it can also be a quiet night)."})
+        return out
 
     def wanted(self) -> bool:
         return base(self._address()) is not None
@@ -235,6 +369,9 @@ class Aircraft(Kept):
         """What was had, gone (a new address, or none)."""
         with self._lock:
             self._had, self._tried, self._where, self._empty_since = None, 0.0, None, None
+        with self._mem:
+            self._tracks.clear(), self._rates.clear(), self._descents.clear()
+            self._hist.clear()
 
     def _says(self, had: dict) -> str:
         return says(had)
@@ -285,6 +422,13 @@ def tile(had: dict | None, alerted: set[str]) -> list[dict]:
              "says": " ".join([says(had)] + [w for _, _, w, _ in now] + ([f"{len(low)} below {LOW_FT:,} ft."] if low else [])) + " (your aircraft receiver)"}]
 
 
+def _quiet() -> bool:
+    try:
+        return bool(QUIET())
+    except Exception:                                # (not knowing is not "quiet")
+        return False
+
+
 def alerts(had: dict | None, spoken: bool = False) -> list[tuple[str, int, str, str]]:
     """What's worth an alert (conditions.alerts_now()): an aircraft squawking an emergency code (the DJ says it); one low
     and close, and one on the watch list (the eye only: spoken=True leaves them out, until SPEAK_EXTRAS)."""
@@ -294,11 +438,53 @@ def alerts(had: dict | None, spoken: bool = False) -> list[tuple[str, int, str, 
         out.append((f"aircraft:{p.get('hex') or label(p)}:{sq}", 2,
                     f"Aircraft {label(p)} is squawking {sq}: {EMERGENCY[sq]}." + (f" It is {where(p)}." if where(p) else ""),
                     f"{label(p)} squawking {sq}"))
-    if not spoken or SPEAK_EXTRAS:
-        for p in (had or {}).get("low") or []:
-            out.append((f"aircraft:low:{p.get('hex') or label(p)}", 1, f"Low aircraft {label(p)}: {where(p)}.",
-                        f"Low: {label(p)} {p['ft']:,} ft · {p['nm']:g} nm {SHORT[round(p['deg'] / 45) % 8]}"))
-        for p in (had or {}).get("watch") or []:
-            out.append((f"aircraft:watch:{p.get('hex') or label(p)}", 1, f"Watched aircraft {label(p)}" + (f": {where(p)}." if where(p) else "."),
-                        f"Watching: {label(p)}" + (f" {p['nm']:g} nm {SHORT[round(p['deg'] / 45) % 8]}" if "nm" in p else "")))
+    if spoken and not SPEAK_EXTRAS:
+        return out
+    h = had or {}
+    on = lambda kind: kind not in OFF
+    at = lambda p: (f" {p['nm']:g} nm {SHORT[round(p['deg'] / 45) % 8]}" if "nm" in p else "")
+    key = lambda kind, p: f"aircraft:{kind}:{p.get('hex') or label(p)}"
+    if on("low"):
+        for p in h.get("low") or []:
+            out.append((key("low", p), 1, f"Low aircraft {label(p)}: {where(p)}.", f"Low: {label(p)} {p['ft']:,} ft ·{at(p)}"))
+    if on("watch"):
+        for p in h.get("watch") or []:
+            out.append((key("watch", p), 1, f"Watched aircraft {label(p)}" + (f": {where(p)}." if where(p) else "."), f"Watching: {label(p)}{at(p)}"))
+    if on("inbound"):
+        for p in h.get("inbound") or []:
+            out.append((key("inbound", p), 1, f"Aircraft {label(p)} is heading for you: {where(p)}, passing in about {p['eta']:g} minutes.", f"Inbound: {label(p)} · {p['eta']:g} min"))
+    if on("loiter"):
+        for p in h.get("loiter") or []:
+            out.append((key("loiter", p), 1, f"Aircraft {label(p)} has been circling for {p['mins']} minutes: {where(p)}.", f"Circling: {label(p)} · {p['mins']} min"))
+    if on("descent"):
+        for p in h.get("descent") or []:
+            out.append((key("descent", p), 2, f"Aircraft {label(p)} is descending fast: {-p['rate']:,} feet a minute" + (f", {where(p)}." if where(p) else "."), f"Descending: {label(p)} · {-p['rate']:,} ft/min"))
+    if on("long"):
+        for p in h.get("long") or []:
+            out.append((key("long", p), 1, f"Aircraft {label(p)} heard at {p['nm']:g} nautical miles: unusually far.", f"Long range: {label(p)} · {p['nm']:g} nm"))
+    if on("night") and _quiet():
+        for p in h.get("near") or []:
+            out.append((key("night", p), 1, f"Night flight: {label(p)}, {where(p)}.", f"Night: {label(p)} · {p['ft']:,} ft ·{at(p)}"))
+    if on("heli"):
+        for p in h.get("heli") or []:
+            out.append((key("heli", p), 1, f"Helicopter {label(p)}: {where(p)}.", f"Helicopter: {label(p)}{at(p)}"))
+    if on("heavy"):
+        for p in h.get("heavy") or []:
+            out.append((key("heavy", p), 1, f"Heavy jet {label(p)} low: {where(p)}.", f"Heavy low: {label(p)} · {p['ft']:,} ft"))
+    if on("busy") and h.get("busy"):
+        b = h["busy"]
+        out.append(("aircraft:busy", 1, f"A busy sky: {b['n']} aircraft, usually about {b['usual']}.", f"Busy: {b['n']} aircraft (usually {b['usual']})"))
     return out
+
+
+def flagged(had: dict | None) -> list[dict]:
+    """The aircraft with an alert on them (for the scope), with a position, each once: [plane + "kinds"]."""
+    seen: dict[str, dict] = {}
+    for what, _, _, _ in alerts(had):
+        parts = what.split(":")
+        if len(parts) != 3 or parts[2] in EMERGENCY:
+            continue
+        for p in (had or {}).get("near" if parts[1] == "night" else parts[1]) or []:
+            if (p.get("hex") or label(p)) == parts[2] and "nm" in p:
+                seen.setdefault(parts[2], {**p, "kinds": []})["kinds"].append(parts[1])
+    return list(seen.values())
