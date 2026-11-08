@@ -52,3 +52,12 @@ gpiozero, a small LCD driver library) are permissively licensed (LGPL/MIT/BSD
 family) and do not change the overall GPL-3.0-or-later status, which is
 already fixed by the eSpeak-NG dependency above. Re-check this file if the
 dependency list changes.
+
+
+Map data in the Aircraft scope
+------------------------------
+
+sleepradiopi/data/map.json is built by tools/build_mapdata.py from Natural
+Earth (https://www.naturalearthdata.com/: coastlines and populated places) and
+OurAirports (https://ourairports.com/data/: airfields). Both put their data in
+the public domain. It is drawn by the radio itself; nothing is fetched.

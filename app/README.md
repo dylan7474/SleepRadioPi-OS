@@ -1657,6 +1657,12 @@ The cards:
   the service stops answering) and adds the time since the look to each `ago_s`. `state_word()` says what the dongle
   is doing in words (Scanning / Paused: the VHF receiver is in use / Paused: listening for radiosondes / Starting
   again). Tile `"r433"`; the window is `UI.r433` in desktop.html (signal = a bar and a word, never colour alone).
+  The Aircraft scope's map is `data/map.json` (made by `tools/build_mapdata.py` from Natural Earth and OurAirports, both public
+  domain; ~570 KB: the coast as whole-number delta-coded rings in two layers, towns, airfields), served by `GET /api/mapdata` with
+  `Cache-Control: max-age=604800` (read from the image each time, not held in memory; `_send()` no longer adds `no-store` when a
+  handler gives its own Cache-Control). The page projects it about the aerial (`/api/aircraft` `"at"`) with the same azimuthal
+  equidistant projection as the rings (distance and bearing), so the aircraft, drawn from `nm`/`deg`, sit exactly on it. Nothing is
+  fetched from a third party (an earlier build used Esri's tiles; their terms don't allow keeping them, so it was replaced).
   *Lightning* (`playback/lightning.py`, `GET /api/lightning`, `POST
   /api/lightning {"on"?, "bell"?, "ring"?}`, the settings
   `lightning_watch` (off to begin with), `lightning_bell`): `lightning.Watch`, a thread of its

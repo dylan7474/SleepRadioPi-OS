@@ -74,15 +74,42 @@ def test_fetch_keeps_the_nearest_and_the_emergency() -> None:
     assert asked.count("http://192.0.2.10:8080/data/receiver.json") == 1                                  # (the aerial is asked once)
 
 
-def test_the_scope_gets_the_aerials_place_and_each_aircrafts_for_its_map() -> None:
+def test_the_scope_gets_the_aerials_place_for_its_map() -> None:
     a = _air()
     a.fetch()
     had = a.status(False)
     assert had["at"] == [54.532, -1.088]                                  # (the receiver's own place, to about 100 m: all the map needs)
-    placed = [p for p in had["planes"] if "nm" in p]
-    assert placed and all(isinstance(p["lat"], float) and isinstance(p["lon"], float) for p in placed)
-    assert next(p for p in placed if p["hex"] == "440096")["lat"] == 55.364
-    assert not any("lat" in p for p in had["planes"] if "nm" not in p)    # (no position, none shown)
+    assert not any("lat" in p or "lon" in p for p in had["planes"])       # (aircraft are drawn by distance and bearing: no positions are sent on)
+
+
+def test_the_built_in_map_is_there_and_sound() -> None:
+    d = json.loads(aircraft.MAP_FILE.read_text())
+    assert d["v"] == 1 and "public domain" in d["credit"] and aircraft.MAP_FILE.stat().st_size < 1_000_000
+    for name in ("land50", "land10"):
+        q = d[name]["q"]
+        assert len(d[name]["rings"]) > 500
+        for r in d[name]["rings"]:
+            assert len(r) >= 6 + 4 and (len(r) - 6) % 2 == 0 and r[0] <= r[2] and r[1] <= r[3]      # (a box, a first point, then pairs of steps)
+            x, y = r[4], r[5]
+            assert r[0] <= x <= r[2] and r[1] <= y <= r[3] and abs(x / q) <= 180 and abs(y / q) <= 90
+    assert d["land10"]["box"] == [-26.0, 33.0, 46.0, 73.0]
+    airfields = {a[2]: a for a in d["airports"]}
+    assert airfields["EGNV"][3].startswith("Teesside") and 54.4 < airfields["EGNV"][1] < 54.6 and -1.5 < airfields["EGNV"][0] < -1.3
+    assert "Middlesbrough" in [t[3] for t in d["towns"]]
+
+
+def test_the_map_is_served_to_be_kept_by_the_browser(tmp_path: Path) -> None:
+    conf = tmp_path / "config.json"
+    conf.write_text("{}")
+    httpd = ThreadingHTTPServer(("127.0.0.1", 0), make_handler(None, None, None, conf))
+    threading.Thread(target=httpd.serve_forever, daemon=True).start()
+    try:
+        with urllib.request.urlopen(f"http://127.0.0.1:{httpd.server_address[1]}/api/mapdata", timeout=5) as r:
+            assert r.headers.get_all("Cache-Control") == ["public, max-age=604800"]                 # (once, not every twenty seconds)
+            assert json.loads(r.read())["land10"]["q"] == 1000
+    finally:
+        httpd.shutdown()
+        httpd.server_close()
 
 
 def test_without_receiver_json_the_radios_own_locator_is_used(monkeypatch) -> None:

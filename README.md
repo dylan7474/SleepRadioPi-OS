@@ -552,10 +552,12 @@ Actions, Sleep timer and Radio folders open:
   **busy sky** (twice the usual). The radio works out "usual" and "circling"
   from what it has seen since it started (nothing is kept on the card).
   **The scope** has four labelled distance rings in round numbers, and a map
-  of the ground under it (Esri's dark grey tiles, fetched by your browser, not
-  the radio, so it needs internet there; with none, or with the *Map* switch
-  under the scope off, it's the rings alone). An aircraft with an alert gets a
-  flashing ring and a ▲ by its name.
+  under them: the coast, the larger towns and the airfields (with their ICAO
+  codes), drawn by the radio from public-domain data it carries itself
+  (Natural Earth and OurAirports), in the same projection as the rings, so
+  aircraft are exactly where the map says. Nothing is fetched from anyone, so
+  it works with no internet; the *Map* switch under the scope hides it. An
+  aircraft with an alert gets a flashing ring and a ▲ by its name.
   And if the receiver answers but has heard no aircraft at all for an hour,
   or its best range over the last hour is far below its usual, the
   "something's wrong" light says to check its aerial.

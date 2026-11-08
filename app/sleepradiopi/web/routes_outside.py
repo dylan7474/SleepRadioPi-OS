@@ -93,6 +93,17 @@ def build(ctx):
             # The 433 MHz window (playback/radio433.py): the background service's address, whether it answers, what the scan is doing, the devices heard.
             self._send(json.dumps(r433_state()).encode(), "application/json")
             return True
+        if path == "/api/mapdata":
+            # The Aircraft scope's built-in map (data/map.json, made by tools/build_mapdata.py from public-domain data): read from the
+            # image each time (not kept in memory) and told to be kept by the browser, so it is asked for once.
+            from sleepradiopi.playback import aircraft as air_mod
+            try:
+                body = air_mod.MAP_FILE.read_bytes()
+            except OSError:
+                self._error("no map in this build")
+                return True
+            self._send(body, "application/json", [("Cache-Control", "public, max-age=604800")])
+            return True
         if path == "/api/aircraft":
             # The Aircraft window (playback/aircraft.py): the receiver's address, whether it answers, and the aircraft near.
             from sleepradiopi.playback import aircraft as air_mod

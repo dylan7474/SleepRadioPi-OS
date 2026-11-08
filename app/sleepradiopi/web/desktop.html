@@ -601,9 +601,12 @@
   .air-scope { position: relative; width: 100%; aspect-ratio: 1; border-radius: 50%; overflow: hidden;
     background: radial-gradient(circle at 50% 45%, #1b2b2a 0%, #101a1d 62%, #0a1013 100%);
     box-shadow: 0 0 0 1px #000a, 0 0 0 5px #2c3036, 0 0 0 6px #00000080, inset 0 0 28px #000c, 0 8px 22px var(--shadow); }
-  .air-map { position: absolute; inset: 0; z-index: 0; }
-  .air-tile { position: absolute; display: block; max-width: none; pointer-events: none; user-select: none; }
-  .air-scope::after { content: ""; position: absolute; inset: 0; z-index: 1; border-radius: 50%; pointer-events: none; background: radial-gradient(circle, transparent 58%, #0a1013b8 100%); }
+  .air-scope::after { content: ""; position: absolute; inset: 0; z-index: 1; border-radius: 50%; pointer-events: none; background: radial-gradient(circle, transparent 62%, #0a101388 100%); }
+  .air-land { fill: #1e3a37; stroke: #6fc7aa; stroke-opacity: .6; stroke-width: .9; stroke-linejoin: round; }
+  .air-pt { fill: none; stroke: #bfe9ff; stroke-width: 1.4; }
+  .air-tn { fill: #bfe9ff; stroke: none; }
+  .air-scope .air-pl { font-size: 9.5px; fill: #cfe7f3; opacity: .85; }
+  .air-scope .air-ac { font-size: 11.5px; font-weight: 700; fill: #fff; }
   .air-scope svg { position: absolute; inset: 0; z-index: 2; width: 100%; height: 100%; }
   .air-scope text { font: 11px var(--mono); fill: #d8efe3; paint-order: stroke; stroke: #0a1013; stroke-width: 3px; stroke-linejoin: round; }
   .air-scope .rng { fill: #d7fbe8; font-size: 11px; font-weight: 600; }
@@ -5326,41 +5329,64 @@ const UI = {
       const KIND_MARK = { low: "↓", watch: "◎", inbound: "➜", loiter: "↻", descent: "⤓", long: "⌁", night: "☾", heli: "✚", heavy: "▣", busy: "≋" };
       const placed = a.planes.filter(p => p.nm != null), marks = new Set((a.flagged || []).map(p => p.hex)),
             plot = placed.concat((a.flagged || []).filter(w => w.nm != null && !placed.some(p => p.hex === w.hex)));
-      // The scope: 420 units drawn at up to 420 px. Four rings in round numbers, each labelled; a map of the ground under it (Esri's dark grey tiles,
-      // loaded by THIS BROWSER, never by the radio: with no internet, or the switch off, it's the rings alone); the aircraft where they are on that map.
-      const SZ = 420, C = SZ / 2, R = 188;
+      // The scope: 420 units drawn at up to 420 px. Four rings in round numbers, each labelled; under them a map the radio carries itself (the coast, towns
+      // and airfields, from public-domain data: /api/mapdata), drawn in the same projection as the rings -- distance and bearing from the aerial -- so the
+      // aircraft are exactly where the map says. Nothing is fetched from anyone: it works with no internet, and the Map switch only hides it.
+      const SZ = 420, C = SZ / 2, R = 188, EARTH_NM = 3440.065;
       const RANGES = [[8, 2], [20, 5], [40, 10], [80, 20], [120, 30], [160, 40], [200, 50], [320, 80]];        // [the range in nm, a ring every...]
-      const MAP_URL = (z, x, y) => `https://services.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/${z}/${y}/${x}`;
       const mapOn = () => { try { return localStorage.getItem("srd.airmap") !== "off"; } catch { return true; } };
+      const MAPDATA = (UI.aircraft.mapdata ||= { data: null, failed: false, asked: null });
+      const getMap = () => MAPDATA.asked ||= fetch("/api/mapdata").then(r => r.ok ? r.json() : Promise.reject()).then(d => { MAPDATA.data = d; return d; }, () => { MAPDATA.failed = true; return null; });
       const pick = a => {
         const sorted = placed.map(p => p.nm).sort((x, y) => x - y), far = sorted.length ? sorted[Math.min(sorted.length - 1, Math.floor(sorted.length * 0.85))] : 0,
               flagFar = Math.max(0, ...(a.flagged || []).filter(p => p.nm != null).map(p => p.nm));
         return RANGES.find(([r]) => r >= Math.max(far, flagFar)) || RANGES[RANGES.length - 1];
       };
-      const scope = (a, noMap, skipMap) => {
-        const [range, step] = pick(a), at = a.at, lat0 = at ? at[0] * Math.PI / 180 : 0, kpm = R / (range * 1852);          // (units per metre, at the aerial)
-        const Z = at ? Math.max(2, Math.min(14, Math.round(Math.log2(156543.03392 * Math.cos(lat0) * kpm)))) : 0;
-        const k = at ? kpm * 156543.03392 * Math.cos(lat0) / 2 ** Z : 1;                                                   // (one tile pixel is k units)
-        const wx = lon => (lon + 180) / 360 * 256 * 2 ** Z, wy = lat => (1 - Math.asinh(Math.tan(lat * Math.PI / 180)) / Math.PI) / 2 * 256 * 2 ** Z;
-        const px0 = at ? wx(at[1]) : 0, py0 = at ? wy(at[0]) : 0;
-        const spot = p => {                         // where on the scope: over its place on the map; one beyond the range (or with no map) on the rim at its bearing
-          if (at && p.lat != null && p.nm <= range) return [C + (wx(p.lon) - px0) * k, C + (wy(p.lat) - py0) * k];
-          const r = p.deg * Math.PI / 180, d = Math.min(p.nm / range, 1);
-          return [C + Math.sin(r) * d * R, C - Math.cos(r) * d * R];
+      // The ground: land (whole numbers, delta-coded rings: see tools/build_mapdata.py), then towns and airfields as points with names.
+      const groundLayer = (md, at, range) => {
+        const D2R = Math.PI / 180, lat0 = at[0] * D2R, sl0 = Math.sin(lat0), cl0 = Math.cos(lat0), kk = R / range;
+        const proj = (lat, lon) => {                  // azimuthal equidistant about the aerial: nm east and north, then scope units
+          const p = lat * D2R, dl = (lon - at[1]) * D2R, cp = Math.cos(p), cosc = Math.max(-1, Math.min(1, sl0 * Math.sin(p) + cl0 * cp * Math.cos(dl))), c = Math.acos(cosc);
+          const f = c < 1e-9 ? 1 : c / Math.sin(c) * EARTH_NM;
+          return [C + cp * Math.sin(dl) * f * kk, C - (cl0 * Math.sin(p) - sl0 * cp * Math.cos(dl)) * f * kk];
         };
-        const map = el("div", { className: "air-map" });
-        if (at && mapOn() && !skipMap) {
-          const n = 2 ** Z, half = C / k;
-          let left = 0;
-          for (let ty = Math.floor((py0 - half) / 256); ty <= Math.floor((py0 + half) / 256); ty++) for (let tx = Math.floor((px0 - half) / 256); tx <= Math.floor((px0 + half) / 256); tx++) {
-            if (ty < 0 || ty >= n) continue;
-            const img = el("img", { className: "air-tile", src: MAP_URL(Z, ((tx % n) + n) % n, ty), alt: "", draggable: false, referrerPolicy: "no-referrer",
-              style: `left:${((C + (tx * 256 - px0) * k) / SZ * 100).toFixed(3)}%;top:${((C + (ty * 256 - py0) * k) / SZ * 100).toFixed(3)}%;width:${(256 * k / SZ * 100 + .1).toFixed(3)}%` });
-            img.onerror = () => { img.remove(); if (--left === 0 && noMap) noMap(); };       // (no internet, or the provider said no: the scope is the rings alone, and it says so)
-            map.append(img); left++;
+        const dLat = range / 60 * 1.15 + .05, dLon = dLat / Math.max(.2, cl0);
+        const w = at[1] - dLon, e = at[1] + dLon, s = at[0] - dLat, n = at[0] + dLat;
+        const box = md.land10.box, fine = at[1] - dLon > box[0] && at[1] + dLon < box[2] && at[0] - dLat > box[1] && at[0] + dLat < box[3];
+        const L = fine ? md.land10 : md.land50, q = L.q, g = sv("g", { class: "air-ground" }); let d = "";
+        for (const r of L.rings) {
+          if (r[2] / q < w || r[0] / q > e || r[3] / q < s || r[1] / q > n) continue;      // (a ring nowhere near the scope)
+          let x = r[4], y = r[5], [px, py] = proj(y / q, x / q), lx = px, ly = py; d += `M${px.toFixed(1)} ${py.toFixed(1)}`;
+          for (let i = 6; i < r.length; i += 2) {
+            x += r[i]; y += r[i + 1];
+            [px, py] = proj(y / q, x / q);
+            const away = px < -SZ * .6 || px > SZ * 1.6 || py < -SZ * .6 || py > SZ * 1.6;      // (well outside the scope: only the shape of it is kept)
+            if (Math.abs(px - lx) + Math.abs(py - ly) < (away ? 30 : .7)) continue;             // (closer than a pixel -- or, far off, than a few -- to the last: not drawn)
+            d += `L${px.toFixed(1)} ${py.toFixed(1)}`; lx = px; ly = py;
           }
+          d += "Z";
         }
+        g.append(sv("path", { d, class: "air-land", "fill-rule": "evenodd" }));
+        const inView = (lat, lon) => { const [x, y] = proj(lat, lon); return Math.hypot(x - C, y - C) < R - 4 ? [x, y] : null; };
+        const places = [];                                                                   // (towns and airfields: the biggest, in view, as many as will read)
+        const townMin = range <= 40 ? 0 : range <= 120 ? 100000 : 400000, airMin = range <= 80 ? 0 : range <= 160 ? 1 : 2;
+        for (const t of md.towns) if (t[2] >= townMin) { const p = inView(t[1], t[0]); if (p) places.push({ kind: "town", p, name: t[3], rank: t[2] / 1e6 }); }
+        for (const a of md.airports) if (a[4] >= airMin) { const p = inView(a[1], a[0]); if (p) places.push({ kind: "air", p, name: a[2], full: a[3], rank: 100 + a[4] }); }
+        places.sort((u, v) => v.rank - u.rank);
+        const used = [];
+        for (const pl of places) {
+          const [x, y] = pl.p, W = pl.name.length * 6.6 + 8;
+          if (used.some(u => Math.abs(u[0] - x) < Math.max(u[2], W) && Math.abs(u[1] - y) < 13) || used.length > 30) continue;
+          used.push([x, y, W]);
+          if (pl.kind === "air") g.append(sv("path", { d: `M${x} ${y - 5}L${x + 5} ${y}L${x} ${y + 5}L${x - 5} ${y}Z`, class: "air-pt air-af" }), sv("text", { x: x + 8, y: y + 4, class: "air-pl" }, pl.name));
+          else g.append(sv("circle", { cx: x, cy: y, r: 2.6, class: "air-pt air-tn" }), sv("text", { x: x + 6, y: y + 4, class: "air-pl" }, pl.name));
+        }
+        return g;
+      };
+      const scope = a => {
+        const [range, step] = pick(a), at = a.at;
         const g = sv("svg", { viewBox: `0 0 ${SZ} ${SZ}`, "aria-label": `Radar: ${placed.length} aircraft within ${range} nautical miles, rings every ${step}` });
+        if (at && mapOn() && MAPDATA.data) g.append(groundLayer(MAPDATA.data, at, range));
         for (let i = 1; i <= 4; i++) {                // (the rings, each said: 4 of them, in round numbers)
           const r = R * i / 4;
           g.append(sv("circle", { cx: C, cy: C, r, fill: "none", stroke: "#8fe8bd", "stroke-opacity": i === 4 ? .75 : .45, "stroke-width": i === 4 ? 1.5 : 1.1, "stroke-dasharray": i === 4 ? "" : "4 4" }),
@@ -5370,6 +5396,7 @@ const UI = {
           g.append(sv("line", { x1: C + Math.sin(r) * (R - (big ? 12 : 7)), y1: C - Math.cos(r) * (R - (big ? 12 : 7)), x2: C + Math.sin(r) * R, y2: C - Math.cos(r) * R, stroke: "#8fe8bd", "stroke-opacity": big ? .7 : .4, "stroke-width": 1.1 })); }
         g.append(sv("line", { x1: C, y1: C - R, x2: C, y2: C + R, stroke: "#8fe8bd", "stroke-opacity": .14 }), sv("line", { x1: C - R, y1: C, x2: C + R, y2: C, stroke: "#8fe8bd", "stroke-opacity": .14 }));
         for (const [t, d] of [["N", 0], ["E", 90], ["S", 180], ["W", 270]]) { const r = d * Math.PI / 180; g.append(sv("text", { x: C + Math.sin(r) * (R - 22), y: C - Math.cos(r) * (R - 22) + 4, "text-anchor": "middle", class: "rng" }, t)); }
+        const spot = p => { const r = p.deg * Math.PI / 180, d = Math.min(p.nm / range, 1); return [C + Math.sin(r) * d * R, C - Math.cos(r) * d * R]; };   // (beyond the range: on the rim)
         const order = plot.slice().sort((p, q) => q.nm - p.nm);                  // (the nearest drawn last: on top)
         for (const p of order) {
           const [x, y] = spot(p), col = p.squawk ? "#ff6a55" : altCol(p), big = (p.squawk ? 1.35 : 1) * 1.35;
@@ -5383,21 +5410,21 @@ const UI = {
         placed.slice(0, 8).concat(plot.filter(p => !placed.slice(0, 8).includes(p) && (p.squawk || marks.has(p.hex)))).forEach(p => {
           const [px, py] = spot(p), x = Math.min(px + 11, SZ - 78), y = py + 4;
           if (!p.squawk && !marks.has(p.hex) && taken.some(t => Math.abs(t[1] - y) < 13 && Math.abs(t[0] - x) < 60)) return;
-          taken.push([x, y]); g.append(sv("text", { x, y }, (marks.has(p.hex) ? "▲ " : "") + (p.call || p.hex))); });
+          taken.push([x, y]); g.append(sv("text", { x, y, class: "air-ac" }, (marks.has(p.hex) ? "▲ " : "") + (p.call || p.hex))); });
         g.append(sv("circle", { cx: C, cy: C, r: 3, fill: "#fff" }), sv("circle", { cx: C, cy: C, r: 7, fill: "none", stroke: "#fff", "stroke-opacity": .6 }));
-        return el("div", { className: "air-scope" }, map, g);
+        return el("div", { className: "air-scope" }, g);
       };
       const scopeBox = a => {                       // (the scope, and under it: the switch for the map, what the rings are, whose map)
         const box = el("div", { className: "air-scopebox" }), step = pick(a)[1];
-        let failed = false;
         const draw = () => {
           const cb = el("input", { type: "checkbox", id: "air-map", checked: mapOn() });
-          cb.onchange = () => { try { localStorage.setItem("srd.airmap", cb.checked ? "on" : "off"); } catch {} draw(); };
-          box.replaceChildren(scope(a, failed ? null : () => { failed = true; draw(); }, failed), el("p", { className: "shelp air-attr" },
-            ...(a.at ? [el("label", {}, cb, " Map"), ` · rings every ${step} nm from the aerial${mapOn() ? (failed ? " · the map couldn't be fetched (is this browser online?): rings only" : " · map tiles from Esri, fetched by this browser (Esri, HERE, Garmin, FAO, NOAA, USGS, © OpenStreetMap contributors)") : ""}`]
-                     : [`Rings every ${step} nm from the aerial. No map: the receiver didn't say where its aerial is, and the radio has no locator.`])));
+          cb.onchange = () => { try { localStorage.setItem("srd.airmap", cb.checked ? "on" : "off"); } catch {} if (cb.checked) getMap().then(draw); else draw(); };
+          const note = !a.at ? "No map: the receiver didn't say where its aerial is, and the radio has no locator."
+            : !mapOn() ? "" : MAPDATA.failed ? "the map data couldn't be loaded: rings only" : MAPDATA.data ? "◆ airfield · ● town · drawn by the radio from Natural Earth and OurAirports (public domain): nothing is fetched" : "loading the map…";
+          box.replaceChildren(scope(a), el("p", { className: "shelp air-attr" }, ...(a.at ? [el("label", {}, cb, " Map"), ` · rings every ${step} nm from the aerial${note ? " · " + note : ""}`] : [`Rings every ${step} nm from the aerial. ${note}`])));
         };
         draw();
+        if (a.at && mapOn() && !MAPDATA.data && !MAPDATA.failed) getMap().then(draw);
         return box;
       };
       const figures = a => {

@@ -20,6 +20,7 @@ import threading
 import time
 import urllib.parse
 import urllib.request
+from pathlib import Path
 from typing import Callable
 
 from sleepradiopi.audio import ft8
@@ -28,6 +29,7 @@ from sleepradiopi.playback.lightning import compass
 
 log = logging.getLogger(__name__)
 
+MAP_FILE = Path(__file__).resolve().parent.parent / "data" / "map.json"      # the scope's built-in map (tools/build_mapdata.py): coast, towns, airfields
 ADDRESS = ""                 # the receiver's address; main.py sets it from the settings (and the web side when it's changed)
 EVERY_S = 20.0               # (Outside looks every 30 s, so about that)
 OLD_S = 120.0                # a picture this old is no picture: the tile goes
@@ -171,7 +173,6 @@ def plane(a: dict, at: tuple[float, float] | None) -> dict | None:
     if at and isinstance(a.get("lat"), (int, float)) and isinstance(a.get("lon"), (int, float)):
         nm, deg = distance(at[0], at[1], a["lat"], a["lon"])
         out["nm"], out["deg"] = round(nm, 1), round(deg)
-        out["lat"], out["lon"] = round(a["lat"], 3), round(a["lon"], 3)         # (the scope's map puts it over the right place)
     return out if len(out) > 1 else None
 
 
