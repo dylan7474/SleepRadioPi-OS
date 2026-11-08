@@ -560,7 +560,7 @@ Actions, Sleep timer and Radio folders open:
   **range** buttons under the scope (Auto, 8, 20, 40, 80, 160, 320 nm) fix how
   far it shows, to keep to local traffic: the choice is kept in the radio's
   settings (it survives a restart and applies to every browser), and aircraft
-  beyond it are counted below the scope and listed in the table, not drawn. An
+  beyond it are neither drawn nor listed below (the caption counts them). An
   aircraft with an alert gets a flashing ring and a ▲ by its name, and is
   never hidden by the range: out of range, it sits on the rim with its distance.
   And if the receiver answers but has heard no aircraft at all for an hour,
