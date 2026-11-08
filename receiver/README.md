@@ -238,3 +238,33 @@ The audio is a WAV stream (16-bit mono; 16 kHz, 32 kHz for broadcast FM,
   amateur and broadcast are for anyone; marine and airband are not general
   listening.
 - Tests: `python -m pytest receiver/tests` (no dongle needed).
+
+## Background jobs: radiosondes and a 433 MHz scan
+
+A dongle that nobody is listening to can be doing something else.
+`sleepradio_background.py` (a second service, `sleepradio-background`, installed with
+`receiver/install-background.sh USER@HOST`) gives it two jobs and serves what they hear as JSON on port 8076:
+
+| Address | What |
+|---|---|
+| `http://RECEIVER:8076/status` | which job has the dongle, whether the receiver is using it, the sonde hours |
+| `http://RECEIVER:8076/sondes` | the radiosonde flights heard: position, height, speed, a thinned track |
+| `http://RECEIVER:8076/433` | the 433 MHz devices heard |
+
+* **Radiosondes.** The weather services launch a balloon twice a day (about 11:15 and 23:15 UTC) that radios its
+  position and readings on 400-406 MHz. [radiosonde_auto_rx](https://github.com/projecthorus/radiosonde_auto_rx)
+  decodes them; the service runs it in the hours given by `--sonde-window HH:MM-HH:MM` (UTC, as often as you
+  like, it may run past midnight) and for as long as a flight is still being heard. It is built by hand under
+  `/opt/radiosonde` (`git clone`, `python3 -m venv --system-site-packages venv`, `pip install -r requirements.txt`,
+  `./build.sh`; `sox` from apt) with a `station.cfg` that has uploads **off** and its device set to the dongle.
+* **433 MHz.** The rest of the time `rtl_433` listens on 433.92 MHz for thermometers, weather stations and the
+  like. Other people's devices are counted under an ID made up on the receiver (a salted hash; the salt never
+  leaves it), with no readings. **Yours** are named in `/etc/sleepradio-background/known.json`,
+  `{"Acurite-Tower:1234": "Shed"}` (the model, a colon, the ID `rtl_433` shows), and show their readings.
+  Nothing is written to the SD card: the devices are kept in memory and served live (whoever polls `/433` keeps
+  the history; a Sleep Radio does, in its own memory), and the sonde decoder's logs go to `/run` (RAM).
+  `--log-433 FILE` is there if a log is wanted.
+* **The receiver comes first.** Start the receiver with `--background http://127.0.0.1:8076` and it asks
+  (`POST /yield`, answered only to this computer) before it opens the dongle: the job lets go at once, nothing
+  starts again for 30 s, and then not until the receiver has rested (a minute without a listener). Only the
+  receiver that shares the dongle needs the option; an HF receiver on a second dongle does not.

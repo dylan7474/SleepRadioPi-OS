@@ -79,6 +79,7 @@ import sys
 import tempfile
 import threading
 import time
+import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
@@ -100,6 +101,7 @@ SPECTRUM_ROWS = 50           # how many of those are kept for whoever draws a wa
 HANG_S = 2.0                 # stay with a channel this long after it closes, for the reply
 HOG_S = 30.0                 # a channel open this long without a break gives way to another that opens
 HIGHPASS_HZ = 300            # narrow FM: below the speech (takes out CTCSS tones, a hum otherwise)
+YIELD_WAIT_S = 10.0           # how long to wait for the background jobs (sleepradio_background.py) to let go of the dongle
 IDLE_S = 60.0                # no listener this long: the dongle rests
 PPM_MOST, TRIM_MOST_HZ = 200, 50_000        # what a calibration from the web side may set
 MAX_CHANNELS = 64            # in one band (48 use most of one of a Pi 2's cores)
@@ -541,7 +543,8 @@ class Listener:
 class Receiver:
     def __init__(self, bands: dict, airband: str | None = None, rtl_fm: str | None = None, gain: float = GAIN_DB,
                  ppm: int = 0, device: int | str = 0, skips_file: Path | None = None, bands_file: Path | None = None,
-                 shift_hz: int = 0, trim_hz: int = 0, calibration_file: Path | None = None, nth: int = 0) -> None:
+                 shift_hz: int = 0, trim_hz: int = 0, calibration_file: Path | None = None, nth: int = 0, background: str | None = None) -> None:
+        self.background = background                  # the background jobs' address: they let go of the dongle when asked
         self.bands = dict(bands)
         self.shift_hz, self.trim_hz = shift_hz, trim_hz     # an upconverter's oscillator, and what it and the dongle are out by
         self.calibration_file = calibration_file      # the ppm and trim set from the web side (POST /calibrate), kept here
@@ -599,6 +602,7 @@ class Receiver:
             if rig(spec) and self.tuner is not None and self.proc is not None and self.proc.poll() is None:
                 return self._retune(spec)             # (already being tuned: moved where it is, whoever listens staying)
             self._stop()
+            self._make_way()
             name, channels = spec_channels(spec, self.bands, self.skips)
             self.spec, self.name, self.error = spec, name, None
             self.gen += 1
@@ -659,6 +663,18 @@ class Receiver:
                                  daemon=True).start()
             threading.Thread(target=self._stderr_run, args=(self.proc,), name="engine-log", daemon=True).start()
             log.info("receiving %s (%d channel%s)", name, len(channels), "" if len(channels) == 1 else "s")
+
+    def _make_way(self) -> None:
+        """Before the dongle is opened: the background jobs that may have it (sondes, the 433 scan) are asked to let go.
+        A listener comes first. Nobody there (or no answer) is no problem: the dongle is the receiver's."""
+        if not self.background:
+            return
+        try:
+            req = urllib.request.Request(self.background.rstrip("/") + "/yield", data=b"", method="POST")
+            with urllib.request.urlopen(req, timeout=YIELD_WAIT_S) as r:
+                r.read()
+        except (OSError, ValueError) as e:
+            log.info("background jobs not asked to let go (%s)", e)
 
     def _spectrum_row(self, gen: int, row: bytes) -> None:
         if gen == self.gen and time.monotonic() - self.spectrum_wanted < 10:
@@ -1121,6 +1137,9 @@ def main(argv=None) -> int:
                          "been set from the web side (POST /calibrate: the radio's Calibrate key) those are kept "
                          "in the state directory (calibration.json) and used instead of what's given here")
     ap.add_argument("--airband", help="path to rtl_airband")
+    ap.add_argument("--background", metavar="URL",
+                    help="sleepradio_background.py's address (http://127.0.0.1:8076): it runs jobs on this dongle when nobody "
+                         "is listening, and is asked to let go before a listener's band is opened")
     ap.add_argument("--state", type=Path, default=Path("/var/lib/sleepradio-receiver"),
                     help="where the skipped channels and the bands made from the web side are kept")
     args = ap.parse_args(argv)
@@ -1130,7 +1149,7 @@ def main(argv=None) -> int:
     receiver = Receiver(load_bands(args.bands, into=builtin, limits=limits_for(shift)), airband=args.airband, gain=args.gain,
                         ppm=args.ppm, device=args.device, skips_file=args.state / "skip.json", bands_file=args.state / "bands.json",
                         shift_hz=shift, trim_hz=args.trim, calibration_file=args.state / "calibration.json",
-                        nth=(args.port - PORT) % 40)
+                        nth=(args.port - PORT) % 40, background=args.background)
     httpd = ThreadingHTTPServer(("", args.port), make_handler(receiver))
     httpd.daemon_threads = True
     log.info("Sleep Radio receiver on port %d: bands %s", args.port, ", ".join(receiver.bands))

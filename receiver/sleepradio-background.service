@@ -1,0 +1,26 @@
+[Unit]
+Description=Sleep Radio background jobs (radiosondes and a 433 MHz scan on a dongle nobody is listening to)
+After=network-online.target sleepradio-receiver.service
+Wants=network-online.target
+
+[Service]
+# Its settings (--device SERIAL --ppm N --gain DB --sonde-window HH:MM-HH:MM ...) are in OPTIONS in this file; see install-background.sh.
+EnvironmentFile=-/etc/sleepradio-background/options
+ExecStart=/usr/bin/python3 -u /opt/sleepradio-receiver/sleepradio_background.py $OPTIONS
+# The user who owns radiosonde_auto_rx (it writes its logs beside itself), with the group the dongle belongs to.
+User=@USER@
+SupplementaryGroups=plugdev
+# (what it keeps is in memory; the sonde decoder's logs go to /run/sleepradio-background, which is RAM)
+RuntimeDirectory=sleepradio-background
+Restart=always
+RestartSec=5
+# (the jobs are stopped when the service is: they are one control group)
+TimeoutStopSec=15
+ProtectSystem=strict
+ReadWritePaths=/opt/radiosonde
+ProtectHome=yes
+PrivateTmp=yes
+NoNewPrivileges=yes
+
+[Install]
+WantedBy=multi-user.target
