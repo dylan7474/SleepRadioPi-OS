@@ -21,7 +21,7 @@ def build(ctx):
         from sleepradiopi.playback import aircraft as air_mod
         had = air_mod.aircraft.status(False)
         return {"address": air_mod.ADDRESS, "watch": air_mod.WATCH, "up": bool(had), "t": had and had["t"], "n": had and had["n"], "placed": had and had["placed"],
-                "alerts": [{"what": w, "short": sh} for w, _, _, sh in air_mod.alerts(had) if w.split(":")[-1] not in air_mod.EMERGENCY],
+                "alerts": [{"what": w, "short": sh, "says": words} for w, _, words, sh in air_mod.alerts(had) if w.split(":")[-1] not in air_mod.EMERGENCY],
                 "flagged": air_mod.flagged(had), "off": sorted(air_mod.OFF), "kinds": {k: list(v) for k, v in air_mod.KINDS.items()},
                 "planes": (had or {}).get("planes") or [], "emergency": (had or {}).get("emergency") or [], "far_nm": had and had["far_nm"],
                 "aerial": bool(had and had["aerial"]), "from": had and had["from"], "says": had and had["says"], "low_ft": air_mod.LOW_FT}

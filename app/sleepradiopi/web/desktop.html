@@ -131,6 +131,10 @@
   @media (prefers-reduced-motion: reduce) { .icon.pulse .glyph, .icon.pulse .atag, .menubar .opill.pulse { animation: none; } }
   .menubar .opill { display: inline-flex; align-items: center; gap: 8px; padding: 2px 12px; border-radius: 12px; background: var(--win); border: 1px solid var(--amber);
                     font: 600 11.5px var(--display); color: var(--ink); cursor: pointer; max-width: 330px; overflow: hidden; text-overflow: ellipsis; transition: opacity .4s; flex-shrink: 1; }
+  .menubar .opill.alerting { max-width: min(560px, 46vw); }
+  .out-alert { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; margin: 8px 10px 0; padding: 8px 12px; border: 3px solid var(--ink); border-radius: 9px; background: var(--win-2); }
+  .out-alert b { font: 800 11px/1 var(--display); letter-spacing: .05em; padding: 3px 7px; background: var(--ink); color: var(--win); border-radius: 3px; white-space: nowrap; }
+  .out-alert span { flex: 1 1 260px; font-size: 13px; line-height: 1.35; }
   .menubar .opill[hidden] { display: none; }
   .menubar .hpill { flex-shrink: 0; max-width: 280px; }
   .menubar .hpill i { background: #e07b00; box-shadow: 0 0 6px #e07b00; }
@@ -4008,6 +4012,11 @@ function folderView(o, box, win) {
   }
   if (o.kids.length) tools.append(viewSwitch(o));
   if (tools.children.length) box.append(tools);
+  if (o.box === "outside") for (const a of OUTSIDE_NOW.alerts) {      // (each alert in full, with where it is: the tiles' captions are cut short)
+    const from = (OUTSIDE_NOW.tiles.find(t => t.key === a.tile) || {}).title || "The world outside";
+    box.append(el("div", { className: "out-alert", role: "alert" }, el("b", { textContent: "▲ ALERT · " + from.toUpperCase() }), el("span", { textContent: a.says }),
+      T("Open " + from, () => { outsideSaw(); open(outsidePanel(a.tile)); })));
+  }
   const asList = viewOf(o) === "list" && o.kids.length;
   const grid = asList ? el("ul", { className: "rows" }) : el("div", { className: "grid" });
   sorted(o, o.kids).forEach(id => O[id] && grid.append((asList ? listEl : iconEl)(O[id], { where: o.id, parent: o.id })));
@@ -5314,7 +5323,7 @@ const UI = {
       const placed = a.planes.filter(p => p.nm != null), marks = new Set((a.flagged || []).map(p => p.hex)),
             plot = placed.concat((a.flagged || []).filter(w => w.nm != null && !placed.some(p => p.hex === w.hex)));
       const scope = a => {
-        const sorted = placed.map(p => p.nm).sort((x, y) => x - y), far = sorted.length ? sorted[Math.min(sorted.length - 1, Math.floor(sorted.length * 0.85))] : 0, range = [10, 25, 50, 100, 150, 200, 250, 300].find(r => r >= far) || 300, C = 145, R = 128;
+        const sorted = placed.map(p => p.nm).sort((x, y) => x - y), far = sorted.length ? sorted[Math.min(sorted.length - 1, Math.floor(sorted.length * 0.85))] : 0, flagFar = Math.max(0, ...(a.flagged || []).filter(p => p.nm != null).map(p => p.nm)), range = [10, 25, 50, 100, 150, 200, 250, 300].find(r => r >= Math.max(far, flagFar)) || 300, C = 145, R = 128;
         const g = sv("svg", { viewBox: "0 0 290 290", "aria-label": `Radar: ${placed.length} aircraft within ${range} nautical miles` });
         for (const f of [1 / 3, 2 / 3, 1]) g.append(sv("circle", { cx: C, cy: C, r: R * f, fill: "none", stroke: "#6fe0a8", "stroke-opacity": f === 1 ? .38 : .2, "stroke-width": f === 1 ? 1.1 : .8, "stroke-dasharray": f === 1 ? "" : "2 3" }));
         for (let d = 0; d < 360; d += 30) { const r = d * Math.PI / 180, big = d % 90 === 0;
@@ -5326,7 +5335,7 @@ const UI = {
         for (const p of order) {
           const r = p.deg * Math.PI / 180, d = Math.min(p.nm / range, 1), x = C + Math.sin(r) * d * R, y = C - Math.cos(r) * d * R, col = p.squawk ? "#ff6a55" : altCol(p), big = p.squawk ? 1.35 : 1;
           if (p.squawk) g.append(sv("circle", { cx: x, cy: y, r: 9, fill: "none", stroke: "#ff6a55", "stroke-width": 1.5, class: "pulse" }));
-          else if (marks.has(p.hex)) g.append(sv("circle", { cx: x, cy: y, r: 8, fill: "none", stroke: "#f2b24a", "stroke-width": 1.3, "stroke-dasharray": "2.5 2" }));
+          else if (marks.has(p.hex)) g.append(sv("circle", { cx: x, cy: y, r: 11, fill: "none", stroke: "#fff6c8", "stroke-width": 1.8, class: "pulse" }), sv("circle", { cx: x, cy: y, r: 8, fill: "none", stroke: "#f2b24a", "stroke-width": 1.5, "stroke-dasharray": "2.5 2" }));
           g.append(p.track != null && !p.ground
             ? sv("path", { d: "M0 -6.5 L3.6 5 L0 2.8 L-3.6 5 Z", fill: col, stroke: "#0a1013", "stroke-width": .8, "stroke-linejoin": "round", transform: `translate(${x.toFixed(1)} ${y.toFixed(1)}) rotate(${p.track}) scale(${big})` })
             : sv("circle", { cx: x, cy: y, r: 2.6 * big, fill: col, stroke: "#0a1013", "stroke-width": .8 }));
@@ -5335,7 +5344,7 @@ const UI = {
         placed.slice(0, 8).concat(plot.filter(p => !placed.slice(0, 8).includes(p) && (p.squawk || marks.has(p.hex)))).forEach(p => {
           const r = p.deg * Math.PI / 180, d = Math.min(p.nm / range, 1), x = Math.min(C + Math.sin(r) * d * R + 7, 232), y = C - Math.cos(r) * d * R + 3;
           if (!p.squawk && !marks.has(p.hex) && taken.some(t => Math.abs(t[1] - y) < 10 && Math.abs(t[0] - x) < 44)) return;
-          taken.push([x, y]); g.append(sv("text", { x, y }, p.call || p.hex)); });
+          taken.push([x, y]); g.append(sv("text", { x, y }, (marks.has(p.hex) ? "▲ " : "") + (p.call || p.hex))); });
         g.append(sv("circle", { cx: C, cy: C, r: 2.4, fill: "#fff" }), sv("circle", { cx: C, cy: C, r: 5.5, fill: "none", stroke: "#fff", "stroke-opacity": .5 }));
         return el("div", { className: "air-scope" }, el("div", { className: "air-sweep" }), g);
       };
@@ -5348,11 +5357,11 @@ const UI = {
           fig(a.far_nm != null ? String(a.far_nm) : "–", a.far_nm != null ? "nm" : "", "farthest", far ? far.call || far.hex : ""));
       };
       const table = a => {
-        const rows = a.planes.slice(0, 10), cells = [];
+        const flagged = (a.flagged || []).map(f => a.planes.find(p => p.hex === f.hex) || f), rows = flagged.concat(a.planes.filter(p => !flagged.some(f => f.hex === p.hex))).slice(0, 10), cells = [];
         for (const [t, c] of [["Flight", ""], ["Range", ""], ["Altitude", ""], ["Speed", "r"]]) cells.push(el("div", { className: "h " + c, textContent: t }));
         for (const p of rows) {
           const alt = p.ground ? "on ground" : p.ft != null ? p.ft.toLocaleString("en-GB") + " ft" + (p.climb ? (p.climb === "up" ? " ↑" : " ↓") : "") : "–";
-          cells.push(el("div", { className: "c f", style: p.squawk ? "color:var(--red)" : "" }, el("i", { style: `background:${p.squawk ? "#ff6a55" : altCol(p)}` }), p.call || p.hex),
+          cells.push(el("div", { className: "c f", style: p.squawk ? "color:var(--red)" : "" }, el("i", { style: `background:${p.squawk ? "#ff6a55" : altCol(p)}` }), (marks.has(p.hex) ? "▲ " : "") + (p.call || p.hex)),
                      el("div", { className: "c d", textContent: p.nm != null ? `${p.nm} nm ${dir(p.deg)}` : "–" }),
                      el("div", { className: "c", textContent: alt }),
                      el("div", { className: "c d r", textContent: p.kt != null ? `${p.kt} kt` : "–" }));
@@ -5371,7 +5380,7 @@ const UI = {
       watchIn.onkeydown = e => { if (e.key === "Enter") saveWatch(); };
       return [
         a.emergency?.length ? el("div", { className: "air-alarm", role: "alert", textContent: "⚠ " + a.emergency.map(p => `${p.call || p.hex} squawking ${p.squawk}`).join(" · ") }) : null,
-        a.alerts?.length ? el("div", { className: "air-chips" }, ...a.alerts.map(x => el("span", { className: "air-chip", textContent: `${KIND_MARK[x.what.split(":")[1]] || "•"} ${x.short}` }))) : null,
+        ...(a.alerts || []).map(x => el("div", { className: "air-alarm air-note", role: "alert", textContent: `▲ ALERT · ${x.says || x.short}` })),
         a.up ? el("div", { className: "air" }, scope(a), figures(a)) : null,
         a.up ? line(el("p", { className: "air-key" }, ...ALT_BANDS.map(([, col, txt]) => el("span", {}, el("i", { style: `background:${col}` }), txt)))) : null,
         a.up ? grp("Nearest first", table(a), help((a.from === "receiver" ? "Distances are from the receiver's aerial, where the receiver says it is." : a.from === "locator" ? "The receiver didn't say where its aerial is, so distances are from the middle of this radio's locator square: approximate (a longer locator in Settings is closer)." : "The receiver didn't say where its aerial is and the radio has no locator, so there are no distances or plot.") + " Callsigns are what the aircraft transmits; ones with no position yet are listed last.")) :
@@ -6933,18 +6942,18 @@ function outsideSaw() {
   setTimeout(drawDesk); outsidePill();
 }
 const outsidePanel = key => PANEL[{ quakes: "quakes", warnings: "warnings", signal: "signal", qrz: "qrz", lightning: "lightning", aircraft: "aircraft", r433: "r433", sun: "sun", aurora: "aurora", vhf: "vhf" }[key] || "conditions"].id;
-let pillAt = 0, pillOne = null;
-function outsidePill(step) {                          // one alert at a time, the next every eight seconds
+let pillAt = 0, pillOne = null, pillSays = false;
+function outsidePill(step) {                          // one alert at a time: first where it is (the tile's name), then what it says, four seconds each
   const p = $("outsidePill"), a = OUTSIDE_NOW.alerts;
   if (!p) return;
   if (!a.length) { p.hidden = true; return; }
-  if (step) pillAt++;
+  if (step) { if (pillSays) pillAt++; pillSays = !pillSays; }
   const one = a[pillAt % a.length];
   pillOne = one;
   const from = (OUTSIDE_NOW.tiles.find(t => t.key === one.tile) || {}).title;
   p.hidden = false; p.title = one.says + " · click to open " + (from || "The world outside");
   p.classList.add("alerting"); p.classList.toggle("pulse", a.some(x => !outsideSeen[x.key]));
-  p.replaceChildren(el("i", { textContent: "▲" }), el("span", { textContent: (from ? from + ": " : "") + one.short }), ...(a.length > 1 ? [el("small", { textContent: `${pillAt % a.length + 1} of ${a.length}` })] : []));
+  p.replaceChildren(el("i", { textContent: "▲" }), el("span", { textContent: pillSays ? one.short : "ALERT · " + (from || "The world outside") }), ...(a.length > 1 ? [el("small", { textContent: `${pillAt % a.length + 1} of ${a.length}` })] : []));
 }
 // The Log window's view: the radio's log (in its memory: reading it writes nothing to the card), problems only to begin with,
 // searchable, following the newest line every few seconds while the window is open and the tab is looked at.
@@ -7019,8 +7028,8 @@ async function outsidePoll() {
   catch (e) { if (!OUTSIDE.loaded) setTimeout(outsidePoll, 5000); }     // (nothing yet: try again soon, not in two minutes; what's shown stays)
 }
 $("outsidePill").onclick = () => { outsideSaw(); open(pillOne ? outsidePanel(pillOne.tile) : OUTSIDE.id); outsidePill(); };
-setInterval(() => { const p = $("outsidePill"); if (!p || p.hidden || OUTSIDE_NOW.alerts.length < 2) return;
-  p.style.opacity = 0; setTimeout(() => { outsidePill(true); p.style.opacity = 1; }, 400); }, 8000);
+setInterval(() => { const p = $("outsidePill"); if (!p || p.hidden || !OUTSIDE_NOW.alerts.length) return;
+  p.style.opacity = 0; setTimeout(() => { outsidePill(true); p.style.opacity = 1; }, 400); }, 4000);
 // The speaker analyser (/analyser/) hands its suggestion over in the address,
 // #tune=bass,mid,treble,lowcut: the Speakers window offers it; nothing changes until Apply.
 let TUNE = null;

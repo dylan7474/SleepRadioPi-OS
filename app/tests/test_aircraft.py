@@ -295,6 +295,7 @@ def test_the_watch_list_from_the_web(tmp_path: Path, monkeypatch) -> None:
         code, d = post({"watch": "RRR, mil"})
         assert code == 200 and d["watch"] == "RRR, mil" and [x["what"] for x in d["alerts"]] == ["aircraft:low:43c0a1", "aircraft:watch:43c0a1"] and d["flagged"][0]["kinds"] == ["low", "watch"]
         assert json.loads(conf.read_text())["aircraft_watch"] == "RRR, mil" and d["address"] == "pi:8080"
+        assert all(x["says"] and x["short"] for x in d["alerts"]) and d["alerts"][0]["says"].startswith("Low aircraft")      # (the window says each alert in full)
         assert [x["what"] for x in post({"watch": ""})[1]["alerts"]] == ["aircraft:low:43c0a1"]
         assert post({"off": ["nonsense"]})[0] == 400 and post({"off": "low"})[0] == 400
         code, d = post({"off": ["low", "inbound"]})
