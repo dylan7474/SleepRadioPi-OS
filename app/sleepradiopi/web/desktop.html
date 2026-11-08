@@ -122,6 +122,13 @@
   .g-live.quiet::before { background: linear-gradient(180deg, #d8d2c2, #a9a290); color: #3d382c; }
   .icon .wbadge { position: absolute; top: 2px; right: 16px; min-width: 20px; height: 20px; padding: 0 5px; border-radius: 10px; background: var(--red);
                   color: #fff; font: 700 11px/20px var(--display); text-align: center; box-shadow: 0 2px 5px #0006; z-index: 3; pointer-events: none; }
+  /* alerts without relying on colour: a thick outline + a triangle and the word ALERT; pulses slowly (1 a second) until seen */
+  .icon.alerting .glyph { outline: 4px solid var(--ink); outline-offset: 3px; border-radius: 8px; }
+  .icon .atag { position: absolute; top: -4px; left: 50%; transform: translateX(-50%); padding: 0 7px; height: 18px; border-radius: 3px; background: var(--ink); color: var(--win);
+                font: 800 10.5px/18px var(--display); letter-spacing: .04em; white-space: nowrap; z-index: 3; pointer-events: none; }
+  .icon.pulse .glyph, .icon.pulse .atag, .menubar .opill.pulse { animation: alertpulse 1s ease-in-out infinite; }
+  @keyframes alertpulse { 50% { opacity: .35; } }
+  @media (prefers-reduced-motion: reduce) { .icon.pulse .glyph, .icon.pulse .atag, .menubar .opill.pulse { animation: none; } }
   .menubar .opill { display: inline-flex; align-items: center; gap: 8px; padding: 2px 12px; border-radius: 12px; background: var(--win); border: 1px solid var(--amber);
                     font: 600 11.5px var(--display); color: var(--ink); cursor: pointer; max-width: 330px; overflow: hidden; text-overflow: ellipsis; transition: opacity .4s; flex-shrink: 1; }
   .menubar .opill[hidden] { display: none; }
@@ -145,7 +152,8 @@
   .hpop .hi.bad i { background: #d0312d; }
   .hpop .hi b { display: block; }
   .hpop .hi span { color: var(--dim); font-size: 12.5px; }
-  .menubar .opill i { width: 8px; height: 8px; border-radius: 50%; background: #e07b00; box-shadow: 0 0 6px #e07b00; flex: none; }
+  .menubar .opill i { font: 800 12px/1 var(--display); font-style: normal; color: #e07b00; flex: none; }
+  .menubar .opill.alerting { border-width: 3px; border-color: var(--ink); min-width: min(230px, 30vw); }
   .menubar .opill small { color: var(--dim); font-weight: 500; }
   .menubar .opill span { overflow: hidden; text-overflow: ellipsis; }
   .g-folder { background: linear-gradient(180deg, #f5c46b, #d99a35); border-radius: 4px 8px 8px 8px; margin-top: 6px; height: 50px;
@@ -1365,8 +1373,13 @@ function iconEl(o, ctx) {
   if (sub) d.append(el("div", { className: "sub", textContent: sub }));
   d.title = `${KIND[o.kind]}: ${o.title}${sub ? " · " + sub : ""}` + (o.kind === "show" ? " · double-click to play, like starting an app" : "");
   if (o.kind === "outside") d.title = `${o.title}: ${o.t?.says || ""}`;
-  const badge = o === OUTSIDE ? outsideNew().length : o.kind === "outside" && OUTSIDE_NOW.alerts.some(a => a.tile === o.t?.key) ? "!" : 0;   // (the folder: alerts not seen yet; a tile: its alert, while it lasts)
-  if (badge) d.append(el("span", { className: "wbadge", textContent: badge }));
+  // (the folder: outlined while any alert lasts, pulsing while one is unseen; a tile: outlined while its alert lasts, pulsing until seen)
+  const alerting = o === OUTSIDE ? OUTSIDE_NOW.alerts.length : o.kind === "outside" && OUTSIDE_NOW.alerts.some(a => a.tile === o.t?.key) ? 1 : 0;
+  if (alerting) {
+    const unseen = o === OUTSIDE ? outsideNew().length : OUTSIDE_NOW.alerts.some(a => a.tile === o.t?.key && !outsideSeen[a.key]);
+    d.classList.add("alerting"); if (unseen) d.classList.add("pulse");
+    d.append(el("span", { className: "atag", textContent: "▲ ALERT" + (o === OUTSIDE && alerting > 1 ? ` ${alerting}` : "") }));
+  }
   d._src = { id: o.id, ...ctx };
   d.addEventListener("pointerdown", e => press(e, d, { id: o.id, ...ctx }));
   d.addEventListener("keydown", e => { if (e.key === "Enter") open(o.id); });
@@ -1948,7 +1961,7 @@ async function open(id) {
   if (o.kind === "panel" && o.key === "lists") return open(LISTS.id);
 
   if (o.kind === "calendar") return open(BDAYS.id);
-  if (o.kind === "outside") { outsideSaw(); return open(PANEL[{ quakes: "quakes", warnings: "warnings", signal: "signal", qrz: "qrz", lightning: "lightning", aircraft: "aircraft", sun: "sun", aurora: "aurora", vhf: "vhf" }[o.t?.key] || "conditions"].id); }   // (each tile its own window; Bands: Band conditions)
+  if (o.kind === "outside") { outsideSaw(); return open(outsidePanel(o.t?.key)); }   // (each tile its own window; Bands: Band conditions)
   if (o === OUTSIDE) outsideSaw();
   if (o.kind === "list" && !o.key) o.key = "alist";
   const had = W.find(w => w.id === id);
@@ -6839,17 +6852,21 @@ function gotOutside(d) {
 function outsideSaw() {
   for (const a of OUTSIDE_NOW.alerts) outsideSeen[a.key] = true;
   try { localStorage.setItem("srd.outsideSeen", JSON.stringify(outsideSeen)); } catch {}
-  setTimeout(drawDesk);
+  setTimeout(drawDesk); outsidePill();
 }
-let pillAt = 0;
+const outsidePanel = key => PANEL[{ quakes: "quakes", warnings: "warnings", signal: "signal", qrz: "qrz", lightning: "lightning", aircraft: "aircraft", sun: "sun", aurora: "aurora", vhf: "vhf" }[key] || "conditions"].id;
+let pillAt = 0, pillOne = null;
 function outsidePill(step) {                          // one alert at a time, the next every eight seconds
   const p = $("outsidePill"), a = OUTSIDE_NOW.alerts;
   if (!p) return;
   if (!a.length) { p.hidden = true; return; }
   if (step) pillAt++;
   const one = a[pillAt % a.length];
-  p.hidden = false; p.title = one.says + " · click to open The world outside";
-  p.replaceChildren(el("i"), el("span", { textContent: one.short }), a.length > 1 ? el("small", { textContent: `${pillAt % a.length + 1} of ${a.length}` }) : null);
+  pillOne = one;
+  const from = (OUTSIDE_NOW.tiles.find(t => t.key === one.tile) || {}).title;
+  p.hidden = false; p.title = one.says + " · click to open " + (from || "The world outside");
+  p.classList.add("alerting"); p.classList.toggle("pulse", a.some(x => !outsideSeen[x.key]));
+  p.replaceChildren(el("i", { textContent: "▲" }), el("span", { textContent: (from ? from + ": " : "") + one.short }), ...(a.length > 1 ? [el("small", { textContent: `${pillAt % a.length + 1} of ${a.length}` })] : []));
 }
 // The Log window's view: the radio's log (in its memory: reading it writes nothing to the card), problems only to begin with,
 // searchable, following the newest line every few seconds while the window is open and the tab is looked at.
@@ -6923,7 +6940,7 @@ async function outsidePoll() {
   try { const was = JSON.stringify(OUTSIDE_NOW); gotOutside(await api("/api/outside")); if (JSON.stringify(OUTSIDE_NOW) !== was) drawDesk(); }
   catch (e) { if (!OUTSIDE.loaded) setTimeout(outsidePoll, 5000); }     // (nothing yet: try again soon, not in two minutes; what's shown stays)
 }
-$("outsidePill").onclick = () => open(OUTSIDE.id);
+$("outsidePill").onclick = () => { outsideSaw(); open(pillOne ? outsidePanel(pillOne.tile) : OUTSIDE.id); outsidePill(); };
 setInterval(() => { const p = $("outsidePill"); if (!p || p.hidden || OUTSIDE_NOW.alerts.length < 2) return;
   p.style.opacity = 0; setTimeout(() => { outsidePill(true); p.style.opacity = 1; }, 400); }, 8000);
 // The speaker analyser (/analyser/) hands its suggestion over in the address,
