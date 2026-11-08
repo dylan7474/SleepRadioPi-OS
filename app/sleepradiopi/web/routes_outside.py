@@ -17,6 +17,13 @@ from urllib.parse import urlparse
 def build(ctx):
     config_file, speaker = ctx.config_file, ctx.speaker
 
+    def air_state() -> dict:
+        from sleepradiopi.playback import aircraft as air_mod
+        had = air_mod.aircraft.status(False)
+        return {"address": air_mod.ADDRESS, "watch": air_mod.WATCH, "low": (had or {}).get("low") or [], "watching": (had or {}).get("watch") or [], "up": bool(had), "t": had and had["t"], "n": had and had["n"], "placed": had and had["placed"],
+                "planes": (had or {}).get("planes") or [], "emergency": (had or {}).get("emergency") or [], "far_nm": had and had["far_nm"],
+                "aerial": bool(had and had["aerial"]), "from": had and had["from"], "says": had and had["says"], "low_ft": air_mod.LOW_FT}
+
     def get(self, path) -> bool:
         if path == "/api/rx/conditions":
             # How the bands are (playback/conditions.py): from that receiver's survey (?base=) and who the FT8
@@ -44,11 +51,11 @@ def build(ctx):
             from sleepradiopi.audio import ft8 as ft8_mod
             from sleepradiopi.playback import conditions as conditions_mod, survey as survey_mod
             out = conditions_mod.summary(conditions_mod.freshest(survey_mod.job)[1], ft8_mod.reader.heard()["heard"], time.time())
-            from sleepradiopi.playback import lightning as lightning_mod, qrzlog as qrz_mod, quakes as quakes_mod, spots as spots_mod, ukwarnings as warn_mod
+            from sleepradiopi.playback import aircraft as air_mod, lightning as lightning_mod, qrzlog as qrz_mod, quakes as quakes_mod, spots as spots_mod, ukwarnings as warn_mod
             self._send(json.dumps(conditions_mod.outside(out, conditions_mod.sun.status(False, True), conditions_mod.forecast.status(False, True), conditions_mod.aurora.status(False, True),
                                                          conditions_mod.daytime(time.time(), ft8_mod.HOME), quakes_mod.quakes.status(False, True),
                                                          warn_mod.warnings.status(False, True), spots_mod.spots.status(False, True), qrz_mod.logbook.status(False, True),
-                                                         lightning_mod.watch.status())).encode(), "application/json")
+                                                         lightning_mod.watch.status(), air_mod.aircraft.status(False))).encode(), "application/json")
             return True
         if path == "/api/health":
             # The menu-bar light (health.py): is something wrong? Quiet things that go wrong on a small radio, in a sentence each.
@@ -71,6 +78,11 @@ def build(ctx):
             # The QRZ logbook window (playback/qrzlog.py): whether a key is set (never the key), the book's figures,
             # everything its STATUS said, the latest QSOs, and QRZ's reason if it said no.
             self._send(json.dumps(self._qrz()).encode(), "application/json")
+            return True
+        if path == "/api/aircraft":
+            # The Aircraft window (playback/aircraft.py): the receiver's address, whether it answers, and the aircraft near.
+            from sleepradiopi.playback import aircraft as air_mod
+            self._send(json.dumps(air_state()).encode(), "application/json")
             return True
         if path == "/api/warnings":
             # The Warnings window (playback/ukwarnings.py): the Met Office's for the region ("region": which one, chosen
@@ -176,6 +188,36 @@ def build(ctx):
             if qrz_mod.KEY:
                 qrz_mod.logbook.fetch()
             self._send(json.dumps(self._qrz()).encode(), "application/json")
+            return True
+        if path == "/api/aircraft":
+            # {"address": "192.168.1.5:8080"}: the dump1090 / readsb receiver on the local network ("" forgets it); and/or
+            # {"watch": "RRR, ASCOT, #43C0A1, mil"}: aircraft to watch for ("" for none). Kept; asked at once.
+            from sleepradiopi.playback import aircraft as air_mod
+            try:
+                body = self._body()
+                address, watch = body.get("address"), body.get("watch")
+                if (address is None and watch is None) or (address is not None and (not isinstance(address, str) or (address.strip() and air_mod.base(address) is None))):
+                    raise ValueError
+                if watch is not None:
+                    if not isinstance(watch, str) or len(watch) > 200:
+                        raise ValueError
+                    air_mod.parse_watch(watch)
+            except (ValueError, TypeError, AttributeError):
+                self._error('send {"address": "host:port" of the receiver (the one that serves /data/aircraft.json), or ""} and/or '
+                            '{"watch": "RRR, ASCOT, #43C0A1, #43C000-43CFFF, mil" (callsign starts, # addresses, mil), or ""}')
+                return True
+            if address is not None:
+                air_mod.ADDRESS = address.strip()
+                if config_file is not None:
+                    save_setting(config_file, "aircraft_url", air_mod.ADDRESS)
+            if watch is not None:
+                air_mod.WATCH = watch.strip()
+                if config_file is not None:
+                    save_setting(config_file, "aircraft_watch", air_mod.WATCH)
+            air_mod.aircraft.forget()
+            if air_mod.ADDRESS:
+                air_mod.aircraft.fetch()
+            self._send(json.dumps(air_state()).encode(), "application/json")
             return True
         if path == "/api/warnings":
             # {"region": "ne" | ...}: the Met Office region for weather warnings, or "" for the one nearest the

@@ -182,7 +182,7 @@ class Health:
         if not offline and now - self.started > FEEDS_GRACE_S:
             stale = []
             for f in feeds:
-                if not f.wanted():
+                if not f.wanted() or getattr(f, "LAN", False):      # (a receiver on the local network comes and goes: not worth a light)
                     continue
                 age = f.age()
                 if age is None:
@@ -197,6 +197,11 @@ class Health:
             else:
                 for name, age in stale:
                     add("feed:" + name, "warn", f"{name[0].upper() + name[1:]} out of date", f"{name[0].upper() + name[1:]} " + (f"were last had {ago(age)} ago." if age else "have never been had."))
+        for f in feeds:                                      # (a feed can say what's wrong with itself: a receiver that answers but hears nothing)
+            say = getattr(f, "trouble", None)
+            t = say() if say else None
+            if t:
+                add(t["key"], t["level"], t["title"], t["text"])
         found.sort(key=lambda i: i["level"] != "bad")
         level = "bad" if any(i["level"] == "bad" for i in found) else "warn" if found else "ok"
         return {"level": level, "issues": found, "t": now}

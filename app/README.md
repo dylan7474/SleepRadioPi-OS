@@ -1611,6 +1611,27 @@ The cards:
   `"refused"`, QRZ's REASON (reading a book needs a QRZ Logbook
   subscription). The tile's there with no key too (`"key?"`), so its
   window can be found.
+  *Aircraft* (`playback/aircraft.py`, `GET /api/aircraft`, `POST
+  /api/aircraft {"address": "host:port"}`, `""` to forget; the setting
+  `aircraft_url`, empty to begin with: no address is in the source):
+  `aircraft.Aircraft` (a `Kept`, asked by the keeper every ~30 s, `EVERY_S`
+  20) GETs `<base>/data/aircraft.json` (and `receiver.json` once for the
+  aerial's place, else the radio's locator: `"from"` says which, and the window says so). `base()` takes `host:port` or
+  a URL and keeps only `http(s)://netloc`. It keeps the count, the nearest
+  12 with a position (nm, bearing, ft, kt, track, climb) and the callsigns
+  of the rest, and any squawking 7500/7600/7700 (an alert, level 2,
+  `aircraft:<hex>:<squawk>`). It is a LAN thing, so: no `keep_in` (nothing
+  on the card); `status()` never returns an "old" picture (the tile goes
+  `OLD_S` = 120 s after the receiver stops answering); `LAN = True` keeps it
+  out of the health light's stale-feed list (a radio away from home is not
+  "wrong"); `wanted()` is false with no address.
+  Visual-only alerts (`alerts(had, spoken)`: `alert_due` passes `spoken=True`, which
+  leaves them out until `SPEAK_EXTRAS`): `aircraft:low:<hex>` (`"low"`: under `LOW_ALERT_FT`
+  2000 within `LOW_ALERT_NM` 3, in the air) and `aircraft:watch:<hex>` (`"watch"`: matches
+  the setting `aircraft_watch` / `POST /api/aircraft {"watch"}`, parsed by `parse_watch()`:
+  a callsign prefix, `#hex`, `#lo-hi`, `mil`; a bad one is a 400). `Aircraft.trouble()`
+  (`"aircraft-deaf"`) is a feed's own message to the health light (health.py asks any feed that
+  has `trouble()`): it answered, but with no aircraft at all for `DEAF_S` (an hour).
   *Lightning* (`playback/lightning.py`, `GET /api/lightning`, `POST
   /api/lightning {"on"?, "bell"?, "ring"?}`, the settings
   `lightning_watch` (off to begin with), `lightning_bell`): `lightning.Watch`, a thread of its

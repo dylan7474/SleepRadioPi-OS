@@ -529,7 +529,22 @@ Actions, Sleep timer and Radio folders open:
   comes within 40 km and again within 10 km -- twice a storm at most, not
   in the quiet hours -- and with Alerts on, the DJ says where it is.
   Blitzortung's is a community network: not for protecting life or
-  property, and its feed may change without notice.
+  property, and its feed may change without notice. **Aircraft**: if you
+  run a dump1090 or readsb receiver on your network, type its address
+  (like `192.168.1.5:8080`) into the Aircraft window (the *Aircraft...*
+  button in The world outside) and the tile shows how many aircraft it
+  hears and the nearest; the window lists the nearest with distance,
+  bearing, height, speed and heading. The tile is there only while the
+  receiver answers, so a radio away from home (or the receiver switched
+  off) just has no Aircraft tile, and nothing is written to the card.
+  With Alerts on, the DJ says when an aircraft squawks 7500, 7600 or 7700.
+  Two more are for the eye only (never spoken): an aircraft **low and close**
+  (under 2,000 ft within 3 nm) and any on your **watch list** (callsigns
+  starting so, like `RRR`; `#43C0A1` an address; `#43C000-43CFFF` a range;
+  `mil` the UK and US military) turn the tile red, say what and where in it,
+  ring it on the scope and badge the folder. And if the receiver answers but
+  has heard no aircraft at all for an hour, the "something's wrong" light
+  says to check its aerial.
 - **Quiet hours (do not disturb).** In The DJ's window: from and until
   (23:00 to 06:00 to begin with), or off. No news, birthday wishes, alerts
   or lightning bell in them; music and programmes play as usual.
@@ -1214,7 +1229,7 @@ What's left to do (everything else described here is built and running):
   AuroraWatch UK and alerts. Still to do: where your own receiver's
   reports put you among others', once *Report* is on; more from outside
   in The world outside (a barometer; earthquakes, warnings, PSK Reporter
-  spots of your own callsign, your QRZ logbook and lightning are done).
+  spots of your own callsign, your QRZ logbook, lightning and aircraft from a local dump1090 are done).
 - **A laser-cut wood cathedral** — a real-wood version of the cathedral case:
   - the face and fretwork cut from walnut-veneered plywood, the sides and
     back from plywood or MDF;

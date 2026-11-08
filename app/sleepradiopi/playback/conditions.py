@@ -665,10 +665,11 @@ _alerted: dict[str, tuple[int, float]] = {}       # what's been alerted: {"auror
 
 
 def alerts_now(sun_now: dict | None, fc: dict | None, aurora_now: dict | None, quakes_now: dict | None = None,
-               warn_now: dict | None = None, qrz_now: dict | None = None, light_now: dict | None = None) -> list[tuple[str, int, str, str]]:
+               warn_now: dict | None = None, qrz_now: dict | None = None, light_now: dict | None = None,
+               air_now: dict | None = None, speak: bool = False) -> list[tuple[str, int, str, str]]:
     """What's worth an alert as things are: [(what, how high, the words, a few of them for the page)]."""
-    from sleepradiopi.playback import lightning, qrzlog, quakes, ukwarnings        # (they build on Kept, here)
-    out = lightning.alerts(light_now) + quakes.alerts(quakes_now) + ukwarnings.alerts(warn_now) + qrzlog.alerts(qrz_now)
+    from sleepradiopi.playback import aircraft, lightning, qrzlog, quakes, ukwarnings        # (they build on Kept, here)
+    out = lightning.alerts(light_now) + quakes.alerts(quakes_now) + ukwarnings.alerts(warn_now) + qrzlog.alerts(qrz_now) + aircraft.alerts(air_now, speak)
     if aurora_now and aurora_now.get("level") in ("amber", "red"):
         level = aurora_now["level"]
         out.append(("aurora", AURORA_LEVELS.index(level),
@@ -691,9 +692,9 @@ def alert_due(at, clock_ok: bool, quiet: bool, now: float | None = None) -> str 
     if not ALERTS:
         return None
     now = time.time() if now is None else now
-    from sleepradiopi.playback import lightning, qrzlog, quakes, ukwarnings
+    from sleepradiopi.playback import aircraft, lightning, qrzlog, quakes, ukwarnings
     found = alerts_now(sun.status(), forecast.status(), aurora.status(), quakes.quakes.status(), ukwarnings.warnings.status(), qrzlog.logbook.status(),
-                       lightning.watch.status())
+                       lightning.watch.status(), aircraft.aircraft.status(), True)
     live = {what for what, *_ in found}
     for what in [w for w in _alerted if w not in live and now - _alerted[w][1] > ALERT_AGAIN_S]:
         del _alerted[what]
@@ -709,11 +710,12 @@ def alert_due(at, clock_ok: bool, quiet: bool, now: float | None = None) -> str 
 
 
 # Which tile an alert belongs to (the desktop's "The world outside": outside())
-ALERT_TILE = {"aurora": "aurora", "es": "vhf", "noaa": "sun", "quake": "quakes", "ukquake": "quakes", "met": "warnings", "flood": "warnings", "qrz": "qrz", "lightning": "lightning"}
+ALERT_TILE = {"aurora": "aurora", "es": "vhf", "noaa": "sun", "quake": "quakes", "ukquake": "quakes", "met": "warnings", "flood": "warnings", "qrz": "qrz", "lightning": "lightning", "aircraft": "aircraft"}
 
 
 def outside(s: dict, sun_now: dict | None, fc: dict | None, aurora_now: dict | None, day: bool, quakes_now: dict | None = None,
-            warn_now: dict | None = None, spots_now: dict | None = None, qrz_now: dict | None = None, light_now: dict | None = None) -> dict:
+            warn_now: dict | None = None, spots_now: dict | None = None, qrz_now: dict | None = None, light_now: dict | None = None,
+            air_now: dict | None = None) -> dict:
     """The desktop's "The world outside" folder: a tile for each thing known, and the alerts there are now ->
     {"tiles": [{"key", "title", "value" (a few letters, on the tile), "state" ("good" | "fair" | "poor" |
     "alert" | "quiet"), "sub", "says", "alert"}], "alerts": [{"key", "tile", "short", "says"}]}. A tile is
@@ -722,7 +724,7 @@ def outside(s: dict, sun_now: dict | None, fc: dict | None, aurora_now: dict | N
         return None if had and had.get("gone") else had
     alerts = [{"key": what, "tile": ALERT_TILE[what.partition(":")[0]], "short": short, "says": words}
               for what, _, words, short in alerts_now(current(sun_now), current(fc), current(aurora_now), current(quakes_now), current(warn_now),
-                                                      current(qrz_now), light_now)]
+                                                      current(qrz_now), light_now, air_now)]
     alerted = {a["tile"] for a in alerts}
     tiles, from_fc = [], False
     live = sorted((b for b in s["bands"] if b["n"]), key=lambda b: (-b["n"], -(b.get("km") or 0)))
@@ -761,9 +763,9 @@ def outside(s: dict, sun_now: dict | None, fc: dict | None, aurora_now: dict | N
                       "state": "alert" if "vhf" in alerted else "quiet",
                       "sub": f"sporadic E · {_and(es)}" if es else "nothing open",
                       "says": f"Sporadic E open on {_and(es)} across Europe (N0NBH)." if es else "No sporadic E or VHF aurora forecast (N0NBH)."})
-    from sleepradiopi.playback import lightning, qrzlog, quakes, spots, ukwarnings
+    from sleepradiopi.playback import aircraft, lightning, qrzlog, quakes, spots, ukwarnings
     tiles += (lightning.tile(light_now, alerted) + ukwarnings.tile(warn_now, alerted) + quakes.tiles(quakes_now, alerted, quakes_now["t"] if (quakes_now or {}).get("gone") else None)
-              + spots.tile(spots_now) + qrzlog.tile(qrz_now, alerted))
+              + spots.tile(spots_now) + qrzlog.tile(qrz_now, alerted) + aircraft.tile(air_now, alerted))
     now = time.time()
     source = {"sun": sun_now, "aurora": aurora_now, "vhf": fc, "warnings": warn_now, "quakes": quakes_now, "signal": spots_now, "qrz": qrz_now,
               "bands": fc if from_fc else None}
@@ -830,8 +832,8 @@ class Outside:
 
 def outside_feeds() -> list:
     """The Kept feeds in The world outside (lightning has a thread of its own)."""
-    from sleepradiopi.playback import qrzlog, quakes, spots, ukwarnings
-    return [sun, forecast, aurora, quakes.quakes, ukwarnings.warnings, spots.spots, qrzlog.logbook]
+    from sleepradiopi.playback import aircraft, qrzlog, quakes, spots, ukwarnings
+    return [sun, forecast, aurora, quakes.quakes, ukwarnings.warnings, spots.spots, qrzlog.logbook, aircraft.aircraft]
 
 
 keeper = Outside(outside_feeds)

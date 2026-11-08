@@ -981,6 +981,9 @@ def main() -> None:
     from sleepradiopi.playback import qrzlog as qrz_mod
     qrz_mod.KEY = settings.qrz_key or ""
     qrz_mod.logbook.keep_in(Path.home() / ".cache" / "sleepradiopi" / "qrz.json")               # the owner's QRZ logbook (not the key)
+    from sleepradiopi.playback import aircraft as aircraft_mod
+    aircraft_mod.WATCH = settings.aircraft_watch or ""
+    aircraft_mod.ADDRESS = settings.aircraft_url or ""               # aircraft overhead, from a receiver on the local network (nothing kept on the card)
     from sleepradiopi.playback import lightning as lightning_mod
     lightning_mod.ON = settings.lightning_watch is not False
     lightning_mod.BELL = settings.lightning_bell is not False
