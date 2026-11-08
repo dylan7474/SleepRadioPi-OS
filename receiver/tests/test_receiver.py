@@ -29,7 +29,7 @@ def test_what_to_listen_to() -> None:
     assert rx.parse_spec({"freq": ["145.5"]}, bands) == {"freq": 145_500_000, "mode": "nfm"}
     assert rx.parse_spec({"freq": ["156000000"], "squelch": ["off"]}, bands) == {"freq": 156_000_000, "mode": "nfm", "squelch": False}
     assert rx.parse_spec({"freq": "95.0", "mode": "WFM"}, bands) == {"freq": 95_000_000, "mode": "wfm"}
-    for bad in ({"band": ["70cm"]}, {}, {"freq": ["abc"]}, {"freq": ["5"]}, {"freq": ["145.5"], "mode": ["ssb"]}):
+    for bad in ({"band": ["23cm"]}, {}, {"freq": ["abc"]}, {"freq": ["5"]}, {"freq": ["145.5"], "mode": ["ssb"]}):
         with pytest.raises(ValueError):
             rx.parse_spec(bad, bands)
     assert rx.spec_channels({"freq": 145_500_000, "mode": "nfm"}, bands) == ("145.5 MHz", [{"freq": 145_500_000, "name": "145.5 MHz"}])
@@ -563,3 +563,13 @@ def test_a_newer_driver_takes_the_nearest_step():
     assert -28 < min(offs) < -20 and 20 < max(offs) < 28           # half a step either way, 55 Hz a step at these frequencies
     assert abs(float(sum(offs)) / len(offs)) < 2 and st.r820t_off(138_774_218, 64, driver=-1) == 0.0      # (a driver not known: left alone)
     assert st.driver() in (-1, 0, 2)
+
+
+def test_seventy_cm_bands() -> None:
+    simplex = rx.DEFAULT_BANDS["70cm"]["channels"]
+    assert [c["freq"] for c in simplex][:2] == [433_400_000, 433_412_500] and simplex[-1]["freq"] == 433_575_000
+    assert [c for c in simplex if c.get("priority")][0]["freq"] == 433_500_000
+    pmr = rx.DEFAULT_BANDS["pmr446"]["channels"]
+    assert len(pmr) == 16 and pmr[0]["freq"] == 446_006_250 and pmr[-1]["freq"] == 446_193_750
+    assert rx.parse_spec({"band": ["70cm"]}, rx.DEFAULT_BANDS) == {"band": "70cm"}
+    assert rx.rig(rx.parse_spec({"band": ["70cm-ssb"]}, rx.DEFAULT_BANDS) | {"mode": "usb"})

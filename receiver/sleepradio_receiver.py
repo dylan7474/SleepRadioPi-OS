@@ -148,6 +148,20 @@ def two_metre_channels(names: dict[int, str] | None = None, skip: tuple[int, ...
 NEAR_GUISBOROUGH = {145_212_500: "MB7ICC gateway", 145_237_500: "MB7IMB gateway", 145_312_500: "MB7ISQ gateway",
                     145_600_000: "GB7RW", 145_625_000: "GB3HG", 145_737_500: "GB3RT", 145_762_500: "GB3IR"}
 
+def seventy_cm_channels() -> list[dict]:
+    """The 70 cm band's FM simplex: 433.400-433.575 MHz every 12.5 kHz (S16-S23, calling channel 433.500)."""
+    out = []
+    for hz in range(433_400_000, 433_575_001, 12_500):
+        out.append({"freq": hz, "name": f"{hz / 1e6:.4f}".rstrip("0") + (", Calling channel" if hz == 433_500_000 else ""),
+                    **({"priority": True} if hz == 433_500_000 else {})})
+    return out
+
+
+def pmr446_channels() -> list[dict]:
+    """PMR446 licence-free handhelds: 16 channels, 446.00625-446.19375 MHz every 12.5 kHz (digital DMR uses 8 of them)."""
+    return [{"freq": 446_006_250 + 12_500 * i, "name": f"PMR446 channel {i + 1}"} for i in range(16)]
+
+
 def broadcast_channels() -> list[dict]:
     """Broadcast FM, 87.5-108 MHz every 100 kHz."""
     return [{"freq": hz, "name": f"{hz / 1e6:.1f} FM"} for hz in range(87_500_000, 108_000_001, 100_000)]
@@ -188,6 +202,8 @@ def _hz(value) -> int:
 
 DEFAULT_BANDS = {
     "2m": {"name": "2 metres", "mode": "nfm", "channels": two_metre_channels(NEAR_GUISBOROUGH, skip=(145_662_500,))},
+    "70cm": {"name": "70 centimetres", "mode": "nfm", "channels": seventy_cm_channels()},
+    "pmr446": {"name": "PMR446", "mode": "nfm", "channels": pmr446_channels()},
     "marine": {"name": "Marine VHF", "mode": "nfm", "channels": marine_channels()},
     "fm": {"name": "Broadcast FM", "mode": "wfm", "channels": broadcast_channels()},      # (one station at a time)
     # tuned like a rig, sideband and Morse: what an RTL-SDR reaches of short wave, and the weak-signal ends of VHF
@@ -196,6 +212,7 @@ DEFAULT_BANDS = {
     "10m": tuned_band("10 metres", 28.0, 29.7, 28.4),
     "6m": tuned_band("6 metres", 50.0, 50.5, 50.15),
     "2m-ssb": tuned_band("2 m sideband", 144.0, 144.4, 144.3),
+    "70cm-ssb": tuned_band("70 cm sideband", 432.0, 432.4, 432.2),
 }
 
 # With an upconverter: short wave. The amateur bands and the broadcast ones, in the order they come.
