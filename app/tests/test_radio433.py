@@ -12,8 +12,10 @@ from sleepradiopi.web.server import make_handler
 
 NOW = 1_792_340_000.0
 SCAN = {"running": True, "since": NOW - 5000, "messages": 120, "devices": [
-    {"id": "aa51b898", "model": "Ambientweather-F007TH", "count": 80, "first": NOW - 4000, "last": NOW - 30, "ago_s": 30, "rssi": -12.1, "snr": 22.2, "freq": 433.91},
-    {"id": "0badf00d", "model": "Acurite-Tower", "count": 30, "ago_s": 40, "rssi": -9.0, "snr": 18.0, "name": "Shed", "readings": {"temperature_C": 7.5, "humidity": 81, "battery_ok": 1}},
+    {"id": "aa51b898", "model": "Ambientweather-F007TH", "count": 80, "first": NOW - 4000, "last": NOW - 30, "ago_s": 30, "rssi": -12.1, "snr": 22.2, "freq": 433.91, "real": "Ambientweather-F007TH:77",
+     "readings": {"temperature_C": 21.3, "humidity": 44, "battery_ok": 1, "channel": "ignored"}},
+    {"id": "0badf00d", "model": "Acurite-Tower", "count": 30, "ago_s": 40, "rssi": -9.0, "snr": 18.0, "name": "Shed", "real": "Acurite-Tower:1234", "readings": {"temperature_C": 7.5, "humidity": 81, "battery_ok": 1}},
+    {"id": "7e5f0001", "model": "Toyota", "count": 4, "ago_s": 50, "snr": 9.0, "readings": {"type": "TPMS", "pressure_kPa": 230.5, "temperature_C": 19}},
     {"id": "c0ffee00", "model": "Nexus-TH", "count": 10, "ago_s": 7200, "snr": 5.0},
     {"nonsense": True}, "garbage"]}
 STATUS = {"job": "scan433", "receiver_busy": False, "held_s": 0, "sonde_windows_utc": ["22:45-01:30", "10:45-13:30"], "sonde_heard_ago_s": None}
@@ -43,7 +45,7 @@ def test_it_is_asked_only_with_an_address_and_goes_when_the_receiver_does() -> N
     assert r.wanted() and r.LAN and r.fetch() is not None
     had = r.status(False)
     assert had["job"] == "scan433" and had["windows"] == ["22:45-01:30", "10:45-13:30"] and had["messages"] == 120
-    assert [d["model"] for d in had["devices"]] == ["Ambientweather-F007TH", "Acurite-Tower", "Nexus-TH"]        # (nonsense dropped, the latest heard first)
+    assert [d["model"] for d in had["devices"]] == ["Ambientweather-F007TH", "Acurite-Tower", "Toyota", "Nexus-TH"]        # (nonsense dropped, the latest heard first)
     r.t[0] += 60
     assert r.status(False)["devices"][0]["ago_s"] == 90                  # (heard 30 s before the look, and the look was a minute ago)
     r.t[0] += radio433.OLD_S
@@ -52,13 +54,16 @@ def test_it_is_asked_only_with_an_address_and_goes_when_the_receiver_does() -> N
     assert down.fetch() is None and down.status(False) is None
 
 
-def test_only_your_own_devices_show_readings_and_ids_are_the_receivers() -> None:
+def test_every_device_shows_what_it_says() -> None:
     r = _r()
     r.fetch()
     devs = {d["model"]: d for d in r.status(False)["devices"]}
-    assert devs["Acurite-Tower"]["name"] == "Shed" and devs["Acurite-Tower"]["readings"] == {"temperature_C": 7.5, "humidity": 81, "battery_ok": 1}
-    assert "readings" not in devs["Ambientweather-F007TH"] and "name" not in devs["Ambientweather-F007TH"]
+    assert devs["Acurite-Tower"]["name"] == "Shed" and devs["Acurite-Tower"]["real"] == "Acurite-Tower:1234"
+    assert devs["Acurite-Tower"]["readings"] == {"temperature_C": 7.5, "humidity": 81, "battery_ok": 1}
+    assert devs["Ambientweather-F007TH"]["readings"]["temperature_C"] == 21.3 and "name" not in devs["Ambientweather-F007TH"]     # (anyone's: shown)
+    assert devs["Ambientweather-F007TH"]["real"] == "Ambientweather-F007TH:77" and "real" not in devs["Toyota"]                   # (a car's tyre sensor: no ID)
     assert radio433.reading(devs["Acurite-Tower"]) == "7.5°C · 81%" and radio433.reading(devs["Nexus-TH"]) == ""
+    assert radio433.reading(devs["Toyota"]) == "19°C · 230.5 kPa"
 
 
 def test_the_history_is_in_memory_and_counts_only_what_was_seen_to_arrive() -> None:
@@ -74,12 +79,12 @@ def test_the_history_is_in_memory_and_counts_only_what_was_seen_to_arrive() -> N
     r._get = _get({"/433": {**SCAN, "messages": 5}, "/status": STATUS})   # (the service restarted: no negative counts)
     r.fetch()
     assert sum(n for _, n in r.status(False)["activity"]) == 30
-    series = r.status(False)["series"]["Shed"]
-    assert len(series) == 3 and series[0][1:] == [7.5, 81] and set(r.status(False)["series"]) == {"Shed"}       # (one every five minutes, named devices only)
+    series = r.status(False)["series"]["0badf00d"]
+    assert len(series) == 3 and series[0][1:] == [7.5, 81] and set(r.status(False)["series"]) == {"aa51b898", "0badf00d", "7e5f0001"}       # (one every five minutes, each device that reports a temperature)
     r.forget()
     assert r.status(False) is None
     r.fetch()
-    assert r.status(False)["series"] == {"Shed": [[round(r.t[0]), 7.5, 81]]} and sum(n for _, n in r.status(False)["activity"]) == 0
+    assert r.status(False)["series"]["0badf00d"] == [[round(r.t[0]), 7.5, 81]] and sum(n for _, n in r.status(False)["activity"]) == 0
 
 
 def test_it_says_what_the_dongle_is_doing_in_words() -> None:
@@ -94,8 +99,8 @@ def test_the_tile() -> None:
     r = _r()
     r.fetch()
     t = radio433.tile(r.status(False), set())[0]
-    assert t["key"] == "r433" and t["title"] == "433 MHz" and t["value"] == "2" and t["state"] == "good"       # (the Nexus was heard two hours ago)
-    assert t["sub"] == "Shed 7.5°C · 81%" and "Scanning." in t["says"] and "Shed: 7.5°C · 81%." in t["says"]
+    assert t["key"] == "r433" and t["title"] == "433 MHz" and t["value"] == "3" and t["state"] == "good"       # (the Nexus was heard two hours ago)
+    assert t["sub"] == "Shed 7.5°C · 81%" and "Scanning." in t["says"] and "Shed: 7.5°C · 81%." in t["says"] and "Ambientweather-F007TH: 21.3°C · 44%." in t["says"]      # (yours first, then the others)
     busy = _r({"/433": SCAN, "/status": {**STATUS, "job": None, "receiver_busy": True}})
     busy.fetch()
     assert radio433.tile(busy.status(False), set())[0]["sub"].startswith("paused: the VHF receiver is in use")
@@ -160,7 +165,7 @@ def test_from_the_web(tmp_path: Path, monkeypatch) -> None:
         for bad in ({}, {"address": 3}, {"address": "ftp://x"}, {"address": "a b"}):
             assert post(bad)[0] == 400
         code, d = post({"address": "pi.local:8076"})
-        assert code == 200 and d["up"] is True and d["now"] == "Scanning" and d["paused"] is False and len(d["devices"]) == 3
+        assert code == 200 and d["up"] is True and d["now"] == "Scanning" and d["paused"] is False and len(d["devices"]) == 4
         assert json.loads(conf.read_text())["background_url"] == "pi.local:8076"
         assert "r433" in [t["key"] for t in get("/api/outside")["tiles"]]
         answers["/433"] = None                                                                        # the receiver goes

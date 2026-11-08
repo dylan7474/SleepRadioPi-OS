@@ -1650,10 +1650,10 @@ The cards:
   {"address": "host:port"}`, `""` to forget; the setting `background_url`, empty to begin with): `radio433.Radio433`
   (a `Kept` in `outside_feeds()`, `EVERY_S` 20, `LAN = True`, no `keep_in`: nothing on the card) GETs
   `<base>/433` and `<base>/status` of the receiver's background service (`receiver/sleepradio_background.py`).
-  The devices come with made-up IDs and, only for those named in the receiver's `known.json`, `name` and
-  `readings`. In memory under `_mem`, cleared by `forget()`: the messages per quarter hour for a day (the
+  Every device comes with its `readings` (all it says, as rtl_433 reports it), a made-up ID, `real` (the rtl_433 name, the key for
+  `known.json`; absent for TPMS) and `name` if the receiver's `known.json` has it. In memory under `_mem`, cleared by `forget()`: the messages per quarter hour for a day (the
   difference of the service's running total between looks; a smaller total = it restarted: counted as none) and
-  the named devices' readings every five minutes (`SERIES_S`). `status()` is never "old" (the tile goes `OLD_S` after
+  the readings of every device that reports a temperature every five minutes (`SERIES_S`, keyed by the made-up ID, at most `SERIES_DEVICES`). `status()` is never "old" (the tile goes `OLD_S` after
   the service stops answering) and adds the time since the look to each `ago_s`. `state_word()` says what the dongle
   is doing in words (Scanning / Paused: the VHF receiver is in use / Paused: listening for radiosondes / Starting
   again). Tile `"r433"`; the window is `UI.r433` in desktop.html (signal = a bar and a word, never colour alone).
@@ -1667,6 +1667,13 @@ The cards:
   handler gives its own Cache-Control). The page projects it about the aerial (`/api/aircraft` `"at"`) with the same azimuthal
   equidistant projection as the rings (distance and bearing), so the aircraft, drawn from `nm`/`deg`, sit exactly on it. Nothing is
   fetched from a third party (an earlier build used Esri's tiles; their terms don't allow keeping them, so it was replaced).
+  *Radiosondes* (`playback/sondes.py`, `GET /api/sondes`; no address of its own: it uses `radio433.ADDRESS`, so the 433 MHz window's
+  `POST /api/radio433` starts and forgets both): `sondes.Sondes` (a `Kept`, `EVERY_S` 15, `LAN`, nothing on the card) GETs `<base>/sondes`
+  and `/status`. The service only knows a flight while it hears it, so the radio keeps the newest `KEEP` (8) flights in memory under `_mem`
+  (each one's track, merged with the service's, and its highest point, taken from the whole track), with distance and bearing from the
+  aerial (the aircraft receiver's own place, else the locator's). `judge()`: climbing / falling / steady while heard; once silent
+  `LANDED_S` (300) it is `landed` (last heard under `LANDED_M` 1500 m and it came down 1000 m or more) or `lost`. Tile `"sondes"`; the
+  window is `UI.sondes` (the flights table; the scope shares `ScopeMap` with the Aircraft one: built-in map, projection, rings).
   *Lightning* (`playback/lightning.py`, `GET /api/lightning`, `POST
   /api/lightning {"on"?, "bell"?, "ring"?}`, the settings
   `lightning_watch` (off to begin with), `lightning_bell`): `lightning.Watch`, a thread of its

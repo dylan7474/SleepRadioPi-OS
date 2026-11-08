@@ -33,6 +33,15 @@ def build(ctx):
                 "windows": (had or {}).get("windows") or [], "messages": had and had["messages"], "devices": (had or {}).get("devices") or [],
                 "activity": (had or {}).get("activity") or [], "series": (had or {}).get("series") or {}, "says": had and had["says"]}
 
+    def sondes_state() -> dict:
+        from sleepradiopi.playback import radio433 as r_mod, sondes as s_mod
+        had = s_mod.sondes.status(False)
+        t = time.gmtime()
+        nxt = s_mod.next_window((had or {}).get("windows") or [], t.tm_hour * 60 + t.tm_min)
+        return {"address": r_mod.ADDRESS, "up": bool(had), "t": had and had["t"], "now": had and r_mod.state_word(had), "job": had and had.get("job"), "windows": (had or {}).get("windows") or [],
+                "window": nxt and {"start": nxt[0], "end": nxt[1], "on": nxt[2]}, "running": bool(had and had.get("running")), "flights": (had or {}).get("flights") or [],
+                "aerial": had and had.get("aerial"), "says": had and had["says"], "words": s_mod.STATE_WORDS}
+
     def get(self, path) -> bool:
         if path == "/api/rx/conditions":
             # How the bands are (playback/conditions.py): from that receiver's survey (?base=) and who the FT8
@@ -60,12 +69,12 @@ def build(ctx):
             from sleepradiopi.audio import ft8 as ft8_mod
             from sleepradiopi.playback import conditions as conditions_mod, survey as survey_mod
             out = conditions_mod.summary(conditions_mod.freshest(survey_mod.job)[1], ft8_mod.reader.heard()["heard"], time.time())
-            from sleepradiopi.playback import aircraft as air_mod, lightning as lightning_mod, qrzlog as qrz_mod, quakes as quakes_mod, radio433 as r433_mod, spots as spots_mod, ukwarnings as warn_mod
+            from sleepradiopi.playback import aircraft as air_mod, lightning as lightning_mod, qrzlog as qrz_mod, quakes as quakes_mod, radio433 as r433_mod, sondes as sondes_mod, spots as spots_mod, ukwarnings as warn_mod
             self._send(json.dumps(conditions_mod.outside(out, conditions_mod.sun.status(False, True), conditions_mod.forecast.status(False, True), conditions_mod.aurora.status(False, True),
                                                          conditions_mod.daytime(time.time(), ft8_mod.HOME), quakes_mod.quakes.status(False, True),
                                                          warn_mod.warnings.status(False, True), spots_mod.spots.status(False, True), qrz_mod.logbook.status(False, True),
                                                          lightning_mod.watch.status(), air_mod.aircraft.status(False),
-                                                         r433_mod.radio433.status(False))).encode(), "application/json")
+                                                         r433_mod.radio433.status(False), sondes_mod.sondes.status(False))).encode(), "application/json")
             return True
         if path == "/api/health":
             # The menu-bar light (health.py): is something wrong? Quiet things that go wrong on a small radio, in a sentence each.
@@ -88,6 +97,10 @@ def build(ctx):
             # The QRZ logbook window (playback/qrzlog.py): whether a key is set (never the key), the book's figures,
             # everything its STATUS said, the latest QSOs, and QRZ's reason if it said no.
             self._send(json.dumps(self._qrz()).encode(), "application/json")
+            return True
+        if path == "/api/sondes":
+            # The Radiosondes window (playback/sondes.py): the flights heard, kept in memory (the address is the 433 MHz window's: one service).
+            self._send(json.dumps(sondes_state()).encode(), "application/json")
             return True
         if path == "/api/radio433":
             # The 433 MHz window (playback/radio433.py): the background service's address, whether it answers, what the scan is doing, the devices heard.
@@ -228,8 +241,11 @@ def build(ctx):
             if config_file is not None:
                 save_setting(config_file, "background_url", r_mod.ADDRESS)
             r_mod.radio433.forget()
+            from sleepradiopi.playback import sondes as s_mod
+            s_mod.sondes.forget()
             if r_mod.ADDRESS:
                 r_mod.radio433.fetch()
+                s_mod.sondes.refresh()                          # (in a thread of its own: a dead address must not make this wait twice)
             self._send(json.dumps(r433_state()).encode(), "application/json")
             return True
         if path == "/api/aircraft":

@@ -2,7 +2,7 @@
 
 The receiver Pi (receiver/sleepradio_background.py, port 8076) listens on 433.92 MHz with rtl_433 whenever nobody is
 using its dongle, and serves what it hears as JSON: <address>/433 (every device: a model, a made-up ID, a count, a
-signal strength, and -- only for the devices its owner has named there -- the readings) and <address>/status
+signal strength, everything it says -- temperature, humidity, battery... -- and the name its owner gave it there, if any) and <address>/status
 (whether it's scanning, or paused because the VHF receiver is in use, or listening for radiosondes). The owner types
 its address into the 433 MHz window (the setting background_url: "192.168.50.4:8076"; empty = off, and the address
 is never in the source). Only that address is asked, and it is the radio that asks: the receiver never sends.
@@ -31,6 +31,8 @@ BUCKET_S = 900.0             # the activity is kept in quarter hours...
 HIST_S = 86400.0             # ...for a day
 SERIES_S = 300.0             # a named device's readings: one every five minutes...
 SERIES_MAX = 288             # ...for a day
+SERIES_DEVICES = 24          # ...for this many devices at most (the ones that report a temperature)
+MAX_FIELDS = 14
 MOST = 60                    # devices served (the most recently heard first; the receiver keeps up to 500)
 HOUR_S = 3600
 NOW_WORDS = {"scan433": "Scanning", "sondes": "Paused: listening for radiosondes"}
@@ -46,7 +48,12 @@ def clean(d: dict) -> dict | None:
             out[k] = d[k]
     if isinstance(d.get("name"), str) and d["name"]:
         out["name"] = d["name"][:40]
-        out["readings"] = {k: v for k, v in (d.get("readings") or {}).items() if isinstance(v, (int, float)) and isinstance(k, str)}
+    if isinstance(d.get("real"), str):
+        out["real"] = d["real"][:60]                  # (what rtl_433 calls it: "Acurite-Tower:1234", the key for a name in known.json; not sent for a car's tyre sensors)
+    r = {k[:40]: (v[:24] if isinstance(v, str) else v) for k, v in (d.get("readings") or {}).items()
+         if isinstance(k, str) and ((isinstance(v, (int, float)) and not isinstance(v, bool)) or isinstance(v, str))}
+    if r:
+        out["readings"] = dict(list(r.items())[:MAX_FIELDS])
     return out
 
 
@@ -70,7 +77,7 @@ class Radio433(Kept):
         self._address = address
         self._mem = threading.Lock()
         self._activity: dict[int, int] = {}          # quarter hour -> messages heard in it (by this radio's watching; memory only)
-        self._series: dict[str, list] = {}           # a named device -> [(t, temperature, humidity)]
+        self._series: dict[str, list] = {}           # a device (its made-up ID) that reports a temperature -> [(t, temperature, humidity)]
         self._total: int | None = None               # the service's message count at the last look (a smaller one: it restarted)
 
     def _fetch(self) -> dict:
@@ -92,13 +99,14 @@ class Radio433(Kept):
             for k in [k for k in self._activity if k < b - HIST_S / BUCKET_S]:
                 del self._activity[k]
             for d in devices:
-                if d.get("name") and d["ago_s"] < OLD_S * 3:
-                    r = d.get("readings") or {}
-                    s = self._series.setdefault(d["name"], [])
-                    if "temperature_C" in r or "humidity" in r:
-                        if not s or now - s[-1][0] >= SERIES_S:
-                            s.append((round(now), r.get("temperature_C"), r.get("humidity")))
-                            del s[:-SERIES_MAX]
+                r = d.get("readings") or {}
+                if d["ago_s"] < OLD_S * 3 and isinstance(r.get("temperature_C"), (int, float)):
+                    if d["id"] not in self._series and len(self._series) >= SERIES_DEVICES:
+                        del self._series[min(self._series, key=lambda k: self._series[k][-1][0])]
+                    s = self._series.setdefault(d["id"], [])
+                    if not s or now - s[-1][0] >= SERIES_S:
+                        s.append((round(now), r["temperature_C"], r.get("humidity")))
+                        del s[:-SERIES_MAX]
             first = b - int(HIST_S / BUCKET_S) + 1
             activity = [[(first + i) * BUCKET_S, self._activity.get(first + i, 0)] for i in range(int(HIST_S / BUCKET_S))]
             series = {k: [list(p) for p in v] for k, v in self._series.items()}
@@ -137,14 +145,22 @@ class Radio433(Kept):
 
 
 def reading(d: dict) -> str:
-    """A named device's readings in a few words ("7.5°C · 80%")."""
+    """A device's readings in a few words ("7.5°C · 80%"): its temperature, humidity and pressure, when it says them."""
     r = d.get("readings") or {}
     parts = []
-    if "temperature_C" in r:
+    if isinstance(r.get("temperature_C"), (int, float)):
         parts.append(f"{r['temperature_C']:g}°C")
-    if "humidity" in r:
+    if isinstance(r.get("humidity"), (int, float)):
         parts.append(f"{r['humidity']:g}%")
+    if isinstance(r.get("pressure_kPa"), (int, float)):
+        parts.append(f"{r['pressure_kPa']:g} kPa")
+    elif isinstance(r.get("pressure_hPa"), (int, float)):
+        parts.append(f"{r['pressure_hPa']:g} hPa")
     return " · ".join(parts)
+
+
+def label(d: dict) -> str:
+    return d.get("name") or d["model"]
 
 
 def tile(had: dict | None, alerted: set[str]) -> list[dict]:
@@ -152,13 +168,14 @@ def tile(had: dict | None, alerted: set[str]) -> list[dict]:
     if not had:
         return []
     recent = [d for d in had["devices"] if d["ago_s"] < HOUR_S]
-    named = [d for d in recent if d.get("name") and reading(d)]
+    named = [d for d in recent if reading(d)]
+    named.sort(key=lambda d: (not d.get("name"), d["ago_s"]))             # (yours first, then the latest heard)
     paused = had.get("job") != "scan433"
-    sub = (f"{named[0]['name']} {reading(named[0])}" if named else f"{len(recent)} device{'s' if len(recent) != 1 else ''} in the last hour") if (named or recent) else "nothing heard yet"
+    sub = (f"{label(named[0])} {reading(named[0])}" if named else f"{len(recent)} device{'s' if len(recent) != 1 else ''} in the last hour") if (named or recent) else "nothing heard yet"
     if paused:
         sub = state_word(had).replace("Paused: ", "paused: ").replace("Starting again", "starting again") + (f" · {sub}" if recent else "")
     return [{"key": "r433", "title": "433 MHz", "value": str(len(recent)), "state": "good" if recent else "quiet", "sub": sub,
-             "says": " ".join([state_word(had) + "."] + [f"{d['name']}: {reading(d)}." for d in named] +
+             "says": " ".join([state_word(had) + "."] + [f"{label(d)}: {reading(d)}." for d in named[:3]] +
                               [f"{len(recent)} device{'s' if len(recent) != 1 else ''} heard in the last hour ({had['messages']:,} messages since the scan began)."]) + " (your receiver's 433 MHz scan)"}]
 
 

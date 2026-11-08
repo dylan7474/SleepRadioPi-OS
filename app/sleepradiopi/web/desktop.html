@@ -644,6 +644,15 @@
   .r4-mine span { font-size: 11px; letter-spacing: .09em; text-transform: uppercase; color: var(--dim); }
   .r4-mine svg { grid-column: 1 / -1; width: 100%; height: 44px; color: var(--ink); }
   .r4-mine em { grid-column: 1 / -1; font: normal 10.5px var(--mono); color: var(--faint); }
+  .sd-mark { stroke: #0a1013; stroke-width: 1; }
+  .sd-track { fill: none; stroke: #ffe08a; stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
+  .sd-fall { stroke-dasharray: 6 4; }
+  .sd-row { display: grid; grid-template-columns: minmax(0, 1.3fr) minmax(0, 1fr) minmax(0, .8fr) minmax(0, 1fr); gap: 4px 10px; font-size: 12.5px; align-items: baseline; }
+  .sd-row .h { font-size: 10px; letter-spacing: .09em; text-transform: uppercase; color: var(--faint); padding-bottom: 4px; border-bottom: 1px solid var(--plate-line); }
+  .sd-row .c { padding: 4px 0; border-bottom: 1px solid color-mix(in srgb, var(--plate-line) 55%, transparent); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-variant-numeric: tabular-nums; }
+  .sd-row .d { color: var(--dim); }
+  .sd-row button.c { font: inherit; text-align: left; background: none; border: 0; border-bottom: 1px solid color-mix(in srgb, var(--plate-line) 55%, transparent); color: var(--ink); cursor: pointer; font-weight: 600; font-family: var(--mono); }
+  .sd-row button.c[aria-pressed="true"] { text-decoration: underline; text-underline-offset: 3px; }
   .r4-bars { color: var(--ink); }
   .r4-bars rect { fill: var(--amber-deep); }
   .r4-tab { display: grid; grid-template-columns: minmax(0, 1.5fr) minmax(0, .8fr) minmax(0, 1.1fr) minmax(0, .6fr); gap: 4px 10px; font-size: 12.5px; align-items: baseline; }
@@ -866,7 +875,7 @@ const PANEL = {};
 for (const [key, title, sym, h, page] of PANELS) PANEL[key] = mk({ id: "set:" + key, kind: "panel", key, title, sym, h, page });
 for (const [key, title, sym, h] of [["messages", "Messages", "✎", 55], ["birthdays", "Birthdays", "✿", 340], ["stations", "Stations", "R", 8],
                                     ["tests", "Test sounds", "▶", 150], ["stream", "Listen in a browser", "◠", 200], ["lists", "Themes", "A", 195],
-                                    ["findstation", "Find a station", "R", 8], ["findreceiver", "Find a receiver", "⌁", 200], ["modes", "Where to listen", "⌖", 215], ["conditions", "Band conditions", "☼", 45], ["quakes", "Earthquakes", "≋", 20], ["sun", "The sun", "☀", 45], ["aurora", "Aurora", "◠", 130], ["vhf", "VHF openings", "⌃", 200], ["warnings", "Warnings", "⚠", 35], ["signal", "My signal", "⌇", 210], ["qrz", "QRZ logbook", "Q", 225], ["lightning", "Lightning", "ϟ", 50], ["aircraft", "Aircraft", "✈", 215], ["r433", "433 MHz", "∿", 280], ["findroom", "Find a room", "☊", 265], ["findpodcast", "Follow a podcast", "P", 275], ["findbook", "Find a LibriVox book", "B", 150], ["findebook", "Find an ebook", "E", 160], ["newlist", "New theme", "A", 195]])
+                                    ["findstation", "Find a station", "R", 8], ["findreceiver", "Find a receiver", "⌁", 200], ["modes", "Where to listen", "⌖", 215], ["conditions", "Band conditions", "☼", 45], ["quakes", "Earthquakes", "≋", 20], ["sun", "The sun", "☀", 45], ["aurora", "Aurora", "◠", 130], ["vhf", "VHF openings", "⌃", 200], ["warnings", "Warnings", "⚠", 35], ["signal", "My signal", "⌇", 210], ["qrz", "QRZ logbook", "Q", 225], ["lightning", "Lightning", "ϟ", 50], ["aircraft", "Aircraft", "✈", 215], ["r433", "433 MHz", "∿", 280], ["sondes", "Radiosondes", "⇡", 300], ["findroom", "Find a room", "☊", 265], ["findpodcast", "Follow a podcast", "P", 275], ["findbook", "Find a LibriVox book", "B", 150], ["findebook", "Find an ebook", "E", 160], ["newlist", "New theme", "A", 195]])
   PANEL[key] = mk({ id: "set:" + key, kind: "panel", key, title, sym, h, page: key });
 const DJ = mk({ id: "dj", kind: "dj", title: "The DJ" });
 const NOTES = mk({ id: "notes", kind: "folder", box: "messages", title: "Messages", kids: [], sym: "✎" });   // a folder of sticky notes
@@ -1275,6 +1284,7 @@ const OUTSIDE_PIC = {
   qrz: '<rect x="4" y="3" width="16" height="18" rx="2"/><path d="M8 8h8M8 12h8M8 16h5"/>',
   lightning: '<path d="M13 2.5 5 13.5h6l-1 8 8-11h-6z"/>',
   aircraft: '<path d="M21 15.5 13.5 11V5a1.5 1.5 0 0 0-3 0v6L3 15.5V17l7.5-2v4L8.5 20.5V22l3.5-1 3.5 1v-1.5l-2-1.5v-4l7.5 2z"/>',
+  sondes: '<ellipse cx="12" cy="8" rx="5" ry="6"/><path d="M8.5 13.5 11 19h2l2.5-5.5M12 19v3"/>',
   r433: '<path d="M12 20V10"/><circle cx="12" cy="8" r="1.6"/><path d="M7.5 12.5a6 6 0 0 1 0-9M16.5 12.5a6 6 0 0 0 0-9M4.5 15a10 10 0 0 1 0-14M19.5 15a10 10 0 0 0 0-14"/>',
   signal: '<path d="M12 20V11"/><circle cx="12" cy="9" r="1.5"/><path d="M8.5 5.5a5 5 0 0 0 0 7M15.5 5.5a5 5 0 0 1 0 7M5.5 3a9 9 0 0 0 0 12M18.5 3a9 9 0 0 1 0 12"/>',
 };
@@ -3873,7 +3883,7 @@ function folderView(o, box, win) {
   else if (o.box === "playlists") tools.append(T("New playlist", newPlaylist), el("span", { className: "note", textContent: "Drop songs, albums or folders onto a playlist" }));
   else if (o.box === "programmes") tools.append(T("New programme", newProgramme), el("span", { className: "note", textContent: "A running order the radio plays by itself" }));
   else if (o.box === "stations") tools.append(T("Find a station", () => open(PANEL.findstation.id)), T("Find a receiver", () => open(PANEL.findreceiver.id)), T("Find a room", () => open(PANEL.findroom.id)), el("span", { className: "note", textContent: "Drag a station onto a button to keep it there" }));
-  else if (o.box === "outside") tools.append(T("Band conditions…", () => open(PANEL.conditions.id)), T("Aircraft…", () => open(PANEL.aircraft.id)), T("433 MHz…", () => open(PANEL.r433.id)), el("span", { className: "note", textContent: "Live from outside · open one for all of it · the DJ says it if you ask, in Band conditions" }));
+  else if (o.box === "outside") tools.append(T("Band conditions…", () => open(PANEL.conditions.id)), T("Aircraft…", () => open(PANEL.aircraft.id)), T("433 MHz…", () => open(PANEL.r433.id)), T("Radiosondes…", () => open(PANEL.sondes.id)), el("span", { className: "note", textContent: "Live from outside · open one for all of it · the DJ says it if you ask, in Band conditions" }));
   else if (o.box === "podcasts") tools.append(T("Follow a podcast", () => open(PANEL.findpodcast.id)), el("span", { className: "note", textContent: "Open a show for its episodes" }));
   else if (o.box === "lists") tools.append(T("New theme", () => open(PANEL.newlist.id)), el("span", { className: "note", textContent: "Double-click a theme to change it · drag one onto the radio to play it" }));
   else if (o.box === "receiver") tools.append(T("Find a receiver", () => open(PANEL.findreceiver.id)), T("Find a room", () => open(PANEL.findroom.id)), el("span", { className: "note", textContent: "Each opens as a rig · they're the receivers your saved stations use · Name… in a rig's window gives it a name of your own" }));
@@ -4537,6 +4547,76 @@ function awayGrp(a, act) {
     ...(a.list || []).map(m => el("p", { className: "note", style: "margin:2px 0", title: says(m), textContent: `“${m.text}” · ${says(m)}` })),
     help("In the document, each paragraph is a message. Start one with notes in square brackets to say when: [at 10:00 16:00], [every 60], [from 09:00 to 18:00], [until 2026-10-18], [days sat sun], [no date], [theme Carisbrooke], [off]. A line beginning with # is a note to yourself."));
 }
+// The built-in map under a radar-style scope (the Aircraft and Radiosondes windows): the coast, towns and airfields the radio carries (data/map.json, public-domain
+// data: /api/mapdata), drawn about the aerial in the same projection as the rings (distance and bearing: azimuthal equidistant), so what is plotted by distance
+// and bearing sits exactly on it. Nothing is fetched from anyone. The Map switch (srd.airmap) is the browser's own.
+const ScopeMap = {
+  SZ: 420, C: 210, R: 188, EARTH_NM: 3440.065, data: null, failed: false, asked: null,
+  on() { try { return localStorage.getItem("srd.airmap") !== "off"; } catch { return true; } },
+  get() { return this.asked ||= fetch("/api/mapdata").then(r => r.ok ? r.json() : Promise.reject()).then(d => { this.data = d; return d; }, () => { this.failed = true; return null; }); },
+  sv(t, at = {}, txt) { const n = document.createElementNS("http://www.w3.org/2000/svg", t); for (const k in at) n.setAttribute(k, at[k]); if (txt != null) n.textContent = txt; return n; },
+  proj(at, range) {                             // -> (lat, lon) => [x, y] on the scope, `range` nm across from the aerial to the rim
+    const D2R = Math.PI / 180, sl0 = Math.sin(at[0] * D2R), cl0 = Math.cos(at[0] * D2R), kk = this.R / range, { C, EARTH_NM } = this;
+    return (lat, lon) => {
+      const p = lat * D2R, dl = (lon - at[1]) * D2R, cp = Math.cos(p), c = Math.acos(Math.max(-1, Math.min(1, sl0 * Math.sin(p) + cl0 * cp * Math.cos(dl))));
+      const f = c < 1e-9 ? 1 : c / Math.sin(c) * EARTH_NM;
+      return [C + cp * Math.sin(dl) * f * kk, C - (cl0 * Math.sin(p) - sl0 * cp * Math.cos(dl)) * f * kk];
+    };
+  },
+  distNm(at, lat, lon) {                        // great-circle distance in nautical miles
+    const D2R = Math.PI / 180, a = Math.sin((lat - at[0]) * D2R / 2) ** 2 + Math.cos(at[0] * D2R) * Math.cos(lat * D2R) * Math.sin((lon - at[1]) * D2R / 2) ** 2;
+    return 2 * this.EARTH_NM * Math.asin(Math.min(1, Math.sqrt(a)));
+  },
+  rings(g, step, unit) {                        // four rings, each said, the compass points, the aerial in the middle
+    const { C, R } = this, sv = this.sv;
+    for (let i = 1; i <= 4; i++) {
+      const r = R * i / 4;
+      g.append(sv("circle", { cx: C, cy: C, r, fill: "none", stroke: "#8fe8bd", "stroke-opacity": i === 4 ? .75 : .45, "stroke-width": i === 4 ? 1.5 : 1.1, "stroke-dasharray": i === 4 ? "" : "4 4" }),
+               sv("text", { x: C + r * .7071, y: C - r * .7071 - 4, "text-anchor": "end", class: "rng" }, `${step * i} ${unit}`));
+    }
+    for (let d = 0; d < 360; d += 30) { const r = d * Math.PI / 180, big = d % 90 === 0;
+      g.append(sv("line", { x1: C + Math.sin(r) * (R - (big ? 12 : 7)), y1: C - Math.cos(r) * (R - (big ? 12 : 7)), x2: C + Math.sin(r) * R, y2: C - Math.cos(r) * R, stroke: "#8fe8bd", "stroke-opacity": big ? .7 : .4, "stroke-width": 1.1 })); }
+    g.append(sv("line", { x1: C, y1: C - R, x2: C, y2: C + R, stroke: "#8fe8bd", "stroke-opacity": .14 }), sv("line", { x1: C - R, y1: C, x2: C + R, y2: C, stroke: "#8fe8bd", "stroke-opacity": .14 }));
+    for (const [t, d] of [["N", 0], ["E", 90], ["S", 180], ["W", 270]]) { const r = d * Math.PI / 180; g.append(sv("text", { x: C + Math.sin(r) * (R - 22), y: C - Math.cos(r) * (R - 22) + 4, "text-anchor": "middle", class: "rng" }, t)); }
+  },
+  centre(g) { g.append(this.sv("circle", { cx: this.C, cy: this.C, r: 3, fill: "#fff" }), this.sv("circle", { cx: this.C, cy: this.C, r: 7, fill: "none", stroke: "#fff", "stroke-opacity": .6 })); },
+  ground(at, range) {                           // the land, towns and airfields: a <g> for the scope's SVG
+    const md = this.data, { C, R, SZ, EARTH_NM } = this, sv = this.sv;
+      const D2R = Math.PI / 180, cl0 = Math.cos(at[0] * D2R), proj = this.proj(at, range);
+      const dLat = range / 60 * 1.15 + .05, dLon = dLat / Math.max(.2, cl0);
+      const w = at[1] - dLon, e = at[1] + dLon, s = at[0] - dLat, n = at[0] + dLat;
+      const box = md.land10.box, fine = at[1] - dLon > box[0] && at[1] + dLon < box[2] && at[0] - dLat > box[1] && at[0] + dLat < box[3];
+      const L = fine ? md.land10 : md.land50, q = L.q, g = sv("g", { class: "air-ground" }); let d = "";
+      for (const r of L.rings) {
+        if (r[2] / q < w || r[0] / q > e || r[3] / q < s || r[1] / q > n) continue;      // (a ring nowhere near the scope)
+        let x = r[4], y = r[5], [px, py] = proj(y / q, x / q), lx = px, ly = py; d += `M${px.toFixed(1)} ${py.toFixed(1)}`;
+        for (let i = 6; i < r.length; i += 2) {
+          x += r[i]; y += r[i + 1];
+          [px, py] = proj(y / q, x / q);
+          const away = px < -SZ * .6 || px > SZ * 1.6 || py < -SZ * .6 || py > SZ * 1.6;      // (well outside the scope: only the shape of it is kept)
+          if (Math.abs(px - lx) + Math.abs(py - ly) < (away ? 30 : .7)) continue;             // (closer than a pixel -- or, far off, than a few -- to the last: not drawn)
+          d += `L${px.toFixed(1)} ${py.toFixed(1)}`; lx = px; ly = py;
+        }
+        d += "Z";
+      }
+      g.append(sv("path", { d, class: "air-land", "fill-rule": "evenodd" }));
+      const inView = (lat, lon) => { const [x, y] = proj(lat, lon); return Math.hypot(x - C, y - C) < R - 4 ? [x, y] : null; };
+      const places = [];                                                                   // (towns and airfields: the biggest, in view, as many as will read)
+      const townMin = range <= 40 ? 0 : range <= 120 ? 100000 : 400000, airMin = range <= 80 ? 0 : range <= 160 ? 1 : 2;
+      for (const t of md.towns) if (t[2] >= townMin) { const p = inView(t[1], t[0]); if (p) places.push({ kind: "town", p, name: t[3], rank: t[2] / 1e6 }); }
+      for (const a of md.airports) if (a[4] >= airMin) { const p = inView(a[1], a[0]); if (p) places.push({ kind: "air", p, name: a[2], full: a[3], rank: 100 + a[4] }); }
+      places.sort((u, v) => v.rank - u.rank);
+      const used = [];
+      for (const pl of places) {
+        const [x, y] = pl.p, W = pl.name.length * 6.6 + 8;
+        if (used.some(u => Math.abs(u[0] - x) < Math.max(u[2], W) && Math.abs(u[1] - y) < 13) || used.length > 30) continue;
+        used.push([x, y, W]);
+        if (pl.kind === "air") g.append(sv("path", { d: `M${x} ${y - 5}L${x + 5} ${y}L${x} ${y + 5}L${x - 5} ${y}Z`, class: "air-pt air-af" }), sv("text", { x: x + 8, y: y + 4, class: "air-pl" }, pl.name));
+        else g.append(sv("circle", { cx: x, cy: y, r: 2.6, class: "air-pt air-tn" }), sv("text", { x: x + 6, y: y + 4, class: "air-pl" }, pl.name));
+      }
+      return g;
+    },
+};
 const UI = {
   tests: {
     load: async () => (await api("/api/status")).speaker,
@@ -5332,11 +5412,9 @@ const UI = {
       // The scope: 420 units drawn at up to 420 px. Four rings in round numbers, each labelled; under them a map the radio carries itself (the coast, towns
       // and airfields, from public-domain data: /api/mapdata), drawn in the same projection as the rings -- distance and bearing from the aerial -- so the
       // aircraft are exactly where the map says. Nothing is fetched from anyone: it works with no internet, and the Map switch only hides it.
-      const SZ = 420, C = SZ / 2, R = 188, EARTH_NM = 3440.065;
+      const { SZ, C, R } = ScopeMap;
       const RANGES = [[8, 2], [20, 5], [40, 10], [80, 20], [120, 30], [160, 40], [200, 50], [320, 80]];        // [the range in nm, a ring every...]
-      const mapOn = () => { try { return localStorage.getItem("srd.airmap") !== "off"; } catch { return true; } };
-      const MAPDATA = (UI.aircraft.mapdata ||= { data: null, failed: false, asked: null });
-      const getMap = () => MAPDATA.asked ||= fetch("/api/mapdata").then(r => r.ok ? r.json() : Promise.reject()).then(d => { MAPDATA.data = d; return d; }, () => { MAPDATA.failed = true; return null; });
+      const mapOn = () => ScopeMap.on(), MAPDATA = ScopeMap, getMap = () => ScopeMap.get();
       const pick = a => {
         if (a.range) return [a.range, a.range / 4];                      // (set on the radio: kept in its settings; every range has four round rings)
         const sorted = placed.map(p => p.nm).sort((x, y) => x - y), far = sorted.length ? sorted[Math.min(sorted.length - 1, Math.floor(sorted.length * 0.85))] : 0,
@@ -5344,46 +5422,7 @@ const UI = {
         return RANGES.find(([r]) => r >= Math.max(far, flagFar)) || RANGES[RANGES.length - 1];
       };
       // The ground: land (whole numbers, delta-coded rings: see tools/build_mapdata.py), then towns and airfields as points with names.
-      const groundLayer = (md, at, range) => {
-        const D2R = Math.PI / 180, lat0 = at[0] * D2R, sl0 = Math.sin(lat0), cl0 = Math.cos(lat0), kk = R / range;
-        const proj = (lat, lon) => {                  // azimuthal equidistant about the aerial: nm east and north, then scope units
-          const p = lat * D2R, dl = (lon - at[1]) * D2R, cp = Math.cos(p), cosc = Math.max(-1, Math.min(1, sl0 * Math.sin(p) + cl0 * cp * Math.cos(dl))), c = Math.acos(cosc);
-          const f = c < 1e-9 ? 1 : c / Math.sin(c) * EARTH_NM;
-          return [C + cp * Math.sin(dl) * f * kk, C - (cl0 * Math.sin(p) - sl0 * cp * Math.cos(dl)) * f * kk];
-        };
-        const dLat = range / 60 * 1.15 + .05, dLon = dLat / Math.max(.2, cl0);
-        const w = at[1] - dLon, e = at[1] + dLon, s = at[0] - dLat, n = at[0] + dLat;
-        const box = md.land10.box, fine = at[1] - dLon > box[0] && at[1] + dLon < box[2] && at[0] - dLat > box[1] && at[0] + dLat < box[3];
-        const L = fine ? md.land10 : md.land50, q = L.q, g = sv("g", { class: "air-ground" }); let d = "";
-        for (const r of L.rings) {
-          if (r[2] / q < w || r[0] / q > e || r[3] / q < s || r[1] / q > n) continue;      // (a ring nowhere near the scope)
-          let x = r[4], y = r[5], [px, py] = proj(y / q, x / q), lx = px, ly = py; d += `M${px.toFixed(1)} ${py.toFixed(1)}`;
-          for (let i = 6; i < r.length; i += 2) {
-            x += r[i]; y += r[i + 1];
-            [px, py] = proj(y / q, x / q);
-            const away = px < -SZ * .6 || px > SZ * 1.6 || py < -SZ * .6 || py > SZ * 1.6;      // (well outside the scope: only the shape of it is kept)
-            if (Math.abs(px - lx) + Math.abs(py - ly) < (away ? 30 : .7)) continue;             // (closer than a pixel -- or, far off, than a few -- to the last: not drawn)
-            d += `L${px.toFixed(1)} ${py.toFixed(1)}`; lx = px; ly = py;
-          }
-          d += "Z";
-        }
-        g.append(sv("path", { d, class: "air-land", "fill-rule": "evenodd" }));
-        const inView = (lat, lon) => { const [x, y] = proj(lat, lon); return Math.hypot(x - C, y - C) < R - 4 ? [x, y] : null; };
-        const places = [];                                                                   // (towns and airfields: the biggest, in view, as many as will read)
-        const townMin = range <= 40 ? 0 : range <= 120 ? 100000 : 400000, airMin = range <= 80 ? 0 : range <= 160 ? 1 : 2;
-        for (const t of md.towns) if (t[2] >= townMin) { const p = inView(t[1], t[0]); if (p) places.push({ kind: "town", p, name: t[3], rank: t[2] / 1e6 }); }
-        for (const a of md.airports) if (a[4] >= airMin) { const p = inView(a[1], a[0]); if (p) places.push({ kind: "air", p, name: a[2], full: a[3], rank: 100 + a[4] }); }
-        places.sort((u, v) => v.rank - u.rank);
-        const used = [];
-        for (const pl of places) {
-          const [x, y] = pl.p, W = pl.name.length * 6.6 + 8;
-          if (used.some(u => Math.abs(u[0] - x) < Math.max(u[2], W) && Math.abs(u[1] - y) < 13) || used.length > 30) continue;
-          used.push([x, y, W]);
-          if (pl.kind === "air") g.append(sv("path", { d: `M${x} ${y - 5}L${x + 5} ${y}L${x} ${y + 5}L${x - 5} ${y}Z`, class: "air-pt air-af" }), sv("text", { x: x + 8, y: y + 4, class: "air-pl" }, pl.name));
-          else g.append(sv("circle", { cx: x, cy: y, r: 2.6, class: "air-pt air-tn" }), sv("text", { x: x + 6, y: y + 4, class: "air-pl" }, pl.name));
-        }
-        return g;
-      };
+      const groundLayer = (md, at, range) => ScopeMap.ground(at, range);
       const scope = a => {
         const [range, step] = pick(a), at = a.at;
         // At a range that is set, what is beyond it isn't drawn (it's in the table, and counted below the scope): but an aircraft with an alert is never hidden, it sits on the rim.
@@ -5496,36 +5535,31 @@ const UI = {
       const ago = s => s < 90 ? `${s} s ago` : s < 5400 ? `${Math.round(s / 60)} min ago` : `${Math.round(s / 3600)} h ago`;
       const sig = d => d.snr == null ? ["", "–"] : d.snr >= 15 ? [Math.min(d.snr, 30) / 30, "strong"] : d.snr >= 8 ? [d.snr / 30, "fair"] : [Math.max(d.snr, 2) / 30, "weak"];
       const fmt = (x, u) => x == null ? "–" : `${+x.toFixed(1)}${u}`;
-      const mine = a.devices.filter(d => d.name);
-      const spark = (name, col) => {
-        const pts = ((a.series || {})[name] || []).filter(p => p[col] != null);
+      const spark = (id, col, name) => {
+        const pts = ((a.series || {})[id] || []).filter(p => p[col] != null);
         if (pts.length < 2) return null;
         const t0 = pts[0][0], t1 = pts[pts.length - 1][0], lo = Math.min(...pts.map(p => p[col])), hi = Math.max(...pts.map(p => p[col])), span = (hi - lo) || 1;
         const g = sv("svg", { viewBox: "0 0 240 44", preserveAspectRatio: "none", "aria-label": `${name} over the last ${ago(Math.round(t1 - t0)).replace(" ago", "")}: ${fmt(lo, "°C")} to ${fmt(hi, "°C")}` });
         g.append(sv("polyline", { points: pts.map(p => `${(((p[0] - t0) / ((t1 - t0) || 1)) * 236 + 2).toFixed(1)},${(40 - ((p[col] - lo) / span) * 36).toFixed(1)}`).join(" "), fill: "none", stroke: "currentColor", "stroke-width": 1.6, "vector-effect": "non-scaling-stroke" }));
         return [g, `${ago(Math.round(t1 - t0)).replace(" ago", "")} of readings · lowest ${fmt(lo, "°C")} · highest ${fmt(hi, "°C")}`];
       };
-      const yours = d => {
-        const r = d.readings || {}, sp = spark(d.name, 1);
-        return el("div", { className: "r4-mine" }, el("div", {}, el("span", { textContent: d.name }), el("div", {}, el("b", { textContent: [r.temperature_C != null ? `${r.temperature_C}°C` : "", r.humidity != null ? `${r.humidity}%` : ""].filter(Boolean).join(" · ") || "no readings" }))),
-          el("span", { textContent: ago(d.ago_s) }), sp ? sp[0] : null, sp ? el("em", { textContent: sp[1] }) : null);
+      // What a device says, as rtl_433 reports it: the common ones in words, the rest as they come.
+      const LABELS = { temperature_C: ["Temperature", "°C"], temperature_F: ["Temperature", "°F"], humidity: ["Humidity", "%"], battery_V: ["Battery", " V"], pressure_kPa: ["Pressure", " kPa"], pressure_hPa: ["Pressure", " hPa"],
+        wind_avg_km_h: ["Wind", " km/h"], wind_max_km_h: ["Gust", " km/h"], wind_dir_deg: ["Wind from", "°"], rain_mm: ["Rain", " mm"], light_lux: ["Light", " lux"], uv: ["UV", ""], moisture: ["Moisture", "%"], strike_count: ["Lightning strikes", ""] };
+      const readingRows = d => Object.entries(d.readings || {}).map(([k, v]) => k === "battery_ok" ? ["Battery", v ? "OK" : "low"] : LABELS[k] ? [LABELS[k][0], `${typeof v === "number" ? +v.toFixed(2) : v}${LABELS[k][1]}`] : [k.replace(/_/g, " "), String(v)]);
+      const headline = d => { const r = d.readings || {}; return [r.temperature_C != null ? `${r.temperature_C}°C` : r.temperature_F != null ? `${r.temperature_F}°F` : "", r.humidity != null ? `${r.humidity}%` : ""].filter(Boolean).join(" · "); };
+      const card = d => {                              // one device: its name or model, what it says (the temperature big), its day of readings if it has a temperature, who it is and how well it's heard
+        const sp = spark(d.id, 1, d.name || d.model), [, word] = sig(d), more = readingRows(d).filter(([k]) => k !== "Temperature" && k !== "Humidity");
+        return el("div", { className: "r4-mine" }, el("div", {}, el("span", { textContent: d.name || d.model }), el("div", {}, el("b", { textContent: headline(d) || (more.length ? "" : "no readings") }))),
+          el("span", { textContent: ago(d.ago_s) }), more.length ? el("em", { textContent: more.map(([k, v]) => `${k} ${v}`).join(" · ") }) : null,
+          sp ? sp[0] : null, sp ? el("em", { textContent: sp[1] }) : null,
+          el("em", { textContent: `${d.name ? d.model + " · " : ""}${d.real || "ID not shown (a car's tyre sensor)"} · signal ${word} · ${d.count.toLocaleString("en-GB")} message${d.count === 1 ? "" : "s"}` }));
       };
       const bars = () => {
         const act = a.activity || [], max = Math.max(1, ...act.map(x => x[1])), g = sv("svg", { viewBox: `0 0 ${act.length * 3} 40`, preserveAspectRatio: "none", class: "r4-bars", style: "width:100%;height:46px", "aria-label": `Messages per quarter hour over the last day, most ${max}` });
         g.append(sv("line", { x1: 0, y1: 39.5, x2: act.length * 3, y2: 39.5, stroke: "currentColor", "stroke-opacity": .35, "stroke-width": 1, "vector-effect": "non-scaling-stroke" }));
         act.forEach((x, i) => { const h = x[1] ? Math.max(1.5, (x[1] / max) * 38) : 0; if (h) g.append(sv("rect", { x: i * 3, y: 40 - h, width: 2.2, height: h })); });
         return [g, `Messages heard per quarter hour, the last day (most: ${max}). Only what this radio has seen since it started.`];
-      };
-      const table = () => {
-        const rows = a.devices.filter(d => !d.name).slice(0, 14), cells = [];
-        for (const [t, c] of [["Device", ""], ["Heard", ""], ["Signal", ""], ["Messages", "r"]]) cells.push(el("div", { className: "h " + c, textContent: t }));
-        for (const d of rows) {
-          const [w, word] = sig(d);
-          cells.push(el("div", { className: "c", textContent: d.model, title: `Made-up ID ${d.id}` }), el("div", { className: "c d", textContent: ago(d.ago_s) }),
-                     el("div", { className: "c d" }, w === "" ? null : el("i", { className: "r4-sig", style: `width:${Math.round(w * 44)}px` }), word),
-                     el("div", { className: "c r", textContent: d.count.toLocaleString("en-GB") }));
-        }
-        return el("div", { className: "r4-tab" }, ...cells, a.devices.filter(d => !d.name).length > rows.length ? el("p", { className: "shelp", style: "grid-column:1/-1;margin:6px 0 0", textContent: `and ${a.devices.filter(d => !d.name).length - rows.length} more` }) : null);
       };
       const addr = el("input", { type: "text", id: "r433-addr", autocomplete: "off", spellcheck: false, value: a.address, placeholder: "The receiver's background service, like 192.168.50.4:8076" });
       addr.setAttribute("aria-label", "433 MHz receiver address");
@@ -5534,18 +5568,102 @@ const UI = {
         setTimeout(() => fitWin(PANEL.r433.id), 300); });
       addr.onkeydown = e => { if (e.key === "Enter") save(); };
       const recent = a.devices.filter(d => d.ago_s < 3600).length;
+      const ordered = a.devices.slice().sort((p, q) => (!!q.name - !!p.name) || ((q.readings?.temperature_C != null) - (p.readings?.temperature_C != null)) || p.ago_s - q.ago_s);
       return [
         a.up ? el("div", { className: "r4-state" + (a.paused ? " paused" : ""), role: "status", textContent: (a.paused ? "⏸ " : "● ") + a.now + (a.paused && a.windows?.length ? ` (radiosonde hours, UTC: ${a.windows.join(", ")})` : "") }) : null,
         a.up ? grp("Heard", el("p", { className: "shelp", style: "margin:0 0 8px", textContent: `${recent} device${recent === 1 ? "" : "s"} in the last hour · ${a.devices.length} since the scan began · ${(a.messages || 0).toLocaleString("en-GB")} messages` })) : null,
-        a.up && mine.length ? grp("Yours", ...mine.map(yours)) : null,
+        a.up && ordered.length ? grp("Devices heard", ...ordered.slice(0, 16).map(card), ordered.length > 16 ? help(`and ${ordered.length - 16} more`) : null,
+          help("Everything each device says, as it is sent (anyone's sensors are out there on the same frequency). To name one of yours, add the ID shown under it to known.json on the receiver: it then comes first, with your name. A car's tyre sensors are read but their ID is never shown: it would follow the car about.")) : null,
         a.up ? grp("Activity", ...(() => { const [g, t] = bars(); return [g, help(t)]; })()) : null,
-        a.up ? grp("Out there", a.devices.some(d => !d.name) ? table() : help("Nothing but your own devices heard yet."),
-          help("Other people's devices are counted under made-up IDs, with no readings: the receiver never keeps or shows who they are. A device of yours is named on the receiver (known.json there) and shows its readings.")) :
-          grp("433 MHz", help(a.address ? "The receiver isn't answering. That's normal away from home: the 433 MHz tile is in The world outside only while it does." : "No receiver set. The tile shows once one is.")),
+        a.up && !ordered.length ? grp("Devices heard", help("Nothing heard yet. Thermometers and weather stations send every half minute or so, so it can take a minute or two.")) : null,
+        !a.up ? grp("433 MHz", help(a.address ? "The receiver isn't answering. That's normal away from home: the 433 MHz tile is in The world outside only while it does." : "No receiver set. The tile shows once one is.")) : null,
         grp("The receiver", srow("Address", addr, sbtn(a.address ? "Change" : "Keep it", save, "primary")),
           a.address ? line(sbtn("Forget it", () => act(() => api("/api/radio433", { address: "" })))) : null,
           help("The background service on the receiver Pi (receiver/sleepradio_background.py, port 8076), like 192.168.50.4:8076. It scans 433.92 MHz whenever nobody is using that dongle (and listens for radiosondes in the launch hours); the VHF receiver always comes first. This radio asks it every half a minute or so; nothing is written to the card, and the history here starts again when the radio does.")),
       ];
+    },
+  },
+  // Radiosondes (a tile in The world outside, only while the receiver's background service answers): the weather balloons its decoder hears. The flights are
+  // kept in the radio's memory (the service only knows a flight while it hears it). Distances are km from the aerial; the map is the Aircraft scope's.
+  sondes: {
+    load: () => api("/api/sondes"),
+    build: (a, act) => {
+      const SM = ScopeMap, { SZ, C, R } = SM, sv = (...x) => SM.sv(...x), words = a.words || {}, flights = a.flights || [];
+      const ago = s => s < 90 ? `${s} s ago` : s < 5400 ? `${Math.round(s / 60)} min ago` : `${Math.round(s / 3600)} h ago`;
+      const num = (x, d = 1) => x == null ? "–" : (+x).toLocaleString("en-GB", { maximumFractionDigits: d });
+      const sel = flights.find(f => f.id === UI.sondes.sel) || flights[0], live = f => f.ago_s < 120;
+      const RANGES_KM = [40, 80, 160, 320, 640];                                       // four rings each, 10, 20, 40, 80, 160 km apart
+      const pickKm = f => {                                                              // the smallest range that holds the whole flight so far
+        const far = a.aerial ? Math.max(0, ...(f.track || []).filter(p => p.length >= 3).map(p => SM.distNm(a.aerial, p[0], p[1]) * 1.852), f.km || 0) : 0;
+        return RANGES_KM.find(r => r >= far * 1.05) || RANGES_KM[RANGES_KM.length - 1];
+      };
+      const scope = f => {
+        const at = a.aerial, track = (f.track || []).filter(p => p.length >= 3), km = pickKm(f), range = km / 1.852;
+        const g = sv("svg", { viewBox: `0 0 ${SZ} ${SZ}`, "aria-label": `Map: ${f.id} within ${km} kilometres of the aerial` });
+        if (SM.on() && SM.data && at) g.append(SM.ground(at, range));
+        SM.rings(g, km / 4, "km");
+        if (at) {
+          const pr = SM.proj(at, range), pts = track.map(p => pr(p[0], p[1])), top = track.reduce((m, p, i) => p[2] > track[m][2] ? i : m, 0), line = (from, to, cls) => to - from >= 1 ? sv("polyline", { class: cls, points: pts.slice(from, to + 1).map(p => p.map(v => v.toFixed(1)).join(",")).join(" ") }) : null;
+          g.append(...[line(0, top, "sd-track"), line(top, pts.length - 1, "sd-track sd-fall")].filter(Boolean));          // (up: a solid line; down after the burst: dashed)
+          if (pts.length) {
+            const [sx, sy] = pts[0], [x, y] = pts[pts.length - 1];
+            g.append(sv("rect", { x: sx - 4, y: sy - 4, width: 8, height: 8, fill: "#fff", class: "sd-mark" }), sv("text", { x: sx + 8, y: sy + 4, class: "air-pl" }, "launch"));
+            if (live(f)) g.append(sv("circle", { cx: x, cy: y, r: 14, fill: "none", stroke: "#fff6c8", "stroke-width": 2, class: "pulse" }));
+            g.append(f.state === "landed" || f.state === "lost" ? sv("path", { d: `M${x - 6} ${y - 6}L${x + 6} ${y + 6}M${x + 6} ${y - 6}L${x - 6} ${y + 6}`, stroke: "#ff9a8a", "stroke-width": 3, "stroke-linecap": "round", fill: "none" })
+              : sv("path", { d: f.state === "falling" ? `M${x - 8} ${y - 6}L${x + 8} ${y - 6}L${x} ${y + 8}Z` : `M${x - 8} ${y + 7}L${x + 8} ${y + 7}L${x} ${y - 8}Z`, fill: "#ffe08a", class: "sd-mark" }),
+              sv("text", { x: Math.min(x + 12, SZ - 96), y: y + 4, class: "air-ac" }, `${f.id} ${num(f.alt / 1000)} km`));
+          }
+          SM.centre(g);
+        }
+        return el("div", { className: "air-scope" }, g);
+      };
+      const fig = (big, unit, what, who) => el("div", { className: "air-fig" }, el("b", { textContent: big }, unit ? el("small", { textContent: unit }) : null), el("span", { textContent: what }), el("em", { textContent: who || " " }));
+      const dirs = ["N", "NE", "E", "SE", "S", "SW", "W", "NW"], dir = d => dirs[Math.round(d / 45) % 8];
+      const figures = f => el("div", { className: "air-figs" },
+        fig(num(f.alt / 1000), "km", "height", `${Math.round(f.alt * 3.28084).toLocaleString("en-GB")} ft · highest ${num(f.max_alt / 1000)} km`),
+        fig(f.vel_v == null ? "–" : num(Math.abs(f.vel_v)), f.vel_v == null ? "" : "m/s", f.state === "falling" ? "descending" : f.state === "climbing" ? "climbing" : "vertical", f.state === "steady" ? "level" : ""),
+        fig(f.km == null ? "–" : num(f.km), f.km == null ? "" : "km", "from you", f.deg == null ? "" : `${dir(f.deg)} (${f.deg}°)`),
+        fig(f.vel_h == null ? "–" : num(f.vel_h * 3.6, 0), f.vel_h == null ? "" : "km/h", "sideways", f.heading == null ? "" : `heading ${Math.round(f.heading)}°`),
+        fig(f.temp == null ? "–" : num(f.temp), f.temp == null ? "" : "°C", "outside there", f.humidity == null ? "" : `${num(f.humidity, 0)}% humidity`),
+        fig(f.snr == null ? "–" : num(f.snr, 0), f.snr == null ? "" : "dB", "signal", f.batt == null ? "" : `battery ${num(f.batt)} V`));
+      const where = f => {                                                              // the last position, as text (to copy) and as a link to a map (opened only when clicked)
+        const ll = `${f.lat.toFixed(5)}, ${f.lon.toFixed(5)}`;
+        return help(`${live(f) ? "Position now" : "Last position heard"}: ${ll} at ${Math.round(f.alt).toLocaleString("en-GB")} m, ${ago(f.ago_s)}.`);
+      };
+      const mapLink = f => el("a", { href: `https://www.openstreetmap.org/?mlat=${f.lat.toFixed(5)}&mlon=${f.lon.toFixed(5)}#map=14/${f.lat.toFixed(5)}/${f.lon.toFixed(5)}`, target: "_blank", rel: "noopener noreferrer", textContent: "Open that spot on OpenStreetMap (leaves the radio)" });
+      const table = () => {
+        const cells = [];
+        for (const t of ["Flight", "Type", "Highest", "Now"]) cells.push(el("div", { className: "h", textContent: t }));
+        for (const f of flights) {
+          const b = el("button", { type: "button", className: "c", textContent: f.id, title: "Show this flight" });
+          b.setAttribute("aria-pressed", String(f === sel));
+          b.onclick = () => act(async () => { UI.sondes.sel = f.id; });
+          cells.push(b, el("div", { className: "c d", textContent: `${f.type || "–"}${f.freq ? " · " + f.freq : ""}` }), el("div", { className: "c d", textContent: `${num(f.max_alt / 1000)} km` }),
+            el("div", { className: "c", textContent: `${words[f.state] || f.state} · ${ago(f.ago_s)}` }));
+        }
+        return el("div", { className: "sd-row" }, ...cells);
+      };
+      const nowWin = a.window && (a.window.on ? `Listening now, until ${a.window.end} UTC` : `Next listening ${a.window.start} UTC`);
+      const scopeBox = () => {
+        const box = el("div", { className: "air-scopebox" });
+        const draw = () => {
+          const cb = el("input", { type: "checkbox", id: "sd-map", checked: SM.on() });
+          cb.onchange = () => { try { localStorage.setItem("srd.airmap", cb.checked ? "on" : "off"); } catch {} if (cb.checked) SM.get().then(draw); else draw(); };
+          box.replaceChildren(scope(sel), el("p", { className: "shelp air-attr" }, el("label", {}, cb, " Map"), ` · rings every ${pickKm(sel) / 4} km · solid line: the climb, dashed: after the burst · ▲ climbing ▼ descending ✕ landed or lost`));
+        };
+        draw();
+        if (a.aerial && SM.on() && !SM.data && !SM.failed) SM.get().then(draw);
+        return box;
+      };
+      return [
+        a.up ? el("div", { className: "r4-state" + (a.job === "sondes" ? "" : " paused"), role: "status", textContent: (a.job === "sondes" ? "● Listening for radiosondes" + (a.window?.on ? ` · until ${a.window.end} UTC` : " · a flight is still being heard") : "⏸ " + (a.now || "") + (nowWin ? ` · ${nowWin}` : "")) }) : null,
+        a.up && sel ? [el("div", { className: "air" }, scopeBox(), figures(sel)), grp(sel.id + " · " + (sel.type || "radiosonde") + (sel.freq ? " · " + sel.freq : ""), where(sel), line(mapLink(sel)))] : null,
+        a.up && !sel ? grp("Radiosondes", help(`None heard yet. The decoder listens at the launch hours (${(a.windows || []).join(", ") || "set on the receiver"}, UTC: about 11:15 and 23:15) and a balloon is heard from about when it is launched until it lands; the flights then stay here, in the radio's memory.`)) : null,
+        a.up && flights.length ? grp("Flights (this radio's memory)", table()) : null,
+        !a.up ? grp("Radiosondes", help(a.address ? "The receiver isn't answering. That's normal away from home: the Radiosondes tile is in The world outside only while it does." : "No receiver set. Set the receiver's background service in the 433 MHz window (one address does both)."),
+                    line(sbtn("Open 433 MHz…", () => open(PANEL.r433.id)))) : null,
+        grp("About", help("Weather balloons are launched twice a day (about 11:15 and 23:15 UTC) and radio their position, height and readings on 400 to 406 MHz. The receiver's decoder (radiosonde_auto_rx) hears them when the dongle is free; nothing is uploaded anywhere. Heights are metres above the sea; distances are from your aerial. Only this radio's memory keeps the flights: a restart clears them.")),
+      ].flat().filter(Boolean);
     },
   },
   // My signal (a tile in The world outside): who heard the owner's callsign in the last day, from PSK Reporter.
@@ -7032,7 +7150,7 @@ function outsideSaw() {
   try { localStorage.setItem("srd.outsideSeen", JSON.stringify(outsideSeen)); } catch {}
   setTimeout(drawDesk); outsidePill();
 }
-const outsidePanel = key => PANEL[{ quakes: "quakes", warnings: "warnings", signal: "signal", qrz: "qrz", lightning: "lightning", aircraft: "aircraft", r433: "r433", sun: "sun", aurora: "aurora", vhf: "vhf" }[key] || "conditions"].id;
+const outsidePanel = key => PANEL[{ quakes: "quakes", warnings: "warnings", signal: "signal", qrz: "qrz", lightning: "lightning", aircraft: "aircraft", r433: "r433", sondes: "sondes", sun: "sun", aurora: "aurora", vhf: "vhf" }[key] || "conditions"].id;
 let pillAt = 0, pillOne = null, pillSays = false;
 function outsidePill(step) {                          // one alert at a time: first where it is (the tile's name), then what it says, four seconds each
   const p = $("outsidePill"), a = OUTSIDE_NOW.alerts;

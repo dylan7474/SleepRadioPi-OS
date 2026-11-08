@@ -258,9 +258,11 @@ A dongle that nobody is listening to can be doing something else.
   `/opt/radiosonde` (`git clone`, `python3 -m venv --system-site-packages venv`, `pip install -r requirements.txt`,
   `./build.sh`; `sox` from apt) with a `station.cfg` that has uploads **off** and its device set to the dongle.
 * **433 MHz.** The rest of the time `rtl_433` listens on 433.92 MHz for thermometers, weather stations and the
-  like. Other people's devices are counted under an ID made up on the receiver (a salted hash; the salt never
-  leaves it), with no readings. **Yours** are named in `/etc/sleepradio-background/known.json`,
-  `{"Acurite-Tower:1234": "Shed"}` (the model, a colon, the ID `rtl_433` shows), and show their readings.
+  like, and serves everything each one says (its readings: temperature, humidity, battery...) with its signal, under an
+  ID made up on the receiver (a salted hash; the salt never leaves it) and, as `real`, the name `rtl_433` gives it.
+  **Yours** are named in `/etc/sleepradio-background/known.json`, `{"Acurite-Tower:1234": "Shed"}` (the `real` value
+  shown under a device) and carry the name. A car's tyre sensors (`TPMS`) are read but their real ID is never kept or
+  shown. `rtl_433` runs with `-C si` (metric).
   Nothing is written to the SD card: the devices are kept in memory and served live (whoever polls `/433` keeps
   the history; a Sleep Radio does, in its own memory), and the sonde decoder's logs go to `/run` (RAM).
   `--log-433 FILE` is there if a log is wanted.

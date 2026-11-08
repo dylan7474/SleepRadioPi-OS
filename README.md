@@ -574,12 +574,23 @@ Actions, Sleep timer and Radio folders open:
   many devices -- thermometers, weather stations, doorbells -- it has heard in
   the last hour. The window says what the scan is doing in words (scanning, or
   paused because the VHF receiver is in use, or for radiosondes), draws a day of
-  messages, and lists what is out there with a signal bar and a word. Other
-  people's devices are only a model, a count and a signal, under an ID the
-  receiver made up; a device **of yours**, named in `known.json` on the receiver,
-  shows its readings and a day of them as a line. The radio asks the receiver
-  (it never sends), nothing is written to the card, and the history is in memory:
-  it begins again when the radio does. Away from home there is simply no tile.
+  messages, and shows **everything each device says**: a card per device with its
+  temperature and humidity (and battery, pressure, wind, rain...), a day of its
+  temperature as a line, its signal and how long ago it was heard. A device you
+  name in `known.json` on the receiver (the ID shown under it) comes first with
+  your name; a car's tyre sensors are read but their ID is never shown, as it
+  would follow the car about. The radio asks the receiver (it never sends),
+  nothing is written to the card, and the history is in memory: it begins again
+  when the radio does. Away from home there is simply no tile.
+- **Radiosondes.** The same service also listens for the weather balloons
+  launched twice a day (about 11:15 and 23:15 UTC) on 400-406 MHz. With the
+  receiver's address set (one address does both), a *Radiosondes* tile and window
+  show each flight: height, climb or descent rate, how far and which way from
+  your aerial, the temperature up there, and its track on the same built-in map as
+  the Aircraft scope (solid line up, dashed after the burst, ✕ where it was last
+  heard). The last few flights stay in the radio's memory (not the card), with the
+  last position as text and a link to open it on a map, for anyone who wants to
+  find a sonde. Nothing is uploaded anywhere.
 - **Quiet hours (do not disturb).** In The DJ's window: from and until
   (23:00 to 06:00 to begin with), or off. No news, birthday wishes, alerts
   or lightning bell in them; music and programmes play as usual.

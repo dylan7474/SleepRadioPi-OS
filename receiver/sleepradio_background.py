@@ -7,8 +7,8 @@ Runs beside sleepradio_receiver.py on the computer that has the dongle (standard
     balloons' signals (400-406 MHz), during the hours around the twice-daily launches (--sonde-window), and for
     as long as a flight is still being heard;
   * a 433 MHz scan: rtl_433 listens for the little sensors (thermometers, weather stations, doorbells) the rest
-    of the time. Only devices named in known.json show their readings; the others are a model, a count and a
-    signal strength, under an ID made up here (the real ID is never kept or shown).
+    of the time. Every device is served with what it says (temperature, humidity, battery...), its signal and a made-up ID;
+    ones named in known.json carry their name. (Tyre-pressure sensors are read but their real ID is never shown.)
 
 Nothing is written to the SD card: what is heard is kept in memory and served live (whoever polls it keeps the
 history), and the sonde decoder's own logs go to /run (RAM).
@@ -49,8 +49,9 @@ RESTART_AFTER_S = 30.0       # a job that died isn't started again sooner than t
 MAX_DEVICES = 500            # 433: devices remembered
 TRACK_POINTS = 300           # sondes: points of a flight's track served
 LOG_LIMIT = 256 * 1024       # 433: if a log file is asked for (--log-433), it is turned over at this size
-KEPT_READINGS = ("temperature_C", "temperature_F", "humidity", "battery_ok", "pressure_hPa", "wind_avg_km_h",
-                 "wind_max_km_h", "wind_dir_deg", "rain_mm", "light_lux", "uv")
+SKIP_FIELDS = {"time", "model", "id", "channel", "mic", "rssi", "snr", "noise", "freq", "freq1", "freq2", "protocol", "subtype", "raw_msg", "codes", "data", "len",
+               "count", "num_rows", "rows", "mod", "hop_index", "mcs", "sequence_num"}        # (rtl_433's own bookkeeping: what is left is what the device says)
+MAX_FIELDS = 14
 
 
 # --- when -------------------------------------------------------------------------------
@@ -87,9 +88,10 @@ def choose(minute: int, windows: list[tuple[int, int]], receiver_busy: bool, son
 
 
 class Devices:
-    """The 433 MHz devices heard. Their IDs are made up (a hash with a salt made at every start, held in memory), so what is
-    served says "an Acurite-Tower, 3 000 messages" and never whose it is. A device listed in known.json
-    ({"Acurite-Tower:1234": "Shed"}, the model and the real ID) is named and shows its readings."""
+    """The 433 MHz devices heard, with everything each one says (its readings: temperature, humidity, battery...). `id` is made up
+    (a hash with a salt made at every start, held in memory) to tell devices apart; `real` is what rtl_433 calls it ("Acurite-Tower:1234"),
+    which is what a name in known.json ({"Acurite-Tower:1234": "Shed"}) is matched on. Tyre-pressure sensors (TPMS) are the exception:
+    their IDs follow a car about, so they are counted and read but their real ID is never kept or shown."""
 
     def __init__(self, salt: bytes, known: dict[str, str] | None = None, log_path: Path | None = None) -> None:
         self.salt, self.known = salt, dict(known or {})
@@ -110,6 +112,7 @@ class Devices:
             return False
         now = time.time() if now is None else now
         real = f"{model}:{msg.get('id', msg.get('channel', ''))}"
+        hide = "TPMS" in model.upper() or str(msg.get("type", "")).upper() == "TPMS"      # (a car's tyre sensors: a number that follows it about)
         key = hashlib.sha256(self.salt + real.encode()).hexdigest()[:8]
         name = self.known.get(real)
         rssi, snr = msg.get("rssi"), msg.get("snr")
@@ -127,9 +130,14 @@ class Devices:
                     e[field] = round(float(value), 1)
             if isinstance(msg.get("freq"), (int, float)):
                 e["freq"] = round(float(msg["freq"]), 3)
+            if not hide:
+                e["real"] = real
             if name:
                 e["name"] = name
-                e["readings"] = {k: msg[k] for k in KEPT_READINGS if isinstance(msg.get(k), (int, float))}
+            readings = {k: (round(v, 2) if isinstance(v, float) else v) for k, v in msg.items()
+                        if k not in SKIP_FIELDS and ((isinstance(v, (int, float)) and not isinstance(v, bool)) or (isinstance(v, str) and 0 < len(v) <= 24))}
+            if readings:
+                e["readings"] = dict(list(readings.items())[:MAX_FIELDS])
         self._log({"t": int(now), "id": key, "model": model, "rssi": rssi})
         return True
 
@@ -169,6 +177,11 @@ def tidy(directory: Path, limit: int = 1_000_000) -> int:
     return n
 
 
+def _num(v, low: float = -998.0) -> float | None:
+    """A reading from the decoder, or None: it uses -1 and -9999 for what a sonde doesn't report."""
+    return v if isinstance(v, (int, float)) and not isinstance(v, bool) and v > low else None
+
+
 def flights_from(archive: dict, now: float | None = None) -> list[dict]:
     """radiosonde_auto_rx's /get_telemetry_archive -> the flights, the latest heard first."""
     now = time.time() if now is None else now
@@ -178,13 +191,13 @@ def flights_from(archive: dict, now: float | None = None) -> list[dict]:
             t = rec["latest_telem"]
             path = rec.get("path") or []
             step = max(1, len(path) // TRACK_POINTS)
-            vel_v = t.get("vel_v")
+            vel_v = _num(t.get("vel_v"))
             out.append({
                 "id": str(t.get("id", serial)), "type": t.get("type"), "freq": t.get("freq"),
-                "lat": t["lat"], "lon": t["lon"], "alt": t["alt"], "vel_v": vel_v, "vel_h": t.get("vel_h"),
-                "temp": t.get("temp"), "humidity": t.get("humidity"), "snr": t.get("snr"),
-                "state": "climbing" if isinstance(vel_v, (int, float)) and vel_v > 1 else
-                         "falling" if isinstance(vel_v, (int, float)) and vel_v < -1 else "steady",
+                "lat": t["lat"], "lon": t["lon"], "alt": t["alt"], "vel_v": vel_v, "vel_h": _num(t.get("vel_h")),
+                "heading": _num(t.get("heading")), "temp": _num(t.get("temp"), -200.0), "humidity": _num(t.get("humidity"), -0.5),
+                "pressure": _num(t.get("pressure"), 0.0), "batt": _num(t.get("batt"), 0.0), "snr": t.get("snr"),
+                "state": "climbing" if vel_v is not None and vel_v > 1 else "falling" if vel_v is not None and vel_v < -1 else "steady",
                 "last": rec.get("timestamp"), "ago_s": round(now - rec["timestamp"]) if rec.get("timestamp") else None,
                 "track": path[::step][-TRACK_POINTS:],
             })
@@ -410,7 +423,7 @@ def main(argv=None) -> int:
         "sondes": Job("sondes", [args.auto_rx_python, "auto_rx.py", "-c", "station.cfg", "-l", str(args.auto_rx_log)], cwd=str(args.auto_rx_dir),
                       env={"PYTHONDONTWRITEBYTECODE": "1"}),
         "scan433": Job("scan433", [args.rtl_433, "-d", f":{args.device}" if not args.device.isdigit() else args.device,
-                                   "-f", args.freq_433, "-g", str(args.gain), "-p", str(args.ppm), "-M", "level", "-F", "json"],
+                                   "-f", args.freq_433, "-g", str(args.gain), "-p", str(args.ppm), "-C", "si", "-M", "level", "-F", "json"],
                        on_line=devices.feed),
     }
     bg = Background(jobs, windows, receiver_busy_check(args.receiver), archive_fetcher(args.auto_rx_url), devices, log_dir=args.auto_rx_log)

@@ -38,23 +38,27 @@ def test_the_receiver_comes_first_and_a_flight_keeps_the_sonde_job() -> None:
     assert bgm.choose(minute(15), [], False, False) == "scan433"
 
 
-def test_433_devices_are_anonymous_unless_they_are_yours() -> None:
+def test_433_devices_show_everything_they_say_and_yours_are_named() -> None:
     d = bgm.Devices(b"salt", {"Acurite-Tower:1234": "Shed"})
     assert not d.feed("not json") and not d.feed("[1]") and not d.feed('{"id": 3}')
     for _ in range(3):
-        assert d.feed(json.dumps({"model": "Acurite-Tower", "id": 1234, "temperature_C": 7.5, "humidity": 80, "rssi": -9.4, "freq": 433.92}), now=100)
-    assert d.feed(json.dumps({"model": "Nexus-TH", "id": 77, "temperature_C": 21.0, "rssi": -15}), now=101)
+        assert d.feed(json.dumps({"model": "Acurite-Tower", "id": 1234, "channel": "A", "temperature_C": 7.5, "humidity": 80, "battery_ok": 1, "mic": "CRC",
+                                  "time": "2026-11-08 21:00:00", "rssi": -9.4, "snr": 18.2, "noise": -27.6, "freq": 433.92, "protocol": 40}), now=100)
+    assert d.feed(json.dumps({"model": "Nexus-TH", "id": 77, "temperature_C": 21.04567, "humidity": 40, "state": "OK", "rssi": -15}), now=101)
+    assert d.feed(json.dumps({"model": "Toyota", "type": "TPMS", "id": "5ab0c1", "pressure_kPa": 230.5, "temperature_C": 19}), now=102)
+    assert d.feed(json.dumps({"model": "Generic-TPMS", "id": "99", "pressure_kPa": 228}), now=103)
     snap = d.snapshot(now=110)
-    assert snap["messages"] == 4 and len(snap["devices"]) == 2
-    shed = next(e for e in snap["devices"] if e["model"] == "Acurite-Tower")
-    other = next(e for e in snap["devices"] if e["model"] == "Nexus-TH")
-    assert shed["name"] == "Shed" and shed["readings"] == {"temperature_C": 7.5, "humidity": 80} and shed["count"] == 3 and shed["ago_s"] == 10
-    assert "readings" not in other and "name" not in other
-    assert "1234" not in json.dumps(snap) and "77" not in other["id"] and len(other["id"]) == 8
-    assert bgm.Devices(b"other salt").snapshot()["devices"] == []        # (a different salt, a different made-up ID)
+    assert snap["messages"] == 6 and len(snap["devices"]) == 4
+    by = {e["model"]: e for e in snap["devices"]}
+    shed, other = by["Acurite-Tower"], by["Nexus-TH"]
+    assert shed["name"] == "Shed" and shed["count"] == 3 and shed["ago_s"] == 10 and shed["real"] == "Acurite-Tower:1234"
+    assert shed["readings"] == {"temperature_C": 7.5, "humidity": 80, "battery_ok": 1}          # (what it says, not rtl_433's own bookkeeping)
+    assert "name" not in other and other["real"] == "Nexus-TH:77" and other["readings"] == {"temperature_C": 21.05, "humidity": 40, "state": "OK"}     # (anyone's: shown)
+    assert "real" not in by["Toyota"] and "real" not in by["Generic-TPMS"] and by["Toyota"]["readings"]["pressure_kPa"] == 230.5   # (a car's tyre sensors: read, never named)
+    assert "5ab0c1" not in json.dumps(snap) and len(other["id"]) == 8
     d2 = bgm.Devices(b"other salt")
     d2.feed(json.dumps({"model": "Nexus-TH", "id": 77}))
-    assert d2.snapshot()["devices"][0]["id"] != other["id"]
+    assert d2.snapshot()["devices"][0]["id"] != other["id"]                                     # (a different salt, a different made-up ID)
 
 
 def test_433_remembers_a_limited_number_and_turns_its_log_over(tmp_path: Path, monkeypatch) -> None:
@@ -84,6 +88,17 @@ def test_flights_from_the_decoders_archive() -> None:
     assert flights[0]["state"] == "climbing" and flights[0]["ago_s"] == 10 and len(flights[0]["track"]) <= bgm.TRACK_POINTS
     assert flights[1]["state"] == "falling" and flights[1]["track"] == []
     assert bgm.flights_from({}) == [] and bgm.flights_from(None) == []
+
+
+def test_what_a_sonde_does_not_report_is_none_not_minus_9999() -> None:
+    archive = {"X1": {"timestamp": 100, "path": [], "latest_telem": {"id": "X1", "type": "RS41", "lat": 54.0, "lon": -1.0, "alt": 5000.0, "vel_v": 5.0,
+                                                                   "vel_h": -9999.0, "heading": -9999.0, "temp": -23.4, "humidity": -1.0, "pressure": -1, "batt": -1}}}
+    f = bgm.flights_from(archive, now=110)[0]
+    assert f["vel_h"] is None and f["heading"] is None and f["humidity"] is None and f["pressure"] is None and f["batt"] is None
+    assert f["temp"] == -23.4 and f["vel_v"] == 5.0 and f["state"] == "climbing"
+    good = {"X2": {"timestamp": 100, "path": [], "latest_telem": {"id": "X2", "lat": 1.0, "lon": 2.0, "alt": 100.0, "vel_v": -5.0, "vel_h": 12.5, "heading": 270.0, "humidity": 0.0, "pressure": 1013.2, "batt": 2.7, "temp": 0.0}}}
+    g = bgm.flights_from(good, now=100)[0]
+    assert g["vel_h"] == 12.5 and g["heading"] == 270.0 and g["humidity"] == 0.0 and g["pressure"] == 1013.2 and g["batt"] == 2.7 and g["temp"] == 0.0 and g["state"] == "falling"
 
 
 class FakeJob:

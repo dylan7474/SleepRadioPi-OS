@@ -715,7 +715,7 @@ ALERT_TILE = {"aurora": "aurora", "es": "vhf", "noaa": "sun", "quake": "quakes",
 
 def outside(s: dict, sun_now: dict | None, fc: dict | None, aurora_now: dict | None, day: bool, quakes_now: dict | None = None,
             warn_now: dict | None = None, spots_now: dict | None = None, qrz_now: dict | None = None, light_now: dict | None = None,
-            air_now: dict | None = None, r433_now: dict | None = None) -> dict:
+            air_now: dict | None = None, r433_now: dict | None = None, sondes_now: dict | None = None) -> dict:
     """The desktop's "The world outside" folder: a tile for each thing known, and the alerts there are now ->
     {"tiles": [{"key", "title", "value" (a few letters, on the tile), "state" ("good" | "fair" | "poor" |
     "alert" | "quiet"), "sub", "says", "alert"}], "alerts": [{"key", "tile", "short", "says"}]}. A tile is
@@ -763,9 +763,9 @@ def outside(s: dict, sun_now: dict | None, fc: dict | None, aurora_now: dict | N
                       "state": "alert" if "vhf" in alerted else "quiet",
                       "sub": f"sporadic E · {_and(es)}" if es else "nothing open",
                       "says": f"Sporadic E open on {_and(es)} across Europe (N0NBH)." if es else "No sporadic E or VHF aurora forecast (N0NBH)."})
-    from sleepradiopi.playback import aircraft, lightning, qrzlog, quakes, radio433, spots, ukwarnings
+    from sleepradiopi.playback import aircraft, lightning, qrzlog, quakes, radio433, sondes, spots, ukwarnings
     tiles += (lightning.tile(light_now, alerted) + ukwarnings.tile(warn_now, alerted) + quakes.tiles(quakes_now, alerted, quakes_now["t"] if (quakes_now or {}).get("gone") else None)
-              + spots.tile(spots_now) + qrzlog.tile(qrz_now, alerted) + aircraft.tile(air_now, alerted) + radio433.tile(r433_now, alerted))
+              + spots.tile(spots_now) + qrzlog.tile(qrz_now, alerted) + aircraft.tile(air_now, alerted) + radio433.tile(r433_now, alerted) + sondes.tile(sondes_now, alerted))
     now = time.time()
     source = {"sun": sun_now, "aurora": aurora_now, "vhf": fc, "warnings": warn_now, "quakes": quakes_now, "signal": spots_now, "qrz": qrz_now,
               "bands": fc if from_fc else None}
@@ -832,8 +832,8 @@ class Outside:
 
 def outside_feeds() -> list:
     """The Kept feeds in The world outside (lightning has a thread of its own)."""
-    from sleepradiopi.playback import aircraft, qrzlog, quakes, radio433, spots, ukwarnings
-    return [sun, forecast, aurora, quakes.quakes, ukwarnings.warnings, spots.spots, qrzlog.logbook, aircraft.aircraft, radio433.radio433]
+    from sleepradiopi.playback import aircraft, qrzlog, quakes, radio433, sondes, spots, ukwarnings
+    return [sun, forecast, aurora, quakes.quakes, ukwarnings.warnings, spots.spots, qrzlog.logbook, aircraft.aircraft, radio433.radio433, sondes.sondes]
 
 
 keeper = Outside(outside_feeds)
