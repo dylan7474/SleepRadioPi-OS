@@ -114,7 +114,8 @@ def test_what_it_says_when_nothing_is_heard() -> None:
     s = _s([], status={**STATUS, "job": None, "receiver_busy": True})
     s.fetch()
     had = s.status(False)
-    assert had["flights"] == [] and "Paused: the VHF receiver is in use" in had["says"] and "No radiosonde is being heard" in had["says"]
+    assert had["flights"] == [] and "Not listening for radiosondes now: the VHF receiver is in use" in had["says"] and "No radiosonde is being heard" in had["says"]
+    assert sondes.sonde_word({"job": "sondes"}) == "Listening for radiosondes" and "scanning 433 MHz sensors" in sondes.sonde_word({"job": "scan433"})
 
 
 def test_the_sonde_hours() -> None:
@@ -183,7 +184,7 @@ def test_from_the_web(tmp_path: Path, monkeypatch) -> None:
         assert "sondes" not in [t["key"] for t in get("/api/outside")["tiles"]]
         assert post({"address": "pi.local:8076"})["up"] is True               # (the one address, set in the 433 MHz window, starts both)
         d = get("/api/sondes")
-        assert d["up"] is True and d["flights"][0]["id"] == "V1234567" and d["job"] == "sondes" and d["now"] == "Paused: listening for radiosondes"
+        assert d["up"] is True and d["flights"][0]["id"] == "V1234567" and d["job"] == "sondes" and d["now"] == "Listening for radiosondes"
         assert d["window"]["start"] == "22:45" and d["words"]["landed"] == "landed (last heard)" and d["aerial"] == list(AT)
         assert "sondes" in [t["key"] for t in get("/api/outside")["tiles"]]
         assert post({"address": ""})["address"] == "" and get("/api/sondes")["flights"] == []       # (forgetting it forgets the flights too)

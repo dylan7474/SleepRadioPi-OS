@@ -35,6 +35,15 @@ M_TO_FT = 3.28084
 STATE_WORDS = {"climbing": "climbing", "falling": "descending", "steady": "steady", "landed": "landed (last heard)", "lost": "lost (last heard)"}
 
 
+def sonde_word(had: dict) -> str:
+    """What the dongle is doing, said for THIS window (the 433 MHz one says it its own way): the sonde job, or why it isn't."""
+    if had.get("job") == "sondes":
+        return "Listening for radiosondes"
+    if had.get("job") == "scan433":
+        return "Not listening for radiosondes now: the dongle is scanning 433 MHz sensors"
+    return "Not listening for radiosondes now: the VHF receiver is in use" if had.get("receiver_busy") else "Not listening for radiosondes now (starting again)"
+
+
 def aerial() -> tuple[float, float] | None:
     """Where the aerial is: the aircraft receiver's own place if it said, else the middle of the radio's locator square."""
     from sleepradiopi.playback import aircraft
@@ -159,7 +168,7 @@ class Sondes(Kept):
         if live:
             f = live[0]
             return f"{f.get('type') or 'A radiosonde'} {f['id']} is {STATE_WORDS.get(f['state'], f['state'])} at {f['alt'] / 1000:.1f} km" + (f", {f['km']:g} km from you." if "km" in f else ".")
-        return radio433.state_word(had) + ". No radiosonde is being heard."
+        return sonde_word(had) + ". No radiosonde is being heard."
 
 
 def tile(had: dict | None, alerted: set[str], minute: int | None = None) -> list[dict]:

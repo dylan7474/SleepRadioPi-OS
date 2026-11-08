@@ -38,7 +38,7 @@ def build(ctx):
         had = s_mod.sondes.status(False)
         t = time.gmtime()
         nxt = s_mod.next_window((had or {}).get("windows") or [], t.tm_hour * 60 + t.tm_min)
-        return {"address": r_mod.ADDRESS, "up": bool(had), "t": had and had["t"], "now": had and r_mod.state_word(had), "job": had and had.get("job"), "windows": (had or {}).get("windows") or [],
+        return {"address": r_mod.ADDRESS, "up": bool(had), "t": had and had["t"], "now": had and s_mod.sonde_word(had), "job": had and had.get("job"), "windows": (had or {}).get("windows") or [],
                 "window": nxt and {"start": nxt[0], "end": nxt[1], "on": nxt[2]}, "running": bool(had and had.get("running")), "flights": (had or {}).get("flights") or [],
                 "aerial": had and had.get("aerial"), "says": had and had["says"], "words": s_mod.STATE_WORDS}
 
