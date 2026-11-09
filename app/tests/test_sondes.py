@@ -184,12 +184,12 @@ def test_from_the_web(tmp_path: Path, monkeypatch) -> None:
     try:
         d = get("/api/sondes")
         assert d["up"] is False and d["flights"] == [] and d["address"] == ""
-        assert "sondes" not in [t["key"] for t in get("/api/outside")["tiles"]]
+        assert "sondes" not in [t["key"] for t in get("/api/outside")["tiles"] if not t.get("empty") and t["key"] != "lightning"]
         assert post({"address": "pi.local:8076"})["up"] is True               # (the one address, set in the 433 MHz window, starts both)
         d = get("/api/sondes")
         assert d["up"] is True and d["flights"][0]["id"] == "V1234567" and d["job"] == "sondes" and d["now"] == "Listening for radiosondes"
         assert d["window"]["start"] == "22:45" and d["words"]["landed"] == "landed (last heard)" and d["aerial"] == list(AT)
-        assert "sondes" in [t["key"] for t in get("/api/outside")["tiles"]]
+        assert "sondes" in [t["key"] for t in get("/api/outside")["tiles"] if not t.get("empty") and t["key"] != "lightning"]
         assert post({"address": ""})["address"] == "" and get("/api/sondes")["flights"] == []       # (forgetting it forgets the flights too)
     finally:
         httpd.shutdown()

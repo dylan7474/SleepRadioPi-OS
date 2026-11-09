@@ -70,11 +70,11 @@ def build(ctx):
             from sleepradiopi.playback import conditions as conditions_mod, survey as survey_mod
             out = conditions_mod.summary(conditions_mod.freshest(survey_mod.job)[1], ft8_mod.reader.heard()["heard"], time.time())
             from sleepradiopi.playback import aircraft as air_mod, lightning as lightning_mod, qrzlog as qrz_mod, quakes as quakes_mod, radio433 as r433_mod, sondes as sondes_mod, spots as spots_mod, ukwarnings as warn_mod
-            self._send(json.dumps(conditions_mod.outside(out, conditions_mod.sun.status(False, True), conditions_mod.forecast.status(False, True), conditions_mod.aurora.status(False, True),
+            self._send(json.dumps(conditions_mod.with_placeholders(conditions_mod.outside(out, conditions_mod.sun.status(False, True), conditions_mod.forecast.status(False, True), conditions_mod.aurora.status(False, True),
                                                          conditions_mod.daytime(time.time(), ft8_mod.HOME), quakes_mod.quakes.status(False, True),
                                                          warn_mod.warnings.status(False, True), spots_mod.spots.status(False, True), qrz_mod.logbook.status(False, True),
                                                          lightning_mod.watch.status(), air_mod.aircraft.status(False),
-                                                         r433_mod.radio433.status(False), sondes_mod.sondes.status(False))).encode(), "application/json")
+                                                         r433_mod.radio433.status(False), sondes_mod.sondes.status(False)))).encode(), "application/json")
             return True
         if path == "/api/health":
             # The menu-bar light (health.py): is something wrong? Quiet things that go wrong on a small radio, in a sentence each.
@@ -86,6 +86,14 @@ def build(ctx):
             except Exception:
                 offline = False
             self._send(json.dumps(health_mod.health.issues(conditions_mod.outside_feeds(), offline, clock_trusted())).encode(), "application/json")
+            return True
+        if path == "/api/notify":
+            # Notifications (playback/notify.py): every kind of alert, with its mode (off | active | always), and whether
+            # Flite is here to say them.
+            from sleepradiopi.playback import lightning as lightning_mod, notify as notify_mod
+            from sleepradiopi.tts import flite as flite_mod
+            kinds = [{"key": k, "label": label, "mode": lightning_mod.WHEN if k == "lightning" else notify_mod.mode(k)} for k, label in notify_mod.KINDS.items()]
+            self._send(json.dumps({"kinds": kinds, "modes": list(notify_mod.MODES), "flite": flite_mod.available()}).encode(), "application/json")
             return True
         if path == "/api/lightning":
             # The Lightning window (playback/lightning.py): strikes within "area_km" of the locator in the last three
@@ -175,6 +183,8 @@ def build(ctx):
                     save_setting(config_file, "conditions_every_h", every)
             if alerts is not None:
                 conditions_mod.ALERTS = alerts
+                from sleepradiopi.playback import notify as notify_mod
+                notify_mod.set_default(alerts)               # (the old switch: what a kind not set in Notifications follows)
                 if config_file is not None:
                     save_setting(config_file, "conditions_alerts", alerts)
             self._send(json.dumps({"say_every_h": conditions_mod.EVERY_H, "alerts": conditions_mod.ALERTS}).encode(), "application/json")
@@ -210,6 +220,45 @@ def build(ctx):
                 from sleepradiopi.io.announce import Clip as BellClip
                 speaker.play_clip(BellClip(lightning_mod.bell(), "bell", "Lightning"))
             self._send(json.dumps({"on": lightning_mod.ON, "bell": lightning_mod.BELL, "when": lightning_mod.WHEN}).encode(), "application/json")
+            return True
+        if path == "/api/notify":
+            # {"modes": {"aurora": "off" | "active" | "always", ...}}: when each kind of alert may be said (kept; lightning's is
+            # lightning_when); {"test": "aurora"}: say a sample of it now (lightning: ring the bell), quiet hours or not.
+            from sleepradiopi.playback import lightning as lightning_mod, notify as notify_mod
+            try:
+                body = self._body()
+                given, test = body.get("modes"), body.get("test")
+                if (given is None and test is None) or (given is not None and (not isinstance(given, dict) or not given
+                        or any(k not in notify_mod.KINDS or v not in notify_mod.MODES for k, v in given.items()))) \
+                        or (test is not None and test not in notify_mod.KINDS):
+                    raise ValueError
+            except (ValueError, TypeError, AttributeError):
+                self._error('send {"modes": {"aurora": "off", "quake": "active", "met": "always"}} or {"test": "aurora"}')
+                return True
+            if given:
+                for k, v in given.items():
+                    if k == "lightning":
+                        lightning_mod.WHEN = v
+                        lightning_mod.BELL = v != "off"
+                        if config_file is not None:
+                            save_setting(config_file, "lightning_when", v)
+                    else:
+                        notify_mod.modes[k] = v
+                if config_file is not None and any(k != "lightning" for k in given):
+                    save_setting(config_file, "notify", dict(notify_mod.modes))
+            if test:
+                if test == "lightning":
+                    if speaker is None:
+                        self._error("this radio has no speaker")
+                        return True
+                    from sleepradiopi.io.announce import Clip as BellClip
+                    speaker.play_clip(BellClip(lightning_mod.bell(), "bell", "Lightning"))
+                elif notify_mod.notifier is None:
+                    self._error("this radio can't say alerts")
+                    return True
+                else:
+                    notify_mod.notifier.say(f"This is a test of the {notify_mod.KINDS[test]} alert.", notify_mod.KINDS[test])
+            self._send(json.dumps({"ok": True}).encode(), "application/json")
             return True
         if path == "/api/qrz":
             # {"key": "..."}: the QRZ logbook's access key, kept (never sent back); "" forgets it and what was had.

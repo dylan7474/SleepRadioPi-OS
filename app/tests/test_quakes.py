@@ -150,7 +150,7 @@ def test_the_earthquakes_window_from_the_web(tmp_path: Path, monkeypatch) -> Non
         assert d["had"] and [x["mag"] for x in d["world"]] == [6.8] and d["uk"][0]["km"] < 20 and d["alerts"] is False
         assert d["alert_at"] == {"world": 6.5, "uk": 3.0, "near": 2.0, "near_km": 100}
         with urllib.request.urlopen(base + "/api/outside", timeout=5) as r:
-            keys = [t["key"] for t in json.loads(r.read())["tiles"]]
+            keys = [t["key"] for t in json.loads(r.read())["tiles"] if not t.get("empty") and t["key"] != "lightning"]
         assert keys == ["quakes", "qrz"]                              # (the QRZ tile is always there: where its key goes in)
         monkeypatch.setattr(quakes, "quakes", quakes.Quakes(get_json=lambda url: (_ for _ in ()).throw(OSError("offline")),
                                                            get_xml=lambda url: (_ for _ in ()).throw(OSError("offline"))))

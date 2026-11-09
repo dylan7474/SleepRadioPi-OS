@@ -192,7 +192,7 @@ def test_from_the_web(tmp_path: Path, monkeypatch) -> None:
             d = json.loads(r.read())
         assert d["call"] == "M8ODJ" and [x["call"] for x in d["spots"]][0] == "DL1ABC" and "callsign=M8ODJ" in d["map"]
         with urllib.request.urlopen(base + "/api/outside", timeout=5) as r:
-            keys = [t["key"] for t in json.loads(r.read())["tiles"]]
+            keys = [t["key"] for t in json.loads(r.read())["tiles"] if not t.get("empty") and t["key"] != "lightning"]
         assert keys == ["warnings", "signal", "qrz"]
         for bad in ({}, {"region": "xx"}, {"region": 3}):
             assert post("/api/warnings", bad)[0] == 400

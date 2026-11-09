@@ -153,7 +153,12 @@ class Watch:
                     self.listen()
                 except Exception:                    # (nothing of the lightning may stop the radio)
                     log.exception("lightning: the spell failed")
-            self._stop.wait(max(5.0, EVERY_S - (self._clock() - began)))
+            was_on = ON
+            while not self._stop.is_set() and self._clock() - began < EVERY_S:
+                self._stop.wait(5.0)
+                if ON and not was_on:                # (switched on from the page: listen now, not at the next round)
+                    break
+                was_on = ON
 
     def listen(self, spell: float = SAMPLE_S) -> int:
         """One spell: listen for `spell` seconds -- longer while strikes keep landing near. -> how many near."""
@@ -261,6 +266,17 @@ def says(st: dict, now: float | None = None) -> str:
             f"the nearest {near['km']} km to the {compass(near['deg'])}.")
 
 
+def near_words(st: dict | None, now: float | None = None) -> str:
+    """What the bell is followed by, in words: how near the storm is ("A storm: the nearest strike 12 kilometres to the
+    north east, 7 in the last hour"). Empty with nothing near."""
+    h = hour(st or {}, now) if st else []
+    if not h:
+        return ""
+    near = min(h, key=lambda s: s["km"])
+    return (f"Lightning. The nearest strike is {near['km']} kilometres to the {compass(near['deg'])}; "
+            f"{len(h)} in the last hour.")
+
+
 def alerts(st: dict | None, now: float | None = None) -> list[tuple[str, int, str, str]]:
     """A storm come within ALERT_KM in the last FRESH_S (conditions.alerts_now()): once a storm -- the key is when
     its spell of near strikes began. Closer than in the ten minutes before: "getting closer"."""
@@ -289,8 +305,14 @@ def tile(st: dict | None, alerted: set[str], now: float | None = None) -> list[d
     if st and not st.get("on"):                      # (off: the tile stays, so the way to turn it on can be found)
         return [{"key": "lightning", "title": "Lightning", "value": "off", "state": "quiet", "sub": "not watching",
                  "says": "Not watching for lightning: open this to turn it on."}]
-    if not st or not st.get("home") or (st.get("listened") is None and not st.get("strikes")):
-        return []                                    # (not until it has listened: a radio with no internet has no tile)
+    if not st:
+        return []
+    if not st.get("home"):                           # (never hidden: it says what it needs)
+        return [{"key": "lightning", "title": "Lightning", "value": "locator", "state": "quiet", "sub": "set the radio's locator",
+                 "says": "Lightning is near-here only: set the radio's locator (Settings, This radio) so it knows where to listen."}]
+    if st.get("listened") is None and not st.get("strikes"):
+        return [{"key": "lightning", "title": "Lightning", "value": "wait", "state": "quiet", "sub": "not listened yet",
+                 "says": "Watching for lightning: it has not listened yet (it listens now and then)."}]
     h = hour(st, now)
     near = min(h, key=lambda s: s["km"]) if h else None
     return [{"key": "lightning", "title": "Lightning", "value": f"{near['km']} km" if near else "none",

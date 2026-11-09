@@ -261,13 +261,13 @@ def test_from_the_web(tmp_path: Path, monkeypatch) -> None:
     try:
         d = get("/api/aircraft")
         assert d["address"] == "" and d["up"] is False and d["planes"] == []
-        assert "aircraft" not in [t["key"] for t in get("/api/outside")["tiles"]]
+        assert "aircraft" not in [t["key"] for t in get("/api/outside")["tiles"] if not t.get("empty") and t["key"] != "lightning"]
         for bad in ({}, {"address": 3}, {"address": "ftp://x"}, {"address": "a b"}):
             assert post(bad)[0] == 400
         code, d = post({"address": "pi.local:8080"})
         assert code == 200 and d["up"] is True and d["n"] == 6 and d["emergency"][0]["call"] == "EMRG1"
         assert json.loads(conf.read_text())["aircraft_url"] == "pi.local:8080"
-        assert "aircraft" in [t["key"] for t in get("/api/outside")["tiles"]]
+        assert "aircraft" in [t["key"] for t in get("/api/outside")["tiles"] if not t.get("empty") and t["key"] != "lightning"]
         answers["/data/aircraft.json"] = None                                                                 # the receiver goes
         code, d = post({"address": "pi.local:8080"})
         assert d["up"] is False and d["address"] == "pi.local:8080"

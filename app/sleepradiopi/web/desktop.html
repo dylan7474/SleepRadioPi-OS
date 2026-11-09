@@ -875,7 +875,7 @@ const PANEL = {};
 for (const [key, title, sym, h, page] of PANELS) PANEL[key] = mk({ id: "set:" + key, kind: "panel", key, title, sym, h, page });
 for (const [key, title, sym, h] of [["messages", "Messages", "✎", 55], ["birthdays", "Birthdays", "✿", 340], ["stations", "Stations", "R", 8],
                                     ["tests", "Test sounds", "▶", 150], ["stream", "Listen in a browser", "◠", 200], ["lists", "Themes", "A", 195],
-                                    ["findstation", "Find a station", "R", 8], ["findreceiver", "Find a receiver", "⌁", 200], ["modes", "Where to listen", "⌖", 215], ["conditions", "Band conditions", "☼", 45], ["quakes", "Earthquakes", "≋", 20], ["sun", "The sun", "☀", 45], ["aurora", "Aurora", "◠", 130], ["vhf", "VHF openings", "⌃", 200], ["warnings", "Warnings", "⚠", 35], ["signal", "My signal", "⌇", 210], ["qrz", "QRZ logbook", "Q", 225], ["lightning", "Lightning", "ϟ", 50], ["aircraft", "Aircraft", "✈", 215], ["r433", "433 MHz", "∿", 280], ["sondes", "Radiosondes", "⇡", 300], ["findroom", "Find a room", "☊", 265], ["findpodcast", "Follow a podcast", "P", 275], ["findbook", "Find a LibriVox book", "B", 150], ["findebook", "Find an ebook", "E", 160], ["newlist", "New theme", "A", 195]])
+                                    ["findstation", "Find a station", "R", 8], ["findreceiver", "Find a receiver", "⌁", 200], ["modes", "Where to listen", "⌖", 215], ["conditions", "Band conditions", "☼", 45], ["quakes", "Earthquakes", "≋", 20], ["sun", "The sun", "☀", 45], ["aurora", "Aurora", "◠", 130], ["vhf", "VHF openings", "⌃", 200], ["warnings", "Warnings", "⚠", 35], ["signal", "My signal", "⌇", 210], ["qrz", "QRZ logbook", "Q", 225], ["lightning", "Lightning", "ϟ", 50], ["notify", "Notifications", "♪", 20], ["aircraft", "Aircraft", "✈", 215], ["r433", "433 MHz", "∿", 280], ["sondes", "Radiosondes", "⇡", 300], ["findroom", "Find a room", "☊", 265], ["findpodcast", "Follow a podcast", "P", 275], ["findbook", "Find a LibriVox book", "B", 150], ["findebook", "Find an ebook", "E", 160], ["newlist", "New theme", "A", 195]])
   PANEL[key] = mk({ id: "set:" + key, kind: "panel", key, title, sym, h, page: key });
 const DJ = mk({ id: "dj", kind: "dj", title: "The DJ" });
 const NOTES = mk({ id: "notes", kind: "folder", box: "messages", title: "Messages", kids: [], sym: "✎" });   // a folder of sticky notes
@@ -3883,7 +3883,7 @@ function folderView(o, box, win) {
   else if (o.box === "playlists") tools.append(T("New playlist", newPlaylist), el("span", { className: "note", textContent: "Drop songs, albums or folders onto a playlist" }));
   else if (o.box === "programmes") tools.append(T("New programme", newProgramme), el("span", { className: "note", textContent: "A running order the radio plays by itself" }));
   else if (o.box === "stations") tools.append(T("Find a station", () => open(PANEL.findstation.id)), T("Find a receiver", () => open(PANEL.findreceiver.id)), T("Find a room", () => open(PANEL.findroom.id)), el("span", { className: "note", textContent: "Drag a station onto a button to keep it there" }));
-  else if (o.box === "outside") tools.append(T("Band conditions…", () => open(PANEL.conditions.id)), T("Aircraft…", () => open(PANEL.aircraft.id)), T("433 MHz…", () => open(PANEL.r433.id)), T("Radiosondes…", () => open(PANEL.sondes.id)), el("span", { className: "note", textContent: "Live from outside · open one for all of it · the DJ says it if you ask, in Band conditions" }));
+  else if (o.box === "outside") tools.append(T("Notifications…", () => open(PANEL.notify.id)), T("Lightning…", () => open(PANEL.lightning.id)), T("Band conditions…", () => open(PANEL.conditions.id)), T("Aircraft…", () => open(PANEL.aircraft.id)), T("433 MHz…", () => open(PANEL.r433.id)), T("Radiosondes…", () => open(PANEL.sondes.id)), el("span", { className: "note", textContent: "Live from outside · open one for all of it · the DJ says it if you ask, in Band conditions" }));
   else if (o.box === "podcasts") tools.append(T("Follow a podcast", () => open(PANEL.findpodcast.id)), el("span", { className: "note", textContent: "Open a show for its episodes" }));
   else if (o.box === "lists") tools.append(T("New theme", () => open(PANEL.newlist.id)), el("span", { className: "note", textContent: "Double-click a theme to change it · drag one onto the radio to play it" }));
   else if (o.box === "receiver") tools.append(T("Find a receiver", () => open(PANEL.findreceiver.id)), T("Find a room", () => open(PANEL.findroom.id)), el("span", { className: "note", textContent: "Each opens as a rig · they're the receivers your saved stations use · Name… in a rig's window gives it a name of your own" }));
@@ -4478,6 +4478,16 @@ const hostFor = (name, fallback) => (name || "").normalize("NFKD").replace(/[^\x
 const srow = (label, control, extra) => el("div", { className: "srow" }, el("label", { textContent: label }), control, extra || el("span"));
 const grp = (title, ...rows) => el("div", { className: "grp" }, title ? el("h3", { textContent: title }) : null, ...rows);
 const help = t => el("p", { className: "shelp", textContent: t });
+const NOTIFY_MODES = [["off", "Muted"], ["active", "Armed: playing"], ["always", "Armed: playing or paused"]];
+// an alert's mode (playback/notify.py): muted | armed while the radio plays | armed while it plays or is paused (the quiet hours beat all three)
+const notifySelect = (kind, label) => {
+  const s = el("select", { "aria-label": label + ": when it may be said" });
+  NOTIFY_MODES.forEach(([v, t]) => s.append(new Option(t, v)));
+  api("/api/notify").then(N => { const k = N.kinds.find(x => x.key === kind); if (k) s.value = k.mode; }).catch(() => {});
+  s.onchange = () => api("/api/notify", { modes: { [kind]: s.value } }).catch(e => toast(e.message));
+  return s;
+};
+const notifyRow = (kind, label) => srow(label, notifySelect(kind, label), line(sbtn("Hear it", () => api("/api/notify", { test: kind }).catch(e => toast(e.message)))));
 
 // Step by step, in Cloudflare's own words, for someone who has never used it. Open until a token is kept.
 function cloudflareGuide(open) {
@@ -4779,7 +4789,8 @@ const UI = {
         (() => { const from = timeIn({ value: hhmm(d.quiet_start_min ?? 1380), id: "quiet-from" }), until = timeIn({ value: hhmm(d.quiet_end_min ?? 360), id: "quiet-until" });
           from.onchange = () => set({ quiet_start_min: minsOf(from.value) }); until.onchange = () => set({ quiet_end_min: minsOf(until.value) });
           return grp("Quiet hours (do not disturb)", srow("Quiet hours", sw(d.quiet_on, v => set({ quiet_on: v }), "Quiet hours")), srow("From", from), srow("Until", until),
-            help("No news, birthday wishes or alerts from the DJ in them, and no lightning bell. Music and programmes play as usual.")); })(),
+            help("No news, birthday wishes or alerts in them, and no lightning bell: nothing gets past them. Music and programmes play as usual. Which alerts may be said, and when, is in Notifications (The world outside)."),
+            line(sbtn("Notifications…", () => open(PANEL.notify.id)))); })(),
         grp("Waking up", srow("At power-on", seg([[true, "Chime"], [false, "Silent"]], d.startup_sound, v => set({ startup_sound: v })))),
         grp("Each theme's own", help("How much the DJ talks, time checks, the news, jingles and 70s hooks belong to each theme: in its Settings."),
           d.theme ? line(sbtn(`${stationOf(d.theme)}'s settings…`, () => { mk({ id: "tset:" + d.theme, kind: "panel", key: "tset", name: d.theme, title: "Settings", sym: "⚙" }); open("tset:" + d.theme); })) : null),
@@ -5226,9 +5237,8 @@ const UI = {
         srow("Every", seg([[0, "Never"], [1, "Hour"], [2, "2 h"], [3, "3 h"], [6, "6 h"]], c.say_every_h, v => act(() => api("/api/rx/conditions", { say_every_h: v })))),
         c.spoken ? el("p", { className: "note", id: "cond-spoken", textContent: `As it would be said now: “${c.spoken}”` }) : null,
         help("Like the news: at a quarter past the hour or the first gap after, on Theme Radio with the DJ on, and not in the news's quiet hours. What the radio has heard comes first; with no survey lately it says N0NBH's forecast instead."),
-        srow("Alerts", sw(c.alerts, v => act(() => api("/api/rx/conditions", { alerts: v })), "Alerts"),
-          help(c.alerts ? "Said in the next gap, whatever the hour" : "Off")),
-        help("When AuroraWatch UK goes to amber or red, sporadic E opens on 6, 4 or 2 m, or NOAA reports a strong radio blackout or geomagnetic storm: once, when it starts, in the next gap between songs (not in the quiet hours)."))],
+        notifyRow("aurora", "Aurora alerts"), notifyRow("es", "Sporadic E openings"), notifyRow("noaa", "Solar storms and blackouts"),
+        help("Each says once when it starts, in Flite's voice: AuroraWatch UK at amber or red, sporadic E on 6, 4 or 2 m, or a strong NOAA radio blackout or geomagnetic storm. Muted never speaks; the quiet hours stop all of them."))],
   },
   // Log: the radio's log, newest at the bottom (logView below keeps its own state: it refreshes itself while Follow is on)
   log: {
@@ -5250,8 +5260,8 @@ const UI = {
         grp(`In the UK, the last ${q.hours} hours`, ...(q.uk.length ? q.uk.map(x => row(x, true)) : [help(q.had ? "None." : "Not had yet.")]),
           help("From the British Geological Survey: mostly small ones, felt by few if any.")),
         grp("Said by the DJ",
-          srow("Alerts", sw(q.alerts, v => act(() => api("/api/rx/conditions", { alerts: v })), "Alerts"), help(q.alerts ? "Said in the next gap" : "Off")),
-          help(`A fresh one, once, in the next gap between songs (with the DJ on, not in the quiet hours): magnitude ${q.alert_at.world} or more anywhere, ${q.alert_at.uk} or more in the UK, or ${q.alert_at.near} or more within ${q.alert_at.near_km} km of here. The same switch as Band conditions' alerts.`))];
+          notifyRow("quake", "World quakes"), notifyRow("ukquake", "UK quakes"),
+          help(`A fresh one, once, in Flite's voice: magnitude ${q.alert_at.world} or more anywhere, ${q.alert_at.uk} or more in the UK, or ${q.alert_at.near} or more within ${q.alert_at.near_km} km of here. Never in the quiet hours.`))];
     },
   },
   // The sun, Aurora and VHF openings (tiles in The world outside): each from /api/rx/conditions, said in full.
@@ -5335,8 +5345,8 @@ const UI = {
             : [help(w.home ? "No flood warnings or alerts in force." : "Set the radio's locator for its flood warnings.")]),
           help(`From the Environment Agency, within ${w.flood_km} km of the locator: England only (Scotland, Wales and Northern Ireland have their own).`)),
         grp("Said by the DJ",
-          srow("Alerts", sw(w.alerts, v => act(() => api("/api/rx/conditions", { alerts: v })), "Alerts"), help(w.alerts ? "Said in the next gap" : "Off")),
-          help("An amber or red weather warning, or a flood warning or severe flood warning, once when it's issued (and again if it's raised), in the next gap between songs, with the DJ on, not in the quiet hours. The same switch as Band conditions' alerts."))];
+          notifyRow("met", "Met Office warnings"), notifyRow("flood", "Flood warnings"),
+          help("An amber or red weather warning, or a flood warning or severe flood warning, once when it's issued (and again if it's raised), in Flite's voice. Never in the quiet hours."))];
     },
   },
   // Lightning (a tile in The world outside): strikes near the locator lately, from Blitzortung's live feed, which
@@ -5357,7 +5367,7 @@ const UI = {
           srow("Watch for lightning", sw(L.on, v => act(() => api("/api/lightning", { on: v })), "Watch for lightning"),
             help(!L.on ? "Off" : L.listening ? "Listening now" : L.listened ? `Last listened ${condAge(L.listened)}${L.error ? ` (${L.error})` : ` (${L.heard} strikes in the world)`}` : "Not yet")),
           srow("Bell", (() => { const pick = el("select", { id: "lightning-when", "aria-label": "When the bell rings" },
-              ...[["off", "Muted"], ["active", "Armed while playing"], ["always", "Armed while playing or paused"]].map(([v, t]) => el("option", { value: v, textContent: t, selected: v === L.when })));
+              ...[["off", "Muted"], ["active", "Armed: playing"], ["always", "Armed: playing or paused"]].map(([v, t]) => el("option", { value: v, textContent: t, selected: v === L.when })));
               pick.onchange = () => act(() => api("/api/lightning", { when: pick.value })); return pick; })(),
             line(sbtn("Hear the bell", () => api("/api/lightning", { ring: true }).catch(e => toast(e.message))))),
           help(`The bell rings on the radio when a storm first comes within ${L.alert_km} km, and again if one strikes within ${L.close_km} km: twice a storm at most, whether the DJ's on or not. Muted: never. Armed while playing: only when the radio is playing. Armed while playing or paused: also on its own while paused. Nothing gets past the quiet hours (the do-not-disturb, in The DJ's settings): the bell never rings in them.`),
@@ -5365,6 +5375,16 @@ const UI = {
           help("Lightning data by Blitzortung.org and its contributors. It's a community network: not for protecting life or property, and its live feed may change or stop without notice.")),
         line(el("a", { href: "https://www.lightningmaps.org/", target: "_blank", rel: "noopener", textContent: "The live map on LightningMaps.org" }))];
     },
+  },
+  // Notifications: every kind of alert and when it may be said (playback/notify.py).
+  notify: {
+    load: () => api("/api/notify"),
+    build: (N, act) => [
+      grp("When each alert may be said",
+        ...N.kinds.map(k => notifyRow(k.key, k.label)),
+        help("Muted: never. Armed while playing: only when the radio is playing. Armed while playing or paused: also on its own while paused. Nothing gets past the quiet hours (the do-not-disturb, in The DJ's settings)."),
+        help(N.flite ? "Alerts are spoken in Flite's voice, over whatever is playing, with the DJ on or off. Lightning rings its bell first, then says how near the storm is."
+                     : "This radio has no Flite voice, so alerts can't be spoken (lightning still rings its bell)."))],
   },
   // QRZ logbook (a tile in The world outside): the book's figures and latest QSOs, and its access key -- typed in
   // here, kept by the radio, never shown again (QRZ: Logbook, Settings, the API key).

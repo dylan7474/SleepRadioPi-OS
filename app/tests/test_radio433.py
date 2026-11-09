@@ -161,13 +161,13 @@ def test_from_the_web(tmp_path: Path, monkeypatch) -> None:
     try:
         d = get("/api/radio433")
         assert d["address"] == "" and d["up"] is False and d["devices"] == []
-        assert "r433" not in [t["key"] for t in get("/api/outside")["tiles"]]
+        assert "r433" not in [t["key"] for t in get("/api/outside")["tiles"] if not t.get("empty") and t["key"] != "lightning"]
         for bad in ({}, {"address": 3}, {"address": "ftp://x"}, {"address": "a b"}):
             assert post(bad)[0] == 400
         code, d = post({"address": "pi.local:8076"})
         assert code == 200 and d["up"] is True and d["now"] == "Scanning" and d["paused"] is False and len(d["devices"]) == 4
         assert json.loads(conf.read_text())["background_url"] == "pi.local:8076"
-        assert "r433" in [t["key"] for t in get("/api/outside")["tiles"]]
+        assert "r433" in [t["key"] for t in get("/api/outside")["tiles"] if not t.get("empty") and t["key"] != "lightning"]
         answers["/433"] = None                                                                        # the receiver goes
         code, d = post({"address": "pi.local:8076"})
         assert d["up"] is False and d["address"] == "pi.local:8076"

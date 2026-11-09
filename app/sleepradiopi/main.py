@@ -237,10 +237,47 @@ def _wifi_back_on() -> None:
 TWIST_AGAIN_S = 60.0   # a second twist this soon after the address: the radio's own network
 
 
+def _alerts_found() -> list:
+    """What's worth an alert now (conditions.alerts_now(), from the feeds as they stand)."""
+    from sleepradiopi.playback import aircraft, conditions, lightning, qrzlog, quakes, ukwarnings
+    return conditions.alerts_now(conditions.sun.status(), conditions.forecast.status(), conditions.aurora.status(), quakes.quakes.status(),
+                                 ukwarnings.warnings.status(), qrzlog.logbook.status(), lightning.watch.status(), aircraft.aircraft.status(), True)
+
+
+def _alert_voice(station) -> str:
+    from sleepradiopi.tts import flite as _flite
+    return station.config.ebook_voice if _flite.is_flite(station.config.ebook_voice) else _flite.DEFAULT_VOICE
+
+
+def _speak_flite(station, words: str):
+    """The words in Flite's voice, levelled like the DJ's, as int16 stereo (None: no Flite on this radio)."""
+    from sleepradiopi.audio import pcm as _pcm
+    from sleepradiopi.tts import flite as _flite
+    if not _flite.available():
+        return None
+    voice = _alert_voice(station)
+    samples, rate = _flite.FliteTts().synth(voice, words, _flite.stretch(voice, "normal"))
+    return _pcm.speech_pcm(samples, rate, station.announcer_volume)
+
+
+def _say_alert(station, control, words: str, label: str) -> None:
+    """An alert (playback/notify.py): its words in Flite's voice, over the show or on its own while paused."""
+    from sleepradiopi.io.announce import Clip as _AlertClip
+    audio = _speak_flite(station, words)
+    if audio is None:
+        logging.getLogger(__name__).info("notify: no Flite to say %r", words[:60])
+        return
+    control.play_clip(_AlertClip(audio, "alert", label))
+    logging.getLogger(__name__).info("notify: said %r", words[:80])
+
+
 def _lightning_bell(station, control) -> None:
-    """Lightning near (playback/lightning.py): the bell on the speaker -- over the show, or on its own while paused --
-    unless it's the quiet hours (the news's: the radio's do-not-disturb)."""
+    """Lightning near (playback/lightning.py): the bell, then how near the storm is in Flite's voice, on the speaker --
+    over the show, or on its own while paused -- as the notification mode allows (muted | armed while playing |
+    armed while playing or paused), and never in the quiet hours (the news's: the radio's do-not-disturb)."""
     from datetime import datetime as _when
+    import numpy as _np
+    from sleepradiopi.audio import pcm as _pcm
     from sleepradiopi.broadcast.news import QuietHours as _Quiet
     from sleepradiopi.io.announce import Clip as _BellClip
     from sleepradiopi.playback import lightning as _lightning
@@ -251,7 +288,15 @@ def _lightning_bell(station, control) -> None:
     if cfg.news_quiet_hours and _when.now().time() in _Quiet.of_minutes(cfg.news_quiet_start_min, cfg.news_quiet_end_min):
         logging.getLogger(__name__).info("lightning: the bell not rung (the quiet hours)")
         return
-    control.play_clip(_BellClip(_lightning.bell(), "bell", "Lightning"))
+    audio = _lightning.bell()
+    try:
+        near = _lightning.near_words(_lightning.watch.status())
+        spoken = _speak_flite(station, near) if near else None
+        if spoken is not None:
+            audio = _np.concatenate([audio, _pcm.silence(0.4), spoken])
+    except Exception:                                # (the bell alone: the words are a extra)
+        logging.getLogger(__name__).exception("lightning: the words not made")
+    control.play_clip(_BellClip(audio, "bell", "Lightning"))
     logging.getLogger(__name__).info("lightning: the bell rung")
 
 
@@ -1006,6 +1051,15 @@ def main() -> None:
     lightning_mod.BELL = lightning_mod.WHEN != "off"
     if control is not None:
         lightning_mod.watch.on_bell = lambda: _lightning_bell(station, control)
+    from sleepradiopi.playback import notify as notify_mod
+    from sleepradiopi.config.clock import clock_trusted as _clock_trusted
+    notify_mod.set_default(bool(settings.conditions_alerts))
+    notify_mod.modes.update(notify_mod.clean(settings.notify))
+    if control is not None:
+        notify_mod.notifier = notify_mod.Notifier(
+            found=_alerts_found, paused=lambda: control.paused, quiet=_quiet_now, clock_ok=_clock_trusted,
+            say=lambda words, label: _say_alert(station, control, words, label))
+        notify_mod.notifier.start()
     lightning_mod.watch.keep_in(Path.home() / ".cache" / "sleepradiopi" / "lightning.json")    # strikes near here, from Blitzortung
     lightning_mod.watch.start()
     from sleepradiopi import health as health_mod

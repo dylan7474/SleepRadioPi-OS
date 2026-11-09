@@ -118,7 +118,8 @@ def test_said_and_tiled() -> None:
     far = {**st, "strikes": [{"t": NOW - 60, "km": 70, "deg": 90}]}
     assert lightning.alerts(far, NOW) == [] and lightning.tile(far, set(), NOW)[0]["state"] == "fair"
     assert lightning.tile({**st, "strikes": []}, set(), NOW)[0]["value"] == "none"
-    assert lightning.tile({**st, "strikes": [], "listened": None}, set(), NOW) == []              # (not listened yet: no tile)
+    assert lightning.tile({**st, "strikes": [], "listened": None}, set(), NOW)[0]["value"] == "wait"   # (not listened yet: a tile saying so)
+    assert lightning.tile({**st, "home": None}, set(), NOW)[0]["value"] == "locator"                    # (no locator: a tile saying so)
     assert lightning.tile({**st, "on": False}, set(), NOW)[0]["value"] == "off"          # (off: the tile stays, to turn it on from)
 
 

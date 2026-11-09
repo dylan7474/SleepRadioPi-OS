@@ -1681,8 +1681,8 @@ The cards:
   and reads each strike (`decode()`: the site's LZW) for `SAMPLE_S` (30)
   every `EVERY_S` (600), staying while one lands within `AREA_KM` (100):
   until `STAY_S` (1200) without one. Only those within `AREA_KM` are kept
-  (three hours, `lightning.json`). Tile `"lightning"` (shown as "off" while not watching, so it can be
-  turned on from it; otherwise only once it has listened). Alerts: within `ALERT_KM` (40) in the last ten minutes, once
+  (three hours, `lightning.json`). Tile `"lightning"` (never hidden: "off" while not watching, "wait" until its first
+  listen, "locator" with none set; switching it on listens at once). Alerts: within `ALERT_KM` (40) in the last ten minutes, once
   a storm (a gap of an hour makes a new one), "getting closer" when
   nearer than the ten minutes before. The bell (`data/lightning_bell.wav`,
   `lightning.bell()`, rung by `main._lightning_bell` with the speaker's
@@ -2006,6 +2006,19 @@ The cards:
 - **Shut down** — turns the radio off safely before unplugging (appliance
   image only: the station isn't root, so it creates the file named by
   `SLEEPRADIOPI_POWER_REQUEST`, which a root service watches).
+  *Every tile always shows* (`conditions.with_placeholders()`, used by `GET /api/outside`, in `TILE_ORDER`):
+  one with nothing to show is a greyed empty tile (`"empty": true`: "no data yet", "no receiver set",
+  "set the callsign") that still opens its window, so a setting is never hidden until something happens.
+  *Notifications* (`playback/notify.py`, `GET`/`POST /api/notify {"modes": {kind: "off"|"active"|"always"}}` or
+  `{"test": kind}`, the setting `notify`; lightning's is `lightning_when`): each kind of alert is muted, armed
+  while the radio plays, or armed while it plays or is paused; the quiet hours beat all three (nothing breaks
+  through). `Notifier` (a thread, every 30 s) takes `conditions.alerts_now()` and says each armed one once
+  (again when higher, or after `ALERT_AGAIN_S`) in Flite's voice (`main._say_alert`: `FliteTts`, levelled with
+  `pcm.speech_pcm`, played with `play_clip`, so it works with the DJ off and without the neural worker); a held
+  back one is not marked said. Lightning keeps its bell (`main._lightning_bell`), which now says how near the
+  storm is after it (`lightning.near_words`). A kind not set follows the old `conditions_alerts` switch. The
+  DJ no longer says alerts in the gap (only the periodic band report). Window: Notifications (The world
+  outside's toolbar and The DJ), and each feed's own window has its row.
 
 ### Tuning the speakers
 

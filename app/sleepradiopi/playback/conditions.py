@@ -781,6 +781,25 @@ def outside(s: dict, sun_now: dict | None, fc: dict | None, aurora_now: dict | N
     return {"tiles": tiles, "alerts": alerts}
 
 
+# Every tile the folder can have, in order, and what its empty tile says (never hidden: a thing that isn't set up,
+# or hasn't been heard yet, still shows, so its window -- and its settings -- can be found)
+TILE_ORDER = (("bands", "Bands", "nothing yet"), ("sun", "The sun", "no data yet"), ("aurora", "Aurora", "no data yet"),
+              ("vhf", "VHF openings", "no data yet"), ("lightning", "Lightning", "no data yet"), ("warnings", "Warnings", "no data yet"),
+              ("quakes", "Earthquakes", "no data yet"), ("signal", "My signal", "set the callsign"), ("qrz", "QRZ logbook", "set the key"),
+              ("aircraft", "Aircraft", "no receiver set"), ("r433", "433 MHz", "no receiver set"), ("sondes", "Radiosondes", "no receiver set"))
+
+
+def with_placeholders(d: dict) -> dict:
+    """outside()'s tiles with an empty tile (greyed, "empty": true) for each that has nothing to show, in a fixed order."""
+    have = {t["key"]: t for t in d["tiles"]}
+    tiles = [have[key] if key in have else
+             {"key": key, "title": title, "value": "–", "state": "quiet", "sub": hint, "alert": False, "empty": True,
+              "says": f"{title}: nothing to show yet ({hint}). Open it to see why, or to set it up."}
+             for key, title, hint in TILE_ORDER]
+    tiles += [t for k, t in have.items() if k not in {key for key, _, _ in TILE_ORDER}]
+    return {**d, "tiles": tiles}
+
+
 def _ago(seconds: float) -> str:
     """"40 min", "5 h", "1 day"."""
     if seconds < 3600:

@@ -2039,16 +2039,15 @@ class Station:
 
     def _bands_due(self, end_at: datetime) -> str | None:
         """How the short-wave bands are, for the DJ to say in this gap (playback/conditions.py): only if it's been
-        asked for, at its hours, outside the news's quiet hours. Before it, an alert (an aurora, an opening, a
-        storm just begun), if those are asked for."""
+        asked for, at its hours, outside the news's quiet hours. (Alerts -- an aurora, an opening, a storm just
+        begun -- are not said here any more: playback/notify.py says them, in Flite's voice, as each kind is armed.)"""
         from sleepradiopi.audio import ft8
         from sleepradiopi.playback import conditions, survey
-        if not conditions.EVERY_H and not conditions.ALERTS:
+        if not conditions.EVERY_H:
             return None
         quiet = self.config.news_quiet_hours and end_at.time() in QuietHours.of_minutes(self.config.news_quiet_start_min, self.config.news_quiet_end_min)
         try:
-            return conditions.alert_due(end_at, clock_trusted(), bool(quiet)) \
-                or conditions.say_due(end_at, clock_trusted(), bool(quiet), survey.job, ft8.reader.heard()["heard"])
+            return conditions.say_due(end_at, clock_trusted(), bool(quiet), survey.job, ft8.reader.heard()["heard"])
         except Exception:                            # (nothing of the bands may stop the show)
             log.exception("band conditions: not said")
             return None

@@ -469,17 +469,18 @@ def test_alerts_said_once_when_they_begin(monkeypatch) -> None:
     assert due() is None
 
 
-def test_an_alert_comes_before_the_bands_in_a_gap(tmp_path: Path, monkeypatch) -> None:
+def test_the_dj_says_the_bands_in_a_gap_but_no_alerts(tmp_path: Path, monkeypatch) -> None:
+    """Alerts are said by playback/notify.py now (Flite, by each kind's mode); the gap has only the periodic report."""
     from datetime import datetime
     from test_offline import _station
     st = _station(tmp_path / "st")
     noon = datetime.fromtimestamp(NOW).replace(hour=12, minute=20)
     monkeypatch.setattr(conditions, "say_due", lambda *a: "The short wave bands.")
     monkeypatch.setattr(conditions, "alert_due", lambda at, clock_ok, quiet: "Sporadic E has opened on 6 metres across Europe.")
-    assert st._bands_due(noon) is None                                       # neither asked for
+    monkeypatch.setattr(conditions, "EVERY_H", 0)
     monkeypatch.setattr(conditions, "ALERTS", True)
-    assert st._bands_due(noon) == "Sporadic E has opened on 6 metres across Europe."
-    monkeypatch.setattr(conditions, "alert_due", lambda at, clock_ok, quiet: None)
+    assert st._bands_due(noon) is None                                       # (not asked for: and no alert in the gap either)
+    monkeypatch.setattr(conditions, "EVERY_H", 3)
     assert st._bands_due(noon) == "The short wave bands."
 
 
@@ -521,7 +522,8 @@ def test_the_world_outside_from_the_web(tmp_path: Path, monkeypatch) -> None:
     try:
         with urllib.request.urlopen(f"http://127.0.0.1:{httpd.server_address[1]}/api/outside", timeout=5) as r:
             d = json.loads(r.read())
-        assert [t["key"] for t in d["tiles"]] == ["bands", "vhf", "qrz"] and d["alerts"][0]["key"] == "es:6 m"
+        assert [t["key"] for t in d["tiles"] if not t.get("empty")] == ["bands", "vhf", "lightning", "qrz"] and d["alerts"][0]["key"] == "es:6 m"
+        assert [t["key"] for t in d["tiles"]] == [k for k, _, _ in conditions.TILE_ORDER]          # (every tile is always there, in order; the empty ones say so)
     finally:
         httpd.shutdown()
         httpd.server_close()
@@ -648,3 +650,11 @@ def test_a_stagnant_tile_is_marked_and_a_gone_one_is_greyed_with_no_alert() -> N
     assert d["alerts"] == []
     fresh = conditions.outside(nothing, None, None, {"level": "green", "says": "ok", "t": t}, True)
     assert not next(x for x in fresh["tiles"] if x["key"] == "aurora").get("old")
+
+
+def test_every_tile_is_always_there() -> None:
+    d = conditions.with_placeholders(conditions.outside(conditions.summary({}, [], NOW), None, None, None, True))
+    assert [t["key"] for t in d["tiles"]] == [k for k, _, _ in conditions.TILE_ORDER]
+    empty = {t["key"]: t for t in d["tiles"] if t.get("empty")}
+    assert "qrz" not in empty and empty["aircraft"]["sub"] == "no receiver set" and empty["aircraft"]["state"] == "quiet" and not empty["aircraft"]["alert"]
+    assert "Open it" in empty["sondes"]["says"]
