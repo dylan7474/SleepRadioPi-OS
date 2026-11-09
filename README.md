@@ -1036,6 +1036,9 @@ Other targets are passed through to Buildroot: `make menuconfig`,
 - Serial console: GPIO14/15, 115200 baud (Bluetooth is disabled so the full
   UART is used).
 - Logs: `/var/log/messages` (in RAM, lost at power-off).
+- Radio dropouts leave a trace: when an internet station's sound runs dry and comes back the log says
+  `radio: <station>: stalled for N s (slowest segment …, last …; Wi-Fi … dBm); stall K`, and a segment that took
+  more than half its length to arrive says `radio: slow segment: …`. Both are `grep stalled` / `grep slow`.
 - The station starts at boot as user `radio` and is restarted if it exits.
   Settings: `/data/radio/.config/sleepradiopi/config.json`; logs:
   `grep sleepradiopi /var/log/messages`; restart: `pkill -f sleepradiopi.main`;

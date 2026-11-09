@@ -1,5 +1,6 @@
 """Radiosondes from the receiver's background service on the local network (playback/sondes.py)."""
 import json
+import time
 import threading
 import urllib.error
 import urllib.request
@@ -158,6 +159,8 @@ def test_it_is_in_the_keeper_and_in_the_world_outside(monkeypatch) -> None:
 
 def test_from_the_web(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setattr(sondes, "aerial", lambda: AT)
+    real_gmtime = time.gmtime
+    monkeypatch.setattr(time, "gmtime", lambda secs=None: real_gmtime(1794178800 if secs is None else secs))     # (23:00 UTC: the evening window is on, whatever the hour the tests run)
     conf = tmp_path / "config.json"
     conf.write_text("{}")
     httpd = ThreadingHTTPServer(("127.0.0.1", 0), make_handler(None, None, None, conf))

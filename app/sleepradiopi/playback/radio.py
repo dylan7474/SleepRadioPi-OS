@@ -491,6 +491,8 @@ class RadioStream:
         self._blocks: queue.Queue = queue.Queue(QUEUE_BLOCKS)
         self._proc: subprocess.Popen | None = None
         self._resp = None
+        self.last_fetch_s = 0.0                # how long the latest HLS segment took to arrive
+        self.slow_fetch_s = 0.0                # ...and the slowest since the last stall was reported
 
     def start(self) -> None:
         self._proc = subprocess.Popen(self._cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
@@ -637,8 +639,13 @@ class RadioStream:
                 n = pl["seq"] + i
                 if n <= seen:
                     continue
+                began = time.monotonic()
                 try:
                     data = self._retried(self._bytes, seg)
+                    took = self.last_fetch_s = time.monotonic() - began
+                    self.slow_fetch_s = max(self.slow_fetch_s, took)
+                    if took > pl["target"] / 2:          # (a segment this slow leaves little in hand: it can cause a stall)
+                        log.info("radio: slow segment: %.1f s to fetch (segments are %.0f s)", took, pl["target"])
                 except (StreamError, OSError, http.client.HTTPException) as e:
                     misses += 1                          # a blip beats a reconnect: skip it
                     if misses >= HLS_MAX_MISSES:

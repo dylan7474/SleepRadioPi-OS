@@ -101,6 +101,16 @@ def _is_receiver(url: str) -> bool:
     from sleepradiopi.playback import monitor, receiver
     return receiver.is_receiver(url) or monitor.receiver_of(url) is not None
 
+def _wifi_level_dbm() -> int | None:
+    """The Wi-Fi signal level in dBm, or None if it can't be read (nothing here may fail the radio)."""
+    try:
+        for line in Path("/proc/net/wireless").read_text().splitlines()[2:]:
+            return int(float(line.split()[3]))
+    except (OSError, ValueError, IndexError):
+        pass
+    return None
+
+
 class Output(Protocol):
     def start(self) -> None: ...
     def write(self, block: np.ndarray) -> None: ...
@@ -327,6 +337,7 @@ class Station:
         self.radio_stream = None             # the open stream, while a station plays (a receiver's can be retuned)
         self.monitor = None                  # playback/monitor.Monitor, if main.py gave it one
         self.radio_playing = False           # its sound is on air (not tuning in / reconnecting)
+        self.radio_stalls = 0                # times a radio stream ran dry and came back (logged: _log_radio_stall)
         self.source_error: str | None = None # why the last source stopped
         # Called with the source (or None) when it changes, so it can be saved
         # and resumed after a restart (an album at the track it was on).
@@ -915,6 +926,7 @@ class Station:
             try:
                 stream.start()
                 playing = False
+                stalled_at = None                    # when the sound ran dry (None: not stalled)
                 while not self._halted():
                     if stream.title != self.radio_title and stream.title is not None:
                         self.radio_title = stream.title
@@ -923,6 +935,8 @@ class Station:
                     filling = not playing and stream.buffered_s < RADIO_PREBUFFER_S and not stream.ended
                     block = None if filling else stream.read(0.05)
                     if block is None:
+                        if playing and stalled_at is None:
+                            stalled_at = time.monotonic()
                         playing = self.radio_playing = False
                         if stream.ended and not stream.buffered_s:
                             why = stream.ended
@@ -934,6 +948,9 @@ class Station:
                         continue
                     if not playing:
                         playing = self.radio_playing = True
+                        if stalled_at is not None:
+                            self._log_radio_stall(name, time.monotonic() - stalled_at, stream)
+                            stalled_at = None
                         on_air.title = self.radio_title or name
                         on_air.started = time.time()
                     self._radio_heard = True
@@ -963,6 +980,18 @@ class Station:
                 self._give_up_radio(tuned, why)
                 return
         self.radio_title = None
+
+    def _log_radio_stall(self, name: str, gap_s: float, stream) -> None:
+        """The sound ran dry and came back: say when, for how long, and what the link looked like, so a
+        dropout leaves a trace (it used to be silent). Also counted for the health page."""
+        self.radio_stalls += 1
+        link = _wifi_level_dbm()
+        slow, last = getattr(stream, "slow_fetch_s", 0.0), getattr(stream, "last_fetch_s", 0.0)    # (only a stream of segments knows)
+        log.info("radio: %s: stalled for %.1f s (slowest segment %.1f s, last %.1f s; Wi-Fi %s); stall %d",
+                 name, gap_s, slow, last,
+                 f"{link} dBm" if link is not None else "level unknown", self.radio_stalls)
+        if hasattr(stream, "slow_fetch_s"):
+            stream.slow_fetch_s = 0.0
 
     # --- output -----------------------------------------------------------------------
 

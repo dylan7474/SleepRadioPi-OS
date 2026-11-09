@@ -364,6 +364,33 @@ def test_a_dropped_stream_reconnects(tmp_path: Path, monkeypatch) -> None:
     assert len(FakeStream.made) == 3 and st.source_error is None
 
 
+class StallingStream(FakeStream):
+    """Plays 20 blocks, runs dry for 15 reads, then plays on (a slow segment)."""
+    def __init__(self, url):
+        super().__init__(url, blocks=10_000)
+        self.reads, self.slow_fetch_s, self.last_fetch_s = 0, 7.5, 2.0
+
+    def read(self, timeout=0.1):
+        self.reads += 1
+        if 20 <= self.reads < 35:
+            return None
+        return super().read(timeout)
+
+
+def test_a_stall_is_logged_and_counted(tmp_path: Path, monkeypatch, caplog) -> None:
+    import logging
+    monkeypatch.setattr(radio, "RadioStream", StallingStream)
+    st = _station(tmp_path)
+    st.tune({"name": "Radio 4", "url": "http://r4/"})
+    st.output = Counting(after=80, then=lambda: st.tune(None))
+    st._switch.clear()
+    with caplog.at_level(logging.INFO):
+        st._run_radio(st.source)
+    assert st.radio_stalls == 1
+    said = [r.getMessage() for r in caplog.records if "stalled for" in r.getMessage()]
+    assert len(said) == 1 and "Radio 4" in said[0] and "slowest segment 7.5 s" in said[0]
+
+
 def test_a_silent_station_gives_way_to_the_show(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setattr(radio, "RadioStream", lambda url: FakeStream(url, blocks=0))
     monkeypatch.setattr(station_mod, "RADIO_RETRY_S", 0.05)
