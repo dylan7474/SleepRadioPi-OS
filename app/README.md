@@ -1675,19 +1675,19 @@ The cards:
   `LANDED_S` (300) it is `landed` (last heard under `LANDED_M` 1500 m and it came down 1000 m or more) or `lost`. Tile `"sondes"`; the
   window is `UI.sondes` (the flights table; the scope shares `ScopeMap` with the Aircraft one: built-in map, projection, rings).
   *Lightning* (`playback/lightning.py`, `GET /api/lightning`, `POST
-  /api/lightning {"on"?, "bell"?, "ring"?}`, the settings
-  `lightning_watch` (off to begin with), `lightning_bell`): `lightning.Watch`, a thread of its
+  /api/lightning {"on"?, "when"?, "ring"?}`, the settings
+  `lightning_watch` (off to begin with), `lightning_when`: `off` (muted) | `active` (rings only while the radio plays) | `always` (playing or paused); an old `lightning_bell` is read as always/off): `lightning.Watch`, a thread of its
   own, connects to `wss://ws1|ws7.blitzortung.org/`, sends `{"a":111}`
   and reads each strike (`decode()`: the site's LZW) for `SAMPLE_S` (30)
   every `EVERY_S` (600), staying while one lands within `AREA_KM` (100):
   until `STAY_S` (1200) without one. Only those within `AREA_KM` are kept
-  (three hours, `lightning.json`). Tile `"lightning"` (only once it has
-  listened). Alerts: within `ALERT_KM` (40) in the last ten minutes, once
+  (three hours, `lightning.json`). Tile `"lightning"` (shown as "off" while not watching, so it can be
+  turned on from it; otherwise only once it has listened). Alerts: within `ALERT_KM` (40) in the last ten minutes, once
   a storm (a gap of an hour makes a new one), "getting closer" when
   nearer than the ten minutes before. The bell (`data/lightning_bell.wav`,
   `lightning.bell()`, rung by `main._lightning_bell` with the speaker's
   `play_clip`) for a storm come within 40 km and again within `CLOSE_KM`
-  (10), never in the quiet hours. *Quiet hours*: `POST /api/dj
+  (10), never in the quiet hours (nothing gets past them). *Quiet hours*: `POST /api/dj
   {"quiet_on", "quiet_start_min", "quiet_end_min"}` (`Station.set_quiet()`:
   live for the news and the birthdays; saved as `news_quiet_*`).
   *How the bands are* (`GET /api/rx/conditions?base=`;

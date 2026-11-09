@@ -46,7 +46,8 @@ class Settings:
     conditions_every_h: int = 0           # the DJ says how the short-wave bands are, this many hours apart (0: not at all) (playback/conditions.py)
     conditions_alerts: bool = False       # ...and says it when an aurora alert, a sporadic E opening or a strong storm begins
     lightning_watch: bool = False         # listen for lightning near the locator now and then (playback/lightning.py)
-    lightning_bell: bool = True           # ...and ring a bell when it comes near (not in the quiet hours)
+    lightning_bell: bool = True           # (old switch: kept so an old settings file still reads; lightning_when replaces it)
+    lightning_when: str = ""              # ...the bell when it comes near: "off" (muted) | "active" (only while the radio's playing) | "always" (playing or paused); "" = from lightning_bell. Never in the quiet hours
     qrz_key: str = ""                     # the owner's QRZ logbook access key (playback/qrzlog.py): never in a backup file, never sent to the page
     aircraft_url: str = ""                # a dump1090 / readsb receiver on the local network ("192.168.1.5:8080"): the Aircraft tile; empty = off (playback/aircraft.py)
     background_url: str = ""             # the receiver Pi's background service ("192.168.50.4:8076"): the 433 MHz tile; empty = off (playback/radio433.py)

@@ -181,32 +181,35 @@ def build(ctx):
             return True
         if path == "/api/lightning":
             # {"on": true | false}: listening for lightning near here now and then (the setting lightning_watch);
-            # {"bell": true | false}: the bell when it comes near (lightning_bell); {"ring": true}: the bell now, to
+            # {"when": "off" | "active" | "always"}: the bell when it comes near -- muted, only while the radio plays,
+            # or playing or paused (lightning_when; never in the quiet hours); {"ring": true}: the bell now, to
             # hear it (quiet hours or not). Kept.
             from sleepradiopi.playback import lightning as lightning_mod
             try:
                 body = self._body()
-                on, bell, ring = body.get("on"), body.get("bell"), body.get("ring")
-                if (on is None and bell is None and ring is None) or any(v is not None and not isinstance(v, bool) for v in (on, bell, ring)):
+                on, when, ring = body.get("on"), body.get("when"), body.get("ring")
+                if (on is None and when is None and ring is None) or any(v is not None and not isinstance(v, bool) for v in (on, ring)) \
+                        or (when is not None and when not in lightning_mod.WHENS):
                     raise ValueError
             except (ValueError, TypeError, AttributeError):
-                self._error('send {"on": true or false}, {"bell": true or false} or {"ring": true}')
+                self._error('send {"on": true or false}, {"when": "off", "active" or "always"} or {"ring": true}')
                 return True
             if on is not None:
                 lightning_mod.ON = on
                 if config_file is not None:
                     save_setting(config_file, "lightning_watch", on)
-            if bell is not None:
-                lightning_mod.BELL = bell
+            if when is not None:
+                lightning_mod.WHEN = when
+                lightning_mod.BELL = when != "off"
                 if config_file is not None:
-                    save_setting(config_file, "lightning_bell", bell)
+                    save_setting(config_file, "lightning_when", when)
             if ring:
                 if speaker is None:
                     self._error("this radio has no speaker")
                     return True
                 from sleepradiopi.io.announce import Clip as BellClip
                 speaker.play_clip(BellClip(lightning_mod.bell(), "bell", "Lightning"))
-            self._send(json.dumps({"on": lightning_mod.ON, "bell": lightning_mod.BELL}).encode(), "application/json")
+            self._send(json.dumps({"on": lightning_mod.ON, "bell": lightning_mod.BELL, "when": lightning_mod.WHEN}).encode(), "application/json")
             return True
         if path == "/api/qrz":
             # {"key": "..."}: the QRZ logbook's access key, kept (never sent back); "" forgets it and what was had.

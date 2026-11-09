@@ -54,7 +54,9 @@ SPELL_GAP_S = 3600.0         # a strike this long after the last near one is a n
 FRESH_S = 600.0              # what's said as now: the last ten minutes
 MOST = 500
 ON = True                    # main.py sets it from the settings (lightning_watch)
-BELL = True                  # ...and this (lightning_bell)
+BELL = True                  # ...and this: the bell isn't muted (WHEN != "off")
+WHEN = "always"              # the bell: "off" (muted) | "active" (rings only while the radio plays) | "always" (playing or paused)
+WHENS = ("off", "active", "always")
 CLOSE_KM = 10                # the bell rings again: this near
 BELL_FILE = Path(__file__).resolve().parent.parent / "data" / "lightning_bell.wav"
 COMPASS = ("north", "north-east", "east", "south-east", "south", "south-west", "west", "north-west")
@@ -225,7 +227,7 @@ class Watch:
         now = self._clock()
         with self._lock:
             strikes = [x for x in self._strikes if now - x["t"] <= KEEP_S]
-        return {"on": ON, "bell": BELL, "close_km": CLOSE_KM, "home": ft8.HOME, "area_km": AREA_KM, "alert_km": ALERT_KM, "listening": self.listening,
+        return {"on": ON, "bell": BELL, "when": WHEN, "close_km": CLOSE_KM, "home": ft8.HOME, "area_km": AREA_KM, "alert_km": ALERT_KM, "listening": self.listening,
                 "listened": self.listened, "heard": self.heard, "error": self.error, "every_s": EVERY_S, "sample_s": SAMPLE_S,
                 "strikes": sorted(strikes, key=lambda x: -x["t"]), "t": now}
 
@@ -284,7 +286,10 @@ def alerts(st: dict | None, now: float | None = None) -> list[tuple[str, int, st
 
 def tile(st: dict | None, alerted: set[str], now: float | None = None) -> list[dict]:
     """The Lightning tile for "The world outside" (conditions.outside()): the nearest in the last hour."""
-    if not st or not st.get("on") or not st.get("home") or (st.get("listened") is None and not st.get("strikes")):
+    if st and not st.get("on"):                      # (off: the tile stays, so the way to turn it on can be found)
+        return [{"key": "lightning", "title": "Lightning", "value": "off", "state": "quiet", "sub": "not watching",
+                 "says": "Not watching for lightning: open this to turn it on."}]
+    if not st or not st.get("home") or (st.get("listened") is None and not st.get("strikes")):
         return []                                    # (not until it has listened: a radio with no internet has no tile)
     h = hour(st, now)
     near = min(h, key=lambda s: s["km"]) if h else None

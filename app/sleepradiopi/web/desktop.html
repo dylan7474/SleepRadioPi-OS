@@ -5356,9 +5356,11 @@ const UI = {
         grp("Listening",
           srow("Watch for lightning", sw(L.on, v => act(() => api("/api/lightning", { on: v })), "Watch for lightning"),
             help(!L.on ? "Off" : L.listening ? "Listening now" : L.listened ? `Last listened ${condAge(L.listened)}${L.error ? ` (${L.error})` : ` (${L.heard} strikes in the world)`}` : "Not yet")),
-          srow("Bell", sw(L.bell, v => act(() => api("/api/lightning", { bell: v })), "Bell"),
-            line(sbtn("Hear the bell", () => api("/api/lightning", { ring: true }).catch(e => toast(e.message))), el("span", { className: "shelp", textContent: L.bell ? " On" : " Off" }))),
-          help(`The bell rings on the radio when a storm first comes within ${L.alert_km} km, and again if one strikes within ${L.close_km} km: twice a storm at most, over whatever's playing (or on its own while paused), whether the DJ's on or not. Never in the quiet hours (the news's, in The DJ's settings).`),
+          srow("Bell", (() => { const pick = el("select", { id: "lightning-when", "aria-label": "When the bell rings" },
+              ...[["off", "Muted"], ["active", "Armed while playing"], ["always", "Armed while playing or paused"]].map(([v, t]) => el("option", { value: v, textContent: t, selected: v === L.when })));
+              pick.onchange = () => act(() => api("/api/lightning", { when: pick.value })); return pick; })(),
+            line(sbtn("Hear the bell", () => api("/api/lightning", { ring: true }).catch(e => toast(e.message))))),
+          help(`The bell rings on the radio when a storm first comes within ${L.alert_km} km, and again if one strikes within ${L.close_km} km: twice a storm at most, whether the DJ's on or not. Muted: never. Armed while playing: only when the radio is playing. Armed while playing or paused: also on its own while paused. Nothing gets past the quiet hours (the do-not-disturb, in The DJ's settings): the bell never rings in them.`),
           help(`Every ${Math.round(L.every_s / 60)} minutes the radio listens for ${Math.round(L.sample_s)} seconds to Blitzortung's live feed of every strike in the world, and keeps those within ${L.area_km} km; while one lands that near, it stays listening until the storm's been quiet for 20 minutes. With Alerts on (Band conditions), the DJ says it once a storm when it comes within ${L.alert_km} km.`),
           help("Lightning data by Blitzortung.org and its contributors. It's a community network: not for protecting life or property, and its live feed may change or stop without notice.")),
         line(el("a", { href: "https://www.lightningmaps.org/", target: "_blank", rel: "noopener", textContent: "The live map on LightningMaps.org" }))];

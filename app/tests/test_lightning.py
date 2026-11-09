@@ -119,7 +119,7 @@ def test_said_and_tiled() -> None:
     assert lightning.alerts(far, NOW) == [] and lightning.tile(far, set(), NOW)[0]["state"] == "fair"
     assert lightning.tile({**st, "strikes": []}, set(), NOW)[0]["value"] == "none"
     assert lightning.tile({**st, "strikes": [], "listened": None}, set(), NOW) == []              # (not listened yet: no tile)
-    assert lightning.tile({**st, "on": False}, set(), NOW) == []
+    assert lightning.tile({**st, "on": False}, set(), NOW)[0]["value"] == "off"          # (off: the tile stays, to turn it on from)
 
 
 def test_the_bell_twice_a_storm_at_most(monkeypatch) -> None:
@@ -157,7 +157,7 @@ def test_the_bell_keeps_the_quiet_hours(tmp_path: Path, monkeypatch) -> None:
     from test_offline import _station
     st = _station(tmp_path / "st")
     played = []
-    control = type("C", (), {"play_clip": lambda self, clip: played.append(clip.label)})()
+    control = type("C", (), {"paused": False, "play_clip": lambda self, clip: played.append(clip.label)})()
     st.set_quiet(True, 0, 0)                                     # (start == end: no quiet at all)
     main_mod._lightning_bell(st, control)
     assert played == ["Lightning"]
@@ -167,6 +167,23 @@ def test_the_bell_keeps_the_quiet_hours(tmp_path: Path, monkeypatch) -> None:
     st.set_quiet(False)                                          # quiet hours off: rings
     main_mod._lightning_bell(st, control)
     assert played == ["Lightning", "Lightning"]
+    played.clear()
+    lightning.WHEN = "off"                                       # muted: never
+    main_mod._lightning_bell(st, control)
+    lightning.WHEN = "active"                                    # armed while playing: not while paused
+    control.paused = True
+    main_mod._lightning_bell(st, control)
+    assert played == []
+    control.paused = False
+    main_mod._lightning_bell(st, control)
+    lightning.WHEN = "always"                                    # playing or paused
+    control.paused = True
+    main_mod._lightning_bell(st, control)
+    assert played == ["Lightning", "Lightning"]
+    st.set_quiet(True, 0, 24 * 60 - 1)                           # and nothing gets past the quiet hours
+    main_mod._lightning_bell(st, control)
+    assert played == ["Lightning", "Lightning"]
+    st.set_quiet(False)
     with pytest.raises(ValueError):
         st.set_quiet(start_min=1440)
     assert st.news_schedule.quiet is None and st.birthdays.quiet is None
@@ -211,10 +228,11 @@ def test_from_the_web(tmp_path: Path, monkeypatch) -> None:
         with urllib.request.urlopen(base + "/api/lightning", timeout=5) as r:
             d = json.loads(r.read())
         assert d["on"] and d["bell"] and d["area_km"] == 100 and d["alert_km"] == 40 and d["close_km"] == 10 and d["alerts"] is False
-        for bad in ({}, {"on": 1}, {"bell": "yes"}):
+        for bad in ({}, {"on": 1}, {"when": "sometimes"}, {"bell": True}):
             assert post(bad)[0] == 400
-        assert post({"on": False}) == (200, {"on": False, "bell": True}) and json.loads(conf.read_text())["lightning_watch"] is False
-        assert post({"bell": False})[1]["bell"] is False and json.loads(conf.read_text())["lightning_bell"] is False
+        assert post({"on": False}) == (200, {"on": False, "bell": True, "when": "always"}) and json.loads(conf.read_text())["lightning_watch"] is False
+        assert post({"when": "off"})[1]["bell"] is False and json.loads(conf.read_text())["lightning_when"] == "off"
+        assert post({"when": "active"})[1] == {"on": False, "bell": True, "when": "active"}
         assert post({"ring": True})[0] == 200 and rung == ["Lightning"]                         # hear it, whatever the settings
     finally:
         httpd.shutdown()

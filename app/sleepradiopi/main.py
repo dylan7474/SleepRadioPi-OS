@@ -245,6 +245,9 @@ def _lightning_bell(station, control) -> None:
     from sleepradiopi.io.announce import Clip as _BellClip
     from sleepradiopi.playback import lightning as _lightning
     cfg = station.config
+    if _lightning.WHEN == "off" or (_lightning.WHEN == "active" and control.paused):
+        logging.getLogger(__name__).info("lightning: the bell not rung (%s)", "muted" if _lightning.WHEN == "off" else "the radio's paused")
+        return
     if cfg.news_quiet_hours and _when.now().time() in _Quiet.of_minutes(cfg.news_quiet_start_min, cfg.news_quiet_end_min):
         logging.getLogger(__name__).info("lightning: the bell not rung (the quiet hours)")
         return
@@ -998,7 +1001,9 @@ def main() -> None:
     aircraft_mod.ADDRESS = settings.aircraft_url or ""               # aircraft overhead, from a receiver on the local network (nothing kept on the card)
     from sleepradiopi.playback import lightning as lightning_mod
     lightning_mod.ON = settings.lightning_watch is not False
-    lightning_mod.BELL = settings.lightning_bell is not False
+    lightning_mod.WHEN = (settings.lightning_when if settings.lightning_when in lightning_mod.WHENS
+                          else "always" if settings.lightning_bell is not False else "off")
+    lightning_mod.BELL = lightning_mod.WHEN != "off"
     if control is not None:
         lightning_mod.watch.on_bell = lambda: _lightning_bell(station, control)
     lightning_mod.watch.keep_in(Path.home() / ".cache" / "sleepradiopi" / "lightning.json")    # strikes near here, from Blitzortung
