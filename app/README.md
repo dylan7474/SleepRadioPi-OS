@@ -1674,6 +1674,11 @@ The cards:
   aerial (the aircraft receiver's own place, else the locator's). `judge()`: climbing / falling / steady while heard; once silent
   `LANDED_S` (300) it is `landed` (last heard under `LANDED_M` 1500 m and it came down 1000 m or more) or `lost`. Tile `"sondes"`; the
   window is `UI.sondes` (the flights table; the scope shares `ScopeMap` with the Aircraft one: built-in map, projection, rings).
+  Keeping flights: `POST /api/sondes/pin` `{id, pinned}` keeps a flight (up to `MAX_PINS` 10, exempt from `KEEP`) in
+  `~/.local/state/sleepradiopi/sonde_pins.json` (one write per pin/unpin, and once more when a flight pinned while still heard has gone silent);
+  `GET /api/sondes/export[?id=]` downloads one flight or all as a `sleepradiopi-sondes` v1 file, `POST /api/sondes/import` reads one back
+  (checked in full by `parse()`/`clean()` first; shown as imported; nothing changes if any flight is wrong). `forget()` keeps pinned
+  flights, and `GET /api/sondes` shows `sondes.kept()` when the receiver isn't answering. Not part of the settings backup.
   *Lightning* (`playback/lightning.py`, `GET /api/lightning`, `POST
   /api/lightning {"on"?, "when"?, "ring"?}`, the settings
   `lightning_watch` (off to begin with), `lightning_when`: `off` (muted) | `active` (rings only while the radio plays) | `always` (playing or paused); an old `lightning_bell` is read as always/off): `lightning.Watch`, a thread of its

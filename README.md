@@ -588,7 +588,8 @@ Actions, Sleep timer and Radio folders open:
   show each flight: height, climb or descent rate, how far and which way from
   your aerial, the temperature up there, and its track on the same built-in map as
   the Aircraft scope (solid line up, dashed after the burst, ✕ where it was last
-  heard). The last few flights stay in the radio's memory (not the card), with the
+  heard). The last few flights stay in the radio's memory (not the card; pin one
+  to keep it over a restart, or Download it and Import it back later), with the
   last position as text and a link to open it on a map, for anyone who wants to
   find a sonde. Nothing is uploaded anywhere.
 - **Quiet hours (do not disturb).** In The DJ's window: from and until

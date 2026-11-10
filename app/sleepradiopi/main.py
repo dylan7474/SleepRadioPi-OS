@@ -1043,6 +1043,8 @@ def main() -> None:
     aircraft_mod.QUIET = _quiet_now
     from sleepradiopi.playback import radio433 as radio433_mod
     radio433_mod.ADDRESS = settings.background_url or ""             # 433 MHz devices, from the receiver's background service (nothing kept on the card)
+    from sleepradiopi.playback import sondes as sondes_mod
+    sondes_mod.sondes.pins_in(Path.home() / ".local" / "state" / "sleepradiopi" / "sonde_pins.json")     # flights the user pinned, kept over a restart
     aircraft_mod.ADDRESS = settings.aircraft_url or ""               # aircraft overhead, from a receiver on the local network (nothing kept on the card)
     from sleepradiopi.playback import lightning as lightning_mod
     lightning_mod.ON = settings.lightning_watch is not False

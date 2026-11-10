@@ -5660,13 +5660,26 @@ const UI = {
         const cells = [];
         for (const t of ["Flight", "Type", "Highest", "Now"]) cells.push(el("div", { className: "h", textContent: t }));
         for (const f of flights) {
-          const b = el("button", { type: "button", className: "c", textContent: f.id, title: "Show this flight" });
+          const b = el("button", { type: "button", className: "c", textContent: (f.pinned ? "📌 " : "") + f.id, title: "Show this flight" });
           b.setAttribute("aria-pressed", String(f === sel));
           b.onclick = () => act(async () => { UI.sondes.sel = f.id; });
           cells.push(b, el("div", { className: "c d", textContent: `${f.type || "–"}${f.freq ? " · " + f.freq : ""}` }), el("div", { className: "c d", textContent: `${num(f.max_alt / 1000)} km` }),
-            el("div", { className: "c", textContent: `${words[f.state] || f.state} · ${ago(f.ago_s)}` }));
+            el("div", { className: "c", textContent: `${words[f.state] || f.state} · ${ago(f.ago_s)}${f.imported ? " · imported" : ""}` }));
         }
         return el("div", { className: "sd-row" }, ...cells);
+      };
+      const keep = () => {                                                             // pin / download / import: the flights outlive a restart only if pinned or taken to the PC
+        const dl = id => { const l = el("a", { href: "/api/sondes/export" + (id ? "?id=" + encodeURIComponent(id) : ""), download: "" }); document.body.append(l); l.click(); l.remove(); };
+        const pick = el("input", { type: "file", hidden: true, accept: ".json,application/json" });
+        pick.onchange = () => { const file = pick.files[0]; pick.value = ""; if (file) act(async () => {
+          let data; try { data = JSON.parse(await file.text()); } catch { toast("That isn't a radiosonde file."); return; }
+          try { const r = await api("/api/sondes/import", data); UI.sondes.sel = r.imported[0]; toast(`Imported ${r.imported.length} flight${r.imported.length === 1 ? "" : "s"}.`); } catch (e) { toast(String(e.message || e)); }
+        }); };
+        const pins = flights.filter(f => f.pinned).length;
+        return grp("Keep flights", help(`The flights are in the radio's memory and go when it restarts. Pin one to keep it over a restart (up to ${a.pins || 10}; written to the card once), or Download it to keep on your PC and Import it back whenever you like.`),
+          line(sel ? sbtn(sel.pinned ? "Unpin this flight" : "📌 Pin this flight", () => act(async () => { try { await api("/api/sondes/pin", { id: sel.id, pinned: !sel.pinned }); } catch (e) { toast(String(e.message || e)); } })) : null,
+            sel ? sbtn("Download this flight", () => dl(sel.id)) : null, flights.length > 1 ? sbtn("Download all", () => dl("")) : null, sbtn("Import…", () => pick.click()), pick),
+          help(`${pins} pinned.`));
       };
       const nowWin = a.window && (a.window.on ? `Listening now, until ${a.window.end} UTC` : `Next listening ${a.window.start} UTC`);
       const scopeBox = () => {
@@ -5682,12 +5695,13 @@ const UI = {
       };
       return [
         a.up ? el("div", { className: "r4-state" + (a.job === "sondes" ? "" : " paused"), role: "status", textContent: (a.job === "sondes" ? "● Listening for radiosondes" + (a.window?.on ? ` · until ${a.window.end} UTC` : " · a flight is still being heard") : "⏸ " + (a.now || "") + (nowWin ? ` · ${nowWin}` : "")) }) : null,
-        a.up && sel ? [el("div", { className: "air" }, scopeBox(), figures(sel)), grp(sel.id + " · " + (sel.type || "radiosonde") + (sel.freq ? " · " + sel.freq : ""), where(sel), line(mapLink(sel)))] : null,
+        sel ? [el("div", { className: "air" }, scopeBox(), figures(sel)), grp(sel.id + " · " + (sel.type || "radiosonde") + (sel.freq ? " · " + sel.freq : ""), where(sel), line(mapLink(sel)))] : null,
         a.up && !sel ? grp("Radiosondes", help(`None heard yet. The decoder listens at the launch hours (${(a.windows || []).join(", ") || "set on the receiver"}, UTC: about 11:15 and 23:15) and a balloon is heard from about when it is launched until it lands; the flights then stay here, in the radio's memory.`)) : null,
-        a.up && flights.length ? grp("Flights (this radio's memory)", table()) : null,
+        flights.length ? grp("Flights (this radio's memory)", table()) : null,
+        a.up || flights.length ? keep() : null,
         !a.up ? grp("Radiosondes", help(a.address ? "The receiver isn't answering. That's normal away from home: the Radiosondes tile is in The world outside only while it does." : "No receiver set. Set the receiver's background service in the 433 MHz window (one address does both)."),
                     line(sbtn("Open 433 MHz…", () => open(PANEL.r433.id)))) : null,
-        grp("About", help("Weather balloons are launched twice a day (about 11:15 and 23:15 UTC) and radio their position, height and readings on 400 to 406 MHz. The receiver's decoder (radiosonde_auto_rx) hears them when the dongle is free; nothing is uploaded anywhere. Heights are metres above the sea; distances are from your aerial. Only this radio's memory keeps the flights: a restart clears them.")),
+        grp("About", help("Weather balloons are launched twice a day (about 11:15 and 23:15 UTC) and radio their position, height and readings on 400 to 406 MHz. The receiver's decoder (radiosonde_auto_rx) hears them when the dongle is free; nothing is uploaded anywhere. Heights are metres above the sea; distances are from your aerial. The flights are in this radio's memory: a restart clears them unless you pinned them.")),
       ].flat().filter(Boolean);
     },
   },

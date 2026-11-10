@@ -39,8 +39,8 @@ def build(ctx):
         t = time.gmtime()
         nxt = s_mod.next_window((had or {}).get("windows") or [], t.tm_hour * 60 + t.tm_min)
         return {"address": r_mod.ADDRESS, "up": bool(had), "t": had and had["t"], "now": had and s_mod.sonde_word(had), "job": had and had.get("job"), "windows": (had or {}).get("windows") or [],
-                "window": nxt and {"start": nxt[0], "end": nxt[1], "on": nxt[2]}, "running": bool(had and had.get("running")), "flights": (had or {}).get("flights") or [],
-                "aerial": had and had.get("aerial"), "says": had and had["says"], "words": s_mod.STATE_WORDS}
+                "window": nxt and {"start": nxt[0], "end": nxt[1], "on": nxt[2]}, "running": bool(had and had.get("running")), "flights": (had or {}).get("flights") or s_mod.sondes.kept(),
+                "pins": s_mod.MAX_PINS, "aerial": (had or {}).get("aerial") or (list(a) if (a := s_mod.aerial()) else None), "says": had and had["says"], "words": s_mod.STATE_WORDS}
 
     def get(self, path) -> bool:
         if path == "/api/rx/conditions":
@@ -109,6 +109,18 @@ def build(ctx):
         if path == "/api/sondes":
             # The Radiosondes window (playback/sondes.py): the flights heard, kept in memory (the address is the 433 MHz window's: one service).
             self._send(json.dumps(sondes_state()).encode(), "application/json")
+            return True
+        if path == "/api/sondes/export":
+            # ?id=H4713951: that flight as a file to keep (JSON); without it, all the flights kept.
+            from sleepradiopi.playback import sondes as s_mod
+            q = parse_qs(urlparse(self.path).query)
+            try:
+                doc = s_mod.sondes.export((q.get("id") or [None])[0])
+            except s_mod.BadFlight as e:
+                self._error(str(e))
+                return True
+            name = (q.get("id") or ["radiosondes"])[0] if q.get("id") else "radiosondes-" + time.strftime("%Y%m%d-%H%M")
+            self._send(json.dumps(doc, indent=1).encode(), "application/json", [("Content-Disposition", f'attachment; filename="{"".join(c for c in name if c.isalnum() or c in "-_.")}.json"')])
             return True
         if path == "/api/radio433":
             # The 433 MHz window (playback/radio433.py): the background service's address, whether it answers, what the scan is doing, the devices heard.
@@ -299,6 +311,24 @@ def build(ctx):
                 r_mod.radio433.fetch()
                 s_mod.sondes.refresh()                          # (in a thread of its own: a dead address must not make this wait twice)
             self._send(json.dumps(r433_state()).encode(), "application/json")
+            return True
+        if path in ("/api/sondes/import", "/api/sondes/pin"):
+            # import: a radiosonde file (from /api/sondes/export) into the radio's memory. pin: {"id": "H4713951", "pinned": true | false}:
+            # keep that flight over a restart (a small file on the card, written once), or stop.
+            from sleepradiopi.playback import sondes as s_mod
+            try:
+                body = self._body()
+                if path.endswith("import"):
+                    ids = s_mod.sondes.load(body)
+                    self._send(json.dumps({"imported": ids, **sondes_state()}).encode(), "application/json")
+                    return True
+                if not isinstance(body.get("id"), str) or not isinstance(body.get("pinned"), bool):
+                    raise s_mod.BadFlight('send {"id": "the flight", "pinned": true or false}')
+                s_mod.sondes.pin(body["id"], body["pinned"])
+            except (s_mod.BadFlight, ValueError, TypeError, AttributeError) as e:
+                self._error(str(e) or "that isn't a radiosonde file")
+                return True
+            self._send(json.dumps(sondes_state()).encode(), "application/json")
             return True
         if path == "/api/aircraft":
             # {"address": "192.168.1.5:8080"}: the dump1090 / readsb receiver on the local network ("" forgets it); and/or

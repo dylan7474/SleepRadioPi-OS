@@ -194,3 +194,133 @@ def test_from_the_web(tmp_path: Path, monkeypatch) -> None:
     finally:
         httpd.shutdown()
         httpd.server_close()
+
+
+def _flight_file(i="Y1722563", **kw):
+    f = flight(i, alt=800.0, vel_v=-5.0, track=[[54.5, -1.0, 100.0], [54.9, -1.5, 26900.0], [55.0, -1.6, 800.0]], **kw)
+    return {"format": sondes.FORMAT, "version": 1, "flights": [{"id": i, "first": NOW - 9000, "max_alt": 26907.0, "last_heard": NOW - 4000, "track": f["track"],
+                                                                  **{k: f[k] for k in sondes.FIELDS}}]}
+
+
+def test_a_flight_exports_and_imports_back_and_is_marked_imported(monkeypatch) -> None:
+    monkeypatch.setattr(sondes, "aerial", lambda: AT)
+    s = _s()
+    s.fetch()
+    doc = s.export("V1234567")
+    assert doc["format"] == sondes.FORMAT and doc["flights"][0]["id"] == "V1234567" and len(doc["flights"][0]["track"]) == 2
+    s2 = _s(flights=[])
+    assert s2.load(json.loads(json.dumps(doc))) == ["V1234567"]
+    f = s2.kept()[0]
+    assert f["imported"] is True and f["id"] == "V1234567" and f["max_alt"] == doc["flights"][0]["max_alt"] and "km" in f
+    assert len(s.export()["flights"]) == 1
+    try:
+        s.export("nope")
+        raise AssertionError
+    except sondes.BadFlight:
+        pass
+
+
+def test_a_wrong_file_changes_nothing(monkeypatch) -> None:
+    s = _s(flights=[])
+    good = _flight_file()
+    bad = _flight_file("X1")
+    bad["flights"][0]["track"][1] = [200, 0, 5]                    # off the Earth
+    both = {**good, "flights": good["flights"] + bad["flights"]}
+    for data in (both, {"format": "other"}, [], {**good, "version": 9}, {**good, "flights": []},
+                 {**good, "flights": [{**good["flights"][0], "id": "../../x"}]}, {**good, "flights": [{**good["flights"][0], "alt": float("nan")}]}):
+        try:
+            s.load(data)
+            raise AssertionError(data)
+        except sondes.BadFlight:
+            pass
+    assert s.kept() == []
+
+
+def test_a_pinned_flight_survives_a_restart_and_the_limit_of_eight(monkeypatch, tmp_path: Path) -> None:
+    monkeypatch.setattr(sondes, "aerial", lambda: AT)
+    pins = tmp_path / "state" / "pins.json"
+    s = _s(flights=[flight(f"A{i}", ago=3 + i) for i in range(3)])
+    s.pins_in(pins)
+    s.fetch()
+    assert not pins.exists()                                            # (nothing is written until something is pinned)
+    s.pin("A1")
+    assert pins.exists() and [f["id"] for f in json.loads(pins.read_text())["flights"]] == ["A1"]
+    for n in range(12):                                                  # a stream of newer flights pushes the loose ones out, never the pinned
+        s.t[0] += 60
+        s.answers["/sondes"] = {"running": True, "flights": [flight(f"B{n}", ago=1)]}
+        s.fetch()
+    ids = [f["id"] for f in s.status(False)["flights"]]
+    assert "A1" in ids and len([i for i in ids if i != "A1"]) == sondes.KEEP
+    s2 = _s(flights=[])                                                  # a restart
+    s2.pins_in(pins)
+    f = s2.kept()[0]
+    assert f["id"] == "A1" and f["pinned"] is True and len(f["track"]) >= 2
+    s2.forget()                                                          # (changing the receiver's address forgets what it said, not the pinned)
+    assert [f["id"] for f in s2.kept()] == ["A1"]
+    s2.pin("A1", False)
+    assert not pins.exists() and s2.kept()[0]["pinned"] is False
+
+
+def test_the_pins_are_limited_and_a_flight_still_heard_is_written_again_once_it_is_silent(monkeypatch, tmp_path: Path) -> None:
+    monkeypatch.setattr(sondes, "aerial", lambda: AT)
+    pins = tmp_path / "pins.json"
+    s = _s(flights=[flight(f"P{i}") for i in range(sondes.MAX_PINS + 1)])
+    monkeypatch.setattr(sondes, "KEEP", 50)
+    s.pins_in(pins)
+    s.fetch()
+    for i in range(sondes.MAX_PINS):
+        s.pin(f"P{i}")
+    try:
+        s.pin(f"P{sondes.MAX_PINS}")
+        raise AssertionError
+    except sondes.BadFlight as e:
+        assert "unpin" in str(e)
+    for bad in ("nope",):
+        try:
+            s.pin(bad)
+            raise AssertionError
+        except sondes.BadFlight:
+            pass
+    before = json.loads(pins.read_text())["flights"]
+    assert all(len(f["track"]) == 2 for f in before)
+    s.answers["/sondes"] = {"running": True, "flights": [flight("P0", lat=55.0, track=[[54.54, -1.09, 100.0], [54.9, -1.5, 12400.0], [55.0, -1.5, 12400.0]], ago=1)]}
+    s.t[0] += 10
+    s.fetch()
+    assert len(next(f for f in json.loads(pins.read_text())["flights"] if f["id"] == "P0")["track"]) == 2      # (still being heard: not written again yet)
+    s.t[0] += sondes.ACTIVE_S + 10
+    s.answers["/sondes"] = {"running": True, "flights": []}
+    s.fetch()
+    assert len(next(f for f in json.loads(pins.read_text())["flights"] if f["id"] == "P0")["track"]) == 3      # (silent now: written once)
+
+
+def test_the_web_page_pins_exports_and_imports(monkeypatch, tmp_path: Path) -> None:
+    monkeypatch.setattr(sondes, "aerial", lambda: AT)
+    conf = tmp_path / "config.json"
+    conf.write_text("{}")
+    httpd = ThreadingHTTPServer(("127.0.0.1", 0), make_handler(None, None, None, conf))
+    threading.Thread(target=httpd.serve_forever, daemon=True).start()
+    base = f"http://127.0.0.1:{httpd.server_address[1]}"
+    s = _s(flights=[], address="")
+    s.pins_in(tmp_path / "pins.json")
+    monkeypatch.setattr(sondes, "sondes", s)
+    monkeypatch.setattr(radio433, "ADDRESS", "")
+
+    def call(path, body=None):
+        req = urllib.request.Request(base + path, data=None if body is None else json.dumps(body).encode(), method="GET" if body is None else "POST")
+        try:
+            with urllib.request.urlopen(req, timeout=5) as resp:
+                return resp.status, json.loads(resp.read()), resp.headers
+        except urllib.error.HTTPError as e:
+            return e.code, json.loads(e.read()), e.headers
+    try:
+        code, d, _ = call("/api/sondes/import", _flight_file())
+        assert code == 200 and d["imported"] == ["Y1722563"] and d["up"] is False and d["flights"][0]["imported"] is True    # (shown with no receiver too)
+        assert call("/api/sondes/import", {"format": "x"})[0] == 400
+        code, d, _ = call("/api/sondes/pin", {"id": "Y1722563", "pinned": True})
+        assert code == 200 and d["flights"][0]["pinned"] is True and (tmp_path / "pins.json").exists()
+        assert call("/api/sondes/pin", {"id": "nope", "pinned": True})[0] == 400 and call("/api/sondes/pin", {"id": "Y1722563"})[0] == 400
+        code, d, h = call("/api/sondes/export?id=Y1722563")
+        assert code == 200 and d["flights"][0]["id"] == "Y1722563" and "Y1722563.json" in h["Content-Disposition"]
+        assert call("/api/sondes/export")[1]["format"] == sondes.FORMAT and call("/api/sondes/export?id=zz")[0] == 400
+    finally:
+        httpd.shutdown()
