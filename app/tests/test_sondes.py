@@ -81,6 +81,20 @@ def test_the_radio_keeps_the_flights_and_their_highest_point_in_memory(monkeypat
     assert s.status(False) is None
 
 
+def test_a_pin_shows_at_once_while_the_receiver_answers(monkeypatch, tmp_path: Path) -> None:
+    # The status is the receiver's last answer (asked every half minute); its flights must be the radio's memory now,
+    # or a tick in the Pin box is undone by the page's reload until the next ask (it was, 2026-11-12).
+    monkeypatch.setattr(sondes, "aerial", lambda: None)
+    s = _s()
+    s.pins_in(tmp_path / "pins.json")
+    s.fetch()
+    assert not s.status(False)["flights"][0].get("pinned")
+    s.pin("V1234567", True)
+    assert s.status(False)["flights"][0]["pinned"] is True
+    s.pin("V1234567", False)
+    assert s.status(False)["flights"][0]["pinned"] is False
+
+
 def test_only_the_newest_flights_are_kept(monkeypatch) -> None:
     monkeypatch.setattr(sondes, "aerial", lambda: None)
     s = _s([flight(i=f"S{n}", ago=n) for n in range(12)])

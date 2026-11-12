@@ -314,13 +314,9 @@ class Sondes(Kept):
         had = super().status(refresh, False)
         if had is None:
             return None
-        gone = round(self._clock() - had["t"])         # (as of now: what was heard 15 s ago was heard that much longer ago)
-        flights = []
-        for e in had["flights"]:
-            e = {**e, "ago_s": e["ago_s"] + gone}
-            e["state"] = judge(e)
-            flights.append(e)
-        return {**had, "flights": flights}
+        # The flights from memory as they are now, not as they were at the last ask of the receiver (up to half a minute ago): a pin, an
+        # unpin or an import shows at once (it didn't: the tick box went back until the next ask), and "ago" is as of now.
+        return {**had, "flights": self.kept()}
 
     def forget(self) -> None:
         with self._lock:
