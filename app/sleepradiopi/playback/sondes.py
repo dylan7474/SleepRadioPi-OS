@@ -199,6 +199,7 @@ class Sondes(Kept):
         self._mem = threading.Lock()
         self._flights: dict[str, dict] = {}           # id -> what is known of it (memory; only a pinned flight is also in the pins file)
         self._pins: Path | None = None
+        self._deleted: set[str] = set()               # ids deleted here: not taken back from the receiver, which still has them (memory: a restart forgets this)
         self._saved: dict[str, tuple] = {}            # pinned id -> (track points, series rows) in the file (a pinned flight still being heard is written again once it is silent)
 
     def _fetch(self) -> dict:
@@ -211,7 +212,7 @@ class Sondes(Kept):
         now = self._clock()
         with self._mem:
             for f in data["flights"]:
-                if not isinstance(f, dict) or not isinstance(f.get("id"), str) or not all(isinstance(f.get(k), (int, float)) for k in ("lat", "lon", "alt")):
+                if not isinstance(f, dict) or not isinstance(f.get("id"), str) or not all(isinstance(f.get(k), (int, float)) for k in ("lat", "lon", "alt")) or f["id"] in self._deleted:
                     continue
                 e = self._flights.setdefault(f["id"], {"id": f["id"][:20], "first": now, "track": [], "max_alt": f["alt"]})
                 latest = {k: f.get(k) for k in FIELDS}
@@ -364,6 +365,7 @@ class Sondes(Kept):
         flights = parse(data)
         with self._mem:
             for f in flights:
+                self._deleted.discard(f["id"])                     # (imported on purpose: it is wanted again)
                 had = self._flights.get(f["id"])
                 if had and self._size(had)[::-1] >= self._size(f)[::-1]:          # (the one with more readings, then more track, stays)
                     continue
@@ -385,6 +387,17 @@ class Sondes(Kept):
             e["pinned"] = on
             self._write_pins()
             self._trim()
+
+    def delete(self, ident: str) -> None:
+        """Forget this flight now, pinned or not (a pinned one leaves the pins file too). The receiver may still be serving it: it isn't
+        taken back from it (until the radio restarts). BadFlight if there is no such flight."""
+        with self._mem:
+            e = self._flights.pop(ident, None)
+            if e is None:
+                raise BadFlight("there's no such flight")
+            self._deleted.add(ident)
+            if e.get("pinned"):
+                self._write_pins()
 
     def wanted(self) -> bool:
         return base(self._address()) is not None

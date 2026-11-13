@@ -322,6 +322,19 @@ def build(ctx):
                 s_mod.sondes.refresh()                          # (in a thread of its own: a dead address must not make this wait twice)
             self._send(json.dumps(r433_state()).encode(), "application/json")
             return True
+        if path == "/api/sondes/delete":
+            # {"id": "H4713951"}: forget that flight now (pinned or not; a pinned one leaves the card's pins file too).
+            from sleepradiopi.playback import sondes as s_mod
+            try:
+                body = self._body()
+                if not isinstance(body.get("id"), str):
+                    raise s_mod.BadFlight('send {"id": "the flight"}')
+                s_mod.sondes.delete(body["id"])
+            except (s_mod.BadFlight, ValueError, TypeError, AttributeError) as e:
+                self._error(str(e) or "that isn't a flight")
+                return True
+            self._send(json.dumps(sondes_state()).encode(), "application/json")
+            return True
         if path in ("/api/sondes/import", "/api/sondes/pin"):
             # import: a radiosonde file (from /api/sondes/export) into the radio's memory. pin: {"id": "H4713951", "pinned": true | false}:
             # keep that flight over a restart (a small file on the card, written once), or stop.

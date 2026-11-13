@@ -665,6 +665,11 @@
   .sd3-down { stroke-dasharray: 5 4; }
   .sd3-guide { stroke: var(--dim); stroke-dasharray: 2 3; }
   .sd3-dot { fill: none; stroke: var(--ink); stroke-width: 2.5; }
+  .sd-bar { position: sticky; top: -1px; z-index: 5; display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; margin: 0 -2px 10px; padding: 8px 10px;
+            background: var(--win); border: 1px solid var(--plate-line); border-radius: 10px; box-shadow: 0 4px 12px var(--shadow); }
+  .sd-bar select { min-width: 0; flex: 1 1 260px; max-width: 520px; font: inherit; padding: 4px 6px; background: var(--field); color: var(--ink); border: 1px solid var(--key-line); border-radius: 7px; }
+  .sd-bar .sd-n { font: 12px var(--mono); color: var(--dim); white-space: nowrap; }
+  .sd-bar .sbtn { white-space: nowrap; }
   .sd-row { display: grid; grid-template-columns: 3.2em minmax(0, 1.3fr) minmax(0, 1fr) minmax(0, .8fr) minmax(0, 1fr); gap: 4px 10px; font-size: 12.5px; align-items: baseline; }
   .sd-row .h { font-size: 10px; letter-spacing: .09em; text-transform: uppercase; color: var(--faint); padding-bottom: 4px; border-bottom: 1px solid var(--plate-line); }
   .sd-row .c { padding: 4px 0; border-bottom: 1px solid color-mix(in srgb, var(--plate-line) 55%, transparent); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-variant-numeric: tabular-nums; }
@@ -4730,7 +4735,7 @@ const Sonde3D = {
   },
   make() {
     const st = this.st, cv = el("canvas", { className: "sd3-cv", tabIndex: 0 });
-    cv.setAttribute("aria-label", "The flight in 3D: drag to turn it, the wheel to zoom; arrow keys turn it, + and - zoom, < and > step through the flight");
+    cv.setAttribute("aria-label", "The flight in 3D: drag to turn it, the wheel to zoom; arrow keys turn it, + and - zoom, < and > step through the flight, [ and ] the previous and next flight");
     const exag = seg([[1, "×1"], [3, "×3"], [10, "×10"]], this.exag(), v => {
       try { localStorage.setItem("srd.sd3exag", String(v)); } catch {}
       exag.querySelectorAll("button").forEach(b => b.setAttribute("aria-pressed", String(b.textContent === "×" + v)));
@@ -4772,6 +4777,7 @@ const Sonde3D = {
       else if (k === "+" || k === "=") st.zoom = Math.min(8, st.zoom * 1.2); else if (k === "-") st.zoom = Math.max(.5, st.zoom / 1.2);
       else if ((k === "," || k === "<" || k === ".") && n) { this.stop(); st.idx = Math.max(0, Math.min(n - 1, (st.idx ?? n - 1) + (k === "." ? 1 : -1))); }
       else if (k === "Home" && n) st.idx = 0; else if (k === "End" && n) st.idx = n - 1;
+      else if ((k === "[" || k === "]") && this.step) { e.preventDefault(); this.step(k === "]" ? 1 : -1); return; }
       else return;
       e.preventDefault(); this.draw();
     };
@@ -4780,7 +4786,7 @@ const Sonde3D = {
       el("div", { className: "line sd3-ctl" }, el("span", { className: "note", textContent: "Height stretched" }), exag, play, reset),
       this.shadeRow = el("div", { className: "line sd3-ctl" }, el("span", { className: "note", textContent: "Path shows" }), shade),
       slider, card, note, charts,
-      help("Drag to turn it, the wheel (or + and -) to zoom; click the path, or move the slider, for the readings at that moment. Solid line: the climb; dashed: after the burst. Path shows: the path shaded by a reading (dark low, bright high, its scale at the bottom left) and the reading written beside the climb every 5 km. ■ launch (or where it was first heard), ◆ burst (the highest point), ▲ ▼ ✕ the last heard (climbing, descending, landed or lost). Dots on a one-colour climb every kilometre of height. The map under it is the radio's own."));
+      help("Drag to turn it, the wheel (or + and -) to zoom ([ and ] change flight while it has the keys); click the path, or move the slider, for the readings at that moment. Solid line: the climb; dashed: after the burst. Path shows: the path shaded by a reading (dark low, bright high, its scale at the bottom left) and the reading written beside the climb every 5 km. ■ launch (or where it was first heard), ◆ burst (the highest point), ▲ ▼ ✕ the last heard (climbing, descending, landed or lost). Dots on a one-colour climb every kilometre of height. The map under it is the radio's own."));
     Object.assign(this, { cv, slider, card, charts, note, playBtn: play });
     new ResizeObserver(() => this.draw()).observe(cv);
     return node;
@@ -6034,6 +6040,26 @@ const UI = {
         return { buttons, pins, box: () => grp("Keep flights", help(`The flights are in the radio's memory and go when it restarts. Pin one to keep it over a restart (up to ${a.pins || 10}; written to the card once), or Download it to keep on your PC and Import it back whenever you like. ${pins} pinned.`), sel ? null : buttons) };
       };
       const kp = keepOf();
+      // the flight bar: stays at the top of the window as it scrolls, so a flight can be chosen, pinned or deleted while its 3D view is in sight
+      const goTo = id => act(async () => { UI.sondes.sel = id; });
+      const at = flights.indexOf(sel);
+      Sonde3D.step = d => { const f = flights[at + d]; if (f) goTo(f.id); };
+      const flightBar = () => {
+        const pick = el("select", { title: "The flight shown" });
+        pick.setAttribute("aria-label", "The flight shown");
+        for (const f of flights) pick.append(el("option", { value: f.id, selected: f === sel,
+          textContent: `${f.pinned ? "📌 " : ""}${f.id} · ${f.type || "sonde"} · highest ${num(f.max_alt / 1000)} km · ${words[f.state] || f.state} ${ago(f.ago_s)}${f.series_rows ? " · full readings" : ""}${f.imported ? " · imported" : ""}` }));
+        pick.onchange = () => goTo(pick.value);
+        const prev = sbtn("◀ Newer", () => Sonde3D.step(-1)), next = sbtn("Older ▶", () => Sonde3D.step(1));
+        prev.disabled = at <= 0; next.disabled = at >= flights.length - 1;
+        prev.title = "The flight heard after this one"; next.title = "The flight heard before this one";
+        const pin = sbtn(sel.pinned ? "📌 Pinned: unpin" : "📌 Pin", () => act(async () => { try { await api("/api/sondes/pin", { id: sel.id, pinned: !sel.pinned }); } catch (e) { toast(String(e.message || e)); } }));
+        pin.setAttribute("aria-pressed", String(!!sel.pinned));
+        const del = sbtn("Delete…", () => ask(`Delete ${sel.id} from the radio? ${sel.pinned ? "It is pinned: it leaves the card too. " : ""}Download it first if you might want it back (Import brings it back).`, "Delete", () => act(async () => {
+          try { await api("/api/sondes/delete", { id: sel.id }); UI.sondes.sel = (flights[at + 1] || flights[at - 1] || {}).id; toast(`${sel.id} deleted.`); } catch (e) { toast(String(e.message || e)); }
+        })));
+        return el("div", { className: "sd-bar", role: "toolbar" }, prev, pick, next, el("span", { className: "sd-n", textContent: `${at + 1} of ${flights.length}` }), pin, del);
+      };
       const nowWin = a.window && (a.window.on ? `Listening now, until ${a.window.end} UTC` : `Next listening ${a.window.start} UTC`);
       const scopeBox = () => {
         const box = el("div", { className: "air-scopebox" });
@@ -6048,8 +6074,8 @@ const UI = {
       };
       return [
         a.up ? el("div", { className: "r4-state" + (a.job === "sondes" ? "" : " paused"), role: "status", textContent: (a.job === "sondes" ? "● Listening for radiosondes" + (a.window?.on ? ` · until ${a.window.end} UTC` : " · a flight is still being heard") : "⏸ " + (a.now || "") + (nowWin ? ` · ${nowWin}` : "")) }) : null,
-        sel ? [el("div", { className: "air" }, scopeBox(), figures(sel)), grp(sel.id + " · " + (sel.type || "radiosonde") + (sel.freq ? " · " + sel.freq : "") + (sel.pinned ? " · 📌 pinned" : sel.imported ? " · imported" : ""), where(sel), line(mapLink(sel)), kp.buttons),
-               grp("The flight in 3D", Sonde3D.view(sel, a.aerial))] : null,
+        sel ? [flightBar(), grp("The flight in 3D", Sonde3D.view(sel, a.aerial)),
+               el("div", { className: "air" }, scopeBox(), figures(sel)), grp(sel.id + " · " + (sel.type || "radiosonde") + (sel.freq ? " · " + sel.freq : "") + (sel.pinned ? " · 📌 pinned" : sel.imported ? " · imported" : ""), where(sel), line(mapLink(sel)), kp.buttons)] : null,
         a.up && !sel ? grp("Radiosondes", help(`None heard yet. The decoder listens at the launch hours (${(a.windows || []).join(", ") || "set on the receiver"}, UTC: about 11:15 and 23:15) and a balloon is heard from about when it is launched until it lands; the flights then stay here, in the radio's memory.`)) : null,
         flights.length ? grp("Flights (this radio's memory)", table()) : null,
         a.up || flights.length ? kp.box() : null,

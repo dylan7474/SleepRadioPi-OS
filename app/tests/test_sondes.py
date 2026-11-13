@@ -427,3 +427,57 @@ def test_the_readings_are_pinned_exported_and_imported_and_an_old_file_still_rea
         raise AssertionError
     except sondes.BadFlight:
         pass
+
+
+def test_a_flight_can_be_deleted_and_the_receiver_does_not_bring_it_back(monkeypatch, tmp_path: Path) -> None:
+    monkeypatch.setattr(sondes, "aerial", lambda: AT)
+    s = _s([flight("A1"), flight("B2", ago=10)])
+    pins = tmp_path / "pins.json"
+    s.pins_in(pins)
+    s.fetch()
+    s.pin("B2")
+    s.delete("A1")
+    assert [f["id"] for f in s.kept()] == ["B2"]
+    s.t[0] += 20
+    s.fetch()                                                           # (the receiver still serves A1: it stays deleted)
+    assert [f["id"] for f in s.status(False)["flights"]] == ["B2"]
+    s.delete("B2")                                                      # (a pinned one: it leaves the card too)
+    assert s.kept() == [] and not pins.exists()
+    try:
+        s.delete("nope")
+        raise AssertionError
+    except sondes.BadFlight:
+        pass
+    s.load(_flight_file("A1"))                                          # (imported on purpose: back it comes)
+    assert [f["id"] for f in s.kept()] == ["A1"]
+    s.answers["/sondes"]["flights"] = [flight("A1"), flight("B2")]
+    s.fetch()
+    assert "A1" in [f["id"] for f in s.kept()] and "B2" not in [f["id"] for f in s.kept()]
+
+
+def test_delete_from_the_web(monkeypatch, tmp_path: Path) -> None:
+    monkeypatch.setattr(sondes, "aerial", lambda: AT)
+    conf = tmp_path / "config.json"
+    conf.write_text("{}")
+    s = _s([flight("A1")])
+    s.fetch()
+    monkeypatch.setattr(sondes, "sondes", s)
+    httpd = ThreadingHTTPServer(("127.0.0.1", 0), make_handler(None, None, None, conf))
+    threading.Thread(target=httpd.serve_forever, daemon=True).start()
+    base = f"http://127.0.0.1:{httpd.server_address[1]}"
+
+    def post(body):
+        req = urllib.request.Request(base + "/api/sondes/delete", data=json.dumps(body).encode(), method="POST")
+        with urllib.request.urlopen(req, timeout=5) as resp:
+            return json.loads(resp.read())
+    try:
+        assert post({"id": "A1"})["flights"] == []
+        for bad in ({"id": "A1"}, {}):
+            try:
+                post(bad)
+                raise AssertionError(bad)
+            except urllib.error.HTTPError as e:
+                assert e.code == 400
+    finally:
+        httpd.shutdown()
+        httpd.server_close()

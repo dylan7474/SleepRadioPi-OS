@@ -598,7 +598,9 @@ Actions, Sleep timer and Radio folders open:
   slider (or a click on the path, or Play) for the height, temperature,
   humidity, pressure, climb, drift and distance at any moment, with charts of
   temperature, humidity and pressure by height and the climb over time. Pinned
-  and downloaded flights keep their readings.
+  and downloaded flights keep their readings. A bar at the top of the window
+  (it stays there as you scroll) steps through the flights (◀ Newer, Older ▶,
+  or a list) and pins or deletes the one shown.
 - **Quiet hours (do not disturb).** In The DJ's window: from and until
   (23:00 to 06:00 to begin with), or off. No news, birthday wishes, alerts
   or lightning bell in them; music and programmes play as usual.
