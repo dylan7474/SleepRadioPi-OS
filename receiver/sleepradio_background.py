@@ -19,6 +19,8 @@ started again until the receiver has rested (it lets go itself after a minute wi
 What it serves (port 8076, JSON, read-only except /yield, which only answers this computer):
   /status   which job has the dongle, whether the receiver is using it, the sonde windows
   /sondes   the flights heard (position, height, speed, and a thinned track)
+  /sondes/series?id=ID   one flight's readings over time: a row every SERIES_EVERY_S seconds or so (time, position,
+            height, speeds, heading, temperature, humidity, pressure, battery, signal), kept in memory while this runs
   /433      the devices heard
 """
 from __future__ import annotations
@@ -48,6 +50,10 @@ SONDE_QUIET_S = 300          # a flight heard this recently keeps the sonde job 
 RESTART_AFTER_S = 30.0       # a job that died isn't started again sooner than this
 MAX_DEVICES = 500            # 433: devices remembered
 TRACK_POINTS = 300           # sondes: points of a flight's track served
+SERIES_EVERY_S = 5.0         # sondes: a row of a flight's readings at most this often (the decoder hears a frame a second)
+SERIES_MAX = 4000            # ...rows kept of one flight (past this every other one goes: about 5.5 h at 5 s before it thins)
+SERIES_FLIGHTS = 8           # ...flights whose readings are kept (the newest heard)
+SERIES_COLUMNS = ("t", "lat", "lon", "alt", "vel_v", "vel_h", "heading", "temp", "humidity", "pressure", "batt", "snr")
 LOG_LIMIT = 256 * 1024       # 433: if a log file is asked for (--log-433), it is turned over at this size
 SKIP_FIELDS = {"time", "model", "id", "channel", "mic", "rssi", "snr", "noise", "freq", "freq1", "freq2", "protocol", "subtype", "raw_msg", "codes", "data", "len",
                "count", "num_rows", "rows", "mod", "hop_index", "mcs", "sequence_num"}        # (rtl_433's own bookkeeping: what is left is what the device says)
@@ -182,6 +188,60 @@ def _num(v, low: float = -998.0) -> float | None:
     return v if isinstance(v, (int, float)) and not isinstance(v, bool) and v > low else None
 
 
+def readings(t: dict) -> dict:
+    """A decoder frame's readings, cleaned (what a sonde doesn't report is None)."""
+    return {"vel_v": _num(t.get("vel_v")), "vel_h": _num(t.get("vel_h")), "heading": _num(t.get("heading")), "temp": _num(t.get("temp"), -200.0),
+            "humidity": _num(t.get("humidity"), -0.5), "pressure": _num(t.get("pressure"), 0.0), "batt": _num(t.get("batt"), 0.0),
+            "snr": t.get("snr") if isinstance(t.get("snr"), (int, float)) and not isinstance(t.get("snr"), bool) else None}
+
+
+ROUND = {"lat": 5, "lon": 5, "alt": 1, "vel_v": 2, "vel_h": 2, "heading": 1, "temp": 1, "humidity": 1, "pressure": 2, "batt": 2, "snr": 1}
+
+
+def series_row(rec: dict) -> list | None:
+    """One row of a flight's readings (SERIES_COLUMNS) from the decoder's archive entry, or None if it has no time or place."""
+    try:
+        t = rec["latest_telem"]
+        when = float(rec["timestamp"])
+        lat, lon, alt = float(t["lat"]), float(t["lon"]), float(t["alt"])
+    except (KeyError, TypeError, ValueError):
+        return None
+    vals = {"lat": lat, "lon": lon, "alt": alt, **readings(t)}
+    return [round(when, 1)] + [None if vals[k] is None else round(vals[k], ROUND[k]) for k in SERIES_COLUMNS[1:]]
+
+
+class Series:
+    """Each flight's readings over time, in memory: a row at most every SERIES_EVERY_S seconds, the newest SERIES_FLIGHTS flights."""
+
+    def __init__(self) -> None:
+        self.rows: dict[str, list[list]] = {}
+
+    def add(self, archive: dict) -> None:
+        for serial, rec in (archive or {}).items():
+            if not isinstance(rec, dict):
+                continue
+            row = series_row(rec)
+            if row is None:
+                continue
+            ident = str((rec.get("latest_telem") or {}).get("id", serial))[:20]
+            rows = self.rows.setdefault(ident, [])
+            if rows and row[0] - rows[-1][0] < SERIES_EVERY_S:
+                continue
+            rows.append(row)
+            if len(rows) > SERIES_MAX:
+                del rows[1:-1:2]                                    # (every other one, but the first and the last stay)
+        if len(self.rows) > SERIES_FLIGHTS:
+            for ident in sorted(self.rows, key=lambda k: self.rows[k][-1][0] if self.rows[k] else 0)[:-SERIES_FLIGHTS]:
+                del self.rows[ident]
+
+    def count(self, ident: str) -> int:
+        return len(self.rows.get(ident, ()))
+
+    def get(self, ident: str) -> dict | None:
+        rows = self.rows.get(ident)
+        return None if rows is None else {"id": ident, "every_s": SERIES_EVERY_S, "columns": list(SERIES_COLUMNS), "rows": [list(r) for r in rows]}
+
+
 def flights_from(archive: dict, now: float | None = None) -> list[dict]:
     """radiosonde_auto_rx's /get_telemetry_archive -> the flights, the latest heard first."""
     now = time.time() if now is None else now
@@ -191,12 +251,11 @@ def flights_from(archive: dict, now: float | None = None) -> list[dict]:
             t = rec["latest_telem"]
             path = rec.get("path") or []
             step = max(1, len(path) // TRACK_POINTS)
-            vel_v = _num(t.get("vel_v"))
+            r = readings(t)
+            vel_v = r["vel_v"]
             out.append({
                 "id": str(t.get("id", serial)), "type": t.get("type"), "freq": t.get("freq"),
-                "lat": t["lat"], "lon": t["lon"], "alt": t["alt"], "vel_v": vel_v, "vel_h": _num(t.get("vel_h")),
-                "heading": _num(t.get("heading")), "temp": _num(t.get("temp"), -200.0), "humidity": _num(t.get("humidity"), -0.5),
-                "pressure": _num(t.get("pressure"), 0.0), "batt": _num(t.get("batt"), 0.0), "snr": t.get("snr"),
+                "lat": t["lat"], "lon": t["lon"], "alt": t["alt"], **r, "snr": t.get("snr"),
                 "state": "climbing" if vel_v is not None and vel_v > 1 else "falling" if vel_v is not None and vel_v < -1 else "steady",
                 "last": rec.get("timestamp"), "ago_s": round(now - rec["timestamp"]) if rec.get("timestamp") else None,
                 "track": path[::step][-TRACK_POINTS:],
@@ -258,6 +317,7 @@ class Background:
         self.current: str | None = None
         self.hold_until = 0.0
         self.flights: list[dict] = []
+        self.series = Series()
         self.sonde_heard_at = 0.0
         self.busy = False
 
@@ -289,6 +349,7 @@ class Background:
             self.busy = busy
             if archive is not None and self.current == "sondes" and self.jobs["sondes"].alive:
                 self.flights = flights_from(archive, now)
+                self.series.add(archive)
                 heard = [f["last"] for f in self.flights if f["last"]]
                 if heard:
                     self.sonde_heard_at = max(self.sonde_heard_at, max(heard))
@@ -324,7 +385,11 @@ class Background:
 
     def sondes(self) -> dict:
         with self.lock:
-            return {"running": self.current == "sondes", "flights": self.flights}
+            return {"running": self.current == "sondes", "flights": [{**f, "series_rows": self.series.count(f["id"])} for f in self.flights]}
+
+    def sonde_series(self, ident: str) -> dict | None:
+        with self.lock:
+            return self.series.get(ident)
 
     def scan433(self) -> dict:
         with self.lock:
@@ -352,8 +417,13 @@ def make_handler(bg: Background):
             self.wfile.write(body)
 
         def do_GET(self) -> None:
+            if self.path.split("?")[0] == "/sondes/series":
+                from urllib.parse import parse_qs, urlsplit
+                ident = (parse_qs(urlsplit(self.path).query).get("id") or [""])[0]
+                had = bg.sonde_series(ident)
+                return self._json(had if had else {"error": "no readings of that flight"}, 200 if had else 404)
             route = {"/status": bg.status, "/sondes": bg.sondes, "/433": bg.scan433}.get(self.path.split("?")[0])
-            self._json(route() if route else {"error": "/status, /sondes or /433"}, 200 if route else 404)
+            self._json(route() if route else {"error": "/status, /sondes, /sondes/series?id= or /433"}, 200 if route else 404)
 
         def do_POST(self) -> None:
             if self.path.split("?")[0] != "/yield":

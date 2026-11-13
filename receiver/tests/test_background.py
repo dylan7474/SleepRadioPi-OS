@@ -101,6 +101,35 @@ def test_what_a_sonde_does_not_report_is_none_not_minus_9999() -> None:
     assert g["vel_h"] == 12.5 and g["heading"] == 270.0 and g["humidity"] == 0.0 and g["pressure"] == 1013.2 and g["batt"] == 2.7 and g["temp"] == 0.0 and g["state"] == "falling"
 
 
+def test_a_flight_s_readings_are_kept_over_time() -> None:
+    series = bgm.Series()
+    def frame(t, alt, temp=-20.0, humidity=-1.0):
+        return {"S1": {"timestamp": t, "path": [], "latest_telem": {"id": "S1", "lat": 54.123456789, "lon": -1.5, "alt": alt, "vel_v": 5.0,
+                                                                    "vel_h": -9999.0, "temp": temp, "humidity": humidity, "snr": 11.04}}}
+    for t in range(1000, 1060):                                     # a frame a second for a minute
+        series.add(frame(t, 100.0 + 5 * (t - 1000)))
+    got = series.get("S1")
+    assert got["columns"][:4] == ["t", "lat", "lon", "alt"] and len(got["columns"]) == len(got["rows"][0])
+    assert [r[0] for r in got["rows"]] == [1000 + 5 * i for i in range(12)]          # (one every 5 s)
+    row = dict(zip(got["columns"], got["rows"][1]))
+    assert row == {"t": 1005, "lat": 54.12346, "lon": -1.5, "alt": 125.0, "vel_v": 5.0, "vel_h": None, "heading": None, "temp": -20.0,
+                   "humidity": None, "pressure": None, "batt": None, "snr": 11.0}
+    series.add({"bad": {"timestamp": 2000}, "worse": None, "S2": {"latest_telem": {"lat": 1, "lon": 2, "alt": 3}}})       # (no time: no row)
+    assert series.get("bad") is None and series.get("S2") is None and series.get("nothing") is None and series.count("S1") == 12
+
+
+def test_a_long_flight_is_thinned_and_only_the_newest_flights_are_kept(monkeypatch) -> None:
+    monkeypatch.setattr(bgm, "SERIES_MAX", 10)
+    series = bgm.Series()
+    for i in range(25):
+        series.add({"L": {"timestamp": 100 + 5 * i, "latest_telem": {"id": "L", "lat": 1, "lon": 2, "alt": i}}})
+    rows = series.get("L")["rows"]
+    assert len(rows) <= 10 and rows[0][0] == 100 and rows[-1][0] == 220                   # (the launch and the newest stay)
+    for n in range(bgm.SERIES_FLIGHTS + 2):
+        series.add({f"F{n}": {"timestamp": 1000 + n, "latest_telem": {"id": f"F{n}", "lat": 1, "lon": 2, "alt": 3}}})
+    assert len(series.rows) == bgm.SERIES_FLIGHTS and "L" not in series.rows and "F0" not in series.rows and f"F{bgm.SERIES_FLIGHTS + 1}" in series.rows
+
+
 class FakeJob:
     def __init__(self, name: str) -> None:
         self.name, self.proc, self.died, self.running, self.starts = name, None, 0.0, False, 0
@@ -162,7 +191,7 @@ def test_a_flight_outlasts_its_window_and_a_dead_job_waits_before_a_restart() ->
     bg.tick()
     assert bg.current == "sondes"
     bg.tick()
-    assert bg.sondes()["flights"][0]["id"] == "V1" and bg.sondes()["running"]
+    assert bg.sondes()["flights"][0]["id"] == "V1" and bg.sondes()["running"] and bg.sondes()["flights"][0]["series_rows"] == 1
     now[0] = utc(1, 40)                                                 # (past the window, the flight heard 11 minutes ago: over)
     bg.tick()
     assert bg.current == "scan433"
@@ -205,6 +234,12 @@ def test_the_web_side() -> None:
         assert get(url + "/status")["job"] == "scan433" and get(url + "/status")["sonde_windows_utc"] == ["22:45-01:30", "10:45-13:30"]
         assert get(url + "/433")["running"] and get(url + "/433")["devices"][0]["model"] == "Nexus-TH"
         assert get(url + "/sondes") == {"running": False, "flights": []}
+        with pytest.raises(urllib.error.HTTPError) as e:
+            get(url + "/sondes/series?id=nothing")
+        assert e.value.code == 404
+        bg.series.add({"Q1": {"timestamp": 50, "latest_telem": {"id": "Q1", "lat": 54.0, "lon": -1.0, "alt": 900.0, "temp": 3.5}}})
+        had = get(url + "/sondes/series?id=Q1")
+        assert had["id"] == "Q1" and had["rows"] == [[50, 54.0, -1.0, 900.0, None, None, None, 3.5, None, None, None, None]]
         assert get(url + "/yield", "POST") == {"ok": True, "was": "scan433"} and not jobs["scan433"].running
         with pytest.raises(urllib.error.HTTPError) as e:
             get(url + "/nothing")

@@ -647,6 +647,24 @@
   .sd-mark { stroke: #0a1013; stroke-width: 1; }
   .sd-track { fill: none; stroke: #ffe08a; stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
   .sd-fall { stroke-dasharray: 6 4; }
+  .sd3-wrap { border-radius: 10px; overflow: hidden; border: 1px solid var(--plate-line); }
+  .sd3-cv { display: block; width: 100%; cursor: grab; touch-action: none; }
+  .sd3-cv:active { cursor: grabbing; }
+  .sd3-cv:focus-visible { outline: 3px solid var(--ink); outline-offset: -3px; }
+  .sd3-ctl { margin-top: 8px; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .sd3-slider { width: 100%; margin: 10px 0 4px; }
+  .sd3-when { margin: 4px 0 8px; font: 12px var(--mono); color: var(--dim); }
+  .sd3-figs { max-width: none; grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); }
+  .sd3-charts { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 10px; margin-top: 10px; }
+  .sd3-fig { margin: 0; background: var(--win-2); border: 1px solid var(--plate-line); border-radius: 10px; padding: 6px 8px; }
+  .sd3-fig figcaption { font-size: 10px; letter-spacing: .09em; text-transform: uppercase; color: var(--dim); }
+  .sd3-chart { width: 100%; display: block; }
+  .sd3-plot { fill: none; stroke: var(--line); }
+  .sd3-ax { font: 10px var(--mono); fill: var(--dim); }
+  .sd3-l { fill: none; stroke: var(--ink); stroke-width: 1.6; stroke-linejoin: round; }
+  .sd3-down { stroke-dasharray: 5 4; }
+  .sd3-guide { stroke: var(--dim); stroke-dasharray: 2 3; }
+  .sd3-dot { fill: none; stroke: var(--ink); stroke-width: 2.5; }
   .sd-row { display: grid; grid-template-columns: 3.2em minmax(0, 1.3fr) minmax(0, 1fr) minmax(0, .8fr) minmax(0, 1fr); gap: 4px 10px; font-size: 12.5px; align-items: baseline; }
   .sd-row .h { font-size: 10px; letter-spacing: .09em; text-transform: uppercase; color: var(--faint); padding-bottom: 4px; border-bottom: 1px solid var(--plate-line); }
   .sd-row .c { padding: 4px 0; border-bottom: 1px solid color-mix(in srgb, var(--plate-line) 55%, transparent); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-variant-numeric: tabular-nums; }
@@ -4629,6 +4647,329 @@ const ScopeMap = {
       return g;
     },
 };
+// The Radiosondes window's 3D flight: one flight drawn in the air above the built-in map (the coast and towns of data/map.json, nothing
+// fetched from anyone), turned by dragging, zoomed with the wheel, and a slider (or a click on the path) that picks a moment of the
+// flight: its readings in a card, and a cursor on the charts below (temperature and humidity against height, the climb against time).
+// The way up is a solid line, the way down after the burst a dashed one; launch, burst and the last point heard each have their own
+// shape and word (never colour alone). It is drawn from /api/sondes/profile (the flight's track and its readings over time); a flight
+// heard before the radio kept its readings (or from an old file) has its path only. One node is kept and moved into each redraw of the
+// window, so the angle, the zoom and the moment picked stay put while the window refreshes.
+const Sonde3D = {
+  st: { id: null, prof: null, rowsSeen: -1, asking: false, err: null, yaw: -35, pitch: 26, zoom: 1, idx: null, node: null, playing: null, ground: null, groundFor: null },
+  exag() { try { return +localStorage.getItem("srd.sd3exag") || 3; } catch { return 3; } },
+  // what the path is shaded by: a reading (temperature to begin with), or nothing (one colour)
+  SHADES: { temp: { key: "temp", word: "Temperature", fmt: v => `${v.toFixed(0)} °C` }, humidity: { key: "humidity", word: "Humidity", fmt: v => `${v.toFixed(0)} %` },
+            pressure: { key: "pressure", word: "Pressure", fmt: v => `${v < 100 ? v.toFixed(1) : v.toFixed(0)} hPa` } },
+  shade() { try { const v = localStorage.getItem("srd.sd3shade"); return v === "none" ? null : v in this.SHADES ? v : "temp"; } catch { return "temp"; } },
+  // dark blue to bright yellow (cividis: it reads the same to colour-blind eyes, by how light it is)
+  ramp(f) {
+    const S = [[0, 32, 77], [65, 77, 108], [124, 123, 120], [188, 175, 111], [255, 234, 70]], x = Math.max(0, Math.min(1, f)) * 4, i = Math.min(3, Math.floor(x)), t = x - i;
+    return `rgb(${S[i].map((c, k) => Math.round(c + (S[i + 1][k] - c) * t)).join(",")})`;
+  },
+  // the flight shown is `f` (from the window's list): ask for its story if it is new to this view or it has more readings now
+  view(f, aerial) {
+    const st = this.st;
+    if (st.id !== f.id) { this.stop(); Object.assign(st, { id: f.id, prof: null, rowsSeen: -1, err: null, idx: null, ground: null, groundFor: null }); }
+    st.aerial = aerial; this.flight = f;
+    const want = (f.series_rows || 0) + ":" + (f.track || []).length;
+    if (!st.asking && st.rowsSeen !== want) {
+      st.asking = true;
+      api("/api/sondes/profile?id=" + encodeURIComponent(f.id)).then(p => { if (st.id === p.id) { st.prof = p; st.rowsSeen = want; st.err = null; st.pts = null; this.draw(); } },
+                                                                      e => { st.err = String(e.message || e); this.draw(); }).finally(() => { st.asking = false; });
+    }
+    if (!st.node) st.node = this.make();
+    if (ScopeMap.on() && !ScopeMap.data && !ScopeMap.failed) ScopeMap.get().then(() => this.draw());
+    this.draw();
+    return st.node;
+  },
+  // the points of the flight: its readings if it has them, else its track (positions and heights only), in km east and north of the aerial
+  points() {
+    const st = this.st, p = st.prof;
+    if (!p) return null;
+    if (st.pts) return st.pts;
+    const rows = p.rows || [], c = p.columns || [], col = k => c.indexOf(k);
+    let pts = rows.length ? rows.map(r => Object.fromEntries(c.map((k, i) => [k, r[i]]))) : (p.track || []).map(q => ({ t: null, lat: q[0], lon: q[1], alt: q[2] }));
+    pts = pts.filter(q => q.lat != null && q.lon != null && q.alt != null);
+    if (!pts.length) return st.pts = [];
+    const o = st.aerial || [pts[0].lat, pts[0].lon], kx = 111.32 * Math.cos(o[0] * Math.PI / 180), ky = 110.57;
+    const top = pts.reduce((m, q, i) => q.alt > pts[m].alt ? i : m, 0);
+    pts.forEach((q, i) => { q.x = (q.lon - o[1]) * kx; q.y = (q.lat - o[0]) * ky; q.up = i <= top; q.i = i; });
+    pts.top = top; pts.timed = rows.length > 0 && col("t") >= 0; pts.origin = o; pts.kx = kx; pts.ky = ky;
+    const xs = pts.map(q => q.x).concat(st.aerial ? [0] : []), ys = pts.map(q => q.y).concat(st.aerial ? [0] : []);
+    let [x0, x1, y0, y1] = [Math.min(...xs), Math.max(...xs), Math.min(...ys), Math.max(...ys)];
+    const half = Math.max(10, (x1 - x0) * .6, (y1 - y0) * .6), cx = (x0 + x1) / 2, cy = (y0 + y1) / 2;
+    pts.box = [cx - half, cx + half, cy - half, cy + half]; pts.half = half; pts.cx = cx; pts.cy = cy;
+    pts.zmax = Math.max(...pts.map(q => q.alt)) / 1000;
+    return st.pts = pts;
+  },
+  // the coast (lines) and the towns inside the ground plate, in km: worked out once per flight
+  groundOf(pts) {
+    const st = this.st, md = ScopeMap.data;
+    if (!md || !ScopeMap.on()) return null;
+    if (st.groundFor === pts) return st.ground;
+    const [bx0, bx1, by0, by1] = pts.box, o = pts.origin, lonW = o[1] + bx0 / pts.kx, lonE = o[1] + bx1 / pts.kx, latS = o[0] + by0 / pts.ky, latN = o[0] + by1 / pts.ky;
+    const box = md.land10.box, L = lonW > box[0] && lonE < box[2] && latS > box[1] && latN < box[3] ? md.land10 : md.land50, q = L.q;
+    const inside = (x, y) => x >= bx0 && x <= bx1 && y >= by0 && y <= by1, lines = [], step = pts.half / 150;
+    for (const r of L.rings) {
+      if (r[2] / q < lonW || r[0] / q > lonE || r[3] / q < latS || r[1] / q > latN) continue;
+      let x = r[4], y = r[5], cur = null, lx = 1e9, ly = 1e9;
+      for (let i = 4; i < r.length; i += 2) {
+        if (i > 4) { x += r[i]; y += r[i + 1]; }
+        const kx = (x / q - o[1]) * pts.kx, ky = (y / q - o[0]) * pts.ky;
+        if (!inside(kx, ky)) { cur = null; continue; }
+        if (cur && Math.abs(kx - lx) + Math.abs(ky - ly) < step) continue;
+        if (!cur) lines.push(cur = []);
+        cur.push([kx, ky]); lx = kx; ly = ky;
+      }
+    }
+    const towns = [];
+    for (const t of md.towns) { const kx = (t[0] - o[1]) * pts.kx, ky = (t[1] - o[0]) * pts.ky; if (inside(kx, ky)) towns.push([kx, ky, t[2], t[3]]); }
+    towns.sort((a, b) => b[2] - a[2]);
+    st.groundFor = pts;
+    return st.ground = { lines: lines.filter(l => l.length > 1), towns: towns.slice(0, 12) };
+  },
+  make() {
+    const st = this.st, cv = el("canvas", { className: "sd3-cv", tabIndex: 0 });
+    cv.setAttribute("aria-label", "The flight in 3D: drag to turn it, the wheel to zoom; arrow keys turn it, + and - zoom, < and > step through the flight");
+    const exag = seg([[1, "×1"], [3, "×3"], [10, "×10"]], this.exag(), v => {
+      try { localStorage.setItem("srd.sd3exag", String(v)); } catch {}
+      exag.querySelectorAll("button").forEach(b => b.setAttribute("aria-pressed", String(b.textContent === "×" + v)));
+      this.draw();
+    });
+    const shade = seg([["none", "One colour"], ["temp", "Temperature"], ["humidity", "Humidity"], ["pressure", "Pressure"]], this.shade() || "none", v => {
+      try { localStorage.setItem("srd.sd3shade", v); } catch {}
+      shade.querySelectorAll("button").forEach((b, i) => b.setAttribute("aria-pressed", String(["none", "temp", "humidity", "pressure"][i] === v)));
+      this.draw();
+    });
+    const slider = el("input", { type: "range", min: 0, max: 0, value: 0, className: "sd3-slider" });
+    slider.setAttribute("aria-label", "The moment of the flight shown");
+    slider.oninput = () => { this.stop(); st.idx = +slider.value; this.draw(); };
+    const play = sbtn("▶ Play", () => this.playing ? this.stop() : this.play());
+    const reset = sbtn("Reset view", () => { Object.assign(st, { yaw: -35, pitch: 26, zoom: 1 }); this.draw(); });
+    let drag = null;
+    cv.onpointerdown = e => { drag = { x: e.clientX, y: e.clientY, yaw: st.yaw, pitch: st.pitch, moved: false }; cv.setPointerCapture(e.pointerId); };
+    cv.onpointermove = e => {
+      if (!drag) return;
+      const dx = e.clientX - drag.x, dy = e.clientY - drag.y;
+      if (Math.abs(dx) + Math.abs(dy) > 4) drag.moved = true;
+      if (drag.moved) { st.yaw = drag.yaw - dx * .4; st.pitch = Math.max(2, Math.min(89, drag.pitch + dy * .3)); this.draw(); }
+    };
+    cv.onpointerup = e => {
+      const was = drag; drag = null;
+      if (was && !was.moved && st.screen) {                                  // a click, not a drag: the moment nearest the pointer
+        const r = cv.getBoundingClientRect(), x = e.clientX - r.left, y = e.clientY - r.top;
+        let best = -1, bd = 14;
+        st.screen.forEach((p, i) => { const d = Math.hypot(p[0] - x, p[1] - y); if (d < bd) { bd = d; best = i; } });
+        if (best >= 0) { this.stop(); st.idx = best; this.draw(); }
+      }
+    };
+    cv.onpointercancel = () => { drag = null; };
+    cv.onwheel = e => { e.preventDefault(); st.zoom = Math.max(.5, Math.min(8, st.zoom * (e.deltaY < 0 ? 1.15 : 1 / 1.15))); this.draw(); };
+    cv.onkeydown = e => {
+      const n = (st.pts || []).length, k = e.key;
+      if (k === "ArrowLeft") st.yaw += 10; else if (k === "ArrowRight") st.yaw -= 10;
+      else if (k === "ArrowUp") st.pitch = Math.min(89, st.pitch + 6); else if (k === "ArrowDown") st.pitch = Math.max(2, st.pitch - 6);
+      else if (k === "+" || k === "=") st.zoom = Math.min(8, st.zoom * 1.2); else if (k === "-") st.zoom = Math.max(.5, st.zoom / 1.2);
+      else if ((k === "," || k === "<" || k === ".") && n) { this.stop(); st.idx = Math.max(0, Math.min(n - 1, (st.idx ?? n - 1) + (k === "." ? 1 : -1))); }
+      else if (k === "Home" && n) st.idx = 0; else if (k === "End" && n) st.idx = n - 1;
+      else return;
+      e.preventDefault(); this.draw();
+    };
+    const card = el("div", { className: "sd3-card", role: "status" }), charts = el("div", { className: "sd3-charts" }), note = el("p", { className: "shelp" });
+    const node = el("div", { className: "sd3" }, el("div", { className: "sd3-wrap" }, cv),
+      el("div", { className: "line sd3-ctl" }, el("span", { className: "note", textContent: "Height stretched" }), exag, play, reset),
+      this.shadeRow = el("div", { className: "line sd3-ctl" }, el("span", { className: "note", textContent: "Path shows" }), shade),
+      slider, card, note, charts,
+      help("Drag to turn it, the wheel (or + and -) to zoom; click the path, or move the slider, for the readings at that moment. Solid line: the climb; dashed: after the burst. Path shows: the path shaded by a reading (dark low, bright high, its scale at the bottom left) and the reading written beside the climb every 5 km. ■ launch (or where it was first heard), ◆ burst (the highest point), ▲ ▼ ✕ the last heard (climbing, descending, landed or lost). Dots on a one-colour climb every kilometre of height. The map under it is the radio's own."));
+    Object.assign(this, { cv, slider, card, charts, note, playBtn: play });
+    new ResizeObserver(() => this.draw()).observe(cv);
+    return node;
+  },
+  play() {
+    const st = this.st, n = (st.pts || []).length;
+    if (n < 2) return;
+    if (st.idx == null || st.idx >= n - 1) st.idx = 0;
+    const each = Math.max(15, 20000 / n);                                   // (the whole flight in about 20 seconds)
+    this.playing = setInterval(() => { if (!this.cv.isConnected || st.idx >= n - 1) return this.stop(); st.idx++; this.draw(); }, each);
+    this.draw();
+  },
+  stop() { if (this.playing) { clearInterval(this.playing); this.playing = null; if (this.cv) this.draw(); } },
+  draw() {
+    const st = this.st, cv = this.cv;
+    if (!cv) return;
+    const pts = this.points(), n = pts ? pts.length : 0;
+    const W = cv.clientWidth || 600, H = Math.round(W * .62), dpr = window.devicePixelRatio || 1;
+    if (cv.width !== Math.round(W * dpr) || cv.height !== Math.round(H * dpr)) { cv.width = Math.round(W * dpr); cv.height = Math.round(H * dpr); cv.style.height = H + "px"; }
+    const g = cv.getContext("2d");
+    g.setTransform(dpr, 0, 0, dpr, 0, 0);
+    g.fillStyle = "#0d171b"; g.fillRect(0, 0, W, H);
+    this.playBtn.textContent = this.playing ? "❚❚ Pause" : "▶ Play";
+    g.font = "12px ui-monospace, monospace"; g.textBaseline = "middle";
+    if (!n) {
+      g.fillStyle = "#d8efe3"; g.textAlign = "center";
+      g.fillText(st.err ? "Couldn't ask the radio for this flight: " + st.err : st.prof ? "No positions in this flight." : "Asking the radio for the flight…", W / 2, H / 2);
+      this.card.replaceChildren(); this.charts.replaceChildren(); this.note.textContent = ""; this.slider.hidden = true;
+      return;
+    }
+    const ex = this.exag(), D2R = Math.PI / 180, cy = Math.cos(st.yaw * D2R), sy = Math.sin(st.yaw * D2R), cp = Math.cos(st.pitch * D2R), sp = Math.sin(st.pitch * D2R);
+    const zTop = Math.max(1, pts.zmax) * ex, Rs = Math.hypot(pts.half * 1.42, zTop / 2), s = Math.min(W, H) / 2 / Rs * .95 * st.zoom;
+    const P = (x, y, zkm) => {                                            // km east, km north, km up -> screen x, y (and depth: bigger is nearer)
+      const X = x - pts.cx, Y = y - pts.cy, Z = zkm * ex - zTop / 2;
+      const xr = X * cy - Y * sy, yr = X * sy + Y * cy;
+      return [W / 2 + s * xr, H / 2 - s * (Z * cp + yr * sp), -(yr * cp - Z * sp)];
+    };
+    const path = (list, close) => { g.beginPath(); list.forEach((p, i) => i ? g.lineTo(p[0], p[1]) : g.moveTo(p[0], p[1])); if (close) g.closePath(); };
+    const [bx0, bx1, by0, by1] = pts.box;
+    // the ground: a plate, a grid, the coast and the towns
+    path([P(bx0, by0, 0), P(bx1, by0, 0), P(bx1, by1, 0), P(bx0, by1, 0)], true);
+    g.fillStyle = "#13262a"; g.fill(); g.strokeStyle = "rgba(143,232,189,.55)"; g.lineWidth = 1; g.stroke();
+    const span = bx1 - bx0, gs = [5, 10, 20, 50, 100, 200].find(v => span / v <= 8) || 500;
+    g.strokeStyle = "rgba(143,232,189,.13)";
+    for (let v = Math.ceil(bx0 / gs) * gs; v <= bx1; v += gs) { path([P(v, by0, 0), P(v, by1, 0)]); g.stroke(); }
+    for (let v = Math.ceil(by0 / gs) * gs; v <= by1; v += gs) { path([P(bx0, v, 0), P(bx1, v, 0)]); g.stroke(); }
+    const gr = this.groundOf(pts);
+    if (gr) {
+      g.strokeStyle = "rgba(111,199,170,.75)"; g.lineWidth = 1.1;
+      for (const l of gr.lines) { path(l.map(q => P(q[0], q[1], 0))); g.stroke(); }
+      g.textAlign = "left";
+      const taken = [P(pts[0].x, pts[0].y, pts[0].alt / 1000), ...(st.aerial ? [P(0, 0, 0)] : [])].map(p => [p[0], p[1], 70]);     // (the launch and "you" are labelled: towns keep clear)
+      for (const t of gr.towns) {
+        const [x, y] = P(t[0], t[1], 0), w = t[3].length * 7.2 + 8;
+        g.fillStyle = "#cfe7f3"; g.beginPath(); g.arc(x, y, 2.4, 0, 7); g.fill();
+        if (taken.some(u => x + w > u[0] - 6 && x < u[0] + u[2] && Math.abs(y - u[1]) < 14)) continue;
+        taken.push([x, y, w]); g.globalAlpha = .8; g.fillText(t[3], x + 5, y); g.globalAlpha = 1;
+      }
+    }
+    const nPt = P(pts.cx, by1, 0); g.fillStyle = "#d7fbe8"; g.textAlign = "center"; g.font = "bold 12px ui-monospace, monospace"; g.fillText("N", nPt[0], nPt[1] - 9); g.font = "12px ui-monospace, monospace";
+    g.fillText(`grid ${gs} km`, ...P(bx1, by0, 0).slice(0, 2).map((v, i) => i ? v + 12 : v));
+    if (st.aerial) { const [x, y] = P(0, 0, 0); g.strokeStyle = "#fff"; g.lineWidth = 1.5; g.beginPath(); g.arc(x, y, 5, 0, 7); g.stroke(); g.fillStyle = "#fff"; g.textAlign = "right"; g.lineWidth = 3; g.strokeStyle = "#0d171b"; g.strokeText("you", x - 7, y + 11); g.fillText("you", x - 7, y + 11); }
+    // the shadow on the ground, and lines down to it now and then
+    g.strokeStyle = "rgba(200,210,215,.28)"; g.lineWidth = 1; g.setLineDash([]);
+    path(pts.map(q => P(q.x, q.y, 0))); g.stroke();
+    const every = Math.max(1, Math.round(n / 14));
+    g.strokeStyle = "rgba(200,210,215,.22)"; g.setLineDash([2, 3]);
+    for (let i = 0; i < n; i += every) { const q = pts[i]; path([P(q.x, q.y, 0), P(q.x, q.y, q.alt / 1000)]); g.stroke(); }
+    g.setLineDash([]);
+    // a height scale at the launch
+    const l0 = pts[0], kmStep = pts.zmax * ex > 40 ? 10 : 5;
+    g.strokeStyle = "rgba(215,251,232,.45)"; path([P(l0.x, l0.y, 0), P(l0.x, l0.y, Math.ceil(pts.zmax / kmStep) * kmStep)]); g.stroke();
+    g.fillStyle = "#d7fbe8"; g.textAlign = "right";
+    for (let k = kmStep; k <= pts.zmax + kmStep - .01; k += kmStep) { const [x, y] = P(l0.x, l0.y, k); g.fillRect(x - 3, y - .5, 6, 1); g.fillText(`${k} km`, x - 6, y); }
+    // the path: solid up, dashed down
+    const scr = pts.map(q => P(q.x, q.y, q.alt / 1000));
+    st.screen = scr;
+    g.lineJoin = g.lineCap = "round";
+    const by = this.shade(), K = by && pts.timed ? Sonde3D.SHADES[by] : null, vals = K ? pts.map(q => q[K.key]).filter(v => v != null) : [];
+    const lo = vals.length ? Math.min(...vals) : 0, hi = vals.length ? Math.max(...vals) : 1, frac = v => hi - lo < 1e-6 ? .5 : (v - lo) / (hi - lo);
+    if (vals.length > 1) {                                                    // each piece of the path in the colour of its reading (dark: low, bright: high)
+      g.lineWidth = 6; g.strokeStyle = "rgba(230,240,245,.32)";                     // (a pale edge, so the dark end shows on the dark sky)
+      path(scr.slice(0, pts.top + 1)); g.stroke();
+      if (pts.top < n - 1) { g.setLineDash([7, 5]); path(scr.slice(pts.top)); g.stroke(); g.setLineDash([]); }
+      g.lineWidth = 3.4;
+      for (let i = 1; i < n; i++) {
+        const v = pts[i][K.key] ?? pts[i - 1][K.key];
+        g.strokeStyle = v == null ? "#888" : this.ramp(frac(v));
+        g.setLineDash(i > pts.top ? [7, 5] : []);
+        path([scr[i - 1], scr[i]]); g.stroke();
+      }
+      g.setLineDash([]);
+      // the reading written beside the climb every 5 km (so it can be read without the colours), and the scale
+      g.font = "11px ui-monospace, monospace"; g.textAlign = "left";
+      let nextKm = 5;
+      for (let i = 0; i <= pts.top; i++) if (pts[i].alt / 1000 >= nextKm && pts[i][K.key] != null) {
+        const w = K.fmt(pts[i][K.key]), [x, y] = scr[i];
+        g.lineWidth = 3; g.strokeStyle = "#0d171b"; g.strokeText(w, x - 8 - g.measureText(w).width, y); g.fillStyle = "#e8f4ff"; g.fillText(w, x - 8 - g.measureText(w).width, y);
+        nextKm = Math.floor(pts[i].alt / 5000) * 5 + 5;
+      }
+      const lx = 14, ly = H - 40, lw = Math.min(180, W * .3);
+      for (let k = 0; k < lw; k++) { g.fillStyle = this.ramp(k / (lw - 1)); g.fillRect(lx + k, ly, 1, 10); }
+      g.strokeStyle = "rgba(230,240,245,.6)"; g.lineWidth = 1; g.strokeRect(lx - .5, ly - .5, lw + 1, 11);
+      g.fillStyle = "#d8efe3"; g.font = "11px ui-monospace, monospace"; g.textAlign = "left"; g.fillText(`${K.word}: ${K.fmt(lo)} (dark)`, lx, ly + 22);
+      g.textAlign = "right"; g.fillText(`${K.fmt(hi)} (bright)`, lx + lw, ly - 9); g.font = "12px ui-monospace, monospace";
+    } else {
+      g.lineWidth = 2.2; g.strokeStyle = "#ffe08a";
+      path(scr.slice(0, pts.top + 1)); g.stroke();
+      if (pts.top < n - 1) { g.setLineDash([7, 5]); path(scr.slice(pts.top)); g.stroke(); g.setLineDash([]); }
+    }
+    // a dot every km of height on the climb
+    g.fillStyle = "#fff6c8";
+    let nextKm = 1;
+    if (vals.length < 2) for (let i = 0; i <= pts.top; i++) if (pts[i].alt / 1000 >= nextKm) { g.beginPath(); g.arc(scr[i][0], scr[i][1], 2, 0, 7); g.fill(); nextKm = Math.floor(pts[i].alt / 1000) + 1; }
+    // launch, burst, the last heard
+    const mark = (i, kind, word) => {
+      const [x, y] = scr[i];
+      g.fillStyle = "#fff"; g.strokeStyle = "#0d171b"; g.lineWidth = 1.5;
+      if (kind === "launch") { g.fillRect(x - 4.5, y - 4.5, 9, 9); g.strokeRect(x - 4.5, y - 4.5, 9, 9); }
+      else if (kind === "burst") { g.fillStyle = "#ffe08a"; path([[x, y - 7], [x + 6, y], [x, y + 7], [x - 6, y]], true); g.fill(); g.stroke(); }
+      else if (kind === "lost") { g.strokeStyle = "#ff9a8a"; g.lineWidth = 3; path([[x - 6, y - 6], [x + 6, y + 6]]); g.stroke(); path([[x + 6, y - 6], [x - 6, y + 6]]); g.stroke(); }
+      else { g.fillStyle = "#ffe08a"; path(kind === "down" ? [[x - 7, y - 6], [x + 7, y - 6], [x, y + 7]] : [[x - 7, y + 6], [x + 7, y + 6], [x, y - 7]], true); g.fill(); g.stroke(); }
+      g.fillStyle = "#fff"; g.textAlign = "left"; g.lineWidth = 3; g.strokeStyle = "#0d171b"; g.strokeText(word, x + 10, y); g.fillText(word, x + 10, y);
+    };
+    const f = (this.flight || {});
+    mark(0, "launch", pts[0].alt > 1500 ? `first heard ${(pts[0].alt / 1000).toFixed(1)} km` : "launch");
+    if (pts.top > 0 && pts.top < n - 1) mark(pts.top, "burst", `burst ${(pts[pts.top].alt / 1000).toFixed(1)} km`);
+    if (n > 1) mark(n - 1, f.state === "landed" || f.state === "lost" ? "lost" : pts[n - 1].up && pts.top === n - 1 ? "up" : "down", `${(pts[n - 1].alt / 1000).toFixed(1)} km${f.state === "landed" ? " landed" : f.state === "lost" ? " lost" : ""}`);
+    // the moment picked
+    const idx = Math.max(0, Math.min(n - 1, st.idx ?? n - 1)), q = pts[idx], [mx, my] = scr[idx];
+    g.strokeStyle = "#fff"; g.lineWidth = 1; g.setLineDash([3, 3]); path([[mx, my], P(q.x, q.y, 0)]); g.stroke(); g.setLineDash([]);
+    g.lineWidth = 2.5; g.beginPath(); g.arc(mx, my, 9, 0, 7); g.stroke();
+    this.slider.hidden = n < 2; this.shadeRow.hidden = !pts.timed; this.slider.max = n - 1; this.slider.value = idx;
+    this.cardFor(q, pts);
+    this.chartsFor(pts, idx);
+    this.note.textContent = pts.timed ? `${n} moments of the flight (${this.st.prof.rows.length === n ? "" : "thinned, "}about one every ${Math.max(1, Math.round((pts[n - 1].t - pts[0].t) / Math.max(1, n - 1)))} s).`
+      : "This flight has its path and heights only: it was heard before the radio kept the readings over time (or comes from an older file). Flights heard from now on have them all.";
+  },
+  cardFor(q, pts) {
+    const num = (x, d = 1) => x == null ? "–" : (+x).toLocaleString("en-GB", { maximumFractionDigits: d, minimumFractionDigits: d });
+    const fig = (big, unit, what) => el("div", { className: "air-fig" }, el("b", { textContent: big }, unit && big !== "–" ? el("small", { textContent: unit }) : null), el("span", { textContent: what }));
+    const t = q.t != null ? new Date(q.t * 1000) : null, since = q.t != null && pts[0].t != null ? q.t - pts[0].t : null;
+    const km = this.st.aerial ? Math.hypot(q.x, q.y) : null, brg = this.st.aerial ? (Math.atan2(q.x, q.y) * 180 / Math.PI + 360) % 360 : null;
+    const dirs = ["N", "NE", "E", "SE", "S", "SW", "W", "NW"];
+    this.card.replaceChildren(
+      el("p", { className: "sd3-when", textContent: (t ? `${t.toLocaleTimeString("en-GB")} (${t.toISOString().slice(11, 19)} UTC) · ${Math.floor(since / 60)} min ${Math.round(since % 60)} s after the first heard` : `Point ${q.i + 1} of ${pts.length}`) + (q.up ? " · on the way up" : " · on the way down") }),
+      el("div", { className: "air-figs sd3-figs" },
+        fig(num(q.alt / 1000), "km", `height · ${Math.round(q.alt * 3.28084).toLocaleString("en-GB")} ft`),
+        fig(q.vel_v == null ? "–" : num(q.vel_v), "m/s", q.vel_v == null ? "climb" : q.vel_v < -1 ? "descending" : q.vel_v > 1 ? "climbing" : "level"),
+        fig(q.temp == null ? "–" : num(q.temp), "°C", "temperature"),
+        fig(q.humidity == null ? "–" : num(q.humidity, 0), "%", "humidity"),
+        fig(q.pressure == null ? "–" : num(q.pressure, q.pressure < 100 ? 1 : 0), "hPa", "pressure"),
+        fig(q.vel_h == null ? "–" : num(q.vel_h * 3.6, 0), "km/h", q.heading == null ? "wind (its drift)" : `drifting to ${dirs[Math.round(q.heading / 45) % 8]} (${Math.round(q.heading)}°)`),
+        fig(km == null ? "–" : num(km), "km", km == null ? "from you" : `from you, ${dirs[Math.round(brg / 45) % 8]}`),
+        fig(q.snr == null ? "–" : num(q.snr, 0), "dB", "signal"),
+        q.batt == null ? null : fig(num(q.batt), "V", "battery")));
+  },
+  // small charts: temperature and humidity against height, the climb against time; up solid, down dashed; the moment picked ringed
+  chartsFor(pts, idx) {
+    if (!pts.timed) { this.charts.replaceChildren(); return; }
+    const sv = (...x) => ScopeMap.sv(...x), W = 300, H = 190, L = 44, R = 10, T = 12, B = 30;
+    const chart = (title, xOf, yOf, xUnit, yUnit) => {
+      const ok = pts.filter(q => xOf(q) != null && yOf(q) != null);
+      if (ok.length < 2) return null;
+      const xs = ok.map(xOf), ys = ok.map(yOf);
+      let [x0, x1, y0, y1] = [Math.min(...xs), Math.max(...xs), Math.min(...ys), Math.max(...ys)];
+      if (x1 - x0 < 1e-6) { x0 -= 1; x1 += 1; } if (y1 - y0 < 1e-6) { y0 -= 1; y1 += 1; }
+      const X = v => L + (v - x0) / (x1 - x0) * (W - L - R), Y = v => H - B - (v - y0) / (y1 - y0) * (H - T - B);
+      const svg = sv("svg", { viewBox: `0 0 ${W} ${H}`, class: "sd3-chart", role: "img", "aria-label": title });
+      svg.append(sv("rect", { x: L, y: T, width: W - L - R, height: H - T - B, class: "sd3-plot" }));
+      const fmt = v => Math.abs(v) >= 100 ? Math.round(v) : +v.toFixed(1);
+      for (const [v, a] of [[x0, "start"], [x1, "end"]]) svg.append(sv("text", { x: X(v), y: H - B + 13, "text-anchor": a, class: "sd3-ax" }, String(fmt(v))));
+      for (const v of [y0, y1]) svg.append(sv("text", { x: L - 4, y: Y(v) + 4, "text-anchor": "end", class: "sd3-ax" }, String(fmt(v))));
+      svg.append(sv("text", { x: (L + W - R) / 2, y: H - 4, "text-anchor": "middle", class: "sd3-ax" }, xUnit), sv("text", { x: 4, y: T - 2, class: "sd3-ax" }, yUnit));
+      const line = (list, cls) => list.length > 1 ? sv("polyline", { class: cls, points: list.map(q => `${X(xOf(q)).toFixed(1)},${Y(yOf(q)).toFixed(1)}`).join(" ") }) : null;
+      [line(ok.filter(q => q.up), "sd3-l"), line(ok.filter(q => !q.up || q.i === pts.top), "sd3-l sd3-down")].forEach(n => n && svg.append(n));
+      const q = pts[idx];
+      if (xOf(q) != null && yOf(q) != null) svg.append(sv("line", { x1: L, x2: W - R, y1: Y(yOf(q)), y2: Y(yOf(q)), class: "sd3-guide" }), sv("circle", { cx: X(xOf(q)), cy: Y(yOf(q)), r: 5, class: "sd3-dot" }));
+      return el("figure", { className: "sd3-fig" }, el("figcaption", { textContent: title }), svg);
+    };
+    const t0 = pts[0].t;
+    this.charts.replaceChildren(...[
+      chart("Temperature by height", q => q.temp, q => q.alt / 1000, "°C", "km"),
+      chart("Humidity by height", q => q.humidity, q => q.alt / 1000, "% humidity", "km"),
+      chart("Climb over time", q => (q.t - t0) / 60, q => q.vel_v, "minutes after the first heard", "m/s"),
+      chart("Pressure by height", q => q.pressure, q => q.alt / 1000, "hPa", "km"),
+    ].filter(Boolean));
+  },
+};
 const UI = {
   tests: {
     load: async () => (await api("/api/status")).speaker,
@@ -5700,7 +6041,8 @@ const UI = {
       };
       return [
         a.up ? el("div", { className: "r4-state" + (a.job === "sondes" ? "" : " paused"), role: "status", textContent: (a.job === "sondes" ? "● Listening for radiosondes" + (a.window?.on ? ` · until ${a.window.end} UTC` : " · a flight is still being heard") : "⏸ " + (a.now || "") + (nowWin ? ` · ${nowWin}` : "")) }) : null,
-        sel ? [el("div", { className: "air" }, scopeBox(), figures(sel)), grp(sel.id + " · " + (sel.type || "radiosonde") + (sel.freq ? " · " + sel.freq : "") + (sel.pinned ? " · 📌 pinned" : sel.imported ? " · imported" : ""), where(sel), line(mapLink(sel)), kp.buttons)] : null,
+        sel ? [el("div", { className: "air" }, scopeBox(), figures(sel)), grp(sel.id + " · " + (sel.type || "radiosonde") + (sel.freq ? " · " + sel.freq : "") + (sel.pinned ? " · 📌 pinned" : sel.imported ? " · imported" : ""), where(sel), line(mapLink(sel)), kp.buttons),
+               grp("The flight in 3D", Sonde3D.view(sel, a.aerial))] : null,
         a.up && !sel ? grp("Radiosondes", help(`None heard yet. The decoder listens at the launch hours (${(a.windows || []).join(", ") || "set on the receiver"}, UTC: about 11:15 and 23:15) and a balloon is heard from about when it is launched until it lands; the flights then stay here, in the radio's memory.`)) : null,
         flights.length ? grp("Flights (this radio's memory)", table()) : null,
         a.up || flights.length ? kp.box() : null,

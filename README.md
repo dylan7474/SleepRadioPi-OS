@@ -591,7 +591,14 @@ Actions, Sleep timer and Radio folders open:
   heard). The last few flights stay in the radio's memory (not the card; pin one
   to keep it over a restart, or Download it and Import it back later), with the
   last position as text and a link to open it on a map, for anyone who wants to
-  find a sonde. Nothing is uploaded anywhere.
+  find a sonde. Nothing is uploaded anywhere. Each flight's readings are kept
+  over time too (a row every 5 s or so on the receiver; up to 600 per flight on
+  the radio), and *The flight in 3D* draws the whole flight above the built-in
+  map: drag to turn it, the wheel to zoom, a height stretch (×1, ×3, ×10), and a
+  slider (or a click on the path, or Play) for the height, temperature,
+  humidity, pressure, climb, drift and distance at any moment, with charts of
+  temperature, humidity and pressure by height and the climb over time. Pinned
+  and downloaded flights keep their readings.
 - **Quiet hours (do not disturb).** In The DJ's window: from and until
   (23:00 to 06:00 to begin with), or off. No news, birthday wishes, alerts
   or lightning bell in them; music and programmes play as usual.

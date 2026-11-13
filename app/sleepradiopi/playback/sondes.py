@@ -3,11 +3,13 @@
 The receiver Pi's background service (receiver/sleepradio_background.py, the one the 433 MHz window asks: ONE address for
 both, the setting background_url) runs radiosonde_auto_rx in the hours around the weather balloons' launches (about 11:15 and
 23:15 UTC) and serves what it decodes as JSON: <address>/sondes (each flight: position, height, climb rate, speed, heading,
-temperature... and a thinned track) and <address>/status (what the dongle is doing, and the sonde hours).
+temperature... and a thinned track), <address>/sondes/series?id= (one flight's readings over time: a row every 5 s or so) and
+<address>/status (what the dongle is doing, and the sonde hours).
 
 Sondes is a conditions.Kept like the 433 MHz one (LAN: no light for it, no file: nothing is written to the card). The service
 only knows a flight while it has heard it, so the radio keeps the last few flights itself, in memory, with each one's track
-and highest point, and the tile and window exist only while the service answers. Distances are from the aerial (the aircraft
+and highest point and its readings over time (the series: asked for a few times a flight, not every look), and the tile
+and window exist only while the service answers. Distances are from the aerial (the aircraft
 receiver's own place if it gave one, else the middle of the radio's locator square).
 """
 from __future__ import annotations
@@ -19,6 +21,7 @@ import re
 import threading
 import time
 from pathlib import Path
+from urllib.parse import quote
 from typing import Callable
 
 from sleepradiopi.audio import ft8
@@ -39,7 +42,11 @@ LANDED_S = 300               # ...silent for this long
 M_TO_FT = 3.28084
 MAX_PINS = 10                # flights kept over a restart (a file of a few tens of KB: one write per pin, never a steady stream)
 FORMAT = "sleepradiopi-sondes"
-VERSION = 1
+VERSION = 2                  # 2: a flight may have its series (1: position, height and the last readings only; still read)
+SERIES_KEEP = 600            # rows of a flight's series the radio keeps (thinned evenly: one every 15 s or so of a 2.5 h flight)
+SERIES_EVERY_S = 300.0       # a flight still being heard: its series is asked for again at most this often (and once more when it goes silent)
+SERIES_COLUMNS = ("t", "lat", "lon", "alt", "vel_v", "vel_h", "heading", "temp", "humidity", "pressure", "batt", "snr")
+HIDDEN = ("heard", "series", "series_at", "series_of")      # (not in the window's list: the series is asked for on its own, /api/sondes/profile)
 FIELDS = ("type", "freq", "lat", "lon", "alt", "vel_v", "vel_h", "heading", "temp", "humidity", "pressure", "batt", "snr", "state")
 STATE_WORDS = {"climbing": "climbing", "falling": "descending", "steady": "steady", "landed": "landed (last heard)", "lost": "lost (last heard)"}
 
@@ -102,6 +109,33 @@ def _num(v, lo=-1e7, hi=1e7) -> bool:
     return isinstance(v, (int, float)) and not isinstance(v, bool) and math.isfinite(v) and lo <= v <= hi
 
 
+def thin(rows: list, most: int = SERIES_KEEP) -> list:
+    """At most `most` rows, evenly spread, the first and the last kept."""
+    if len(rows) <= most:
+        return rows
+    step = (len(rows) - 1) / (most - 1)
+    return [rows[round(i * step)] for i in range(most)]
+
+
+def series_from(data, most: int = SERIES_KEEP) -> list[list] | None:
+    """{"columns": [...], "rows": [[...]]} (the service's, or a file's) -> rows in SERIES_COLUMNS order, checked and thinned; None if it isn't one.
+    A column it doesn't have is None; a row without a time and a place is left out."""
+    if not isinstance(data, dict) or not isinstance(data.get("columns"), list) or not isinstance(data.get("rows"), list):
+        return None
+    cols = data["columns"]
+    at = [cols.index(c) if c in cols else None for c in SERIES_COLUMNS]
+    out = []
+    for r in data["rows"][:20000]:
+        if not isinstance(r, list):
+            continue
+        row = [r[i] if i is not None and i < len(r) and (_num(r[i], 0, 1e11) if c == "t" else _num(r[i])) else None for c, i in zip(SERIES_COLUMNS, at)]
+        if None in row[:4] or not (-90 <= row[1] <= 90 and -180 <= row[2] <= 180):
+            continue
+        out.append(row)
+    out.sort(key=lambda row: row[0])
+    return thin(out, most)
+
+
 def clean(f) -> dict:
     """One flight from a file, checked: only the fields a flight has, each the right kind (BadFlight if not)."""
     if not isinstance(f, dict):
@@ -132,6 +166,12 @@ def clean(f) -> dict:
         out["track"].append([p[0], p[1], p[2]])
     while len(out["track"]) > TRACK_MAX:
         del out["track"][1::2]
+    if "series" in f:
+        rows = series_from(f["series"])
+        if rows is None:
+            raise BadFlight(f"{i}: the readings over time are wrong")
+        if rows:
+            out["series"] = rows
     return out
 
 
@@ -159,7 +199,7 @@ class Sondes(Kept):
         self._mem = threading.Lock()
         self._flights: dict[str, dict] = {}           # id -> what is known of it (memory; only a pinned flight is also in the pins file)
         self._pins: Path | None = None
-        self._saved: dict[str, int] = {}              # pinned id -> track points in the file (a pinned flight still being heard is written again once it is silent)
+        self._saved: dict[str, tuple] = {}            # pinned id -> (track points, series rows) in the file (a pinned flight still being heard is written again once it is silent)
 
     def _fetch(self) -> dict:
         url = base(self._address())
@@ -186,6 +226,10 @@ class Sondes(Kept):
                 while len(e["track"]) > TRACK_MAX:
                     del e["track"][1::2]
             self._trim()
+            wanted = [(f["id"], f.get("series_rows")) for f in data["flights"] if isinstance(f, dict) and self._series_due(f, now)]
+        for ident, n in wanted:                                     # (asked outside the lock: the network is slow)
+            self._fetch_series(url, ident, n, now)
+        with self._mem:
             self._resave(now)
         flights = self._view(now)
         at = aerial()
@@ -196,6 +240,41 @@ class Sondes(Kept):
         return {"job": status.get("job") if isinstance(status.get("job"), str) else None, "receiver_busy": bool(status.get("receiver_busy")),
                 "windows": [w for w in status.get("sonde_windows_utc") or [] if isinstance(w, str)][:6], "running": bool(data.get("running")),
                 "flights": flights, "aerial": list(at) if at else None}
+
+    def _series_due(self, f: dict, now: float) -> bool:
+        """Should this flight's series be asked for now? (the caller holds _mem) When the service has rows the radio hasn't: every
+        SERIES_EVERY_S while it is heard, and once more as soon as it has gone silent."""
+        e = self._flights.get(f.get("id"))
+        n = f.get("series_rows")
+        if e is None or not isinstance(n, int) or n <= 0 or n == e.get("series_of"):
+            return False
+        silent = isinstance(f.get("ago_s"), (int, float)) and f["ago_s"] >= ACTIVE_S
+        return now - e.get("series_at", 0.0) >= (60.0 if silent else SERIES_EVERY_S)
+
+    def _fetch_series(self, url: str, ident: str, n: int, now: float) -> None:
+        try:
+            rows = series_from(self._get(url + "/sondes/series?id=" + quote(ident)))
+        except (OSError, ValueError) as e:
+            log.info("sondes: %s's readings couldn't be had (%s)", ident, e)
+            rows = None
+        with self._mem:
+            e = self._flights.get(ident)
+            if e is None:
+                return
+            e["series_at"] = now
+            if rows is not None:
+                e["series_of"] = n
+                if len(rows) >= len(e.get("series") or ()) or not e.get("series"):
+                    e["series"] = rows
+
+    def profile(self, ident: str) -> dict:
+        """One flight's whole story, for the 3D view: its track and its series (BadFlight if there is no such flight)."""
+        with self._mem:
+            e = self._flights.get(ident)
+            if e is None:
+                raise BadFlight("there's no such flight")
+            return {"id": e["id"], "type": e.get("type"), "max_alt": e["max_alt"], "first": e["first"], "last_heard": e["heard"],
+                    "track": [list(p) for p in e["track"]], "columns": list(SERIES_COLUMNS), "rows": [list(r) for r in e.get("series") or ()]}
 
     # -- flights kept: pinned (over a restart), exported and imported (a file on the PC) --
 
@@ -208,7 +287,8 @@ class Sondes(Kept):
     def _view(self, now: float) -> list[dict]:
         """Every flight kept, newest first, with how long ago and what it is doing (the caller holds nothing)."""
         with self._mem:
-            flights = [{**{k: v for k, v in e.items() if k != "heard"}, "last_heard": e["heard"]} for e in self._flights.values()]
+            flights = [{**{k: v for k, v in e.items() if k not in HIDDEN}, "last_heard": e["heard"], "series_rows": len(e.get("series") or ())}
+                       for e in self._flights.values()]
         flights.sort(key=lambda e: e["last_heard"], reverse=True)
         for e in flights:
             e["ago_s"] = max(0, round(now - e["last_heard"]))
@@ -238,7 +318,7 @@ class Sondes(Kept):
         with self._mem:
             for f in flights[:MAX_PINS]:
                 self._flights[f["id"]] = {**{k: v for k, v in f.items() if k != "last_heard"}, "heard": f["last_heard"], "pinned": True}
-                self._saved[f["id"]] = len(f["track"])
+                self._saved[f["id"]] = self._size(f)
 
     def _write_pins(self) -> None:
         """The pinned flights into the file (the caller holds _mem)."""
@@ -250,19 +330,24 @@ class Sondes(Kept):
                 write_atomic(self._pins, json.dumps(self._document(pinned)))
             else:
                 self._pins.unlink(missing_ok=True)
-            self._saved = {e["id"]: len(e["track"]) for e in pinned}
+            self._saved = {e["id"]: self._size(e) for e in pinned}
         except OSError as e:
             log.warning("sondes: the pinned flights couldn't be written (%s)", e)
 
     def _resave(self, now: float) -> None:
         """A pinned flight that was still being heard when pinned has grown since: write it again, once, when it has gone silent (the caller holds _mem)."""
-        if any(e.get("pinned") and len(e["track"]) != self._saved.get(e["id"]) and now - e["heard"] >= ACTIVE_S for e in self._flights.values()):
+        if any(e.get("pinned") and self._size(e) != self._saved.get(e["id"]) and now - e["heard"] >= ACTIVE_S for e in self._flights.values()):
             self._write_pins()
+
+    @staticmethod
+    def _size(e: dict) -> tuple:
+        return len(e["track"]), len(e.get("series") or ())
 
     def _document(self, flights) -> dict:
         out = []
         for e in flights:
-            out.append({"id": e["id"], "first": e["first"], "max_alt": e["max_alt"], "last_heard": e["heard"], "track": e["track"], **{k: e.get(k) for k in FIELDS}})
+            out.append({"id": e["id"], "first": e["first"], "max_alt": e["max_alt"], "last_heard": e["heard"], "track": e["track"], **{k: e.get(k) for k in FIELDS},
+                        **({"series": {"columns": list(SERIES_COLUMNS), "rows": e["series"]}} if e.get("series") else {})})
         return {"format": FORMAT, "version": VERSION, "saved": time.strftime("%Y-%m-%dT%H:%M:%S%z"), "flights": out}
 
     def export(self, ident: str | None = None) -> dict:
@@ -280,7 +365,7 @@ class Sondes(Kept):
         with self._mem:
             for f in flights:
                 had = self._flights.get(f["id"])
-                if had and len(had["track"]) >= len(f["track"]):
+                if had and self._size(had)[::-1] >= self._size(f)[::-1]:          # (the one with more readings, then more track, stays)
                     continue
                 self._flights[f["id"]] = {**{k: v for k, v in f.items() if k != "last_heard"}, "heard": f["last_heard"], "imported": True,
                                           "pinned": bool(had and had.get("pinned"))}

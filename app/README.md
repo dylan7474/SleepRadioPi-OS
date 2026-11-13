@@ -1679,6 +1679,14 @@ The cards:
   `GET /api/sondes/export[?id=]` downloads one flight or all as a `sleepradiopi-sondes` v1 file, `POST /api/sondes/import` reads one back
   (checked in full by `parse()`/`clean()` first; shown as imported; nothing changes if any flight is wrong). `forget()` keeps pinned
   flights, and `GET /api/sondes` shows `sondes.kept()` when the receiver isn't answering. Not part of the settings backup.
+  Readings over time: the service's `/sondes` gives each flight's `series_rows`, and `<base>/sondes/series?id=` its rows (`SERIES_COLUMNS`:
+  t, lat, lon, alt, vel_v, vel_h, heading, temp, humidity, pressure, batt, snr). The radio asks for a flight's series when the service has
+  rows it hasn't, at most every `SERIES_EVERY_S` (300 s) while it is heard and once more when it has gone silent (outside `_mem`), keeps
+  `series_from()`'s checked rows thinned evenly to `SERIES_KEEP` (600), and leaves them out of `GET /api/sondes` (only `series_rows`);
+  `GET /api/sondes/profile?id=` gives one flight's track and rows. Pins and exports are `sleepradiopi-sondes` v2 (each flight may carry
+  `series: {columns, rows}`; v1 files still import, with no readings; on import the copy with more readings stays). The window's
+  *The flight in 3D* is `Sonde3D` in desktop.html: a canvas drawn by hand (no library: it works offline), one node kept across the
+  window's redraws so the angle, zoom and moment stay; the height stretch is the browser's own (`srd.sd3exag`).
   *Lightning* (`playback/lightning.py`, `GET /api/lightning`, `POST
   /api/lightning {"on"?, "when"?, "ring"?}`, the settings
   `lightning_watch` (off to begin with), `lightning_when`: `off` (muted) | `active` (rings only while the radio plays) | `always` (playing or paused); an old `lightning_bell` is read as always/off): `lightning.Watch`, a thread of its

@@ -204,6 +204,13 @@ def test_from_the_web(tmp_path: Path, monkeypatch) -> None:
         assert d["up"] is True and d["flights"][0]["id"] == "V1234567" and d["job"] == "sondes" and d["now"] == "Listening for radiosondes"
         assert d["window"]["start"] == "22:45" and d["words"]["landed"] == "landed (last heard)" and d["aerial"] == list(AT)
         assert "sondes" in [t["key"] for t in get("/api/outside")["tiles"] if not t.get("empty") and t["key"] != "lightning"]
+        prof = get("/api/sondes/profile?id=V1234567")
+        assert prof["id"] == "V1234567" and len(prof["track"]) == 2 and prof["rows"] == [] and prof["columns"][0] == "t"
+        try:
+            get("/api/sondes/profile?id=nope")
+            raise AssertionError
+        except urllib.error.HTTPError as e:
+            assert e.code == 400
         assert post({"address": ""})["address"] == "" and get("/api/sondes")["flights"] == []       # (forgetting it forgets the flights too)
     finally:
         httpd.shutdown()
@@ -338,3 +345,85 @@ def test_the_web_page_pins_exports_and_imports(monkeypatch, tmp_path: Path) -> N
         assert call("/api/sondes/export")[1]["format"] == sondes.FORMAT and call("/api/sondes/export?id=zz")[0] == 400
     finally:
         httpd.shutdown()
+
+
+COLS = ["t", "lat", "lon", "alt", "vel_v", "vel_h", "heading", "temp", "humidity", "pressure", "batt", "snr"]
+
+
+def _rows(n, t0=NOW - 600):
+    return [[t0 + 5 * k, 54.5 + k / 1000, -1.0, 100.0 + 25 * k, 5.0, 10.0, 90.0, 15.0 - k / 10, 80.0, 1000.0 - k, 2.8, 12.0] for k in range(n)]
+
+
+def test_a_flight_s_readings_over_time_are_asked_for_now_and_then_and_once_it_is_silent(monkeypatch) -> None:
+    monkeypatch.setattr(sondes, "aerial", lambda: AT)
+    asked = []
+    s = _s([flight(series_rows=10)])
+    s.answers["/sondes/series?id=V1234567"] = lambda url: asked.append(url) or {"id": "V1234567", "columns": COLS, "rows": _rows(len(asked) * 10)}
+    s.fetch()
+    assert len(asked) == 1
+    p = s.profile("V1234567")
+    assert p["columns"] == COLS and len(p["rows"]) == 10 and p["rows"][3][7] == 14.7 and len(p["track"]) == 2
+    assert s.status(False)["flights"][0]["series_rows"] == 10 and "series" not in s.status(False)["flights"][0]       # (the list stays small)
+    s.answers["/sondes"]["flights"] = [flight(series_rows=20)]
+    s.t[0] += 60
+    s.fetch()
+    assert len(asked) == 1                                              # (still heard: not again for 5 minutes)
+    s.t[0] += sondes.SERIES_EVERY_S
+    s.fetch()
+    assert len(asked) == 2 and len(s.profile("V1234567")["rows"]) == 20
+    s.answers["/sondes"]["flights"] = [flight(series_rows=30, ago=sondes.ACTIVE_S + 5)]
+    s.t[0] += 61
+    s.fetch()
+    assert len(asked) == 3 and len(s.profile("V1234567")["rows"]) == 30   # (gone silent: once more at once)
+    s.t[0] += 100
+    s.fetch()
+    assert len(asked) == 3                                              # (and then not again: it has them all)
+    try:
+        s.profile("nope")
+        raise AssertionError
+    except sondes.BadFlight:
+        pass
+
+
+def test_the_readings_are_checked_and_thinned() -> None:
+    rows = _rows(2000)
+    rows[5] = [None, 54, -1, 100]                                       # (no time: left out)
+    rows[6][1] = 200                                                   # (off the Earth: left out)
+    rows[7][7] = float("nan")                                           # (a bad reading: None, the row stays)
+    got = sondes.series_from({"columns": COLS, "rows": rows})
+    assert len(got) == sondes.SERIES_KEEP and got[0][0] == rows[0][0] and got[-1][0] == rows[-1][0]
+    few = sondes.series_from({"columns": ["alt", "t", "lat", "lon", "extra"], "rows": [[900.0, NOW, 54.0, -1.0, 7], rows[7]]})
+    assert few == [[NOW, 54.0, -1.0, 900.0] + [None] * 8]               # (columns by name, in any order; ones it doesn't know dropped)
+    assert sondes.series_from({"rows": []}) is None and sondes.series_from([]) is None
+    assert sondes.series_from({"columns": COLS, "rows": [rows[7]]})[0][7] is None
+
+
+def test_the_readings_are_pinned_exported_and_imported_and_an_old_file_still_reads(monkeypatch, tmp_path: Path) -> None:
+    monkeypatch.setattr(sondes, "aerial", lambda: AT)
+    s = _s([flight(series_rows=40, ago=sondes.ACTIVE_S + 1)])
+    s.answers["/sondes/series?id=V1234567"] = {"id": "V1234567", "columns": COLS, "rows": _rows(40)}
+    pins = tmp_path / "pins.json"
+    s.pins_in(pins)
+    s.fetch()
+    s.pin("V1234567")
+    doc = json.loads(pins.read_text())
+    assert doc["version"] == 2 and doc["flights"][0]["series"]["columns"] == COLS and len(doc["flights"][0]["series"]["rows"]) == 40
+    again = _s(flights=[])
+    again.pins_in(pins)                                                 # (a restart)
+    assert len(again.profile("V1234567")["rows"]) == 40
+    out = s.export("V1234567")
+    other = _s(flights=[])
+    other.load(json.loads(json.dumps(out)))
+    assert other.profile("V1234567")["rows"] == s.profile("V1234567")["rows"]
+    old = _flight_file()                                                # (a version 1 file: no readings, still fine)
+    other.load(old)
+    assert other.profile("Y1722563")["rows"] == [] and len(other.profile("Y1722563")["track"]) == 3
+    bare = {**old, "flights": [{**old["flights"][0], "id": "V1234567"}]}
+    other.load(bare)
+    assert len(other.profile("V1234567")["rows"]) == 40                 # (a file with fewer readings doesn't replace the one with more)
+    worse = {**out, "flights": [{**out["flights"][0], "id": "Z9", "series": {"rows": 5}}]}
+    try:
+        other.load(worse)
+        raise AssertionError
+    except sondes.BadFlight:
+        pass

@@ -110,6 +110,16 @@ def build(ctx):
             # The Radiosondes window (playback/sondes.py): the flights heard, kept in memory (the address is the 433 MHz window's: one service).
             self._send(json.dumps(sondes_state()).encode(), "application/json")
             return True
+        if path == "/api/sondes/profile":
+            # ?id=H4713951: that flight's whole story for the 3D view: its track and its readings over time (columns + rows), from memory.
+            from sleepradiopi.playback import sondes as s_mod
+            try:
+                doc = s_mod.sondes.profile((parse_qs(urlparse(self.path).query).get("id") or [""])[0])
+            except s_mod.BadFlight as e:
+                self._error(str(e))
+                return True
+            self._send(json.dumps(doc).encode(), "application/json")
+            return True
         if path == "/api/sondes/export":
             # ?id=H4713951: that flight as a file to keep (JSON); without it, all the flights kept.
             from sleepradiopi.playback import sondes as s_mod
