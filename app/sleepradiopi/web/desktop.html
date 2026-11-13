@@ -4832,7 +4832,8 @@ const Sonde3D = {
       g.strokeStyle = "rgba(111,199,170,.75)"; g.lineWidth = 1.1;
       for (const l of gr.lines) { path(l.map(q => P(q[0], q[1], 0))); g.stroke(); }
       g.textAlign = "left";
-      const taken = [P(pts[0].x, pts[0].y, pts[0].alt / 1000), ...(st.aerial ? [P(0, 0, 0)] : [])].map(p => [p[0], p[1], 70]);     // (the launch and "you" are labelled: towns keep clear)
+      const l0p = P(pts[0].x, pts[0].y, pts[0].alt / 1000), you = st.aerial ? P(0, 0, 0) : null;
+      const taken = [[l0p[0], l0p[1], 150], ...(you ? [[you[0] - 40, you[1] + 11, 48], [you[0] - 6, you[1], 12]] : [])];     // (the launch and "you", below left of its ring, are labelled: towns keep clear)
       for (const t of gr.towns) {
         const [x, y] = P(t[0], t[1], 0), w = t[3].length * 7.2 + 8;
         g.fillStyle = "#cfe7f3"; g.beginPath(); g.arc(x, y, 2.4, 0, 7); g.fill();
@@ -4896,6 +4897,7 @@ const Sonde3D = {
     let nextKm = 1;
     if (vals.length < 2) for (let i = 0; i <= pts.top; i++) if (pts[i].alt / 1000 >= nextKm) { g.beginPath(); g.arc(scr[i][0], scr[i][1], 2, 0, 7); g.fill(); nextKm = Math.floor(pts[i].alt / 1000) + 1; }
     // launch, burst, the last heard
+    const said = [];                                                          // (labels already written: a later one that would land on one moves down a line)
     const mark = (i, kind, word) => {
       const [x, y] = scr[i];
       g.fillStyle = "#fff"; g.strokeStyle = "#0d171b"; g.lineWidth = 1.5;
@@ -4903,7 +4905,12 @@ const Sonde3D = {
       else if (kind === "burst") { g.fillStyle = "#ffe08a"; path([[x, y - 7], [x + 6, y], [x, y + 7], [x - 6, y]], true); g.fill(); g.stroke(); }
       else if (kind === "lost") { g.strokeStyle = "#ff9a8a"; g.lineWidth = 3; path([[x - 6, y - 6], [x + 6, y + 6]]); g.stroke(); path([[x + 6, y - 6], [x - 6, y + 6]]); g.stroke(); }
       else { g.fillStyle = "#ffe08a"; path(kind === "down" ? [[x - 7, y - 6], [x + 7, y - 6], [x, y + 7]] : [[x - 7, y + 6], [x + 7, y + 6], [x, y - 7]], true); g.fill(); g.stroke(); }
-      g.fillStyle = "#fff"; g.textAlign = "left"; g.lineWidth = 3; g.strokeStyle = "#0d171b"; g.strokeText(word, x + 10, y); g.fillText(word, x + 10, y);
+      const w = g.measureText(word).width, lx = x + 10;
+      let ly = y;
+      while (said.some(u => lx < u[0] + u[2] + 6 && lx + w + 6 > u[0] && Math.abs(ly - u[1]) < 15)) ly += 15;
+      said.push([lx, ly, w]);
+      if (ly !== y) { g.strokeStyle = "rgba(255,255,255,.45)"; g.lineWidth = 1; path([[x + 4, y + 2], [lx - 2, ly]]); g.stroke(); }     // (a thin line from the moved label to its mark)
+      g.fillStyle = "#fff"; g.textAlign = "left"; g.lineWidth = 3; g.strokeStyle = "#0d171b"; g.strokeText(word, lx, ly); g.fillText(word, lx, ly);
     };
     const f = (this.flight || {});
     mark(0, "launch", pts[0].alt > 1500 ? `first heard ${(pts[0].alt / 1000).toFixed(1)} km` : "launch");
