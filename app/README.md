@@ -1687,7 +1687,7 @@ The cards:
   `series: {columns, rows}`; v1 files still import, with no readings; on import the copy with more readings stays). The window's
   *The flight in 3D* is `Sonde3D` in desktop.html: a canvas drawn by hand (no library: it works offline), one node kept across the
   window's redraws so the angle, zoom and moment stay; the height stretch is the browser's own (`srd.sd3exag`).
-  The window's flight bar (`.sd-bar`, sticky at the top of the window as it scrolls): ◀ Newer, a list of the flights, Older ▶, Pin, and
+  The window's flight bar (`.sd-bar`, sticky at the top of the window as it scrolls): a carousel of flight cards (`.sd-car`, each a height sparkline from its track), ◀ ▶, Pin, and
   Delete… (`POST /api/sondes/delete {id}`: `Sondes.delete()` forgets it, pinned or not, rewriting the pins file if it was pinned; its id is
   remembered in memory so the receiver, which may still serve it, doesn't bring it back until a restart; an Import brings it back). In the
   3D view `[` and `]` change flight.
