@@ -68,7 +68,9 @@ class SpeakerOutput:
 
     def __init__(self, device: str = "default", volume: int = 30,
                  command: list[str] | None = None, mono: bool = False,
-                 eq: Equalizer | None = None, amp=None) -> None:
+                 eq: Equalizer | None = None, amp=None, keep_awake: bool = False) -> None:
+        self.keep_awake = keep_awake     # the card stays open once opened, silence while nothing plays (setting amp_keep_awake)
+        self._amp_on = True              # (kept awake: whether the amp pin is up, so it's written only on a change)
         self.amp = amp                   # an ampmute.AmpMute: the amp's MUTE pin, low while the card is closed
         self.command = command or [
             "aplay", "-q", "-D", device, "-t", "raw", "-f", "S16_LE",
@@ -115,6 +117,7 @@ class SpeakerOutput:
             pass
         if self.amp is not None:
             self.amp.unmute_soon()       # (a moment after the card opens: its pop goes unheard)
+            self._amp_on = True
         log.info("speaker on")
 
     def _close(self) -> None:
@@ -138,16 +141,26 @@ class SpeakerOutput:
         return self._running and self.enabled
 
     def _sync(self) -> None:
-        """(Under _lock.) aplay open while the show plays or the noise is on; the
-        pump running while the noise is on and the show isn't, or while a clip
-        plays (it carries the clip on if the show stalls)."""
+        """(Under _lock.) aplay open while the show plays or the noise is on (or
+        always, once opened, with keep_awake); the pump running while the noise
+        is on (or keep_awake: silence) and the show isn't, or while a clip plays
+        (it carries the clip on if the show stalls)."""
         clip = self.hold is not None or self.test is not None
-        want = self._show_on or self.noise is not None or clip
+        awake = self.keep_awake and self._opened_once     # (not before the first open: the start-up sound has the card)
+        want = self._show_on or self.noise is not None or clip or awake
         if want and self._proc is None:
             self._open()
         elif not want and self._proc is not None:
             self._close()
-        if (clip or (self.noise is not None and not self._show_on)) \
+        if awake and self.amp is not None and self._proc is not None:
+            # Kept awake with a MUTE/shutdown pin too: the card never stops or starts (starting it is what
+            # clicks on a MAX98357A, even shut down), and the amp is off while nothing sounds -- switching
+            # its pin with the clock running is silent.
+            sounding = self._show_on or self.noise is not None or clip
+            if sounding != self._amp_on:
+                self._amp_on = sounding
+                (self.amp.unmute_now if sounding else self.amp.mute)()
+        if (clip or ((self.noise is not None or awake) and not self._show_on)) \
                 and (self._pump is None or not self._pump.is_alive()):
             self._pump = threading.Thread(target=self._pump_run, name="noise", daemon=True)
             self._pump.start()
@@ -156,7 +169,7 @@ class SpeakerOutput:
         while True:
             with self._lock:
                 clip = self.hold is not None or self.test is not None
-                if (self.noise is None and not clip) or (self._show_on and not clip) or self._proc is None:
+                if (self.noise is None and not clip and not self.keep_awake) or (self._show_on and not clip) or self._proc is None:
                     if not self._show_on:
                         self._sync()         # (a clip over while paused: the speaker off again)
                     return

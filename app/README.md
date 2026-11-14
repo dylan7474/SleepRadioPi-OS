@@ -217,6 +217,21 @@ a stacking header between the Pi and the amp.
   card opens (`audio/ampmute.py`). Keep buttons off GPIO16 and GPIO26 (preset
   button 3 is on GPIO7, pin 26). Off by default: a radio without the amp is
   untouched.
+- **A MAX98357A instead (one speaker, mono).** The same `hifiberry-dac`
+  overlay drives it (BCLK GPIO18, LRC GPIO19, DIN GPIO21, VIN 5 V); set
+  `speaker_mono`. It shuts itself down whenever the I2S clock stops and
+  clicks loudly as it wakes, so wire its **SD** pin to GPIO16 (pin 36),
+  NOT to 5 V and nothing else on it (SD driven high selects the left
+  channel, which carries the whole mono mix), leave GAIN unconnected (9 dB),
+  and set both `amp_mute_gpio = 16` and `amp_keep_awake = true`. Then the
+  sound card is never stopped once the station has opened it (it plays
+  silence while paused) and the amp is switched off by SD while nothing
+  sounds: switching SD with the clock running is silent, starting the card
+  isn't. At power-on the station script holds SD low, and the start-up chime
+  turns the amp on just after its card opens and off before it hands over,
+  so its start and the hand-over are hidden too. `amp_keep_awake` alone (no
+  SD wire) also stops the pause/resume clicks, but leaves the amp on. Both
+  are this radio's own settings, never saved to a settings file.
 
 ### config.txt
 

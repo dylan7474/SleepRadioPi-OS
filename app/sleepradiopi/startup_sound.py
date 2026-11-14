@@ -159,6 +159,12 @@ def main(argv=None) -> int:
         LOCK.write_text(str(os.getpid()))
     except OSError:
         pass
+    # The amp's MUTE/shutdown pin, if the radio has one (setting amp_mute_gpio; the station script
+    # sets it up LOW, amp off): on a moment after the card opens, off just before it closes, so
+    # neither the chime's start nor the hand-over to the station clicks (an amp that sleeps when
+    # its I2S clock stops, the MAX98357A, clicks loudly at both). No pin: nothing happens.
+    from sleepradiopi.audio.ampmute import AmpMute
+    amp = AmpMute()
     try:
         player, pieces = None, 0
         for piece in parts(args.home):
@@ -166,6 +172,7 @@ def main(argv=None) -> int:
             if player is None:
                 player = subprocess.Popen(["aplay", "-q", "-D", args.device, "-t", "raw", "-f", "S16_LE",
                                            "-r", str(RATE), "-c", str(CHANNELS)], stdin=subprocess.PIPE)
+                amp.unmute_soon()
             player.stdin.write(piece)
             player.stdin.flush()
         if player is not None:                   # then tick until the station takes over
@@ -183,6 +190,7 @@ def main(argv=None) -> int:
                     LOCK.touch()                             # (still alive: not a crashed one's lock)
                 except OSError:
                     pass
+            amp.mute()                               # (before the card closes: the station unmutes after it opens)
             player.stdin.close()
             player.wait(timeout=60)
             print(f"start-up sound played ({'chime + warming up' if pieces > 1 else 'chime'})", flush=True)

@@ -765,7 +765,7 @@ def main() -> None:
     if settings.speaker_enabled:
         # (the start-up sound chimes, then ticks, until the speaker first opens: SpeakerOutput._open)
         amp = AmpMute() if settings.amp_mute_gpio else None
-        speaker = SpeakerOutput(settings.speaker_device, mono=settings.speaker_mono, amp=amp,
+        speaker = SpeakerOutput(settings.speaker_device, mono=settings.speaker_mono, amp=amp, keep_awake=settings.amp_keep_awake,
                                 eq=Equalizer(pcm.SAMPLE_RATE, pcm.CHANNELS, settings.speaker_eq,
                                              settings.speaker_highpass_hz))
         station = Station(cfg, tts, TeeOutput(speaker, stream))

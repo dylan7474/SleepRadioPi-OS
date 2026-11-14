@@ -118,3 +118,47 @@ def test_it_ticks_until_the_station_takes_over(tmp_path, monkeypatch) -> None:
     t.join(3)
     assert not t.is_alive() and not lock.exists()
     assert len(ss.tick(1.0)) == 4 * int(ss.TICK_EVERY_S * ss.RATE)
+
+
+def test_the_amp_is_on_only_while_its_card_is_open(tmp_path: Path, monkeypatch) -> None:
+    """With an amp MUTE/shutdown pin (amp_mute_gpio): on a moment after the chime's card opens,
+    off before it closes, so the chime's start and the hand-over to the station don't click
+    (a MAX98357A clicks loudly at both). The pin starts low: the station script exports it so."""
+    from sleepradiopi.audio import ampmute
+    home = _home(tmp_path)
+    pin = tmp_path / "amp-mute"
+    pin.write_text("0")
+    seen = tmp_path / "pin-while-playing"
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    # aplay: wait for the unmute, note the pin, take the sound, and note it again as the card closes
+    (bin_dir / "aplay").write_text(f"#!/bin/sh\nsleep 0.3\ncat {pin} > {seen}\ncat > /dev/null\ncat {pin} >> {seen}\n")
+    (bin_dir / "aplay").chmod(0o755)
+    monkeypatch.setenv("PATH", f"{bin_dir}:/usr/bin:/bin")
+    monkeypatch.setattr(ss, "LOCK", tmp_path / "lock")
+    monkeypatch.setattr(ss, "TICK_FOR_S", 0)
+    real = ampmute.AmpMute
+    monkeypatch.setattr(ampmute, "AmpMute", lambda: real(pin, delay_s=0.05))
+    assert ss.main(["--home", str(home)]) == 0
+    assert seen.read_text() == "10"            # on while it played, off by the time the card closed
+    assert pin.read_text() == "0"
+
+
+def test_no_pin_no_change(tmp_path: Path, monkeypatch) -> None:
+    """A radio without the pin (no link): the chime plays as before."""
+    from sleepradiopi.audio import ampmute
+    home = _home(tmp_path)
+    out = tmp_path / "played.raw"
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    (bin_dir / "aplay").write_text(f"#!/bin/sh\ncat > {out}\n")
+    (bin_dir / "aplay").chmod(0o755)
+    monkeypatch.setenv("PATH", f"{bin_dir}:/usr/bin:/bin")
+    monkeypatch.setattr(ss, "LOCK", tmp_path / "lock")
+    monkeypatch.setattr(ss, "TICK_FOR_S", 0)
+    monkeypatch.setattr(ampmute, "LINK", tmp_path / "no-such-pin")
+    real = ampmute.AmpMute
+    monkeypatch.setattr(ampmute, "AmpMute", lambda: real(tmp_path / "no-such-pin"))
+    assert ss.main(["--home", str(home)]) == 0
+    assert out.stat().st_size == len(ss.chime(ss.gain(80)))
+    assert not (tmp_path / "no-such-pin").exists()

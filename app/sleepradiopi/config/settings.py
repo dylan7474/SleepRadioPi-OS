@@ -108,6 +108,8 @@ class Settings:
     speaker_enabled: bool = False
     speaker_device: str = "default"   # ALSA device for aplay
     amp_mute_gpio: int = 0            # the amp's MUTE pin (MiniAmp: 16), muted while the card is closed; 0 = off. Needs that pin free of a button
+    amp_keep_awake: bool = False      # keep the sound card open (playing silence) while paused: an amp with no MUTE pin that sleeps when
+                                      # the I2S clock stops (MAX98357A) clicks as it wakes; kept awake, it never does. Costs a little CPU
     speaker_volume: int = 30          # 0-100 on first start; after that the knob's last setting
     speaker_mono: bool = False        # mix left and right so both speakers play the same
     speaker_eq: dict = field(default_factory=dict)  # {"g31".."g16k"}: dB, -12..12 (old bass/mid/treble load as bands)
