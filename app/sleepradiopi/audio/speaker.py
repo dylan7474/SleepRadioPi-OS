@@ -89,6 +89,8 @@ class SpeakerOutput:
         self.noise = None                # the noise layer (a NoiseGen), None = off
         self.noise_mix = 50              # balance: 0 = programme only, 50 = both full, 100 = noise only
         self.enabled = True
+        self.unheard = False             # the show runs to nobody (back from an update, paused): keep real time anyway
+        self._unheard_t0: float | None = None
         self._running = False            # between the show's start() and stop()
         self._proc: subprocess.Popen | None = None
         self._lock = threading.Lock()
@@ -197,6 +199,13 @@ class SpeakerOutput:
 
     def write(self, block: np.ndarray) -> None:
         if not self.enabled:             # paused: the show's last seconds go nowhere
+            if self.unheard:             # ...but nothing else may pace it: real time, as if it were heard
+                now = time.monotonic()
+                if self._unheard_t0 is None or now - self._unheard_t0 > 2.0:
+                    self._unheard_t0 = now
+                self._unheard_t0 += len(block) / pcm.SAMPLE_RATE
+                if self._unheard_t0 > now:
+                    time.sleep(self._unheard_t0 - now)
             return
         for i in range(0, len(block), SLICE_FRAMES):
             self._show_at = time.monotonic()     # (before waiting for _io: the pump makes way)

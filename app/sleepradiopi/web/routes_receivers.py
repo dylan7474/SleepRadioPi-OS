@@ -18,6 +18,12 @@ from urllib.parse import urlparse
 from sleepradiopi.web.common import OWN_RX, OWN_RX_ASKS, _quietly
 
 
+def _receiver_bands(base: str) -> dict:
+    """A receiver of your own's bands (GET base/bands), for checking a station before it's saved."""
+    with urllib.request.urlopen(f"{base}/bands", timeout=4) as r:
+        return json.loads(r.read())
+
+
 def build(ctx):
     config_file, directory, speaker, station = ctx.config_file, ctx.directory, ctx.speaker, ctx.station
 
@@ -128,6 +134,12 @@ def build(ctx):
                 tuned = radio_mod.validate_station(body)
             elif action == "stations":
                 stations = radio_mod.validate_stations(body["stations"])
+                had = {s.get("url") for s in self._radio_stations()}
+                for s in stations:               # a new one on a receiver of your own: ask it (a band it has?)
+                    if s["url"] not in had:
+                        why = radio_mod.check_receiver(s["url"], _receiver_bands)
+                        if why:
+                            raise ValueError(f"{s['name']}: {why}")
         except (ValueError, TypeError, KeyError, AttributeError) as e:
             self._error(str(e) if isinstance(e, ValueError) else "send a station or {\"stations\": [...]}")
             return

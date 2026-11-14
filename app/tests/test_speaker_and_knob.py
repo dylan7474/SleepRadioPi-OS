@@ -197,3 +197,23 @@ def test_a_clip_plays_on_when_the_show_stalls(tmp_path: Path) -> None:
     assert (played[1024:] == 5000).all()
     assert spk._pump is None or not spk._pump.is_alive()
     spk.stop()
+
+
+def test_an_unheard_show_keeps_real_time(tmp_path) -> None:
+    """Off (paused), the show's blocks go nowhere at once -- unless it's running unheard (back from an
+    update on a paused radio): then it still takes real time, and nothing reaches the speaker."""
+    out = tmp_path / "pcm"
+    spk = SpeakerOutput(command=["sh", "-c", f"cat >> {out}"])
+    spk.set_enabled(False)
+    block = np.zeros((speaker_mod.pcm.SAMPLE_RATE // 10, speaker_mod.pcm.CHANNELS), dtype=np.int16)   # 0.1 s
+    t = time.monotonic()
+    for _ in range(5):
+        spk.write(block)
+    assert time.monotonic() - t < 0.1                       # paused: dropped at once
+    spk.unheard = True
+    t = time.monotonic()
+    for _ in range(5):
+        spk.write(block)
+    took = time.monotonic() - t
+    assert 0.35 < took < 0.8                                # unheard: about 0.5 s of real time
+    assert not out.exists() or out.stat().st_size == 0      # and still not a sound

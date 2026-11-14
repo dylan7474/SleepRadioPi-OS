@@ -35,7 +35,7 @@ import urllib.error
 import urllib.request
 from collections.abc import Callable
 from pathlib import Path
-from urllib.parse import quote, urljoin, urlparse
+from urllib.parse import parse_qs, quote, urljoin, urlparse
 
 import numpy as np
 
@@ -109,6 +109,43 @@ def validate_station(d) -> dict:
     if not isinstance(info, str):
         info = ""
     return {"name": name.strip(), "url": url.strip(), "info": info.strip()[:MAX_NAME]}
+
+
+def check_receiver(url: str, bands_of) -> str | None:
+    """A station on a receiver of your own (http://HOST:PORT/audio?band=... or ?freq=MHz): does that
+    receiver have the band, or reach the frequency? bands_of(base) -> its /bands ({id: {"range": [lo_hz,
+    hi_hz], ...}}), or raises OSError/ValueError if it can't be asked. Returns why not (a sentence), or
+    None: fine -- or not a receiver's address, or a receiver that isn't answering (then it can't be
+    told, and the station is kept as it was given)."""
+    parts = urlparse(url)
+    q = parse_qs(parts.query)
+    if parts.scheme not in ("http", "https") or parts.path.rstrip("/") != "/audio" or not ("band" in q or "freq" in q):
+        return None
+    base = f"{parts.scheme}://{parts.netloc}"
+    try:
+        bands = bands_of(base)
+        if not isinstance(bands, dict) or not bands:
+            return None
+    except (OSError, ValueError):
+        return None
+    where = parts.netloc
+    if "band" in q:
+        band = q["band"][0]
+        if band not in bands:
+            return f"the receiver at {where} has no band \u201c{band}\u201d: it has {', '.join(bands)}"
+    if "freq" in q:
+        try:
+            mhz = float(q["freq"][0])
+        except ValueError:
+            return f"\u201c{q['freq'][0]}\u201d isn't a frequency in MHz (like 145.5)"
+        spans = [b.get("range") for b in bands.values() if isinstance(b, dict)]
+        spans = [r for r in spans if isinstance(r, list) and len(r) == 2]
+        if spans:
+            lo, hi = min(r[0] for r in spans) / 1e6, max(r[1] for r in spans) / 1e6
+            if not lo <= mhz <= hi:
+                return (f"the receiver at {where} doesn't reach {mhz:g} MHz: its bands cover "
+                        f"{lo:g} to {hi:g} MHz")
+    return None
 
 
 def validate_stations(stations) -> list[dict]:

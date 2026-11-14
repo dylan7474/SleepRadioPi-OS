@@ -103,6 +103,48 @@ def test_confirmed_after_the_reboot(release) -> None:
     assert len(said) == 2                                                 # said once
 
 
+def test_a_paused_radio_stays_paused_and_quiet_through_an_update(release) -> None:
+    """Installed while paused: nothing said, a stay-paused flag left for the next start-up, which
+    reads it once (quiet_start) and confirms without a word; the start after that plays as usual."""
+    url, paths, image, remounts, tmp = release
+    (tmp / "version").write_text("v1.1.0\n")
+    said = []
+    u = up.Updates(url, said.append, state=paths.state, run=tmp / "run", version_file=tmp / "version",
+                   restart_delay_s=0.1)
+    u.paused = lambda: True
+    u.check()
+    (tmp / "run").mkdir(exist_ok=True)
+    u.install()
+    assert (paths.state / up.STAY_PAUSED).exists()
+    req = json.loads((tmp / "run" / "update-request").read_text())
+    paths.status = tmp / "run" / "update-status"
+    up.install(req, paths)
+    end = time.monotonic() + 15
+    while not (tmp / "run" / "update-reboot").exists() and time.monotonic() < end:
+        time.sleep(0.2)
+    assert (tmp / "run" / "update-reboot").exists() and said == []        # not a word while paused
+    (tmp / "proc_cmdline").write_text("root=/dev/mmcblk0p3 ro")         # back up on the new one
+    after = up.Updates(url, said.append, state=paths.state, run=tmp / "run", version_file=tmp / "version")
+    assert after.quiet_start() and not (paths.state / up.STAY_PAUSED).exists()
+    after.on_air()                                                        # confirmed, silently
+    assert said == [] and not (paths.state / "pending.json").exists()
+    assert json.loads((paths.state / "result.json").read_text())["ok"] if (paths.state / "result.json").exists() else True
+    assert not up.Updates(url, said.append, state=paths.state, run=tmp / "run",
+                          version_file=tmp / "version").quiet_start()    # read once: a power cut plays
+
+
+def test_a_playing_radio_updates_as_before(release) -> None:
+    url, paths, image, remounts, tmp = release
+    said = []
+    u = up.Updates(url, said.append, state=paths.state, run=tmp / "run", version_file=tmp / "version")
+    u.paused = lambda: False
+    u.check()
+    (tmp / "run").mkdir(exist_ok=True)
+    u.install()
+    assert not (paths.state / up.STAY_PAUSED).exists() and "Downloading" in said[0]
+    assert not up.Updates(url, state=paths.state, run=tmp / "run", version_file=tmp / "version").quiet_start()
+
+
 def test_not_confirmed_goes_back(release) -> None:
     url, paths, image, remounts, tmp = release
     up.install(up.fetch_manifest(url), paths)

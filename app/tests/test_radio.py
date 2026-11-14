@@ -725,3 +725,28 @@ def test_the_copy_search_finds_the_same_as_reading_line_by_line(tmp_path: Path) 
 
     for q in ("beatles", "radio 4", "jazz radio", "café", "été", "ⅳ", "kiss fm", "60s", "zzqx", "a", "Radio"):
         assert [r["url"] for r in d.search(q)[0]] == by_lines(q), q
+
+
+def test_a_receiver_station_is_checked_with_the_receiver() -> None:
+    """A new station on a receiver of your own: a band it doesn't have (the HF one asked for 2m, or
+    '2m.' with a stray full stop) or a frequency out of its reach is refused, saying what it has; a
+    receiver that isn't answering, or an ordinary stream, isn't held against it."""
+    from sleepradiopi.playback.radio import check_receiver
+    vhf = {"2m": {"range": [144000000, 146000000]}, "marine": {"range": [156000000, 162025000]}}
+    hf = {"40m": {"range": [7000000, 7200000]}, "mw": {"range": [531000, 1602000]}}
+    bands = {"http://rx:8074": vhf, "http://rx:8075": hf}
+
+    def ask(base):
+        if base not in bands:
+            raise OSError("not answering")
+        return bands[base]
+    assert check_receiver("http://rx:8074/audio?band=2m", ask) is None
+    assert check_receiver("http://rx:8074/audio?freq=145.5", ask) is None
+    assert check_receiver("http://rx:8074/audio?freq=156.0&mode=nfm", ask) is None
+    assert "no band “2m”" in check_receiver("http://rx:8075/audio?band=2m", ask)
+    assert "40m, mw" in check_receiver("http://rx:8075/audio?band=2m", ask)
+    assert "no band “2m.”" in check_receiver("http://rx:8074/audio?band=2m.", ask)
+    assert "doesn't reach 145.5 MHz" in check_receiver("http://rx:8075/audio?freq=145.5", ask)
+    assert "isn't a frequency" in check_receiver("http://rx:8074/audio?freq=abc", ask)
+    assert check_receiver("http://elsewhere:8074/audio?band=2m", ask) is None      # not answering: kept
+    assert check_receiver("http://stream.example/live.mp3", ask) is None           # not a receiver

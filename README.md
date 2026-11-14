@@ -912,7 +912,8 @@ the root helper `update-watch` (`app/sleepradiopi/updater.py`), which
 refuses a kernel change, streams the image into the spare root slot,
 checks it against the SHA-256 (and reads it back from the card), updates
 `config.txt` if needed, switches `cmdline.txt` and reboots. The station
-confirms the update once music plays; if it hasn't within 5 minutes,
+confirms the update once music plays (on a radio that was paused for the
+update: played unheard, and it stays paused); if it hasn't within 5 minutes,
 `S98update-watchdog` switches back to the old slot and reboots. Logs:
 `grep update /var/log/messages`. An update sent as a file (the release's
 `sleepradio-VERSION.update`: a plain tar of `manifest.json`, the image and

@@ -401,16 +401,19 @@ def _lock_in_memory() -> None:
         pass
 
 
-def _after_first_song(station: Station, updates: Updates) -> None:
+def _after_first_song(station: Station, updates: Updates, then=None) -> None:
     """Once music is playing after a start-up, confirm a pending update (so the
     boot watchdog doesn't roll it back) and say how it went; and lock the
-    station in memory (everything it needs is loaded by then)."""
+    station in memory (everything it needs is loaded by then). then(): after it
+    (a quiet start-up: the unheard listener leaves)."""
     waited = 0.0
     while not _can_confirm(station, waited):
         time.sleep(2)
         waited += 2
     _lock_in_memory()
     updates.on_air()
+    if then is not None:
+        then()
 
 
 NOTHING_TO_PLAY_CONFIRM_S = 150           # (the boot watchdog gives the new version 300 s)
@@ -945,14 +948,30 @@ def main() -> None:
     from sleepradiopi.audio import readers as readers_mod
     readers_mod.place_from(station.source, lambda: (station.source or {}).get("url"))     # (where the receiver is, till a page says)
     readers_mod.restore(settings.rx_reader, lambda: (station.source or {}).get("url"))
-    if control is not None and not settings.programme_mode:
-        # a bedside radio plays as soon as it's powered (in programme mode: quiet until one's on):
-        # what's been chosen for switch-on, if anything, else what was on last
-        presets.power_on()
-        control.play()
     updates = Updates(settings.update_source, say=lambda text: _say_now(station, control, text))
-    threading.Thread(target=_after_first_song, args=(station, updates), name="update-confirm",
-                     daemon=True).start()
+    if control is not None:
+        updates.paused = lambda: control.paused
+    if control is not None and updates.quiet_start():
+        # Back from an update that was installed while the radio was paused: it stays paused. The show
+        # still runs, unheard (a listener, the speaker off), until music has played and the update is
+        # confirmed -- or the boot watchdog would take it for a broken one and roll it back.
+        logging.getLogger(__name__).info("back from an update installed while paused: staying paused")
+        speaker.unheard = True                          # (real time, though nothing reaches the speaker)
+
+        def unheard_done():
+            speaker.unheard = False
+            station.listener_left()
+        station.listener_joined()
+        threading.Thread(target=_after_first_song, args=(station, updates, unheard_done),
+                         name="update-confirm", daemon=True).start()
+    else:
+        if control is not None and not settings.programme_mode:
+            # a bedside radio plays as soon as it's powered (in programme mode: quiet until one's on):
+            # what's been chosen for switch-on, if anything, else what was on last
+            presets.power_on()
+            control.play()
+        threading.Thread(target=_after_first_song, args=(station, updates), name="update-confirm",
+                         daemon=True).start()
     jobs = VoiceJobs(voices, Path.home() / "voice-inbox",
                      on_installed=lambda name: _voice_installed(station, args.config, control, name))
     if not station.voices():

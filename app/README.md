@@ -1143,7 +1143,11 @@ The cards:
 - **Receivers** — a folder that appears on the desktop once a saved
   station's address is a receiver's (straight away when one is added, no
   reload). Two of your own on one Pi are named by port (*Receiver 8074*,
-  *Receiver 8075*) until you name them. Each receiver in it is an object of
+  *Receiver 8075*) until you name them. A new station on a receiver of
+  your own is checked with the receiver before it's saved: a band it
+  doesn't have (`?band=2m` on the HF one, or `2m.`) or a frequency out of
+  its reach is refused, saying what it has; a receiver that isn't answering
+  can't be asked, so the station is saved as given. Each receiver in it is an object of
   its own -- one of your own (`receiver/` in the repository: an RTL-SDR
   dongle on a spare Pi, `http://HOST:8074/audio?band=…`, added with
   *Add by address* in the Stations folder's toolbar) or someone's
@@ -2035,7 +2039,11 @@ The cards:
   GitHub release (`update_source`) and *Install* puts it on (see the
   top-level README): the music carries on while it downloads, the DJ says
   when it's restarting and afterwards that it's been updated -- or, if the
-  new version didn't come on air, that it went back.
+  new version didn't come on air, that it went back. Installed on a
+  **paused** radio, it says nothing and comes back paused: the show runs
+  unheard (speaker off, in real time) until music has played and the update
+  is confirmed, then stops (a `stay-paused` file in `/data/radio/.update`,
+  read once at the next start; a power cut still plays, as a radio does).
 - **Backup** — *Save settings* downloads everything above plus the volume
   as one JSON file; *Load settings* puts it back (after re-flashing the
   card, or onto a second radio). The file is checked before anything is

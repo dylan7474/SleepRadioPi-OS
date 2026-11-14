@@ -58,7 +58,8 @@ DEFAULT_SOURCE = "github:dylan7474/SleepRadioPi-OS"
 VERSION_FILE = Path("/etc/sleepradiopi-version")
 RUN = Path("/run/sleepradiopi")
 REQUEST, STATUS, GO = RUN / "update-request", RUN / "update-status", RUN / "update-reboot"
-STATE = Path("/data/radio/.update")        # pending.json, result.json (the station can write here)
+STATE = Path("/data/radio/.update")
+STAY_PAUSED = "stay-paused"                # in STATE: the radio was paused when the update was installed        # pending.json, result.json (the station can write here)
 CONFIRM_S = 300                           # the new system must be on air within this
 SLOT_BYTES = 256 * 1024 * 1024
 UA = {"User-Agent": "SleepRadioPi-updater"}
@@ -416,6 +417,10 @@ class Updates:
                  state: Path = STATE, run: Path = RUN, version_file: Path = VERSION_FILE,
                  restart_delay_s: float = 9) -> None:
         self.source, self.say = source, say
+        # A paused radio stays paused through its update: no spoken progress, and back up quiet
+        # (main runs the show unheard till the update confirms). paused() is set by main.
+        self.paused: Callable[[], bool] = lambda: False
+        self.quiet = False                        # this update (or this start-up after one) is a quiet one
         self.restart_delay_s = restart_delay_s    # time to say "restarting" before it does
         self.state, self.version_file = state, version_file
         self.request, self.status_file, self.go = run / "update-request", run / "update-status", run / "update-reboot"
@@ -501,14 +506,22 @@ class Updates:
             self._job = {"state": "requested"}
         m = self.available
         self.status_file.unlink(missing_ok=True)
+        self.quiet = bool(self.paused())
+        try:
+            if self.quiet:                        # (one tiny file, only when an update is installed)
+                (self.state / STAY_PAUSED).touch()
+            else:
+                (self.state / STAY_PAUSED).unlink(missing_ok=True)
+        except OSError:
+            pass
         _write_json(self.request, {"version": m["version"], "rootfs": m["rootfs"], "current": self.version,
                                    "kernel_sha256": m["kernel_sha256"], "config_txt": m.get("config_txt"),
                                    **({"bundle": m["bundle"]} if m.get("bundle") else {})})
         if m.get("bundle"):
-            self.say(f"Installing an update: version {m['version']}. The music carries on meanwhile.")
+            self._say(f"Installing an update: version {m['version']}. The music carries on meanwhile.")
         else:
-            self.say(f"Downloading an update: version {m['version']}. "
-                     "The music carries on while it downloads.")
+            self._say(f"Downloading an update: version {m['version']}. "
+                      "The music carries on while it downloads.")
         threading.Thread(target=self._follow, name="update", daemon=True).start()
         return self.status()
 
@@ -523,8 +536,8 @@ class Updates:
             if st.get("state") == "ready":
                 with self._lock:
                     self._job = {"state": "ready"}
-                self.say(f"The update is ready. The radio is restarting now, and will be back in about a minute.")
-                time.sleep(self.restart_delay_s)
+                self._say(f"The update is ready. The radio is restarting now, and will be back in about a minute.")
+                time.sleep(self.restart_delay_s if not self.quiet else 1)
                 self.go.touch()
                 return
             if st.get("state") == "error":
@@ -532,11 +545,13 @@ class Updates:
                     self._job = {"state": "error", "message": st.get("message", "the update failed")}
                     if (self.available or {}).get("bundle"):     # (the helper has thrown the file away)
                         self.available = None
-                self.say("The update didn't work, so nothing has changed.")
+                (self.state / STAY_PAUSED).unlink(missing_ok=True)     # (no restart: nothing to stay quiet through)
+                self._say("The update didn't work, so nothing has changed.")
                 return
             time.sleep(1)
         with self._lock:
             self._job = {"state": "error", "message": "the update helper didn't answer"}
+        (self.state / STAY_PAUSED).unlink(missing_ok=True)
 
     def on_air(self) -> None:
         """Once music is playing after a start-up: confirm a pending update,
@@ -557,11 +572,29 @@ class Updates:
             return
         result.unlink(missing_ok=True)
         if r.get("rolled_back"):
-            self.say(f"The radio has gone back to its previous version, {self.version}.")
+            self._say(f"The radio has gone back to its previous version, {self.version}.")
         elif r.get("ok"):
-            self.say(f"The radio has been updated to version {r.get('version', self.version)}.")
+            self._say(f"The radio has been updated to version {r.get('version', self.version)}.")
         else:
-            self.say(f"The last update didn't work, so the radio went back to the version it had before.")
+            self._say(f"The last update didn't work, so the radio went back to the version it had before.")
+
+    def _say(self, text: str) -> None:
+        """Say it on the radio -- unless the update began on a paused radio (then only logged)."""
+        if self.quiet:
+            log.info("not said (the radio was paused for the update): %s", text)
+            return
+        self.say(text)
+
+    def quiet_start(self) -> bool:
+        """At start-up: was the radio paused when the update it's restarting from was installed?
+        (Read once, then forgotten: a later power cut plays as a radio does.)"""
+        flag = self.state / STAY_PAUSED
+        try:
+            self.quiet = flag.exists()
+            flag.unlink(missing_ok=True)
+        except OSError:
+            self.quiet = False
+        return self.quiet
 
 
 if __name__ == "__main__":
