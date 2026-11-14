@@ -957,7 +957,7 @@ const PANELS = [
 ];
 const PANEL = {};
 for (const [key, title, sym, h, page] of PANELS) PANEL[key] = mk({ id: "set:" + key, kind: "panel", key, title, sym, h, page });
-for (const [key, title, sym, h] of [["messages", "Messages", "✎", 55], ["birthdays", "Birthdays", "✿", 340], ["stations", "Stations", "R", 8], ["radios", "Other radios", "⇄", 165],
+for (const [key, title, sym, h] of [["messages", "Messages", "✎", 55], ["birthdays", "Birthdays", "✿", 340], ["stations", "Stations", "R", 8], ["radios", "Other radios", "⇄", 165], ["hooks", "DJ lines", "❝", 30],
                                     ["tests", "Test sounds", "▶", 150], ["stream", "Listen in a browser", "◠", 200], ["lists", "Themes", "A", 195],
                                     ["findstation", "Find a station", "R", 8], ["findreceiver", "Find a receiver", "⌁", 200], ["modes", "Where to listen", "⌖", 215], ["conditions", "Band conditions", "☼", 45], ["quakes", "Earthquakes", "≋", 20], ["sun", "The sun", "☀", 45], ["aurora", "Aurora", "◠", 130], ["vhf", "VHF openings", "⌃", 200], ["warnings", "Warnings", "⚠", 35], ["signal", "My signal", "⌇", 210], ["qrz", "QRZ logbook", "Q", 225], ["lightning", "Lightning", "ϟ", 50], ["notify", "Notifications", "♪", 20], ["aircraft", "Aircraft", "✈", 215], ["r433", "433 MHz", "∿", 280], ["sondes", "Radiosondes", "⇡", 300], ["sondelive", "Sonde console", "◉", 300], ["findroom", "Find a room", "☊", 265], ["findpodcast", "Follow a podcast", "P", 275], ["findbook", "Find a LibriVox book", "B", 150], ["findebook", "Find an ebook", "E", 160], ["newlist", "New theme", "A", 195]])
   PANEL[key] = mk({ id: "set:" + key, kind: "panel", key, title, sym, h, page: key });
@@ -5347,6 +5347,26 @@ function openSondeConsole(id) {
   if (!had) { const w = W.find(w => w.id === PANEL.sondelive.id), d = $("desk"); if (w) { Object.assign(w, { x: 16, y: 8, w: Math.min(1280, d.clientWidth - 32), h: d.clientHeight - 24, fitted: true }); drawDesk(); } }
 }
 const UI = {
+  // The DJ's lines between songs: the 70s ones that come with the radio (to read), and its own (added here, synced).
+  hooks: {
+    load: () => api("/api/dj/hooks"),
+    build: (d, act) => {
+      const add = el("input", { type: "text", id: "hook-add", maxLength: 240, placeholder: "A line for the DJ to say before a song" });
+      const save = change => act(async () => { const now = await api("/api/dj/hooks"); await api("/api/dj/hooks", { own: change(now.own) }); });
+      const go = () => { const t = add.value.trim(); if (!t) return toast("A line for the DJ, please."); save(own => [...own, t]); };
+      add.onkeydown = e => { if (e.key === "Enter") go(); };
+      return [
+        grp("Your own lines",
+          ...(d.own.length ? d.own.map(t => srow("", el("span", { textContent: "“" + t + "”" }), sbtn("Remove", () => save(own => own.filter(x => x !== t)))))
+            : [help("None yet. Add your own below: they go in the shuffle with the 70s ones, on every theme with 70s hooks on.")]),
+          srow("New line", add), line(sbtn("Add", go, "primary")),
+          help("A line is said just before the DJ introduces the next song. Paired radios share your lines.")),
+        grp(`The 70s lines (${d.builtin.length}, with the radio)`,
+          ...d.builtin.map(t => el("p", { className: "shelp", textContent: "“" + t + "”" })),
+          help("Each theme says these when its 70s hooks are on (a theme's Settings). They're shuffled: each is said once before any again.")),
+      ];
+    },
+  },
   // Other radios (sync.py): the ones paired with this one (kept the same both ways), the others heard on the network, pairing.
   radios: {
     load: () => api("/api/sync"),
@@ -5520,6 +5540,7 @@ const UI = {
       const row = k => { const [label, opts] = THEME_SET[k]; return srow(label, seg(opts, own[k], v => setOwn(k, v))); };
       return [grp(stationOf(cur.name), row("chattiness"), row("time_checks"), row("news"), row("jingle_every"),
                   d.dj.hooks_available ? row("dj_hooks") : null,
+                  line(sbtn("DJ lines…", () => open(PANEL.hooks.id))),
                   help(cur.name.toLowerCase() === "default" ? "A new theme starts with these; artist radio uses them too."
                                                              : "This theme's own. (A new theme starts with Default's.)")),
               grp("", line(sbtn("The whole radio's DJ: voice, speed…", () => open(PANEL.dj.id))))];
@@ -5552,7 +5573,7 @@ const UI = {
         grp("Waking up", srow("At power-on", seg([[true, "Chime"], [false, "Silent"]], d.startup_sound, v => set({ startup_sound: v })))),
         grp("Each theme's own", help("How much the DJ talks, time checks, the news, jingles and 70s hooks belong to each theme: in its Settings."),
           d.theme ? line(sbtn(`${stationOf(d.theme)}'s settings…`, () => { mk({ id: "tset:" + d.theme, kind: "panel", key: "tset", name: d.theme, title: "Settings", sym: "⚙" }); open("tset:" + d.theme); })) : null),
-        grp("", line(sbtn("Themes…", () => open(LISTS.id)), sbtn("Birthdays…", () => open(BDAYS.id)), sbtn("Voices…", () => open(VOICES.id))),
+        grp("", line(sbtn("Themes…", () => open(LISTS.id)), sbtn("Birthdays…", () => open(BDAYS.id)), sbtn("Voices…", () => open(VOICES.id)), sbtn("DJ lines…", () => open(PANEL.hooks.id))),
           help("Each theme has its own jingles and messages: open it in Themes.")),
       ];
     },

@@ -147,6 +147,25 @@ class HookPool:
         return self._last
 
 
+MAX_OWN_HOOKS, MAX_HOOK_LEN = 300, 240
+
+
+def validate_own_hooks(lines) -> list[str]:
+    """The DJ's own lines, as kept: each a short line of words, once."""
+    if not isinstance(lines, list) or len(lines) > MAX_OWN_HOOKS:
+        raise ValueError(f"the DJ's own lines: a list of up to {MAX_OWN_HOOKS}")
+    out = []
+    for line in lines:
+        if not isinstance(line, str):
+            raise ValueError("the DJ's own lines are words")
+        t = " ".join(line.split())
+        if len(t) > MAX_HOOK_LEN:
+            raise ValueError(f"a DJ line is up to {MAX_HOOK_LEN} letters")
+        if t and t not in out:
+            out.append(t)
+    return out
+
+
 def parse_hooks(text: str) -> list[str]:
     """One hook per line; blank lines and '#' comments are skipped."""
     lines = (line.strip() for line in text.splitlines())

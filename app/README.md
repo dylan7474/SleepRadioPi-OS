@@ -2044,13 +2044,19 @@ The cards:
   unheard (speaker off, in real time) until music has played and the update
   is confirmed, then stops (a `stay-paused` file in `/data/radio/.update`,
   read once at the next start; a power cut still plays, as a radio does).
+- **DJ lines** — the lines the DJ says before introducing a song when a
+  theme's *70s hooks* are on: the 78 that come with the radio, to read, and
+  your own, added here (they join the shuffle on every theme with hooks on,
+  and paired radios share them). From The DJ, or a theme's Settings: *DJ lines…*.
 - **Other radios** (`sleepradiopi/sync.py`) — radios find each other on the
   network (each says it's there about once a minute, and asks who's there
   when it starts: a small UDP broadcast on port 47474) and can be **paired**,
   from the list or by address. Paired radios keep **everything they can
   share** the same, **both ways** -- stations and receiver names, themes
   (Default's DJ settings too), playlists, programmes, messages and their
-  times, birthdays, podcasts followed, and the radio's other settings (the
+  times, birthdays, podcasts followed, the DJ's own lines, the **theme
+  jingles** (the files themselves: one a radio hasn't got is fetched from the
+  other, one deleted on either goes from both), and the radio's other settings (the
   DJ's, alerts, the outside tiles, callsign and locator...): every few minutes (or *Sync
   now*) one reads the other's, merges the two against the state they last
   agreed on, and both take up the result -- so an add, an edit or a delete on

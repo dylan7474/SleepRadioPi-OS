@@ -401,6 +401,14 @@ def _lock_in_memory() -> None:
         pass
 
 
+def _own_hooks(station: Station, settings) -> None:
+    """The DJ's own lines (dj_hooks_own), with the 70s ones."""
+    try:
+        station.set_own_hooks(settings.dj_hooks_own or [])
+    except ValueError as e:
+        logging.getLogger(__name__).warning("the DJ's own lines ignored: %s", e)
+
+
 def _after_first_song(station: Station, updates: Updates, then=None) -> None:
     """Once music is playing after a start-up, confirm a pending update (so the
     boot watchdog doesn't roll it back) and say how it went; and lock the
@@ -772,6 +780,7 @@ def main() -> None:
                                 eq=Equalizer(pcm.SAMPLE_RATE, pcm.CHANNELS, settings.speaker_eq,
                                              settings.speaker_highpass_hz))
         station = Station(cfg, tts, TeeOutput(speaker, stream))
+        _own_hooks(station, settings)
         station.monitor = monitor
         speaker.on_stuck = _speaker_stuck
         control = SpeakerControl(
@@ -867,6 +876,7 @@ def main() -> None:
         knob.start()
     else:
         station = Station(cfg, tts, stream)
+        _own_hooks(station, settings)
         station.monitor = monitor
         control = None
         cathedral = settings.hardware == "cathedral"
@@ -1100,7 +1110,8 @@ def main() -> None:
         sync = sync_mod.Sync(args.config, lambda: brand.name, args.port or settings.http_port,
                              version=updates.version if updates is not None else "",
                              protected=lambda: bool(read_config(args.config).get(auth_mod.KEY)),
-                             backup=lambda label: store.save(backup_mod.export(args.config, None), label))
+                             backup=lambda label: store.save(backup_mod.export(args.config, None), label),
+                             media=media)
         sync.start()
     except Exception:                                  # (never stops the radio starting)
         logging.getLogger(__name__).exception("sync: not started")

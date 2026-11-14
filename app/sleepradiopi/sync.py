@@ -38,6 +38,7 @@ import random
 import socket
 import threading
 import time
+import urllib.parse
 import urllib.request
 import uuid
 from collections.abc import Callable
@@ -52,8 +53,10 @@ from sleepradiopi.broadcast import messages as messages_mod
 from sleepradiopi.broadcast import playlists as playlists_mod
 from sleepradiopi.broadcast import profiles as profiles_mod
 from sleepradiopi.broadcast import programmes as programmes_mod
+from sleepradiopi.broadcast import selector as selector_mod
 from sleepradiopi.config import backup as backup_mod
 from sleepradiopi.config.settings import Settings
+from sleepradiopi import media as media_mod
 from sleepradiopi.playback import podcasts as podcasts_mod
 from sleepradiopi.playback import radio as radio_mod
 
@@ -175,7 +178,7 @@ RADIO_OWN = {"speaker_mono", "speaker_eq", "speaker_highpass_hz", "speaker_volum
              "ondemand_keep",
              "broadcast_voice", "news_voice"}     # (the voices: their files aren't synced yet -- a personal one may not be there)
 COLLECTION_KEYS = {"radio_stations", "receiver_names", "profiles", "playlists", "programmes", "messages",
-                   "birthdays", "podcasts"}
+                   "birthdays", "podcasts", "dj_hooks_own"}
 
 
 def _synced_settings() -> list[str]:
@@ -212,11 +215,33 @@ COLLECTIONS = {
     "message_times": (_times_in, _check_times, None, _times_out),
     "birthdays": (*_plain("birthdays", birthdays_mod.validate)[:2], lambda b: f"{b['name'].lower()}|{b['day']}|{b['month']}", _plain("birthdays", birthdays_mod.validate)[2]),
     "podcasts": (*_plain("podcasts", podcasts_mod.validate_shows)[:2], lambda p: p["feed_url"], _plain("podcasts", podcasts_mod.validate_shows)[2]),
+    "dj_hooks_own": (*_plain("dj_hooks_own", selector_mod.validate_own_hooks)[:2], lambda line: line, _plain("dj_hooks_own", selector_mod.validate_own_hooks)[2]),
     "settings": (_settings_in, _check_settings, None, lambda conf, v: dict(v)),
 }
-WORDS = {"radio_stations": "stations", "receiver_names": "receiver names", "profiles": "themes", "playlists": "playlists",
+# Files kept the same too: each kind a collection of {path: size}, read from the card, not the config. A file
+# one radio lacks is fetched from the other (GET /api/media/download); one deleted on either goes from both.
+FILE_KINDS = ("jingles",)
+MAX_SYNC_FILES = 5000
+
+
+def _check_files(value) -> dict:
+    if not isinstance(value, dict) or len(value) > MAX_SYNC_FILES:
+        raise ValueError("files: {path: size}")
+    out = {}
+    for path, size in value.items():
+        parts = path.split("/") if isinstance(path, str) else []
+        if not parts or len(path) > 400 or any(not p or p in (".", "..") or p.startswith(".") for p in parts) \
+                or not isinstance(size, int) or isinstance(size, bool) or not 0 <= size <= media_mod.MAX_FILE:
+            raise ValueError(f"files: {str(path)[:60]!r} isn't a file's path and size")
+        out[path] = size
+    return out
+
+
+for _kind in FILE_KINDS:
+    COLLECTIONS[f"files:{_kind}"] = (None, _check_files, None, None)
+WORDS = {**{f"files:{k}": k for k in FILE_KINDS}, "radio_stations": "stations", "receiver_names": "receiver names", "profiles": "themes", "playlists": "playlists",
          "programmes": "programmes", "messages": "messages", "message_times": "message times", "birthdays": "birthdays",
-         "podcasts": "podcasts", "settings": "settings"}
+         "podcasts": "podcasts", "dj_hooks_own": "DJ lines", "settings": "settings"}
 
 
 def _as_map(name: str, value) -> dict:
@@ -294,7 +319,7 @@ class Sync:
 
     def __init__(self, config_file: Path, name: Callable[[], str], port: int, version: str = "",
                  fetch: Callable | None = None, protected: Callable[[], bool] = lambda: False,
-                 backup: Callable[[str], None] | None = None) -> None:
+                 backup: Callable[[str], None] | None = None, media=None) -> None:
         self.config_file = Path(config_file)
         self.base_file = self.config_file.parent / BASE_FILE
         self.name, self.port, self.version = name, port, version
@@ -302,6 +327,8 @@ class Sync:
         self.protected = protected
         self.backup = backup                     # backup(label): a named settings backup (before a first sync)
         self.apply_live = None                   # apply_live(settings, changed): the running radio takes up a sync's changes
+        self.media = media                       # the music storage (media.Media): files synced only with one
+        self.get_file = _get_file                # get_file(address, kind, path): a response (.headers, .read) -- a test's own
         self.seen: dict[str, dict] = {}          # id -> {"id", "name", "address", "version", "at"} (heard lately)
         self.status: dict[str, dict] = {}        # peer id -> {"at", "ok", "said", "held"?}
         self._allow_once: set[str] = set()       # peers whose held merge may go through once
@@ -312,6 +339,23 @@ class Sync:
         if not self.id:                          # (made once, kept: who this radio is to the others)
             self.id = uuid.uuid4().hex[:12]
             save_setting(self.config_file, "radio_id", self.id)
+
+    def names(self) -> list[str]:
+        """The collections this radio syncs: the files only if it has music storage."""
+        return [n for n, c in COLLECTIONS.items() if c[0] is not None or self.media is not None]
+
+    def _read(self, conf: dict, names) -> dict:
+        out = {}
+        for n in names:
+            read = COLLECTIONS[n][0]
+            if read is not None:
+                out[n] = read(conf)
+            else:
+                try:
+                    out[n] = self.media.tree(n.split(":", 1)[1])["files"]
+                except media_mod.MediaError:
+                    out[n] = {}
+        return out
 
     # (the config, read fresh: other parts of the radio change it)
     def _conf(self) -> dict:
@@ -349,7 +393,7 @@ class Sync:
         re-flashed), the next merge between them only adds: neither can tell a delete from a missed add."""
         conf = self._conf()
         base = self._bases().get(for_id) if for_id else None
-        return {**self.hello(), "collections": {n: c[0](conf) for n, c in COLLECTIONS.items()},
+        return {**self.hello(), "collections": self._read(conf, self.names()),
                 "base": _digest(base) if isinstance(base, dict) and base else ""}
 
     def paired_with(self, peer: dict) -> None:
@@ -421,7 +465,8 @@ class Sync:
         if them.get("protected"):
             return self._said(peer_id, False, "it has a password: no sync")
         try:
-            theirs = {n: COLLECTIONS[n][1](them["collections"][n]) for n in COLLECTIONS}
+            names = [n for n in self.names() if n in them["collections"]]     # (what both sync)
+            theirs = {n: COLLECTIONS[n][1](them["collections"][n]) for n in names}
         except (KeyError, TypeError, ValueError) as e:
             return self._said(peer_id, False, f"what it sent didn't check out ({e})")
         their_name = str(them.get("name") or "")
@@ -438,9 +483,10 @@ class Sync:
                     log.exception("sync: the backup before the first sync wasn't made")
             with CONFIG_LOCK:                             # (worked out under the lock; the other radio asked without it)
                 conf = read_config(self.config_file)
-                mine = {n: c[0](conf) for n, c in COLLECTIONS.items()}
+                mine = self._read(conf, names)
                 merged, here, there, held = {}, {}, {}, []
-                for n, (_read, check, _key, _write) in COLLECTIONS.items():
+                for n in names:
+                    check = COLLECTIONS[n][1]
                     merged[n], here[n] = merge(n, (base or {}).get(n), mine[n], theirs[n])
                     there[n] = _gone(n, theirs[n], merged[n])                  # (what the other radio would lose)
                     for where, count, of in (("here", here[n]["deleted"], mine[n]), ("there", there[n], theirs[n])):
@@ -454,8 +500,8 @@ class Sync:
             if held:
                 return self._said(peer_id, False, "held: it would delete " + ", ".join(held) +
                                   ". Sync anyway to let it through", held=True)
-            if not all(same(n, merged[n], theirs[n]) for n in COLLECTIONS) or base is None \
-                    or not all(same(n, base.get(n, []), merged[n]) for n in COLLECTIONS):
+            if not all(same(n, merged[n], theirs[n]) for n in names) or base is None \
+                    or not all(n in base and same(n, base[n], merged[n]) for n in names):
                 try:                                       # (the other radio takes it up, if it hasn't changed since)
                     ok = self.fetch(f"http://{peer['address']}/api/sync/adopt",
                                     {"id": self.id, "merged": merged, "was": _digest(theirs)})
@@ -465,16 +511,17 @@ class Sync:
                     return self._said(peer_id, False, "it changed meanwhile: it'll sync next time")
             with CONFIG_LOCK:
                 conf = read_config(self.config_file)
-                now = {n: c[0](conf) for n, c in COLLECTIONS.items()}
+                now = self._read(conf, names)
                 if _digest(now) != _digest(mine):          # (changed here while it was asked: kept; the next sync merges it)
                     return self._said(peer_id, False, "changed here meanwhile: it'll sync next time")
                 updates = self._write(conf, merged, mine)
-            self._keep_base(peer_id, merged)
+            got = self._files(peer["address"], names, mine, merged)      # (the files: fetched / deleted here)
+            self._keep_base(peer_id, {n: v for n, v in merged.items() if n in got or not n.startswith("files:")})
             self._allow_once.discard(peer_id)
         if their_name and their_name != peer.get("name"):
             self._save_peers([{**p, "name": their_name} if p["id"] == peer_id else p for p in self.peers()])
         words = lambda counts: ", ".join(f"{v} {k} {WORDS[n]}" for n, c in counts.items() for k, v in c.items() if v)
-        here_w, there_w = words(here), words({n: _changes(n, theirs[n], merged[n]) for n in COLLECTIONS})
+        here_w, there_w = words(here), words({n: _changes(n, theirs[n], merged[n]) for n in names})
         said = "; ".join(x for x in (here_w and f"here: {here_w}", there_w and f"on {their_name or 'it'}: {there_w}") if x)
         log.info("sync with %s: %s", their_name or peer_id, said or "already the same")
         return self._said(peer_id, True, said or "already the same")
@@ -486,7 +533,8 @@ class Sync:
             raise ValueError("that radio isn't paired with this one")
         if not isinstance(merged, dict):
             raise ValueError("send the merged collections")
-        new = {n: COLLECTIONS[n][1](merged[n]) for n in COLLECTIONS}      # (KeyError/ValueError: refused)
+        names = [n for n in self.names() if n in merged]
+        new = {n: COLLECTIONS[n][1](merged[n]) for n in names}      # (ValueError: refused)
         if not self._lock.acquire(timeout=2):        # (this radio is syncing with that one itself: no -- try later)
             return False
         try:
@@ -498,22 +546,72 @@ class Sync:
                     log.exception("sync: the backup before the first sync wasn't made")
             with CONFIG_LOCK:
                 conf = read_config(self.config_file)
-                mine = {n: c[0](conf) for n, c in COLLECTIONS.items()}
+                mine = self._read(conf, names)
                 if _digest(mine) != was:
                     return False
                 updates = self._write(conf, new, mine)
-            self._keep_base(peer_id, new)
+            files = [n for n in names if n.startswith("files:") and not same(n, new[n], mine[n])]
+            self._keep_base(peer_id, {n: v for n, v in new.items() if n not in files})     # (those once they're here)
             self.status[peer_id] = {"at": time.time(), "ok": True, "said": "synced (it asked)"}
         finally:
             self._lock.release()
+        if files:                                    # (the files after, in the background: the other radio's waiting)
+            peer = next(p for p in self.peers() if p["id"] == peer_id)
+            threading.Thread(target=self._adopt_files, args=(peer_id, peer["address"], files, mine, new),
+                             name="sync-files", daemon=True).start()
         return True
+
+    def _adopt_files(self, peer_id, address, names, mine, new) -> None:
+        with self._lock:
+            got = self._files(address, names, mine, new)
+            self._keep_base(peer_id, {**(self._bases().get(peer_id) or {}), **{n: new[n] for n in names if n in got}})
+
+    def _files(self, address: str, names, mine: dict, want: dict) -> set:
+        """Bring this radio's files to want: fetch what's missing or different from the radio at address,
+        delete what's gone. Returns the file collections now exactly as wanted (the rest: kept out of the
+        base, so the next sync only adds -- nothing is deleted for a file that didn't arrive)."""
+        done = set()
+        for n in names:
+            if not n.startswith("files:") or self.media is None:
+                continue
+            kind, ok = n.split(":", 1)[1], True
+            have, goal = mine.get(n, {}), want[n]
+            try:
+                for path, size in goal.items():
+                    if have.get(path) == size:
+                        continue
+                    try:
+                        with self.get_file(address, kind, path) as r:
+                            length = int(r.headers.get("Content-Length") or 0)
+                            if length != size:
+                                raise OSError(f"{path}: {length} bytes, not {size}")
+                            self.media.receive(kind, "", path, length, r.read, replace=True)
+                    except (OSError, ValueError, media_mod.MediaError) as e:
+                        ok = False
+                        log.warning("sync: %s/%s not fetched (%s)", kind, path, e)
+                for path in have:
+                    if path not in goal:
+                        try:
+                            self.media.delete(kind, path, prune=True)
+                        except media_mod.MediaError as e:
+                            ok = False
+                            log.warning("sync: %s/%s not deleted (%s)", kind, path, e)
+            finally:
+                try:
+                    self.media.done()
+                except Exception:
+                    log.exception("sync: the music storage wasn't put back")
+            if ok:
+                done.add(n)
+        return done
 
     def _write(self, conf: dict, merged: dict, mine: dict) -> dict:
         """Write the collections that changed into the config (under CONFIG_LOCK), then take them up in the
         running radio (apply_live: set by the web server). Returns the config keys written."""
         updates: dict = {}
-        for n, c in COLLECTIONS.items():
-            if not same(n, merged[n], mine[n]):
+        for n in merged:
+            c = COLLECTIONS[n]
+            if c[3] is not None and not same(n, merged[n], mine[n]):
                 out = c[3]({**conf, **updates}, merged[n])
                 updates.update(out)
         if not updates:
@@ -535,7 +633,7 @@ class Sync:
     def _keep_base(self, peer_id: str, agreed: dict) -> None:
         bases = self._bases()
         old = bases.get(peer_id)
-        if isinstance(old, dict) and all(n in old and same(n, old[n], agreed[n]) for n in COLLECTIONS):
+        if isinstance(old, dict) and set(old) == set(agreed) and all(same(n, old[n], agreed[n]) for n in agreed):
             return                                         # (unchanged: not written -- few writes to the card)
         bases[peer_id] = agreed
         self._save_bases(bases)
@@ -661,6 +759,11 @@ def _clean_address(address: str) -> str:
     if not a or "/" in a or " " in a or len(a) > 100:
         raise ValueError("an address like 192.168.1.20, or 192.168.1.20:8080")
     return a
+
+
+def _get_file(address: str, kind: str, path: str):
+    return urllib.request.urlopen(f"http://{address}/api/media/download?kind={kind}&path={urllib.parse.quote(path)}",
+                                  timeout=30)
 
 
 def _fetch(url: str, body: dict | None = None):

@@ -281,3 +281,88 @@ def test_on_a_first_sync_a_setting_someone_set_beats_one_never_set() -> None:
     got2, _ = merge("settings", None, {"broadcast_chattiness": "minimal", "locator": "IO00"},
                     {"broadcast_chattiness": "maximum", "locator": None})
     assert got2 == got                                                                        # either way round
+
+
+# --- files (jingles): each radio a pretend card ---
+
+class Card:
+    def __init__(self, files=None):
+        self.files = {"jingles": dict(files or {})}          # path -> bytes
+
+    def tree(self, kind):
+        return {"files": {p: len(b) for p, b in self.files[kind].items()}}
+
+    def receive(self, kind, folder, name, length, read, replace=False):
+        self.files[kind][name] = read(length)
+
+    def delete(self, kind, path, prune=False):
+        del self.files[kind][path]
+
+    def done(self):
+        return True
+
+
+class Got:
+    def __init__(self, data):
+        self.data, self.headers = data, {"Content-Length": str(len(data))}
+
+    def read(self, n=-1):
+        d, self.data = self.data, b""
+        return d
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *a):
+        return False
+
+
+def carded(tmp_path, net, address, files):
+    r = radio(tmp_path, net, address)
+    r.media = Card(files)
+
+    def get_file(addr, kind, path, net=net):
+        other = net.radios[addr]
+        if getattr(other, "off", False) or path not in other.media.files[kind]:
+            raise OSError("not there")
+        return Got(other.media.files[kind][path])
+    r.get_file = get_file
+    return r
+
+
+def test_jingles_are_kept_the_same_both_ways(tmp_path) -> None:
+    import time as _t
+    net = Net()
+    one = carded(tmp_path, net, "one", {"Rock/a.mp3": b"AAAA", "Rock/b.mp3": b"BB"})
+    two = carded(tmp_path, net, "two", {"Jazz/c.mp3": b"CCC"})
+    one.pair("two")
+    for _ in range(100):                                       # (the radio asked fetches its files in the background)
+        if len(two.media.files["jingles"]) == 3:
+            break
+        _t.sleep(0.02)
+    assert one.media.files == two.media.files == {"jingles": {"Rock/a.mp3": b"AAAA", "Rock/b.mp3": b"BB", "Jazz/c.mp3": b"CCC"}}
+    _t.sleep(0.1)
+    del two.media.files["jingles"]["Rock/b.mp3"]               # deleted on two
+    two.media.files["jingles"]["Jazz/d.mp3"] = b"DDDDD"        # ...and one added
+    two.sync_now(one.id)
+    assert one.media.files["jingles"] == {"Rock/a.mp3": b"AAAA", "Jazz/c.mp3": b"CCC", "Jazz/d.mp3": b"DDDDD"}
+
+
+def test_a_jingle_that_does_not_arrive_is_never_deleted_later(tmp_path) -> None:
+    """A file that couldn't be fetched leaves the two disagreeing on what they last agreed: the next sync only
+    adds, so the other radio's copy isn't taken for one this radio deleted."""
+    import time as _t
+    net = Net()
+    one = carded(tmp_path, net, "one", {})
+    two = carded(tmp_path, net, "two", {"Rock/a.mp3": b"AAAA"})
+    real = one.get_file
+    one.get_file = lambda *a: (_ for _ in ()).throw(OSError("dropped"))
+    one.pair("two")                                            # one couldn't fetch it
+    assert one.media.files["jingles"] == {}
+    one.get_file = real
+    two.sync_now(one.id)                                       # two syncs next: must not delete its own copy
+    for _ in range(100):
+        if one.media.files["jingles"]:
+            break
+        _t.sleep(0.02)
+    assert two.media.files["jingles"] == {"Rock/a.mp3": b"AAAA"} and one.media.files["jingles"] == {"Rock/a.mp3": b"AAAA"}

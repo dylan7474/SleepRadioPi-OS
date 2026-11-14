@@ -15,6 +15,7 @@ from datetime import datetime
 from sleepradiopi.broadcast import away as away_mod
 from sleepradiopi.broadcast import birthdays
 from sleepradiopi.broadcast import messages
+from sleepradiopi.broadcast import selector as selector_mod
 from sleepradiopi.config.clock import clock_trusted
 from sleepradiopi.config.settings import save_setting
 from sleepradiopi.io.announce import Clip
@@ -188,9 +189,24 @@ def build(ctx):
         if path == "/api/dj":
             self._send(json.dumps(self._dj_state()).encode(), "application/json")
             return True
+        if path == "/api/dj/hooks":         # the DJ's lines: the 70s ones that come with the radio, and its own
+            self._send(json.dumps({"builtin": getattr(station, "hooks_builtin", []),
+                                   "own": getattr(station, "hooks_own", [])}).encode(), "application/json")
+            return True
         return False
 
     def post(self, path) -> bool:
+        if path == "/api/dj/hooks":         # {"own": [...]}: the DJ's own lines, replaced (saved; synced to paired radios)
+            try:
+                own = selector_mod.validate_own_hooks(self._body().get("own"))
+            except (ValueError, AttributeError) as e:
+                self._error(str(e) or "send {\"own\": [...]}")
+                return True
+            station.set_own_hooks(own)
+            if config_file is not None:
+                save_setting(config_file, "dj_hooks_own", own)
+            self._send(json.dumps({"builtin": station.hooks_builtin, "own": station.hooks_own}).encode(), "application/json")
+            return True
         if path == "/api/birthdays":
             self._set_birthdays()
             return True

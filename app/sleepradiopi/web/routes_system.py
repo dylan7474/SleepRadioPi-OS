@@ -186,6 +186,8 @@ def build(ctx):
                 save_selection()
         if "birthdays" in changed:
             station.set_birthdays(settings["birthdays"])
+        if "dj_hooks_own" in changed and hasattr(station, "set_own_hooks"):
+            station.set_own_hooks(settings["dj_hooks_own"])
         if "podcasts" in changed and getattr(station, "podcasts", None) is not None:
             from sleepradiopi.playback import podcasts as podcasts_mod
             with station.podcasts._lock:                 # (the shows followed, as the radio keeps them: else a follow saves the old list back)

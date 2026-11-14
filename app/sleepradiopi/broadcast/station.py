@@ -56,7 +56,7 @@ from . import profiles as profiles_mod
 from .birthdays import BirthdayWishes, wish_text
 from .messages import Messages
 from .script_builder import DjScriptBuilder, ShowClock, artist_station_name
-from .selector import BroadcastSelector, DeckStore, HookPool, artist_key, parse_hooks
+from .selector import BroadcastSelector, DeckStore, HookPool, artist_key, parse_hooks, validate_own_hooks
 
 log = logging.getLogger(__name__)
 
@@ -235,8 +235,11 @@ class Station:
         self.time_checks = bool(cfg.get("broadcast_time_checks", True))
         self.voices_dir: Path | None = cfg.get("voices_dir")
         self._hook_pool = None                # loaded even when off, so they can be turned on
+        self.hooks_builtin: list[str] = []    # the 70s lines that come with the radio (hooks_file)
+        self.hooks_own: list[str] = []        # lines added on the page (dj_hooks_own: synced between paired radios)
         if cfg["hooks_file"] and Path(cfg["hooks_file"]).is_file():
-            self._hook_pool = HookPool(parse_hooks(Path(cfg["hooks_file"]).read_text()))
+            self.hooks_builtin = parse_hooks(Path(cfg["hooks_file"]).read_text())
+            self._hook_pool = HookPool(self.hooks_builtin)
         self.builder = DjScriptBuilder(hooks=self._hook_pool if self.config.dj_hooks_enabled else None)
         self.news_schedule = NewsSchedule(
             QuietHours.of_minutes(self.config.news_quiet_start_min, self.config.news_quiet_end_min)
@@ -1789,6 +1792,19 @@ class Station:
         self._jingle_bag.clear()
         for j in self.jingles + self._default_jingles:     # (a handful of short files: loudness up front)
             self._scan(j.path)
+
+    def set_own_hooks(self, lines: list[str]) -> None:
+        """The DJ's own lines (added on the page) join the 70s ones in the shuffle (validated: ValueError)."""
+        self.hooks_own = validate_own_hooks(lines)
+        every = self.hooks_builtin + self.hooks_own
+        if self._hook_pool is None:
+            if not every:
+                return
+            self._hook_pool = HookPool(every)
+            self._apply_settings()                     # (hooks may be on for the theme playing, with none till now)
+            return
+        self._hook_pool.all = list(dict.fromkeys(h.strip() for h in every if h.strip()))
+        self._hook_pool._bag.clear()                   # (a fresh shuffle, with the new ones in it)
 
     def set_dj(self, chattiness: str | None = None, dj_hooks: bool | None = None,
                jingle_every: int | None = None, news_enabled: bool | None = None,

@@ -4,10 +4,11 @@ What's built is described in the [app README](../README.md) and the
 [appliance image's README](../../README.md); this is what's left, the same list as
 the image README's [Roadmap](../../README.md#roadmap) (keep the two in step).
 
-- **Radios that sync: files** — paired radios already keep their settings,
-  stations, themes, playlists, programmes, messages, birthdays and podcasts the
-  same both ways (*Other radios*). Still to do: the files -- jingles and the
-  DJ's voices (then the voice setting syncs too), and **shared music folders**
+- **Radios that sync: the rest of the files** — paired radios already keep their
+  settings, stations, themes, playlists, programmes, messages, birthdays,
+  podcasts, DJ lines and theme jingles the same both ways (*Other radios*).
+  Still to do: the DJ's voices (then the voice setting syncs too; a file is
+  matched by its size for now -- a checksum would catch a same-size edit), and **shared music folders**
   (a folder marked Shared is kept on both, both ways, only as much as fits on
   the smaller card, with a meter that says so); and a radio with a web
   password pairing with its partners (today such a radio stays out of sync).
