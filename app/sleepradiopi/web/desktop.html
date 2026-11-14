@@ -4084,7 +4084,7 @@ function folderView(o, box, win) {
   }
   else if (o.box === "playlists") tools.append(T("New playlist", newPlaylist), el("span", { className: "note", textContent: "Drop songs, albums or folders onto a playlist" }));
   else if (o.box === "programmes") tools.append(T("New programme", newProgramme), el("span", { className: "note", textContent: "A running order the radio plays by itself" }));
-  else if (o.box === "stations") tools.append(T("Find a station", () => open(PANEL.findstation.id)), T("Find a receiver", () => open(PANEL.findreceiver.id)), T("Find a room", () => open(PANEL.findroom.id)), el("span", { className: "note", textContent: "Drag a station onto a button to keep it there" }));
+  else if (o.box === "stations") tools.append(T("Find a station", () => open(PANEL.findstation.id)), T("Find a receiver", () => open(PANEL.findreceiver.id)), T("Find a room", () => open(PANEL.findroom.id)), T("Add by address", () => open(PANEL.stations.id)), el("span", { className: "note", textContent: "Drag a station onto a button to keep it there" }));
   else if (o.box === "outside") tools.append(T("Notifications…", () => open(PANEL.notify.id)), T("Lightning…", () => open(PANEL.lightning.id)), T("Band conditions…", () => open(PANEL.conditions.id)), T("Aircraft…", () => open(PANEL.aircraft.id)), T("433 MHz…", () => open(PANEL.r433.id)), T("Radiosondes…", () => open(PANEL.sondes.id)), el("span", { className: "note", textContent: "Live from outside · open one for all of it · the DJ says it if you ask, in Band conditions" }));
   else if (o.box === "podcasts") tools.append(T("Follow a podcast", () => open(PANEL.findpodcast.id)), el("span", { className: "note", textContent: "Open a show for its episodes" }));
   else if (o.box === "lists") tools.append(T("New theme", () => open(PANEL.newlist.id)), el("span", { className: "note", textContent: "Double-click a theme to change it · drag one onto the radio to play it" }));
@@ -5357,7 +5357,7 @@ const UI = {
     build: (d, act) => {
       const save = list => act(() => api("/api/radio/stations", { stations: list }));
       const name = el("input", { type: "text", id: "st-add-name", placeholder: "Name", maxLength: 120 });
-      const url = el("input", { type: "url", id: "st-add-url", placeholder: "https://… stream address" });
+      const url = el("input", { type: "url", id: "st-add-url", placeholder: "https://… stream, or a receiver: http://192.168.1.5:8074/audio?freq=145.5" });
       const dir = d.directory || {};
       return [
         grp("Your stations", ...(d.stations.length ? d.stations.map((st, i) => srow(st.name, el("span", { className: "shelp", textContent: st.info || "" }),
@@ -5367,7 +5367,8 @@ const UI = {
         grp("Add one by its address", srow("Name", name), srow("Address", url),
           line(sbtn("Add", () => { if (!name.value.trim() || !url.value.trim()) return toast("A name and a stream address, please.");
                                    save([...d.stations, { name: name.value.trim(), url: url.value.trim() }]); }, "primary"),
-               sbtn("Find a station…", () => open(PANEL.findstation.id)))),
+               sbtn("Find a station…", () => open(PANEL.findstation.id))),
+          help("A receiver of your own (receiver/ in the repository) is added the same way: its address and a band or a frequency, like http://192.168.1.5:8074/audio?band=marine or …:8075/audio?band=40m. It then shows in Receivers, and opens as a rig.")),
         grp("Station directory", help(dir.stations ? `A copy of the Radio Browser directory: ${dir.stations.toLocaleString()} stations` + (dir.updated ? `, from ${new Date(dir.updated * 1000).toLocaleDateString()}` : "") + "." : "No copy of the Radio Browser directory yet: searches go online."),
           ...(dir.error ? [help("Last update: " + dir.error)] : []),
           line(sbtn(dir.refreshing ? "Updating…" : "Update the list now", () => act(() => api("/api/radio/directory", {})))),

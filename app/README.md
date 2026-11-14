@@ -1143,7 +1143,8 @@ The cards:
 - **Receivers** — a folder that appears on the desktop once a saved
   station's address is a receiver's. Each receiver in it is an object of
   its own -- one of your own (`receiver/` in the repository: an RTL-SDR
-  dongle on a spare Pi, `http://HOST:8074/audio?band=…`) or someone's
+  dongle on a spare Pi, `http://HOST:8074/audio?band=…`, added with
+  *Add by address* in the Stations folder's toolbar) or someone's
   **KiwiSDR** or **OpenWebRX** on the internet (a station like
   `http://HOST:8073/?f=7150.00lsb`; *Find a receiver* has a *Rig* button on
   each one too) -- and each opens
