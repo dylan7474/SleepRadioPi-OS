@@ -136,6 +136,13 @@ def series_from(data, most: int = SERIES_KEEP) -> list[list] | None:
     return thin(out, most)
 
 
+def merge(had: list, new: list, most: int = SERIES_KEEP) -> list:
+    """Two copies of a flight's rows as one: every time in either (the newer copy's row where both have it), in order, thinned."""
+    rows = {r[0]: r for r in had}
+    rows.update({r[0]: r for r in new})
+    return thin([rows[t] for t in sorted(rows)], most)
+
+
 def clean(f) -> dict:
     """One flight from a file, checked: only the fields a flight has, each the right kind (BadFlight if not)."""
     if not isinstance(f, dict):
@@ -265,8 +272,7 @@ class Sondes(Kept):
             e["series_at"] = now
             if rows is not None:
                 e["series_of"] = n
-                if len(rows) >= len(e.get("series") or ()) or not e.get("series"):
-                    e["series"] = rows
+                e["series"] = merge(e.get("series") or [], rows)            # (by time: what the receiver lost in a restart, the radio still has)
 
     def live(self, ident: str, since: float = 0.0) -> dict:
         """For the live console, asked every few seconds while it is open: the flight's rows after `since` straight from the receiver

@@ -499,3 +499,17 @@ def test_the_live_console_gets_the_new_rows_and_the_decoder(monkeypatch) -> None
     s.answers["/status"] = None                                         # (the receiver stops answering)
     assert s.live("L1")["up"] is False
     assert _s(address="").live("L1")["error"] == "no receiver set"
+
+
+def test_the_radio_merges_its_copy_with_the_receivers_after_the_receiver_restarts(monkeypatch) -> None:
+    monkeypatch.setattr(sondes, "aerial", lambda: AT)
+    rows = _rows(30)
+    s = _s([flight("M1", series_rows=20, ago=sondes.ACTIVE_S + 1)])
+    s.answers["/sondes/series?id=M1"] = {"columns": COLS, "rows": rows[:20]}
+    s.fetch()
+    s.answers["/sondes"]["flights"] = [flight("M1", series_rows=10, ago=sondes.ACTIVE_S + 1)]          # the receiver restarted: only the newest rows
+    s.answers["/sondes/series?id=M1"] = {"columns": COLS, "rows": rows[20:]}
+    s.t[0] += 61
+    s.fetch()
+    assert [r[0] for r in s.profile("M1")["rows"]] == [r[0] for r in rows]
+    assert sondes.merge([[1, 1], [2, 2]], [[2, 9], [3, 3]]) == [[1, 1], [2, 9], [3, 3]]
