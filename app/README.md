@@ -1141,7 +1141,9 @@ The cards:
   one inverted — if the inverted part sounds fuller, a speaker is wired the
   wrong way round, and vocals would vanish in stereo but not in mono).
 - **Receivers** — a folder that appears on the desktop once a saved
-  station's address is a receiver's. Each receiver in it is an object of
+  station's address is a receiver's (straight away when one is added, no
+  reload). Two of your own on one Pi are named by port (*Receiver 8074*,
+  *Receiver 8075*) until you name them. Each receiver in it is an object of
   its own -- one of your own (`receiver/` in the repository: an RTL-SDR
   dongle on a spare Pi, `http://HOST:8074/audio?band=…`, added with
   *Add by address* in the Stations folder's toolbar) or someone's

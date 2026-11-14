@@ -899,6 +899,13 @@ let RX_NAMES = {};                                  // the names you've given re
 const rxObj = (rx, origin, title, info) => mk({ id: "rx:" + origin, kind: "rx", rx, origin, title, name: title, info, sym: "⌁" });
 const rxOrigin = url => { const m = /^(https?:\/\/[^/]+)\/audio\?(?:.*&)?(?:band|freq)=/.exec(url || ""); return m && m[1]; };
 const rxOrigins = stations => [...new Set(stations.map(x => rxOrigin(x.url)).filter(Boolean))];
+// The Receivers folder goes on the desktop once a saved station says there's a receiver: when the page
+// starts, and the moment one is saved (not only after a reload); an open Receivers window takes it in too.
+function rxOnDesk(stations) {
+  if (!(rxOrigins(stations).length || stations.some(x => rxKiwi(x.url) || rxOwrx(x.url) || rxRoom(x.url)))) return;
+  if (!desk.some(p => p.id === RECEIVER.id)) { desk.push({ id: RECEIVER.id, ...freeSpot() }); saveDesk(); drawDesk(); }
+  if (W.some(w => w.id === RECEIVER.id)) loadFolder(RECEIVER).then(drawDesk).catch(() => {});
+}
 const rxMhz = hz => String(+(hz / 1e6).toFixed(4));
 const rxAgo = sec => sec < 90 ? `${Math.max(1, Math.round(sec))} s` : sec < 5400 ? `${Math.round(sec / 60)} min` : `${Math.round(sec / 3600)} h`;
 // A receiver of your own is asked through the radio (/api/rx/own/...), never by the page itself: away from home, or with
@@ -1030,10 +1037,13 @@ async function loadFolder(f) {
   } else if (f.box === "stations") {
     const d = await api("/api/radio");
     f.kids = d.stations.map(s => stationObj(s).id);
+    rxOnDesk(d.stations);
   } else if (f.box === "receiver") {                // every receiver a saved station points at
     const d = await api("/api/radio"), own = rxOrigins(d.stations), kiwis = [...new Set(d.stations.map(x => rxKiwi(x.url)).filter(Boolean))];
     RX_NAMES = d.receiver_names || {};
-    const kids = own.map(origin => rxObj("own", origin, RX_NAMES[origin] || (own.length === 1 ? "Home receiver" : rxHost(origin)), `Your own · ${rxHost(origin)}`).id);
+    const host = o => rxHost(o).replace(/:\d+$/, ""), port = o => (/:(\d+)$/.exec(rxHost(o)) || [])[1];
+    const shared = o => port(o) && own.filter(x => host(x) === host(o)).length > 1;   // (two on one Pi: told apart by port, not a cut-off address)
+    const kids = own.map(origin => rxObj("own", origin, RX_NAMES[origin] || (own.length === 1 ? "Home receiver" : shared(origin) ? `Receiver ${port(origin)}` : rxHost(origin)), `Your own · ${rxHost(origin)}`).id);
     const owrxs = [...new Set(d.stations.map(x => rxOwrx(x.url)).filter(Boolean))];
     for (const [kind, base] of [...kiwis.map(b => ["kiwi", b]), ...owrxs.map(b => ["owrx", b])]) {
       let title = RX_NAMES[base] || O["rx:" + base]?.named;
@@ -5355,7 +5365,7 @@ const UI = {
   stations: {
     load: () => api("/api/radio"),
     build: (d, act) => {
-      const save = list => act(() => api("/api/radio/stations", { stations: list }));
+      const save = list => act(async () => { await api("/api/radio/stations", { stations: list }); rxOnDesk(list); if (W.some(w => w.id === STATIONS.id)) await loadFolder(STATIONS); });
       const name = el("input", { type: "text", id: "st-add-name", placeholder: "Name", maxLength: 120 });
       const url = el("input", { type: "url", id: "st-add-url", placeholder: "https://… stream, or a receiver: http://192.168.1.5:8074/audio?freq=145.5" });
       const dir = d.directory || {};
@@ -7921,7 +7931,7 @@ async function boot() {
     setInterval(() => { if (!document.hidden) healthPoll(); }, 60000);
     // The Receiver folder appears on the desktop once a station says there's a receiver; while one of its
     // windows is open it's asked every few seconds who has the air.
-    api("/api/radio").then(d => { if ((rxOrigins(d.stations).length || d.stations.some(x => rxKiwi(x.url) || rxOwrx(x.url) || rxRoom(x.url))) && !desk.some(p => p.id === RECEIVER.id)) { desk.push({ id: RECEIVER.id, ...freeSpot() }); saveDesk(); drawDesk(); } }).catch(() => {});
+    api("/api/radio").then(d => rxOnDesk(d.stations)).catch(() => {});
     setInterval(() => { if (!document.hidden && W.some(w => ["rxbands", "rxband"].includes(O[w.id]?.box))) refreshOpen(); }, 4000);
     setInterval(rigPoll, 350);
     document.addEventListener("visibilitychange", () => { if (!document.hidden) { refreshOpen(); poll(); } }); setInterval(async () => { if (document.hidden) return; await loadButtons(); updateRadio(); }, 15000); }
