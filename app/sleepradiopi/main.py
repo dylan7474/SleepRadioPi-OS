@@ -22,7 +22,7 @@ from sleepradiopi.audio.eq import Equalizer
 from sleepradiopi.audio.speaker import SpeakerControl, SpeakerOutput, TeeOutput
 from sleepradiopi.broadcast.station import Station
 from sleepradiopi.config import atomic
-from sleepradiopi.config.settings import DEFAULT_PATH, load, save, save_setting
+from sleepradiopi.config.settings import DEFAULT_PATH, load, read_config, save, save_setting
 from sleepradiopi import startup_sound
 from sleepradiopi import wifi
 from sleepradiopi.updater import Updates
@@ -1091,8 +1091,21 @@ def main() -> None:
     conditions_mod.keeper.start()
     conditions_mod.EVERY_H = settings.conditions_every_h if settings.conditions_every_h in conditions_mod.SAY_HOURS else 0
     conditions_mod.ALERTS = settings.conditions_alerts is True
+    # Other radios: found on the network, paired, and some things kept the same both ways (sync.py).
+    from sleepradiopi import sync as sync_mod
+    from sleepradiopi.config import auth as auth_mod, backup as backup_mod
+    sync = None
+    try:
+        store = backup_mod.Store(args.config.parent / "backups")
+        sync = sync_mod.Sync(args.config, lambda: brand.name, args.port or settings.http_port,
+                             version=updates.version if updates is not None else "",
+                             protected=lambda: bool(read_config(args.config).get(auth_mod.KEY)),
+                             backup=lambda label: store.save(backup_mod.export(args.config, None), label))
+        sync.start()
+    except Exception:                                  # (never stops the radio starting)
+        logging.getLogger(__name__).exception("sync: not started")
     serve(station, stream, args.port or settings.http_port, control, args.config, announcer, jobs, updates,
-          presets, directory, media, lamps)
+          presets, directory, media, lamps, sync)
 
 
 if __name__ == "__main__":

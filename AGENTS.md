@@ -19,7 +19,8 @@ information in anything committed (`local/` is git-ignored for those).
 - After a release, radios install the PUBLISHED release through their own
   update API (`POST /api/update/check`, then `/api/update/install`, then poll
   `/api/status` for the version). Do not build a separate image per radio.
-  A radio comes back PLAYING: pause it again if it was paused.
+  A radio paused when the update is installed comes back paused and silent
+  (since 1.9.80); one that was playing comes back playing. Check, don't assume.
 
 ## Rules
 

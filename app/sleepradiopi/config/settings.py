@@ -39,6 +39,8 @@ class Settings:
     podcasts: list = field(default_factory=list)  # the shows followed: [{"feed_url", "title", "author"}]
     radio_stations: list | None = None    # internet radio: [{"name", "url", "info"?}]; None = the starter set
     callsign: str | None = None           # the owner's amateur radio callsign: what a room is joined under (playback/room.py)
+    radio_id: str = ""                    # who this radio is to the others it syncs with (made once: sync.py)
+    sync_peers: list = field(default_factory=list)   # the radios it's paired with: [{"id", "name", "address"}] (sync.py)
     receiver_names: dict = field(default_factory=dict)   # names given to receivers on the desktop: {"http://192.168.50.4:8075": "Short wave"}
     locator: str | None = None            # the radio's place as a locator ("IO94"): how far an FT8 station is (audio/ft8.py)
     calibrate_itself: dict = field(default_factory=dict)   # receivers of your own the radio calibrates by itself: {"http://192.168.50.4:8075": "night" | "listening"} (playback/calibrate.py)

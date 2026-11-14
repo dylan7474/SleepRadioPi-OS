@@ -957,7 +957,7 @@ const PANELS = [
 ];
 const PANEL = {};
 for (const [key, title, sym, h, page] of PANELS) PANEL[key] = mk({ id: "set:" + key, kind: "panel", key, title, sym, h, page });
-for (const [key, title, sym, h] of [["messages", "Messages", "✎", 55], ["birthdays", "Birthdays", "✿", 340], ["stations", "Stations", "R", 8],
+for (const [key, title, sym, h] of [["messages", "Messages", "✎", 55], ["birthdays", "Birthdays", "✿", 340], ["stations", "Stations", "R", 8], ["radios", "Other radios", "⇄", 165],
                                     ["tests", "Test sounds", "▶", 150], ["stream", "Listen in a browser", "◠", 200], ["lists", "Themes", "A", 195],
                                     ["findstation", "Find a station", "R", 8], ["findreceiver", "Find a receiver", "⌁", 200], ["modes", "Where to listen", "⌖", 215], ["conditions", "Band conditions", "☼", 45], ["quakes", "Earthquakes", "≋", 20], ["sun", "The sun", "☀", 45], ["aurora", "Aurora", "◠", 130], ["vhf", "VHF openings", "⌃", 200], ["warnings", "Warnings", "⚠", 35], ["signal", "My signal", "⌇", 210], ["qrz", "QRZ logbook", "Q", 225], ["lightning", "Lightning", "ϟ", 50], ["notify", "Notifications", "♪", 20], ["aircraft", "Aircraft", "✈", 215], ["r433", "433 MHz", "∿", 280], ["sondes", "Radiosondes", "⇡", 300], ["sondelive", "Sonde console", "◉", 300], ["findroom", "Find a room", "☊", 265], ["findpodcast", "Follow a podcast", "P", 275], ["findbook", "Find a LibriVox book", "B", 150], ["findebook", "Find an ebook", "E", 160], ["newlist", "New theme", "A", 195]])
   PANEL[key] = mk({ id: "set:" + key, kind: "panel", key, title, sym, h, page: key });
@@ -1606,12 +1606,12 @@ function loadDesk() {
     radioPos = s.radio || null;
     desk = desk.filter(p => ![SHOW.id, POWER_ON.id, NOTES.id, JINGLES.id].includes(p.id));   // (jingles and messages live in each theme)
     desk = desk.filter(p => p.alias || ![...RADIO_KIDS, ...ACTION_KIDS].includes(p.id));   // (the radio's own folders live in Radio; a shortcut you made stays)
-    for (const f of [ACTIONS_BOX, LISTS, RADIO_BOX, OUTSIDE, EBOOKS])      // (new since the layout was saved: in the first free spot)
+    for (const f of [ACTIONS_BOX, LISTS, RADIO_BOX, OUTSIDE, EBOOKS, PANEL.radios])      // (new since the layout was saved: in the first free spot)
       if (!desk.some(p => p.id === f.id)) desk.push({ id: f.id, ...freeSpot() });
   }
   if (!desk.length) {
     [MUSIC, ONDEMAND, BOOKS, EBOOKS, PODCASTS, STATIONS, PLAYLISTS, PROGRAMMES, LISTS, ACTIONS_BOX, RADIO_BOX].forEach((f, i) => desk.push({ id: f.id, x: 18 + Math.floor(i / 8) * 122, y: 14 + (i % 8) * 92 }));
-    [DJ, BDAYS, OUTSIDE].forEach((o, i) => desk.push({ id: o.id, x: 140, y: 14 + (i + 3) * 92, alias: false }));   // (under Actions and Radio, which head that column)
+    [DJ, BDAYS, OUTSIDE, PANEL.radios].forEach((o, i) => desk.push({ id: o.id, x: 140, y: 14 + (i + 3) * 92, alias: false }));   // (under Actions and Radio, which head that column)
   }
 }
 function freeSpot() {                  // the first place on the icon grid that nothing is near, column by column
@@ -5347,6 +5347,34 @@ function openSondeConsole(id) {
   if (!had) { const w = W.find(w => w.id === PANEL.sondelive.id), d = $("desk"); if (w) { Object.assign(w, { x: 16, y: 8, w: Math.min(1280, d.clientWidth - 32), h: d.clientHeight - 24, fitted: true }); drawDesk(); } }
 }
 const UI = {
+  // Other radios (sync.py): the ones paired with this one (kept the same both ways), the others heard on the network, pairing.
+  radios: {
+    load: () => api("/api/sync"),
+    build: (d, act) => {
+      const ago = t => { const s = Date.now() / 1000 - t; return s < 90 ? "just now" : s < 5400 ? `${Math.round(s / 60)} min ago` : `${Math.round(s / 3600)} h ago`; };
+      const addr = el("input", { type: "text", id: "sync-addr", autocomplete: "off", spellcheck: false, placeholder: "Its address, like 192.168.1.20" });
+      const pair = a => act(async () => { const r = await api("/api/sync/pair", { address: a }); toast(`Paired with ${r.name || a}: synced.`); });
+      const peerRow = p => {
+        const st = p.status;
+        const said = st ? `${st.ok ? "✓ Synced" : st.held ? "⏸ Held" : "✗ Not synced"} ${ago(st.at)}: ${st.said}` : "Not synced yet";
+        return srow(p.name || p.address, el("span", { className: "shelp", textContent: `${p.address} · ${p.online ? "on the network" : "not heard lately"} · ${said}` }),
+          line(sbtn("Sync now", () => act(async () => { const r = await api("/api/sync/now", { id: p.id }); toast(r.ok ? `Synced with ${p.name}: ${r.said}.` : `${p.name}: ${r.said}.`); })),
+               ...(st?.held ? [sbtn("Sync anyway", () => act(() => api("/api/sync/allow", { id: p.id })))] : []),
+               sbtn("Unpair", () => act(() => api("/api/sync/unpair", { id: p.id })))));
+      };
+      return [
+        grp("Paired with " + (d.me?.name || "this radio"),
+          ...(d.peers.length ? d.peers.map(peerRow) : [help("None yet: pair with a radio below.")]),
+          help("Paired radios keep their stations and receiver names the same, both ways: a change on either is on both after the next sync (every few minutes, or Sync now). Each radio's own set-up, buttons and volume stay its own.")),
+        grp("On the network",
+          ...(d.seen.length ? d.seen.map(r => srow(r.name || r.address, el("span", { className: "shelp", textContent: `${r.address}${r.version ? " · v" + r.version : ""}` }),
+                line(sbtn("Pair", () => pair(r.address), "primary"))))
+            : [help(d.peers.length ? "No others heard besides the paired ones above." : "No other radios heard yet: each says it's there about once a minute. One on another network can be paired by its address.")])),
+        grp("Pair by address", srow("Address", addr),
+          line(sbtn("Pair", () => { if (!addr.value.trim()) return toast("The other radio's address, please."); pair(addr.value.trim()); }, "primary"))),
+      ];
+    },
+  },
   sondelive: {
     load: async () => ({}),
     build: () => [SondeConsole.view()],

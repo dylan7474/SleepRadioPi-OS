@@ -2044,6 +2044,22 @@ The cards:
   unheard (speaker off, in real time) until music has played and the update
   is confirmed, then stops (a `stay-paused` file in `/data/radio/.update`,
   read once at the next start; a power cut still plays, as a radio does).
+- **Other radios** (`sleepradiopi/sync.py`) — radios find each other on the
+  network (each says it's there about once a minute, and asks who's there
+  when it starts: a small UDP broadcast on port 47474) and can be **paired**,
+  from the list or by address. Paired radios keep their **stations and
+  receiver names** the same, **both ways**: every few minutes (or *Sync
+  now*) one reads the other's, merges the two against the state they last
+  agreed on, and both take up the result -- so an add, an edit or a delete on
+  either ends up on both, with no clocks involved (the same item changed
+  differently on both: a change beats a delete, else the same fixed rule on
+  every radio). The first sync with a radio only adds, never deletes, and
+  each saves a backup first (*Before syncing with ...* in Backups); a sync
+  that would delete much of a list is **held** until *Sync anyway*. Each
+  radio's own set-up, buttons, volume and what's playing stay its own. A
+  radio with a web password doesn't sync. Its id (`radio_id`) and the radios
+  it's paired with (`sync_peers`) are its own (not in a settings file); what
+  was last agreed with each is `sync-base.json` beside the config.
 - **Backup** — *Save settings* downloads everything above plus the volume
   as one JSON file; *Load settings* puts it back (after re-flashing the
   card, or onto a second radio). The file is checked before anything is

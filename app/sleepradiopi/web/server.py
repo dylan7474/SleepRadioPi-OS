@@ -75,7 +75,7 @@ def _restart_soon(speaker) -> None:
 
 def make_handler(station: Station, output: Mp3Output, speaker=None,
                  config_file: Path | None = None, announcer=None, voice_jobs=None, updates=None,
-                 presets=None, directory=None, media=None, lamps=None):
+                 presets=None, directory=None, media=None, lamps=None, sync=None):
     auth = Auth(config_file)
     book_dl = bookdl_mod.BookDownloader(station.podcasts, media, station.book_positions) \
         if media is not None and hasattr(station, "podcasts") else None      # (a LibriVox book kept on the radio)
@@ -401,12 +401,13 @@ def make_handler(station: Station, output: Mp3Output, speaker=None,
 
 
     from types import SimpleNamespace
-    from . import routes_system, routes_controls, routes_messages, routes_library, routes_receivers, routes_outside
+    from . import routes_system, routes_controls, routes_messages, routes_library, routes_receivers, routes_outside, routes_sync
     ctx = SimpleNamespace(station=station, output=output, speaker=speaker, config_file=config_file, announcer=announcer,
                           voice_jobs=voice_jobs, updates=updates, presets=presets, directory=directory, media=media, lamps=lamps,
-                          auth=auth, book_dl=book_dl, ebook_dl=ebook_dl, hear=hear, backups=backups, open_paths=open_paths)
+                          auth=auth, book_dl=book_dl, ebook_dl=ebook_dl, hear=hear, backups=backups, open_paths=open_paths,
+                          sync=sync)
     gets, posts = [], []
-    for area in (routes_system, routes_controls, routes_messages, routes_library, routes_receivers, routes_outside):          # (the handler's helpers and routes, by area: web/routes_*.py)
+    for area in (routes_system, routes_controls, routes_messages, routes_library, routes_receivers, routes_outside, routes_sync):          # (the handler's helpers and routes, by area: web/routes_*.py)
         built = area.build(ctx)
         for name, method in built["methods"].items():
             setattr(Handler, name, method)
@@ -433,11 +434,11 @@ class RadioServer(ThreadingHTTPServer):
 
 def serve(station: Station, output: Mp3Output, port: int, speaker=None,
           config_file: Path | None = None, announcer=None, voice_jobs=None, updates=None,
-          presets=None, directory=None, media=None, lamps=None) -> None:
+          presets=None, directory=None, media=None, lamps=None, sync=None) -> None:
     from sleepradiopi.config import brand
     server = RadioServer(("0.0.0.0", port),
                                  make_handler(station, output, speaker, config_file, announcer, voice_jobs,
-                                              updates, presets, directory, media, lamps))
+                                              updates, presets, directory, media, lamps, sync))
     server.daemon_threads = True
     log.info("%s on http://0.0.0.0:%d/", brand.name, port)
     server.serve_forever()
