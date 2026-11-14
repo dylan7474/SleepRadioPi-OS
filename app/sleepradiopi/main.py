@@ -1111,7 +1111,8 @@ def main() -> None:
                              version=updates.version if updates is not None else "",
                              protected=lambda: bool(read_config(args.config).get(auth_mod.KEY)),
                              backup=lambda label: store.save(backup_mod.export(args.config, None), label),
-                             media=media)
+                             media=media, voice_jobs=jobs)
+        sync.voice_ok = lambda key, v: v in station.ebook_voices()
         sync.start()
     except Exception:                                  # (never stops the radio starting)
         logging.getLogger(__name__).exception("sync: not started")

@@ -2056,7 +2056,9 @@ The cards:
   (Default's DJ settings too), playlists, programmes, messages and their
   times, birthdays, podcasts followed, the DJ's own lines, the **theme
   jingles** (the files themselves: one a radio hasn't got is fetched from the
-  other, one deleted on either goes from both), and the radio's other settings (the
+  other, one deleted on either goes from both), the **voice packs** (only ever
+  added: a voice one radio lacks is packed by the other and installed as an
+  upload is; one of the same name is never replaced, none is deleted), and the radio's other settings (the
   DJ's, alerts, the outside tiles, callsign and locator...): every few minutes (or *Sync
   now*) one reads the other's, merges the two against the state they last
   agreed on, and both take up the result -- so an add, an edit or a delete on
@@ -2068,8 +2070,9 @@ The cards:
   radio's own stays its own: its hardware and how it's set up (speakers,
   amp, EQ and speaker sounds, buttons, knob, glow, meter), its volume and what
   it's playing (theme, noise), programme mode, the receiver jobs one radio
-  does (reporting, surveys, calibrating), and for now the DJ's voice (voice
-  files aren't synced yet). A **programme** is copied both ways, but whether it
+  does (reporting, surveys, calibrating), and which voice its DJ and news use
+  (each radio's choice of the voices both have; the ebook voice is shared, and
+  taken up once that voice is on the radio). A **programme** is copied both ways, but whether it
   starts by itself is each radio's own: one that arrives from another radio
   arrives switched off. On a first sync, a setting someone set beats one never
   set. What a sync changes is taken up at once, with no restart. A

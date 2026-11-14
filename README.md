@@ -721,7 +721,7 @@ Actions, Sleep timer and Radio folders open:
 
 - **Other radios** — radios on the same network find each other and can be
   paired; paired radios keep everything they can share the same, both ways
-  -- settings, stations, themes and their jingles, playlists, programmes (each
+  -- settings, stations, themes and their jingles, voice packs, playlists, programmes (each
   radio decides if one starts by itself), messages, birthdays, podcasts, the
   DJ's own lines -- while each keeps its
   own hardware set-up, buttons and volume. See the [app README](app/README.md)
@@ -1286,9 +1286,9 @@ What's left to do (everything else described here is built and running):
 
 - **Radios that sync: the rest of the files** — paired radios already keep their
   settings, stations, themes, playlists, programmes, messages, birthdays,
-  podcasts, DJ lines and theme jingles the same both ways (*Other radios*).
-  Still to do: the DJ's voices (then the voice setting syncs too; a file is
-  matched by its size for now -- a checksum would catch a same-size edit), and **shared music folders**
+  podcasts, DJ lines, theme jingles and voice packs the same both ways (*Other
+  radios*). Still to do: a checksum for files (matched by size for now: a
+  same-size edit isn't caught), and **shared music folders**
   (a folder marked Shared is kept on both, both ways, only as much as fits on
   the smaller card, with a meter that says so); and a radio with a web
   password pairing with its partners (today such a radio stays out of sync).

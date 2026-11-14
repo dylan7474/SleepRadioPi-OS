@@ -57,6 +57,7 @@ from sleepradiopi.broadcast import selector as selector_mod
 from sleepradiopi.config import backup as backup_mod
 from sleepradiopi.config.settings import Settings
 from sleepradiopi import media as media_mod
+from sleepradiopi import voices as voices_mod
 from sleepradiopi.playback import podcasts as podcasts_mod
 from sleepradiopi.playback import radio as radio_mod
 
@@ -170,13 +171,14 @@ def _times_out(conf: dict, value) -> dict:
 # The radio's other settings, each kept the same on both -- all but its own: what its hardware is and how
 # it's set up (speakers, amp, buttons, knob, glow, meter), what it's playing, its volume, and the jobs one
 # radio does for a receiver (reporting, surveys, calibrating), which two radios mustn't both do.
+VOICE_SETTINGS = {"ebook_voice"}     # (a synced setting naming a voice: not taken up live till that voice is here)
 RADIO_OWN = {"speaker_mono", "speaker_eq", "speaker_highpass_hz", "speaker_volume", "speaker_sounds", "eq_slots",
              "eq_by_type", "eq_auto", "meter_trim_db", "glow_day", "glow_night", "knob_mode", "knob_step", "knob_long",
              "buttons", "buttons_night", "buttons_bank", "buttons_auto", "power_on", "programme_mode",
              "broadcast_profile", "broadcast_artist", "noise_on", "noise_kind", "noise_mix", "calibrate_itself",
              "survey_itself", "report_heard", "listener_grace_s", "monitor_music", "monitor_rooms", "web_stream",
              "ondemand_keep",
-             "broadcast_voice", "news_voice"}     # (the voices: their files aren't synced yet -- a personal one may not be there)
+             "broadcast_voice", "news_voice"}    # (the DJ's and the news's voice: each radio's choice; the packs themselves sync)
 COLLECTION_KEYS = {"radio_stations", "receiver_names", "profiles", "playlists", "programmes", "messages",
                    "birthdays", "podcasts", "dj_hooks_own"}
 
@@ -239,7 +241,21 @@ def _check_files(value) -> dict:
 
 for _kind in FILE_KINDS:
     COLLECTIONS[f"files:{_kind}"] = (None, _check_files, None, None)
-WORDS = {**{f"files:{k}": k for k in FILE_KINDS}, "radio_stations": "stations", "receiver_names": "receiver names", "profiles": "themes", "playlists": "playlists",
+
+
+# The DJ's voices: which voice packs each radio has, by name. Only ever added -- a voice one radio lacks is packed
+# by the other (GET /api/sync/voice) and installed the usual way; one of the same name is never replaced (two radios'
+# "personal" voices may differ) and none is deleted (voices aren't deleted from the page either).
+def _check_voices(value) -> dict:
+    if not isinstance(value, dict) or len(value) > 50:
+        raise ValueError("voices: {name: 1}")
+    for name in value:
+        voices_mod.check_name(name)
+    return {name: 1 for name in value}
+
+
+COLLECTIONS["voices"] = (None, _check_voices, None, None)
+WORDS = {**{f"files:{k}": k for k in FILE_KINDS}, "voices": "voices", "radio_stations": "stations", "receiver_names": "receiver names", "profiles": "themes", "playlists": "playlists",
          "programmes": "programmes", "messages": "messages", "message_times": "message times", "birthdays": "birthdays",
          "podcasts": "podcasts", "dj_hooks_own": "DJ lines", "settings": "settings"}
 
@@ -319,7 +335,7 @@ class Sync:
 
     def __init__(self, config_file: Path, name: Callable[[], str], port: int, version: str = "",
                  fetch: Callable | None = None, protected: Callable[[], bool] = lambda: False,
-                 backup: Callable[[str], None] | None = None, media=None) -> None:
+                 backup: Callable[[str], None] | None = None, media=None, voice_jobs=None) -> None:
         self.config_file = Path(config_file)
         self.base_file = self.config_file.parent / BASE_FILE
         self.name, self.port, self.version = name, port, version
@@ -329,6 +345,9 @@ class Sync:
         self.apply_live = None                   # apply_live(settings, changed): the running radio takes up a sync's changes
         self.media = media                       # the music storage (media.Media): files synced only with one
         self.get_file = _get_file                # get_file(address, kind, path): a response (.headers, .read) -- a test's own
+        self.voice_jobs = voice_jobs             # voices.VoiceJobs: installs a voice fetched from another radio
+        self.voice_ok = lambda key, value: True  # voice_ok(setting, voice): this radio has that voice (main: the station's)
+        self.get_voice = _get_voice              # get_voice(address, name): a response (.headers, .read): the pack, as a tar
         self.seen: dict[str, dict] = {}          # id -> {"id", "name", "address", "version", "at"} (heard lately)
         self.status: dict[str, dict] = {}        # peer id -> {"at", "ok", "said", "held"?}
         self._allow_once: set[str] = set()       # peers whose held merge may go through once
@@ -342,7 +361,16 @@ class Sync:
 
     def names(self) -> list[str]:
         """The collections this radio syncs: the files only if it has music storage."""
-        return [n for n, c in COLLECTIONS.items() if c[0] is not None or self.media is not None]
+        return [n for n, c in COLLECTIONS.items() if c[0] is not None
+                or (n == "voices" and self.voice_jobs is not None) or (n.startswith("files:") and self.media is not None)]
+
+    def voice_names(self) -> dict:
+        """The voice packs here: {name: 1} (a folder with a model; not one part-installed)."""
+        root = Path(self.voice_jobs.voices_dir) if self.voice_jobs is not None else None
+        if root is None or not root.is_dir():
+            return {}
+        return {d.name: 1 for d in sorted(root.iterdir())
+                if d.is_dir() and not d.name.startswith(".") and (d / "model.onnx").is_file()}
 
     def _read(self, conf: dict, names) -> dict:
         out = {}
@@ -350,6 +378,8 @@ class Sync:
             read = COLLECTIONS[n][0]
             if read is not None:
                 out[n] = read(conf)
+            elif n == "voices":
+                out[n] = self.voice_names()
             else:
                 try:
                     out[n] = self.media.tree(n.split(":", 1)[1])["files"]
@@ -487,7 +517,7 @@ class Sync:
                 merged, here, there, held = {}, {}, {}, []
                 for n in names:
                     check = COLLECTIONS[n][1]
-                    merged[n], here[n] = merge(n, (base or {}).get(n), mine[n], theirs[n])
+                    merged[n], here[n] = merge(n, None if n == "voices" else (base or {}).get(n), mine[n], theirs[n])
                     there[n] = _gone(n, theirs[n], merged[n])                  # (what the other radio would lose)
                     for where, count, of in (("here", here[n]["deleted"], mine[n]), ("there", there[n], theirs[n])):
                         if count > HOLD_MIN and count > HOLD_DELETES * max(1, len(_as_map(n, of))) \
@@ -516,7 +546,7 @@ class Sync:
                     return self._said(peer_id, False, "changed here meanwhile: it'll sync next time")
                 updates = self._write(conf, merged, mine)
             got = self._files(peer["address"], names, mine, merged)      # (the files: fetched / deleted here)
-            self._keep_base(peer_id, {n: v for n, v in merged.items() if n in got or not n.startswith("files:")})
+            self._keep_base(peer_id, {n: v for n, v in merged.items() if n in got or not (n.startswith("files:") or n == "voices")})
             self._allow_once.discard(peer_id)
         if their_name and their_name != peer.get("name"):
             self._save_peers([{**p, "name": their_name} if p["id"] == peer_id else p for p in self.peers()])
@@ -550,7 +580,7 @@ class Sync:
                 if _digest(mine) != was:
                     return False
                 updates = self._write(conf, new, mine)
-            files = [n for n in names if n.startswith("files:") and not same(n, new[n], mine[n])]
+            files = [n for n in names if (n.startswith("files:") or n == "voices") and not same(n, new[n], mine[n])]
             self._keep_base(peer_id, {n: v for n, v in new.items() if n not in files})     # (those once they're here)
             self.status[peer_id] = {"at": time.time(), "ok": True, "said": "synced (it asked)"}
         finally:
@@ -571,6 +601,18 @@ class Sync:
         delete what's gone. Returns the file collections now exactly as wanted (the rest: kept out of the
         base, so the next sync only adds -- nothing is deleted for a file that didn't arrive)."""
         done = set()
+        if "voices" in names and self.voice_jobs is not None:
+            missing = [v for v in want.get("voices", {}) if v not in mine.get("voices", {})]
+            for name in missing[:1]:                 # (one voice a sync: an install takes a while; the next sync, the next)
+                try:
+                    with self.get_voice(address, name) as r:
+                        length = int(r.headers.get("Content-Length") or 0)
+                        self.voice_jobs.receive(name, f"{name}.tar", length, r.read)
+                    log.info("sync: voice %s fetched; installing", name)
+                except (OSError, ValueError) as e:
+                    log.warning("sync: voice %s not fetched (%s)", name, e)
+            if not missing:
+                done.add("voices")
         for n in names:
             if not n.startswith("files:") or self.media is None:
                 continue
@@ -611,8 +653,9 @@ class Sync:
         updates: dict = {}
         for n in merged:
             c = COLLECTIONS[n]
-            if c[3] is not None and not same(n, merged[n], mine[n]):
-                out = c[3]({**conf, **updates}, merged[n])
+            value = merged[n]
+            if c[3] is not None and not same(n, value, mine[n]):
+                out = c[3]({**conf, **updates}, value)
                 updates.update(out)
         if not updates:
             return {}
@@ -625,10 +668,22 @@ class Sync:
         return updates
 
     def _take_up(self, updates: dict, changed: set) -> None:
+        later = {k for k in changed & VOICE_SETTINGS if not self.voice_ok(k, updates.get(k))}
+        if later:                                    # (a voice not here yet: kept in the settings, taken up once it is)
+            log.info("sync: %s waits for its voice", ", ".join(sorted(later)))
+            changed = changed - later
+            if not changed:
+                return
         try:
             self.apply_live(updates, changed)
-        except Exception:
-            log.exception("sync: the radio couldn't take up %s", ", ".join(sorted(changed)))
+            return
+        except Exception as e:
+            log.warning("sync: taking up %s together failed (%s): one at a time", ", ".join(sorted(changed)), e)
+        for key in sorted(changed):                  # (one that can't be taken up mustn't stop the rest)
+            try:
+                self.apply_live({k: v for k, v in updates.items() if k == key or k not in changed}, {key})
+            except Exception:
+                log.exception("sync: the radio couldn't take up %s", key)
 
     def _keep_base(self, peer_id: str, agreed: dict) -> None:
         bases = self._bases()
@@ -759,6 +814,10 @@ def _clean_address(address: str) -> str:
     if not a or "/" in a or " " in a or len(a) > 100:
         raise ValueError("an address like 192.168.1.20, or 192.168.1.20:8080")
     return a
+
+
+def _get_voice(address: str, name: str):
+    return urllib.request.urlopen(f"http://{address}/api/sync/voice?name={urllib.parse.quote(name)}", timeout=60)
 
 
 def _get_file(address: str, kind: str, path: str):

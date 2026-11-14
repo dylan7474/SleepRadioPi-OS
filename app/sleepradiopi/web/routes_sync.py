@@ -23,6 +23,8 @@ def build(ctx):
             return False
         if path == "/api/sync":
             self._send(json.dumps(sync.overview()).encode(), "application/json")
+        elif path == "/api/sync/voice":      # a voice pack, as a tar (for a paired radio that hasn't got it)
+            self._send_voice()
         elif path == "/api/sync/hello":
             self._send(json.dumps(sync.hello()).encode(), "application/json")
         elif path == "/api/sync/state":
@@ -71,4 +73,48 @@ def build(ctx):
         self._send(json.dumps(reply).encode(), "application/json")
         return True
 
-    return {"methods": {}, "get": get, "post": post}
+    def _send_voice(self) -> None:
+        """GET /api/sync/voice?name=: the pack's folder as a plain tar, streamed (its length worked out first by
+        writing it to nowhere: a Zero hasn't the memory to hold an 80 MB voice)."""
+        import tarfile
+        from pathlib import Path
+        from urllib.parse import parse_qs, urlparse
+        from sleepradiopi import voices as voices_mod
+        name = parse_qs(urlparse(self.path).query).get("name", [""])[0]
+        try:
+            voices_mod.check_name(name)
+        except ValueError as e:
+            self._error(str(e))
+            return
+        if sync.voice_jobs is None or name not in sync.voice_names():
+            self._error("there's no voice of that name here")
+            return
+        pack = Path(sync.voice_jobs.voices_dir) / name
+
+        class Out:
+            def __init__(self, sink=None):
+                self.n, self.sink = 0, sink
+
+            def write(self, b):
+                self.n += len(b)
+                if self.sink is not None:
+                    self.sink.write(b)
+                return len(b)
+
+        def tar(out):
+            with tarfile.open(fileobj=out, mode="w|", format=tarfile.PAX_FORMAT) as t:
+                t.add(pack, arcname=name, recursive=True)
+        size = Out()
+        tar(size)
+        self.send_response(200)
+        self.send_header("Content-Type", "application/x-tar")
+        self.send_header("Content-Length", str(size.n))
+        self.send_header("Cache-Control", "no-store")
+        self.end_headers()
+        try:
+            tar(Out(self.wfile))
+        except (BrokenPipeError, ConnectionResetError):
+            pass
+        log.info("sync: voice %s sent to %s", name, self.client_address[0])
+
+    return {"methods": {"_send_voice": _send_voice}, "get": get, "post": post}

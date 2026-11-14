@@ -366,3 +366,87 @@ def test_a_jingle_that_does_not_arrive_is_never_deleted_later(tmp_path) -> None:
             break
         _t.sleep(0.02)
     assert two.media.files["jingles"] == {"Rock/a.mp3": b"AAAA"} and one.media.files["jingles"] == {"Rock/a.mp3": b"AAAA"}
+
+
+class Jobs:
+    """A pretend VoiceJobs: voices are folders with a model in voices_dir."""
+    def __init__(self, d, names):
+        self.voices_dir = d
+        d.mkdir(parents=True, exist_ok=True)
+        for n, data in names.items():
+            (d / n).mkdir()
+            (d / n / "model.onnx").write_bytes(data)
+
+    def receive(self, name, filename, length, read):
+        data = read(length)                                    # (like the real one: in place only once it's all here)
+        (self.voices_dir / name).mkdir()
+        (self.voices_dir / name / "model.onnx").write_bytes(data)
+
+
+def voiced(tmp_path, net, address, names):
+    r = radio(tmp_path, net, address)
+    r.voice_jobs = Jobs(tmp_path / f"{address}-voices", names)
+
+    def get_voice(addr, name, net=net):
+        return Got((net.radios[addr].voice_jobs.voices_dir / name / "model.onnx").read_bytes())
+    r.get_voice = get_voice
+    return r
+
+
+def test_a_voice_one_radio_lacks_is_added_and_a_same_named_one_never_replaced(tmp_path) -> None:
+    import time as _t
+    net = Net()
+    one = voiced(tmp_path, net, "one", {"personal": b"MINE", "deep": b"DEEP"})
+    two = voiced(tmp_path, net, "two", {"personal": b"THEIRS"})
+    one.pair("two")
+    for _ in range(100):
+        if (two.voice_jobs.voices_dir / "deep" / "model.onnx").is_file() and \
+                (two.voice_jobs.voices_dir / "deep" / "model.onnx").stat().st_size:
+            break
+        _t.sleep(0.02)
+    assert (two.voice_jobs.voices_dir / "deep" / "model.onnx").read_bytes() == b"DEEP"          # added
+    assert (two.voice_jobs.voices_dir / "personal" / "model.onnx").read_bytes() == b"THEIRS"    # never replaced
+    assert (one.voice_jobs.voices_dir / "personal" / "model.onnx").read_bytes() == b"MINE"
+    import shutil
+    shutil.rmtree(two.voice_jobs.voices_dir / "deep")          # gone from one radio (by hand): not deleted on the other
+    two.sync_now(one.id)
+    assert (one.voice_jobs.voices_dir / "deep").exists()
+
+
+def test_a_setting_naming_a_voice_this_radio_lacks_keeps_its_own_till_the_voice_is_here(tmp_path) -> None:
+    net = Net()
+    one, two = radio(tmp_path, net, "one"), radio(tmp_path, net, "two")
+    set_conf(one, ebook_voice="personal")
+    set_conf(two, ebook_voice="stock")
+    have = {"stock"}
+    two.voice_ok = lambda key, v: v in have
+    one.voice_ok = lambda key, v: True
+    taken = []
+    two.apply_live = lambda settings, changed: taken.extend(changed)
+    one.pair("two")
+    import time as _t
+    _t.sleep(0.2)
+    assert conf_of(two)["ebook_voice"] == "personal"             # agreed and kept on both (nothing bounces back)...
+    assert "ebook_voice" not in taken                            # ...but not taken up live: two hasn't that voice yet
+    two.sync_now(one.id)
+    assert conf_of(one)["ebook_voice"] == "personal"
+
+
+def test_one_change_the_radio_cannot_take_up_does_not_stop_the_rest(tmp_path) -> None:
+    import time as _t
+    net = Net()
+    one, two = radio(tmp_path, net, "one"), radio(tmp_path, net, "two")
+    set_conf(one, birthdays=[{"name": "Sam", "day": 1, "month": 2}], locator="IO00aa")
+    taken = []
+
+    def apply_live(settings, changed):
+        if "locator" in changed:
+            raise ValueError("can't")
+        taken.extend(changed)
+    two.apply_live = apply_live
+    one.pair("two")
+    for _ in range(100):
+        if "birthdays" in taken:
+            break
+        _t.sleep(0.02)
+    assert "birthdays" in taken
