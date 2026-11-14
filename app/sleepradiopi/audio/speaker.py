@@ -40,6 +40,8 @@ PIPE_BYTES = 16384           # ~93 ms of audio queued in the pipe to aplay
 ALSA_BUFFER_US = 500_000     # aplay's own buffer; 250 / 350 ms under-ran now and then while the voice reloaded
 SHOW_STALL_S = 0.25          # the show hasn't written for this long (a book seeking, a station
                              # connecting): the pump plays a clip on, so a button's words aren't held up
+LOW_WATER_S = 0.15           # kept awake: silence goes in only when the card holds less than this (a real stall);
+                             # a stream's ordinary bursts leave it far fuller (its buffer is ALSA_BUFFER_US)
 STUCK_S = 120.0              # the card won't open for this long: on_stuck() (the radio restarts)
 DB_PER_STEP = 0.5            # volume 100 = full scale, 0 = silent
 F_SETPIPE_SZ = 1031          # fcntl.F_SETPIPE_SZ (Linux), missing from older Pythons
@@ -71,6 +73,7 @@ class SpeakerOutput:
                  eq: Equalizer | None = None, amp=None, keep_awake: bool = False) -> None:
         self.keep_awake = keep_awake     # the card stays open once opened, silence while nothing plays (setting amp_keep_awake)
         self._amp_on = True              # (kept awake: whether the amp pin is up, so it's written only on a change)
+        self._fed_until = 0.0            # time.monotonic() when what's been written to the card runs out
         self.amp = amp                   # an ampmute.AmpMute: the amp's MUTE pin, low while the card is closed
         self.command = command or [
             "aplay", "-q", "-D", device, "-t", "raw", "-f", "S16_LE",
@@ -175,8 +178,12 @@ class SpeakerOutput:
                         self._sync()         # (a clip over while paused: the speaker off again)
                     return
                 stalled = not self._show_on or time.monotonic() - self._show_at > SHOW_STALL_S
+                dry = self._fed_until - time.monotonic() < LOW_WATER_S
             if not stalled:                  # the show is writing: it plays the clip
                 time.sleep(0.05)
+                continue
+            if self._show_on and not clip and not dry:   # (kept awake, the show between bursts: the card
+                time.sleep(0.02)                         # still has plenty; only a real stall gets silence)
                 continue
             if not self._emit(None, SLICE_FRAMES):   # blocks on aplay: real time
                 time.sleep(0.1)
@@ -209,7 +216,7 @@ class SpeakerOutput:
                 if show is not None and not self._show_on:
                     return False
                 if show is None and test is None and self._show_on and not (
-                        self.keep_awake and time.monotonic() - self._show_at > SHOW_STALL_S):
+                        self.keep_awake and self._fed_until - time.monotonic() < LOW_WATER_S):
                     return True              # (the pump, its clip just over: the show plays on)
                 # (kept awake, the show stalled -- a station changing, a stream reconnecting: silence,
                 # so the card never runs dry; an underrun restarts it, which clicks on a MAX98357A)
@@ -241,6 +248,8 @@ class SpeakerOutput:
                 view = memoryview(part.tobytes())
                 while view:                          # (unbuffered: a write can take part of it)
                     view = view[proc.stdin.write(view):]
+                now = time.monotonic()
+                self._fed_until = max(self._fed_until, now) + len(part) / pcm.SAMPLE_RATE
             except (BrokenPipeError, ValueError, OSError):
                 self._failed()
                 with self._lock:

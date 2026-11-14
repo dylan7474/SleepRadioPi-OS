@@ -116,3 +116,31 @@ def test_not_kept_awake_a_stalled_show_is_left_alone(tmp_path):
         assert out.stat().st_size == size            # as before: nothing extra written
     finally:
         sp.stop()
+
+
+def test_kept_awake_a_bursty_stream_gets_no_silence_between_its_bursts(tmp_path):
+    """An internet stream arrives in bursts; the card's buffer covers the gaps. Silence put in
+    whenever the show hadn't written for a moment chopped the music into crackle (2026-11-14):
+    it may only go in when the card is nearly dry. And waiting must not spin the CPU."""
+    import os
+    sp, out = _speaker(tmp_path, keep_awake=True)
+    try:
+        sp.start()
+        burst = np.full((int(0.8 * pcm.SAMPLE_RATE), pcm.CHANNELS), 1000, np.int16)   # 0.8 s of sound
+        cpu0 = sum(os.times()[:2])
+        for _ in range(3):
+            sp.write(burst)                      # (cat takes it at once: the card is 0.8 s ahead)
+            time.sleep(0.4)                      # longer than SHOW_STALL_S, but the buffer still holds 0.4 s
+        cpu = sum(os.times()[:2]) - cpu0
+        sp.keep_awake = False                    # (stop the pump before reading)
+        sp.stop()
+        with sp._lock:
+            sp._close()
+        samples = np.frombuffer(out.read_bytes(), np.int16).reshape(-1, pcm.CHANNELS)
+        sound = np.flatnonzero(samples[:, 0])
+        music = samples[sound[0]:sound[-1] + 1, 0]       # (silence before the first burst is right: nothing yet)
+        assert len(music) == 3 * len(burst) and music.all()   # the bursts back to back: no silence slipped between
+        assert cpu < 0.6                          # (it waited, not spun: about 1.2 s of wall time)
+    finally:
+        sp.keep_awake = False
+        sp.stop()
