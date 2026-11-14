@@ -685,3 +685,43 @@ def test_an_empty_radio_has_nothing_to_play_and_so_can_confirm_an_update(tmp_pat
     assert not st.nothing_to_play and not main._can_confirm(st, 9999)       # it has music: it must play
     playing = SimpleNamespace(music_started=True, nothing_to_play=False)
     assert main._can_confirm(playing, 0)
+
+
+def test_the_copy_search_finds_the_same_as_reading_line_by_line(tmp_path: Path) -> None:
+    """The search jumps between lines holding the longest plain word (bytes, fast on a Pi 3);
+    it must find exactly what reading every line did, in the same order."""
+    import random
+    rng = random.Random(4)
+    vocab = ["Radio", "Jazz", "Beatles", "BBC", "Radio 4", "Rock", "Café", "Été", "Classic", "FM", "Kiss", "Ⅳ", "İstanbul"]
+    tags = ["jazz", "rock,pop", "news", "beatles,60s", "", "classical", "talk"]
+    n = len(radio.Directory.FIELDS)
+    lines = []
+    for i in range(3000):
+        name = " ".join(rng.sample(vocab, rng.randint(1, 3))) + f" {i}"
+        row = [name, f"http://s/{i}", "MP3", "128", "GB", "10", rng.choice(tags)] + [""] * (n - 7)
+        lines.append("\t".join(row[:n]))
+    path = tmp_path / "stations.tsv"
+    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    d = radio.Directory(path, lambda *a, **k: None)
+
+    def by_lines(query, limit=40):
+        words = query.lower().split()
+        by_name, by_tag = [], []
+        for line in path.read_text(encoding="utf-8").splitlines():
+            parts = line.split("\t")
+            name = parts[0].lower()
+            if all(w in name for w in words) and radio._starts_words(words, name):
+                by_name.append(parts[1])
+                if len(by_name) >= limit:
+                    break
+            elif len(by_tag) < limit and all(w in name or w in parts[6].lower() for w in words) \
+                    and radio._starts_words(words, f"{name} {parts[6].lower()}"):
+                by_tag.append(parts[1])
+        out = []
+        for u in by_name + by_tag:
+            if u not in out:
+                out.append(u)
+        return out[:limit]
+
+    for q in ("beatles", "radio 4", "jazz radio", "café", "été", "ⅳ", "kiss fm", "60s", "zzqx", "a", "Radio"):
+        assert [r["url"] for r in d.search(q)[0]] == by_lines(q), q

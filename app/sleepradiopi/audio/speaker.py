@@ -160,8 +160,8 @@ class SpeakerOutput:
             if sounding != self._amp_on:
                 self._amp_on = sounding
                 (self.amp.unmute_now if sounding else self.amp.mute)()
-        if (clip or ((self.noise is not None or awake) and not self._show_on)) \
-                and (self._pump is None or not self._pump.is_alive()):
+        if (clip or awake or (self.noise is not None and not self._show_on)) \
+                and (self._pump is None or not self._pump.is_alive()):   # (kept awake: it also fills a show's gaps)
             self._pump = threading.Thread(target=self._pump_run, name="noise", daemon=True)
             self._pump.start()
 
@@ -169,7 +169,8 @@ class SpeakerOutput:
         while True:
             with self._lock:
                 clip = self.hold is not None or self.test is not None
-                if (self.noise is None and not clip and not self.keep_awake) or (self._show_on and not clip) or self._proc is None:
+                if (self.noise is None and not clip and not self.keep_awake) \
+                        or (self._show_on and not clip and not self.keep_awake) or self._proc is None:
                     if not self._show_on:
                         self._sync()         # (a clip over while paused: the speaker off again)
                     return
@@ -207,8 +208,11 @@ class SpeakerOutput:
                 test, noise, mix = self.test or self.hold, self.noise, self.noise_mix
                 if show is not None and not self._show_on:
                     return False
-                if show is None and test is None and self._show_on:
+                if show is None and test is None and self._show_on and not (
+                        self.keep_awake and time.monotonic() - self._show_at > SHOW_STALL_S):
                     return True              # (the pump, its clip just over: the show plays on)
+                # (kept awake, the show stalled -- a station changing, a stream reconnecting: silence,
+                # so the card never runs dry; an underrun restarts it, which clicks on a MAX98357A)
             if proc is None:
                 return False
             n = len(show) if show is not None else n

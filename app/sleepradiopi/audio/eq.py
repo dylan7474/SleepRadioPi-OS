@@ -30,6 +30,8 @@ import numpy as np
 
 TAPS = 2047                 # odd, so the delay is a whole number of samples
 NFFT = 4096                 # holds TAPS - 1 frames of history + a block of up to 2050
+FADE_S = 0.1                # a change glides from the old sound to the new over this long (one 23 ms slice
+                            # was a step you could hear: a big boost turns everything else down by as much)
 MAX_DB = 12
 MAX_HIGHPASS_HZ = 300
 
@@ -178,10 +180,16 @@ class Equalizer:
         self.rate = rate
         self._history = np.zeros((TAPS - 1, channels), dtype=np.float32)
         self._lock = threading.Lock()
-        self._spectrum = self._playing = None      # None = flat
+        self._spectrum = None                      # None = flat
         self.highpass = 0
         self.set(gains or {}, highpass)
-        self._playing = self._spectrum             # nothing to fade from at the start
+        self._target = self._spectrum              # what it's fading to (or plays), and from what
+        self._from = self._spectrum
+        self._fade_n = max(1, int(FADE_S * rate))
+        self._pos = self._fade_n                   # nothing to fade from at the start
+        delta = np.zeros(NFFT)
+        delta[TAPS // 2] = 1.0                     # flat, as a spectrum (the same delay), for blending
+        self._flat = np.fft.rfft(delta)[:, None]
 
     def set(self, gains: dict, highpass: float | None = None) -> None:
         """New band gains (dB) and, if given, the low cut in Hz (0 = off)."""
@@ -223,13 +231,25 @@ class Equalizer:
             buf = np.concatenate([self._history, block.astype(np.float32)])
             self._history = buf[n:]
             new = self._spectrum
+            if new is not self._target:            # changed (perhaps mid-fade: from where it is now)
+                self._from, self._target, self._pos = self._blend(), new, 0
             out = self._filter(new, buf, n)
-            if new is not self._playing:
-                old = self._filter(self._playing, buf, n)
-                fade = np.linspace(0, 1, n, endpoint=False, dtype=np.float32)[:, None]
+            if self._pos < self._fade_n:
+                old = self._filter(self._from, buf, n)
+                fade = np.minimum(1.0, (self._pos + np.arange(n, dtype=np.float32)) / self._fade_n)[:, None]
                 out = old + (out - old) * fade
-                self._playing = new
+                self._pos += n
         return out.astype(np.float32)
+
+    def _blend(self):
+        """(Under _lock.) The filter playing now, as one spectrum: part way through a fade
+        it's the mix of the two (filtering is linear), so a new change starts from there."""
+        if self._pos >= self._fade_n:
+            return self._target
+        a = self._pos / self._fade_n
+        f = self._flat if self._from is None else self._from
+        t = self._flat if self._target is None else self._target
+        return f * (1 - a) + t * a
 
 
 MAX_SOUNDS = 20

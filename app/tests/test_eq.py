@@ -173,3 +173,34 @@ def test_music_presets_are_ten_bands_within_range_and_distinct() -> None:
         assert len(v) == 10 and all(-12 <= x <= 12 for x in v), name
         assert v not in seen, name
         seen.add(v)
+
+
+def test_a_change_glides_over_a_tenth_of_a_second() -> None:
+    """A big boost turns everything else down to make room: done in one 23 ms slice it was a step
+    you could hear, so the old sound fades into the new over FADE_S, across slices."""
+    from sleepradiopi.audio.eq import FADE_S
+    x = _sine(1000, 1.0)
+    eq = Equalizer(RATE, 2)
+    out = [eq.process(x[i:i + 1024]) for i in range(0, 8192, 1024)]
+    eq.set({"g31": 12})                              # everything else drops by about 12 dB
+    out += [eq.process(x[i:i + 1024]) for i in range(8192, len(x), 1024)]
+    y = np.abs(np.concatenate(out)[:, 0])
+    def level(at_s):
+        i = int(at_s * RATE)
+        return y[i:i + 441].max()
+    before, after = level(0.15), level(0.5)
+    assert after < 0.4 * before                      # it did turn down
+    mid = level(8192 / RATE + FADE_S * 0.45)
+    assert after * 1.2 < mid < before * 0.95         # and half-way through the fade it was half-way there
+
+
+def test_a_change_mid_fade_carries_on_from_where_it_is() -> None:
+    x = _sine(300, 0.6)
+    eq = Equalizer(RATE, 2)
+    out = []
+    for i, start in enumerate(range(0, len(x), 256)):
+        if i % 3 == 0:
+            eq.set({"g125": 12, "g8k": -12} if (i // 3) % 2 else {"g31": 9})   # dragged about, faster than the fade
+        out.append(eq.process(x[start:start + 256]))
+    y = np.concatenate(out)
+    assert np.max(np.abs(np.diff(y[:, 0]))) < 1.2 * np.max(np.abs(np.diff(x[:, 0])))

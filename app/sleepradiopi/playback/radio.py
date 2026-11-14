@@ -313,19 +313,42 @@ class Directory:
         if not self.path.is_file():
             return search(query, limit, self.fetch), "online"
         by_name, by_tag = [], []
-        with open(self.path, encoding="utf-8", errors="replace") as f:
-            for line in f:
-                parts = line.rstrip("\n").split("\t")
-                if len(parts) != len(self.FIELDS):
-                    continue
-                name = parts[0].lower()
-                if all(w in name for w in words) and _starts_words(words, name):
-                    by_name.append(parts)
-                    if len(by_name) >= limit:
+
+        def take(parts) -> bool:                    # (True: enough by name)
+            if len(parts) != len(self.FIELDS):
+                return False
+            name = parts[0].lower()
+            if all(w in name for w in words) and _starts_words(words, name):
+                by_name.append(parts)
+                return len(by_name) >= limit
+            if len(by_tag) < limit and all(w in name or w in parts[6].lower() for w in words) \
+                    and _starts_words(words, f"{name} {parts[6].lower()}"):
+                by_tag.append(parts)
+            return False
+
+        ascii_words = [w for w in words if w.isascii()]
+        if ascii_words:
+            # Jump between the lines holding the longest plain word (bytes: lower-casing keeps every
+            # position; decoding the whole 6 MB copy line by line took over a second on a Pi 3, long
+            # enough to starve the speaker -- a click on a MAX98357A). Same lines, same order.
+            with open(self.path, "rb") as f:
+                data = f.read()
+            low = data.lower()
+            key = max(ascii_words, key=len).encode()
+            pos = low.find(key)
+            while pos >= 0:
+                start = low.rfind(b"\n", 0, pos) + 1
+                end = low.find(b"\n", pos)
+                if end < 0:
+                    end = len(low)
+                if take(data[start:end].decode("utf-8", "replace").rstrip("\r").split("\t")):
+                    break
+                pos = low.find(key, end + 1)
+        else:                                       # (only non-ASCII words: line by line, as before)
+            with open(self.path, encoding="utf-8", errors="replace") as f:
+                for line in f:
+                    if take(line.rstrip("\n").split("\t")):
                         break
-                elif len(by_tag) < limit and all(w in name or w in parts[6].lower() for w in words) \
-                        and _starts_words(words, f"{name} {parts[6].lower()}"):
-                    by_tag.append(parts)
         out, seen = [], set()
         for p in (by_name + by_tag):
             if p[1] in seen:

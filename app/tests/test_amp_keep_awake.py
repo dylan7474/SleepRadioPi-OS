@@ -83,3 +83,36 @@ def test_kept_awake_with_a_mute_pin_the_amp_is_off_while_paused_and_the_card_nev
         sp.stop()
         with sp._lock:
             sp._close()
+
+
+def test_kept_awake_a_show_that_stalls_is_filled_with_silence(tmp_path):
+    """A station changing or reconnecting writes nothing for seconds while it still 'plays': the
+    card would run dry (an underrun restarts it: a click on a MAX98357A). Kept awake, silence fills it."""
+    sp, out = _speaker(tmp_path, keep_awake=True)
+    try:
+        sp.start()
+        sp.write(np.full((4096, pcm.CHANNELS), 1000, np.int16))
+        proc = sp._proc
+        time.sleep(0.4)                              # the show goes quiet but is still on
+        size = out.stat().st_size
+        time.sleep(0.4)
+        assert out.stat().st_size > size             # silence went on flowing
+        assert sp._proc is proc
+    finally:
+        sp.keep_awake = False
+        sp.stop()
+        with sp._lock:
+            sp._close()
+
+
+def test_not_kept_awake_a_stalled_show_is_left_alone(tmp_path):
+    sp, out = _speaker(tmp_path, keep_awake=False)
+    try:
+        sp.start()
+        sp.write(np.full((4096, pcm.CHANNELS), 1000, np.int16))
+        time.sleep(0.4)
+        size = out.stat().st_size
+        time.sleep(0.4)
+        assert out.stat().st_size == size            # as before: nothing extra written
+    finally:
+        sp.stop()
