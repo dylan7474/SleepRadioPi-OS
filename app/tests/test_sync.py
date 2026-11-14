@@ -50,18 +50,20 @@ def test_receiver_names_merge_as_a_dict() -> None:
 # --- radios, in memory: each a Sync with its own config; fetch goes straight to the other ---
 
 class Net:
-    def __init__(self):
+    def __init__(self, lose=lambda: False):
         self.radios = {}
+        self.lose = lose                  # lose(): this adopt is taken up, but its reply is lost (a timeout)
 
     def fetch(self, url, body=None):
         address, _, what = url.removeprefix("http://").partition("/api/sync/")
+        what, _, query = what.partition("?for=")
         r = self.radios.get(address)
         if r is None or getattr(r, "off", False):
             raise OSError("not answering")
         if what == "hello":
             return r.hello()
         if what == "state":
-            return r.state()
+            return r.state(query)
         if what == "paired":
             me = next(a for a, x in self.radios.items() if x.id == body["id"])
             r.paired_with({"id": body["id"], "name": body["name"], "address": me})
@@ -70,7 +72,10 @@ class Net:
             r.unpaired(body["id"])
             return {"ok": True}
         if what == "adopt":
-            return {"ok": r.adopt(body["id"], body["merged"], body["was"])}
+            ok = r.adopt(body["id"], body["merged"], body["was"])
+            if self.lose():
+                raise OSError("timed out")
+            return {"ok": ok}
         raise AssertionError(what)
 
 
@@ -185,3 +190,25 @@ def test_three_radios_with_random_edits_end_the_same(tmp_path, monkeypatch, seed
                 a.pull(p["id"])
     first = json.dumps(sorted(stations_of(rs[0]), key=lambda s: s["url"]))
     assert all(json.dumps(sorted(stations_of(r), key=lambda s: s["url"])) == first for r in rs)
+
+
+def test_a_lost_reply_never_turns_an_add_into_a_delete(tmp_path) -> None:
+    """The other radio took up a sync but its reply was lost: the two now disagree on what they last agreed.
+    The next sync (from either side) must not take the other's add for a delete."""
+    lose = [False]
+    net = Net(lose=lambda: lose[0])
+    one, two = radio(tmp_path, net, "one", [st("a")]), radio(tmp_path, net, "two", [st("a")])
+    one.pair("two")
+    set_stations(two, stations_of(two) + [st("b")])             # added on two
+    lose[0] = True
+    assert not one.pull(two.id)["ok"]                            # two took it up; one never heard back
+    lose[0] = False
+    two.pull(one.id)                                             # now two syncs first
+    assert "http://b" in urls(stations_of(one)) and "http://b" in urls(stations_of(two))
+
+
+def test_pairing_says_how_the_first_sync_went(tmp_path) -> None:
+    net = Net()
+    one, two = radio(tmp_path, net, "one", [st("a")]), radio(tmp_path, net, "two", [st("b")])
+    r = one.pair("two")
+    assert r["sync"]["ok"] and "added" in r["sync"]["said"]

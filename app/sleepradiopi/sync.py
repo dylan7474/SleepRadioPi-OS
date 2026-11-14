@@ -201,9 +201,14 @@ class Sync:
         return {"sleepradio": PROTOCOL, "id": self.id, "name": self.name(), "port": self.port,
                 "version": self.version, "protected": bool(self.protected())}
 
-    def state(self) -> dict:
+    def state(self, for_id: str = "") -> dict:
+        """This radio's collections; and (for_id: the radio asking) a fingerprint of the state this radio last
+        agreed on with it -- if the two radios' fingerprints differ (a reply lost mid-sync, a re-pair, a card
+        re-flashed), the next merge between them only adds: neither can tell a delete from a missed add."""
         conf = self._conf()
-        return {**self.hello(), "collections": {n: c[0](conf) for n, c in COLLECTIONS.items()}}
+        base = self._bases().get(for_id) if for_id else None
+        return {**self.hello(), "collections": {n: c[0](conf) for n, c in COLLECTIONS.items()},
+                "base": _digest(base) if isinstance(base, dict) and base else ""}
 
     def paired_with(self, peer: dict) -> None:
         """Another radio paired with this one (its id, name, address): keep it."""
@@ -235,8 +240,8 @@ class Sync:
             raise ValueError(f"{them.get('name') or address} has a password: it can't be paired")
         self.fetch(f"http://{address}/api/sync/paired", {"id": self.id, "name": self.name(), "port": self.port})
         self.paired_with({"id": them["id"], "name": them.get("name", ""), "address": address})
-        self.sync_now(them["id"])
-        return {"id": them["id"], "name": them.get("name", "")}
+        st = self.sync_now(them["id"])
+        return {"id": them["id"], "name": them.get("name", ""), "sync": st}
 
     def unpair(self, peer_id: str) -> None:
         peer = next((p for p in self.peers() if p["id"] == peer_id), None)
@@ -264,7 +269,7 @@ class Sync:
         if self.protected():
             return self._said(peer_id, False, "this radio has a password: no sync")
         try:
-            them = self.fetch(f"http://{peer['address']}/api/sync/state")
+            them = self.fetch(f"http://{peer['address']}/api/sync/state?for={self.id}")
         except (OSError, ValueError) as e:
             return self._said(peer_id, False, f"not answering ({str(getattr(e, 'reason', e))[:60]})")
         if not isinstance(them, dict) or them.get("id") != peer_id:
@@ -281,12 +286,15 @@ class Sync:
         with self._lock:
             base = self._bases().get(peer_id)
             base = base if isinstance(base, dict) and base else None
+            if base is not None and them.get("base") != _digest(base):
+                log.info("sync with %s: the last agreed state differs between the two: this time only adds", their_name)
+                base = None                              # (see state(): a delete can't be told from a missed add)
             if base is None and self.backup is not None:     # (the first sync with that radio: a backup first)
                 try:
                     self.backup(f"Before syncing with {their_name or peer.get('name') or 'another radio'}")
                 except Exception:
                     log.exception("sync: the backup before the first sync wasn't made")
-            with CONFIG_LOCK:
+            with CONFIG_LOCK:                             # (worked out under the lock; the other radio asked without it)
                 conf = read_config(self.config_file)
                 mine = {n: c[0](conf) for n, c in COLLECTIONS.items()}
                 merged, here, there, held = {}, {}, {}, []
@@ -301,18 +309,23 @@ class Sync:
                         merged[n] = check(merged[n])
                     except ValueError as e:                # (e.g. more stations together than a radio keeps)
                         return self._said(peer_id, False, f"together they don't fit: {e}")
-                if held:
-                    return self._said(peer_id, False, "held: it would delete " + ", ".join(held) +
-                                      ". Sync anyway to let it through", held=True)
-                if not all(same(n, merged[n], theirs[n]) for n in COLLECTIONS) or base is None \
-                        or not all(same(n, base.get(n, []), merged[n]) for n in COLLECTIONS):
-                    try:                                   # (the other radio takes it up, if it hasn't changed since)
-                        ok = self.fetch(f"http://{peer['address']}/api/sync/adopt",
-                                        {"id": self.id, "merged": merged, "was": _digest(theirs)})
-                    except (OSError, ValueError) as e:
-                        return self._said(peer_id, False, f"it didn't take the sync ({str(getattr(e, 'reason', e))[:60]})")
-                    if not (isinstance(ok, dict) and ok.get("ok")):
-                        return self._said(peer_id, False, "it changed meanwhile: it'll sync next time")
+            if held:
+                return self._said(peer_id, False, "held: it would delete " + ", ".join(held) +
+                                  ". Sync anyway to let it through", held=True)
+            if not all(same(n, merged[n], theirs[n]) for n in COLLECTIONS) or base is None \
+                    or not all(same(n, base.get(n, []), merged[n]) for n in COLLECTIONS):
+                try:                                       # (the other radio takes it up, if it hasn't changed since)
+                    ok = self.fetch(f"http://{peer['address']}/api/sync/adopt",
+                                    {"id": self.id, "merged": merged, "was": _digest(theirs)})
+                except (OSError, ValueError) as e:
+                    return self._said(peer_id, False, f"it didn't take the sync ({str(getattr(e, 'reason', e))[:60]})")
+                if not (isinstance(ok, dict) and ok.get("ok")):
+                    return self._said(peer_id, False, "it changed meanwhile: it'll sync next time")
+            with CONFIG_LOCK:
+                conf = read_config(self.config_file)
+                now = {n: c[0](conf) for n, c in COLLECTIONS.items()}
+                if _digest(now) != _digest(mine):          # (changed here while it was asked: kept; the next sync merges it)
+                    return self._said(peer_id, False, "changed here meanwhile: it'll sync next time")
                 if not all(same(n, merged[n], mine[n]) for n in COLLECTIONS):
                     conf.update(merged)
                     write_atomic(self.config_file, json.dumps(conf, indent=2) + "\n")

@@ -5353,7 +5353,8 @@ const UI = {
     build: (d, act) => {
       const ago = t => { const s = Date.now() / 1000 - t; return s < 90 ? "just now" : s < 5400 ? `${Math.round(s / 60)} min ago` : `${Math.round(s / 3600)} h ago`; };
       const addr = el("input", { type: "text", id: "sync-addr", autocomplete: "off", spellcheck: false, placeholder: "Its address, like 192.168.1.20" });
-      const pair = a => act(async () => { const r = await api("/api/sync/pair", { address: a }); toast(`Paired with ${r.name || a}: synced.`); });
+      const pair = a => act(async () => { const r = await api("/api/sync/pair", { address: a }), st = r.sync || {};
+        toast(`Paired with ${r.name || a}. ` + (st.ok ? `Synced: ${st.said}.` : `Not synced yet: ${st.said || "it'll try again"}.`)); });
       const peerRow = p => {
         const st = p.status;
         const said = st ? `${st.ok ? "✓ Synced" : st.held ? "⏸ Held" : "✗ Not synced"} ${ago(st.at)}: ${st.said}` : "Not synced yet";
@@ -5393,18 +5394,20 @@ const UI = {
   stations: {
     load: () => api("/api/radio"),
     build: (d, act) => {
-      const save = list => act(async () => { await api("/api/radio/stations", { stations: list }); rxOnDesk(list); if (W.some(w => w.id === STATIONS.id)) await loadFolder(STATIONS); });
+      // (each change made to the list as it is now, not as the window first read it: a sync from another radio may have changed it since)
+      const save = change => act(async () => { const list = change((await api("/api/radio")).stations);
+        await api("/api/radio/stations", { stations: list }); rxOnDesk(list); if (W.some(w => w.id === STATIONS.id)) await loadFolder(STATIONS); });
       const name = el("input", { type: "text", id: "st-add-name", placeholder: "Name", maxLength: 120 });
       const url = el("input", { type: "url", id: "st-add-url", placeholder: "https://… stream, or a receiver: http://192.168.1.5:8074/audio?freq=145.5" });
       const dir = d.directory || {};
       return [
         grp("Your stations", ...(d.stations.length ? d.stations.map((st, i) => srow(st.name, el("span", { className: "shelp", textContent: st.info || "" }),
             line(sbtn("▶", () => act(() => api("/api/radio/play", { name: st.name, url: st.url }))),
-                 sbtn("Remove", () => save(d.stations.filter((_, k) => k !== i))))))
+                 sbtn("Remove", () => save(now => now.filter(x => x.url !== st.url))))))
           : [help("None yet: find one, or add one by its stream address below.")])),
         grp("Add one by its address", srow("Name", name), srow("Address", url),
           line(sbtn("Add", () => { if (!name.value.trim() || !url.value.trim()) return toast("A name and a stream address, please.");
-                                   save([...d.stations, { name: name.value.trim(), url: url.value.trim() }]); }, "primary"),
+                                   const add = { name: name.value.trim(), url: url.value.trim() }; save(now => [...now, add]); }, "primary"),
                sbtn("Find a station…", () => open(PANEL.findstation.id))),
           help("A receiver of your own (receiver/ in the repository) is added the same way: its address and a band or a frequency, like http://192.168.1.5:8074/audio?band=marine or …:8075/audio?band=40m. It then shows in Receivers, and opens as a rig.")),
         grp("Station directory", help(dir.stations ? `A copy of the Radio Browser directory: ${dir.stations.toLocaleString()} stations` + (dir.updated ? `, from ${new Date(dir.updated * 1000).toLocaleDateString()}` : "") + "." : "No copy of the Radio Browser directory yet: searches go online."),

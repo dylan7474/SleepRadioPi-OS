@@ -26,7 +26,9 @@ def build(ctx):
         elif path == "/api/sync/hello":
             self._send(json.dumps(sync.hello()).encode(), "application/json")
         elif path == "/api/sync/state":
-            self._send(json.dumps(sync.state()).encode(), "application/json")
+            from urllib.parse import parse_qs, urlparse
+            for_id = parse_qs(urlparse(self.path).query).get("for", [""])[0]
+            self._send(json.dumps(sync.state(for_id)).encode(), "application/json")
         else:
             return False
         return True
