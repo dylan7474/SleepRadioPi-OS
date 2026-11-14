@@ -2047,8 +2047,11 @@ The cards:
 - **Other radios** (`sleepradiopi/sync.py`) — radios find each other on the
   network (each says it's there about once a minute, and asks who's there
   when it starts: a small UDP broadcast on port 47474) and can be **paired**,
-  from the list or by address. Paired radios keep their **stations and
-  receiver names** the same, **both ways**: every few minutes (or *Sync
+  from the list or by address. Paired radios keep **everything they can
+  share** the same, **both ways** -- stations and receiver names, themes
+  (Default's DJ settings too), playlists, programmes, messages and their
+  times, birthdays, podcasts followed, and the radio's other settings (the
+  DJ's, alerts, the outside tiles, callsign and locator...): every few minutes (or *Sync
   now*) one reads the other's, merges the two against the state they last
   agreed on, and both take up the result -- so an add, an edit or a delete on
   either ends up on both, with no clocks involved (the same item changed
@@ -2056,7 +2059,14 @@ The cards:
   every radio). The first sync with a radio only adds, never deletes, and
   each saves a backup first (*Before syncing with ...* in Backups); a sync
   that would delete much of a list is **held** until *Sync anyway*. Each
-  radio's own set-up, buttons, volume and what's playing stay its own. A
+  radio's own stays its own: its hardware and how it's set up (speakers,
+  amp, EQ and speaker sounds, buttons, knob, glow, meter), its volume and what
+  it's playing (theme, noise), programme mode, the receiver jobs one radio
+  does (reporting, surveys, calibrating), and for now the DJ's voice (voice
+  files aren't synced yet). A **programme** is copied both ways, but whether it
+  starts by itself is each radio's own: one that arrives from another radio
+  arrives switched off. On a first sync, a setting someone set beats one never
+  set. What a sync changes is taken up at once, with no restart. A
   radio with a web password doesn't sync. Its id (`radio_id`) and the radios
   it's paired with (`sync_peers`) are its own (not in a settings file); what
   was last agreed with each is `sync-base.json` beside the config.

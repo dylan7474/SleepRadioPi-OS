@@ -154,18 +154,9 @@ def build(ctx):
             return
         self._send(json.dumps({"ok": True, "name": name, "backups": backups.list()}).encode(), "application/json")
 
-    def _apply_settings(self, data: dict) -> None:
-        """Take up a settings file's contents (already read): see _load_settings."""
-        try:
-            settings, volume = backup.parse(data)
-        except backup.BadSettings as e:
-            self._error(str(e))
-            return
-        try:
-            changed = backup.apply(config_file, settings)     # before the live ones save theirs
-        except ValueError as e:                               # (the settings file can't be read: nothing written)
-            self._error(str(e))
-            return
+    def apply_live(settings: dict, changed: set, volume=None, save_selection=None) -> set:
+        """Take up settings already written to the config (changed: the ones that differ) in the running
+        radio: from a settings file (_apply_settings) or another radio (sync.py). Nothing restarts here."""
         dj_keys = {"broadcast_chattiness", "broadcast_dj_hooks", "broadcast_jingle_enabled",
                    "broadcast_jingle_every", "news_enabled", "broadcast_announcer_speed", "news_speed", "ebook_speed", "ebook_voice", "ebook_pace", "ebook_pause"}
         if changed & dj_keys:
@@ -183,16 +174,22 @@ def build(ctx):
                                ebook_pause=settings.get("ebook_pause"), ebook_pace=settings.get("ebook_pace"))
         if "profiles" in changed:
             station.set_profiles(settings["profiles"])
-        if changed & {"broadcast_artist", "broadcast_profile", "profiles"}:
+        if changed & {"broadcast_artist", "broadcast_profile", "profiles"} and \
+                ("broadcast_profile" in settings or "broadcast_artist" in settings):     # (a file's choice of theme: not a sync's)
             if settings.get("broadcast_profile"):
                 station.set_profile(settings["broadcast_profile"])
             else:                         # (an old file's artist radio: its one-artist theme)
                 station.set_artist(settings.get("broadcast_artist"))
                 if config_file is not None:
                     save_setting(config_file, "profiles", station.profiles)
-            self._save_selection()
+            if save_selection is not None:
+                save_selection()
         if "birthdays" in changed:
             station.set_birthdays(settings["birthdays"])
+        if "podcasts" in changed and getattr(station, "podcasts", None) is not None:
+            from sleepradiopi.playback import podcasts as podcasts_mod
+            with station.podcasts._lock:                 # (the shows followed, as the radio keeps them: else a follow saves the old list back)
+                station.podcasts.shows = podcasts_mod.validate_shows(settings["podcasts"])
         if "playlists" in changed:
             station.set_playlists(settings["playlists"])
         if "programmes" in changed and getattr(station, "scheduler", None) is not None:
@@ -229,6 +226,21 @@ def build(ctx):
                     changed.add("volume")
                 speaker.set_volume(volume)
                 speaker.save_now()
+        return changed
+
+    def _apply_settings(self, data: dict) -> None:
+        """Take up a settings file's contents (already read): see _load_settings."""
+        try:
+            settings, volume = backup.parse(data)
+        except backup.BadSettings as e:
+            self._error(str(e))
+            return
+        try:
+            changed = backup.apply(config_file, settings)     # before the live ones save theirs
+        except ValueError as e:                               # (the settings file can't be read: nothing written)
+            self._error(str(e))
+            return
+        changed = apply_live(settings, changed, volume, self._save_selection)
         needs_restart = bool(changed - backup.LIVE - {"volume"})
         restarting = needs_restart and bool(os.environ.get(RESTART_ENV))
         log.info("settings loaded from %s; changed: %s", self.address_string(),
@@ -508,6 +520,9 @@ def build(ctx):
             self._send(json.dumps(reply).encode(), "application/json")
             return True
         return False
+
+    if getattr(ctx, "sync", None) is not None:          # (a sync from another radio takes up its changes the same way)
+        ctx.sync.apply_live = lambda settings, changed: apply_live(settings, set(changed))
 
     return {"methods": {"_remote": _remote, "_power": _power, "_save_settings": _save_settings, "_send_settings": _send_settings, "_load_settings": _load_settings, "_backups": _backups, "_apply_settings": _apply_settings, "_set_lamps": _set_lamps, "_identity": _identity, "_set_identity": _set_identity, "_wifi_state": _wifi_state, "_wifi": _wifi, "_voices_state": _voices_state, "_upload_voice": _upload_voice, "_set_stream": _set_stream, "_stream": _stream},
             "get": get, "post": post}

@@ -212,3 +212,72 @@ def test_pairing_says_how_the_first_sync_went(tmp_path) -> None:
     one, two = radio(tmp_path, net, "one", [st("a")]), radio(tmp_path, net, "two", [st("b")])
     r = one.pair("two")
     assert r["sync"]["ok"] and "added" in r["sync"]["said"]
+
+
+def conf_of(r):
+    return json.loads(r.config_file.read_text())
+
+
+def set_conf(r, **kv):
+    c = conf_of(r)
+    c.update(kv)
+    r.config_file.write_text(json.dumps(c))
+
+
+def test_everything_shared_is_synced_and_a_radios_own_is_not(tmp_path) -> None:
+    net = Net()
+    one, two = radio(tmp_path, net, "one"), radio(tmp_path, net, "two")
+    set_conf(one, profiles=[{"name": "Default", "artists": [], "all": True}, {"name": "Jazz", "artists": ["Miles Davis"]}],
+             playlists=[{"name": "Faves", "tracks": [["music", "A/b.mp3"]]}],
+             birthdays=[{"name": "Sam", "day": 1, "month": 2}],
+             messages={"on": True, "every_min": 20, "list": [{"text": "Hello"}]},
+             podcasts=[{"id": "pod_1", "feed_url": "https://feed.example/a", "title": "A", "author": "B"}],
+             broadcast_chattiness="minimal", locator="IO00aa",              # shared settings
+             speaker_mono=True, speaker_volume=12, buttons=[{"kind": "show"}])  # this radio's own
+    taken = []
+    two.apply_live = lambda settings, changed: taken.append(set(changed))
+    one.pair("two")
+    c = conf_of(two)
+    assert [p["name"] for p in c["profiles"]] == ["Default", "Jazz"] and c["playlists"][0]["name"] == "Faves"
+    assert c["birthdays"][0]["name"] == "Sam" and c["podcasts"][0]["feed_url"] == "https://feed.example/a"
+    assert c["messages"]["list"][0]["text"] == "Hello" and c["messages"]["every_min"] == 20
+    assert c["broadcast_chattiness"] == "minimal" and c["locator"] == "IO00aa"
+    assert "speaker_mono" not in c and "speaker_volume" not in c and "buttons" not in c       # never sent
+    import time as _t
+    for _ in range(50):                                         # (taken up in the background)
+        if taken:
+            break
+        _t.sleep(0.02)
+    assert taken and {"profiles", "playlists", "birthdays", "messages", "podcasts", "broadcast_chattiness"} <= taken[0]
+
+
+def test_a_programme_arrives_switched_off_and_on_off_stays_each_radios(tmp_path) -> None:
+    net = Net()
+    one, two = radio(tmp_path, net, "one"), radio(tmp_path, net, "two")
+    wake = {"name": "Wake", "start": "07:00", "auto": True, "days": [], "then": "show", "gap": "show", "blocks": []}
+    set_conf(one, programmes=[wake])
+    one.pair("two")
+    assert conf_of(two)["programmes"][0]["auto"] is False             # arrives off: no alarm sounding on two
+    assert conf_of(one)["programmes"][0]["auto"] is True              # still on where it was made
+    set_conf(two, programmes=[{**wake, "auto": True, "start": "07:30"}])   # two switches it on, and moves it
+    two.sync_now(one.id)
+    assert conf_of(one)["programmes"][0]["start"] == "07:30" and conf_of(one)["programmes"][0]["auto"] is True
+    set_conf(one, programmes=[{**conf_of(one)["programmes"][0], "auto": False}])   # one switches its own off
+    one.sync_now(two.id)
+    assert conf_of(two)["programmes"][0]["auto"] is True              # ...two's stays on
+
+
+def test_a_setting_left_empty_is_a_value_not_a_delete() -> None:
+    got, counts = merge("settings", None, {"locator": None, "callsign": "X"}, {"locator": "IO00", "callsign": None})
+    assert counts["deleted"] == 0 and set(got) == {"locator", "callsign"}
+    got, counts = merge("settings", {"locator": None}, {"locator": None}, {"locator": "IO00"})
+    assert got == {"locator": "IO00"} and counts == {"added": 0, "changed": 1, "deleted": 0}
+
+
+def test_on_a_first_sync_a_setting_someone_set_beats_one_never_set() -> None:
+    got, _ = merge("settings", None, {"broadcast_chattiness": "maximum", "locator": None},     # (new-radio values)
+                   {"broadcast_chattiness": "minimal", "locator": "IO00"})
+    assert got == {"broadcast_chattiness": "minimal", "locator": "IO00"}
+    got2, _ = merge("settings", None, {"broadcast_chattiness": "minimal", "locator": "IO00"},
+                    {"broadcast_chattiness": "maximum", "locator": None})
+    assert got2 == got                                                                        # either way round

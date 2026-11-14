@@ -720,10 +720,12 @@ Actions, Sleep timer and Radio folders open:
 ### Radios together
 
 - **Other radios** — radios on the same network find each other and can be
-  paired; paired radios keep their stations and receiver names the same,
-  both ways (an add, edit or delete on either reaches the other within a few
-  minutes). See the [app README](app/README.md) for how it merges, and the
-  roadmap for what's next (themes, playlists, shared music folders).
+  paired; paired radios keep everything they can share the same, both ways
+  -- settings, stations, themes, playlists, programmes (each radio decides if
+  one starts by itself), messages, birthdays, podcasts -- while each keeps its
+  own hardware set-up, buttons and volume. See the [app README](app/README.md)
+  for how it merges, and the roadmap for what's next (jingles, voices, shared
+  music folders).
 
 ## Build one
 
@@ -1281,13 +1283,13 @@ v1.9.7).
 
 What's left to do (everything else described here is built and running):
 
-- **Radios that sync: the rest** — paired radios already keep their stations
-  and receiver names the same both ways (*Other radios*). Still to do: themes,
-  playlists, programmes, messages, birthdays and podcasts the same way; then
-  **shared music folders** (a folder marked Shared is kept on both, both ways,
-  only as much as fits on the smaller card, with a meter that says so); and a
-  radio with a web password pairing with its partners (today such a radio
-  stays out of sync).
+- **Radios that sync: files** — paired radios already keep their settings,
+  stations, themes, playlists, programmes, messages, birthdays and podcasts the
+  same both ways (*Other radios*). Still to do: the files -- jingles and the
+  DJ's voices (then the voice setting syncs too), and **shared music folders**
+  (a folder marked Shared is kept on both, both ways, only as much as fits on
+  the smaller card, with a meter that says so); and a radio with a web
+  password pairing with its partners (today such a radio stays out of sync).
 - **More ways to pick the sound** — the sound by kind of audio is built (music, radio, audiobook,
   ebook, podcast). Buttons can carry a sound too (day and night sets each have their own). Still open: a sound per
   music genre (needs reliable tags), a Music/Talk tag for stations played from the page, and the same on

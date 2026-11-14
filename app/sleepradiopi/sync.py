@@ -45,11 +45,21 @@ from pathlib import Path
 
 from sleepradiopi.config.atomic import write_atomic
 from sleepradiopi.config.settings import CONFIG_LOCK, read_config, save_setting
+from dataclasses import asdict
+
+from sleepradiopi.broadcast import birthdays as birthdays_mod
+from sleepradiopi.broadcast import messages as messages_mod
+from sleepradiopi.broadcast import playlists as playlists_mod
+from sleepradiopi.broadcast import profiles as profiles_mod
+from sleepradiopi.broadcast import programmes as programmes_mod
+from sleepradiopi.config import backup as backup_mod
+from sleepradiopi.config.settings import Settings
+from sleepradiopi.playback import podcasts as podcasts_mod
 from sleepradiopi.playback import radio as radio_mod
 
 log = logging.getLogger(__name__)
 
-PROTOCOL = 1                    # what a sync request looks like (not the app's version: radios mid-update still sync)
+PROTOCOL = 2                    # what a sync request looks like (not the app's version: radios mid-update still sync)
 BEACON_PORT = 47474
 BEACON_EVERY_S = 60
 SEEN_FOR_S = 3 * BEACON_EVERY_S + 30     # a radio not heard for this long is no longer listed as on the network
@@ -89,12 +99,124 @@ def _check_names(value) -> dict:
     return out
 
 
+def _plain(read_key: str, check, default=list):
+    """A collection that's one setting of the same name: (read, check, write)."""
+    def read(conf):
+        v = conf.get(read_key)
+        try:
+            return check(v if v is not None else default())
+        except (ValueError, TypeError):
+            return default()
+    return read, check, lambda conf, value: {read_key: value}
+
+
+# Programmes: copied both ways, but whether one starts by itself is each radio's own (one that arrives
+# from another radio arrives switched off) -- else an alarm set on one would sound on every paired radio.
+def _programmes_in(conf: dict) -> list[dict]:
+    try:
+        return [{k: v for k, v in p.items() if k != "auto"} for p in programmes_mod.validate(conf.get("programmes") or [])]
+    except (ValueError, TypeError):
+        return []
+
+
+def _check_programmes(value) -> list[dict]:
+    return [{k: v for k, v in p.items() if k != "auto"} for p in programmes_mod.validate(
+        [{**p, "auto": False} if isinstance(p, dict) else p for p in (value or [])])]
+
+
+def _programmes_out(conf: dict, value) -> dict:
+    auto = {p["name"].lower(): bool(p.get("auto")) for p in (conf.get("programmes") or []) if isinstance(p, dict) and "name" in p}
+    return {"programmes": programmes_mod.validate([{**p, "auto": auto.get(p["name"].lower(), False)} for p in value])}
+
+
+# Messages: the list (each message keyed by its words, times and theme: an edit is a delete and an add),
+# and the times they're read at, kept apart (a dict of their own).
+def _messages_cfg(conf: dict) -> dict:
+    try:
+        return messages_mod.validate(conf.get("messages") or {})
+    except (ValueError, TypeError):
+        return messages_mod.validate({})
+
+
+def _messages_in(conf: dict) -> list[dict]:
+    return _messages_cfg(conf)["list"]
+
+
+def _check_messages(value) -> list[dict]:
+    return messages_mod.validate({"list": value})["list"]
+
+
+def _messages_out(conf: dict, value) -> dict:
+    return {"messages": messages_mod.validate({**_messages_cfg(conf), "list": value})}
+
+
+def _times_in(conf: dict) -> dict:
+    return {k: v for k, v in _messages_cfg(conf).items() if k != "list"}
+
+
+def _check_times(value) -> dict:
+    if not isinstance(value, dict):
+        raise ValueError("message times: {...}")
+    return {k: v for k, v in messages_mod.validate({**value, "list": []}).items() if k != "list"}
+
+
+def _times_out(conf: dict, value) -> dict:
+    return {"messages": messages_mod.validate({**_messages_cfg(conf), **value})}
+
+
+# The radio's other settings, each kept the same on both -- all but its own: what its hardware is and how
+# it's set up (speakers, amp, buttons, knob, glow, meter), what it's playing, its volume, and the jobs one
+# radio does for a receiver (reporting, surveys, calibrating), which two radios mustn't both do.
+RADIO_OWN = {"speaker_mono", "speaker_eq", "speaker_highpass_hz", "speaker_volume", "speaker_sounds", "eq_slots",
+             "eq_by_type", "eq_auto", "meter_trim_db", "glow_day", "glow_night", "knob_mode", "knob_step", "knob_long",
+             "buttons", "buttons_night", "buttons_bank", "buttons_auto", "power_on", "programme_mode",
+             "broadcast_profile", "broadcast_artist", "noise_on", "noise_kind", "noise_mix", "calibrate_itself",
+             "survey_itself", "report_heard", "listener_grace_s", "monitor_music", "monitor_rooms", "web_stream",
+             "ondemand_keep",
+             "broadcast_voice", "news_voice"}     # (the voices: their files aren't synced yet -- a personal one may not be there)
+COLLECTION_KEYS = {"radio_stations", "receiver_names", "profiles", "playlists", "programmes", "messages",
+                   "birthdays", "podcasts"}
+
+
+def _synced_settings() -> list[str]:
+    return sorted(f.name for f in backup_mod.SHARED if f.name not in RADIO_OWN | COLLECTION_KEYS)
+
+
+def _settings_in(conf: dict) -> dict:
+    defaults = asdict(Settings())
+    out = {}
+    for k in _synced_settings():
+        try:
+            out[k] = backup_mod._check(k, conf.get(k, defaults.get(k)))
+        except ValueError:
+            out[k] = defaults.get(k)
+    return out
+
+
+def _check_settings(value) -> dict:
+    if not isinstance(value, dict):
+        raise ValueError("settings: {...}")
+    known = set(_synced_settings())
+    return {k: backup_mod._check(k, v) for k, v in value.items() if k in known}     # (one this version hasn't: skipped)
+
+
 COLLECTIONS = {
-    # name: (read from the config, check what another radio sent, the item's key -- None: a dict, keyed already)
-    "radio_stations": (_stations_in, radio_mod.validate_stations, lambda s: s["url"]),
-    "receiver_names": (_names_in, _check_names, None),
+    # name: (read from the config, check what another radio sent, the item's key -- None: a dict, keyed
+    # already --, the config keys it's written as)
+    "radio_stations": (_stations_in, radio_mod.validate_stations, lambda s: s["url"], lambda conf, v: {"radio_stations": v}),
+    "receiver_names": (_names_in, _check_names, None, lambda conf, v: {"receiver_names": v}),
+    "profiles": (*_plain("profiles", profiles_mod.validate)[:2], lambda p: p["name"].lower(), _plain("profiles", profiles_mod.validate)[2]),
+    "playlists": (*_plain("playlists", playlists_mod.validate)[:2], lambda p: p["name"].lower(), _plain("playlists", playlists_mod.validate)[2]),
+    "programmes": (_programmes_in, _check_programmes, lambda p: p["name"].lower(), _programmes_out),
+    "messages": (_messages_in, _check_messages, lambda m: _canon(m), _messages_out),
+    "message_times": (_times_in, _check_times, None, _times_out),
+    "birthdays": (*_plain("birthdays", birthdays_mod.validate)[:2], lambda b: f"{b['name'].lower()}|{b['day']}|{b['month']}", _plain("birthdays", birthdays_mod.validate)[2]),
+    "podcasts": (*_plain("podcasts", podcasts_mod.validate_shows)[:2], lambda p: p["feed_url"], _plain("podcasts", podcasts_mod.validate_shows)[2]),
+    "settings": (_settings_in, _check_settings, None, lambda conf, v: dict(v)),
 }
-WORDS = {"radio_stations": "stations", "receiver_names": "receiver names"}
+WORDS = {"radio_stations": "stations", "receiver_names": "receiver names", "profiles": "themes", "playlists": "playlists",
+         "programmes": "programmes", "messages": "messages", "message_times": "message times", "birthdays": "birthdays",
+         "podcasts": "podcasts", "settings": "settings"}
 
 
 def _as_map(name: str, value) -> dict:
@@ -107,6 +229,18 @@ def _canon(x) -> str:
     return json.dumps(x, sort_keys=True, ensure_ascii=False)
 
 
+_NONE = object()
+
+
+def _unset(name: str, key, value) -> bool:
+    """Never set on that radio: empty, or (a setting) still what a new radio has."""
+    if value is None:
+        return True
+    if name == "settings":
+        return _canon(value) == _canon(asdict(Settings()).get(key))
+    return False
+
+
 def merge(name: str, base, mine, theirs) -> tuple[object, dict]:
     """Three-way merge of one collection. base None: the first time (only adds). Returns (the merged
     collection -- a list keeps this radio's order, then theirs' new ones in their order -- and
@@ -115,22 +249,29 @@ def merge(name: str, base, mine, theirs) -> tuple[object, dict]:
     m, t = _as_map(name, mine), _as_map(name, theirs)
     out: dict = {}
     for k in list(m) + [k for k in t if k not in m]:
-        mi, ti = m.get(k), t.get(k)
-        bi = b.get(k) if b is not None else None
+        mi, ti = m.get(k, _NONE), t.get(k, _NONE)        # (_NONE: not there; None is a value -- a setting left empty)
+        bi = b.get(k, _NONE) if b is not None else _NONE
         if b is None:                                    # first time: everything either has, nothing goes
-            got = mi if ti is None else ti if mi is None else (mi if _canon(mi) == _canon(ti) else max(mi, ti, key=_canon))
-        elif mi is not None and ti is not None:
-            if _canon(mi) == _canon(ti) or _canon(ti) == _canon(bi):
+            if ti is _NONE or (mi is not _NONE and _canon(mi) == _canon(ti)):
+                got = mi
+            elif mi is _NONE:
+                got = ti
+            elif _unset(name, k, mi) != _unset(name, k, ti):
+                got = ti if _unset(name, k, mi) else mi  # (one radio set it, the other never did: the one set wins)
+            else:
+                got = max(mi, ti, key=_canon)
+        elif mi is not _NONE and ti is not _NONE:
+            if _canon(mi) == _canon(ti) or (bi is not _NONE and _canon(ti) == _canon(bi)):
                 got = mi                                 # (the same, or only mine changed)
-            elif _canon(mi) == _canon(bi):
+            elif bi is not _NONE and _canon(mi) == _canon(bi):
                 got = ti                                 # only theirs changed
             else:
-                got = max(mi, ti, key=_canon)            # both changed it: the same rule on every radio
-        elif mi is not None:                             # theirs hasn't it
-            got = None if bi is not None and _canon(mi) == _canon(bi) else mi    # they deleted it (I hadn't changed it): gone
+                got = max(mi, ti, key=_canon)            # both changed it (or both added it): the same rule on every radio
+        elif mi is not _NONE:                            # theirs hasn't it
+            got = _NONE if bi is not _NONE and _canon(mi) == _canon(bi) else mi    # they deleted it (I hadn't changed it): gone
         else:                                            # mine hasn't it
-            got = None if bi is not None and _canon(ti) == _canon(bi) else ti    # I deleted it (they hadn't changed it): stays gone
-        if got is not None:
+            got = _NONE if bi is not _NONE and _canon(ti) == _canon(bi) else ti    # I deleted it (they hadn't changed it): stays gone
+        if got is not _NONE:
             out[k] = got
     counts = {"added": sum(1 for k in out if k not in m),
               "changed": sum(1 for k in out if k in m and _canon(out[k]) != _canon(m[k])),
@@ -160,6 +301,7 @@ class Sync:
         self.fetch = fetch or _fetch
         self.protected = protected
         self.backup = backup                     # backup(label): a named settings backup (before a first sync)
+        self.apply_live = None                   # apply_live(settings, changed): the running radio takes up a sync's changes
         self.seen: dict[str, dict] = {}          # id -> {"id", "name", "address", "version", "at"} (heard lately)
         self.status: dict[str, dict] = {}        # peer id -> {"at", "ok", "said", "held"?}
         self._allow_once: set[str] = set()       # peers whose held merge may go through once
@@ -298,7 +440,7 @@ class Sync:
                 conf = read_config(self.config_file)
                 mine = {n: c[0](conf) for n, c in COLLECTIONS.items()}
                 merged, here, there, held = {}, {}, {}, []
-                for n, (_read, check, _key) in COLLECTIONS.items():
+                for n, (_read, check, _key, _write) in COLLECTIONS.items():
                     merged[n], here[n] = merge(n, (base or {}).get(n), mine[n], theirs[n])
                     there[n] = _gone(n, theirs[n], merged[n])                  # (what the other radio would lose)
                     for where, count, of in (("here", here[n]["deleted"], mine[n]), ("there", there[n], theirs[n])):
@@ -326,9 +468,7 @@ class Sync:
                 now = {n: c[0](conf) for n, c in COLLECTIONS.items()}
                 if _digest(now) != _digest(mine):          # (changed here while it was asked: kept; the next sync merges it)
                     return self._said(peer_id, False, "changed here meanwhile: it'll sync next time")
-                if not all(same(n, merged[n], mine[n]) for n in COLLECTIONS):
-                    conf.update(merged)
-                    write_atomic(self.config_file, json.dumps(conf, indent=2) + "\n")
+                updates = self._write(conf, merged, mine)
             self._keep_base(peer_id, merged)
             self._allow_once.discard(peer_id)
         if their_name and their_name != peer.get("name"):
@@ -361,13 +501,36 @@ class Sync:
                 mine = {n: c[0](conf) for n, c in COLLECTIONS.items()}
                 if _digest(mine) != was:
                     return False
-                if not all(same(n, new[n], mine[n]) for n in COLLECTIONS):
-                    conf.update(new)
-                    write_atomic(self.config_file, json.dumps(conf, indent=2) + "\n")
+                updates = self._write(conf, new, mine)
             self._keep_base(peer_id, new)
+            self.status[peer_id] = {"at": time.time(), "ok": True, "said": "synced (it asked)"}
         finally:
             self._lock.release()
         return True
+
+    def _write(self, conf: dict, merged: dict, mine: dict) -> dict:
+        """Write the collections that changed into the config (under CONFIG_LOCK), then take them up in the
+        running radio (apply_live: set by the web server). Returns the config keys written."""
+        updates: dict = {}
+        for n, c in COLLECTIONS.items():
+            if not same(n, merged[n], mine[n]):
+                out = c[3]({**conf, **updates}, merged[n])
+                updates.update(out)
+        if not updates:
+            return {}
+        before = {k: conf.get(k) for k in updates}
+        conf.update(updates)
+        write_atomic(self.config_file, json.dumps(conf, indent=2) + "\n")
+        changed = {k for k, v in updates.items() if _canon(before[k]) != _canon(v)}
+        if changed and self.apply_live is not None:
+            threading.Thread(target=self._take_up, args=(updates, changed), name="sync-apply", daemon=True).start()
+        return updates
+
+    def _take_up(self, updates: dict, changed: set) -> None:
+        try:
+            self.apply_live(updates, changed)
+        except Exception:
+            log.exception("sync: the radio couldn't take up %s", ", ".join(sorted(changed)))
 
     def _keep_base(self, peer_id: str, agreed: dict) -> None:
         bases = self._bases()
