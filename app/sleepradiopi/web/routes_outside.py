@@ -110,6 +110,21 @@ def build(ctx):
             # The Radiosondes window (playback/sondes.py): the flights heard, kept in memory (the address is the 433 MHz window's: one service).
             self._send(json.dumps(sondes_state()).encode(), "application/json")
             return True
+        if path == "/api/sondes/now":
+            # The flights being heard now (the page opens the live console by itself for a new one): from memory, cheap to ask often.
+            from sleepradiopi.playback import sondes as s_mod
+            self._send(json.dumps({"live": s_mod.sondes.live_now() if s_mod.sondes.wanted() else []}).encode(), "application/json")
+            return True
+        if path == "/api/sondes/live":
+            # ?id=Y1722550&since=1794612726.3: the live console's few-seconds ask (playback/sondes.py Sondes.live: the receiver's new rows and its decoder).
+            from sleepradiopi.playback import sondes as s_mod
+            q = parse_qs(urlparse(self.path).query)
+            try:
+                since = float((q.get("since") or ["0"])[0])
+            except ValueError:
+                since = 0.0
+            self._send(json.dumps(s_mod.sondes.live((q.get("id") or [""])[0], since)).encode(), "application/json")
+            return True
         if path == "/api/sondes/profile":
             # ?id=H4713951: that flight's whole story for the 3D view: its track and its readings over time (columns + rows), from memory.
             from sleepradiopi.playback import sondes as s_mod

@@ -602,6 +602,11 @@ Actions, Sleep timer and Radio folders open:
   (it stays there as you scroll) is a carousel of the flights, newest first: a
   card each with its height profile, highest point and state; click one, or ◀ ▶,
   to show it, and Pin or Delete the one shown.
+  While a balloon is being heard, a *Sonde console* opens by itself (once per
+  flight): live panels for the signal, height, climb, temperature, humidity and
+  pressure, where to point your aerial (bearing and elevation), the drift, the
+  ground track, a log of what has happened (burst, signal lost) and, on the way
+  down, an estimate of when it lands.
 - **Quiet hours (do not disturb).** In The DJ's window: from and until
   (23:00 to 06:00 to begin with), or off. No news, birthday wishes, alerts
   or lightning bell in them; music and programmes play as usual.

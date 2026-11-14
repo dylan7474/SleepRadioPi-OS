@@ -249,7 +249,7 @@ A dongle that nobody is listening to can be doing something else.
 |---|---|
 | `http://RECEIVER:8076/status` | which job has the dongle, whether the receiver is using it, the sonde hours |
 | `http://RECEIVER:8076/sondes` | the radiosonde flights heard: position, height, speed, a thinned track |
-| `http://RECEIVER:8076/sondes/series?id=ID` | one flight's readings over time: a row about every 5 s (time, position, height, climb, speed, heading, temperature, humidity, pressure, battery, signal) |
+| `http://RECEIVER:8076/sondes/series?id=ID[&since=T]` | one flight's readings over time (after time T): a row about every 3 s (time, position, height, climb, speed, heading, temperature, humidity, pressure, battery, signal, frame number) |
 | `http://RECEIVER:8076/433` | the 433 MHz devices heard |
 
 * **Radiosondes.** The weather services launch a balloon twice a day (about 11:15 and 23:15 UTC) that radios its
@@ -266,9 +266,10 @@ A dongle that nobody is listening to can be doing something else.
   shown. `rtl_433` runs with `-C si` (metric).
   Nothing is written to the SD card: the devices are kept in memory and served live (whoever polls `/433` keeps
   the history; a Sleep Radio does, in its own memory), and the sonde decoder's logs go to `/run` (RAM).
-  Each radiosonde flight's readings are kept as a series in memory too (a row at most every 5 s, the newest 8
+  Each radiosonde flight's readings are kept as a series in memory too (a row at most every 3 s, the newest 8
   flights, up to 4,000 rows each, thinned evenly past that), so a Sleep Radio can show and keep the whole flight,
-  not just the last frame heard. A restart of the service clears them.
+  not just the last frame heard. A restart of the service clears them. A flight stays listed for 6 hours after it
+  was last heard, even when the decoder restarts (it forgets its flights); `/status` says what the decoder is doing.
   `--log-433 FILE` is there if a log is wanted.
 * **The receiver comes first.** Start the receiver with `--background http://127.0.0.1:8076` and it asks
   (`POST /yield`, answered only to this computer) before it opens the dongle: the job lets go at once, nothing

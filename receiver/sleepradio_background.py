@@ -19,7 +19,7 @@ started again until the receiver has rested (it lets go itself after a minute wi
 What it serves (port 8076, JSON, read-only except /yield, which only answers this computer):
   /status   which job has the dongle, whether the receiver is using it, the sonde windows
   /sondes   the flights heard (position, height, speed, and a thinned track)
-  /sondes/series?id=ID   one flight's readings over time: a row every SERIES_EVERY_S seconds or so (time, position,
+  /sondes/series?id=ID[&since=T]   one flight's readings over time (only those after time T): a row every SERIES_EVERY_S seconds or so (time, position,
             height, speeds, heading, temperature, humidity, pressure, battery, signal), kept in memory while this runs
   /433      the devices heard
 """
@@ -50,10 +50,11 @@ SONDE_QUIET_S = 300          # a flight heard this recently keeps the sonde job 
 RESTART_AFTER_S = 30.0       # a job that died isn't started again sooner than this
 MAX_DEVICES = 500            # 433: devices remembered
 TRACK_POINTS = 300           # sondes: points of a flight's track served
-SERIES_EVERY_S = 5.0         # sondes: a row of a flight's readings at most this often (the decoder hears a frame a second)
-SERIES_MAX = 4000            # ...rows kept of one flight (past this every other one goes: about 5.5 h at 5 s before it thins)
+SERIES_EVERY_S = 2.5         # sondes: a row of a flight's readings at most this often (the decoder hears a frame a second; it is asked every TICK_S)
+SERIES_MAX = 4000            # ...rows kept of one flight (past this every other one goes: about 3.3 h at 3 s before it thins)
+FLIGHTS_KEPT_S = 6 * 3600    # sondes: a flight stays listed this long after it was last heard (the decoder forgets it when it restarts)
 SERIES_FLIGHTS = 8           # ...flights whose readings are kept (the newest heard)
-SERIES_COLUMNS = ("t", "lat", "lon", "alt", "vel_v", "vel_h", "heading", "temp", "humidity", "pressure", "batt", "snr")
+SERIES_COLUMNS = ("t", "lat", "lon", "alt", "vel_v", "vel_h", "heading", "temp", "humidity", "pressure", "batt", "snr", "frame")
 LOG_LIMIT = 256 * 1024       # 433: if a log file is asked for (--log-433), it is turned over at this size
 SKIP_FIELDS = {"time", "model", "id", "channel", "mic", "rssi", "snr", "noise", "freq", "freq1", "freq2", "protocol", "subtype", "raw_msg", "codes", "data", "len",
                "count", "num_rows", "rows", "mod", "hop_index", "mcs", "sequence_num"}        # (rtl_433's own bookkeeping: what is left is what the device says)
@@ -195,7 +196,7 @@ def readings(t: dict) -> dict:
             "snr": t.get("snr") if isinstance(t.get("snr"), (int, float)) and not isinstance(t.get("snr"), bool) else None}
 
 
-ROUND = {"lat": 5, "lon": 5, "alt": 1, "vel_v": 2, "vel_h": 2, "heading": 1, "temp": 1, "humidity": 1, "pressure": 2, "batt": 2, "snr": 1}
+ROUND = {"lat": 5, "lon": 5, "alt": 1, "vel_v": 2, "vel_h": 2, "heading": 1, "temp": 1, "humidity": 1, "pressure": 2, "batt": 2, "snr": 1, "frame": 0}
 
 
 def series_row(rec: dict) -> list | None:
@@ -206,7 +207,8 @@ def series_row(rec: dict) -> list | None:
         lat, lon, alt = float(t["lat"]), float(t["lon"]), float(t["alt"])
     except (KeyError, TypeError, ValueError):
         return None
-    vals = {"lat": lat, "lon": lon, "alt": alt, **readings(t)}
+    frame = t.get("frame")
+    vals = {"lat": lat, "lon": lon, "alt": alt, **readings(t), "frame": frame if isinstance(frame, int) and not isinstance(frame, bool) and frame >= 0 else None}
     return [round(when, 1)] + [None if vals[k] is None else round(vals[k], ROUND[k]) for k in SERIES_COLUMNS[1:]]
 
 
@@ -237,9 +239,11 @@ class Series:
     def count(self, ident: str) -> int:
         return len(self.rows.get(ident, ()))
 
-    def get(self, ident: str) -> dict | None:
+    def get(self, ident: str, since: float = 0.0) -> dict | None:
+        """The flight's rows (only those after `since`, a time: what a live view hasn't had yet), or None if it has none."""
         rows = self.rows.get(ident)
-        return None if rows is None else {"id": ident, "every_s": SERIES_EVERY_S, "columns": list(SERIES_COLUMNS), "rows": [list(r) for r in rows]}
+        return None if rows is None else {"id": ident, "every_s": SERIES_EVERY_S, "columns": list(SERIES_COLUMNS),
+                                          "rows": [list(r) for r in rows if r[0] > since]}
 
 
 def flights_from(archive: dict, now: float | None = None) -> list[dict]:
@@ -310,7 +314,8 @@ class Job:
 
 class Background:
     def __init__(self, jobs: dict[str, Job], windows: list[tuple[int, int]], receiver_busy, sondes_archive,
-                 devices: Devices, clock=time.time, log_dir: Path | None = None) -> None:
+                 devices: Devices, clock=time.time, log_dir: Path | None = None, decoder_task=lambda: None) -> None:
+        self.decoder_task = decoder_task
         self.jobs, self.windows, self.receiver_busy, self.sondes_archive, self.devices = jobs, windows, receiver_busy, sondes_archive, devices
         self.clock, self.log_dir, self.ticks = clock, log_dir, 0
         self.lock = threading.RLock()
@@ -318,6 +323,7 @@ class Background:
         self.hold_until = 0.0
         self.flights: list[dict] = []
         self.series = Series()
+        self.decoder: dict | None = None
         self.sonde_heard_at = 0.0
         self.busy = False
 
@@ -344,11 +350,17 @@ class Background:
             tidy(self.log_dir)
         busy = bool(self.receiver_busy())                             # (asked before the lock: a slow answer mustn't hold up /yield)
         archive = self.sondes_archive() if self.current == "sondes" else None
+        task = self.decoder_task() if self.current == "sondes" else None
         with self.lock:
             now = self.clock()
             self.busy = busy
+            self.decoder = decoder_from(task) if self.current == "sondes" else None
             if archive is not None and self.current == "sondes" and self.jobs["sondes"].alive:
-                self.flights = flights_from(archive, now)
+                fresh = flights_from(archive, now)
+                known = {f["id"] for f in fresh}
+                old = [{**f, "ago_s": round(now - f["last"]) if f.get("last") else f.get("ago_s")} for f in self.flights   # (the decoder forgets a flight when it
+                       if f["id"] not in known and f.get("last") and now - f["last"] < FLIGHTS_KEPT_S]                      # restarts: the service keeps it listed)
+                self.flights = sorted(fresh + old, key=lambda f: f["last"] or 0, reverse=True)[:SERIES_FLIGHTS]
                 self.series.add(archive)
                 heard = [f["last"] for f in self.flights if f["last"]]
                 if heard:
@@ -381,15 +393,15 @@ class Background:
         with self.lock:
             return {"job": self.current, "receiver_busy": self.busy, "held_s": max(0, round(self.hold_until - self.clock())),
                     "sonde_windows_utc": [f"{a // 60:02d}:{a % 60:02d}-{b // 60:02d}:{b % 60:02d}" for a, b in self.windows],
-                    "sonde_heard_ago_s": round(self.clock() - self.sonde_heard_at) if self.sonde_heard_at else None}
+                    "sonde_heard_ago_s": round(self.clock() - self.sonde_heard_at) if self.sonde_heard_at else None, "decoder": self.decoder}
 
     def sondes(self) -> dict:
         with self.lock:
             return {"running": self.current == "sondes", "flights": [{**f, "series_rows": self.series.count(f["id"])} for f in self.flights]}
 
-    def sonde_series(self, ident: str) -> dict | None:
+    def sonde_series(self, ident: str, since: float = 0.0) -> dict | None:
         with self.lock:
-            return self.series.get(ident)
+            return self.series.get(ident, since)
 
     def scan433(self) -> dict:
         with self.lock:
@@ -419,8 +431,13 @@ def make_handler(bg: Background):
         def do_GET(self) -> None:
             if self.path.split("?")[0] == "/sondes/series":
                 from urllib.parse import parse_qs, urlsplit
-                ident = (parse_qs(urlsplit(self.path).query).get("id") or [""])[0]
-                had = bg.sonde_series(ident)
+                q = parse_qs(urlsplit(self.path).query)
+                ident = (q.get("id") or [""])[0]
+                try:
+                    since = float((q.get("since") or ["0"])[0])
+                except ValueError:
+                    since = 0.0
+                had = bg.sonde_series(ident, since)
                 return self._json(had if had else {"error": "no readings of that flight"}, 200 if had else 404)
             route = {"/status": bg.status, "/sondes": bg.sondes, "/433": bg.scan433}.get(self.path.split("?")[0])
             self._json(route() if route else {"error": "/status, /sondes, /sondes/series?id= or /433"}, 200 if route else 404)
@@ -445,6 +462,28 @@ def receiver_busy_check(url: str):
         except (OSError, ValueError):
             return False
     return busy
+
+
+def decoder_from(tasks) -> dict | None:
+    """radiosonde_auto_rx's /get_task_list -> what its dongle is doing: {"task": "Decoding (405.099 MHz)", "freq_mhz", "type"} or None."""
+    if not isinstance(tasks, dict) or not tasks:
+        return None
+    t = next(iter(tasks.values()))
+    if not isinstance(t, dict) or not isinstance(t.get("task"), str):
+        return None
+    freq = t.get("freq")
+    return {"task": t["task"][:60], "freq_mhz": round(freq / 1e6, 3) if isinstance(freq, (int, float)) and freq > 0 else None,
+            "type": t.get("type") if isinstance(t.get("type"), str) else None}
+
+
+def task_fetcher(url: str):
+    def fetch():
+        try:
+            with urllib.request.urlopen(url.rstrip("/") + "/get_task_list", timeout=3) as r:
+                return json.load(r)
+        except (OSError, ValueError):
+            return None
+    return fetch
 
 
 def archive_fetcher(url: str):
@@ -496,7 +535,8 @@ def main(argv=None) -> int:
                                    "-f", args.freq_433, "-g", str(args.gain), "-p", str(args.ppm), "-C", "si", "-M", "level", "-F", "json"],
                        on_line=devices.feed),
     }
-    bg = Background(jobs, windows, receiver_busy_check(args.receiver), archive_fetcher(args.auto_rx_url), devices, log_dir=args.auto_rx_log)
+    bg = Background(jobs, windows, receiver_busy_check(args.receiver), archive_fetcher(args.auto_rx_url), devices, log_dir=args.auto_rx_log,
+                    decoder_task=task_fetcher(args.auto_rx_url))
     httpd = ThreadingHTTPServer(("", args.port), make_handler(bg))
     httpd.daemon_threads = True
     threading.Thread(target=bg.run, name="tick", daemon=True).start()

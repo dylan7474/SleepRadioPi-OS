@@ -347,11 +347,11 @@ def test_the_web_page_pins_exports_and_imports(monkeypatch, tmp_path: Path) -> N
         httpd.shutdown()
 
 
-COLS = ["t", "lat", "lon", "alt", "vel_v", "vel_h", "heading", "temp", "humidity", "pressure", "batt", "snr"]
+COLS = list(sondes.SERIES_COLUMNS)
 
 
 def _rows(n, t0=NOW - 600):
-    return [[t0 + 5 * k, 54.5 + k / 1000, -1.0, 100.0 + 25 * k, 5.0, 10.0, 90.0, 15.0 - k / 10, 80.0, 1000.0 - k, 2.8, 12.0] for k in range(n)]
+    return [[t0 + 5 * k, 54.5 + k / 1000, -1.0, 100.0 + 25 * k, 5.0, 10.0, 90.0, 15.0 - k / 10, 80.0, 1000.0 - k, 2.8, 12.0, 100 + 5 * k] for k in range(n)]
 
 
 def test_a_flight_s_readings_over_time_are_asked_for_now_and_then_and_once_it_is_silent(monkeypatch) -> None:
@@ -393,7 +393,7 @@ def test_the_readings_are_checked_and_thinned() -> None:
     got = sondes.series_from({"columns": COLS, "rows": rows})
     assert len(got) == sondes.SERIES_KEEP and got[0][0] == rows[0][0] and got[-1][0] == rows[-1][0]
     few = sondes.series_from({"columns": ["alt", "t", "lat", "lon", "extra"], "rows": [[900.0, NOW, 54.0, -1.0, 7], rows[7]]})
-    assert few == [[NOW, 54.0, -1.0, 900.0] + [None] * 8]               # (columns by name, in any order; ones it doesn't know dropped)
+    assert few == [[NOW, 54.0, -1.0, 900.0] + [None] * 9]               # (columns by name, in any order; ones it doesn't know dropped)
     assert sondes.series_from({"rows": []}) is None and sondes.series_from([]) is None
     assert sondes.series_from({"columns": COLS, "rows": [rows[7]]})[0][7] is None
 
@@ -481,3 +481,21 @@ def test_delete_from_the_web(monkeypatch, tmp_path: Path) -> None:
     finally:
         httpd.shutdown()
         httpd.server_close()
+
+
+def test_the_live_console_gets_the_new_rows_and_the_decoder(monkeypatch) -> None:
+    monkeypatch.setattr(sondes, "aerial", lambda: AT)
+    s = _s([flight("L1", ago=2)], status={**STATUS, "decoder": {"task": "Decoding (405.099 MHz)", "freq_mhz": 405.099, "type": "RS41"}})
+    asked = []
+    s.answers["/sondes/series?id=L1&since=0.0"] = lambda url: asked.append(url) or {"columns": COLS, "rows": _rows(4)}
+    s.answers["/sondes/series?id=L1&since=" + repr(NOW - 590.0)] = lambda url: asked.append(url) or {"columns": COLS, "rows": _rows(4)[3:]}
+    s.fetch()
+    assert s.live_now() == ["L1"]
+    got = s.live("L1")
+    assert got["up"] and len(got["rows"]) == 4 and got["decoder"]["task"].startswith("Decoding") and got["flight"]["id"] == "L1" and got["rows"][0][-1] == 100
+    assert len(s.live("L1", NOW - 590.0)["rows"]) == 1
+    s.t[0] += sondes.ACTIVE_S
+    assert s.live_now() == []
+    s.answers["/status"] = None                                         # (the receiver stops answering)
+    assert s.live("L1")["up"] is False
+    assert _s(address="").live("L1")["error"] == "no receiver set"

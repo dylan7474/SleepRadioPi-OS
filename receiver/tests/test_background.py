@@ -110,12 +110,13 @@ def test_a_flight_s_readings_are_kept_over_time() -> None:
         series.add(frame(t, 100.0 + 5 * (t - 1000)))
     got = series.get("S1")
     assert got["columns"][:4] == ["t", "lat", "lon", "alt"] and len(got["columns"]) == len(got["rows"][0])
-    assert [r[0] for r in got["rows"]] == [1000 + 5 * i for i in range(12)]          # (one every 5 s)
+    assert [r[0] for r in got["rows"]] == [1000 + 3 * i for i in range(20)]          # (one every 3 s: the 2.5 s floor, frames a second apart)
     row = dict(zip(got["columns"], got["rows"][1]))
-    assert row == {"t": 1005, "lat": 54.12346, "lon": -1.5, "alt": 125.0, "vel_v": 5.0, "vel_h": None, "heading": None, "temp": -20.0,
-                   "humidity": None, "pressure": None, "batt": None, "snr": 11.0}
+    assert row == {"t": 1003, "lat": 54.12346, "lon": -1.5, "alt": 115.0, "vel_v": 5.0, "vel_h": None, "heading": None, "temp": -20.0,
+                   "humidity": None, "pressure": None, "batt": None, "snr": 11.0, "frame": None}
+    assert [r[0] for r in series.get("S1", since=1050)["rows"]] == [1051, 1054, 1057]                     # (only what a live view hasn't had)
     series.add({"bad": {"timestamp": 2000}, "worse": None, "S2": {"latest_telem": {"lat": 1, "lon": 2, "alt": 3}}})       # (no time: no row)
-    assert series.get("bad") is None and series.get("S2") is None and series.get("nothing") is None and series.count("S1") == 12
+    assert series.get("bad") is None and series.get("S2") is None and series.get("nothing") is None and series.count("S1") == 20
 
 
 def test_a_long_flight_is_thinned_and_only_the_newest_flights_are_kept(monkeypatch) -> None:
@@ -239,7 +240,8 @@ def test_the_web_side() -> None:
         assert e.value.code == 404
         bg.series.add({"Q1": {"timestamp": 50, "latest_telem": {"id": "Q1", "lat": 54.0, "lon": -1.0, "alt": 900.0, "temp": 3.5}}})
         had = get(url + "/sondes/series?id=Q1")
-        assert had["id"] == "Q1" and had["rows"] == [[50, 54.0, -1.0, 900.0, None, None, None, 3.5, None, None, None, None]]
+        assert had["id"] == "Q1" and had["rows"] == [[50, 54.0, -1.0, 900.0, None, None, None, 3.5, None, None, None, None, None]]
+        assert get(url + "/sondes/series?id=Q1&since=50")["rows"] == [] and get(url + "/sondes/series?id=Q1&since=x")["rows"] != []
         assert get(url + "/yield", "POST") == {"ok": True, "was": "scan433"} and not jobs["scan433"].running
         with pytest.raises(urllib.error.HTTPError) as e:
             get(url + "/nothing")
@@ -314,3 +316,28 @@ def test_the_decoders_logs_in_ram_are_kept_small(tmp_path: Path) -> None:
     assert bgm.tidy(tmp_path, limit=1000) == 1
     assert (tmp_path / "log_power_X.csv").read_text() == "" and (tmp_path / "small.log").read_text() == "keep"
     assert bgm.tidy(tmp_path / "missing") == 0
+
+
+def test_a_flight_stays_listed_when_the_decoder_restarts_and_the_decoder_is_said() -> None:
+    now, busy = [utc(23)], [False]
+    archive = {"V1": {"timestamp": utc(23), "path": [], "latest_telem": {"id": "V1", "lat": 54.5, "lon": -1.0, "alt": 8000, "vel_v": 5.0, "frame": 1234}}}
+    a = [archive]
+    jobs = {"sondes": FakeJob("sondes"), "scan433": FakeJob("scan433")}
+    task = [{"SRVHF001": {"task": "Decoding (405.099 MHz)", "freq": 405099000.0, "type": "RS41"}}]
+    bg = bgm.Background(jobs, WINDOWS, lambda: busy[0], lambda: a[0], bgm.Devices(b"s"), clock=lambda: now[0], decoder_task=lambda: task[0])
+    bg.tick(); bg.tick()
+    assert [f["id"] for f in bg.sondes()["flights"]] == ["V1"] and bg.status()["decoder"] == {"task": "Decoding (405.099 MHz)", "freq_mhz": 405.099, "type": "RS41"}
+    assert bg.series.get("V1")["rows"][0][-1] == 1234                                   # (the frame number)
+    a[0], task[0] = {}, {"SRVHF001": {"task": "Scanning", "freq": 0}}                    # the decoder restarted: it knows nothing
+    now[0] += 30
+    bg.tick()
+    f = bg.sondes()["flights"]
+    assert [x["id"] for x in f] == ["V1"] and f[0]["ago_s"] == 30 and f[0]["series_rows"] == 1
+    assert bg.status()["decoder"] == {"task": "Scanning", "freq_mhz": None, "type": None}
+    now[0] += bgm.FLIGHTS_KEPT_S
+    bg.tick()
+    assert bg.sondes()["flights"] == []                                                 # (long gone)
+    busy[0] = True
+    bg.tick()
+    assert bg.status()["decoder"] is None
+    assert bgm.decoder_from(None) is None and bgm.decoder_from({}) is None and bgm.decoder_from({"x": "y"}) is None

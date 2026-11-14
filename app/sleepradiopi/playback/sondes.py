@@ -45,7 +45,7 @@ FORMAT = "sleepradiopi-sondes"
 VERSION = 2                  # 2: a flight may have its series (1: position, height and the last readings only; still read)
 SERIES_KEEP = 600            # rows of a flight's series the radio keeps (thinned evenly: one every 15 s or so of a 2.5 h flight)
 SERIES_EVERY_S = 300.0       # a flight still being heard: its series is asked for again at most this often (and once more when it goes silent)
-SERIES_COLUMNS = ("t", "lat", "lon", "alt", "vel_v", "vel_h", "heading", "temp", "humidity", "pressure", "batt", "snr")
+SERIES_COLUMNS = ("t", "lat", "lon", "alt", "vel_v", "vel_h", "heading", "temp", "humidity", "pressure", "batt", "snr", "frame")
 HIDDEN = ("heard", "series", "series_at", "series_of")      # (not in the window's list: the series is asked for on its own, /api/sondes/profile)
 FIELDS = ("type", "freq", "lat", "lon", "alt", "vel_v", "vel_h", "heading", "temp", "humidity", "pressure", "batt", "snr", "state")
 STATE_WORDS = {"climbing": "climbing", "falling": "descending", "steady": "steady", "landed": "landed (last heard)", "lost": "lost (last heard)"}
@@ -267,6 +267,38 @@ class Sondes(Kept):
                 e["series_of"] = n
                 if len(rows) >= len(e.get("series") or ()) or not e.get("series"):
                     e["series"] = rows
+
+    def live(self, ident: str, since: float = 0.0) -> dict:
+        """For the live console, asked every few seconds while it is open: the flight's rows after `since` straight from the receiver
+        (not kept: the radio's own copy is taken as ever), what the decoder is doing, and what the radio knows of the flight.
+        {"up": False, "error"} if the receiver doesn't answer."""
+        now = self._clock()
+        with self._mem:
+            e = self._flights.get(ident)
+            known = None if e is None else {"id": e["id"], "type": e.get("type"), "freq": e.get("freq"), "first": e["first"], "max_alt": e["max_alt"],
+                                            "ago_s": max(0, round(now - e["heard"])), "pinned": bool(e.get("pinned"))}
+        url = base(self._address())
+        if not url:
+            return {"up": False, "error": "no receiver set", "flight": known, "t": now}
+        try:
+            status = self._get(url + "/status")
+            try:
+                rows = series_from(self._get(url + "/sondes/series?id=" + quote(ident) + "&since=" + repr(float(since))), most=5000) or []
+            except OSError:
+                rows = []                                           # (the receiver has no readings of it: an old flight, or a restart)
+        except (OSError, ValueError) as err:
+            return {"up": False, "error": str(err)[:120], "flight": known, "t": now}
+        at = aerial()
+        return {"up": True, "t": now, "flight": known, "columns": list(SERIES_COLUMNS), "rows": rows, "aerial": list(at) if at else None,
+                "job": status.get("job") if isinstance(status.get("job"), str) else None, "receiver_busy": bool(status.get("receiver_busy")),
+                "decoder": status.get("decoder") if isinstance(status.get("decoder"), dict) else None}
+
+    def live_now(self) -> list[str]:
+        """The flights heard in the last ACTIVE_S, newest first (from memory: no asking)."""
+        now = self._clock()
+        with self._mem:
+            live = [(e["heard"], e["id"]) for e in self._flights.values() if now - e["heard"] < ACTIVE_S]
+        return [i for _, i in sorted(live, reverse=True)]
 
     def profile(self, ident: str) -> dict:
         """One flight's whole story, for the 3D view: its track and its series (BadFlight if there is no such flight)."""

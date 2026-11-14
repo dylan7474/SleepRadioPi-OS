@@ -682,6 +682,30 @@
   .sd-bar .sd-side { display: flex; flex-direction: column; gap: 5px; align-items: stretch; }
   .sd-bar .sd-n { font: 12px var(--mono); color: var(--dim); white-space: nowrap; }
   .sd-bar .sbtn { white-space: nowrap; }
+  .sc { background: #05090c; color: #cfe9e1; border-radius: 10px; padding: 10px; font: 12px var(--mono); min-height: 200px; }
+  .sc-empty { padding: 40px 10px; text-align: center; } .sc-empty b { font-size: 18px; letter-spacing: .12em; color: #ffd166; }
+  .sc-head { display: flex; flex-wrap: wrap; gap: 8px 22px; align-items: center; padding: 6px 8px 10px; border-bottom: 1px solid #1d3a40; margin-bottom: 10px; }
+  .sc-id { font-size: 22px; color: #fff; letter-spacing: .04em; }
+  .sc-met span { display: block; font-size: 9.5px; letter-spacing: .14em; color: #ffd166; } .sc-met b { font-size: 22px; color: #fff; font-variant-numeric: tabular-nums; }
+  .sc-phase { font-size: 18px; font-weight: 700; letter-spacing: .18em; color: #05090c; background: #ffd166; padding: 3px 12px; border-radius: 4px; }
+  .sc-link { display: flex; gap: 6px; align-items: center; letter-spacing: .08em; } .sc-link i { font-style: normal; font-size: 16px; }
+  .sc-link.on i { animation: sc-blink 1.2s steps(2) infinite; }
+  @keyframes sc-blink { 50% { opacity: .2; } } @media (prefers-reduced-motion: reduce) { .sc-link.on i { animation: none; } }
+  .sc-alarm { margin: 0 0 10px; padding: 8px 12px; border: 3px solid #ffd166; border-radius: 6px; font-weight: 700; letter-spacing: .05em; color: #fff; animation: sc-blink 1.6s steps(2) infinite; }
+  .sc-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 10px; }
+  .sc-p { background: #0b1418; border: 1px solid #1d3a40; border-radius: 8px; padding: 8px 10px; min-width: 0; }
+  .sc-p h4 { margin: 0 0 4px; font-size: 10px; letter-spacing: .16em; text-transform: uppercase; color: #ffd166; font-weight: 600; }
+  .sc-big b { font-size: 30px; color: #fff; font-variant-numeric: tabular-nums; } .sc-big small { font-size: 12px; margin-left: 4px; color: #9fc4b8; }
+  .sc-big span { display: block; font-size: 10.5px; color: #9fc4b8; }
+  .sc-look { display: grid; gap: 4px; } .sc-look .sc-big b { font-size: 24px; }
+  .sc-chart { width: 100%; display: block; margin-top: 4px; } .sc-gauge { width: 150px; display: block; margin: 2px auto; }
+  .sc-line { fill: none; stroke: #cfe9e1; stroke-width: 1.5; stroke-linejoin: round; } .sc-dn { stroke-dasharray: 4 3; }
+  .sc-dot { fill: #ffd166; stroke: #05090c; stroke-width: 1; } .sc-you { fill: none; stroke: #fff; stroke-width: 1.5; }
+  .sc-ax { font: 9.5px var(--mono); fill: #7fa79b; } .sc-arc { fill: none; stroke: #2a5058; stroke-width: 2; } .sc-tick { stroke: #7fa79b; stroke-width: 1.5; }
+  .sc-needle { stroke: #ffd166; stroke-width: 3; stroke-linecap: round; } .sc-head { fill: #ffd166; }
+  .sc-note { margin: 4px 0 0; font-size: 10.5px; color: #9fc4b8; }
+  .sc-log { grid-column: 1 / -1; } .sc-log ol { list-style: none; margin: 0; padding: 0; max-height: 170px; overflow-y: auto; }
+  .sc-log li { padding: 2px 0; border-bottom: 1px solid #12262b; } .sc-log time { color: #ffd166; }
   .sd-row { display: grid; grid-template-columns: 3.2em minmax(0, 1.3fr) minmax(0, 1fr) minmax(0, .8fr) minmax(0, 1fr); gap: 4px 10px; font-size: 12.5px; align-items: baseline; }
   .sd-row .h { font-size: 10px; letter-spacing: .09em; text-transform: uppercase; color: var(--faint); padding-bottom: 4px; border-bottom: 1px solid var(--plate-line); }
   .sd-row .c { padding: 4px 0; border-bottom: 1px solid color-mix(in srgb, var(--plate-line) 55%, transparent); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-variant-numeric: tabular-nums; }
@@ -912,7 +936,7 @@ const PANEL = {};
 for (const [key, title, sym, h, page] of PANELS) PANEL[key] = mk({ id: "set:" + key, kind: "panel", key, title, sym, h, page });
 for (const [key, title, sym, h] of [["messages", "Messages", "✎", 55], ["birthdays", "Birthdays", "✿", 340], ["stations", "Stations", "R", 8],
                                     ["tests", "Test sounds", "▶", 150], ["stream", "Listen in a browser", "◠", 200], ["lists", "Themes", "A", 195],
-                                    ["findstation", "Find a station", "R", 8], ["findreceiver", "Find a receiver", "⌁", 200], ["modes", "Where to listen", "⌖", 215], ["conditions", "Band conditions", "☼", 45], ["quakes", "Earthquakes", "≋", 20], ["sun", "The sun", "☀", 45], ["aurora", "Aurora", "◠", 130], ["vhf", "VHF openings", "⌃", 200], ["warnings", "Warnings", "⚠", 35], ["signal", "My signal", "⌇", 210], ["qrz", "QRZ logbook", "Q", 225], ["lightning", "Lightning", "ϟ", 50], ["notify", "Notifications", "♪", 20], ["aircraft", "Aircraft", "✈", 215], ["r433", "433 MHz", "∿", 280], ["sondes", "Radiosondes", "⇡", 300], ["findroom", "Find a room", "☊", 265], ["findpodcast", "Follow a podcast", "P", 275], ["findbook", "Find a LibriVox book", "B", 150], ["findebook", "Find an ebook", "E", 160], ["newlist", "New theme", "A", 195]])
+                                    ["findstation", "Find a station", "R", 8], ["findreceiver", "Find a receiver", "⌁", 200], ["modes", "Where to listen", "⌖", 215], ["conditions", "Band conditions", "☼", 45], ["quakes", "Earthquakes", "≋", 20], ["sun", "The sun", "☀", 45], ["aurora", "Aurora", "◠", 130], ["vhf", "VHF openings", "⌃", 200], ["warnings", "Warnings", "⚠", 35], ["signal", "My signal", "⌇", 210], ["qrz", "QRZ logbook", "Q", 225], ["lightning", "Lightning", "ϟ", 50], ["notify", "Notifications", "♪", 20], ["aircraft", "Aircraft", "✈", 215], ["r433", "433 MHz", "∿", 280], ["sondes", "Radiosondes", "⇡", 300], ["sondelive", "Sonde console", "◉", 300], ["findroom", "Find a room", "☊", 265], ["findpodcast", "Follow a podcast", "P", 275], ["findbook", "Find a LibriVox book", "B", 150], ["findebook", "Find an ebook", "E", 160], ["newlist", "New theme", "A", 195]])
   PANEL[key] = mk({ id: "set:" + key, kind: "panel", key, title, sym, h, page: key });
 const DJ = mk({ id: "dj", kind: "dj", title: "The DJ" });
 const NOTES = mk({ id: "notes", kind: "folder", box: "messages", title: "Messages", kids: [], sym: "✎" });   // a folder of sticky notes
@@ -4995,7 +5019,187 @@ const Sonde3D = {
     ].filter(Boolean));
   },
 };
+// The radiosonde live console: a flight being heard, as it happens, in panels like a tracking station's -- the link (signal, battery, the
+// decoder), height, climb, temperature, humidity, pressure, where to point the aerial (bearing and elevation), the drift, the ground track,
+// a log of what has happened and, on the way down, an estimate of when it lands. It asks the radio every LIVE_EVERY_MS for the rows the
+// receiver has heard since the last ask (/api/sondes/live) and keeps them in the page. Opened by itself when a new balloon is heard (each
+// flight once: closing it is respected), or from the Radiosondes window. States are said in words and shapes, never colour alone.
+const SondeConsole = {
+  LIVE_EVERY_MS: 3000,
+  st: { id: null, rows: [], since: 0, info: null, decoder: null, job: null, busy: false, up: true, err: null, t: 0, aerial: null, node: null, timer: null, busyAt: [] },
+  show(id) { const st = this.st; if (id && id !== st.id) Object.assign(st, { id, rows: [], since: 0, info: null, busyAt: [] }); },
+  view() {
+    const st = this.st;
+    if (!st.node) st.node = el("div", { className: "sc" });
+    if (!st.timer) { st.timer = setInterval(() => { if (!st.node.isConnected) { clearInterval(st.timer); st.timer = null; return; } if (!document.hidden) this.ask(); }, this.LIVE_EVERY_MS); this.ask(); }
+    this.render();
+    return st.node;
+  },
+  async ask() {
+    const st = this.st;
+    if (!st.id) { try { st.id = (await api("/api/sondes/now")).live[0] || null; } catch {} if (!st.id) { this.render(); return; } }
+    const id = st.id;
+    let d;
+    try { d = await api(`/api/sondes/live?id=${encodeURIComponent(id)}&since=${st.since}`); } catch (e) { st.up = false; st.err = String(e.message || e); this.render(); return; }
+    if (st.id !== id) return;
+    Object.assign(st, { up: d.up, err: d.error || null, t: d.t, info: d.flight || st.info, aerial: d.aerial || st.aerial });
+    if (d.up) {
+      Object.assign(st, { decoder: d.decoder, job: d.job, busy: d.receiver_busy });
+      if (d.receiver_busy) st.busyAt.push(d.t);
+      const c = d.columns, have = new Set(st.rows.map(q => q.t));
+      for (const r of d.rows) { const q = Object.fromEntries(c.map((k, i) => [k, r[i]])); if (!have.has(q.t)) st.rows.push(q); }
+      st.rows.sort((a, b) => a.t - b.t);
+      if (st.rows.length) st.since = st.rows[st.rows.length - 1].t;
+    }
+    this.render();
+  },
+  // where the aerial must point: bearing, elevation (the Earth's curve allowed for) and the straight-line distance
+  look(at, q) {
+    const R = 6371, D2R = Math.PI / 180, p1 = at[0] * D2R, p2 = q.lat * D2R, dl = (q.lon - at[1]) * D2R;
+    const a = Math.sin((p2 - p1) / 2) ** 2 + Math.cos(p1) * Math.cos(p2) * Math.sin(dl / 2) ** 2, d = 2 * R * Math.asin(Math.min(1, Math.sqrt(a)));
+    const brg = (Math.atan2(Math.sin(dl) * Math.cos(p2), Math.cos(p1) * Math.sin(p2) - Math.sin(p1) * Math.cos(p2) * Math.cos(dl)) / D2R + 360) % 360;
+    const h = q.alt / 1000, el = Math.atan2(h - d * d / (2 * R), Math.max(d, .001)) / D2R;
+    return { d, brg, el, slant: Math.hypot(d, h) };
+  },
+  // on the way down: how long to sea level, falling at the rate now but slower lower down as the air thickens
+  // (a parachute falls at a speed proportional to 1/sqrt(air density); density ~ exp(-h/H), H = 7.2 km)
+  landing(q) {
+    if (q.vel_v == null || q.vel_v > -2 || q.alt <= 0) return null;
+    const H = 7200, v0 = -q.vel_v;
+    return 2 * H / v0 * (Math.exp(q.alt / (2 * H)) - 1);
+  },
+  events(rows, info) {
+    const out = [], hhmm = t => new Date(t * 1000).toLocaleTimeString("en-GB");
+    if (!rows.length) return out;
+    out.push([rows[0].t, `First heard at ${(rows[0].alt / 1000).toFixed(1)} km`]);
+    let next = Math.floor(rows[0].alt / 5000) * 5000 + 5000, top = 0;
+    rows.forEach((q, i) => { if (q.alt > rows[top].alt) top = i; });
+    for (let i = 1; i < rows.length; i++) {
+      const q = rows[i], gap = q.t - rows[i - 1].t;
+      if (gap > 20) out.push([rows[i - 1].t, `Signal lost for ${Math.round(gap)} s (back at ${hhmm(q.t)})`]);
+      if (i <= top && q.alt >= next) { out.push([q.t, `Passed ${next / 1000} km`]); next += 5000; }
+    }
+    const last = rows[rows.length - 1];
+    if (top < rows.length - 1 && rows[top].alt - last.alt > 300) out.push([rows[top].t, `BURST at ${(rows[top].alt / 1000).toFixed(1)} km (${Math.round(rows[top].alt * 3.28084).toLocaleString("en-GB")} ft)`]);
+    for (const t of this.st.busyAt.filter((t, i, a) => i === 0 || t - a[i - 1] > 30)) out.push([t, "The VHF receiver took the dongle: the decoder stopped"]);
+    return out.sort((a, b) => b[0] - a[0]);
+  },
+  render() {
+    const st = this.st, node = st.node;
+    if (!node) return;
+    const rows = st.rows, q = rows[rows.length - 1], sv = (...x) => ScopeMap.sv(...x), num = (x, d = 1) => x == null ? "–" : (+x).toLocaleString("en-GB", { maximumFractionDigits: d, minimumFractionDigits: d });
+    const dirs = ["N", "NNE", "NE", "ENE", "E", "ESE", "SE", "SSE", "S", "SSW", "SW", "WSW", "W", "WNW", "NW", "NNW"], dir = d => dirs[Math.round(d / 22.5) % 16];
+    const hms = s => { s = Math.max(0, Math.round(s)); return `${String(Math.floor(s / 3600)).padStart(2, "0")}:${String(Math.floor(s / 60) % 60).padStart(2, "0")}:${String(s % 60).padStart(2, "0")}`; };
+    if (!st.id) { node.replaceChildren(el("div", { className: "sc-empty" }, el("b", { textContent: "NO BALLOON IS BEING HEARD" }), el("p", { textContent: "This console opens by itself when the receiver hears one (about 11:15 and 23:15 UTC)." }))); return; }
+    if (!q) { node.replaceChildren(el("div", { className: "sc-empty" }, el("b", { textContent: `${st.id}: WAITING FOR DATA` }), el("p", { textContent: st.up ? "Asking the receiver for this flight's readings…" : `The receiver isn't answering: ${st.err || ""}` }))); return; }
+    const age = Math.max(0, (st.t || Date.now() / 1000) - q.t), live = age < 30, top = rows.reduce((m, r) => r.alt > m.alt ? r : m, rows[0]);
+    const burst = top !== q && top.alt - q.alt > 300 && (q.vel_v ?? 0) < -1;
+    const phase = !live && age > 120 ? (q.alt < 1500 && burst ? "LANDED?" : "NO SIGNAL") : burst ? "DESCENDING" : (q.vel_v ?? 0) > 1 ? "CLIMBING" : "LEVEL";
+    const panel = (title, ...kids) => el("section", { className: "sc-p" }, el("h4", { textContent: title }), ...kids);
+    const big = (v, unit, sub) => el("div", { className: "sc-big" }, el("b", { textContent: v }, unit && v !== "–" ? el("small", { textContent: unit }) : null), sub ? el("span", { textContent: sub }) : null);
+    // a strip chart of one reading over the flight (time across), the latest value ringed
+    const strip = (key, fmt) => {
+      const pts = rows.filter(r => r[key] != null);
+      const W = 260, H = 70, g = sv("svg", { viewBox: `0 0 ${W} ${H}`, class: "sc-chart", "aria-hidden": "true" });
+      if (pts.length < 2) return g;
+      const t0 = rows[0].t, t1 = Math.max(q.t, t0 + 60), vs = pts.map(r => r[key]), lo = Math.min(...vs), hi = Math.max(...vs), span = hi - lo || 1;
+      const X = t => 2 + (t - t0) / (t1 - t0) * (W - 4), Y = v => H - 12 - (v - lo) / span * (H - 22);
+      g.append(sv("polyline", { points: pts.map(r => `${X(r.t).toFixed(1)},${Y(r[key]).toFixed(1)}`).join(" "), class: "sc-line" }));
+      const l = pts[pts.length - 1];
+      g.append(sv("circle", { cx: X(l.t), cy: Y(l[key]), r: 3.5, class: "sc-dot" }), sv("text", { x: 2, y: 9, class: "sc-ax" }, fmt(hi)), sv("text", { x: 2, y: H - 1, class: "sc-ax" }, fmt(lo)));
+      return g;
+    };
+    // a profile against height (height up the side), the climb solid and the fall dashed
+    const prof = (key, fmt) => {
+      const pts = rows.filter(r => r[key] != null), W = 260, H = 110, g = sv("svg", { viewBox: `0 0 ${W} ${H}`, class: "sc-chart", "aria-hidden": "true" });
+      if (pts.length < 2) return g;
+      const vs = pts.map(r => r[key]), lo = Math.min(...vs), hi = Math.max(...vs), span = hi - lo || 1, zt = Math.max(1, top.alt);
+      const X = v => 30 + (v - lo) / span * (W - 36), Y = h => H - 12 - h / zt * (H - 20), ti = rows.indexOf(top);
+      const up = pts.filter(r => rows.indexOf(r) <= ti), dn = pts.filter(r => rows.indexOf(r) >= ti);
+      if (up.length > 1) g.append(sv("polyline", { points: up.map(r => `${X(r[key]).toFixed(1)},${Y(r.alt).toFixed(1)}`).join(" "), class: "sc-line" }));
+      if (dn.length > 1) g.append(sv("polyline", { points: dn.map(r => `${X(r[key]).toFixed(1)},${Y(r.alt).toFixed(1)}`).join(" "), class: "sc-line sc-dn" }));
+      const l = pts[pts.length - 1];
+      g.append(sv("circle", { cx: X(l[key]), cy: Y(l.alt), r: 3.5, class: "sc-dot" }), sv("text", { x: 0, y: 10, class: "sc-ax" }, `${(zt / 1000).toFixed(0)} km`), sv("text", { x: 0, y: H - 12, class: "sc-ax" }, "0"),
+               sv("text", { x: 30, y: H - 1, class: "sc-ax" }, fmt(lo)), sv("text", { x: W - 2, y: H - 1, "text-anchor": "end", class: "sc-ax" }, fmt(hi)));
+      return g;
+    };
+    const missing = (key, what) => rows.some(r => r[key] != null) ? null : el("p", { className: "sc-note", textContent: `${what}: not sent by this sonde (so far)` });
+    // the climb gauge: -40 to +10 m/s on a half dial
+    const gauge = v => {
+      const g = sv("svg", { viewBox: "0 0 160 92", class: "sc-gauge", "aria-hidden": "true" }), A = x => Math.PI * (1 - (Math.max(-40, Math.min(10, x)) + 40) / 50);
+      g.append(sv("path", { d: "M10 82 A70 70 0 0 1 150 82", class: "sc-arc" }));
+      for (const m of [-40, -30, -20, -10, 0, 10]) { const a = A(m); g.append(sv("line", { x1: 80 + 62 * Math.cos(a), y1: 82 - 62 * Math.sin(a), x2: 80 + 72 * Math.cos(a), y2: 82 - 72 * Math.sin(a), class: "sc-tick" }), sv("text", { x: 80 + 50 * Math.cos(a), y: 86 - 50 * Math.sin(a), "text-anchor": "middle", class: "sc-ax" }, String(m))); }
+      if (v != null) { const a = A(v); g.append(sv("line", { x1: 80, y1: 82, x2: 80 + 60 * Math.cos(a), y2: 82 - 60 * Math.sin(a), class: "sc-needle" }), sv("circle", { cx: 80, cy: 82, r: 4, class: "sc-dot" })); }
+      return g;
+    };
+    const compass = (hd, spd) => {
+      const g = sv("svg", { viewBox: "0 0 120 120", class: "sc-gauge", "aria-hidden": "true" });
+      g.append(sv("circle", { cx: 60, cy: 60, r: 50, class: "sc-arc" }));
+      for (const [t, d] of [["N", 0], ["E", 90], ["S", 180], ["W", 270]]) { const a = d * Math.PI / 180; g.append(sv("text", { x: 60 + 40 * Math.sin(a), y: 64 - 40 * Math.cos(a), "text-anchor": "middle", class: "sc-ax" }, t)); }
+      if (hd != null && spd != null) { const a = hd * Math.PI / 180; g.append(sv("path", { d: `M${60 - 30 * Math.sin(a)} ${60 + 30 * Math.cos(a)} L${60 + 30 * Math.sin(a)} ${60 - 30 * Math.cos(a)}`, class: "sc-needle" }),
+        sv("path", { d: `M${60 + 34 * Math.sin(a)} ${60 - 34 * Math.cos(a)} L${60 + 24 * Math.sin(a - .35)} ${60 - 24 * Math.cos(a - .35)} L${60 + 24 * Math.sin(a + .35)} ${60 - 24 * Math.cos(a + .35)}Z`, class: "sc-head" })); }
+      return g;
+    };
+    const track = () => {
+      const W = 260, H = 150, g = sv("svg", { viewBox: `0 0 ${W} ${H}`, class: "sc-chart", "aria-hidden": "true" }), at = st.aerial || [rows[0].lat, rows[0].lon];
+      const kx = 111.32 * Math.cos(at[0] * Math.PI / 180), ky = 110.57, P = r => [(r.lon - at[1]) * kx, (r.lat - at[0]) * ky];
+      const ps = rows.map(P), xs = ps.map(p => p[0]).concat(0), ys = ps.map(p => p[1]).concat(0);
+      const x0 = Math.min(...xs), x1 = Math.max(...xs), y0 = Math.min(...ys), y1 = Math.max(...ys), s = Math.min((W - 30) / Math.max(1, x1 - x0), (H - 24) / Math.max(1, y1 - y0));
+      const S = p => [15 + (p[0] - x0) * s, H - 12 - (p[1] - y0) * s], you = S([0, 0]);
+      g.append(sv("polyline", { points: ps.map(p => S(p).map(v => v.toFixed(1)).join(",")).join(" "), class: "sc-line" }), sv("circle", { cx: you[0], cy: you[1], r: 4, class: "sc-you" }),
+               sv("text", { x: you[0] + 6, y: you[1] + 4, class: "sc-ax" }, "you"), sv("text", { x: W - 10, y: 12, class: "sc-ax" }, "N↑"));
+      const l = S(ps[ps.length - 1]); g.append(sv("circle", { cx: l[0], cy: l[1], r: 4, class: "sc-dot" }), sv("text", { x: 4, y: 10, class: "sc-ax" }, `${Math.round(Math.max(x1 - x0, y1 - y0))} km across`));
+      return g;
+    };
+    const lk = st.aerial ? this.look(st.aerial, q) : null, land = this.landing(q), dec = st.decoder, taken = st.busy || (st.job && st.job !== "sondes");
+    const ev = this.events(rows, st.info);
+    node.replaceChildren(...[
+      el("header", { className: "sc-head" },
+        el("div", {}, el("b", { className: "sc-id", textContent: st.id }), el("span", { textContent: ` ${st.info?.type || q.type || "radiosonde"}${st.info?.freq ? " · " + st.info.freq : dec?.freq_mhz ? " · " + dec.freq_mhz + " MHz" : ""}` })),
+        el("div", { className: "sc-met" }, el("span", { textContent: "SINCE FIRST HEARD" }), el("b", { textContent: hms(q.t - rows[0].t) })),
+        el("div", { className: "sc-phase", textContent: phase }),
+        el("div", { className: "sc-link" + (live ? " on" : "") }, el("i", { textContent: live ? "●" : "○" }), el("span", { textContent: live ? `LIVE · last frame ${Math.round(age)} s ago` : `NO FRAMES FOR ${hms(age)}` }))),
+      taken ? el("div", { className: "sc-alarm", role: "alert", textContent: "⚠ DONGLE TAKEN BY THE VHF RECEIVER: the sonde decoder is stopped until nobody is listening to it" }) : null,
+      el("div", { className: "sc-grid" },
+        panel("Link", big(num(q.snr, 1), "dB", "signal to noise"), strip("snr", v => v.toFixed(0) + " dB"),
+          el("p", { className: "sc-note", textContent: `Decoder: ${dec ? dec.task : st.up ? "not running" : "receiver not answering"}${q.frame != null ? ` · frame ${q.frame}` : ""}${q.batt != null ? ` · battery ${num(q.batt, 2)} V` : ""}` })),
+        panel("Height", big(num(q.alt / 1000, 2), "km", `${Math.round(q.alt * 3.28084).toLocaleString("en-GB")} ft · highest ${num(top.alt / 1000, 1)} km`), strip("alt", v => (v / 1000).toFixed(1) + " km")),
+        panel("Climb", big(q.vel_v == null ? "–" : (q.vel_v > 0 ? "+" : "") + num(q.vel_v, 1), "m/s", q.vel_v == null ? "" : q.vel_v < -1 ? "falling" : q.vel_v > 1 ? "rising" : "level"), gauge(q.vel_v), strip("vel_v", v => v.toFixed(0))),
+        panel("Temperature", big(num(q.temp, 1), "°C"), prof("temp", v => v.toFixed(0) + "°"), missing("temp", "Temperature")),
+        panel("Humidity", big(num(q.humidity, 0), "%"), prof("humidity", v => v.toFixed(0) + "%"), missing("humidity", "Humidity")),
+        panel("Pressure", big(num(q.pressure, q.pressure != null && q.pressure < 100 ? 1 : 0), "hPa"), prof("pressure", v => v.toFixed(0)), missing("pressure", "Pressure")),
+        panel("Point the aerial", lk ? el("div", { className: "sc-look" }, big(num(lk.brg, 0), "°", `bearing (${dir(lk.brg)})`), big(num(lk.el, 1), "°", "elevation"), big(num(lk.slant, 1), "km", `away (${num(lk.d, 1)} km over the ground)`))
+          : el("p", { className: "sc-note", textContent: "Your aerial's place isn't known: set the locator (Settings, This radio)." })),
+        panel("Drift", big(q.vel_h == null ? "–" : num(q.vel_h * 3.6, 0), "km/h", q.heading == null ? "" : `towards ${dir(q.heading)} (${Math.round(q.heading)}°) · ${num(q.vel_h * 1.94384, 0)} kn`), compass(q.heading, q.vel_h)),
+        panel("Ground track", track()),
+        panel("Landing", land == null ? el("p", { className: "sc-note", textContent: burst ? "Waiting for a steady fall rate." : "Shown once it is coming down." })
+          : el("div", {}, big(hms(land), "", `about ${new Date((q.t + land) * 1000).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" })}`),
+                       el("p", { className: "sc-note", textContent: "An estimate, to sea level: the fall rate now, slowing lower down as the air thickens. Not where it lands." }))),
+        el("section", { className: "sc-p sc-log" }, el("h4", { textContent: "Log" }), el("ol", {}, ...ev.slice(0, 30).map(([t, w]) => el("li", {}, el("time", { textContent: new Date(t * 1000).toLocaleTimeString("en-GB") }), " ", w)))))].filter(Boolean));
+  },
+};
+// Open the console by itself when a new balloon is heard: each flight once (srd.sdconsole: the ones it has opened for), the window big.
+const SONDE_SEEN = (() => { try { return JSON.parse(localStorage.getItem("srd.sdconsole")) || []; } catch { return []; } })();
+async function sondeWatch() {
+  let live = [];
+  try { live = (await api("/api/sondes/now")).live || []; } catch { return; }
+  const fresh = live.find(id => !SONDE_SEEN.includes(id));
+  if (!fresh) return;
+  SONDE_SEEN.push(fresh); while (SONDE_SEEN.length > 40) SONDE_SEEN.shift();
+  try { localStorage.setItem("srd.sdconsole", JSON.stringify(SONDE_SEEN)); } catch {}
+  openSondeConsole(fresh);
+}
+function openSondeConsole(id) {
+  SondeConsole.show(id);
+  const had = W.find(w => w.id === PANEL.sondelive.id);
+  open(PANEL.sondelive.id);
+  if (!had) { const w = W.find(w => w.id === PANEL.sondelive.id), d = $("desk"); if (w) { Object.assign(w, { x: 16, y: 8, w: Math.min(1280, d.clientWidth - 32), h: d.clientHeight - 24, fitted: true }); drawDesk(); } }
+}
 const UI = {
+  sondelive: {
+    load: async () => ({}),
+    build: () => [SondeConsole.view()],
+  },
   tests: {
     load: async () => (await api("/api/status")).speaker,
     build: (sp, act) => [testsGrp(sp, act)],
@@ -6090,7 +6294,8 @@ const UI = {
         const del = sbtn("Delete…", () => ask(`Delete ${sel.id} from the radio? ${sel.pinned ? "It is pinned: it leaves the card too. " : ""}Download it first if you might want it back (Import brings it back).`, "Delete", () => act(async () => {
           try { await api("/api/sondes/delete", { id: sel.id }); UI.sondes.sel = (flights[at + 1] || flights[at - 1] || {}).id; toast(`${sel.id} deleted.`); } catch (e) { toast(String(e.message || e)); }
         })));
-        return el("div", { className: "sd-bar", role: "toolbar" }, prev, car, next, el("div", { className: "sd-side" }, el("span", { className: "sd-n", textContent: `${at + 1} of ${flights.length} · newest left` }), pin, del));
+        const con = sel.ago_s < 120 ? sbtn("◉ Live console", () => openSondeConsole(sel.id)) : null;
+        return el("div", { className: "sd-bar", role: "toolbar" }, prev, car, next, el("div", { className: "sd-side" }, el("span", { className: "sd-n", textContent: `${at + 1} of ${flights.length} · newest left` }), con, pin, del));
       };
       const nowWin = a.window && (a.window.on ? `Listening now, until ${a.window.end} UTC` : `Next listening ${a.window.start} UTC`);
       const scopeBox = () => {
@@ -7566,6 +7771,7 @@ async function boot() {
     let hiddenTicks = 0; setInterval(() => { if (!document.hidden || hearing || ++hiddenTicks % 6 === 0) poll(); }, 2500);
     setInterval(() => { if (!document.hidden) refreshOpen(); }, 20000);
     setInterval(() => { if (!document.hidden) outsidePoll(); }, 120000);
+    setInterval(() => { if (!document.hidden) sondeWatch(); }, 15000); sondeWatch();
     setInterval(() => { if (!document.hidden) healthPoll(); }, 60000);
     // The Receiver folder appears on the desktop once a station says there's a receiver; while one of its
     // windows is open it's asked every few seconds who has the air.

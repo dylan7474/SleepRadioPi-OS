@@ -1691,6 +1691,12 @@ The cards:
   Delete… (`POST /api/sondes/delete {id}`: `Sondes.delete()` forgets it, pinned or not, rewriting the pins file if it was pinned; its id is
   remembered in memory so the receiver, which may still serve it, doesn't bring it back until a restart; an Import brings it back). In the
   3D view `[` and `]` change flight.
+  The live console (`SondeConsole`, window `PANEL.sondelive` "Sonde console"): `GET /api/sondes/live?id=&since=` every 3 s (`Sondes.live`: the
+  receiver's rows after `since`, its `decoder` and `receiver_busy`, the aerial; nothing kept) and `GET /api/sondes/now` (ids heard in the last
+  `ACTIVE_S`, from memory) every 15 s, which opens the console by itself for a flight it hasn't opened for (`srd.sdconsole`). Panels: link
+  (SNR, decoder, frame, battery), height, climb (gauge), temperature/humidity/pressure against height, where to point the aerial (bearing,
+  elevation with the Earth's curve, slant range), drift, ground track, a landing-time estimate on the way down (2H/v0 (e^(h/2H) - 1),
+  H = 7.2 km: the fall slows as the air thickens), and a log (first heard, every 5 km, burst, signal gaps, the dongle taken).
   *Lightning* (`playback/lightning.py`, `GET /api/lightning`, `POST
   /api/lightning {"on"?, "when"?, "ring"?}`, the settings
   `lightning_watch` (off to begin with), `lightning_when`: `off` (muted) | `active` (rings only while the radio plays) | `always` (playing or paused); an old `lightning_bell` is read as always/off): `lightning.Watch`, a thread of its
