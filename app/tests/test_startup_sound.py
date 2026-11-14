@@ -138,7 +138,7 @@ def test_the_amp_is_on_only_while_its_card_is_open(tmp_path: Path, monkeypatch) 
     monkeypatch.setattr(ss, "LOCK", tmp_path / "lock")
     monkeypatch.setattr(ss, "TICK_FOR_S", 0)
     real = ampmute.AmpMute
-    monkeypatch.setattr(ampmute, "AmpMute", lambda: real(pin, delay_s=0.05))
+    monkeypatch.setattr(ampmute, "AmpMute", lambda: real(pin, delay_s=0.05, status=None))
     assert ss.main(["--home", str(home)]) == 0
     assert seen.read_text() == "10"            # on while it played, off by the time the card closed
     assert pin.read_text() == "0"

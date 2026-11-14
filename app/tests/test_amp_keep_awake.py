@@ -67,7 +67,7 @@ def test_kept_awake_with_a_mute_pin_the_amp_is_off_while_paused_and_the_card_nev
     pin = tmp_path / "value"
     pin.write_text("0")
     sp, _ = _speaker(tmp_path, keep_awake=True)
-    sp.amp = AmpMute(pin, delay_s=0.02)
+    sp.amp = AmpMute(pin, delay_s=0.02, status=None)
     try:
         sp.start()
         sp.write(np.full((4096, pcm.CHANNELS), 1000, np.int16))

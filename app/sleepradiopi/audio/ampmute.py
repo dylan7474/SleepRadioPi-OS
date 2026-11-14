@@ -15,24 +15,32 @@ is NOT left muted by us on purpose: the worst case is the old hiss.
 
 from __future__ import annotations
 
+import glob
 import logging
 import os
 import threading
+import time
 from pathlib import Path
 
 log = logging.getLogger(__name__)
 
 LINK = Path("/run/sleepradiopi/amp-mute")
-UNMUTE_DELAY_S = 0.12      # after the card opens: hides its open pop; a little of the first sound goes unheard
+UNMUTE_DELAY_S = 0.12      # after the card is RUNNING: hides its start; a little of the first sound goes unheard
+# The card's state (ALSA's /proc status files). Unmuting before the I2S clock has started is what clicks
+# (a MAX98357A switched on before its clock: tested 2026-11-14), and a busy Pi at boot can take longer than
+# a fixed delay to start the card, so wait until a playback stream says RUNNING, then the delay.
+CARD_STATUS = "/proc/asound/card*/pcm*p/sub*/status"
+RUNNING_WAIT_S = 3.0       # give up waiting for RUNNING after this (no /proc, a test run): unmute anyway
 
 
 class AmpMute:
-    def __init__(self, path: Path | str = LINK, delay_s: float = UNMUTE_DELAY_S) -> None:
+    def __init__(self, path: Path | str = LINK, delay_s: float = UNMUTE_DELAY_S, status: str | None = CARD_STATUS) -> None:
+        self.status = status            # glob of ALSA status files; None = don't wait for RUNNING
         self.path = Path(path)
         self.delay_s = delay_s
         self._lock = threading.Lock()
         self._want_sound = True          # the last thing asked for
-        self._timer: threading.Timer | None = None
+        self._gen = 0                    # each mute/unmute asked for; a waiting unmute that's been overtaken gives up
         self._failed = False
 
     @property
@@ -57,31 +65,41 @@ class AmpMute:
         """The sound card is closing: silence the amp now."""
         with self._lock:
             self._want_sound = False
-            if self._timer is not None:
-                self._timer.cancel()
-                self._timer = None
+            self._gen += 1
             self._write("0")
 
     def unmute_soon(self) -> None:
-        """The sound card has just opened: let the sound through after the pop."""
+        """The sound card has just opened: let the sound through once it's really
+        playing (a playback stream RUNNING), and a moment after that."""
         with self._lock:
             self._want_sound = True
-            if self._timer is not None:
-                self._timer.cancel()
-            self._timer = threading.Timer(self.delay_s, self._unmute)
-            self._timer.daemon = True
-            self._timer.start()
+            self._gen += 1
+            gen = self._gen
+        threading.Thread(target=self._unmute_when_running, args=(gen,), name="amp-unmute", daemon=True).start()
 
-    def _unmute(self) -> None:
+    def card_running(self) -> bool:
+        for f in glob.glob(self.status or ""):
+            try:
+                with open(f) as fh:
+                    if "RUNNING" in fh.readline():
+                        return True
+            except OSError:
+                pass
+        return False
+
+    def _unmute_when_running(self, gen: int) -> None:
+        end = time.monotonic() + RUNNING_WAIT_S
+        while self.status and time.monotonic() < end and not self.card_running():
+            if gen != self._gen:
+                return
+            time.sleep(0.01)
+        time.sleep(self.delay_s)
         with self._lock:
-            if self._want_sound:             # (not closed again in the meantime)
+            if gen == self._gen and self._want_sound:     # (not closed or asked again meanwhile)
                 self._write("1")
-            self._timer = None
 
     def unmute_now(self) -> None:
         with self._lock:
             self._want_sound = True
-            if self._timer is not None:
-                self._timer.cancel()
-                self._timer = None
+            self._gen += 1
             self._write("1")
