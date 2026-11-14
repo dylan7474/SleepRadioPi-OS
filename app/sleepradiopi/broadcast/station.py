@@ -38,7 +38,7 @@ from typing import Protocol
 
 import numpy as np
 
-from sleepradiopi.audio import denoise, ft8, identify, keyboard, morse, pcm, pictures
+from sleepradiopi.audio import compressor, denoise, ft8, identify, keyboard, morse, pcm, pictures
 from sleepradiopi.config.clock import clock_trusted
 from sleepradiopi.playback import radio as radio_mod
 from sleepradiopi.playback import ebooks as ebooks_mod
@@ -917,7 +917,7 @@ class Station:
         self.gap_plan = []
         self.radio_title = None
         self.history.appendleft({"kind": "radio", "text": name, "at": time.time()})
-        leveller = radio_mod.Leveller()
+        leveller, evener = radio_mod.Leveller(), compressor.Evener()
         cleaner = denoise.Switch() if _is_receiver(tuned["url"]) else None    # (a receiver: its noise reduction, if that's on)
         last_sound = time.monotonic()
         why = "no sound from the station"
@@ -964,7 +964,7 @@ class Station:
                         identify.listener.feed(block)  # (...and What's this?, while it's listening: audio/identify.py)
                         block = cleaner.process(block)
                     # (a room's speech comes at its own level: it isn't levelled like a stream -- playback/room.py)
-                    self._write(block if getattr(stream, "levelled", False) else leveller.process(block))
+                    self._write(block if getattr(stream, "levelled", False) else evener.process(leveller.process(block)))
             finally:
                 stream.close()
                 self.radio_stream = None
@@ -2384,7 +2384,7 @@ class Station:
         if pos >= book.total_ms - 500:
             pos = 0                              # finished last time: from the start
         self._book_seek = None
-        leveller = radio_mod.Leveller()
+        leveller, evener = radio_mod.Leveller(), compressor.Evener()
         on_air = self.on_air = OnAir("book", book.title, book.author)
         self.next_track = None
         self.gap_plan = []
@@ -2418,7 +2418,7 @@ class Station:
                         restart = True
                         break
                     self._radio_heard = True     # (music_started: confirms an update)
-                    self._write(leveller.process(block))
+                    self._write(evener.process(leveller.process(block)))
                     pos += len(block) * 1000 / pcm.SAMPLE_RATE     # (exact: whole ms would drift ~30 s an hour)
                     self.book_now["pos_ms"] = int(pos)
                     if time.monotonic() - saved_at > BOOK_SAVE_S:
@@ -2501,7 +2501,7 @@ class Station:
         mp3 = pod_mod.is_mp3(source)
         nbytes = source.get("bytes") or 0
         self._book_seek = None
-        leveller = radio_mod.Leveller()
+        leveller, evener = radio_mod.Leveller(), compressor.Evener()
         on_air = self.on_air = OnAir("episode", source["title"], source.get("show_title", ""))
         on_air.duration_s = total / 1000
         self.next_track = None
@@ -2561,7 +2561,7 @@ class Station:
                         playing = True
                         last_sound = time.monotonic()
                         self._radio_heard = True
-                        self._write(leveller.process(block))
+                        self._write(evener.process(leveller.process(block)))
                         pos += len(block) * 1000 / pcm.SAMPLE_RATE
                         if not total and stream.total_bytes:  # no length in the feed: from the size (~128 kbps)
                             total = stream.total_bytes * 8 // 128

@@ -84,7 +84,8 @@ def build(ctx):
         (the sound each kind of audio gets; a sound picked by hand holds until the kind changes),
         {"eq_slots": [name|null x4]} (the sound each button picks in EQ mode: a ready-made
         one or one saved with /api/speaker/sounds),
-        {"highpass": Hz} (the low cut; 0 = off) or
+        {"highpass": Hz} (the low cut; 0 = off), {"evenness": "off" | "gentle" | "strong"} (streams' volume evened out:
+        audio/compressor.py) or
         {"test": "bass" | "sweep" | "pink" | "left" | "right" | "sides" | "phase" | "tune" | "stop"}
         (a test sound on the speaker; see audio/testsignal.py).
         Replies with the speaker's status."""
@@ -96,6 +97,8 @@ def build(ctx):
                 speaker.step(int(body["step"]))
             if "knob_mode" in body:
                 speaker.set_knob_mode(body["knob_mode"])
+            if "evenness" in body:
+                speaker.set_evenness(body["evenness"])                 # ValueError if unknown
             if "mono" in body:
                 if not isinstance(body["mono"], bool):
                     raise ValueError("mono must be true or false")

@@ -45,7 +45,7 @@ LOCAL = {"hardware", "station_name", "music_folder", "jingles_folder", "audioboo
          "speaker_enabled", "speaker_device", "amp_mute_gpio", "ebooks", "gpio_pin_mapping", "lcd_panel_type",
          "web_password", "update_source", "stream_source", "rx_reader", "messages_away", "qrz_key"}   # (what's on, not a setting)           # (not a Settings field: kept out of the file on purpose)
 # Applied while the station runs; any other change needs a restart.
-LIVE = {"speaker_mono", "speaker_eq", "speaker_highpass_hz", "broadcast_artist", "birthdays",
+LIVE = {"speaker_mono", "speaker_eq", "speaker_highpass_hz", "stream_evenness", "broadcast_artist", "birthdays",
         "profiles", "broadcast_profile", "broadcast_chattiness", "broadcast_dj_hooks",
         "broadcast_jingle_enabled", "broadcast_jingle_every", "news_enabled", "startup_sound", "web_stream",
         "broadcast_announcer_speed", "news_speed", "ebook_speed", "ebook_voice", "ebook_pace", "ebook_pause", "radio_stations", "buttons", "noise_on", "noise_kind", "noise_mix",
@@ -63,6 +63,7 @@ CHOICES = {
     "broadcast_chattiness": {c.ident for c in Chattiness},
     "noise_kind": {"white", "pink", "brown", "deep", "blue", "violet", "ambient"},
     "knob_mode": {"auto", "fine", "normal", "coarse"},
+    "stream_evenness": {"off", "gentle", "strong"},
 }
 RANGES = {
     "broadcast_jingle_every": (1, 50),

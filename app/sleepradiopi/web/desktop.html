@@ -5251,6 +5251,9 @@ const UI = {
                await api("/api/speaker", { eq: Object.fromEntries(EQ_BANDS.map(b => [b, TUNE.old[b] || 0])), highpass: TUNE.old.lowcut });
                TUNE.applied = false; }))] : []),
              sbtn(TUNE.applied ? "Done" : "Not now", () => act(async () => { TUNE = null; }))))] : []),
+      grp("Even out the volume",
+        srow("Streams", seg([["off", "Off"], ["gentle", "Gentle"], ["strong", "Strong"]], sp.evenness || "off", v => act(() => api("/api/speaker", { evenness: v })))),
+        help("For internet stations, podcasts, audiobooks and receivers whose volume jumps about: quiet stretches are brought up and loud ones held down, all the time, like a compressor. Gentle keeps music lively; Strong suits talk and late at night. Your own music is levelled per song already, and the DJ isn't touched. Heard at once.")),
       grp("How the knob turns", srow("Knob", seg([["auto", "Automatic"], ["fine", "Fine"], ["normal", "Normal"], ["coarse", "Coarse"]], sp.knob_mode, v => act(() => api("/api/speaker", { knob_mode: v })))),
         help("Automatic: a slow turn moves a step a click, a quick spin bigger steps. Fine 1, Normal 2, Coarse 5.")),
       grp("The radio's speakers",

@@ -440,6 +440,18 @@ class SpeakerControl:
                 self._save_setting("speaker_highpass_hz", eq.highpass)
         log.info("speaker low cut: %s", f"{eq.highpass} Hz" if eq.highpass else "off")
 
+    def set_evenness(self, value: str, save: bool = True) -> None:
+        """Even out the volume of streams (audio/compressor.py): "off", "gentle" or "strong". Heard at once (ValueError if
+        it isn't one of them), and saved in the config."""
+        from sleepradiopi.audio import compressor
+        value = compressor.mode(value)
+        if compressor.MODE == value:
+            return
+        compressor.MODE = value
+        if save:
+            self._save_setting("stream_evenness", value)
+        log.info("streams evened out: %s", value)
+
     # --- the buttons' EQ mode (io/presets.py): the sound on each button -----------------------
 
     def set_eq_slots(self, slots) -> list:
@@ -763,7 +775,8 @@ class SpeakerControl:
             self.pause()
 
     def status(self) -> dict:
-        status = {"volume": self.speaker.volume, "playing": not self.paused, "knob_mode": self.knob_mode,
+        from sleepradiopi.audio import compressor
+        status = {"volume": self.speaker.volume, "playing": not self.paused, "knob_mode": self.knob_mode, "evenness": compressor.MODE,
                   "mono": self.speaker.mono, "sleep_min": None, "sleep_left_s": None, "slept": self.slept,
                   "noise": {"on": self.speaker.noise is not None, "kind": self.noise_kind,
                             "mix": self.speaker.noise_mix,

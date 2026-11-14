@@ -182,6 +182,12 @@ Actions, Sleep timer and Radio folders open:
 - **Tuned for small speakers.** A 3-band EQ with a low cut, stereo or mono,
   all done in software (the MiniAmp has no controls of its own); an optional
   bass-port back panel for the case.
+- **Even out the volume.** For stations, podcasts, audiobooks and receivers
+  whose volume jumps about: a continuous two-sided compressor (Off, Gentle or
+  Strong, in Speakers) brings quiet stretches up and holds loud ones down, with
+  a limiter on top. It works after the radio's slow levelling, so it behaves the
+  same on every station; silence and hiss are not brought up. About 6% of one
+  core on a Pi Zero 2 W.
 
 ### Using it
 

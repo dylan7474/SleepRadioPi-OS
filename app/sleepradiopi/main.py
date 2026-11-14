@@ -719,6 +719,8 @@ def main() -> None:
         except ValueError as e:
             log.warning("report: not switched on (%s)", e)
     room_mod.LEVEL = settings.room_level
+    from sleepradiopi.audio import compressor as compressor_mod
+    compressor_mod.MODE = settings.stream_evenness if settings.stream_evenness in compressor_mod.MODES else "off"
     from sleepradiopi.audio import denoise as denoise_mod
     try:
         denoise_mod.LEVEL = denoise_mod.clean_level(settings.noise_reduction)

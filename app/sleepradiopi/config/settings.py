@@ -120,6 +120,7 @@ class Settings:
     eq_by_type: dict = field(default_factory=lambda: {"music": None, "radio": None, "audiobook": "Speech", "ebook": "Speech", "podcast": "Speech"})   # kind of audio -> sound name (None = keep yours)
     speaker_sounds: list = field(default_factory=list)   # saved speaker set-ups: [{"name", "eq", "highpass", "mono"}]
     speaker_highpass_hz: int = 0      # low cut for the speaker (~140 with the box's bass port); 0 = off
+    stream_evenness: str = "off"      # even out the volume of stations, podcasts, books and receivers: off | gentle | strong (audio/compressor.py)
     knob_step: int = 2                # volume change per click of the knob ("normal")
     programme_mode: bool = False      # silent unless a programme is on (an alarm clock): see broadcast/programmes.py
     knob_mode: str = "auto"           # auto (slow = fine, fast = big steps), fine (1), normal (knob_step), coarse (5)

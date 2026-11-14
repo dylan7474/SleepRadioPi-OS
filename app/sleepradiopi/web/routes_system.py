@@ -222,6 +222,8 @@ def build(ctx):
                 speaker.set_eq_auto(settings.get("eq_auto", speaker.eq_auto), settings.get("eq_by_type"))
             if "speaker_highpass_hz" in settings:
                 speaker.set_highpass(settings["speaker_highpass_hz"])
+            if "stream_evenness" in settings:
+                speaker.set_evenness(settings["stream_evenness"], save=False)
             if volume is not None:
                 if volume != speaker.volume:
                     changed.add("volume")
