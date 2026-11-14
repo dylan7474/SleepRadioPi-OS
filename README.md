@@ -145,7 +145,8 @@ Actions, Sleep timer and Radio folders open:
   programmes; windows you open, move and resize; the radio itself on the
   desktop (drop anything on its dial to play it, on a button to keep it there,
   scroll its knob for the volume); programmes built on a timeline; settings on
-  the back of the radio. Light, dark, or following the radio (the default:
+  the back of the radio, with a box there to find any setting by a word or
+  two (it opens the setting's window and points at it). Light, dark, or following the radio (the default:
   dark at night by the clock -- the buttons' Night from / Day from times,
   21:00-07:00 unless changed -- and while it uses its Night buttons); the
   phone remote does the same.

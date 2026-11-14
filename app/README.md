@@ -514,6 +514,14 @@ The cards:
   power-on chime), Noise, Voices, Wi-Fi (join, forget, its own
   network), This radio (name, case, password, listening in a browser),
   Buttons (and the day and night sets), Updates, Save & load, Power.
+  **Find a setting**: the box at the top of the back (the menu bar's
+  Settings puts you in it) lists every setting whose name, section or help
+  has the words typed (a few other words count too: "dark" finds the night
+  set, "auto" the clock swap). The words come from the settings windows
+  themselves, built once out of sight from the radio's answers, so a new
+  setting is found as soon as it is in its window. Enter, or a click, opens
+  that window and points at the setting: an outline, an arrow and a slow
+  pulse for a few seconds.
   **There's always a theme called Default** (`profiles.DEFAULT`; it can't be
   renamed or deleted): all my music (`"all": true`) unless given artists,
   first in Themes. The DJ calls it "Default Radio", a station like any

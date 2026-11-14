@@ -57,3 +57,14 @@ def test_slash_is_the_remote_and_classic_goes_to_the_desktop(tmp_path) -> None:
         httpd.shutdown()
     assert 'id="remote"' in remote and 'id="setup"' in remote
     assert landed.endswith("/desktop") and "/api/status" in page                 # (the classic page is retired)
+
+
+def test_the_settings_search_is_on_the_back_and_points_in_the_windows() -> None:
+    """Find a setting: the box is on the back of the radio, every window marks what was found,
+    and what it leaves out are real settings windows."""
+    page = PAGE.read_text()
+    assert 'id: "findSetting"' in page and 'id: "findList"' in page
+    assert "findMark(o.key, box);" in page                     # (nativePanel: the found setting is pointed at)
+    keys = set(re.findall(r'\["(\w+)", "[^"]+", "[^"]+", \d+, (?:"\w+"|null)\]', page.split("const PANELS = [", 1)[1].split("];", 1)[0]))
+    skip = re.search(r'const FIND_SKIP = new Set\(\[([^\]]*)\]\)', page).group(1)
+    assert set(re.findall(r'"(\w+)"', skip)) <= keys

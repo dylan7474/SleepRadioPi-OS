@@ -497,6 +497,22 @@
   .bpanel::before { left: 5px; } .bpanel::after { right: 5px; }
   .btitle { font: 700 9px var(--display); letter-spacing: .2em; color: #6b6558; text-align: center; margin: 0 0 8px; }
   .mods { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }
+  /* finding a setting (the box on the back; the radio's case is light in both looks) */
+  .findq { display: block; width: 100%; box-sizing: border-box; margin: 0 0 8px; padding: 6px 9px; border-radius: 7px; border: 1px solid #b9b19f;
+           background: #fbf8f1; color: #2b2820; font-size: 12.5px; }
+  .findq::placeholder { color: #7b7568; }
+  .findq:focus { outline: 2px solid #2b2820; outline-offset: 1px; }
+  .findlist { display: flex; flex-direction: column; gap: 4px; max-height: 300px; overflow-y: auto; }
+  .findlist[hidden] { display: none; }
+  .findrow { text-align: left; background: #f2ede2; border: 1px solid #c9c1ae; border-radius: 7px; padding: 5px 8px; cursor: pointer; display: flex; flex-direction: column; gap: 1px; }
+  .findrow b { font-size: 12px; color: #2b2820; } .findrow small { font-size: 10.5px; color: #6b6558; }
+  .findrow:hover, .findrow:focus { border-color: #2b2820; outline: 2px solid #2b2820; outline-offset: -1px; }
+  .findnote { margin: 4px 2px; font-size: 11.5px; color: #6b6558; }
+  .sfound { outline: 3px solid var(--blue); outline-offset: 3px; border-radius: 4px; animation: sfound 1.6s ease-in-out 4; }
+  .sfound > label::before, .sfound > h3::before { content: "➜ "; font-weight: 700; color: var(--ink); }
+  .sbtn.sfound::before { content: "➜ "; }
+  @keyframes sfound { 50% { outline-color: transparent; } }
+  @media (prefers-reduced-motion: reduce) { .sfound { animation: none; } }
   .mod { background: #f2ede2; border: 1px solid #c9c1ae; border-radius: 7px; padding: 6px 5px 5px; display: flex; flex-direction: column; align-items: center; gap: 3px;
          touch-action: none; cursor: pointer; min-width: 0; box-shadow: 0 1px 0 #fff inset, 0 1px 2px #0002; }
   .mod:hover { border-color: #8a8474; }
@@ -1723,10 +1739,135 @@ function radioBackEl() {
   const turn = el("button", { className: "turn", type: "button", textContent: "↻ Front" });
   turn.onclick = turnRadio;
   const handle = el("div", { className: "handle" });
-  r.append(handle, el("div", { className: "bpanel" }, el("p", { className: "btitle", textContent: "THE BACK · EVERY SETTING" }), mods, el("div", { className: "vents" })),
+  const q = el("input", { type: "search", id: "findSetting", className: "findq", value: FIND.q, placeholder: "🔍 Find a setting…", autocomplete: "off", spellcheck: false,
+                          title: "Type a word or two: every setting with those words is listed. Enter opens the first" });
+  q.setAttribute("aria-label", "Find a setting");
+  const list = el("div", { className: "findlist", id: "findList", role: "list", hidden: true });
+  q.addEventListener("pointerdown", e => e.stopPropagation());
+  list.addEventListener("pointerdown", e => e.stopPropagation());
+  q.oninput = () => { FIND.q = q.value; mods.hidden = !!FIND.q.trim(); findShow(); if (FIND.q.trim()) findIndex(); };
+  q.onfocus = () => { FIND.focus = true; findIndex(); };
+  q.onblur = () => { FIND.focus = false; };
+  q.onkeydown = e => {
+    e.stopPropagation();
+    if (e.key === "Escape") { FIND.q = q.value = ""; mods.hidden = false; findShow(); }
+    else if (e.key === "Enter") { e.preventDefault(); list.querySelector("button")?.click(); }
+    else if (e.key === "ArrowDown") { e.preventDefault(); list.querySelector("button")?.focus(); }
+  };
+  list.addEventListener("keydown", e => {
+    const keys = [...list.querySelectorAll("button")], i = keys.indexOf(document.activeElement);
+    if (i < 0) return;
+    e.stopPropagation();
+    if (e.key === "ArrowDown") { e.preventDefault(); keys[Math.min(i + 1, keys.length - 1)].focus(); }
+    else if (e.key === "ArrowUp") { e.preventDefault(); (i ? keys[i - 1] : q).focus(); }
+    else if (e.key === "Escape") { e.preventDefault(); q.focus(); }
+  });
+  mods.hidden = !!FIND.q.trim();
+  if (FIND.focus) setTimeout(() => { if (q.isConnected && document.activeElement !== q) { q.focus(); q.setSelectionRange(q.value.length, q.value.length); } }, 0);
+  setTimeout(findShow);
+  r.append(handle, el("div", { className: "bpanel" }, el("p", { className: "btitle", textContent: "THE BACK · EVERY SETTING" }), q, list, mods, el("div", { className: "vents" })),
            el("div", { className: "rfoot" }, el("span", { className: "plink", textContent: "Drag a setting onto the desktop to keep it handy" }), turn));
   r.addEventListener("pointerdown", e => { if (e.target === r || e.target === handle) moveThing(e, r, (x, y) => { radioPos = { x, y }; saveDesk(); }); });
   return r;
+}
+// Finding a setting: the box on the back of the radio. The words come from the settings windows
+// themselves -- each built once, out of sight, from the radio's own answers -- so nothing is listed
+// twice and a new setting can be found as soon as it's in its window. A result opens its window and
+// points at the setting: an outline, an arrow and a slow pulse (not colour alone).
+const FIND = { q: "", focus: false, index: null, at: 0, building: null, mark: null };
+const FIND_SKIP = new Set(["log", "onair", "library"]);        // (not settings: what happened, what played; themes are a folder)
+const FIND_ALSO = { dark: ["night"], light: ["day"], auto: ["clock", "by itself"], automatic: ["clock", "by itself"], wifi: ["wi-fi"],
+                    loud: ["volume"], loudness: ["volume", "level"], quiet: ["volume"], backup: ["save"], restore: ["load"],
+                    reboot: ["restart"], shutdown: ["power", "switch off"], name: ["this radio"], update: ["updates"],
+                    timetable: ["clock"], schedule: ["clock"], eq: ["equaliser", "sound"], equalizer: ["equaliser"], bass: ["low"], treble: ["high"],
+                    password: ["password"], speaker: ["speakers"], button: ["buttons"], voice: ["voices"] };
+const findNorm = s => (s || "").toLowerCase().replace(/\s+/g, " ").trim();
+const findH3 = g => g.querySelector(":scope > h3")?.textContent.trim() || "";
+const findLabel = r => r.querySelector(":scope > label")?.textContent.trim() || "";
+function findIndex() {
+  if (FIND.index && !FIND.building && Date.now() - FIND.at < 120000) return Promise.resolve(FIND.index);
+  if (FIND.building) return FIND.building;
+  const out = [];
+  FIND.building = (async () => {
+    for (const [key] of PANELS) {                    // one at a time: the radio is a small computer
+      const ui = UI[key];
+      if (!ui || FIND_SKIP.has(key)) continue;
+      let root;
+      try { root = el("div", {}, ...(ui.build(await ui.load(), async () => {}, { id: "find:" + key }) || []).filter(Boolean)); } catch { continue; }
+      const title = PANEL[key].title;
+      for (const g of root.querySelectorAll(".grp")) {
+        const group = findH3(g);
+        const helps = [...g.querySelectorAll(":scope > .shelp")].map(p => p.textContent).join(" ");
+        out.push({ key, title, group, label: "", hay: findNorm(`${title} ${group} ${helps}`), name: findNorm(group || title) });
+        for (const row of g.querySelectorAll(".srow")) {
+          const label = findLabel(row);
+          if (!label || row.closest(".grp") !== g) continue;
+          const extra = [...row.querySelectorAll("[title], [aria-label]")].map(n => `${n.title || ""} ${n.getAttribute("aria-label") || ""}`).join(" ");
+          out.push({ key, title, group, label, hay: findNorm(`${title} ${group} ${label} ${extra}`), name: findNorm(label) });
+        }
+        for (const b of g.querySelectorAll(".sbtn")) {
+          const label = b.textContent.trim();
+          if (!label || b.closest(".grp") !== g || b.closest(".srow")) continue;
+          out.push({ key, title, group, label, button: true, hay: findNorm(`${title} ${group} ${label} ${b.title || ""}`), name: findNorm(label) });
+        }
+      }
+      FIND.index = out.slice(); findShow();         // (results grow as the windows are read)
+    }
+    FIND.index = out; FIND.at = Date.now(); FIND.building = null; findShow();
+    return out;
+  })();
+  return FIND.building;
+}
+function findMatches(q) {
+  const words = findNorm(q).split(" ").filter(Boolean);
+  if (!words.length) return [];
+  const has = (s, w) => s.includes(w) || (FIND_ALSO[w] || []).some(a => s.includes(a));
+  const titles = PANELS.filter(([k]) => UI[k] && !FIND_SKIP.has(k))
+    .map(([key]) => ({ key, title: PANEL[key].title, group: "", label: "", hay: findNorm(PANEL[key].title), name: findNorm(PANEL[key].title) }));
+  const seen = new Set();
+  return [...titles, ...(FIND.index || [])].filter(e => words.every(w => has(e.hay, w)))
+    .map((e, i) => ({ e, i, score: words.filter(w => has(e.name, w)).length * 4 + words.filter(w => has(findNorm(e.group), w)).length
+                                    + words.filter(w => has(findNorm(e.title), w)).length + (e.label ? 1 : 0) }))
+    .sort((a, b) => b.score - a.score || a.i - b.i)
+    .map(x => x.e).filter(e => { const k = `${e.key}|${e.group}|${e.label}`, t = `${e.key}||`;
+      if (seen.has(k) || (!e.group && !e.label && seen.has(t + "x"))) return false; seen.add(k); if (!e.label) seen.add(t + "x"); return true; })
+    .slice(0, 40);
+}
+function findShow() {
+  const list = $("findList");
+  if (!list) return;
+  const q = FIND.q.trim();
+  list.hidden = !q;
+  if (!q) { list.replaceChildren(); return; }
+  const had = document.activeElement && list.contains(document.activeElement) ? [...list.querySelectorAll("button")].indexOf(document.activeElement) : -1;
+  const rows = findMatches(q).map(e => {
+    const b = el("button", { type: "button", className: "findrow", role: "listitem" },
+      el("b", { textContent: e.label || e.group || e.title }),
+      el("small", { textContent: [e.title, e.label ? e.group : ""].filter(Boolean).join(" › ") }));
+    b.onclick = () => findGo(e);
+    return b;
+  });
+  if (FIND.building) rows.push(el("p", { className: "findnote", textContent: "Reading the settings…" }));
+  else if (!rows.length) rows.push(el("p", { className: "findnote", textContent: "No setting has those words. Try fewer, or another word for it." }));
+  list.replaceChildren(...rows);
+  if (had >= 0) list.querySelectorAll("button")[Math.min(had, list.querySelectorAll("button").length - 1)]?.focus();
+}
+function findGo(e) {
+  FIND.mark = { key: e.key, group: e.group, label: e.label, button: !!e.button, until: Date.now() + 8000, scrolled: false };
+  open(PANEL[e.key].id);
+  setTimeout(() => { if (FIND.mark && Date.now() >= FIND.mark.until) { FIND.mark = null; drawDesk(); } }, 8100);
+}
+// (called as a settings window is drawn: points at the setting just found in it)
+function findMark(key, box) {
+  const m = FIND.mark;
+  if (!m || m.key !== key || Date.now() > m.until || !m.group) return;
+  const grp = [...box.querySelectorAll(".grp")].find(g => findH3(g) === m.group);
+  if (!grp) return;
+  let at = grp;
+  if (m.label && !m.button) at = [...grp.querySelectorAll(".srow")].find(r => findLabel(r) === m.label) || grp;
+  else if (m.label) at = [...grp.querySelectorAll(".sbtn")].find(b => b.textContent.trim() === m.label) || grp;
+  at.classList.add("sfound");
+  if (!m.scrolled) { m.scrolled = true; setTimeout(() => { if (at.isConnected) { at.scrollIntoView({ block: "center" }); m.scrolled = "done"; } else m.scrolled = false; }, 60); }
 }
 function updateRadio() {            // the live bits, without redrawing the desktop
   if (radioBack || !$("rTitle")) return;
@@ -6582,6 +6723,7 @@ function nativePanel(o, box, win) {
   let sum = ""; try { sum = SUMS[o.key] ? SUMS[o.key](win.data) : ""; } catch {}
   const head = el("div", { className: "shead" }, glyph(o), el("div", { style: "min-width:0" }, el("h2", { textContent: o.title }), el("p", { textContent: sum, title: sum })));
   box.append(el("div", { className: "wbody" }, head, el("div", { className: "set" }, ...ui.build(win.data, act, win).filter(Boolean))));
+  findMark(o.key, box);
   if (!win.fitted) {                                  // the first time: the window fits what's in it
     win.fitted = true;
     requestAnimationFrame(() => {
@@ -7579,7 +7721,7 @@ document.querySelectorAll("[data-open]").forEach(b => b.onclick = () => open(b.d
 $("tidy").onclick = () => { const before = JSON.stringify(desk.map(p => [p.x, p.y]));
   desk.forEach((p, i) => { p.x = 18 + Math.floor(i / 7) * 128; p.y = 14 + (i % 7) * 96; }); saveDesk(); drawDesk();
   toast(JSON.stringify(desk.map(p => [p.x, p.y])) === before ? "Already tidy." : "Tidied the desktop."); };
-$("settingsMenu").onclick = () => { if (!radioBack) turnRadio(); toast("Every setting is on the back of the radio. Or click a part of it: the speakers, the knob, the buttons, its name."); };
+$("settingsMenu").onclick = () => { if (!radioBack) turnRadio(); FIND.focus = true; drawDesk(); toast("Every setting is on the back of the radio: type in the box there to find one. Or click a part of it: the speakers, the knob, the buttons, its name."); };
 $("wifiMenu").onclick = () => open(PANEL.wifi.id);
 // Listen here (the menu bar): the radio is heard in this browser instead of from its own speaker, until it's pressed again.
 // The speaker is one listener and a browser another, so the show carries on for whichever is listening: the browser is
