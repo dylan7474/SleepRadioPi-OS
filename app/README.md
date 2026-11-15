@@ -2154,6 +2154,20 @@ radio's copy explains the flag, with its own address, if the mic is blocked.
 Because it detects the hiss by ear, it doesn't matter when you tap Start.
 If it starts listening in the middle of a burst, it waits for the next.
 
+**With the phone app** (Sleep Radio Remote, Android): Radios → **Tune the
+speaker** measures whichever radio the app is controlling. The radio plays its
+**sweep** test sound three times while the phone listens from three places round
+where you sit (the phone's own microphone, Android's unprocessed source); the
+app divides the known sweep out of each recording, averages the three, and
+suggests the ten bands and a low cut: warm (a little more low bass), more
+treble, and no boom: 125 and 250 Hz are only ever cut, and nothing below what
+the speaker can play is boosted (a low cut goes there instead). **Listen**
+switches between the radio's own sound and the new one (`"save": false`, so
+nothing is written while you try), **Adjust** steps each band by ear, and
+**Save** keeps it as one of the radio's sounds and uses it. Needs the radio on
+1.9.87 or newer. There's no measurement microphone, so above about 7 kHz the
+treble lift is a preference rather than a measurement.
+
 **By hand** (any test sound, any timing):
 
 1. Put the laptop about 50 cm in front of the radio and press **Measure the
@@ -2208,7 +2222,7 @@ everything but the page itself and the login needs the session cookie
 | `GET /api/log` | The radio's log (`logview.py`; the desktop's Settings → Log): `?level=problems` (warnings and worse; else everything), `?q=text`, `?lines=n` (to 1000) → `{"exists", "lines": [{"t", "level", "who", "text"}], "matched", "shown", "truncated", "system_up_s", "program_up_s"}`. On the appliance syslog's file is in memory (`/var/log` is a link to the RAM disk `/tmp`): reading it writes nothing to the card, and a restart clears it |
 | `GET /api/health` | The "something's wrong" light (`health.py`): `{"level": "ok" \| "warn" \| "bad", "issues": [{"key", "level", "short", "says"}]}` |
 | `GET /api/status` | What's on air, next, history, the library, the voice, the speaker (volume, playing, mono, EQ, low cut, sleep timer, test sound), artist/list playing |
-| `POST /api/speaker` | Any of `{"volume": 0-100}`, `{"step": n}`, `{"knob_mode": "auto" \| "fine" \| "normal" \| "coarse"}`, `{"pause": true \| false \| "toggle"}`, `{"sleep": minutes}` (0 = off), `{"mono": bool}`, `{"noise": true \| false \| "toggle", "noise_kind": "pink", "noise_mix": 0-100}`, `{"eq": {"bass": dB, ...}}`, `{"eq_slots": [name \| null, x4]}` (the sound each button picks in EQ mode), `{"eq_auto": bool, "eq_by_type": {"music" \| "radio" \| "audiobook" \| "ebook" \| "podcast": name \| null}}` (the sound each kind of audio gets), `{"highpass": Hz}`, `{"evenness": "off" \| "gentle" \| "strong"}`, `{"test": "bass" \| "sweep" \| "pink" \| "left" \| "right" \| "sides" \| "phase" \| "tune" \| "stop"}` |
+| `POST /api/speaker` | Any of `{"volume": 0-100}`, `{"step": n}`, `{"knob_mode": "auto" \| "fine" \| "normal" \| "coarse"}`, `{"pause": true \| false \| "toggle"}`, `{"sleep": minutes}` (0 = off), `{"mono": bool}`, `{"noise": true \| false \| "toggle", "noise_kind": "pink", "noise_mix": 0-100}`, `{"eq": {"bass": dB, ...}}`, `{"eq_slots": [name \| null, x4]}` (the sound each button picks in EQ mode), `{"eq_auto": bool, "eq_by_type": {"music" \| "radio" \| "audiobook" \| "ebook" \| "podcast": name \| null}}` (the sound each kind of audio gets), `{"highpass": Hz}`, `{"evenness": "off" \| "gentle" \| "strong"}`, `{"test": "bass" \| "sweep" \| "pink" \| "left" \| "right" \| "sides" \| "phase" \| "tune" \| "stop"}` (a radio that was paused is paused again when the test ends or is stopped). Add `"save": false` to hear an EQ, low cut or mono change without saving it (the phone app's speaker tuning tries sounds this way). |
 | `POST /api/stream` | `{"enabled": bool}` — listening in a browser on/off (saved as `web_stream`) |
 | `POST /api/knob` | `{"press": "short" \| "long" \| "service"}` — the knob's switch; `service` opens the service menu (then `/api/buttons/press` answers it; `GET /api/buttons` has its `service` state); `{"press": "turn", "clicks": n}`: pressed and turned |
 | `GET` / `POST /api/identity` | `{"hardware", "station_name"}` — which radio this is and its name; a POST saves and restarts the station |

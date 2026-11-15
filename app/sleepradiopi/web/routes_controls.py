@@ -84,13 +84,15 @@ def build(ctx):
         (the sound each kind of audio gets; a sound picked by hand holds until the kind changes),
         {"eq_slots": [name|null x4]} (the sound each button picks in EQ mode: a ready-made
         one or one saved with /api/speaker/sounds),
-        {"highpass": Hz} (the low cut; 0 = off), {"evenness": "off" | "gentle" | "strong"} (streams' volume evened out:
+        {"highpass": Hz} (the low cut; 0 = off); with "save": false the EQ, low cut and mono are heard
+        but not saved (trying a sound: the phone app's speaker tuning), {"evenness": "off" | "gentle" | "strong"} (streams' volume evened out:
         audio/compressor.py) or
         {"test": "bass" | "sweep" | "pink" | "left" | "right" | "sides" | "phase" | "tune" | "stop"}
         (a test sound on the speaker; see audio/testsignal.py).
         Replies with the speaker's status."""
         try:
             body = json.loads(self.rfile.read(int(self.headers.get("Content-Length", 0))) or b"{}")
+            save = body.get("save", True) is not False
             if "volume" in body:
                 speaker.set_volume(int(body["volume"]))
             if "step" in body:
@@ -102,14 +104,14 @@ def build(ctx):
             if "mono" in body:
                 if not isinstance(body["mono"], bool):
                     raise ValueError("mono must be true or false")
-                speaker.set_mono(body["mono"])
+                speaker.set_mono(body["mono"], save=save)
             if "eq" in body:
                 eq = body["eq"]
                 if not isinstance(eq, dict) or not all(
                         known_band(k) and isinstance(v, (int, float))
                         and not isinstance(v, bool) for k, v in eq.items()):
                     raise ValueError("eq must map band names (g31..g16k) to numbers")
-                speaker.set_eq(eq)
+                speaker.set_eq(eq, save=save)
             if "eq_slots" in body:         # the sound each button picks in EQ mode (hold button 1 for 3 s)
                 speaker.set_eq_slots(body["eq_slots"])
                 if presets is not None:
@@ -123,7 +125,7 @@ def build(ctx):
                 hz = body["highpass"]
                 if isinstance(hz, bool) or not isinstance(hz, (int, float)) or not 0 <= hz <= 300:
                     raise ValueError("highpass must be 0-300 Hz")
-                speaker.set_highpass(hz)
+                speaker.set_highpass(hz, save=save)
             if "sleep" in body:
                 minutes = body["sleep"]
                 if isinstance(minutes, bool) or not isinstance(minutes, (int, float)) \

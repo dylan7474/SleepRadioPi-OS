@@ -85,6 +85,7 @@ class SpeakerOutput:
         self.eq = eq                     # bass/mid/treble, the speaker only
         self.fade_end: float | None = None  # sleep timer: the programme silent at this time.monotonic()
         self.test: TestSignal | None = None  # a test sound, played instead of everything
+        self.on_test_done: Callable[[], None] | None = None   # (its own thread) a test sound ended by itself
         self.hold = None                 # the service menu's sound: plays (paused or not) instead of everything
         self.noise = None                # the noise layer (a NoiseGen), None = off
         self.noise_mix = 50              # balance: 0 = programme only, 50 = both full, 100 = noise only
@@ -241,6 +242,9 @@ class SpeakerOutput:
                     if self.eq is not None:
                         self.eq.reset()      # don't replay the show from before the test
                     log.info("speaker: %s finished", test.label)
+                    done = self.on_test_done
+                    if done is not None:
+                        threading.Thread(target=done, name="test-done", daemon=True).start()
             else:
                 prog = min(1.0, 2 * (1 - mix / 100)) if noise is not None else 1.0
                 x = show.astype(np.float32) * (prog * fade) if show is not None \
@@ -386,6 +390,8 @@ class SpeakerControl:
         self._lock = threading.Lock()
         self._save_timer: threading.Timer | None = None
         self._sleep_timer: threading.Timer | None = None
+        self._test_was_paused = False    # a test sound started on a paused radio: paused again after it
+        speaker.on_test_done = self._test_over
         self._sleep_min = 0
         # Says a line in the DJ voice (int16 stereo), for the "sides" test's
         # "Left speaker" / "Right speaker"; None (or returning None) = no voice.
@@ -746,6 +752,8 @@ class SpeakerControl:
             raise ValueError(f"unknown test sound {kind!r}")
         signal = TestSignal(kind, pcm.SAMPLE_RATE, pcm.CHANNELS,
                             speech=self._side_words() if kind == "sides" else None)
+        if self.speaker.test is None:    # (a test after a test: the first one knew how the radio was)
+            self._test_was_paused = self.paused
         self.play()
         with self._lock:
             self.speaker.test = signal
@@ -775,6 +783,14 @@ class SpeakerControl:
             if self.speaker.eq is not None:
                 self.speaker.eq.reset()
             log.info("speaker: test sound stopped")
+            self._test_over()
+
+    def _test_over(self) -> None:
+        """A test sound ended (by itself, or stopped): a radio that was paused before it is paused again,
+        so a test (or the phone app's speaker tuning) never leaves the show playing."""
+        if self._test_was_paused and self.speaker.test is None:
+            self._test_was_paused = False
+            self.pause()
 
     def set_sleep(self, minutes: float) -> None:
         """Sleep timer: fade the speaker out over the last minute, then pause.

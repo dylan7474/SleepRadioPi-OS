@@ -71,6 +71,7 @@ def test_speaker_plays_the_test_raw_then_goes_back_to_the_show(tmp_path: Path) -
     ctl = SpeakerControl(spk, lambda: None, lambda: None)
     spk.volume = 100
     spk.start()
+    ctl.play()                                # (playing: the show comes back after the test)
     ctl.start_test("pink")
     assert not ctl.paused and ctl.status()["test"]["label"] == "Pink noise"
     sig = spk.test
@@ -176,3 +177,58 @@ def test_phase_check_alternates_polarity_every_step() -> None:
     power = np.abs(np.fft.rfft(x[:, 0].astype(float))) ** 2
     f = np.fft.rfftfreq(len(x), 1 / RATE)
     assert power[f > 1000].sum() < 0.01 * power.sum()
+
+
+def test_a_paused_radio_is_paused_again_after_a_test(tmp_path: Path) -> None:
+    spk = SpeakerOutput(command=["sh", "-c", "cat > /dev/null"])
+    ctl = SpeakerControl(spk, lambda: None, lambda: None)
+    spk.start()
+    assert ctl.paused
+    ctl.start_test("left")                    # ends by itself
+    assert not ctl.paused
+    show = np.zeros((4096, 2), dtype=np.int16)
+    while spk.test is not None:
+        spk.write(show)
+    for _ in range(50):                       # (the pause comes from its own thread)
+        if ctl.paused:
+            break
+        threading.Event().wait(0.02)
+    assert ctl.paused
+    ctl.start_test("sweep")                   # stopped half way
+    ctl.start_test("bass")                    # (another straight after: still knows it was paused)
+    ctl.stop_test()
+    assert ctl.paused and spk.test is None
+    ctl.play()                                # playing: stays playing after a test
+    ctl.start_test("left")
+    ctl.stop_test()
+    assert not ctl.paused
+    spk.stop()
+
+
+def test_trying_a_sound_without_saving_it(tmp_path: Path) -> None:
+    class FakeStation:
+        def status(self):
+            return {"on_air": True}
+    cfg = tmp_path / "config.json"
+    cfg.write_text("{}")
+    spk = SpeakerOutput(command=["sh", "-c", "cat > /dev/null"], eq=Equalizer(RATE, 2))
+    ctl = SpeakerControl(spk, lambda: None, lambda: None, config_file=cfg)
+    httpd = ThreadingHTTPServer(("127.0.0.1", 0), make_handler(FakeStation(), None, ctl))
+    threading.Thread(target=httpd.serve_forever, daemon=True).start()
+    base = f"http://127.0.0.1:{httpd.server_address[1]}"
+
+    def post(body):
+        req = urllib.request.Request(base + "/api/speaker", data=json.dumps(body).encode(),
+                                     method="POST", headers={"Content-Type": "application/json"})
+        with urllib.request.urlopen(req) as r:
+            return json.load(r)
+    try:
+        post({"eq": {"g125": -4, "g8k": 3}, "highpass": 120, "save": False})
+        assert spk.eq.gains["g125"] == -4 and spk.eq.highpass == 120      # heard
+        saved = json.loads(cfg.read_text())
+        assert "speaker_eq" not in saved and "speaker_highpass_hz" not in saved   # not written
+        post({"eq": {"g125": -2}, "highpass": 100})                        # (the default: saved)
+        saved = json.loads(cfg.read_text())
+        assert saved["speaker_eq"]["g125"] == -2 and saved["speaker_highpass_hz"] == 100
+    finally:
+        httpd.shutdown()

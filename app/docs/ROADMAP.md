@@ -70,7 +70,8 @@ the image README's [Roadmap](../../README.md#roadmap) (keep the two in step).
   (kept as this radio's changes over the built-in list, so a new release's lines still arrive).
   Needs care with sync: today own lines only ever add between paired radios, so an edit or delete
   must travel as a change, not come back from the other radio. (Asked for 2026-11-15.)
-- **Tune the speakers from the phone app** — the speaker analyser (the web page at
+- **Tune the speakers from the phone app** (BEING BUILT 2026-11-15: the radio side is in 1.9.87;
+  the app measures with a sweep from three places, suggests, Listen / Adjust / Save) — the speaker analyser (the web page at
   `/analyser/`: quiet, then hiss, measured by the phone's microphone, suggesting the EQ and low cut)
   built into the Android remote (SleepRadioRemote) as a native screen: no Chrome flag or https needed,
   the app plays the tune sound, measures, and applies or undoes the suggestion on the radio's EQ.
