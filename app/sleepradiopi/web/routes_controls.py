@@ -87,7 +87,9 @@ def build(ctx):
         {"highpass": Hz} (the low cut; 0 = off); with "save": false the EQ, low cut and mono are heard
         but not saved (trying a sound: the phone app's speaker tuning), {"evenness": "off" | "gentle" | "strong"} (streams' volume evened out:
         audio/compressor.py) or
-        {"test": "bass" | "sweep" | "pink" | "left" | "right" | "sides" | "phase" | "tune" | "stop"}
+        {"test": "bass" | "sweep" | "pink" | "left" | "right" | "sides" | "phase" | "tune" | "steady" | "stop"}
+        ("steady": pink noise through the EQ, for the phone app's usable bass and treble) or
+        {"test": "tone", "hz": 20-20000, "db": -90..0} (three beeps: the phone app's hearing check)
         (a test sound on the speaker; see audio/testsignal.py).
         Replies with the speaker's status."""
         try:
@@ -145,6 +147,13 @@ def build(ctx):
             if "test" in body:
                 if body["test"] == "stop":
                     speaker.stop_test()
+                elif body["test"] == "tone":       # the hearing check: {"test": "tone", "hz": 20-20000, "db": -90-0}
+                    hz, db = body.get("hz", 1000), body.get("db", -30)
+                    if isinstance(hz, bool) or not isinstance(hz, (int, float)) or not 20 <= hz <= 20000:
+                        raise ValueError("hz must be 20-20000")
+                    if isinstance(db, bool) or not isinstance(db, (int, float)) or not -90 <= db <= 0:
+                        raise ValueError("db must be -90 to 0")
+                    speaker.start_test("tone", hz=float(hz), db=float(db))
                 elif isinstance(body["test"], str):
                     speaker.start_test(body["test"])   # ValueError if unknown
                 else:

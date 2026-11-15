@@ -59,3 +59,84 @@ def test_web_api_gives_the_bands() -> None:
         assert d["hz"][0] == 31.5 and len(d["db"]) == 28 and d["live"] is False
     finally:
         httpd.shutdown()
+
+
+def test_the_steady_sound_goes_through_the_eq_and_other_tests_dont(tmp_path) -> None:
+    from sleepradiopi.audio.eq import Equalizer
+    from sleepradiopi.audio.testsignal import TestSignal
+    out = tmp_path / "played.raw"
+    spk = SpeakerOutput(command=["sh", "-c", f"cat >> {out}"], eq=Equalizer(RATE, 2, {"g1k": -12}))
+    spk.volume = 100
+    spk.start()
+    ctl = SpeakerControl(spk, lambda: None, lambda: None)
+    ctl.play()
+    ctl.start_test("steady")
+    show = np.zeros((spectrum.SCOPE_N, 2), dtype=np.int16)
+    spk.spectrum()
+    for _ in range(6):
+        spk.write(show)
+    cut = spk.spectrum()["db"]
+    i, j = spectrum.CENTRES.index(1000), spectrum.CENTRES.index(4000)
+    ref = spectrum.bands(TestSignal("steady", RATE, 1).next(spectrum.SCOPE_N)[:, 0] / 32768, RATE)
+    assert (ref[i] - ref[j]) - (cut[i] - cut[j]) > 6                # the 1 kHz cut is in it
+    ctl.stop_test()
+    spk.stop()
+
+
+def test_hearing_check_tones() -> None:
+    from sleepradiopi.audio.testsignal import TestSignal
+    t = TestSignal("tone", RATE, 2, hz=4000, db=-20)
+    x = t.next(t.total)[:, 0]
+    assert t.total == int(3 * (0.25 + 0.2) * RATE) and "4000 Hz" in t.label
+    assert abs(20 * np.log10(np.max(np.abs(x)) / 32767) - (-20)) < 0.2         # its level
+    beep = x[: int(0.25 * RATE)] / 32767
+    db = spectrum.bands(np.concatenate([beep] * 40)[: spectrum.SCOPE_N], RATE)
+    assert spectrum.CENTRES[int(np.argmax(db))] == 4000                          # its pitch
+    assert np.all(x[int(0.26 * RATE): int(0.44 * RATE)] == 0)                    # a gap between beeps
+    quiet = TestSignal("tone", RATE, 2, hz=1000, db=-200)                         # floored, never silent by mistake
+    assert np.max(np.abs(quiet.next(quiet.total))) > 0
+
+
+def test_web_api_tone_checks_its_numbers() -> None:
+    import urllib.error
+    import pytest
+
+    class FakeStation:
+        def status(self):
+            return {"on_air": True}
+    spk = SpeakerOutput(command=["sh", "-c", "cat > /dev/null"])
+    ctl = SpeakerControl(spk, lambda: None, lambda: None)
+    httpd = ThreadingHTTPServer(("127.0.0.1", 0), make_handler(FakeStation(), None, ctl))
+    threading.Thread(target=httpd.serve_forever, daemon=True).start()
+    base = f"http://127.0.0.1:{httpd.server_address[1]}"
+
+    def post(body):
+        req = urllib.request.Request(base + "/api/speaker", data=json.dumps(body).encode(), method="POST",
+                                     headers={"Content-Type": "application/json"})
+        with urllib.request.urlopen(req) as r:
+            return json.load(r)
+    try:
+        assert post({"test": "tone", "hz": 8000, "db": -40})["test"]["kind"] == "tone"
+        for bad in ({"test": "tone", "hz": 5}, {"test": "tone", "db": 3}, {"test": "tone", "hz": True}):
+            with pytest.raises(urllib.error.HTTPError) as e:
+                post(bad)
+            assert e.value.code == 400
+    finally:
+        httpd.shutdown()
+
+
+def test_power_dips_are_counted_while_watched(tmp_path) -> None:
+    import time
+    d = tmp_path / "hwmon1"
+    d.mkdir()
+    (d / "name").write_text("rpi_volt\n")
+    alarm = d / "in0_lcrit_alarm"
+    alarm.write_text("0\n")
+    w = spectrum.PowerWatch(tmp_path)
+    w.EVERY_S = 0.02
+    assert w.watch(time.monotonic() + 1.0) == 0
+    for v in ("1", "1", "0", "1", "0"):
+        alarm.write_text(v + "\n")
+        time.sleep(0.08)
+    assert w.watch(time.monotonic() + 0.1) == 2                   # two dips, however long each lasted
+    assert spectrum.PowerWatch(tmp_path / "none").watch(time.monotonic() + 1) is None   # no sensor: None

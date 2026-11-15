@@ -209,7 +209,8 @@ class SpeakerOutput:
         self.watch_until = now + spectrum.WATCH_S
         live = now - self._scope_at < 1.0 and len(self._scope) >= spectrum.SCOPE_N // 2
         return {"hz": list(spectrum.CENTRES), "live": live,
-                "db": spectrum.bands(self._scope, pcm.SAMPLE_RATE) if live else [spectrum.FLOOR_DB] * len(spectrum.CENTRES)}
+                "db": spectrum.bands(self._scope, pcm.SAMPLE_RATE) if live else [spectrum.FLOOR_DB] * len(spectrum.CENTRES),
+                "power_dips": spectrum.POWER.watch(self.watch_until)}
 
     def write(self, block: np.ndarray) -> None:
         if not self.enabled:             # paused: the show's last seconds go nowhere
@@ -246,8 +247,13 @@ class SpeakerOutput:
             if proc is None:
                 return False
             n = len(show) if show is not None else n
-            if test is not None:             # the box as it is: no mono mix, EQ or low cut
+            if test is not None:             # the box as it is: no mono mix, EQ or low cut...
                 x = test.next(n)
+                if getattr(test, "through_eq", False):   # ...but the steady sound for the phone app goes through them
+                    if self.mono:
+                        x = np.repeat(x.mean(axis=1, keepdims=True), x.shape[1], axis=1)
+                    if self.eq is not None:
+                        x = self.eq.process(x)
                 if test.done and test is not self.hold:
                     with self._lock:
                         if self.test is test:
@@ -778,13 +784,13 @@ class SpeakerControl:
         log.info("speaker: pause")
         self._leave()
 
-    def start_test(self, kind: str) -> None:
+    def start_test(self, kind: str, hz: float = 1000.0, db: float = -30.0) -> None:
         """Play a test sound (testsignal.KINDS) on the speaker instead of the
-        show; starts the speaker if it was paused."""
+        show; starts the speaker if it was paused. hz, db: the hearing check's tone."""
         if kind not in KINDS:
             raise ValueError(f"unknown test sound {kind!r}")
         signal = TestSignal(kind, pcm.SAMPLE_RATE, pcm.CHANNELS,
-                            speech=self._side_words() if kind == "sides" else None)
+                            speech=self._side_words() if kind == "sides" else None, hz=hz, db=db)
         if self.speaker.test is None:    # (a test after a test: the first one knew how the radio was)
             self._test_was_paused = self.paused
         self.play()

@@ -58,7 +58,27 @@ KINDS = {                    # name: (label, duration s, f0, f1); f0 None = nois
     "phase": ("Phase check", 18.0, None, None),
     "tune": ("Speaker tuning", TUNE_CYCLES * (TUNE_QUIET_S + TUNE_NOISE_S), None, None),
     "sides": ("Left, then right", 0.0, None, None),   # duration: from the parts
+    # the phone app's "usable bass and treble": pink noise that, unlike the others, goes THROUGH the EQ (and mono),
+    # so it shows what an EQ change does; stopped by the app (or after this long)
+    "steady": ("Steady sound (through the EQ)", 300.0, None, None),
+    # the phone app's hearing check: three short beeps of one tone at one level (TestSignal(..., hz=, db=))
+    "tone": ("Hearing check tone", 0.0, None, None),
 }
+THROUGH_EQ = {"steady"}
+TONE_BEEP_S, TONE_GAP_S, TONE_BEEPS = 0.25, 0.2, 3
+TONE_MIN_DB = -90.0
+
+
+def _beeps(hz: float, db: float, rate: int, channels: int) -> np.ndarray:
+    """TONE_BEEPS short beeps of a sine at db (dB against full scale), each faded in and out (no clicks)."""
+    amp = 10 ** (max(TONE_MIN_DB, min(0.0, db)) / 20) * 32767
+    beep = int(TONE_BEEP_S * rate)
+    t = np.arange(beep) / rate
+    fade = np.clip(np.minimum(t, TONE_BEEP_S - t) / 0.02, 0, 1)
+    one = np.sin(2 * np.pi * hz * t) * fade * amp
+    gap = np.zeros(int(TONE_GAP_S * rate))
+    y = np.concatenate([np.concatenate((one, gap)) for _ in range(TONE_BEEPS)]).astype(np.float32)
+    return np.repeat(y[:, None], channels, axis=1)
 
 
 def _pink(n: int, rate: int, seed: int = 7, f_hi: float = 20000) -> np.ndarray:
@@ -76,14 +96,23 @@ class TestSignal:
     __test__ = False             # not a pytest test class
 
     def __init__(self, kind: str, rate: int, channels: int,
-                 speech: dict[str, np.ndarray] | None = None) -> None:
+                 speech: dict[str, np.ndarray] | None = None, hz: float = 1000.0, db: float = -30.0) -> None:
         """speech (for "sides"): SIDE_WORDS' lines as int16-scaled (n, channels)
-        audio, keyed "left" / "right"; None or missing = noise only."""
+        audio, keyed "left" / "right"; None or missing = noise only.
+        hz, db (for "tone"): the tone and its level in dB against full scale (0 = the loudest)."""
         self.kind = kind
         self.label, self.duration_s, self.f0, self.f1 = KINDS[kind]
         self.rate, self.channels = rate, channels
+        self.through_eq = kind in THROUGH_EQ
         self.total = int(self.duration_s * rate)
         self.pos = 0
+        if kind == "tone":
+            self._noise = self._sides = None
+            self._audio = _beeps(hz, db, rate, channels)
+            self.total = len(self._audio)
+            self.duration_s = self.total / rate
+            self.label = f"Hearing check: {hz:g} Hz at {db:g} dB"
+            return
         # The phase check uses low noise only: that's where polarity is easiest to hear.
         self._noise = None if self.f0 is not None else \
             _pink(int(NOISE_LOOP_S * rate), rate, f_hi=500 if kind == "phase" else 20000)
