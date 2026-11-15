@@ -30,7 +30,7 @@ def build(ctx):
         elif path == "/api/sync/state":
             from urllib.parse import parse_qs, urlparse
             for_id = parse_qs(urlparse(self.path).query).get("for", [""])[0]
-            self._send(json.dumps(sync.state(for_id)).encode(), "application/json")
+            self._send(json.dumps(sync.state(for_id, self.client_address[0].removeprefix("::ffff:"))).encode(), "application/json")
         else:
             return False
         return True
@@ -55,7 +55,8 @@ def build(ctx):
                 sync.unpaired(str(body.get("id", "")))
                 reply = {"ok": True}
             elif action == "adopt":          # (a paired radio worked out the merge: take it up, if nothing changed here)
-                reply = {"ok": sync.adopt(str(body.get("id", "")), body.get("merged"), str(body.get("was", "")))}
+                reply = {"ok": sync.adopt(str(body.get("id", "")), body.get("merged"), str(body.get("was", "")),
+                                          self.client_address[0].removeprefix("::ffff:"))}
             elif action == "pair":
                 reply = sync.pair(str(body.get("address", "")))
             elif action == "unpair":

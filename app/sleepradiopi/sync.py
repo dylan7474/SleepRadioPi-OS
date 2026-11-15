@@ -35,6 +35,7 @@ import hashlib
 import json
 import logging
 import random
+import re
 import socket
 import threading
 import time
@@ -58,12 +59,13 @@ from sleepradiopi.config import backup as backup_mod
 from sleepradiopi.config.settings import Settings
 from sleepradiopi import media as media_mod
 from sleepradiopi import voices as voices_mod
+from sleepradiopi import wifi as wifi_mod
 from sleepradiopi.playback import podcasts as podcasts_mod
 from sleepradiopi.playback import radio as radio_mod
 
 log = logging.getLogger(__name__)
 
-PROTOCOL = 2                    # what a sync request looks like (not the app's version: radios mid-update still sync)
+PROTOCOL = 3                    # what a sync request looks like (not the app's version: radios mid-update still sync)
 BEACON_PORT = 47474
 BEACON_EVERY_S = 60
 SEEN_FOR_S = 3 * BEACON_EVERY_S + 30     # a radio not heard for this long is no longer listed as on the network
@@ -226,16 +228,23 @@ FILE_KINDS = ("jingles",)
 MAX_SYNC_FILES = 5000
 
 
+def _size_of(value) -> int:
+    """A file's size from its entry: "size:checksum" (or a bare size)."""
+    return value if isinstance(value, int) else int(str(value).split(":", 1)[0])
+
+
 def _check_files(value) -> dict:
     if not isinstance(value, dict) or len(value) > MAX_SYNC_FILES:
-        raise ValueError("files: {path: size}")
+        raise ValueError("files: {path: size:checksum}")
     out = {}
-    for path, size in value.items():
+    for path, entry in value.items():
         parts = path.split("/") if isinstance(path, str) else []
+        ok_entry = (isinstance(entry, int) and not isinstance(entry, bool)) or \
+            (isinstance(entry, str) and re.fullmatch(r"\d{1,12}:[0-9a-f]{16}", entry) is not None)
         if not parts or len(path) > 400 or any(not p or p in (".", "..") or p.startswith(".") for p in parts) \
-                or not isinstance(size, int) or isinstance(size, bool) or not 0 <= size <= media_mod.MAX_FILE:
+                or not ok_entry or not 0 <= _size_of(entry) <= media_mod.MAX_FILE:
             raise ValueError(f"files: {str(path)[:60]!r} isn't a file's path and size")
-        out[path] = size
+        out[path] = entry
     return out
 
 
@@ -255,7 +264,30 @@ def _check_voices(value) -> dict:
 
 
 COLLECTIONS["voices"] = (None, _check_voices, None, None)
-WORDS = {**{f"files:{k}": k for k in FILE_KINDS}, "voices": "voices", "radio_stations": "stations", "receiver_names": "receiver names", "profiles": "themes", "playlists": "playlists",
+
+
+# Wi-Fi networks added on the page (wifi.json: the WPA key, never the password). Only ever added, at the end of the
+# list (a radio's own order of preference stays) -- never removed, which could cut a radio off -- and only ever told
+# to a paired radio, asking from its own address. The set-up hotspot and "no Wi-Fi" stay each radio's own.
+def _check_wifi(value) -> list[dict]:
+    if not isinstance(value, list) or len(value) > 30:
+        raise ValueError("wifi: a list of networks")
+    out = []
+    for n in value:
+        if not isinstance(n, dict) or not isinstance(n.get("ssid"), str) or not 1 <= len(n["ssid"].encode()) <= 32:
+            raise ValueError("wifi: a network's name")
+        if n.get("open") is True:
+            out.append({"ssid": n["ssid"], "open": True})
+        elif isinstance(n.get("psk"), str) and re.fullmatch(r"[0-9a-f]{64}", n["psk"]):
+            out.append({"ssid": n["ssid"], "psk": n["psk"]})
+        else:
+            raise ValueError(f"wifi: {n['ssid']!r} has no key")
+    return out
+
+
+COLLECTIONS["wifi"] = (None, _check_wifi, lambda n: n["ssid"], None)
+UNION_ONLY = {"voices", "wifi"}            # (only ever added: merged as a first sync is, every time)
+WORDS = {**{f"files:{k}": k for k in FILE_KINDS}, "voices": "voices", "wifi": "Wi-Fi networks", "radio_stations": "stations", "receiver_names": "receiver names", "profiles": "themes", "playlists": "playlists",
          "programmes": "programmes", "messages": "messages", "message_times": "message times", "birthdays": "birthdays",
          "podcasts": "podcasts", "dj_hooks_own": "DJ lines", "settings": "settings"}
 
@@ -347,6 +379,9 @@ class Sync:
         self.get_file = _get_file                # get_file(address, kind, path): a response (.headers, .read) -- a test's own
         self.voice_jobs = voice_jobs             # voices.VoiceJobs: installs a voice fetched from another radio
         self.voice_ok = lambda key, value: True  # voice_ok(setting, voice): this radio has that voice (main: the station's)
+        self.wifi_path: Path | None = None       # wifi.json (main sets it on a radio): its networks synced
+        self.ask_wifi = wifi_mod.ask             # ask_wifi("reload"): the Wi-Fi manager takes up a new network
+        self._sums: dict = {}                    # (kind, path) -> (size, mtime_ns, checksum): files checked once
         self.get_voice = _get_voice              # get_voice(address, name): a response (.headers, .read): the pack, as a tar
         self.seen: dict[str, dict] = {}          # id -> {"id", "name", "address", "version", "at"} (heard lately)
         self.status: dict[str, dict] = {}        # peer id -> {"at", "ok", "said", "held"?}
@@ -361,7 +396,7 @@ class Sync:
 
     def names(self) -> list[str]:
         """The collections this radio syncs: the files only if it has music storage."""
-        return [n for n, c in COLLECTIONS.items() if c[0] is not None
+        return [n for n, c in COLLECTIONS.items() if c[0] is not None or (n == "wifi" and self.wifi_path is not None)
                 or (n == "voices" and self.voice_jobs is not None) or (n.startswith("files:") and self.media is not None)]
 
     def voice_names(self) -> dict:
@@ -380,11 +415,39 @@ class Sync:
                 out[n] = read(conf)
             elif n == "voices":
                 out[n] = self.voice_names()
+            elif n == "wifi":
+                out[n] = _check_wifi(wifi_mod.load(self.wifi_path)["networks"]) if self.wifi_path.exists() else []
             else:
+                kind = n.split(":", 1)[1]
                 try:
-                    out[n] = self.media.tree(n.split(":", 1)[1])["files"]
-                except media_mod.MediaError:
-                    out[n] = {}
+                    if not self.media._root(kind).is_dir():
+                        continue                     # (not there: skipped, never read as "everything deleted")
+                    out[n] = {path: self._checksum(kind, path, size)
+                              for path, size in self.media.tree(kind)["files"].items()}
+                except (media_mod.MediaError, OSError):
+                    continue
+        return out
+
+    def _checksum(self, kind: str, path: str, size: int) -> str:
+        """A file's entry: "size:first 16 hex of its SHA-256" -- worked out once, kept while its size and time stay."""
+        try:
+            full = self.media.resolve(kind, path)
+            st = full.stat()
+        except (OSError, media_mod.MediaError):
+            return f"{size}:{'0' * 16}"
+        was = self._sums.get((kind, path))
+        if was and was[0] == st.st_size and was[1] == st.st_mtime_ns:
+            return was[2]
+        h = hashlib.sha256()
+        try:
+            with open(full, "rb") as f:
+                while chunk := f.read(1 << 20):
+                    h.update(chunk)
+        except OSError:
+            return f"{size}:{'0' * 16}"
+        entry = f"{st.st_size}:{h.hexdigest()[:16]}"
+        self._sums[(kind, path)] = (st.st_size, st.st_mtime_ns, entry)
+        return entry
         return out
 
     # (the config, read fresh: other parts of the radio change it)
@@ -417,14 +480,21 @@ class Sync:
         return {"sleepradio": PROTOCOL, "id": self.id, "name": self.name(), "port": self.port,
                 "version": self.version, "protected": bool(self.protected())}
 
-    def state(self, for_id: str = "") -> dict:
+    def _asked_by_peer(self, for_id: str, ip: str | None) -> bool:
+        """The request came from that paired radio, at its own address (Wi-Fi keys go to nobody else)."""
+        peer = next((p for p in self.peers() if p["id"] == for_id), None) if for_id else None
+        return peer is not None and ip is not None and peer["address"].rsplit(":", 1)[0] == ip
+
+    def state(self, for_id: str = "", ip: str | None = None) -> dict:
         """This radio's collections; and (for_id: the radio asking) a fingerprint of the state this radio last
         agreed on with it -- if the two radios' fingerprints differ (a reply lost mid-sync, a re-pair, a card
         re-flashed), the next merge between them only adds: neither can tell a delete from a missed add."""
         conf = self._conf()
         base = self._bases().get(for_id) if for_id else None
-        return {**self.hello(), "collections": self._read(conf, self.names()),
-                "base": _digest(base) if isinstance(base, dict) and base else ""}
+        names = [n for n in self.names() if n != "wifi" or self._asked_by_peer(for_id, ip)]
+        base = base if isinstance(base, dict) else {}
+        return {**self.hello(), "collections": self._read(conf, names),
+                "base": {n: _digest({n: v}) for n, v in base.items() if n not in UNION_ONLY}}
 
     def paired_with(self, peer: dict) -> None:
         """Another radio paired with this one (its id, name, address): keep it."""
@@ -501,12 +571,17 @@ class Sync:
             return self._said(peer_id, False, f"what it sent didn't check out ({e})")
         their_name = str(them.get("name") or "")
         with self._lock:
-            base = self._bases().get(peer_id)
-            base = base if isinstance(base, dict) and base else None
-            if base is not None and them.get("base") != _digest(base):
-                log.info("sync with %s: the last agreed state differs between the two: this time only adds", their_name)
-                base = None                              # (see state(): a delete can't be told from a missed add)
-            if base is None and self.backup is not None:     # (the first sync with that radio: a backup first)
+            kept = self._bases().get(peer_id)
+            kept = kept if isinstance(kept, dict) else {}
+            theirs_base = them.get("base") if isinstance(them.get("base"), dict) else {}
+            # (each collection's base: only where both radios agree on it -- elsewhere (a reply lost mid-sync, a file
+            # that didn't arrive, a re-pair) that one merges as a first sync does: adds only, never a delete)
+            base = {n: kept[n] for n in names if n in kept and n not in UNION_ONLY
+                    and theirs_base.get(n) == _digest({n: kept[n]})}
+            if len(base) < len([n for n in names if n not in UNION_ONLY]) and kept:
+                log.info("sync with %s: only adds this time for %s", their_name,
+                         ", ".join(WORDS[n] for n in names if n not in base and n not in UNION_ONLY))
+            if not kept and self.backup is not None:     # (the first sync with that radio: a backup first)
                 try:
                     self.backup(f"Before syncing with {their_name or peer.get('name') or 'another radio'}")
                 except Exception:
@@ -514,10 +589,12 @@ class Sync:
             with CONFIG_LOCK:                             # (worked out under the lock; the other radio asked without it)
                 conf = read_config(self.config_file)
                 mine = self._read(conf, names)
+                names = [n for n in names if n in mine]  # (one this radio can't read now: left alone this time)
+                theirs = {n: theirs[n] for n in names}
                 merged, here, there, held = {}, {}, {}, []
                 for n in names:
                     check = COLLECTIONS[n][1]
-                    merged[n], here[n] = merge(n, None if n == "voices" else (base or {}).get(n), mine[n], theirs[n])
+                    merged[n], here[n] = merge(n, base.get(n), mine[n], theirs[n])
                     there[n] = _gone(n, theirs[n], merged[n])                  # (what the other radio would lose)
                     for where, count, of in (("here", here[n]["deleted"], mine[n]), ("there", there[n], theirs[n])):
                         if count > HOLD_MIN and count > HOLD_DELETES * max(1, len(_as_map(n, of))) \
@@ -530,8 +607,8 @@ class Sync:
             if held:
                 return self._said(peer_id, False, "held: it would delete " + ", ".join(held) +
                                   ". Sync anyway to let it through", held=True)
-            if not all(same(n, merged[n], theirs[n]) for n in names) or base is None \
-                    or not all(n in base and same(n, base[n], merged[n]) for n in names):
+            if not all(same(n, merged[n], theirs[n]) for n in names) \
+                    or not all(n in base and same(n, base[n], merged[n]) for n in names if n not in UNION_ONLY):
                 try:                                       # (the other radio takes it up, if it hasn't changed since)
                     ok = self.fetch(f"http://{peer['address']}/api/sync/adopt",
                                     {"id": self.id, "merged": merged, "was": _digest(theirs)})
@@ -546,7 +623,7 @@ class Sync:
                     return self._said(peer_id, False, "changed here meanwhile: it'll sync next time")
                 updates = self._write(conf, merged, mine)
             got = self._files(peer["address"], names, mine, merged)      # (the files: fetched / deleted here)
-            self._keep_base(peer_id, {n: v for n, v in merged.items() if n in got or not (n.startswith("files:") or n == "voices")})
+            self._keep_base(peer_id, {n: v for n, v in merged.items() if n in got or not n.startswith("files:")})
             self._allow_once.discard(peer_id)
         if their_name and their_name != peer.get("name"):
             self._save_peers([{**p, "name": their_name} if p["id"] == peer_id else p for p in self.peers()])
@@ -556,14 +633,14 @@ class Sync:
         log.info("sync with %s: %s", their_name or peer_id, said or "already the same")
         return self._said(peer_id, True, said or "already the same")
 
-    def adopt(self, peer_id: str, merged: dict, was: str) -> bool:
+    def adopt(self, peer_id: str, merged: dict, was: str, ip: str | None = None) -> bool:
         """Asked by a paired radio: take up the merged collections it worked out -- if this radio's are still
         what it read (was: their digest); else no (it syncs again later). Kept as the base with it too."""
         if not any(p["id"] == peer_id for p in self.peers()):
             raise ValueError("that radio isn't paired with this one")
         if not isinstance(merged, dict):
             raise ValueError("send the merged collections")
-        names = [n for n in self.names() if n in merged]
+        names = [n for n in self.names() if n in merged and (n != "wifi" or self._asked_by_peer(peer_id, ip))]
         new = {n: COLLECTIONS[n][1](merged[n]) for n in names}      # (ValueError: refused)
         if not self._lock.acquire(timeout=2):        # (this radio is syncing with that one itself: no -- try later)
             return False
@@ -577,7 +654,7 @@ class Sync:
             with CONFIG_LOCK:
                 conf = read_config(self.config_file)
                 mine = self._read(conf, names)
-                if _digest(mine) != was:
+                if set(mine) != set(names) or _digest(mine) != was:
                     return False
                 updates = self._write(conf, new, mine)
             files = [n for n in names if (n.startswith("files:") or n == "voices") and not same(n, new[n], mine[n])]
@@ -619,15 +696,21 @@ class Sync:
             kind, ok = n.split(":", 1)[1], True
             have, goal = mine.get(n, {}), want[n]
             try:
-                for path, size in goal.items():
-                    if have.get(path) == size:
+                for path, entry in goal.items():
+                    if have.get(path) == entry:
                         continue
+                    size = _size_of(entry)
                     try:
                         with self.get_file(address, kind, path) as r:
                             length = int(r.headers.get("Content-Length") or 0)
                             if length != size:
                                 raise OSError(f"{path}: {length} bytes, not {size}")
+                            if path in have:             # (a different one there: out of the way first -- the storage
+                                self.media.delete(kind, path)    # keeps a file of the same size as "the same")
                             self.media.receive(kind, "", path, length, r.read, replace=True)
+                        self._sums.pop((kind, path), None)
+                        if isinstance(entry, str) and self._checksum(kind, path, size) != entry:
+                            raise OSError(f"{path}: arrived, but not as it is there")
                     except (OSError, ValueError, media_mod.MediaError) as e:
                         ok = False
                         log.warning("sync: %s/%s not fetched (%s)", kind, path, e)
@@ -657,6 +740,8 @@ class Sync:
             if c[3] is not None and not same(n, value, mine[n]):
                 out = c[3]({**conf, **updates}, value)
                 updates.update(out)
+        if "wifi" in merged and self.wifi_path is not None and not same("wifi", merged["wifi"], mine.get("wifi", [])):
+            self._write_wifi(merged["wifi"])
         if not updates:
             return {}
         before = {k: conf.get(k) for k in updates}
@@ -666,6 +751,26 @@ class Sync:
         if changed and self.apply_live is not None:
             threading.Thread(target=self._take_up, args=(updates, changed), name="sync-apply", daemon=True).start()
         return updates
+
+    def _write_wifi(self, networks: list[dict]) -> None:
+        """Networks another radio has, added after this radio's own (never one taken away)."""
+        data = wifi_mod.load(self.wifi_path)
+        have = {n["ssid"] for n in data["networks"]}
+        new = [n for n in networks if n["ssid"] not in have]
+        if not new:
+            return
+        data["networks"] = data["networks"] + new
+        wifi_mod.save(data, self.wifi_path)
+        log.info("sync: Wi-Fi networks added: %s", ", ".join(n["ssid"] for n in new))
+        t = threading.Timer(15, self._reload_wifi)   # (after the exchange: a reconfigure may drop the link a moment)
+        t.daemon = True
+        t.start()
+
+    def _reload_wifi(self) -> None:
+        try:
+            self.ask_wifi("reload")
+        except OSError as e:
+            log.warning("sync: the Wi-Fi manager wasn't asked to reload (%s)", e)
 
     def _take_up(self, updates: dict, changed: set) -> None:
         later = {k for k in changed & VOICE_SETTINGS if not self.voice_ok(k, updates.get(k))}
@@ -686,6 +791,7 @@ class Sync:
                 log.exception("sync: the radio couldn't take up %s", key)
 
     def _keep_base(self, peer_id: str, agreed: dict) -> None:
+        agreed = {n: v for n, v in agreed.items() if n not in UNION_ONLY}     # (never Wi-Fi keys in the base file)
         bases = self._bases()
         old = bases.get(peer_id)
         if isinstance(old, dict) and set(old) == set(agreed) and all(same(n, old[n], agreed[n]) for n in agreed):

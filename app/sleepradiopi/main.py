@@ -1113,6 +1113,8 @@ def main() -> None:
                              backup=lambda label: store.save(backup_mod.export(args.config, None), label),
                              media=media, voice_jobs=jobs)
         sync.voice_ok = lambda key, v: v in station.ebook_voices()
+        if wifi.NETWORKS.parent.is_dir():          # (the appliance: its Wi-Fi networks synced too)
+            sync.wifi_path = wifi.NETWORKS
         sync.start()
     except Exception:                                  # (never stops the radio starting)
         logging.getLogger(__name__).exception("sync: not started")

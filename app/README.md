@@ -2056,15 +2056,21 @@ The cards:
   (Default's DJ settings too), playlists, programmes, messages and their
   times, birthdays, podcasts followed, the DJ's own lines, the **theme
   jingles** (the files themselves: one a radio hasn't got is fetched from the
-  other, one deleted on either goes from both), the **voice packs** (only ever
+  other, one deleted on either goes from both; matched by
+  size and a checksum of the contents, so a changed one is caught too), the **voice packs** (only ever
   added: a voice one radio lacks is packed by the other and installed as an
-  upload is; one of the same name is never replaced, none is deleted), and the radio's other settings (the
+  upload is; one of the same name is never replaced, none is deleted), the
+  **Wi-Fi networks** added on the page (their WPA keys: only ever added, at
+  the end of the list, never removed, and only told to a paired radio asking
+  from its own address; never kept in the sync's own files), and the radio's other settings (the
   DJ's, alerts, the outside tiles, callsign and locator...): every few minutes (or *Sync
   now*) one reads the other's, merges the two against the state they last
   agreed on, and both take up the result -- so an add, an edit or a delete on
   either ends up on both, with no clocks involved (the same item changed
   differently on both: a change beats a delete, else the same fixed rule on
-  every radio). The first sync with a radio only adds, never deletes, and
+  every radio). Each kind of thing is agreed on separately: if one can't be
+  brought into line (a jingle that wouldn't arrive), only that kind merges as a
+  first sync does next time. The first sync with a radio only adds, never deletes, and
   each saves a backup first (*Before syncing with ...* in Backups); a sync
   that would delete much of a list is **held** until *Sync anyway*. Each
   radio's own stays its own: its hardware and how it's set up (speakers,

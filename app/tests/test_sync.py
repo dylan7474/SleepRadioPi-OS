@@ -62,8 +62,9 @@ class Net:
             raise OSError("not answering")
         if what == "hello":
             return r.hello()
-        if what == "state":
-            return r.state(query)
+        if what == "state":                                    # (asked from the asking radio's own address)
+            asker = next((a for a, x in self.radios.items() if x.id == query), None)
+            return r.state(query, asker)
         if what == "paired":
             me = next(a for a, x in self.radios.items() if x.id == body["id"])
             r.paired_with({"id": body["id"], "name": body["name"], "address": me})
@@ -72,7 +73,8 @@ class Net:
             r.unpaired(body["id"])
             return {"ok": True}
         if what == "adopt":
-            ok = r.adopt(body["id"], body["merged"], body["was"])
+            asker = next((a for a, x in self.radios.items() if x.id == body["id"]), None)
+            ok = r.adopt(body["id"], body["merged"], body["was"], asker)
             if self.lose():
                 raise OSError("timed out")
             return {"ok": ok}
@@ -286,17 +288,40 @@ def test_on_a_first_sync_a_setting_someone_set_beats_one_never_set() -> None:
 # --- files (jingles): each radio a pretend card ---
 
 class Card:
-    def __init__(self, files=None):
-        self.files = {"jingles": dict(files or {})}          # path -> bytes
+    """A pretend music storage: real files in a folder, so checksums are worked out as on a radio."""
+    def __init__(self, root, files=None):
+        self.root = root
+        for p, b in (files or {}).items():
+            self._put("jingles", p, b)
+
+    def _put(self, kind, path, data):
+        f = self.root / kind / path
+        f.parent.mkdir(parents=True, exist_ok=True)
+        f.write_bytes(data)
+
+    @property
+    def files(self):
+        out = {}
+        for kind_dir in [self.root / "jingles"]:
+            out[kind_dir.name] = {f.relative_to(kind_dir).as_posix(): f.read_bytes()
+                                  for f in sorted(kind_dir.rglob("*")) if f.is_file()} if kind_dir.is_dir() else {}
+        return out
+
+    def resolve(self, kind, path):
+        return self.root / kind / path
+
+    def _root(self, kind):
+        (self.root / kind).mkdir(parents=True, exist_ok=True)
+        return self.root / kind
 
     def tree(self, kind):
         return {"files": {p: len(b) for p, b in self.files[kind].items()}}
 
     def receive(self, kind, folder, name, length, read, replace=False):
-        self.files[kind][name] = read(length)
+        self._put(kind, name, read(length))
 
     def delete(self, kind, path, prune=False):
-        del self.files[kind][path]
+        (self.root / kind / path).unlink()
 
     def done(self):
         return True
@@ -319,7 +344,7 @@ class Got:
 
 def carded(tmp_path, net, address, files):
     r = radio(tmp_path, net, address)
-    r.media = Card(files)
+    r.media = Card(tmp_path / f"{address}-card", files)
 
     def get_file(addr, kind, path, net=net):
         other = net.radios[addr]
@@ -342,10 +367,15 @@ def test_jingles_are_kept_the_same_both_ways(tmp_path) -> None:
         _t.sleep(0.02)
     assert one.media.files == two.media.files == {"jingles": {"Rock/a.mp3": b"AAAA", "Rock/b.mp3": b"BB", "Jazz/c.mp3": b"CCC"}}
     _t.sleep(0.1)
-    del two.media.files["jingles"]["Rock/b.mp3"]               # deleted on two
-    two.media.files["jingles"]["Jazz/d.mp3"] = b"DDDDD"        # ...and one added
+    two.media.delete("jingles", "Rock/b.mp3")                  # deleted on two
+    two.media._put("jingles", "Jazz/d.mp3", b"DDDDD")          # ...and one added
     two.sync_now(one.id)
-    assert one.media.files["jingles"] == {"Rock/a.mp3": b"AAAA", "Jazz/c.mp3": b"CCC", "Jazz/d.mp3": b"DDDDD"}
+    want = {"Rock/a.mp3": b"AAAA", "Jazz/c.mp3": b"CCC", "Jazz/d.mp3": b"DDDDD"}
+    for _ in range(100):                                       # (one, asked, fetches in the background)
+        if one.media.files["jingles"] == want:
+            break
+        _t.sleep(0.02)
+    assert one.media.files["jingles"] == want
 
 
 def test_a_jingle_that_does_not_arrive_is_never_deleted_later(tmp_path) -> None:
@@ -450,3 +480,60 @@ def test_one_change_the_radio_cannot_take_up_does_not_stop_the_rest(tmp_path) ->
             break
         _t.sleep(0.02)
     assert "birthdays" in taken
+
+
+def test_a_jingle_replaced_by_one_of_the_same_size_is_synced_too(tmp_path) -> None:
+    import time as _t
+    net = Net()
+    one = carded(tmp_path, net, "one", {"Rock/a.mp3": b"AAAA"})
+    two = carded(tmp_path, net, "two", {})
+    one.pair("two")
+    for _ in range(100):
+        if two.media.files["jingles"]:
+            break
+        _t.sleep(0.02)
+    _t.sleep(0.05)
+    import os
+    f = one.media.resolve("jingles", "Rock/a.mp3")
+    f.write_bytes(b"ZZZZ")                                     # the same size, other words
+    os.utime(f, ns=(1, 1))                                     # (and a time of its own)
+    one.sync_now(two.id)
+    for _ in range(100):
+        if two.media.files["jingles"].get("Rock/a.mp3") == b"ZZZZ":
+            break
+        _t.sleep(0.02)
+    assert two.media.files["jingles"]["Rock/a.mp3"] == b"ZZZZ"
+
+
+def test_wifi_networks_are_added_never_removed_and_only_told_to_a_paired_radio(tmp_path) -> None:
+    from sleepradiopi import wifi as wifi_mod
+    net = Net()
+    one, two = radio(tmp_path, net, "one"), radio(tmp_path, net, "two")
+    k = "ab" * 32
+    for r, nets in ((one, [{"ssid": "Home", "psk": k}]), (two, [{"ssid": "Shed", "open": True}])):
+        r.wifi_path = tmp_path / f"{r.name()}-wifi.json"
+        wifi_mod.save({"networks": nets, "offline": False}, r.wifi_path)
+        r.ask_wifi = lambda action: None
+    assert "wifi" not in one.state(two.id, "10.9.9.9")["collections"]      # not from its address: no keys
+    one.pair("two")
+    assert [n["ssid"] for n in wifi_mod.load(two.wifi_path)["networks"]] == ["Shed", "Home"]   # added after its own
+    assert [n["ssid"] for n in wifi_mod.load(one.wifi_path)["networks"]] == ["Home", "Shed"]
+    wifi_mod.save({"networks": [{"ssid": "Shed", "open": True}], "offline": False}, two.wifi_path)  # Home removed on two
+    two.sync_now(one.id)
+    assert "Home" in [n["ssid"] for n in wifi_mod.load(one.wifi_path)["networks"]]         # never removed by a sync
+
+
+def test_a_jingle_that_will_not_arrive_does_not_stop_a_station_delete_reaching_the_other(tmp_path) -> None:
+    """Agreement is kept per collection: a file that fails leaves only the files adding-only; a station deleted on
+    one radio still goes from the other."""
+    net = Net()
+    one = carded(tmp_path, net, "one", {})
+    two = carded(tmp_path, net, "two", {"Rock/a.mp3": b"AAAA"})
+    set_stations(one, [st("a"), st("b")])
+    set_stations(two, [st("a"), st("b")])
+    one.get_file = lambda *a: (_ for _ in ()).throw(OSError("never arrives"))
+    one.pair("two")
+    set_stations(two, [st("a")])                                # b deleted on two
+    one.sync_now(two.id)
+    assert urls(stations_of(one)) == ["http://a"]
+    assert two.media.files["jingles"] == {"Rock/a.mp3": b"AAAA"}   # (and two's jingle never deleted)
