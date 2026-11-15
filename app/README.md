@@ -2168,11 +2168,17 @@ the step where the boost no longer stands out in what's heard (judged against th
 middle of the sound, because the radio turns everything down for its biggest boost),
 makes the speaker buzz or rattle (its harmonics rise in what's heard, not what's sent),
 or makes the 5 V supply dip (`power_dips`, from the Pi's `rpi_volt` alarm). It runs at
-the volume you listen at: more volume, less usable bass. An optional **hearing check**
-(three beeps per pitch, 1-16 kHz, quieter each time they're heard) works out how much
-treble lift the listener's ears want (half the loss against ISO 226 normal hearing, the
-hearing-aid half-gain rule; nothing for a pitch not heard at all); the treble used is the
-smaller of that and what the speaker can do. Needs 1.9.88.
+the volume you listen at, from a clean slate (the sound's cuts kept, its boosts reset).
+An optional **hearing check** (three beeps per pitch, 1-16 kHz, quieter each time they're
+heard; remembered on the phone for each radio) works out how much treble lift the
+listener's ears want (half the loss against ISO 226 normal hearing, the hearing-aid
+half-gain rule; nothing at all for a pitch not heard). The sound it suggests gives the
+treble that, the bass a little (125 Hz at most +2, nothing below what the speaker plays),
+never more than the speaker usefully takes, and keeps the loudness the boosts cost within
+the listener's choice: **Louder** (3 dB), **Balanced** (5 dB, about the Rock preset) or
+**More treble** (8 dB), the radio turning everything down by its biggest boost. Every
+boost costs loudness: the first versions, without that limit, suggested +12 dB of treble
+and were quieter at full volume than Rock. Needs 1.9.88.
 
 **With the phone app** (Sleep Radio Remote, Android): Radios → **Tune the
 speaker** measures whichever radio the app is controlling. The radio plays its

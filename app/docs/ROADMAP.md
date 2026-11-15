@@ -65,8 +65,9 @@ the image README's [Roadmap](../../README.md#roadmap) (keep the two in step).
   differences (six presets, the selector, a back button, the meter and the
   grille light) are the `"cathedral"` hardware profile here (software done;
   the image's GPIO keys and PWM next — see *Two radios* in the app README).
-- **Frequency display + usable bass and treble + hearing check** (BUILT 2026-11-15, 1.9.88 + app 1.3.1:
-  desktop Speakers → Frequency display; the app's Frequencies, Bass and treble, and hearing check). User testing.
+- **Frequency display + usable bass and treble + hearing check** (DONE 2026-11-15, 1.9.88 + app 1.4.0:
+  desktop Speakers → Frequency display; the app's Frequencies, Bass and treble with a loudness budget, and the
+  hearing check, remembered per radio). On Phonos the Balanced result sounds about the same as Rock.
 - **An easier volume control on the desktop page** — turning the radio graphic's knob with a mouse
   or finger is tricky. Keep the knob as an indicator of the volume (it looks like the radio), but give
   a better way to actually change it (for example big - / + keys and a plain slider or number beside it,
@@ -76,7 +77,7 @@ the image README's [Roadmap](../../README.md#roadmap) (keep the two in step).
   (kept as this radio's changes over the built-in list, so a new release's lines still arrive).
   Needs care with sync: today own lines only ever add between paired radios, so an edit or delete
   must travel as a change, not come back from the other radio. (Asked for 2026-11-15.)
-- **Tune the speakers from the phone app** (BEING BUILT 2026-11-15: the radio side is in 1.9.87;
+- **Tune the speakers from the phone app** (DONE 2026-11-15: radio side 1.9.87, app 1.1+;
   the app measures with a sweep from three places, suggests, Listen / Adjust / Save) — the speaker analyser (the web page at
   `/analyser/`: quiet, then hiss, measured by the phone's microphone, suggesting the EQ and low cut)
   built into the Android remote (SleepRadioRemote) as a native screen: no Chrome flag or https needed,
