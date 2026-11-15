@@ -449,7 +449,7 @@
   .rface { display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: 10px; margin-top: 11px; }
   .grille { height: 64px; border-radius: 50%; background: radial-gradient(circle, #9b9483 1.5px, transparent 1.8px) 0 0 / 7px 7px; opacity: .9; }
   .knob { width: 66px; height: 66px; border-radius: 50%; border: 0; background: radial-gradient(circle at 35% 30%, #5b86d6, var(--knob) 55%, #1d3d7c);
-          box-shadow: 0 4px 10px #0006, inset 0 0 0 4px #ffffff1a; position: relative; }
+          box-shadow: 0 4px 10px #0006, inset 0 0 0 4px #ffffff1a; position: relative; display: block; margin: 0 auto; }
   .knob::after { content: ""; position: absolute; left: 32px; top: 8px; width: 3px; height: 18px; border-radius: 2px; background: #fff; transform-origin: 1.5px 25px; transform: rotate(var(--rot, 0deg)); }
   .rsleep { margin-top: 1px; opacity: .45; white-space: nowrap; } .rsleep.on { opacity: 1; color: var(--amber-deep); font-weight: 600; }
   .rvol { text-align: center; font-size: 11px; color: #6b6558; margin-top: 3px; font-variant-numeric: tabular-nums; }
