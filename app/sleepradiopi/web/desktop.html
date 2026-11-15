@@ -453,6 +453,10 @@
   .knob::after { content: ""; position: absolute; left: 32px; top: 8px; width: 3px; height: 18px; border-radius: 2px; background: #fff; transform-origin: 1.5px 25px; transform: rotate(var(--rot, 0deg)); }
   .rsleep { margin-top: 1px; opacity: .45; white-space: nowrap; } .rsleep.on { opacity: 1; color: var(--amber-deep); font-weight: 600; }
   .rvol { text-align: center; font-size: 11px; color: #6b6558; margin-top: 3px; font-variant-numeric: tabular-nums; }
+  /* the volume keys either side of "Volume 92" under the knob: the knob shows the volume, these change it (a hold repeats) */
+  .rvolrow { display: flex; align-items: center; justify-content: center; gap: 6px; margin-top: 5px; }
+  .rvolrow .rvol { margin-top: 0; min-width: 62px; }
+  .rvolrow .tkey { width: 30px; height: 30px; font: 700 19px/1 var(--display); }
   .presets { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-top: 10px; }
   .pbtn { display: flex; flex-direction: column; align-items: center; gap: 4px; position: relative; }
   /* a button with steps: a small counter on its key (always there, faded out with one thing on it) */
@@ -1671,12 +1675,24 @@ function radioEl() {
   const nd = el("div", { className: "needle", id: "rNeedle" }); nd.style.left = (12 + hue(title) % 76) + "%"; dial.append(nd);
   dial.dataset.drop = "play";
   const vol = S?.speaker?.volume ?? 0;
-  const knob = el("button", { className: "knob", type: "button", id: "rKnob", title: "Scroll to change the volume · click to pause or play · double-click: speakers and knob settings" });
+  const knob = el("button", { className: "knob", type: "button", id: "rKnob", title: "The volume (the − and + keys below change it, or scroll here) · click to pause or play · double-click: speakers and knob settings" });
   knob.setAttribute("aria-label", "Volume " + vol);
   knob.style.setProperty("--rot", (vol / 100 * 270 - 135) + "deg");
   knob.onclick = async () => { try { S.speaker = await api("/api/speaker", { pause: "toggle" }); updateRadio(); if (hearing) poll(); } catch (e) { toast(e.message); } };
   knob.ondblclick = () => open(PANEL.speakers.id);
   knob.onwheel = e => { e.preventDefault(); volume(-Math.sign(e.deltaY) * 2); };
+  // the volume keys: a click is 2 steps (1 dB); held, it keeps going (as the knob would turning)
+  const vk = (d, text, title, id) => {
+    const b = el("button", { className: "tkey", type: "button", id, title, textContent: text });
+    b.setAttribute("aria-label", title);
+    let rep = null, wait = null;
+    const stop = () => { clearTimeout(wait); clearInterval(rep); wait = rep = null; };
+    b.onpointerdown = e => { if (e.button) return; e.preventDefault(); b.setPointerCapture?.(e.pointerId); volume(d);
+      wait = setTimeout(() => { rep = setInterval(() => volume(d), 110); }, 420); };
+    b.onpointerup = b.onpointercancel = b.onlostpointercapture = stop;
+    b.onclick = e => { if (e.detail === 0) volume(d); };       // (the keyboard: Enter or Space)
+    return b;
+  };
   // like a CD player: Back (the start of this one, or the one before in its first 5 s), play/pause, Skip
   const ICON = {      // drawn, so they're crisp at any size and match the case
     back: '<svg viewBox="0 0 16 16" aria-hidden="true"><rect x="2" y="3" width="2.2" height="10" rx="1" fill="currentColor"/><path d="M13.5 3.6v8.8a.8.8 0 0 1-1.2.7L5.6 8.7a.8.8 0 0 1 0-1.4l6.7-4.4a.8.8 0 0 1 1.2.7z" fill="currentColor"/></svg>',
@@ -1688,7 +1704,8 @@ function radioEl() {
     el("span", { className: "tlabel", textContent: "BACK · SKIP" }),
     tk("rNext", "skip", "Skip to what's next", async () => { try { await api("/api/skip", {}); setTimeout(poll, 600); } catch (e) { toast(e.message); } }));
   const gr = () => { const g = el("div", { className: "grille", title: "Speakers: stereo, EQ, low cut, the knob · drop a saved sound here" }); g.onclick = () => open(PANEL.speakers.id); g.dataset.drop = "grille"; return g; };
-  const face = el("div", { className: "rface" }, gr(), el("div", {}, knob, el("div", { className: "rvol", id: "rVol", textContent: volText(vol) }), el("div", { className: "rvol rsleep" + (sleepLeft() ? " on" : ""), id: "rSleep", textContent: sleepText() })), gr());
+  const face = el("div", { className: "rface" }, gr(), el("div", {}, knob, el("div", { className: "rvolrow" }, vk(-2, "−", "Volume down (hold to keep going)", "rVolDown"),
+    el("div", { className: "rvol", id: "rVol", textContent: volText(vol) }), vk(2, "+", "Volume up (hold to keep going)", "rVolUp")), el("div", { className: "rvol rsleep" + (sleepLeft() ? " on" : ""), id: "rSleep", textContent: sleepText() })), gr());
   const pre = el("div", { className: "presets", id: "rPresets" });
   shownButtons().forEach((b, i) => {
     const pb = el("div", { className: "pbtn" + (b.playing ? " on" : "") });

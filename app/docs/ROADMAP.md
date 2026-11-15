@@ -68,10 +68,8 @@ the image README's [Roadmap](../../README.md#roadmap) (keep the two in step).
 - **Frequency display + usable bass and treble + hearing check** (DONE 2026-11-15, 1.9.88 + app 1.4.0:
   desktop Speakers → Frequency display; the app's Frequencies, Bass and treble with a loudness budget, and the
   hearing check, remembered per radio). On Phonos the Balanced result sounds about the same as Rock.
-- **An easier volume control on the desktop page** — turning the radio graphic's knob with a mouse
-  or finger is tricky. Keep the knob as an indicator of the volume (it looks like the radio), but give
-  a better way to actually change it (for example big - / + keys and a plain slider or number beside it,
-  the mouse wheel over the knob). (Asked for 2026-11-15.)
+- **An easier volume control on the desktop page** (DONE 2026-11-15: − and + keys either side of the volume
+  under the knob, a hold keeps going; the knob stays as the indicator, click / scroll as before)
 - **DJ lines: fully managed** — edit and delete every DJ line, not only add/remove your own:
   edit a line in place (own lines), and edit or switch off the 70s lines that come with the radio
   (kept as this radio's changes over the built-in list, so a new release's lines still arrive).
