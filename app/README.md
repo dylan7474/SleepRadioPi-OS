@@ -2033,7 +2033,12 @@ The cards:
   start with); *Try saved networks now* while it's a hotspot; **Without
   Wi-Fi** (a ten-minute trial, or off for good, for a radio that lives
   where there's none: it then starts with the Wi-Fi down; the knob held
-  and turned right, left, right, or the service menu's 2, turns it back on). See
+  and turned right, left, right, or the service menu's 2, turns it back on);
+  **Fixed address** (for a router with no reservations left: one network, an
+  address outside the router's DHCP range, gateway and DNS; *Use what it has
+  now* fills them in; checked for a clash and the gateway before it's kept,
+  automatic again if not; never synced; `POST /api/wifi/static`, `{"off": true}`
+  to go back; the page follows the radio to its new address). See
   `sleepradiopi/wifi.py` for how the manager decides.
 - **Updates** — the radio's version; *Check for updates* looks at the latest
   GitHub release (`update_source`) and *Install* puts it on (see the

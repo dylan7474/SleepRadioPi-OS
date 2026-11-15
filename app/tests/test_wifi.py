@@ -473,3 +473,171 @@ def test_the_station_says_the_wifi_is_off_only_when_it_was_asked_for() -> None:
     assert a.said == [announce.OFFLINE, announce.TRIAL]
     main._wifi_event(a, {"mode": "offline"}, {"mode": "hotspot", "hotspot": spot, "visit": True})
     assert a.said[-1] == announce.visit_text(spot) and "s, l, e, e, p" in a.said[-1] and "visit" in a.said[-1]
+
+
+# --- a fixed address -------------------------------------------------------------------------
+
+def test_a_fixed_address_is_checked_and_kept(tmp_path: Path) -> None:
+    f = tmp_path / "wifi.json"
+    data = wifi.set_static({"ssid": "CHIGLEY", "address": "192.168.1.50", "gateway": "192.168.1.1",
+                            "dns": "192.168.1.2, 1.1.1.1"}, f)
+    assert data["static"] == {"ssid": "CHIGLEY", "address": "192.168.1.50/24", "gateway": "192.168.1.1",
+                              "dns": ["192.168.1.2", "1.1.1.1"]}
+    wifi.add_network("Cafe", "", f)                          # other changes keep it
+    wifi.set_hotspot("Mine", "password1", f)
+    wifi.set_offline(False, f)
+    assert wifi.load(f)["static"]["address"] == "192.168.1.50/24"
+    assert wifi.set_static(None, f)["static"] is None and wifi.load(f)["static"] is None
+    for bad in ({"ssid": "", "address": "192.168.1.50", "gateway": "192.168.1.1", "dns": "192.168.1.1"},
+                {"ssid": "X", "address": "nonsense", "gateway": "192.168.1.1", "dns": "192.168.1.1"},
+                {"ssid": "X", "address": "192.168.1.255", "gateway": "192.168.1.1", "dns": "192.168.1.1"},
+                {"ssid": "X", "address": "192.168.1.0", "gateway": "192.168.1.1", "dns": "192.168.1.1"},
+                {"ssid": "X", "address": "192.168.1.50", "gateway": "10.0.0.1", "dns": "192.168.1.1"},
+                {"ssid": "X", "address": "192.168.1.50", "gateway": "192.168.1.50", "dns": "192.168.1.1"},
+                {"ssid": "X", "address": "192.168.1.50/31", "gateway": "192.168.1.51", "dns": "192.168.1.1"},
+                {"ssid": "X", "address": "192.168.1.50", "gateway": "192.168.1.1", "dns": ""},
+                {"ssid": "X", "address": "192.168.1.50", "gateway": "192.168.1.1", "dns": "a.b"}):
+        with pytest.raises(ValueError):
+            wifi.set_static(bad, f)
+    f.write_text(json.dumps({"static": {"ssid": "X", "address": "junk"}}))
+    assert wifi.load(f)["static"] is None                    # a broken one: automatic
+
+
+def test_the_fixed_address_is_never_synced(tmp_path: Path) -> None:
+    from sleepradiopi import sync as sync_mod
+    f = tmp_path / "wifi.json"
+    wifi.set_static({"ssid": "CHIGLEY", "address": "192.168.1.50", "gateway": "192.168.1.1", "dns": "192.168.1.1"}, f)
+    assert "static" not in json.dumps(sync_mod._check_wifi(wifi.load(f)["networks"]))
+    s = sync_mod.Sync.__new__(sync_mod.Sync)               # (only _write_wifi: what another radio's networks do here)
+    s.wifi_path, s.ask_wifi = f, lambda a: None
+    s._write_wifi([{"ssid": "Theirs", "psk": "b" * 64}])
+    assert wifi.load(f)["static"]["address"] == "192.168.1.50/24"
+    assert [n["ssid"] for n in wifi.load(f)["networks"]] == ["Theirs"]
+
+
+def test_what_the_radio_has_now() -> None:
+    got = wifi.parse_current("3: wlan0    inet 192.168.50.120/24 brd 192.168.50.255 scope global wlan0\n",
+                             "default via 192.168.50.1 dev wlan0 \n",
+                             "search example.org # wlan0\nnameserver 192.168.50.2 # wlan0\n")
+    assert got == {"address": "192.168.50.120/24", "gateway": "192.168.50.1", "dns": ["192.168.50.2"]}
+    assert wifi.parse_current("", "", "") == {}
+
+
+class StaticPi(FakePi):
+    """FakePi whose address follows `ip addr add/flush`, and whose arping answers as set."""
+
+    def __init__(self):
+        super().__init__()
+        self.ip = "192.168.1.20"            # what DHCP gives
+        self.taken = set()                  # addresses something else answers for
+        self.gateway_answers = True
+
+    def sh(self, *cmd, check=False, timeout=20):
+        if cmd[:3] == ("wpa_cli", "-i", "wlan0") and cmd[3] == "status":
+            self.cmds.append(cmd)
+            if not self.connected_to:
+                return "wpa_state=SCANNING\n"
+            return f"wpa_state=COMPLETED\nssid={self.connected_to}\n" + (f"ip_address={self.ip}\n" if self.ip else "")
+        if cmd[:4] == ("ip", "addr", "flush", "dev"):
+            self.ip = ""
+        elif cmd[:3] == ("ip", "addr", "add") and cmd[3] != "192.168.4.1/24":
+            self.ip = cmd[3].split("/")[0]
+        elif cmd[0] == "udhcpc":
+            self.ip = "192.168.1.20"
+        elif cmd[:2] == ("sh", "-c") and "arping -D" in cmd[2]:
+            self.cmds.append(cmd)
+            return "" if cmd[-1] in self.taken else "ok\n"
+        elif cmd[:2] == ("sh", "-c") and "arping" in cmd[2]:
+            self.cmds.append(cmd)
+            return "ok\n" if self.gateway_answers else ""
+        return super().sh(*cmd, check=check, timeout=timeout)
+
+
+def _static_manager(tmp_path, pi, ssid="CHIGLEY", address="192.168.1.50"):
+    m, run = _manager(tmp_path, pi)
+    m.resolv, m.dhcp_hooks = tmp_path / "resolv.conf", tmp_path / "hooks"
+    (tmp_path / "hooks").mkdir()
+    hook = tmp_path / "hooks" / "ntpd"
+    hook.write_text("#!/bin/sh\n")
+    hook.chmod(0o755)
+    wifi.set_static({"ssid": ssid, "address": address, "gateway": "192.168.1.1", "dns": "192.168.1.2"},
+                    tmp_path / "wifi.json")
+    return m, run
+
+
+def test_it_moves_to_the_fixed_address_on_its_network(tmp_path: Path) -> None:
+    pi = StaticPi()
+    pi.connected_to = "CHIGLEY"
+    m, run = _static_manager(tmp_path, pi)
+    m.start()
+    st = wifi.status(run)
+    assert st["mode"] == "station" and st["ip"] == "192.168.1.50" and st["static"]["state"] == "on"
+    assert ("killall", "-q", "udhcpc") in pi.cmds
+    assert ("ip", "route", "replace", "default", "via", "192.168.1.1", "dev", "wlan0") in pi.cmds
+    assert (tmp_path / "resolv.conf").read_text() == "nameserver 192.168.1.2 # wlan0\n"
+    assert (str(tmp_path / "hooks" / "ntpd"), "bound") in pi.cmds
+    n = len(pi.cmds)
+    _run_for(m, pi, 60)                                      # stays put: nothing more done
+    assert not any(c[0] in ("udhcpc", "killall") or c[:2] == ("sh", "-c") for c in pi.cmds[n:])
+    assert wifi.status(run)["ip"] == "192.168.1.50"
+
+
+def test_a_taken_address_or_a_silent_gateway_leaves_it_automatic(tmp_path: Path) -> None:
+    pi = StaticPi()
+    pi.connected_to = "CHIGLEY"
+    pi.taken = {"192.168.1.50"}
+    m, run = _static_manager(tmp_path, pi)
+    m.start()
+    st = wifi.status(run)
+    assert st["ip"] == "192.168.1.20" and st["static"]["state"] == "failed" and "already has" in st["static"]["reason"]
+    assert not any(c[:3] == ("ip", "addr", "add") for c in pi.cmds)   # never left the automatic address
+    n = len(pi.cmds)
+    _run_for(m, pi, 60)                                      # not tried again and again
+    assert not any(c[:2] == ("sh", "-c") for c in pi.cmds[n:])
+
+    pi2 = StaticPi()
+    pi2.connected_to = "CHIGLEY"
+    pi2.gateway_answers = False
+    (tmp_path / "b").mkdir()
+    m2, run2 = _static_manager(tmp_path / "b", pi2)
+    m2.start()
+    _run_for(m2, pi2, 10)
+    st = wifi.status(run2)
+    assert st["static"]["state"] == "failed" and "gateway" in st["static"]["reason"]
+    assert st["mode"] == "station" and st["ip"] == "192.168.1.20"   # back on DHCP
+    assert [c[0] for c in pi2.cmds].count("udhcpc") == 2
+
+
+def test_another_network_gets_an_automatic_address(tmp_path: Path) -> None:
+    pi = StaticPi()
+    pi.connected_to = "Cafe"
+    m, run = _static_manager(tmp_path, pi)
+    m.start()
+    st = wifi.status(run)
+    assert st["ip"] == "192.168.1.20" and st["static"]["state"] == "elsewhere"
+    assert not any(c[:2] == ("sh", "-c") for c in pi.cmds)
+    # on the fixed address, then onto another saved network: automatic again there
+    pi.connected_to = "CHIGLEY"
+    _run_for(m, pi, 4)
+    assert wifi.status(run)["ip"] == "192.168.1.50"
+    pi.connected_to = "Cafe"
+    _run_for(m, pi, 10)
+    assert wifi.status(run)["ip"] == "192.168.1.20"
+
+
+def test_changing_or_removing_it_from_the_page(tmp_path: Path) -> None:
+    pi = StaticPi()
+    pi.connected_to = "CHIGLEY"
+    m, run = _static_manager(tmp_path, pi)
+    m.start()
+    assert wifi.status(run)["ip"] == "192.168.1.50"
+    wifi.set_static({"ssid": "CHIGLEY", "address": "192.168.1.60", "gateway": "192.168.1.1", "dns": "192.168.1.1"},
+                    tmp_path / "wifi.json")
+    wifi.ask("static", run)
+    _run_for(m, pi, 10)
+    assert wifi.status(run)["ip"] == "192.168.1.60"
+    wifi.set_static(None, tmp_path / "wifi.json")
+    wifi.ask("static", run)
+    _run_for(m, pi, 10)
+    st = wifi.status(run)
+    assert st["ip"] == "192.168.1.20" and "static" not in st

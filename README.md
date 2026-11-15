@@ -706,6 +706,16 @@ Actions, Sleep timer and Radio folders open:
   partition keeps the Wi-Fi on for as long as it's there. Do put the DJ's voice on first: fetching it needs
   the internet once. The time comes from the radio's clock chip, if it has
   one; without one, an offline radio doesn't say the time.
+- **A fixed address.** A router with no room left to reserve an address
+  hands the radio a new one now and then. Settings → Wi-Fi → **Fixed
+  address** gives it its own on your home network: *Use what it has now*
+  fills in the gateway and DNS, then change the address to one **outside
+  the router's own (DHCP) range**. The radio still joins with an automatic
+  address and then moves, but only if nothing else answers for the fixed one,
+  and it keeps it only if the router answers from there. Otherwise it stays
+  automatic and the page says why. Other places and networks always get an
+  automatic address, and the setting is never synced to another radio. A
+  settings reset puts it back to automatic.
 - **Updates from the web page.** Settings → Updates checks for a new release
   on GitHub and installs it into a spare system slot while the music plays;
   the radio restarts, and the DJ says it's been updated. If a new version
@@ -1067,7 +1077,13 @@ Other targets are passed through to Buildroot: `make menuconfig`,
   `wifi: off`); the knob held and turned right, left, right (or the service menu's 2) sets it back
   to `false` and asks for the hotspot, and `/boot/wifi-on.txt` overrides the
   setting. If the manager can't run, `S35wifi` joins the card's network directly
-  after 20 s.
+  after 20 s. `"static"` in `wifi.json` (the page's *Fixed address*: one SSID,
+  address/prefix, gateway, DNS) is applied once that network is joined:
+  `arping -D` first, then udhcpc is stopped, the address and default route set,
+  `/etc/resolv.conf` written and the udhcpc hooks run (ntpd); if the gateway
+  doesn't answer (`arping`) it flushes and restarts udhcpc. The log says
+  `wifi: on the fixed address …` or `wifi: the fixed address … isn't used: …`;
+  STATUS carries `"static": {"state": "on" | "failed" | "elsewhere"}`.
 - Serial console: GPIO14/15, 115200 baud (Bluetooth is disabled so the full
   UART is used).
 - Logs: `/var/log/messages` (in RAM, lost at power-off).

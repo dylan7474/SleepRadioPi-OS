@@ -65,6 +65,16 @@ the image README's [Roadmap](../../README.md#roadmap) (keep the two in step).
   differences (six presets, the selector, a back button, the meter and the
   grille light) are the `"cathedral"` hardware profile here (software done;
   the image's GPIO keys and PWM next — see *Two radios* in the app README).
+- **DJ lines: fully managed** — edit and delete every DJ line, not only add/remove your own:
+  edit a line in place (own lines), and edit or switch off the 70s lines that come with the radio
+  (kept as this radio's changes over the built-in list, so a new release's lines still arrive).
+  Needs care with sync: today own lines only ever add between paired radios, so an edit or delete
+  must travel as a change, not come back from the other radio. (Asked for 2026-11-15.)
+- **Tune the speakers from the phone app** — the speaker analyser (the web page at
+  `/analyser/`: quiet, then hiss, measured by the phone's microphone, suggesting the EQ and low cut)
+  built into the Android remote (SleepRadioRemote) as a native screen: no Chrome flag or https needed,
+  the app plays the tune sound, measures, and applies or undoes the suggestion on the radio's EQ.
+  Chunky controls like the rest of the app. (Asked for 2026-11-15.)
 - **Auto-tune with a USB mic** — a cheap USB mic in the Zero's data port,
   where you sit, and an **Auto-tune** button on the radio's page:
   - it plays the pink noise, records the box and works out the EQ and low

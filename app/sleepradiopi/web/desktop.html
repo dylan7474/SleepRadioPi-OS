@@ -4748,6 +4748,61 @@ function listenLine() {
 // what the Wi-Fi is doing, in a few words (offline: a radio set to work without it)
 const wifiNow = w => w.mode === "offline" ? (w.trial_until ? "Off for a ten-minute trial" : "Off: this radio works without Wi-Fi")
   : w.mode === "hotspot" ? `Its own network: ${w.hotspot.ssid}${w.visit ? " · on for a visit" : ""}` : w.ssid ? `${w.ssid} · ${w.ip}` : "Not connected";
+// A fixed address (wifi.py "static"): for a router with no room left to reserve one. The page follows the radio
+// to its new address (only when it was opened by address, not by name). The clash check comes before any move, so
+// while the old address still answers it's asked how it went ("failed": stay); only once it has gone quiet is the
+// new address tried -- never just "something answers there", which could be the very device it clashed with.
+const ipOf = a => (a || "").split("/")[0];
+function followRadio(ip) {
+  if (!/^\d+\.\d+\.\d+\.\d+$/.test(location.hostname) || location.hostname === ip) return;
+  let tries = 0;
+  const look = async () => {
+    if (++tries > 30) return toast(`The radio didn't turn up at ${ip}. Look for it on the other radio's Other radios, or in the router.`);
+    try {
+      const w = await api("/api/wifi");               // (still here: the old address)
+      if (w.static?.state === "failed") return toast(`Not moved: ${w.static.reason}. The radio stays at ${location.hostname}.`), drawDesk();
+      return setTimeout(look, 2000);
+    } catch {}
+    try { await fetch(`http://${ip}/api/status`, { mode: "no-cors", cache: "no-store" }); location.href = `http://${ip}${location.pathname}`; }
+    catch { setTimeout(look, 3000); }
+  };
+  setTimeout(look, 2000);
+}
+function staticGrp(w, act, known) {
+  const cfg = w.static_settings, note = w.static || {}, cur = w.current || {};
+  const title = "Fixed address";
+  if (!w.editStatic && !cfg) return grp(title, srow("Address", el("b", { textContent: `Automatic (from the router)${w.ip ? " · now " + w.ip : ""}` })),
+    help("If your router has no room left to reserve an address for the radio, give it a fixed one here, so it's always at the same place."),
+    line(sbtn("Give it a fixed address…", () => { w.editStatic = true; win4(w); })));
+  if (!w.editStatic) {
+    const state = note.state === "on" ? "✓ In use."
+      : note.state === "failed" ? `⚠ Not used: ${note.reason}. The radio is on an automatic address for now${w.ip ? " (" + w.ip + ")" : ""}; it tries again when its Wi-Fi next starts or you save this again.`
+      : w.ssid && w.ssid !== cfg.ssid ? `Not in use here: the radio is on ${w.ssid}, so it has an automatic address. It's used on ${cfg.ssid}.`
+      : w.ip === ipOf(cfg.address) ? "✓ In use." : "Switching to it…";
+    return grp(title, srow("Address", el("b", { textContent: `${ipOf(cfg.address)} on ${cfg.ssid}` })), help(state),
+      help(`Gateway ${cfg.gateway} · DNS ${cfg.dns.join(", ")} · network /${cfg.address.split("/")[1]}`),
+      line(sbtn("Change…", () => { w.editStatic = true; win4(w); }),
+        sbtn("Back to automatic…", () => ask("Go back to an address from the router? The radio gets a new address, so this page may lose it: find it on the other radio's Other radios, or in the router.",
+          "Automatic", () => act(async () => { await api("/api/wifi/static", { off: true }); toast("The radio goes back to an address from the router."); })))));
+  }
+  const nets = [...new Set([...(cfg ? [cfg.ssid] : []), ...(w.ssid ? [w.ssid] : []), ...known])];
+  const pick = el("select", { id: "static-ssid", style: "max-width:100%" },
+    ...nets.map(n => el("option", { value: n, textContent: n, selected: n === (cfg?.ssid || w.ssid) })));
+  const box = (id, v, ph) => el("input", { type: "text", id, value: v || "", placeholder: ph, spellcheck: false, autocomplete: "off" });
+  const addr = box("static-addr", cfg ? cfg.address : "", "e.g. 192.168.1.50/24"),
+    gw = box("static-gw", cfg?.gateway, "the router, e.g. 192.168.1.1"),
+    dns = box("static-dns", cfg?.dns.join(", "), "e.g. 192.168.1.1");
+  const fill = () => { if (cur.address) addr.value = cur.address; if (cur.gateway) gw.value = cur.gateway; if (cur.dns) dns.value = cur.dns.join(", ");
+    toast(cur.address ? "Filled in from what the radio has now: change the address to one outside the router's own range." : "The radio has no address to copy just now."); };
+  const save = () => {
+    const body = { ssid: pick.value, address: addr.value.trim(), gateway: gw.value.trim(), dns: dns.value.trim() }, ip = ipOf(body.address);
+    ask(`Give the radio the fixed address ${ip} on ${body.ssid}? It checks nothing else has it, moves there, and checks the router answers; if not, it stays on an automatic address. This page follows it to http://${ip}/.`,
+      "Use it", () => act(async () => { await api("/api/wifi/static", body); w.editStatic = false; toast(`Moving the radio to ${ip}…`); followRadio(ip); }));
+  };
+  return grp(title, srow("Network", pick), srow("Address", addr), srow("Gateway", gw), srow("DNS", dns),
+    help("Pick an address OUTSIDE the range your router hands out by itself (its DHCP range), or the router may give the same address to something else. Other places and networks still get an automatic address."),
+    line(sbtn("Use what it has now", fill), sbtn("Save", save, "primary"), sbtn("Cancel", () => { w.editStatic = false; win4(w); })));
+}
 // Messages from away: a document of your own (a Google Doc, say) that the radio fetches now and then (broadcast/away.py)
 function awayGrp(a, act) {
   const url = Object.assign(el("input", { type: "url", id: "away-url", placeholder: "https://docs.google.com/document/d/…", style: "width:100%" }), { value: a.url || "" });
@@ -5619,6 +5674,7 @@ const UI = {
           line(sbtn("Look again", () => act(() => api("/api/wifi/scan", {}))), sbtn("Try the saved networks now", () => act(() => api("/api/wifi/try", {}))))),
         grp("Saved networks", ...[...known].map(n => srow(n, help(w.on_card?.includes(n) ? "From the card" : "Saved"), w.saved?.includes(n) ? sbtn("Forget", () => act(() => api("/api/wifi/remove", { ssid: n }))) : el("span"))),
           help("The radio reconnects quietly by itself if the Wi-Fi drops.")),
+        w.mode === "hotspot" || w.mode === "offline" ? null : staticGrp(w, act, known),
         grp("The radio's own network",
           srow("Name", Object.assign(el("input", { type: "text", id: "spot-ssid", maxLength: 32 }), { value: w.hotspot_settings?.ssid || w.hotspot.ssid })),
           srow("Password", el("input", { type: "password", id: "spot-pw", placeholder: "8 to 63 characters" })),

@@ -311,7 +311,8 @@ def build(ctx):
         saved = wifi_mod.load()
         return {**st, "saved": [n["ssid"] for n in saved["networks"]],
                 "on_card": wifi_mod.card_networks(), "hotspot_settings": {"ssid": saved["hotspot"]["ssid"]},
-                "offline": saved["offline"]}
+                "offline": saved["offline"], "static_settings": saved["static"],
+                "current": wifi_mod.current_address() if st.get("mode") == "station" else {}}
 
     def _wifi(self, action: str) -> None:
         """POST /api/wifi/add {"ssid", "password"}, /remove {"ssid"}, /scan,
@@ -319,7 +320,9 @@ def build(ctx):
         /try (leave the hotspot and try the saved networks now), /hotspot-now
         (switch to the radio's own network now: the only way it does, besides a reset),
         /offline {"on": bool} (work without Wi-Fi: off from now on, the service menu's 2
-        lets you back in), /trial (off for ten minutes, then back, to try it)."""
+        lets you back in), /trial (off for ten minutes, then back, to try it),
+        /static {"ssid", "address", "gateway", "dns"} (a fixed address on that network;
+        {"off": true}: automatic again)."""
         try:
             body = self._body()
             if action == "add":
@@ -343,6 +346,9 @@ def build(ctx):
                 wifi_mod.ask("offline")
             elif action == "trial":
                 wifi_mod.ask("trial")
+            elif action == "static":
+                wifi_mod.set_static(None if body.get("off") is True else body)
+                wifi_mod.ask("static")
             else:
                 self.send_error(404)
                 return

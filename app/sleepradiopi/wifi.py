@@ -45,11 +45,22 @@ start. Without buttons, a file called wifi-on.txt on the card's boot
 partition (made on a PC) overrides offline for as long as it's there. A
 trial ("trial") turns the Wi-Fi off for TRIAL_S and then back on, to see
 that the radio is happy without it before saying so for good.
+
+A fixed address ("static" in wifi.json: one network, an address, its gateway
+and DNS; never synced to another radio) is for a router with no room left to
+reserve one. The radio joins as usual -- udhcpc gets it an address first, so
+a radio taken somewhere else, or onto another saved network, still connects --
+and once it's on that network it swaps to the fixed address: only if nothing
+else answers for it (arping -D), and only for good if the gateway then
+answers from it. If either fails it goes back to an automatic address and
+STATUS says why ("static": {"state": "failed", "reason"}); it tries again
+when the Wi-Fi next starts or the setting changes ("static" request).
 """
 
 from __future__ import annotations
 
 import hashlib
+import ipaddress
 import json
 import logging
 import os
@@ -73,6 +84,8 @@ JOIN_S, RETRY_S = 45, 300
 RECONNECT_S, RECONNECT_MAX_S, RESTART_S = 30, 120, 600
 VISIT_S, VISIT_CHECK_S, TRIAL_S = 900, 10, 600
 FORCE_ON = Path("/boot/wifi-on.txt")          # (on the card: Wi-Fi whatever "offline" says)
+RESOLV = Path("/etc/resolv.conf")              # (a link to /run/resolv.conf: written in place)
+DHCP_HOOKS = Path("/usr/share/udhcpc/default.script.d")   # (run as udhcpc would on "bound": ntpd's)
 
 
 # --- the saved networks (station side) --------------------------------------------------
@@ -96,7 +109,15 @@ def load(path: Path = NETWORKS) -> dict:
         data = {}
     nets = [n for n in data.get("networks", []) if isinstance(n, dict) and isinstance(n.get("ssid"), str)]
     hotspot = data.get("hotspot") if isinstance(data.get("hotspot"), dict) else {}
-    return {"networks": nets, "hotspot": {**default_hotspot(path), **hotspot}, "offline": data.get("offline") is True}
+    static = None
+    if isinstance(data.get("static"), dict):
+        try:
+            st = data["static"]
+            static = check_static(st.get("ssid"), st.get("address"), st.get("gateway"), st.get("dns"))
+        except (ValueError, TypeError):
+            static = None                         # (a broken one is no fixed address: automatic, safely)
+    return {"networks": nets, "hotspot": {**default_hotspot(path), **hotspot}, "offline": data.get("offline") is True,
+            "static": static}
 
 
 def default_hotspot(networks: Path = NETWORKS) -> dict:
@@ -147,6 +168,80 @@ def set_offline(on: bool, path: Path = NETWORKS) -> dict:
     data["offline"] = bool(on)
     save(data, path)
     return data
+
+
+def check_static(ssid, address, gateway, dns) -> dict:
+    """A fixed address, checked and tidied: {"ssid", "address" ("a.b.c.d/nn"), "gateway", "dns": [..]}.
+    The address may come without its /nn (then /24, a home network's)."""
+    if not isinstance(ssid, str) or not 1 <= len(ssid.encode()) <= 32:
+        raise ValueError("pick the network the fixed address is for")
+    if not isinstance(address, str) or not address.strip():
+        raise ValueError("an address, like 192.168.1.50")
+    address = address.strip()
+    try:
+        iface = ipaddress.IPv4Interface(address if "/" in address else address + "/24")
+    except ValueError:
+        raise ValueError(f"{address} isn't an address (like 192.168.1.50)") from None
+    net = iface.network
+    if not 8 <= net.prefixlen <= 30:
+        raise ValueError("the network size (/nn) should be between /8 and /30; a home network is /24")
+    if iface.ip in (net.network_address, net.broadcast_address) or iface.ip.is_loopback or iface.ip.is_multicast:
+        raise ValueError(f"{iface.ip} can't be used for the radio on {net}")
+    try:
+        gw = ipaddress.IPv4Address(str(gateway or "").strip())
+    except ValueError:
+        raise ValueError("the gateway is the router's address, like 192.168.1.1") from None
+    if gw not in net or gw == iface.ip:
+        raise ValueError(f"the gateway {gw} has to be another address on {net}")
+    if isinstance(dns, str):
+        dns = [d for d in re.split(r"[\s,]+", dns) if d]
+    if not isinstance(dns, list) or not 1 <= len(dns) <= 3:
+        raise ValueError("one to three DNS servers (your router's address will do)")
+    try:
+        dns = [str(ipaddress.IPv4Address(str(d).strip())) for d in dns]
+    except ValueError:
+        raise ValueError("a DNS server is an address, like 192.168.1.1") from None
+    return {"ssid": ssid, "address": str(iface), "gateway": str(gw), "dns": dns}
+
+
+def set_static(cfg: dict | None, path: Path = NETWORKS) -> dict:
+    """Save a fixed address (checked), or None: back to an automatic one."""
+    data = load(path)
+    data["static"] = check_static(cfg.get("ssid"), cfg.get("address"), cfg.get("gateway"), cfg.get("dns")) \
+        if cfg is not None else None
+    save(data, path)
+    return data
+
+
+def parse_current(addr: str, route: str, resolv: str) -> dict:
+    """What the radio has now, for "use what it has now": `ip -4 -o addr show dev wlan0`,
+    `ip -4 route show default`, /etc/resolv.conf -> {"address", "gateway", "dns"} (what's known)."""
+    out: dict = {}
+    m = re.search(r"\binet (\d+\.\d+\.\d+\.\d+/\d+)", addr)
+    if m:
+        out["address"] = m.group(1)
+    m = re.search(r"default via (\d+\.\d+\.\d+\.\d+)", route)
+    if m:
+        out["gateway"] = m.group(1)
+    dns = re.findall(r"^\s*nameserver\s+(\d+\.\d+\.\d+\.\d+)", resolv, re.M)
+    if dns:
+        out["dns"] = dns[:3]
+    return out
+
+
+def current_address() -> dict:
+    """(the station) The address, gateway and DNS the radio has now ({} if none)."""
+    def run(*cmd):
+        try:
+            return subprocess.run(cmd, capture_output=True, text=True, timeout=5).stdout
+        except (OSError, subprocess.TimeoutExpired):
+            return ""
+    try:
+        resolv = RESOLV.read_text()
+    except OSError:
+        resolv = ""
+    return parse_current(run("ip", "-4", "-o", "addr", "show", "dev", IFACE), run("ip", "-4", "route", "show", "default"),
+                         resolv)
 
 
 def card_networks(conf: Path = BASE_CONF) -> list[str]:
@@ -215,9 +310,15 @@ def iw_scan(text: str) -> dict[str, int]:
 
 class Manager:
     def __init__(self, sh=None, base_conf: Path = BASE_CONF, networks: Path = NETWORKS, run: Path = RUN,
-                 clock=time.monotonic, sleep=time.sleep, force_on: Path = FORCE_ON) -> None:
+                 clock=time.monotonic, sleep=time.sleep, force_on: Path = FORCE_ON,
+                 resolv: Path = RESOLV, dhcp_hooks: Path = DHCP_HOOKS) -> None:
         self.sh = sh or self._sh
         self.base_conf, self.networks, self.rundir, self.force_on = base_conf, networks, run, force_on
+        self.resolv, self.dhcp_hooks = resolv, dhcp_hooks
+        self.on_static: str | None = None         # the network the fixed address is in use on
+        self.static_note: dict | None = None      # how the fixed address went (STATUS "static")
+        self.static_failed: tuple | None = None   # (ssid, address) that didn't work: not tried again until the
+                                                  # Wi-Fi next starts or the setting changes
         self.visit, self.visit_idle, self.visit_check = False, 0.0, 0.0   # the hotspot of an offline radio
         self.trial_until: float | None = None     # Wi-Fi off just to try it: back on then
         self.clock, self.sleep = clock, sleep
@@ -248,6 +349,7 @@ class Manager:
                        **({"forced_on": True} if data["offline"] and self.force_on.exists() else {}),
                        **({"trial_until": time.time() + self.trial_until - self.clock()}
                           if self.trial_until is not None and self.mode == "offline" else {}),
+                       **({"static": self.static_note} if self.static_note else {}),
                        **extra}
         tmp = self.rundir / "wifi-status.tmp"
         tmp.write_text(json.dumps(self.status))
@@ -258,6 +360,7 @@ class Manager:
         for name in ("wpa_supplicant", "udhcpc", "hostapd", "dnsmasq"):
             self.sh("killall", "-q", name)
         self.sh("ip", "addr", "flush", "dev", IFACE)
+        self.on_static = None
 
     def offline(self) -> bool:
         """Set to live without Wi-Fi (and not overridden from the card)?"""
@@ -286,12 +389,81 @@ class Manager:
             confs = ["-c", str(extra)]
         self.sh("wpa_supplicant", "-B", "-D", "nl80211", "-i", IFACE, *confs, "-P", "/run/wpa_supplicant.pid",
                 "-f", "/var/log/wpa_supplicant.log", check=True)
-        self.sh("udhcpc", "-b", "-S", "-i", IFACE, "-x", f"hostname:{os.uname().nodename}",
-                "-p", f"/run/udhcpc.{IFACE}.pid")
+        self.static_failed = None                 # (a fresh start: a fixed address that failed is tried again)
+        self._start_dhcp()
         self.mode = "connecting"
         self._write_status()
         if self.have_networks():
             log.info("wifi: joining a saved network")
+
+    def _start_dhcp(self) -> None:
+        self.sh("udhcpc", "-b", "-S", "-i", IFACE, "-x", f"hostname:{os.uname().nodename}",
+                "-p", f"/run/udhcpc.{IFACE}.pid")
+
+    def _ok(self, script: str, *args: str) -> bool:
+        """A command that answers by its exit code (arping): run through sh, "ok" printed on success."""
+        return "ok" in self.sh("sh", "-c", script + ' && echo ok', "sh", *args, timeout=15)
+
+    def _back_to_automatic(self) -> None:
+        self.sh("ip", "addr", "flush", "dev", IFACE)
+        self.on_static = None
+        self._start_dhcp()
+
+    def static_check(self, got: dict) -> dict:
+        """(connected) Swap to the fixed address on its network -- or back to an automatic one on any other
+        (see the top). Returns the connection as it now is."""
+        cfg = load(self.networks)["static"]
+        if self.on_static is not None and (cfg is None or cfg["ssid"] != got["ssid"]
+                                           or cfg["address"].split("/")[0] != got["ip"]):
+            log.info("wifi: leaving the fixed address (%s); automatic again", "on another network"
+                     if cfg is not None and cfg["ssid"] != got["ssid"] else "the setting changed")
+            self._back_to_automatic()
+            self.static_note = None
+            return {**got, "ip": ""}             # (the automatic address arrives in a moment)
+        if cfg is None:
+            self.static_note = None
+            return got
+        if cfg["ssid"] != got["ssid"]:
+            self.static_note = {"state": "elsewhere", "address": cfg["address"]}
+            return got
+        ip, prefix = cfg["address"].split("/")
+        if got["ip"] == ip:
+            self.on_static = got["ssid"]
+            return got
+        key = (cfg["ssid"], cfg["address"])
+        if self.static_failed == key:
+            return got
+
+        def failed(reason: str) -> dict:
+            self.static_failed = key
+            self.static_note = {"state": "failed", "address": cfg["address"], "reason": reason}
+            log.warning("wifi: the fixed address %s isn't used: %s; staying on an automatic one", ip, reason)
+            return got
+
+        if not self._ok('arping -D -q -I "$1" -c 2 -w 3 "$2"', IFACE, ip):
+            return failed(f"something else on {got['ssid']} already has {ip}")
+        log.info("wifi: on %s: moving from %s to the fixed address %s", got["ssid"], got["ip"], ip)
+        self.sh("killall", "-q", "udhcpc")       # (no -R: the lease isn't released, nothing is undone)
+        self.sh("ip", "addr", "flush", "dev", IFACE)
+        self.sh("ip", "addr", "add", cfg["address"], "brd", "+", "dev", IFACE)
+        self.sh("ip", "route", "replace", "default", "via", cfg["gateway"], "dev", IFACE)
+        if not self._ok('arping -q -I "$1" -c 3 -w 4 "$2"', IFACE, cfg["gateway"]):
+            self._back_to_automatic()
+            return {**failed(f"the gateway {cfg['gateway']} didn't answer from {ip}"), "ip": ""}
+        try:
+            self.resolv.write_text("".join(f"nameserver {d} # {IFACE}\n" for d in cfg["dns"]))
+        except OSError as e:
+            log.warning("wifi: DNS not written (%s)", e)
+        try:
+            hooks = sorted(h for h in self.dhcp_hooks.iterdir() if h.is_file() and os.access(h, os.X_OK))
+        except OSError:
+            hooks = []
+        for hook in hooks:                        # (as udhcpc would: ntpd looks the time up now)
+            self.sh(str(hook), "bound")
+        self.on_static = got["ssid"]
+        self.static_note = {"state": "on", "address": cfg["address"]}
+        log.info("wifi: on the fixed address %s", ip)
+        return {**got, "ip": ip}
 
     def connected(self) -> dict | None:
         """{"ssid", "ip"} once associated and addressed, else None."""
@@ -381,8 +553,9 @@ class Manager:
             got = self.connected()
             if got:
                 self.mode = "station"
-                self._write_status(**got)
                 log.info("wifi: connected to %s (%s)", got["ssid"], got["ip"])
+                got = self.static_check(got)
+                self._write_status(**got)
                 return got
             self.sleep(1)
         return None
@@ -423,6 +596,12 @@ class Manager:
             self.start_hotspot()
         elif action == "station":
             self.join_or_keep_trying()
+        elif action == "static":                  # the fixed address was set (or taken off) on the page
+            self.static_failed = None
+            got = self.connected() if self.mode == "station" else None
+            if got:
+                self._write_status(**self.static_check(got))
+                return
         elif action == "trial":
             self.trial_until = self.clock() + TRIAL_S
             self.go_offline(asked=True)
@@ -458,6 +637,7 @@ class Manager:
                 if self.mode == "connecting":
                     log.info("wifi: back on %s (%s)", got["ssid"], got["ip"])
                 self.mode, self.lost_since = "station", None
+                got = self.static_check(got)
                 if got.get("ip") != self.status.get("ip") or got.get("ssid") != self.status.get("ssid") \
                         or self.status.get("reconnecting"):
                     self._write_status(**got)
@@ -501,7 +681,7 @@ class Manager:
         except (OSError, ValueError):
             return None
         path.unlink(missing_ok=True)
-        return action if action in ("reload", "scan", "hotspot", "station", "offline", "trial") else None
+        return action if action in ("reload", "scan", "hotspot", "station", "offline", "trial", "static") else None
 
 
 def ask(action: str, run: Path = RUN) -> None:
