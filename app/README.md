@@ -2161,6 +2161,19 @@ mark. The phone app's **Frequencies** screen shows the same bars (**Sent**) and,
 its microphone on, **Heard**: what reaches the listening spot, lined up with Sent in
 the middle, so the gaps between the two are the speaker and the room.
 
+**The most usable bass and treble** (phone app, Radios → **Bass and treble**): over
+a steady hiss through the EQ (`"steady"`), each bass band (125, 62, 31 Hz) and treble
+band (4, 8, 16 kHz) is raised 2 dB at a time while the phone listens; a band stops at
+the step where the boost no longer stands out in what's heard (judged against the
+middle of the sound, because the radio turns everything down for its biggest boost),
+makes the speaker buzz or rattle (its harmonics rise in what's heard, not what's sent),
+or makes the 5 V supply dip (`power_dips`, from the Pi's `rpi_volt` alarm). It runs at
+the volume you listen at: more volume, less usable bass. An optional **hearing check**
+(three beeps per pitch, 1-16 kHz, quieter each time they're heard) works out how much
+treble lift the listener's ears want (half the loss against ISO 226 normal hearing, the
+hearing-aid half-gain rule; nothing for a pitch not heard at all); the treble used is the
+smaller of that and what the speaker can do. Needs 1.9.88.
+
 **With the phone app** (Sleep Radio Remote, Android): Radios → **Tune the
 speaker** measures whichever radio the app is controlling. The radio plays its
 **sweep** test sound three times while the phone listens from three places round
@@ -2229,8 +2242,8 @@ everything but the page itself and the login needs the session cookie
 | `GET /api/log` | The radio's log (`logview.py`; the desktop's Settings → Log): `?level=problems` (warnings and worse; else everything), `?q=text`, `?lines=n` (to 1000) → `{"exists", "lines": [{"t", "level", "who", "text"}], "matched", "shown", "truncated", "system_up_s", "program_up_s"}`. On the appliance syslog's file is in memory (`/var/log` is a link to the RAM disk `/tmp`): reading it writes nothing to the card, and a restart clears it |
 | `GET /api/health` | The "something's wrong" light (`health.py`): `{"level": "ok" \| "warn" \| "bad", "issues": [{"key", "level", "short", "says"}]}` |
 | `GET /api/status` | What's on air, next, history, the library, the voice, the speaker (volume, playing, mono, EQ, low cut, sleep timer, test sound), artist/list playing |
-| `GET /api/spectrum` | The frequency display: `{"hz": [31.5 … 16000], "db": [...], "live": bool}`, the 28 third-octave bands of what the speaker is fed (after the EQ and low cut, before the volume, mono) in dB against a full-scale sine. The radio only keeps the samples for 5 s after each ask (audio/spectrum.py). |
-| `POST /api/speaker` | Any of `{"volume": 0-100}`, `{"step": n}`, `{"knob_mode": "auto" \| "fine" \| "normal" \| "coarse"}`, `{"pause": true \| false \| "toggle"}`, `{"sleep": minutes}` (0 = off), `{"mono": bool}`, `{"noise": true \| false \| "toggle", "noise_kind": "pink", "noise_mix": 0-100}`, `{"eq": {"bass": dB, ...}}`, `{"eq_slots": [name \| null, x4]}` (the sound each button picks in EQ mode), `{"eq_auto": bool, "eq_by_type": {"music" \| "radio" \| "audiobook" \| "ebook" \| "podcast": name \| null}}` (the sound each kind of audio gets), `{"highpass": Hz}`, `{"evenness": "off" \| "gentle" \| "strong"}`, `{"test": "bass" \| "sweep" \| "pink" \| "left" \| "right" \| "sides" \| "phase" \| "tune" \| "stop"}` (a radio that was paused is paused again when the test ends or is stopped). Add `"save": false` to hear an EQ, low cut or mono change without saving it (the phone app's speaker tuning tries sounds this way). |
+| `GET /api/spectrum` | The frequency display: `{"hz": [31.5 … 16000], "db": [...], "live": bool, "power_dips": n | null}`, the 28 third-octave bands of what the speaker is fed (after the EQ and low cut, before the volume, mono) in dB against a full-scale sine. The radio only keeps the samples for 5 s after each ask (audio/spectrum.py). |
+| `POST /api/speaker` | Any of `{"volume": 0-100}`, `{"step": n}`, `{"knob_mode": "auto" \| "fine" \| "normal" \| "coarse"}`, `{"pause": true \| false \| "toggle"}`, `{"sleep": minutes}` (0 = off), `{"mono": bool}`, `{"noise": true \| false \| "toggle", "noise_kind": "pink", "noise_mix": 0-100}`, `{"eq": {"bass": dB, ...}}`, `{"eq_slots": [name \| null, x4]}` (the sound each button picks in EQ mode), `{"eq_auto": bool, "eq_by_type": {"music" \| "radio" \| "audiobook" \| "ebook" \| "podcast": name \| null}}` (the sound each kind of audio gets), `{"highpass": Hz}`, `{"evenness": "off" \| "gentle" \| "strong"}`, `{"test": "bass" \| "sweep" \| "pink" \| "left" \| "right" \| "sides" \| "phase" \| "tune" \| "stop"}` (a radio that was paused is paused again when the test ends or is stopped); `"steady"` is pink noise that goes through the EQ (the phone app's usable bass and treble), and `{"test": "tone", "hz": 20-20000, "db": -90..0}` plays three short beeps (its hearing check). Add `"save": false` to hear an EQ, low cut or mono change without saving it (the phone app's speaker tuning tries sounds this way). |
 | `POST /api/stream` | `{"enabled": bool}` — listening in a browser on/off (saved as `web_stream`) |
 | `POST /api/knob` | `{"press": "short" \| "long" \| "service"}` — the knob's switch; `service` opens the service menu (then `/api/buttons/press` answers it; `GET /api/buttons` has its `service` state); `{"press": "turn", "clicks": n}`: pressed and turned |
 | `GET` / `POST /api/identity` | `{"hardware", "station_name"}` — which radio this is and its name; a POST saves and restarts the station |
