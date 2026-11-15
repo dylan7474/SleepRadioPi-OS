@@ -22,6 +22,7 @@ from pathlib import Path
 
 import numpy as np
 
+from sleepradiopi.audio import spectrum
 from sleepradiopi.audio import pcm
 from sleepradiopi.audio.eq import DEFAULT_BY_TYPE, DEFAULT_SLOTS, PRESETS, Equalizer, clamp, expand, preset_bands, validate_by_type, validate_slots
 from sleepradiopi.audio.noise import KINDS as NOISE_KINDS, NoiseGen
@@ -100,6 +101,9 @@ class SpeakerOutput:
         self._show_at = 0.0              # when the show last came to write (time.monotonic())
         self._opened_once = False
         self.level = 0.0                 # the last slice's mean |sample|, before the volume (io/lamps.py)
+        self.watch_until = 0.0           # the frequency display is open (audio/spectrum.py): keep the last samples till then
+        self._scope = np.zeros(0, np.float32)
+        self._scope_at = 0.0
         self.level_at = 0.0
         self._fails = 0                  # aplay failures in a row (the card won't open)
         self._opened_at = 0.0
@@ -198,6 +202,15 @@ class SpeakerOutput:
             self._running = True
             self._sync()
 
+    def spectrum(self) -> dict:
+        """The frequency display (audio/spectrum.py): asked for, so keep collecting for a while; the bands now, or
+        silence if nothing has played for a second (paused, between songs)."""
+        now = time.monotonic()
+        self.watch_until = now + spectrum.WATCH_S
+        live = now - self._scope_at < 1.0 and len(self._scope) >= spectrum.SCOPE_N // 2
+        return {"hz": list(spectrum.CENTRES), "live": live,
+                "db": spectrum.bands(self._scope, pcm.SAMPLE_RATE) if live else [spectrum.FLOOR_DB] * len(spectrum.CENTRES)}
+
     def write(self, block: np.ndarray) -> None:
         if not self.enabled:             # paused: the show's last seconds go nowhere
             if self.unheard:             # ...but nothing else may pace it: real time, as if it were heard
@@ -256,6 +269,9 @@ class SpeakerOutput:
                 if self.eq is not None:
                     x = self.eq.process(x)
             self.level, self.level_at = float(np.mean(np.abs(x))), time.monotonic()   # (pre-volume: the VU needle)
+            if self.level_at < self.watch_until:  # (someone's looking at the frequency display: what the speaker gets, mono)
+                self._scope = np.concatenate((self._scope, x.mean(axis=1).astype(np.float32) / 32768))[-spectrum.SCOPE_N:]
+                self._scope_at = self.level_at
             part = np.clip(x * g, -32768, 32767).astype(np.int16)
             try:
                 view = memoryview(part.tobytes())

@@ -65,6 +65,8 @@ the image README's [Roadmap](../../README.md#roadmap) (keep the two in step).
   differences (six presets, the selector, a back button, the meter and the
   grille light) are the `"cathedral"` hardware profile here (software done;
   the image's GPIO keys and PWM next — see *Two radios* in the app README).
+- **Frequency display** (BEING BUILT 2026-11-15: desktop Speakers → Frequency display, and the phone
+  app's Frequencies screen with Sent and Heard bars)
 - **An easier volume control on the desktop page** — turning the radio graphic's knob with a mouse
   or finger is tricky. Keep the knob as an indicator of the volume (it looks like the radio), but give
   a better way to actually change it (for example big - / + keys and a plain slider or number beside it,

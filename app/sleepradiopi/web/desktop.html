@@ -958,7 +958,7 @@ const PANELS = [
 const PANEL = {};
 for (const [key, title, sym, h, page] of PANELS) PANEL[key] = mk({ id: "set:" + key, kind: "panel", key, title, sym, h, page });
 for (const [key, title, sym, h] of [["messages", "Messages", "✎", 55], ["birthdays", "Birthdays", "✿", 340], ["stations", "Stations", "R", 8], ["radios", "Other radios", "⇄", 165], ["hooks", "DJ lines", "❝", 30],
-                                    ["tests", "Test sounds", "▶", 150], ["stream", "Listen in a browser", "◠", 200], ["lists", "Themes", "A", 195],
+                                    ["tests", "Test sounds", "▶", 150], ["spectrum", "Frequency display", "▥", 30], ["stream", "Listen in a browser", "◠", 200], ["lists", "Themes", "A", 195],
                                     ["findstation", "Find a station", "R", 8], ["findreceiver", "Find a receiver", "⌁", 200], ["modes", "Where to listen", "⌖", 215], ["conditions", "Band conditions", "☼", 45], ["quakes", "Earthquakes", "≋", 20], ["sun", "The sun", "☀", 45], ["aurora", "Aurora", "◠", 130], ["vhf", "VHF openings", "⌃", 200], ["warnings", "Warnings", "⚠", 35], ["signal", "My signal", "⌇", 210], ["qrz", "QRZ logbook", "Q", 225], ["lightning", "Lightning", "ϟ", 50], ["notify", "Notifications", "♪", 20], ["aircraft", "Aircraft", "✈", 215], ["r433", "433 MHz", "∿", 280], ["sondes", "Radiosondes", "⇡", 300], ["sondelive", "Sonde console", "◉", 300], ["findroom", "Find a room", "☊", 265], ["findpodcast", "Follow a podcast", "P", 275], ["findbook", "Find a LibriVox book", "B", 150], ["findebook", "Find an ebook", "E", 160], ["newlist", "New theme", "A", 195]])
   PANEL[key] = mk({ id: "set:" + key, kind: "panel", key, title, sym, h, page: key });
 const DJ = mk({ id: "dj", kind: "dj", title: "The DJ" });
@@ -5406,6 +5406,69 @@ function openSondeConsole(id) {
   open(PANEL.sondelive.id);
   if (!had) { const w = W.find(w => w.id === PANEL.sondelive.id), d = $("desk"); if (w) { Object.assign(w, { x: 16, y: 8, w: Math.min(1280, d.clientWidth - 32), h: d.clientHeight - 24, fitted: true }); drawDesk(); } }
 }
+// The frequency display: what the speaker is being fed (after the EQ and low cut), in the 28 third-octave bands from
+// GET /api/spectrum (audio/spectrum.py), about eight times a second while the window is open -- the radio only collects
+// while someone looks. Bars, with a mark for each band's recent peak that falls back slowly; "Slow average" smooths over
+// a few seconds, for judging a whole track. The phone app shows the same bars beside what its microphone hears.
+const Spectrum = {
+  EVERY_MS: 125, FLOOR: -70, PEAK_FALL_DB_S: 12, AVG_S: 3,
+  st: { node: null, cv: null, note: null, timer: null, hz: [], db: [], peak: [], avg: null, mode: "live", live: false, t: 0 },
+  view() {
+    const st = this.st;
+    if (!st.node) {
+      st.cv = el("canvas", { width: 640, height: 260, style: "width:100%;height:auto;display:block", role: "img",
+                             "aria-label": "The frequency display: one bar for each third of an octave, low notes on the left" });
+      st.note = el("p", { className: "shelp" });
+      st.node = el("div", {}, st.cv, st.note);
+    }
+    if (!st.timer) {
+      st.timer = setInterval(() => { if (!st.node.isConnected) { clearInterval(st.timer); st.timer = null; return; } if (!document.hidden) this.ask(); }, this.EVERY_MS);
+      this.ask();
+    }
+    this.draw();
+    return st.node;
+  },
+  async ask() {
+    const st = this.st;
+    let d;
+    try { d = await api("/api/spectrum"); } catch { return; }
+    const now = performance.now(), dt = st.t ? (now - st.t) / 1000 : 0;
+    st.t = now; st.hz = d.hz; st.live = d.live;
+    st.db = d.db.map(v => Math.max(this.FLOOR, v));
+    // the slow average: power, smoothed over AVG_S seconds
+    const k = Math.min(1, dt / this.AVG_S);
+    st.avg = st.avg && st.avg.length === st.db.length ? st.avg.map((a, i) => a + (10 ** (st.db[i] / 10) - a) * k) : st.db.map(v => 10 ** (v / 10));
+    const shown = this.shown();
+    st.peak = shown.map((v, i) => Math.max(v, (st.peak[i] ?? this.FLOOR) - this.PEAK_FALL_DB_S * dt));
+    this.draw();
+  },
+  shown() { const st = this.st; return st.mode === "avg" && st.avg ? st.avg.map(p => Math.max(this.FLOOR, 10 * Math.log10(Math.max(p, 1e-12)))) : st.db; },
+  draw() {
+    const st = this.st, cv = st.cv;
+    if (!cv) return;
+    const g = cv.getContext("2d"), W = cv.width, H = cv.height, css = getComputedStyle(document.documentElement);
+    const ink = css.getPropertyValue("--ink").trim() || "#222", bar = css.getPropertyValue("--amber").trim() || "#d90", line = css.getPropertyValue("--line").trim() || "#ccc";
+    const left = 34, bottom = 22, top = 6, w = (W - left) / Math.max(1, st.hz.length || 28);
+    const y = db => top + (H - top - bottom) * (0 - db) / (0 - this.FLOOR);
+    g.clearRect(0, 0, W, H);
+    g.font = "11px sans-serif"; g.fillStyle = ink; g.strokeStyle = line; g.lineWidth = 1;
+    for (const d of [0, -10, -20, -30, -40, -50, -60]) {
+      g.beginPath(); g.moveTo(left, y(d) + 0.5); g.lineTo(W, y(d) + 0.5); g.stroke();
+      g.fillText(String(d), 2, y(d) + 4);
+    }
+    const shown = this.shown();
+    st.hz.forEach((hz, i) => {
+      const x = left + i * w;
+      g.fillStyle = bar; g.fillRect(x + 1.5, y(shown[i]), w - 3, Math.max(0, H - bottom - y(shown[i])));
+      g.fillStyle = ink; g.fillRect(x + 1.5, y(st.peak[i] ?? this.FLOOR) - 1, w - 3, 2.5);      // the peak mark
+      if ([31.5, 63, 125, 250, 500, 1000, 2000, 4000, 8000, 16000].includes(hz))
+        g.fillText(hz >= 1000 ? hz / 1000 + "k" : String(Math.round(hz)), x + w / 2 - 8, H - 6);
+    });
+    st.note.textContent = (st.live ? "Playing: " : "Nothing playing (paused, or between songs). ") +
+      "What the speaker is fed, after the EQ and low cut, in dB below the loudest a tone can be (0). Bars: " +
+      (st.mode === "avg" ? "slow average over a few seconds." : "live.") + " The dark mark on each is its recent peak.";
+  },
+};
 const UI = {
   // The DJ's lines between songs: the 70s ones that come with the radio (to read), and its own (added here, synced).
   hooks: {
@@ -5459,6 +5522,14 @@ const UI = {
   sondelive: {
     load: async () => ({}),
     build: () => [SondeConsole.view()],
+  },
+  spectrum: {
+    load: async () => ({}),
+    build: (_, act) => [
+      grp("", srow("Bars", seg([["live", "Live"], ["avg", "Slow average"]], Spectrum.st.mode, v => { Spectrum.st.mode = v; act(async () => {}); }))),
+      Spectrum.view(),
+      help("Low notes on the left, high on the right: 31 Hz to 16 kHz in thirds of an octave. Compare a track you know with the Speakers window's EQ, or with the phone app, which also shows what its microphone hears."),
+    ],
   },
   tests: {
     load: async () => (await api("/api/status")).speaker,
@@ -5527,6 +5598,7 @@ const UI = {
         ...EQ_BANDS.map(g => srow(g.slice(1) + " Hz", ...range("eq-" + g, -12, 12, 1, sp.eq?.[g] ?? 0, db, v => act(() => api("/api/speaker", { eq: { [g]: v } }))))),
         srow("Low cut", seg(lowCutSteps(sp.highpass_hz ?? 0), sp.highpass_hz ?? 0, v => act(() => api("/api/speaker", { highpass: v })))),
         line(sbtn("Flat EQ", () => act(() => api("/api/speaker", { eq: eqPresetBands("Flat") }))),
+             sbtn("Frequency display…", () => open(PANEL.spectrum.id)),
              sbtn("Tune speakers…", () => {
                // The analyser (needs the mic: https, or the radio's own copy where Chrome's "Insecure
                // origins treated as secure" flag makes this page secure) listens to the "tune" hiss and

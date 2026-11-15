@@ -240,6 +240,9 @@ def build(ctx):
         self._send(json.dumps(presets.status()).encode(), "application/json")
 
     def get(self, path) -> bool:
+        if path == "/api/spectrum" and speaker is not None:     # the frequency display: what the speaker is fed, in bands
+            self._send(json.dumps(speaker.speaker.spectrum()).encode(), "application/json")
+            return True
         if path == "/api/speaker/sounds" and config_file is not None:
             self._send(json.dumps({"sounds": load_settings(config_file).speaker_sounds}).encode(), "application/json")
             return True
