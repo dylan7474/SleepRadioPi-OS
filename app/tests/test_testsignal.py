@@ -230,5 +230,14 @@ def test_trying_a_sound_without_saving_it(tmp_path: Path) -> None:
         post({"eq": {"g125": -2}, "highpass": 100})                        # (the default: saved)
         saved = json.loads(cfg.read_text())
         assert saved["speaker_eq"]["g125"] == -2 and saved["speaker_highpass_hz"] == 100
+        # tried, then kept as it is (the app's Save after Listen): the same values, and still written
+        post({"eq": {"g250": -5}, "highpass": 80, "mono": True, "save": False})
+        assert json.loads(cfg.read_text())["speaker_highpass_hz"] == 100
+        post({"eq": {"g250": -5}, "highpass": 80, "mono": True})
+        saved = json.loads(cfg.read_text())
+        assert saved["speaker_eq"]["g250"] == -5 and saved["speaker_highpass_hz"] == 80 and saved["speaker_mono"] is True
+        before = cfg.stat().st_mtime_ns
+        post({"eq": {"g250": -5}, "highpass": 80})                         # nothing tried, nothing changed: not written
+        assert cfg.stat().st_mtime_ns == before
     finally:
         httpd.shutdown()

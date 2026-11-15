@@ -391,6 +391,7 @@ class SpeakerControl:
         self._save_timer: threading.Timer | None = None
         self._sleep_timer: threading.Timer | None = None
         self._test_was_paused = False    # a test sound started on a paused radio: paused again after it
+        self._tried: set[str] = set()     # settings heard but not saved (save=False): a save of the same value still writes
         speaker.on_test_done = self._test_over
         self._sleep_min = 0
         # Says a line in the DJ voice (int16 stereo), for the "sides" test's
@@ -442,11 +443,26 @@ class SpeakerControl:
         self._by_hand()
         with self._lock:
             if self.speaker.mono == mono:
+                self._save_tried("speaker_mono", mono, save)
                 return
             self.speaker.mono = mono
-            if save:
-                self._save_setting("speaker_mono", mono)
+            self._saved_or_tried("speaker_mono", mono, save)
         log.info("speaker: %s", "mono" if mono else "stereo")
+
+    def _saved_or_tried(self, key: str, value, save: bool) -> None:
+        """A changed setting: saved, or remembered as only tried."""
+        if save:
+            self._tried.discard(key)
+            self._save_setting(key, value)
+        else:
+            self._tried.add(key)
+
+    def _save_tried(self, key: str, value, save: bool) -> None:
+        """An unchanged setting asked to be saved: written only if it was just tried (heard, not saved) -- the phone
+        app's tuning tries a sound, then keeps the same one (otherwise nothing changed, so nothing is written)."""
+        if save and key in self._tried:
+            self._tried.discard(key)
+            self._save_setting(key, value)
 
     def set_eq(self, gains: dict, save: bool = True) -> None:
         """Band gains in dB (-12..12; missing bands keep their setting).
@@ -459,10 +475,10 @@ class SpeakerControl:
         with self._lock:
             new = clamp({**eq.gains, **expand(gains)})
             if new == eq.gains:
+                self._save_tried("speaker_eq", new, save)
                 return
             eq.set(new)
-            if save:
-                self._save_setting("speaker_eq", new)
+            self._saved_or_tried("speaker_eq", new, save)
         log.info("speaker EQ: %s", new)
 
     def set_highpass(self, hz: float, save: bool = True) -> None:
@@ -476,9 +492,9 @@ class SpeakerControl:
             before = eq.highpass
             eq.set(eq.gains, hz)
             if eq.highpass == before:
+                self._save_tried("speaker_highpass_hz", eq.highpass, save)
                 return
-            if save:
-                self._save_setting("speaker_highpass_hz", eq.highpass)
+            self._saved_or_tried("speaker_highpass_hz", eq.highpass, save)
         log.info("speaker low cut: %s", f"{eq.highpass} Hz" if eq.highpass else "off")
 
     def set_evenness(self, value: str, save: bool = True) -> None:
@@ -536,6 +552,7 @@ class SpeakerControl:
         self._save_setting("speaker_eq", dict(eq.gains))
         self._save_setting("speaker_highpass_hz", eq.highpass)
         self._save_setting("speaker_mono", bool(self.speaker.mono))
+        self._tried -= {"speaker_eq", "speaker_highpass_hz", "speaker_mono"}
 
     # --- the sound by what's playing ----------------------------------------------------------
 
