@@ -4675,6 +4675,11 @@ const EQ_PRESETS = {
   "Dance":      [0, 2, 4, 3, 0, -1, 0, 2, 3, 2],
 };
 const eqPresetBands = n => Object.fromEntries(EQ_BANDS.map((g, i) => [g, EQ_PRESETS[n][i]]));
+// a saved sound that matches the speakers now (EQ and low cut), by name; the phone app's tuning saves them too
+const soundNow = (sp, sounds) => sounds.find(x => EQ_BANDS.every(b => (sp.eq?.[b] || 0) === (x.eq?.[b] || 0)) && (x.highpass || 0) === (sp.highpass_hz || 0))?.name;
+// the low cut's steps, with the radio's own if it's another (the phone app's tuning sets 85 Hz, say)
+const lowCutSteps = hz => { const steps = [0, 100, 120, 140, 160]; if (!steps.includes(hz)) steps.push(hz); steps.sort((a, b) => a - b);
+  return steps.map(v => [v, v === 0 ? "Off" : v === steps[steps.length - 1] ? v + " Hz" : String(v)]); };
 const eqPresetNow = eq => Object.keys(EQ_PRESETS).find(n => EQ_BANDS.every((b, i) => (eq?.[b] || 0) === EQ_PRESETS[n][i]));
 const eqWords = eq => eqPresetNow(eq) || "custom";
 const sw = (on, onflip, label) => { const b = el("button", { className: "sw", type: "button", role: "switch" }); b.setAttribute("aria-checked", String(!!on)); b.setAttribute("aria-label", label); b.onclick = () => onflip(!on); return b; };
@@ -5496,7 +5501,7 @@ const UI = {
     load: async () => {
       const [st, lamps, btns, saved] = await Promise.all([api("/api/status"), api("/api/lamps").catch(() => ({})), api("/api/buttons").catch(() => ({})),
                                                           api("/api/speaker/sounds").catch(() => ({ sounds: [] }))]);
-      return { ...st.speaker, lamps, selector: !!btns.selector, eqMode: !!btns.eq_mode, saved: (saved.sounds || []).map(x => x.name) };
+      return { ...st.speaker, lamps, selector: !!btns.selector, eqMode: !!btns.eq_mode, saved: (saved.sounds || []).map(x => x.name), sounds: saved.sounds || [] };
     },
     build: (sp, act) => [
       ...(TUNE ? [grp("Speaker settings from the analyser",
@@ -5517,8 +5522,10 @@ const UI = {
       grp("The radio's speakers",
         srow("Speakers", seg([[false, "Stereo"], [true, "Mono"]], sp.mono, v => act(() => api("/api/speaker", { mono: v })))),
         srow("Preset", seg(Object.keys(EQ_PRESETS).map(n => [n, n]), eqPresetNow(sp.eq), n => act(() => api("/api/speaker", { eq: eqPresetBands(n) })))),
+        ...(sp.sounds.length ? [srow("Your sounds", seg(sp.sounds.map(x => [x.name, x.name]), soundNow(sp, sp.sounds),
+          n => { const x = sp.sounds.find(y => y.name === n); act(() => api("/api/speaker", { eq: x.eq, highpass: x.highpass || 0, mono: !!x.mono })); }))] : []),
         ...EQ_BANDS.map(g => srow(g.slice(1) + " Hz", ...range("eq-" + g, -12, 12, 1, sp.eq?.[g] ?? 0, db, v => act(() => api("/api/speaker", { eq: { [g]: v } }))))),
-        srow("Low cut", seg([[0, "Off"], [100, "100"], [120, "120"], [140, "140"], [160, "160 Hz"]], sp.highpass_hz ?? 0, v => act(() => api("/api/speaker", { highpass: v })))),
+        srow("Low cut", seg(lowCutSteps(sp.highpass_hz ?? 0), sp.highpass_hz ?? 0, v => act(() => api("/api/speaker", { highpass: v })))),
         line(sbtn("Flat EQ", () => act(() => api("/api/speaker", { eq: eqPresetBands("Flat") }))),
              sbtn("Tune speakers…", () => {
                // The analyser (needs the mic: https, or the radio's own copy where Chrome's "Insecure
