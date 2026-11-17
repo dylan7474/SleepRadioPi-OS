@@ -5329,7 +5329,7 @@ const Air3D = {
     new ResizeObserver(() => this.draw()).observe(cv);
     return el("div", { className: "air3d" }, el("div", { className: "air3d-wrap" }, cv), this.info,
       el("div", { className: "line", style: "justify-content:center;margin-top:6px" }, reset),
-      el("p", { className: "shelp air-attr", textContent: "Drag to turn it, the wheel (or + and -) to zoom, click an aircraft for its details. Each stands on a stalk down to where it is over the ground; the line behind it is where it has been. The pole at the aerial is the height scale. Seen from the south to begin with: north is away from you." }));
+      el("p", { className: "shelp air-attr", textContent: "Drag to turn it, the wheel (or + and -) to zoom, click an aircraft for its details. Each stands on a stalk down to where it is over the ground; the line behind it is where it has been, and its name and height are on a banner it tows (zoomed out, only the nearest have one: zoom in for more). The pole at the aerial is the height scale. Seen from the south to begin with: north is away from you." }));
   },
   go() {                                            // draw about 20 times a second while it's on the screen (the aircraft glide between pictures)
     const st = this.st;
@@ -5489,18 +5489,39 @@ const Air3D = {
       if (picked) { g.strokeStyle = "#fff"; g.lineWidth = 1.5; g.strokeRect(at[0] - 13, at[1] - 13, 26, 26); }
       st.screen.push([at[0], at[1], p.hex]);
     }
-    // labels: the nearest eight, and any with an alert or picked, where they don't land on one already written
-    g.font = "bold 11.5px ui-monospace, monospace";
-    const near = o.shown.slice().sort((u, v) => u.nm - v.nm), want = new Set(near.slice(0, 8).map(p => p.hex)), taken = [];
-    for (const { p, at } of list.slice().reverse()) {
-      const must = p.squawk || o.marks.has(p.hex) || st.sel === p.hex;
-      if (!must && !want.has(p.hex)) continue;
-      const txt = (o.marks.has(p.hex) ? "▲ " : "") + (p.call || p.hex) + (p.ground ? " gnd" : p.ft != null ? ` ${Math.round(p.ft / 100) * 100 >= 1000 ? (Math.round(p.ft / 100) / 10).toFixed(1) + "k" : p.ft} ft` : "");
-      const x = at[0] + 14, wd = g.measureText(txt).width, hits = y => taken.some(t => x < t[0] + t[2] + 4 && x + wd + 4 > t[0] && Math.abs(t[1] - y) < 14);
-      let y = at[1] - 2;
-      if (!must && hits(y)) continue;
-      for (let i = 0; i < 4 && hits(y); i++) y += 14;                     // (one that must be said moves down a line or so instead)
-      taken.push([x, y, wd]); outline(txt, x, y, p.squawk ? "#ffd2c8" : "#fff");
+    // labels: each on a banner towed behind its aircraft (the line points back the way it came, so aircraft going different ways spread
+    // their banners apart; the writing stays level). Zoomed out, fewer of them (the nearest first); zoom in for more. One with an alert,
+    // or picked, always has its banner; the others are left out where there's no room (a longer tow line is tried first).
+    g.font = "bold 10.5px ui-monospace, monospace";
+    const howMany = st.zoom < 1.3 ? 5 : st.zoom < 2 ? 8 : st.zoom < 3.5 ? 12 : 40;
+    const near = o.shown.slice().sort((u, v) => u.nm - v.nm), want = new Set(near.slice(0, howMany).map(p => p.hex)), boxes = [];
+    const high = p => p.ground ? "gnd" : p.ft == null ? "" : p.ft < 1000 ? String(Math.round(p.ft / 100) * 100) : p.ft < 10000 ? `${+(p.ft / 1000).toFixed(1)}k` : `${Math.round(p.ft / 1000)}k`;
+    const must = p => !!(p.squawk || o.marks.has(p.hex) || st.sel === p.hex);
+    const order = list.filter(({ p }) => must(p) || want.has(p.hex)).sort((u, v) => (must(v.p) - must(u.p)) || (u.p.nm - v.p.nm));
+    const marks = list.map(({ at }) => [at[0] - 7, at[1] - 7, at[0] + 7, at[1] + 7]);       // (a banner keeps off the aircraft themselves too)
+    const clash = b => boxes.some(u => b[0] < u[2] + 3 && b[2] + 3 > u[0] && b[1] < u[3] + 2 && b[3] + 2 > u[1]) || marks.some(u => b[0] < u[2] && b[2] > u[0] && b[1] < u[3] && b[3] > u[1]);
+    for (const { p, q, at } of order) {
+      const txt = (o.marks.has(p.hex) ? "▲ " : "") + (p.call || p.hex) + (high(p) ? " " + high(p) : ""), wd = g.measureText(txt).width + 8, ht = 15;
+      let dx = -1, dy = 0;                                                 // which way is behind it, on the screen
+      if (p.track != null && !p.ground) {
+        const h = (p.track + 180) * D2R, b = P(q[0] + Math.sin(h) * range * .05, q[1] + Math.cos(h) * range * .05, q[2]), L = Math.hypot(b[0] - at[0], b[1] - at[1]);
+        if (L > 1.5) { dx = (b[0] - at[0]) / L; dy = (b[1] - at[1]) / L; }
+      }
+      const reach = Math.abs(dx) * wd / 2 + Math.abs(dy) * ht / 2;         // (from the banner's middle to its edge, along the tow line)
+      let put = null;
+      for (const tow of [16, 30, 46, 64]) {
+        const cx = at[0] + dx * (tow + reach), cy = at[1] + dy * (tow + reach), b = [cx - wd / 2, cy - ht / 2, cx + wd / 2, cy + ht / 2];
+        if (b[0] < 2 || b[2] > W - 2 || b[1] < 2 || b[3] > H - 2) continue;
+        if (!clash(b)) { put = { b, tow }; break; }
+        if (!put && must(p)) put = { b, tow, forced: true };
+      }
+      if (!put || (put.forced && !must(p))) continue;
+      const [x0, y0, x1, y1] = put.b, col = o.col(p), ex = at[0] + dx * (put.tow + 1), ey = at[1] + dy * (put.tow + 1);
+      boxes.push(put.b);
+      g.strokeStyle = col; g.globalAlpha = .75; g.lineWidth = 1; path([[at[0] + dx * 7, at[1] + dy * 7], [ex, ey]]); g.stroke(); g.globalAlpha = 1;
+      g.fillStyle = "rgba(10,16,19,.82)"; g.fillRect(x0, y0, x1 - x0, y1 - y0);
+      g.strokeStyle = col; g.lineWidth = st.sel === p.hex ? 1.8 : 1; g.strokeRect(x0 + .5, y0 + .5, x1 - x0 - 1, y1 - y0 - 1);
+      g.textAlign = "center"; g.fillStyle = p.squawk ? "#ffd2c8" : "#fff"; g.fillText(txt, (x0 + x1) / 2, (y0 + y1) / 2 + .5);
     }
     // under it: the picked aircraft's details, in words
     const sel = st.sel && o.shown.find(p => p.hex === st.sel), DIRS = ["N", "NE", "E", "SE", "S", "SW", "W", "NW"];
