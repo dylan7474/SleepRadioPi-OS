@@ -5021,7 +5021,7 @@ const Sonde3D = {
       if (!drag) return;
       const dx = e.clientX - drag.x, dy = e.clientY - drag.y;
       if (Math.abs(dx) + Math.abs(dy) > 4) drag.moved = true;
-      if (drag.moved) { st.yaw = drag.yaw - dx * .4; st.pitch = Math.max(2, Math.min(89, drag.pitch + dy * .3)); this.draw(); }
+      if (drag.moved) { st.yaw = drag.yaw + dx * .4; st.pitch = Math.max(2, Math.min(89, drag.pitch + dy * .3)); this.draw(); }
     };
     cv.onpointerup = e => {
       const was = drag; drag = null;
@@ -5036,7 +5036,7 @@ const Sonde3D = {
     cv.onwheel = e => { e.preventDefault(); st.zoom = Math.max(.5, Math.min(8, st.zoom * (e.deltaY < 0 ? 1.15 : 1 / 1.15))); this.draw(); };
     cv.onkeydown = e => {
       const n = (st.pts || []).length, k = e.key;
-      if (k === "ArrowLeft") st.yaw += 10; else if (k === "ArrowRight") st.yaw -= 10;
+      if (k === "ArrowLeft") st.yaw -= 10; else if (k === "ArrowRight") st.yaw += 10;
       else if (k === "ArrowUp") st.pitch = Math.min(89, st.pitch + 6); else if (k === "ArrowDown") st.pitch = Math.max(2, st.pitch - 6);
       else if (k === "+" || k === "=") st.zoom = Math.min(8, st.zoom * 1.2); else if (k === "-") st.zoom = Math.max(.5, st.zoom / 1.2);
       else if ((k === "," || k === "<" || k === ".") && n) { this.stop(); st.idx = Math.max(0, Math.min(n - 1, (st.idx ?? n - 1) + (k === "." ? 1 : -1))); }
