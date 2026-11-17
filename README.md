@@ -573,12 +573,14 @@ Actions, Sleep timer and Radio folders open:
   The **Flat / 3D** switch above the scope (kept by the browser) turns it into a
   3D view: the rings laid flat as the ground with the map on them, and each
   aircraft drawn as an outline pointing along its heading, at its height, on a
-  stalk down to where it is over the ground, towing a banner with its callsign
-  and height (zoomed out only the nearest have one; zoom in for more), with a
-  height scale at the aerial (every 10,000 ft) and a trail of where it has been
-  in the last few minutes. The colours are the scope's; the height is also the stalk and the
+  stalk down to where it is over the ground, with a height scale at the aerial
+  (every 10,000 ft) and a trail of where it has been in the last few minutes.
+  Click an aircraft and it tows a banner with its callsign and height (click it
+  again to take it off); one squawking an emergency always has one. The colours are the scope's; the height is also the stalk and the
   label, never colour alone. Between pictures each aircraft glides on along its
-  heading. Drag to turn it, the wheel to zoom, click an aircraft for its details.
+  heading. Drag to turn it, the wheel to zoom; a click also gives its details.
+  *Full screen* (beside *Reset view*, where the browser allows it) fills the
+  screen with it, still updating; Esc comes back.
   The window updates itself while it's open (the radio asks the receiver about
   every 30 seconds).
   And if the receiver answers but has heard no aircraft at all for an hour,

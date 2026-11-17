@@ -635,6 +635,11 @@
   @media (prefers-reduced-motion: reduce) { .air-scope .pulse { animation: none; } }
   .air-scopebox.wide { width: min(600px, 100%); }
   .air3d-wrap { border-radius: 12px; overflow: hidden; box-shadow: 0 0 0 1px #000a, 0 0 0 5px #2c3036, 0 0 0 6px #00000080, 0 8px 22px var(--shadow); }
+  .air3d-host { background: #0a1013; color: #d8efe3; padding: 10px 14px; box-sizing: border-box; }
+  .air3d-host .air3d { height: 100%; display: flex; flex-direction: column; }
+  .air3d-host .air3d-info { color: #d8efe3; }
+  .air3d-host .shelp { display: none; }
+  .air3d-host .line { display: flex; gap: 8px; justify-content: center; }
   .air3d-info { text-align: center; margin: 8px 0 0; font: 12px var(--mono); color: var(--ink); min-height: 1.4em; }
   .air-attr { text-align: center; margin: 8px 0 0; font-size: 10.5px; line-height: 1.4; }
   .air-attr label { white-space: nowrap; font-weight: 600; }
@@ -5274,10 +5279,10 @@ const Sonde3D = {
 // where it is over the ground (so height reads from the stalk and the label, never from colour alone: the colours are the scope's height
 // bands). Behind each one, its path over the last few minutes (/api/aircraft "trails", from the tracks the radio already keeps in memory).
 // Between the window's refreshes each aircraft glides on along its heading at its speed (and its climb), and eases onto the next picture.
-// Drag to turn it, the wheel to zoom, click an aircraft for its details. One node is kept and moved into each redraw of the window, so the
+// Drag to turn it, the wheel to zoom, click an aircraft for its banner and details (again: off). One node is kept and moved into each redraw of the window, so the
 // angle, the zoom and the aircraft picked stay put while the window refreshes. Callsigns come from the air: drawn on a canvas, never HTML.
 const Air3D = {
-  st: { yaw: 0, pitch: 30, zoom: 1, node: null, a: null, o: null, got: 0, sel: null, disp: {}, raf: 0, last: 0, groundKey: null, ground: null, screen: [] },
+  st: { yaw: 0, pitch: 30, zoom: 1, node: null, a: null, o: null, got: 0, sel: null, tagged: new Set(), disp: {}, raf: 0, last: 0, groundKey: null, ground: null, screen: [] },
   CEIL_FT: 45000,                                   // the top of the height scale; it stands half the range tall
   MODEL: [[0, 1], [.1, .55], [.12, .25], [.95, -.12], [.95, -.28], [.12, -.12], [.08, -.62], [.38, -.82], [.38, -.95], [0, -.88],
           [-.38, -.95], [-.38, -.82], [-.08, -.62], [-.12, -.12], [-.95, -.28], [-.95, -.12], [-.12, .25], [-.1, .55]],
@@ -5289,13 +5294,14 @@ const Air3D = {
     const st = this.st;
     st.a = a; st.o = o; st.got = performance.now();
     if (!st.node) st.node = this.make();
+    if (this.host) { this.go(); return el("p", { className: "shelp air-attr", textContent: "Showing full screen (Esc to come back)." }); }   // (it stays where it is: the window redraws without it)
     if (ScopeMap.on() && a.at && !ScopeMap.data && !ScopeMap.failed) ScopeMap.get().then(() => { st.groundKey = null; });
     this.go();
     return st.node;
   },
   make() {
     const st = this.st, cv = el("canvas", { className: "sd3-cv air3d-cv", tabIndex: 0 });
-    cv.setAttribute("aria-label", "The aircraft in 3D: drag to turn the view, the wheel to zoom, click an aircraft for its details; arrow keys turn it, + and - zoom");
+    cv.setAttribute("aria-label", "The aircraft in 3D: drag to turn the view, the wheel to zoom, click an aircraft to show or hide its name and see its details; arrow keys turn it, + and - zoom");
     let drag = null;
     cv.onpointerdown = e => { drag = { x: e.clientX, y: e.clientY, yaw: st.yaw, pitch: st.pitch, moved: false }; cv.setPointerCapture(e.pointerId); };
     cv.onpointermove = e => {
@@ -5310,7 +5316,10 @@ const Air3D = {
       const r = cv.getBoundingClientRect(), x = e.clientX - r.left, y = e.clientY - r.top;           // a click: the aircraft nearest the pointer (or none)
       let best = null, bd = 16;
       for (const [sx, sy, hex] of st.screen) { const d = Math.hypot(sx - x, sy - y); if (d < bd) { bd = d; best = hex; } }
-      st.sel = best === st.sel ? null : best; this.draw();
+      if (!best) return;
+      if (st.tagged.has(best)) { st.tagged.delete(best); if (st.sel === best) st.sel = null; }      // (a click turns its banner on, and says its details; again: off)
+      else { st.tagged.add(best); st.sel = best; }
+      this.draw();
     };
     cv.onpointercancel = () => { drag = null; };
     cv.onwheel = e => { e.preventDefault(); st.zoom = Math.max(.6, Math.min(6, st.zoom * (e.deltaY < 0 ? 1.15 : 1 / 1.15))); this.draw(); };
@@ -5324,12 +5333,29 @@ const Air3D = {
       e.preventDefault(); this.draw();
     };
     const reset = sbtn("Reset view", () => { Object.assign(st, { yaw: 0, pitch: 30, zoom: 1 }); this.draw(); });
+    // Full screen: the view moves out of the window into a holder of its own (the window is redrawn every so often, and taking the view out
+    // of the page would end full screen), still fed each new picture by view(); back into the window when full screen ends.
+    const full = document.fullscreenEnabled ? sbtn("⛶ Full screen", () => this.host ? document.exitFullscreen().catch(() => {}) : this.full()) : null;
+    this.fullBtn = full;
     this.info = el("p", { className: "air3d-info", role: "status" });
     this.cv = cv;
     new ResizeObserver(() => this.draw()).observe(cv);
     return el("div", { className: "air3d" }, el("div", { className: "air3d-wrap" }, cv), this.info,
-      el("div", { className: "line", style: "justify-content:center;margin-top:6px" }, reset),
-      el("p", { className: "shelp air-attr", textContent: "Drag to turn it, the wheel (or + and -) to zoom, click an aircraft for its details. Each stands on a stalk down to where it is over the ground; the line behind it is where it has been, and its name and height are on a banner it tows (zoomed out, only the nearest have one: zoom in for more). The pole at the aerial is the height scale. Seen from the south to begin with: north is away from you." }));
+      el("div", { className: "line", style: "justify-content:center;margin-top:6px" }, reset, full),
+      el("p", { className: "shelp air-attr", textContent: "Drag to turn it, the wheel (or + and -) to zoom. Each stands on a stalk down to where it is over the ground; the line behind it is where it has been. Click an aircraft to give it a banner with its name and height (click it again to take it off); one squawking an emergency always has one. The pole at the aerial is the height scale. Seen from the south to begin with: north is away from you." }));
+  },
+  full() {
+    const st = this.st, host = el("div", { className: "air3d-host" });
+    document.body.append(host); host.append(st.node); this.host = host;
+    const back = () => {
+      if (document.fullscreenElement === host) return;
+      document.removeEventListener("fullscreenchange", back);
+      this.host = null; host.remove(); if (this.fullBtn) this.fullBtn.textContent = "⛶ Full screen";
+      drawDesk();                                                         // (the window takes the view back)
+      requestAnimationFrame(() => this.cv?.focus({ preventScroll: true }));
+    };
+    document.addEventListener("fullscreenchange", back);
+    host.requestFullscreen().then(() => { if (this.fullBtn) this.fullBtn.textContent = "✕ Leave full screen"; this.cv.focus({ preventScroll: true }); this.draw(); }, back);
   },
   go() {                                            // draw about 20 times a second while it's on the screen (the aircraft glide between pictures)
     const st = this.st;
@@ -5385,7 +5411,7 @@ const Air3D = {
   draw() {
     const st = this.st, cv = this.cv, a = st.a, o = st.o;
     if (!cv || !a || !o) return;
-    const W = cv.clientWidth || 520, H = Math.round(W * .78), dpr = window.devicePixelRatio || 1;
+    const W = cv.clientWidth || 520, H = this.host ? Math.max(240, window.innerHeight - 90) : Math.round(W * .78), dpr = window.devicePixelRatio || 1;
     if (cv.width !== Math.round(W * dpr) || cv.height !== Math.round(H * dpr)) { cv.width = Math.round(W * dpr); cv.height = Math.round(H * dpr); cv.style.height = H + "px"; }
     const g = cv.getContext("2d"), now = performance.now(), calm = this.calm();
     g.setTransform(dpr, 0, 0, dpr, 0, 0);
@@ -5455,6 +5481,7 @@ const Air3D = {
       list.push({ p, q, at: P(q[0], q[1], q[2]) });
     }
     for (const h of Object.keys(st.disp)) if (!seen.has(h)) delete st.disp[h];
+    for (const h of [...st.tagged]) if (!seen.has(h)) st.tagged.delete(h);
     if (st.sel && !seen.has(st.sel)) st.sel = null;
     list.sort((u, v) => u.at[2] - v.at[2]);
     st.screen = [];
@@ -5489,15 +5516,14 @@ const Air3D = {
       if (picked) { g.strokeStyle = "#fff"; g.lineWidth = 1.5; g.strokeRect(at[0] - 13, at[1] - 13, 26, 26); }
       st.screen.push([at[0], at[1], p.hex]);
     }
-    // labels: each on a banner towed behind its aircraft (the line points back the way it came, so aircraft going different ways spread
-    // their banners apart; the writing stays level). Zoomed out, fewer of them (the nearest first); zoom in for more. One with an alert,
-    // or picked, always has its banner; the others are left out where there's no room (a longer tow line is tried first).
+    // banners: only on the aircraft clicked (a click again takes it off) and on any squawking an emergency, each towed behind its aircraft
+    // (the line points back the way it came, so aircraft going different ways spread their banners apart; the writing stays level).
+    // Where there's no room a longer tow line is tried; failing that it goes where it would have, over another.
     g.font = "bold 10.5px ui-monospace, monospace";
-    const howMany = st.zoom < 1.3 ? 5 : st.zoom < 2 ? 8 : st.zoom < 3.5 ? 12 : 40;
-    const near = o.shown.slice().sort((u, v) => u.nm - v.nm), want = new Set(near.slice(0, howMany).map(p => p.hex)), boxes = [];
+    const boxes = [];
     const high = p => p.ground ? "gnd" : p.ft == null ? "" : p.ft < 1000 ? String(Math.round(p.ft / 100) * 100) : p.ft < 10000 ? `${+(p.ft / 1000).toFixed(1)}k` : `${Math.round(p.ft / 1000)}k`;
-    const must = p => !!(p.squawk || o.marks.has(p.hex) || st.sel === p.hex);
-    const order = list.filter(({ p }) => must(p) || want.has(p.hex)).sort((u, v) => (must(v.p) - must(u.p)) || (u.p.nm - v.p.nm));
+    const must = p => !!(p.squawk || st.tagged.has(p.hex));
+    const order = list.filter(({ p }) => must(p)).sort((u, v) => (!!v.p.squawk - !!u.p.squawk) || (u.p.nm - v.p.nm));
     const marks = list.map(({ at }) => [at[0] - 7, at[1] - 7, at[0] + 7, at[1] + 7]);       // (a banner keeps off the aircraft themselves too)
     const clash = b => boxes.some(u => b[0] < u[2] + 3 && b[2] + 3 > u[0] && b[1] < u[3] + 2 && b[3] + 2 > u[1]) || marks.some(u => b[0] < u[2] && b[2] > u[0] && b[1] < u[3] && b[3] > u[1]);
     for (const { p, q, at } of order) {
@@ -5515,7 +5541,7 @@ const Air3D = {
         if (!clash(b)) { put = { b, tow }; break; }
         if (!put && must(p)) put = { b, tow, forced: true };
       }
-      if (!put || (put.forced && !must(p))) continue;
+      if (!put) continue;
       const [x0, y0, x1, y1] = put.b, col = o.col(p), ex = at[0] + dx * (put.tow + 1), ey = at[1] + dy * (put.tow + 1);
       boxes.push(put.b);
       g.strokeStyle = col; g.globalAlpha = .75; g.lineWidth = 1; path([[at[0] + dx * 7, at[1] + dy * 7], [ex, ey]]); g.stroke(); g.globalAlpha = 1;
@@ -5528,7 +5554,7 @@ const Air3D = {
     const said = sel ? [sel.call || sel.hex, sel.ground ? "on the ground" : sel.ft != null ? `${sel.ft.toLocaleString("en-GB")} ft${sel.climb ? (sel.climb === "up" ? " climbing" : " descending") : ""}` : null,
                         sel.kt != null ? `${sel.kt} kt` : null, sel.track != null && !sel.ground ? `heading ${String(sel.track).padStart(3, "0")}°` : null,
                         `${sel.nm} nm ${DIRS[Math.round(sel.deg / 45) % 8]}`, sel.squawk ? `squawking ${sel.squawk}` : null, o.marks.has(sel.hex) ? "on your watch list" : null].filter(Boolean).join(" · ")
-                     : `${o.shown.length} aircraft · click one for its details`;
+                     : `${o.shown.length} aircraft · click one for its name and details (again to take it off)`;
     if (this.info.textContent !== said) this.info.textContent = said;
   },
 };
