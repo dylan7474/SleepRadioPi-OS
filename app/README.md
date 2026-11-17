@@ -1676,7 +1676,10 @@ The cards:
   (category A7) and `heavy` (A5 low), `busy` (count over `BUSY_X` times the median of the half-hour
   averages, from `BUSY_NEED` of them). All of it (`_tracks`, `_rates`, `_descents`, `_hist`) is in
   memory under `Aircraft._mem`, cleared by `forget()`; `flagged()` gives the scope the aircraft
-  with an alert. `GET /api/aircraft` also returns `alerts`, `flagged`, `off`, `kinds`.
+  with an alert. `GET /api/aircraft` also returns `alerts`, `flagged`, `off`, `kinds`, `now` (the radio's clock)
+  and `trails` (`Aircraft.trails()`: each placed aircraft's latest `TRAIL_POINTS` 40 positions from `_tracks`,
+  `[nm east, nm north, ft, seconds ago]` from the aerial, oldest first) for the desktop's 3D view (`Air3D`, the
+  Flat / 3D switch, `srd.airview`); the desktop asks again every 15 s while the window is open (`refreshLive`).
   *433 MHz* (`playback/radio433.py`, `GET /api/radio433`, `POST /api/radio433
   {"address": "host:port"}`, `""` to forget; the setting `background_url`, empty to begin with): `radio433.Radio433`
   (a `Kept` in `outside_feeds()`, `EVERY_S` 20, `LAN = True`, no `keep_in`: nothing on the card) GETs

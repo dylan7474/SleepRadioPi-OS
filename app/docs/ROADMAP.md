@@ -70,6 +70,8 @@ the image README's [Roadmap](../../README.md#roadmap) (keep the two in step).
   hearing check, remembered per radio). On Phonos the Balanced result sounds about the same as Rock.
 - **An easier volume control on the desktop page** (DONE 2026-11-15: − and + keys either side of the volume
   under the knob, a hold keeps going; the knob stays as the indicator, click / scroll as before)
+- **Aircraft in 3D** (DONE 2026-11-17, 1.9.92: a Flat / 3D switch above the Aircraft scope; the 3D view stands each
+  aircraft on a stalk over the map with its recent path; the Aircraft window now updates itself while it's open)
 - **DJ lines: fully managed** — edit and delete every DJ line, not only add/remove your own:
   edit a line in place (own lines), and edit or switch off the 70s lines that come with the radio
   (kept as this radio's changes over the built-in list, so a new release's lines still arrive).

@@ -62,6 +62,7 @@ KINDS = {                    # the eye-only alerts: {kind: (name, what it is)}; 
 INBOUND_MIN, INBOUND_NM, INBOUND_FAR_NM = 8.0, 2.0, 80.0
 LOITER_S, LOITER_NM, LOITER_MOST, LOITER_SAMPLES = 900.0, 5.0, 3, 8
 TRACK_S, GAP_S = 1500.0, 300.0                   # a track is kept this long; a gap this long ends it (a new aircraft, or out of range)
+TRAIL_POINTS = 40                                # the 3D view's trail: at most this many of an aircraft's latest positions (about 13 minutes)
 DESCENT_RATE, DESCENT_AGAIN, DESCENT_FT, DESCENT_SHOWN_S = -4000, -3000, 10000, 600.0
 LONG_NM = 250.0
 NIGHT_FT, NIGHT_NM, NEAR_MOST = 10000, 5.0, 5
@@ -330,6 +331,25 @@ class Aircraft(Kept):
                 "near": [p for p in placed if p.get("ft") is not None and p["ft"] < NIGHT_FT and p["nm"] <= NIGHT_NM and not grounded(p)][:NEAR_MOST],
                 "heli": [p for p in placed if p.get("cat") == "A7" and p["nm"] <= HELI_NM and not grounded(p)][:NEAR_MOST],
                 "heavy": [p for p in placed if p.get("cat") == "A5" and p["nm"] <= HEAVY_NM and p.get("ft") is not None and p["ft"] < HEAVY_FT and not grounded(p)][:NEAR_MOST]}
+
+    def trails(self, hexes: list[str]) -> dict[str, list]:
+        """The recent path of each of these aircraft, for the 3D view: {hex: [[nm east, nm north, ft or None, seconds ago], ...]}
+        (oldest first, at most TRAIL_POINTS), from the aerial, from the tracks already kept in memory. {} with no aerial."""
+        at = self._where[1] if self._where else None
+        if not at:
+            return {}
+        now, out = self._clock(), {}
+        with self._mem:
+            for h in hexes:
+                tr = self._tracks.get(h)
+                if not tr or len(tr) < 2:
+                    continue
+                pts = []
+                for t, lat, lon, ft in tr[-TRAIL_POINTS:]:
+                    nm, deg = distance(at[0], at[1], lat, lon)
+                    pts.append([round(nm * math.sin(math.radians(deg)), 2), round(nm * math.cos(math.radians(deg)), 2), ft, round(now - t)])
+                out[h] = pts
+        return out
 
     def fetch(self) -> dict | None:
         had = super().fetch()

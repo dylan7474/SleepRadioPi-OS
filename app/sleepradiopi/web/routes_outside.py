@@ -20,7 +20,9 @@ def build(ctx):
     def air_state() -> dict:
         from sleepradiopi.playback import aircraft as air_mod
         had = air_mod.aircraft.status(False)
-        return {"address": air_mod.ADDRESS, "watch": air_mod.WATCH, "up": bool(had), "t": had and had["t"], "n": had and had["n"], "placed": had and had["placed"],
+        planes = (had or {}).get("planes") or []
+        trails = air_mod.aircraft.trails([p["hex"] for p in planes if "nm" in p]) if had else {}
+        return {"address": air_mod.ADDRESS, "now": time.time(), "trails": trails, "watch": air_mod.WATCH, "up": bool(had), "t": had and had["t"], "n": had and had["n"], "placed": had and had["placed"],
                 "alerts": [{"what": w, "short": sh, "says": words} for w, _, words, sh in air_mod.alerts(had) if w.split(":")[-1] not in air_mod.EMERGENCY],
                 "flagged": air_mod.flagged(had), "off": sorted(air_mod.OFF), "kinds": {k: list(v) for k, v in air_mod.KINDS.items()},
                 "planes": (had or {}).get("planes") or [], "emergency": (had or {}).get("emergency") or [], "far_nm": had and had["far_nm"],

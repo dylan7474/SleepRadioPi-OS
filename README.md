@@ -570,6 +570,16 @@ Actions, Sleep timer and Radio folders open:
   beyond it are neither drawn nor listed below (the caption counts them). An
   aircraft with an alert gets a flashing ring and a ▲ by its name, and is
   never hidden by the range: out of range, it sits on the rim with its distance.
+  The **Flat / 3D** switch above the scope (kept by the browser) turns it into a
+  3D view: the rings laid flat as the ground with the map on them, and each
+  aircraft drawn as an outline pointing along its heading, at its height, on a
+  stalk down to where it is over the ground, with its label, a height scale at
+  the aerial (every 10,000 ft) and a trail of where it has been in the last few
+  minutes. The colours are the scope's; the height is also the stalk and the
+  label, never colour alone. Between pictures each aircraft glides on along its
+  heading. Drag to turn it, the wheel to zoom, click an aircraft for its details.
+  The window updates itself while it's open (the radio asks the receiver about
+  every 30 seconds).
   And if the receiver answers but has heard no aircraft at all for an hour,
   or its best range over the last hour is far below its usual, the
   "something's wrong" light says to check its aerial.

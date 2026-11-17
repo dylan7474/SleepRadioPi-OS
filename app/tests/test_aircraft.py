@@ -266,6 +266,7 @@ def test_from_the_web(tmp_path: Path, monkeypatch) -> None:
             assert post(bad)[0] == 400
         code, d = post({"address": "pi.local:8080"})
         assert code == 200 and d["up"] is True and d["n"] == 6 and d["emergency"][0]["call"] == "EMRG1"
+        assert d["trails"] == {} and isinstance(d["now"], float)                                             # (one look: no paths yet, and the radio's clock for the 3D view)
         assert json.loads(conf.read_text())["aircraft_url"] == "pi.local:8080"
         assert "aircraft" in [t["key"] for t in get("/api/outside")["tiles"] if not t.get("empty") and t["key"] != "lightning"]
         answers["/data/aircraft.json"] = None                                                                 # the receiver goes
@@ -524,3 +525,30 @@ def test_alert_kinds_are_all_named_and_switchable() -> None:
         assert [w.split(":")[1] for w, *_ in aircraft.alerts(had)] == ["y"]                  # (an emergency squawk cannot be switched off)
     finally:
         aircraft.OFF.clear()
+
+
+def test_the_3d_view_gets_each_aircrafts_recent_path() -> None:
+    now = [NOW]
+    sky = json.loads(json.dumps(SKY))
+    a = aircraft.Aircraft(get=_get({"/data/aircraft.json": sky, "/data/receiver.json": RECEIVER}), clock=lambda: now[0], address=lambda: "pi:8080")
+    assert a.trails(["440096"]) == {}                                   # (nothing asked yet: no aerial, no paths)
+    a.fetch()
+    assert a.trails(["440096"]) == {}                                   # (one position is not a path)
+    for i in range(1, 50):
+        now[0] = NOW + 20 * i
+        for p in sky["aircraft"]:
+            if p["hex"] == "440096":
+                p["lat"] += 0.01
+        a.fetch()
+    tr = a.trails(["440096", "400002", "nothere"])
+    assert set(tr) == {"440096"}                                        # (on the ground: no track; unknown: nothing)
+    pts = tr["440096"]
+    assert len(pts) == aircraft.TRAIL_POINTS
+    assert pts[-1][3] == 0 and pts[0][3] == 20 * (aircraft.TRAIL_POINTS - 1)    # (oldest first, seconds ago)
+    assert pts[-1][2] == 24250
+    e, n = pts[-1][0], pts[-1][1]
+    p = next(p for p in a.status(False)["planes"] if p["hex"] == "440096")
+    assert abs(math.hypot(e, n) - p["nm"]) < 0.1                         # (the same place the scope puts it, from the aerial)
+    assert abs(math.degrees(math.atan2(e, n)) % 360 - p["deg"]) < 1
+    assert pts[-1][1] > pts[0][1]                                        # (it went north)
+
