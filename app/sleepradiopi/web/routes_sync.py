@@ -4,7 +4,8 @@ GET /api/sync: this radio, the radios it's paired with (and how the last sync we
 network. Asked by another radio: GET /api/sync/hello, GET /api/sync/state, POST /api/sync/paired {"id", "name",
 "port"}, /api/sync/unpaired {"id"}, /api/sync/adopt {"id", "merged", "was"} (its merge, to take up). From the page: POST
 /api/sync/pair {"address"}, /api/sync/unpair {"id"}, /api/sync/now {"id"}, /api/sync/allow {"id"} (a held sync
-let through once).
+let through once), /api/sync/media {"id", "kinds": ["music", "ondemand", "audiobooks", "ebooks"]} (the media shared
+with that radio: set on both, so it must be answering; asked of it as POST /api/sync/media-set {"id", "kinds"}).
 """
 
 from __future__ import annotations
@@ -56,7 +57,12 @@ def build(ctx):
                 reply = {"ok": True}
             elif action == "adopt":          # (a paired radio worked out the merge: take it up, if nothing changed here)
                 reply = {"ok": sync.adopt(str(body.get("id", "")), body.get("merged"), str(body.get("was", "")),
-                                          self.client_address[0].removeprefix("::ffff:"))}
+                                          self.client_address[0].removeprefix("::ffff:"), body.get("was_media"))}
+            elif action == "media-set":      # (the paired radio, sharing media with this one: from its own address)
+                reply = {"ok": sync.media_set(str(body.get("id", "")), body.get("kinds"),
+                                              self.client_address[0].removeprefix("::ffff:"))}
+            elif action == "media":          # (from the page: share these media kinds with that radio)
+                reply = sync.share_media(str(body.get("id", "")), body.get("kinds"))
             elif action == "pair":
                 reply = sync.pair(str(body.get("address", "")))
             elif action == "unpair":

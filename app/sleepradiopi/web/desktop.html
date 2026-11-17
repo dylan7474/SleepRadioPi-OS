@@ -5826,6 +5826,22 @@ const UI = {
       const addr = el("input", { type: "text", id: "sync-addr", autocomplete: "off", spellcheck: false, placeholder: "Its address, like 192.168.1.20" });
       const pair = a => act(async () => { const r = await api("/api/sync/pair", { address: a }), st = r.sync || {};
         toast(`Paired with ${r.name || a}. ` + (st.ok ? `Synced: ${st.said}.` : `Not synced yet: ${st.said || "it'll try again"}.`)); });
+      const MEDIA = { music: "Music", ondemand: "On demand", audiobooks: "Audiobooks", ebooks: "Ebooks" };
+      // (the media shared with a paired radio: a tick each, set on both radios at once; and how the copying's going)
+      const mediaRows = p => {
+        const kinds = d.media_kinds || [], on = p.media || [], ms = p.media_status;
+        if (!kinds.length) return [];
+        const flip = k => {
+          const next = on.includes(k) ? on.filter(x => x !== k) : [...on, k];
+          const go = () => act(async () => { await api("/api/sync/media", { id: p.id, kinds: next });
+            toast(next.includes(k) ? `${MEDIA[k]} is shared with ${p.name || "it"}: it syncs now, then copies in the background.`
+                                   : `${MEDIA[k]} is no longer shared with ${p.name || "it"}.`); });
+          if (on.includes(k)) return go();
+          ask(`Share ${MEDIA[k]} with ${p.name || "that radio"}? Each radio gets what the other has, and after that a file deleted on either goes from both. The first time, nothing is deleted, except that a track both have in different formats is kept as the smaller copy (an MP3 rather than a FLAC). Copying waits while either radio plays, and only starts if it all fits.`, "Share", go);
+        };
+        return [srow("Share", line(...kinds.map(k => sbtn((on.includes(k) ? "✓ " : "") + MEDIA[k], () => flip(k), on.includes(k) ? "primary" : "")))),
+                ...(ms ? [help(`${ms.done ? "✓" : "…"} ${ms.said} (${ago(ms.at)})`)] : [])];
+      };
       const peerRow = p => {
         const st = p.status;
         const said = st ? `${st.ok ? "✓ Synced" : st.held ? "⏸ Held" : "✗ Not synced"} ${ago(st.at)}: ${st.said}` : "Not synced yet";
@@ -5836,8 +5852,8 @@ const UI = {
       };
       return [
         grp("Paired with " + (d.me?.name || "this radio"),
-          ...(d.peers.length ? d.peers.map(peerRow) : [help("None yet: pair with a radio below.")]),
-          help("Paired radios keep their stations and receiver names the same, both ways: a change on either is on both after the next sync (every few minutes, or Sync now). Each radio's own set-up, buttons and volume stay its own.")),
+          ...(d.peers.length ? d.peers.flatMap(p => [peerRow(p), ...mediaRows(p)]) : [help("None yet: pair with a radio below.")]),
+          help("Paired radios keep their stations, themes, playlists, messages and settings the same, both ways: a change on either is on both after the next sync (every few minutes, or Sync now). Each radio's own set-up, buttons and volume stay its own. Music, On demand, audiobooks and ebooks are shared only when ticked under Share (both radios need to be on to change it); a file deleted on one then goes from both.")),
         grp("On the network",
           ...(d.seen.length ? d.seen.map(r => srow(r.name || r.address, el("span", { className: "shelp", textContent: `${r.address}${r.version ? " · v" + r.version : ""}` }),
                 line(sbtn("Pair", () => pair(r.address), "primary"))))

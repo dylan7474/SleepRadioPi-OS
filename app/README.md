@@ -2093,6 +2093,32 @@ The cards:
   radio with a web password doesn't sync. Its id (`radio_id`) and the radios
   it's paired with (`sync_peers`) are its own (not in a settings file); what
   was last agreed with each is `sync-base.json` beside the config.
+
+  **The media** -- music, On demand, audiobooks, ebooks -- are shared only
+  with a paired radio both have ticked them for (*Share* in Other radios,
+  `POST /api/sync/media {"id", "kinds"}`: set on both radios at once, so the
+  other must be on and have this version; it asks that radio with `POST
+  /api/sync/media-set`, taken only from that radio's own address; kept as
+  `media` in its `sync_peers` entry). Nothing is shared until ticked, so a
+  radio updated to this version shares no media until asked. Each library is
+  a collection of its files by **name and size** (no checksums: a whole
+  library can't be hashed on a Zero), only the files that radio's storage
+  takes (what plays there, and cover pictures). A sound file counts without
+  its extension, so the same track as a FLAC on one radio and an MP3 on the
+  other is one item, and where two differ **the smaller wins** on both (an
+  MP3 replaces the FLAC). The merge is the same three-way one: the first time
+  it only adds (a replaced FLAC aside), after that a file deleted on either
+  goes from both and the *held* guard applies. The copying is done in the
+  background, after the exchange, by one worker: the deletes first, then a
+  **room check** (all of it must fit, keeping the card's reserve, or it's held
+  with what's needed, nothing half-copied), then a file at a time, **waiting
+  while the radio plays** (the speaker or a browser listening). What the two
+  agreed on is kept only once every file has arrived, so a copy cut short
+  never turns into deletes; and a library still being copied into doesn't hold
+  up the rest of a sync (it's left for the next one). How it's going is shown
+  under each paired radio (`media_status` in `GET /api/sync`). Turning a kind
+  off forgets what was agreed for it: shared again later, it starts as a first
+  sync.
 - **Backup** — *Save settings* downloads everything above plus the volume
   as one JSON file; *Load settings* puts it back (after re-flashing the
   card, or onto a second radio). The file is checked before anything is

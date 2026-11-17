@@ -74,10 +74,13 @@ class Net:
             return {"ok": True}
         if what == "adopt":
             asker = next((a for a, x in self.radios.items() if x.id == body["id"]), None)
-            ok = r.adopt(body["id"], body["merged"], body["was"], asker)
+            ok = r.adopt(body["id"], body["merged"], body["was"], asker, body.get("was_media"))
             if self.lose():
                 raise OSError("timed out")
             return {"ok": ok}
+        if what == "media-set":
+            asker = next((a for a, x in self.radios.items() if x.id == body["id"]), None)
+            return {"ok": r.media_set(body["id"], body["kinds"], asker)}
         raise AssertionError(what)
 
 
@@ -537,3 +540,182 @@ def test_a_jingle_that_will_not_arrive_does_not_stop_a_station_delete_reaching_t
     one.sync_now(two.id)
     assert urls(stations_of(one)) == ["http://a"]
     assert two.media.files["jingles"] == {"Rock/a.mp3": b"AAAA"}   # (and two's jingle never deleted)
+
+
+# --- the media (music, On demand, audiobooks, ebooks): shared once both radios tick them ---
+
+class Library(Card):
+    """A pretend music storage with every library, and room on it."""
+    def __init__(self, root, files=None, free=10 ** 9):
+        self.root, self.free = root, free
+        for p, b in (files or {}).items():
+            kind, _, path = p.partition("/")
+            self._put(kind, path, b)
+
+    @property
+    def files(self):
+        out = {}
+        for kind in ("jingles", *sync_mod.MEDIA_KINDS):
+            d = self.root / kind
+            out[kind] = {f.relative_to(d).as_posix(): f.read_bytes() for f in sorted(d.rglob("*")) if f.is_file()} \
+                if d.is_dir() else {}
+        return out
+
+    def usage(self):
+        return {"total": 2 * 10 ** 9, "used": 0, "free": self.free}
+
+    def delete(self, kind, path, prune=False):
+        f = self.root / kind / path
+        f.unlink()
+        while prune and f.parent != self.root / kind and not any(f.parent.iterdir()):
+            f.parent.rmdir()
+            f = f.parent
+
+
+def libraried(tmp_path, net, address, files, free=10 ** 9):
+    r = carded(tmp_path, net, address, {})
+    r.media = Library(tmp_path / f"{address}-lib", files, free)
+    return r
+
+
+def settle(*radios, want=None, tries=200):
+    import threading
+    import time as _t
+    for _ in range(tries):
+        busy = any(t.name in ("sync-now", "sync-files") for t in threading.enumerate())
+        if not busy and all(not r._media_jobs and not r._media_worker_on for r in radios) and (want is None or want()):
+            return
+        _t.sleep(0.02)
+
+
+def test_media_entries_are_one_track_whatever_its_format() -> None:
+    files = {"A/01 Song.flac": 900, "A/02 Other.mp3": 300, "A/cover.jpg": 10, "A/notes.txt": 5, "A/.hidden.mp3": 3}
+    got = sync_mod._media_entries("music", files)
+    assert got == {"A/01 Song": "900:.flac", "A/02 Other": "300:.mp3", "A/cover.jpg": "10:"}    # (no .txt, no hidden)
+    assert sync_mod._media_paths(got) == {"A/01 Song.flac": 900, "A/02 Other.mp3": 300, "A/cover.jpg": 10}
+    both = sync_mod._media_entries("music", {"B/x.flac": 900, "B/x.mp3": 300})       # (both copies on one radio)
+    assert both == {"B/x": "300:.mp3", "B/x.flac": "900:"}
+
+
+def test_where_the_two_differ_the_smaller_file_wins_on_both() -> None:
+    a, b = {"A/song": "900:.flac"}, {"A/song": "300:.mp3"}
+    assert merge("media:music", None, a, b)[0] == merge("media:music", None, b, a)[0] == {"A/song": "300:.mp3"}
+
+
+def test_no_media_is_synced_until_both_radios_share_it(tmp_path) -> None:
+    net = Net()
+    one = libraried(tmp_path, net, "one", {"music/A/a.mp3": b"AAAA"})
+    two = libraried(tmp_path, net, "two", {"music/B/b.mp3": b"BB"})
+    one.pair("two")
+    settle(one, two)
+    assert one.media.files["music"] == {"A/a.mp3": b"AAAA"} and two.media.files["music"] == {"B/b.mp3": b"BB"}
+    one.share_media(two.id, ["music"])
+    assert one.shared(two.id) == ["music"] and two.shared(one.id) == ["music"]      # (set on both)
+    one.sync_now(two.id)
+    settle(one, two, want=lambda: len(one.media.files["music"]) == len(two.media.files["music"]) == 2)
+    assert one.media.files["music"] == two.media.files["music"] == {"A/a.mp3": b"AAAA", "B/b.mp3": b"BB"}
+    assert one.media_status[two.id]["done"]
+
+
+def test_a_delete_goes_from_both_and_an_add_reaches_both(tmp_path) -> None:
+    net = Net()
+    files = {f"music/A/{i}.mp3": b"x" * (i + 1) for i in range(10)}
+    one, two = libraried(tmp_path, net, "one", files), libraried(tmp_path, net, "two", files)
+    one.pair("two")
+    one.share_media(two.id, ["music"])
+    settle(one, two)
+    one.sync_now(two.id)
+    settle(one, two)
+    two.sync_now(one.id)                                       # (both agreed: a base on both)
+    settle(one, two)
+    two.media.delete("music", "A/3.mp3")                       # deleted on two
+    one.media._put("music", "C/new.mp3", b"NEW")               # added on one
+    one.sync_now(two.id)
+    settle(one, two, want=lambda: "C/new.mp3" in two.media.files["music"] and "A/3.mp3" not in one.media.files["music"])
+    assert "A/3.mp3" not in one.media.files["music"] and two.media.files["music"]["C/new.mp3"] == b"NEW"
+    assert one.media.files["music"] == two.media.files["music"]
+
+
+def test_a_flac_is_replaced_by_the_other_radios_mp3(tmp_path) -> None:
+    net = Net()
+    one = libraried(tmp_path, net, "one", {"music/A/song.flac": b"F" * 90})
+    two = libraried(tmp_path, net, "two", {"music/A/song.mp3": b"M" * 30})
+    one.pair("two")
+    one.share_media(two.id, ["music"])
+    settle(one, two)
+    one.sync_now(two.id)
+    settle(one, two, want=lambda: one.media.files["music"] == {"A/song.mp3": b"M" * 30})
+    assert one.media.files["music"] == two.media.files["music"] == {"A/song.mp3": b"M" * 30}
+
+
+def test_media_that_will_not_fit_is_held_not_half_copied(tmp_path) -> None:
+    from sleepradiopi import media as media_mod
+    net = Net()
+    one = libraried(tmp_path, net, "one", {}, free=media_mod.KEEP_FREE + 5)
+    two = libraried(tmp_path, net, "two", {"music/A/big.mp3": b"B" * 50})
+    one.pair("two")
+    one.share_media(two.id, ["music"])
+    settle(one, two)
+    one.sync_now(two.id)
+    settle(one, two)
+    assert one.media.files["music"] == {} and "room" in one.media_status[two.id]["said"]
+    assert two.media.files["music"] == {"A/big.mp3": b"B" * 50}       # (and nothing taken from two)
+
+
+def test_the_copying_waits_while_the_radio_plays(tmp_path, monkeypatch) -> None:
+    import time as _t
+    monkeypatch.setattr(sync_mod, "MEDIA_WAIT_S", 0.02)
+    net = Net()
+    one = libraried(tmp_path, net, "one", {})
+    two = libraried(tmp_path, net, "two", {"music/A/a.mp3": b"AAAA"})
+    playing = [True]
+    one.busy = lambda: playing[0]
+    one.pair("two")
+    one.share_media(two.id, ["music"])
+    settle(one, two)
+    one.sync_now(two.id)
+    _t.sleep(0.2)
+    assert one.media.files["music"] == {} and "plays" in one.media_status[two.id]["said"]
+    playing[0] = False
+    settle(one, two, want=lambda: bool(one.media.files["music"]))
+    assert one.media.files["music"] == {"A/a.mp3": b"AAAA"}
+
+
+def test_a_copy_cut_short_never_turns_into_deletes(tmp_path) -> None:
+    net = Net()
+    one = libraried(tmp_path, net, "one", {})
+    two = libraried(tmp_path, net, "two", {"music/A/a.mp3": b"AAAA", "music/A/b.mp3": b"BB"})
+    real = one.get_file
+    one.get_file = lambda addr, kind, path: (_ for _ in ()).throw(OSError("dropped")) if path == "A/b.mp3" else real(addr, kind, path)
+    one.pair("two")
+    one.share_media(two.id, ["music"])
+    settle(one, two)
+    one.sync_now(two.id)
+    settle(one, two)
+    assert one.media.files["music"] == {"A/a.mp3": b"AAAA"}
+    two.sync_now(one.id)                                       # two asks next: must not take b as deleted on one
+    settle(one, two)
+    assert two.media.files["music"] == {"A/a.mp3": b"AAAA", "A/b.mp3": b"BB"}
+    one.get_file = real
+    one.sync_now(two.id)
+    settle(one, two, want=lambda: len(one.media.files["music"]) == 2)
+    assert one.media.files["music"] == two.media.files["music"]
+
+
+def test_sharing_needs_the_other_radio_answering(tmp_path) -> None:
+    net = Net()
+    one, two = libraried(tmp_path, net, "one", {}), libraried(tmp_path, net, "two", {})
+    one.pair("two")
+    two.off = True
+    with pytest.raises(ValueError, match="answering"):
+        one.share_media(two.id, ["music"])
+    assert one.shared(two.id) == [] and two.shared(one.id) == []
+
+
+def test_only_the_paired_radio_itself_can_share_with_this_one(tmp_path) -> None:
+    net = Net()
+    one, two = libraried(tmp_path, net, "one", {}), libraried(tmp_path, net, "two", {})
+    one.pair("two")
+    with pytest.raises(ValueError):
+        two.media_set(one.id, ["music"], "10.9.9.9")           # (asked from somewhere else)
+    assert two.shared(one.id) == []

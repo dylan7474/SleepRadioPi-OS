@@ -1113,6 +1113,8 @@ def main() -> None:
                              backup=lambda label: store.save(backup_mod.export(args.config, None), label),
                              media=media, voice_jobs=jobs)
         sync.voice_ok = lambda key, v: v in station.ebook_voices()
+        # (the media copying waits while the radio plays: the speaker, or someone listening in a browser)
+        sync.busy = lambda: (control is not None and not control.paused) or bool(getattr(station, "_listeners", 0))
         if wifi.NETWORKS.parent.is_dir():          # (the appliance: its Wi-Fi networks synced too)
             sync.wifi_path = wifi.NETWORKS
         sync.start()

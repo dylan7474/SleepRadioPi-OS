@@ -746,10 +746,14 @@ Actions, Sleep timer and Radio folders open:
   paired; paired radios keep everything they can share the same, both ways
   -- settings, stations, themes and their jingles, voice packs, playlists, programmes (each
   radio decides if one starts by itself), messages, birthdays, podcasts, the
-  DJ's own lines -- while each keeps its
-  own hardware set-up, buttons and volume. See the [app README](app/README.md)
-  for how it merges, and the roadmap for what's next (jingles, voices, shared
-  music folders).
+  DJ's own lines, Wi-Fi networks -- while each keeps its
+  own hardware set-up, buttons and volume. **Music, On demand, audiobooks and
+  ebooks** can be shared too, each ticked under *Share* for a paired radio
+  (set on both radios at once): each gets what the other has, a file deleted
+  on either goes from both, the same track as a FLAC on one and an MP3 on the
+  other ends as the MP3 on both, nothing is copied that won't fit, and the
+  copying waits while a radio plays. See the [app README](app/README.md)
+  for how it merges.
 
 ## Build one
 
@@ -1313,13 +1317,14 @@ v1.9.7).
 
 What's left to do (everything else described here is built and running):
 
-- **Radios that sync: the rest of the files** — paired radios already keep their
+- **Radios that sync: what's left** — paired radios already keep their
   settings, stations, themes, playlists, programmes, messages, birthdays,
-  podcasts, DJ lines, theme jingles and voice packs the same both ways (*Other
-  radios*), and Wi-Fi networks. Still to do: **shared music folders**
-  (a folder marked Shared is kept on both, both ways, only as much as fits on
-  the smaller card, with a meter that says so); and a radio with a web
-  password pairing with its partners (today such a radio stays out of sync).
+  podcasts, DJ lines, theme jingles, voice packs and Wi-Fi networks the same
+  both ways (*Other radios*), and the music, On demand, audiobooks and ebooks
+  when shared. Still to do: **book and podcast places** (stop a book on one
+  radio, carry on from there on the other); a meter of how much of each card
+  the shared library fills; and a radio with a web password pairing with its
+  partners (today such a radio stays out of sync).
 - **More ways to pick the sound** — the sound by kind of audio is built (music, radio, audiobook,
   ebook, podcast). Buttons can carry a sound too (day and night sets each have their own). Still open: a sound per
   music genre (needs reliable tags), a Music/Talk tag for stations played from the page, and the same on

@@ -4,13 +4,14 @@ What's built is described in the [app README](../README.md) and the
 [appliance image's README](../../README.md); this is what's left, the same list as
 the image README's [Roadmap](../../README.md#roadmap) (keep the two in step).
 
-- **Radios that sync: the rest of the files** — paired radios already keep their
+- **Radios that sync: what's left** — paired radios already keep their
   settings, stations, themes, playlists, programmes, messages, birthdays,
-  podcasts, DJ lines, theme jingles and voice packs the same both ways (*Other
-  radios*), and Wi-Fi networks. Still to do: **shared music folders**
-  (a folder marked Shared is kept on both, both ways, only as much as fits on
-  the smaller card, with a meter that says so); and a radio with a web
-  password pairing with its partners (today such a radio stays out of sync).
+  podcasts, DJ lines, theme jingles, voice packs and Wi-Fi networks the same
+  both ways (*Other radios*), and the music, On demand, audiobooks and ebooks
+  when shared. Still to do: **book and podcast places** (stop a book on one
+  radio, carry on from there on the other); a meter of how much of each card
+  the shared library fills; and a radio with a web password pairing with its
+  partners (today such a radio stays out of sync).
 - **More ways to pick the sound** — the sound by kind of audio is built (music, radio, audiobook,
   ebook, podcast). Buttons can carry a sound too (day and night sets each have their own). Still open: a sound per
   music genre (needs reliable tags), a Music/Talk tag for stations played from the page, and the same on
