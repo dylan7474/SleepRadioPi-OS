@@ -367,6 +367,7 @@ MAX_MEDIA_FILES = 60000
 SOUNDS = {".mp3", ".flac", ".m4a", ".ogg", ".opus", ".wav", ".m4b", ".aac"}
 MEDIA_WAIT_S = 30                          # (playing: looked at again this often)
 TREE_MAX_AGE_S = 1800                      # (a library's file list, kept between its changes: read again at least this often)
+MEDIA_HOLD_S = 7200                        # a library list that differs waits while either radio plays, but no longer than this
 TOMBSTONE_DAYS = 7                         # (a delete made while a library isn't agreed yet: remembered this long at most)
 
 
@@ -652,6 +653,8 @@ class Sync:
         # A library's file list is a walk of the card (thousands of files: seconds on a Zero, while it plays): kept
         # till the library changes (media.changes) or TREE_MAX_AGE_S. kind -> (changes, when, entries)
         self._trees: dict[str, tuple] = {}
+        self._dsums: dict[str, tuple] = {}       # (a library list's fingerprint, kept with the list it's of: _digests())
+        self._held_since: dict[str, float] = {}  # peer id -> since when a library list that differs has waited (playing)
         # Files deleted here from the page while a library wasn't agreed with the other radio (a copy still going):
         # left out of what's taken from it, so they don't come back, till the two agree. kind -> {rel: when}
         self._deleted: dict[str, dict] = {}
@@ -801,19 +804,43 @@ class Sync:
         peer = next((p for p in self.peers() if p["id"] == for_id), None) if for_id else None
         return peer is not None and ip is not None and peer["address"].rsplit(":", 1)[0] == ip
 
-    def state(self, for_id: str = "", ip: str | None = None) -> dict:
+    def state(self, for_id: str = "", ip: str | None = None, digests: bool = False, only=None) -> dict:
         """This radio's collections; and (for_id: the radio asking) a fingerprint of the state this radio last
         agreed on with it -- if the two radios' fingerprints differ (a reply lost mid-sync, a re-pair, a card
-        re-flashed), the next merge between them only adds: neither can tell a delete from a missed add."""
+        re-flashed), the next merge between them only adds: neither can tell a delete from a missed add.
+        digests=True: each collection's fingerprint instead of its contents (and whether this radio is playing),
+        so the asking radio fetches only what differs; only: just those collections."""
         conf = self._conf()
         base = self._bases().get(for_id) if for_id else None
         names = [n for n in self.names_for(for_id) if n != "wifi" or self._asked_by_peer(for_id, ip)]
+        if only is not None:
+            names = [n for n in names if n in only]
         base = base if isinstance(base, dict) else {}
         collections = self._read(conf, names)
+        sums = self._digests(collections)
         if for_id:                                   # (what it was told: if it sends nothing back, it had it all)
-            self._union_sent[for_id] = {n: _digest({n: v}) for n, v in collections.items() if n in UNION_ONLY}
-        return {**self.hello(), "collections": collections, "usage": self._usage(),
-                "base": {n: _digest({n: v}) for n, v in base.items() if n not in UNION_ONLY}}
+            self._union_sent.setdefault(for_id, {}).update({n: sums[n] for n in collections if n in UNION_ONLY})
+        out = {**self.hello(), "usage": self._usage(),
+               "base": self._digests({n: v for n, v in base.items() if n not in UNION_ONLY})}
+        if digests:
+            return {**out, "digests": sums, "busy": bool(self.busy())}
+        return {**out, "collections": collections}
+
+    def _digests(self, collections: dict) -> dict:
+        """Each collection's fingerprint. A library's list is thousands of entries (a long, blocking sum on a Zero,
+        which starves the sound): its fingerprint is kept while the list is the same."""
+        out = {}
+        for n, v in collections.items():
+            if n.startswith("media:") and isinstance(v, dict):
+                kept = self._dsums.get(n)
+                if kept is not None and kept[0] == v:
+                    out[n] = kept[1]
+                    continue
+                out[n] = _digest({n: v})
+                self._dsums[n] = (dict(v), out[n])
+            else:
+                out[n] = _digest({n: v})
+        return out
 
     def _hook_media(self) -> None:
         """Be told of deletes and adds made in the library (once: the storage may be given after the start)."""
@@ -1114,12 +1141,15 @@ class Sync:
         self._allow_once.add(peer_id)
 
     def sync_now(self, peer_id: str) -> dict:
-        return self.pull(peer_id)
+        return self.pull(peer_id, now=True)         # (asked for: the library lists too, playing or not)
 
-    def pull(self, peer_id: str) -> dict:
+    def pull(self, peer_id: str, now: bool = False) -> dict:
         """One exchange with a paired radio: read its state, merge it with this radio's against the last
         state the two agreed on (the base), send it the result to take up (only if it hasn't changed
-        meanwhile), then take it up here too: both end the same, and both keep it as the new base."""
+        meanwhile), then take it up here too: both end the same, and both keep it as the new base.
+        First only the fingerprints: what's the same on both (and agreed) isn't sent or merged at all, and a
+        library list that differs waits while either radio plays (MEDIA_HOLD_S at most; now: not at all) --
+        a big exchange stalls the sound on a Zero."""
         peer = next((p for p in self.peers() if p["id"] == peer_id), None)
         if peer is None:
             raise ValueError("that radio isn't paired with this one")
@@ -1128,18 +1158,57 @@ class Sync:
         if self.paused(peer_id):
             return self._said(peer_id, False, "paused: Resume to sync again", paused=True)
         self._step(peer_id, "asking")
+
+        def ask(query: str):
+            try:
+                them = self.fetch(f"http://{peer['address']}/api/sync/state?for={self.id}{query}")
+            except (OSError, ValueError) as e:
+                return None, self._said(peer_id, False, f"not answering ({str(getattr(e, 'reason', e))[:60]})")
+            if not isinstance(them, dict) or them.get("id") != peer_id:
+                return None, self._said(peer_id, False, "a different radio is at that address now")
+            if them.get("sleepradio") != PROTOCOL:
+                return None, self._said(peer_id, False, "it has a different version of the sync: update both radios")
+            if them.get("protected"):
+                return None, self._said(peer_id, False, "it has a password: no sync")
+            return them, None
+
+        them, failed = ask("&digests=1")
+        if failed:
+            return failed
+        keep: set = set()                            # (the same on both and agreed: not sent, not merged; its base kept)
+        waits: list = []                             # (library lists that differ, waiting while a radio plays)
+        if isinstance(them.get("digests"), dict):
+            sums = them["digests"]
+            names = [n for n in self.names_for(peer_id) if n in sums]
+            with CONFIG_LOCK:
+                mine_d = self._digests(self._read(read_config(self.config_file), names))
+            kept = self._bases().get(peer_id)
+            kept = kept if isinstance(kept, dict) else {}
+            kept_d = self._digests({n: kept[n] for n in names if n in kept and n not in UNION_ONLY})
+            their_base = them.get("base") if isinstance(them.get("base"), dict) else {}
+            keep = {n for n in names if n in mine_d and mine_d[n] == sums[n]
+                    and (n in UNION_ONLY or kept_d.get(n) == sums[n] == their_base.get(n))}
+            differ = [n for n in names if n.startswith("media:") and n not in keep]
+            since = self._held_since.get(peer_id)
+            if differ and not now and (self.busy() or them.get("busy")) and (since is None or time.time() - since < MEDIA_HOLD_S):
+                waits = differ
+                self._held_since.setdefault(peer_id, time.time())
+            else:
+                self._held_since.pop(peer_id, None)
+            want = [n for n in names if n not in keep and n not in waits]
+            if keep & UNION_ONLY:
+                self._union_seen.setdefault(peer_id, {}).update({n: mine_d[n] for n in keep & UNION_ONLY})
+            if not want:
+                said = "already the same" + (" (the music lists wait till neither radio is playing)" if waits else "")
+                log.info("sync with %s: %s", them.get("name") or peer_id, said)
+                self._step(peer_id, "comparing")
+                return self._said(peer_id, True, said)
+            them, failed = ask("&only=" + ",".join(want))
+            if failed:
+                return failed
+            keep |= set(waits)
         try:
-            them = self.fetch(f"http://{peer['address']}/api/sync/state?for={self.id}")
-        except (OSError, ValueError) as e:
-            return self._said(peer_id, False, f"not answering ({str(getattr(e, 'reason', e))[:60]})")
-        if not isinstance(them, dict) or them.get("id") != peer_id:
-            return self._said(peer_id, False, "a different radio is at that address now")
-        if them.get("sleepradio") != PROTOCOL:
-            return self._said(peer_id, False, "it has a different version of the sync: update both radios")
-        if them.get("protected"):
-            return self._said(peer_id, False, "it has a password: no sync")
-        try:
-            names = [n for n in self.names_for(peer_id) if n in them["collections"]]     # (what both sync)
+            names = [n for n in self.names_for(peer_id) if n in them["collections"] and n not in keep]     # (what both sync)
             theirs = {n: COLLECTIONS[n][1](them["collections"][n]) for n in names}
         except (KeyError, TypeError, ValueError) as e:
             return self._said(peer_id, False, f"what it sent didn't check out ({e})")
@@ -1152,7 +1221,7 @@ class Sync:
             # (each collection's base: only where both radios agree on it -- elsewhere (a reply lost mid-sync, a file
             # that didn't arrive, a re-pair) that one merges as a first sync does: adds only, never a delete)
             base = {n: kept[n] for n in names if n in kept and n not in UNION_ONLY
-                    and theirs_base.get(n) == _digest({n: kept[n]})}
+                    and theirs_base.get(n) == self._digests({n: kept[n]})[n]}
             if len(base) < len([n for n in names if n not in UNION_ONLY]) and kept:
                 log.info("sync with %s: only adds this time for %s", their_name,
                          ", ".join(WORDS[n] for n in names if n not in base and n not in UNION_ONLY))
@@ -1180,8 +1249,9 @@ class Sync:
                         merged[n] = check(merged[n])
                     except ValueError as e:                # (e.g. more stations together than a radio keeps)
                         return self._said(peer_id, False, f"together they don't fit: {e}")
-            self._keep_counts(peer_id, mine, theirs, them.get("usage"))
-            self.their_settings[peer_id] = {n: v for n, v in theirs.items() if n.startswith("settings:")}
+            self._keep_counts(peer_id, mine, theirs, them.get("usage"), keep=keep)
+            self.their_settings[peer_id] = {**{n: v for n, v in (self.their_settings.get(peer_id) or {}).items() if n in keep},
+                                            **{n: v for n, v in theirs.items() if n.startswith("settings:")}}
             if held:
                 return self._said(peer_id, False, "held: it would delete " + ", ".join(held) +
                                   ". Sync anyway to let it through", held=True)
@@ -1207,15 +1277,16 @@ class Sync:
             # rest of the sync isn't held up by it)
             moved = {n for n in names if n.startswith("media:") and _digest({n: now.get(n)}) != _digest({n: mine[n]})}
             got = self._files(peer["address"], [n for n in names if n not in moved], mine, merged, peer_id)
-            self._keep_base(peer_id, {n: v for n, v in merged.items() if n in got or not n.startswith(("files:", "media:"))})
+            self._keep_base(peer_id, {**{n: v for n, v in kept.items() if n in keep},
+                                      **{n: v for n, v in merged.items() if n in got or not n.startswith(("files:", "media:"))}})
             for n in got:
                 self._agreed(n)
             self._allow_once.discard(peer_id)
             # (now: both hold what was merged -- the files where they've arrived; the rest as they were read)
             files_ = lambda n: n.startswith(("files:", "media:"))
-            self._union_seen[peer_id] = {n: _digest({n: merged[n]}) for n in names if n in UNION_ONLY}
+            self._union_seen.setdefault(peer_id, {}).update({n: _digest({n: merged[n]}) for n in names if n in UNION_ONLY})
             self._keep_counts(peer_id, {n: merged[n] if n in got or not files_(n) else mine[n] for n in names},
-                              {n: theirs[n] if files_(n) else merged[n] for n in names}, them.get("usage"))
+                              {n: theirs[n] if files_(n) else merged[n] for n in names}, them.get("usage"), keep=keep)
         if their_name and their_name != peer.get("name"):
             self._save_peers([{**p, "name": their_name} if p["id"] == peer_id else p for p in self.peers()])
         words = lambda counts: ", ".join(f"{v} {k} {WORDS[n]}" for n, c in counts.items() for k, v in c.items() if v)
@@ -1259,15 +1330,17 @@ class Sync:
                 new = {n: self._without_deleted(n, v) if n.startswith("media:") else v for n, v in new.items()}
                 updates = self._write(conf, new, mine)
             files = [n for n in names if (n.startswith(("files:", "media:")) or n == "voices") and not same(n, new[n], mine[n])]
-            self._keep_base(peer_id, {n: v for n, v in new.items() if n not in files})     # (those once they're here)
+            old = self._bases().get(peer_id)             # (what it didn't send was the same on both: its base stays)
+            rest = {n: v for n, v in (old if isinstance(old, dict) else {}).items() if n not in merged}
+            self._keep_base(peer_id, {**rest, **{n: v for n, v in new.items() if n not in files}})     # (those once they're here)
             self.status[peer_id] = {"at": time.time(), "ok": True, "said": "synced (it asked)"}
-            self._union_seen[peer_id] = {n: _digest({n: new[n]}) for n in names if n in UNION_ONLY}
+            self._union_seen.setdefault(peer_id, {}).update({n: _digest({n: new[n]}) for n in names if n in UNION_ONLY})
             ch = ", ".join(f"{v} {k} {WORDS[n]}" for n in names for k, v in _changes(n, mine[n], new[n]).items() if v)
             peer_name = (self._peer(peer_id) or {}).get("name") or "it"
             self._remember(peer_id, True, f"{peer_name} synced: " + (f"here: {ch}" if ch else "already the same"))
             sent = counts if isinstance(counts, dict) else {}
             self._keep_counts(peer_id, {n: new[n] if n not in files else mine[n] for n in names}, None,
-                              usage if isinstance(usage, dict) else None,
+                              usage if isinstance(usage, dict) else None, keep=set(rest),
                               there={n: _measure(n, new[n]) if not n.startswith(("files:", "media:"))
                                      else _clean_measure(sent.get(n), _measure(n, new[n])) for n in names})
         finally:
@@ -1426,11 +1499,14 @@ class Sync:
         self.progress[peer_id] = {"step": step, "at": now, "started": was.get("started", now) if busy else now}
 
     def _keep_counts(self, peer_id: str, here: dict, theirs: dict | None, usage: dict | None,
-                     there: dict | None = None) -> None:
-        """What each radio holds, as of this exchange (shown in Other radios)."""
+                     there: dict | None = None, keep=frozenset()) -> None:
+        """What each radio holds, as of this exchange (shown in Other radios); keep: collections not exchanged
+        this time (the same on both), their counts as they were."""
         self._live = (0.0, None, {})                  # (this radio's own: read again for the window)
-        self.counts[peer_id] = {"at": time.time(), "here": {n: _measure(n, v) for n, v in here.items()},
-                                "there": there if there is not None else {n: _measure(n, v) for n, v in (theirs or {}).items()},
+        was = self.counts.get(peer_id) or {}
+        old = lambda side: {n: v for n, v in (was.get(side) or {}).items() if n in keep}
+        self.counts[peer_id] = {"at": time.time(), "here": {**old("here"), **{n: _measure(n, v) for n, v in here.items()}},
+                                "there": {**old("there"), **(there if there is not None else {n: _measure(n, v) for n, v in (theirs or {}).items()})},
                                 "free_there": usage.get("free") if isinstance(usage, dict) else None}
 
     HISTORY = 20

@@ -53,10 +53,14 @@ class Net:
     def __init__(self, lose=lambda: False):
         self.radios = {}
         self.lose = lose                  # lose(): this adopt is taken up, but its reply is lost (a timeout)
+        self.asked = []                   # (address, what, {digests, only}) of each request
 
     def fetch(self, url, body=None):
         address, _, what = url.removeprefix("http://").partition("/api/sync/")
         what, _, query = what.partition("?for=")
+        query, *extra = query.split("&")
+        extra = dict(x.partition("=")[::2] for x in extra)
+        self.asked.append((address, what, extra))
         r = self.radios.get(address)
         if r is None or getattr(r, "off", False):
             raise OSError("not answering")
@@ -64,7 +68,7 @@ class Net:
             return r.hello()
         if what == "state":                                    # (asked from the asking radio's own address)
             asker = next((a for a, x in self.radios.items() if x.id == query), None)
-            return r.state(query, asker)
+            return r.state(query, asker, extra.get("digests") == "1", set(extra["only"].split(",")) if extra.get("only") else None)
         if what == "paired":
             me = next(a for a, x in self.radios.items() if x.id == body["id"])
             r.paired_with({"id": body["id"], "name": body["name"], "address": me})
@@ -1106,3 +1110,79 @@ def test_a_file_deleted_while_a_copy_is_unfinished_does_not_come_back(tmp_path) 
     settle(one, two, want=lambda: "A/c.mp3" in one.media.files["music"])
     assert set(one.media.files["music"]) == set(two.media.files["music"]) == {"A/b.mp3", "A/c.mp3"}
     assert not one._deleted.get("music")                              # (agreed: deletes go by the base now)
+
+
+# --- 2026-11-18: fingerprints first (a full exchange every few minutes stalled Nightingale's sound) ---
+
+def _agreed_pair(tmp_path, net):
+    files = {f"music/A/{i}.mp3": b"x" * (i + 1) for i in range(5)}
+    one, two = libraried(tmp_path, net, "one", files), libraried(tmp_path, net, "two", files)
+    set_stations(one, [st("a")]), set_stations(two, [st("a")])
+    one.pair("two")
+    one.share_media(two.id, ["music"])
+    settle(one, two)
+    for a, b in ((one, two), (two, one), (one, two)):
+        a.sync_now(b.id)
+        settle(one, two)
+    return one, two
+
+
+def test_what_is_the_same_on_both_is_not_sent_again(tmp_path) -> None:
+    net = Net()
+    one, two = _agreed_pair(tmp_path, net)
+    net.asked.clear()
+    got = one.pull(two.id)
+    assert got["ok"] and got["said"] == "already the same"
+    assert [(w, x) for _, w, x in net.asked] == [("state", {"digests": "1"})]            # (fingerprints only: no lists, no adopt)
+
+
+def test_only_what_changed_is_exchanged_and_the_rest_stays_agreed(tmp_path) -> None:
+    net = Net()
+    one, two = _agreed_pair(tmp_path, net)
+    set_stations(two, [st("a"), st("z")])
+    net.asked.clear()
+    assert one.pull(two.id)["ok"]
+    assert urls(stations_of(one)) == ["http://a", "http://z"]
+    states = [x for _, w, x in net.asked if w == "state"]
+    assert states == [{"digests": "1"}, {"only": "radio_stations"}] and any(w == "adopt" for _, w, _ in net.asked)
+    assert "media:music" in one._bases()[two.id] and "media:music" in two._bases()[one.id]      # (the rest of the base kept)
+    net.asked.clear()
+    assert one.pull(two.id)["said"] == "already the same" and len(net.asked) == 1
+    assert two.pull(one.id)["said"] == "already the same"
+
+
+def test_a_music_list_that_differs_waits_while_either_radio_plays(tmp_path) -> None:
+    net = Net()
+    one, two = _agreed_pair(tmp_path, net)
+    one.media._put("music", "C/new.mp3", b"NEW")
+    for busy in (one, two):                                       # (this radio playing, or the other one)
+        busy.busy = lambda: True
+        net.asked.clear()
+        got = one.pull(two.id)
+        assert got["ok"] and "wait" in got["said"] and "C/new.mp3" not in two.media.files["music"]
+        assert not any(x.get("only", "").count("media:") for _, _, x in net.asked)
+        busy.busy = lambda: False
+    one.busy = lambda: True
+    one._held_since[two.id] -= sync_mod.MEDIA_HOLD_S + 1        # (waited long enough: it goes anyway)
+    one.pull(two.id)
+    settle(one, two, want=lambda: "C/new.mp3" in two.media.files["music"])
+    assert two.media.files["music"]["C/new.mp3"] == b"NEW"
+
+
+def test_sync_now_does_not_wait_for_the_music(tmp_path) -> None:
+    net = Net()
+    one, two = _agreed_pair(tmp_path, net)
+    one.busy = lambda: True
+    one.media._put("music", "C/new.mp3", b"NEW")
+    one.sync_now(two.id)
+    settle(one, two, want=lambda: "C/new.mp3" in two.media.files["music"])
+    assert two.media.files["music"]["C/new.mp3"] == b"NEW"
+
+
+def test_an_older_radio_without_fingerprints_still_syncs(tmp_path) -> None:
+    net = Net()
+    one, two = _agreed_pair(tmp_path, net)
+    full = two.state
+    two.state = lambda for_id="", ip=None, digests=False, only=None: full(for_id, ip)     # (it ignores what it doesn't know)
+    set_stations(two, [st("a"), st("q")])
+    assert one.pull(two.id)["ok"] and urls(stations_of(one)) == ["http://a", "http://q"]

@@ -12,6 +12,8 @@ the image README's [Roadmap](../../README.md#roadmap) (keep the two in step).
   What's shared is chosen item by item (the settings in four groups), with
   warnings where one item needs another, syncing can be paused, places in
   books and podcasts can be shared, and the window lists the recent syncs.
+  (1.9.103, 2026-11-18: fingerprints first, only what differs is sent, and a music list that differs waits
+  while a radio plays -- the full exchange every few minutes caused gaps in Nightingale's sound.)
   Still to do: a radio with a web password pairing with its partners (today
   such a radio stays out of sync).
 - **More ways to pick the sound** — the sound by kind of audio is built (music, radio, audiobook,

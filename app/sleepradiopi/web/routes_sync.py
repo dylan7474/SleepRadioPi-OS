@@ -38,8 +38,11 @@ def build(ctx):
             self._send(json.dumps(sync.hello()).encode(), "application/json")
         elif path == "/api/sync/state":
             from urllib.parse import parse_qs, urlparse
-            for_id = parse_qs(urlparse(self.path).query).get("for", [""])[0]
-            self._send(json.dumps(sync.state(for_id, self.client_address[0].removeprefix("::ffff:"))).encode(), "application/json")
+            q = parse_qs(urlparse(self.path).query)
+            for_id = q.get("for", [""])[0]
+            only = set(q["only"][0].split(",")) if q.get("only") else None        # (just these collections)
+            self._send(json.dumps(sync.state(for_id, self.client_address[0].removeprefix("::ffff:"), q.get("digests", [""])[0] == "1",
+                                             only)).encode(), "application/json")
         else:
             return False
         return True

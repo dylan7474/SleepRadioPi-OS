@@ -2130,7 +2130,18 @@ The cards:
   delete it too, until the two agree (then deletes go by what was agreed).
   Each library's file list is kept between its changes (and read again at
   least every 30 minutes), so answering a sync doesn't walk the card while
-  the radio plays. How it's going is shown
+  the radio plays. **Fingerprints first:** a sync asks the other radio for
+  each kind's fingerprint only (`GET /api/sync/state?for=<id>&digests=1`: a
+  few hundred bytes, plus whether it's playing, `busy`), and then only the
+  kinds that differ, or aren't agreed by both, in full (`&only=a,b`; `POST
+  /api/sync/adopt` then carries just those, and the rest of what was agreed
+  stays as it was). An unchanged library list is never sent again: a whole
+  exchange of everything (280 KB on Nightingale, most of it the music list)
+  every few minutes stalled the sound on a Zero for long enough to be heard.
+  A library list that does differ **waits while either radio plays**, for
+  at most `MEDIA_HOLD_S` (2 hours), or until *Sync now*. A radio from
+  before this sends everything as it did, and it still syncs. A library
+  list's fingerprint is kept with the list (`_digests()`). How it's going is shown
   under each paired radio (`media_status` in `GET /api/sync`). Turning a kind
   off forgets what was agreed for it: shared again later, it starts as a first
   sync.

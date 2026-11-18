@@ -758,7 +758,9 @@ Actions, Sleep timer and Radio folders open:
   (set on both radios at once): each gets what the other has, a file deleted
   on either goes from both, the same track as a FLAC on one and an MP3 on the
   other ends as the MP3 on both, nothing is copied that won't fit, and the
-  copying waits while a radio plays. Each thing is ticked to share or not, for
+  copying waits while a radio plays. A sync compares fingerprints first and
+  sends only what differs, so the sound isn't interrupted, and a change to a
+  music list waits until neither radio is playing (two hours at most). Each thing is ticked to share or not, for
   each paired radio (the settings in four groups), and syncing can be paused;
   where each book and podcast was left can be shared too, so one picks up
   where the other stopped.
