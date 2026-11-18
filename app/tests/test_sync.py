@@ -913,3 +913,20 @@ def test_the_window_says_which_settings_differ(tmp_path) -> None:
     one._live = (0.0, None, {})
     row = {r["key"]: r for r in one.rows(two.id)}["set:dj"]
     assert row["state"] == "changed" and any(d.startswith("news speed: 1.2 here") for d in row["differs"])
+
+
+
+def test_an_agreement_written_by_an_older_version_does_not_stop_the_sync(tmp_path) -> None:
+    """1.9.97 split "settings" into groups: a sync-base.json from before still names it (it stopped both radios
+    answering until it was dropped)."""
+    net = Net()
+    one, two = radio(tmp_path, net, "one", [st("a")]), radio(tmp_path, net, "two")
+    one.pair("two")
+    settle(one, two)
+    for r, other in ((one, two), (two, one)):
+        bases = json.loads(r.base_file.read_text())
+        bases[other.id]["settings"] = {"locator": None}               # (as an older version wrote it)
+        r.base_file.write_text(json.dumps(bases))
+    assert "settings" not in one.state(two.id, "two")["base"]
+    set_stations(one, [st("a"), st("b")])
+    assert one.sync_now(two.id)["ok"] and urls(stations_of(two)) == ["http://a", "http://b"]

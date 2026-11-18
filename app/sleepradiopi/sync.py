@@ -706,11 +706,17 @@ class Sync:
         save_setting(self.config_file, "sync_peers", peers)
 
     def _bases(self) -> dict:
+        """What was last agreed with each radio -- only the collections this version has (a file written by an
+        older one may name one since renamed: 1.9.97 split "settings" into groups; it's dropped, so that one
+        merges as a first sync does)."""
         try:
             b = json.loads(self.base_file.read_text())
-            return b if isinstance(b, dict) else {}
         except (OSError, ValueError):
             return {}
+        if not isinstance(b, dict):
+            return {}
+        return {pid: {n: v for n, v in agreed.items() if n in COLLECTIONS} if isinstance(agreed, dict) else agreed
+                for pid, agreed in b.items()}
 
     def _save_bases(self, bases: dict) -> None:
         write_atomic(self.base_file, json.dumps(bases, ensure_ascii=False) + "\n")
