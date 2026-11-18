@@ -2119,6 +2119,22 @@ The cards:
   under each paired radio (`media_status` in `GET /api/sync`). Turning a kind
   off forgets what was agreed for it: shared again later, it starts as a first
   sync.
+
+  **The window** (`GET /api/sync?live=1`, asked every few seconds while it's
+  open) shows, for each paired radio, every thing that can be shared: whether
+  it is, how many each radio has (this radio's now; the other's as of the last
+  sync, which records both sides' counts and the other card's free space), and
+  a status in words -- *Same* (agreed at the last sync and unchanged since),
+  *Changed here*, *Not agreed yet*, *Copying*, *Waiting* (a radio is playing),
+  *Held* (no room), *Not shared*. A sync shows its steps (asking, comparing,
+  sending) and a copy its progress by bytes, files and time left, whichever
+  radio is doing it (each asks the other, `GET /api/sync/progress?for=`); the
+  Other radios icon carries a badge meanwhile (`sync_busy` in `/api/status`).
+  **Kept to each radio**, never synced, since 1.9.96 also the room's and the
+  speaker's settings: news quiet hours, room level, noise reduction, the
+  announcer's volume, even out the volume, the start-up sound, notifications,
+  the lightning bell and the desktop picture (each radio keeps the value it
+  had).
 - **Backup** — *Save settings* downloads everything above plus the volume
   as one JSON file; *Load settings* puts it back (after re-flashing the
   card, or onto a second radio). The file is checked before anything is

@@ -260,6 +260,7 @@ def make_handler(station: Station, output: Mp3Output, speaker=None,
                 if speaker is not None:
                     status["speaker"] = speaker.status()
                 status["can_power_off"] = can_power_off()
+                status["sync_busy"] = sync.busy_summary() if sync is not None else None
                 sched = getattr(station, "scheduler", None)
                 status["programme"] = sched.status() if sched else None
                 status["switches"] = sched.switches_status() if sched else []

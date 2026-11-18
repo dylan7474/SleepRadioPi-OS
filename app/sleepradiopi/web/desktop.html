@@ -129,6 +129,19 @@
   .icon.pulse .glyph, .icon.pulse .atag, .menubar .opill.pulse { animation: alertpulse 1s ease-in-out infinite; }
   @keyframes alertpulse { 50% { opacity: .35; } }
   @media (prefers-reduced-motion: reduce) { .icon.pulse .glyph, .icon.pulse .atag, .menubar .opill.pulse { animation: none; } }
+  /* Other radios: the sync's progress bar and the table of what's shared */
+  .syncbar { position: relative; min-height: 26px; margin: 6px 0 10px; border: 1px solid var(--line, #556); border-radius: 6px; overflow: hidden; }
+  .syncbar .fill { position: absolute; inset: 0 auto 0 0; background: repeating-linear-gradient(45deg, rgba(120,170,255,.45) 0 10px, rgba(120,170,255,.3) 10px 20px); transition: width .6s; }
+  .syncbar.held .fill { background: repeating-linear-gradient(90deg, rgba(200,200,200,.35) 0 6px, rgba(200,200,200,.15) 6px 12px); }
+  .syncbar span { position: relative; display: block; padding: 4px 10px; line-height: 18px; font-size: 12.5px; }
+  .synctab { width: 100%; border-collapse: collapse; margin: 4px 0 8px; font-size: 13px; }
+  .synctab th { text-align: left; font-weight: 600; opacity: .75; padding: 4px 6px; border-bottom: 1px solid rgba(128,128,128,.4); }
+  .synctab td { padding: 3px 6px; border-bottom: 1px solid rgba(128,128,128,.15); vertical-align: middle; }
+  .synctab td.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .synctab tr.st-off td { opacity: .55; }
+  .synctab tr.st-changed td:last-child, .synctab tr.st-unsynced td:last-child, .synctab tr.st-differs td:last-child, .synctab tr.st-held td:last-child { font-weight: 600; }
+  .synctab .sbtn { padding: 1px 8px; white-space: nowrap; }
+  .synctab td:first-child, .synctab td:nth-child(2) { white-space: nowrap; }
   .menubar .opill { display: inline-flex; align-items: center; gap: 8px; padding: 2px 12px; border-radius: 12px; background: var(--win); border: 1px solid var(--amber);
                     font: 600 11.5px var(--display); color: var(--ink); cursor: pointer; max-width: 330px; overflow: hidden; text-overflow: ellipsis; transition: opacity .4s; flex-shrink: 1; }
   .menubar .opill.alerting { max-width: min(560px, 46vw); }
@@ -1517,6 +1530,10 @@ function iconEl(o, ctx) {
     d.classList.add("alerting"); if (unseen) d.classList.add("pulse");
     d.append(el("span", { className: "atag", textContent: "▲ ALERT" + (o === OUTSIDE && alerting > 1 ? ` ${alerting}` : "") }));
   }
+  if (o === PANEL.radios && S?.sync_busy) {          // (a sync or a copy going on: the icon says so, with how far it's got)
+    const b = S.sync_busy;
+    d.append(el("span", { className: "atag", textContent: (b.step === "waiting" ? "⏸ " : "⇄ ") + (b.pct != null ? b.pct + "%" : "SYNC") }));
+  }
   d._src = { id: o.id, ...ctx };
   d.addEventListener("pointerdown", e => press(e, d, { id: o.id, ...ctx }));
   d.addEventListener("keydown", e => { if (e.key === "Enter") open(o.id); });
@@ -1927,10 +1944,12 @@ function volume(delta) {
   clearTimeout(volTimer);
   volTimer = setTimeout(async () => { const step = volStep; volStep = 0; try { S.speaker = await api("/api/speaker", { step }); updateRadio(); } catch (e) { toast(e.message); } }, 200);
 }
-let lastProg = "";
+let lastProg = "", lastSyncBusy = "null";
 async function poll() {
   try { S = await api("/api/status"); radioName = S.radio_name || radioName; updateRadio(); applyTheme(); } catch { return; }
   hearSync();
+  const sb = JSON.stringify(S.sync_busy || null);     // (a sync or a copy starting, moving on or ending: the Other radios icon's badge)
+  if (sb !== lastSyncBusy) { lastSyncBusy = sb; if (!dragging) drawDesk(); }
   // the radio was updated with a new desktop page: this one is old -- load the new one (not mid-drag or mid-typing)
   if (S.desktop) {
     pageTag = pageTag || S.desktop;
@@ -5818,42 +5837,81 @@ const UI = {
       ];
     },
   },
-  // Other radios (sync.py): the ones paired with this one (kept the same both ways), the others heard on the network, pairing.
+  // Other radios (sync.py): the ones paired with this one -- for each, what's shared, how much each radio has, whether
+  // it's the same on both, and a sync or a copy going on (with its progress) -- the others heard on the network, pairing.
+  // The window asks again every few seconds while it's open (/api/sync?live=1).
   radios: {
-    load: () => api("/api/sync"),
-    build: (d, act) => {
+    load: () => api("/api/sync?live=1"),
+    build: (d, act, win) => {
+      if (win && !win.syncTimer) win.syncTimer = setInterval(async () => {
+        if (!W.includes(win)) { clearInterval(win.syncTimer); win.syncTimer = null; return; }
+        if (document.hidden || dragging || document.querySelector(".win input:focus, .win textarea:focus, .win select:focus, .confirm")) return;
+        try { win.data = await api("/api/sync?live=1"); drawDesk(); } catch {}
+      }, 4000);
       const ago = t => { const s = Date.now() / 1000 - t; return s < 90 ? "just now" : s < 5400 ? `${Math.round(s / 60)} min ago` : `${Math.round(s / 3600)} h ago`; };
+      const clock = t => new Date(t * 1000).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+      const gb = b => b >= 1e9 ? `${(b / 1e9).toFixed(b >= 1e10 ? 1 : 2)} GB` : b >= 1e6 ? `${Math.round(b / 1e6)} MB` : `${Math.max(0, Math.round(b / 1e3))} KB`;
+      const many = m => !m ? "–" : m.n.toLocaleString() + (m.bytes != null && m.n ? " · " + gb(m.bytes) : "");
       const addr = el("input", { type: "text", id: "sync-addr", autocomplete: "off", spellcheck: false, placeholder: "Its address, like 192.168.1.20" });
       const pair = a => act(async () => { const r = await api("/api/sync/pair", { address: a }), st = r.sync || {};
         toast(`Paired with ${r.name || a}. ` + (st.ok ? `Synced: ${st.said}.` : `Not synced yet: ${st.said || "it'll try again"}.`)); });
       const MEDIA = { music: "Music", ondemand: "On demand", audiobooks: "Audiobooks", ebooks: "Ebooks" };
-      // (the media shared with a paired radio: a tick each, set on both radios at once; and how the copying's going)
-      const mediaRows = p => {
-        const kinds = d.media_kinds || [], on = p.media || [], ms = p.media_status;
-        if (!kinds.length) return [];
-        const flip = k => {
-          const next = on.includes(k) ? on.filter(x => x !== k) : [...on, k];
-          const go = () => act(async () => { await api("/api/sync/media", { id: p.id, kinds: next });
-            toast(next.includes(k) ? `${MEDIA[k]} is shared with ${p.name || "it"}: it syncs now, then copies in the background.`
-                                   : `${MEDIA[k]} is no longer shared with ${p.name || "it"}.`); });
-          if (on.includes(k)) return go();
-          ask(`Share ${MEDIA[k]} with ${p.name || "that radio"}? Each radio gets what the other has, and after that a file deleted on either goes from both. The first time, nothing is deleted, except that a track both have in different formats is kept as the smaller copy (an MP3 rather than a FLAC). Copying waits while either radio plays, and only starts if it all fits.`, "Share", go);
-        };
-        return [srow("Share", line(...kinds.map(k => sbtn((on.includes(k) ? "✓ " : "") + MEDIA[k], () => flip(k), on.includes(k) ? "primary" : "")))),
-                ...(ms ? [help(`${ms.done ? "✓" : "…"} ${ms.said} (${ago(ms.at)})`)] : [])];
+      // (a media library's tick: set on both radios at once)
+      const flip = (p, k) => {
+        const on = p.media || [], next = on.includes(k) ? on.filter(x => x !== k) : [...on, k];
+        const go = () => act(async () => { await api("/api/sync/media", { id: p.id, kinds: next });
+          toast(next.includes(k) ? `${MEDIA[k]} is shared with ${p.name || "it"}: it syncs now, then copies in the background.`
+                                 : `${MEDIA[k]} is no longer shared with ${p.name || "it"}.`); });
+        if (on.includes(k)) return go();
+        ask(`Share ${MEDIA[k]} with ${p.name || "that radio"}? Each radio gets what the other has, and after that a file deleted on either goes from both. The first time, nothing is deleted, except that a track both have in different formats is kept as the smaller copy (an MP3 rather than a FLAC). Copying waits while either radio plays, and only starts if it all fits.`, "Share", go);
       };
-      const peerRow = p => {
-        const st = p.status;
-        const said = st ? `${st.ok ? "✓ Synced" : st.held ? "⏸ Held" : "✗ Not synced"} ${ago(st.at)}: ${st.said}` : "Not synced yet";
-        return srow(p.name || p.address, el("span", { className: "shelp", textContent: `${p.address} · ${p.online ? "on the network" : "not heard lately"} · ${said}` }),
-          line(sbtn("Sync now", () => act(async () => { const r = await api("/api/sync/now", { id: p.id }); toast(r.ok ? `Synced with ${p.name}: ${r.said}.` : `${p.name}: ${r.said}.`); })),
-               ...(st?.held ? [sbtn("Sync anyway", () => act(() => api("/api/sync/allow", { id: p.id })))] : []),
-               sbtn("Unpair", () => act(() => api("/api/sync/unpair", { id: p.id })))));
+      const STATE = { same: "✓ Same", copying: "⇄ Copying", waiting: "⏸ Waiting: a radio is playing", held: "⏸ Held: needs more room",
+                      changed: "✎ Changed here: syncs next time", unsynced: "… Not agreed yet: syncs next time", differs: "≠ Different", off: "Not shared" };
+      // (the progress bar: a copy going on, either way, else the steps of an exchange)
+      const STEPS = { asking: [1, "Asking"], comparing: [2, "Comparing"], sending: [3, "Sending the result to"] };
+      const progressOf = p => {
+        const mine = p.progress?.copying, theirs = p.their_progress?.copying, c = mine || theirs;
+        if (c) {
+          const left = c.bytes - c.bytes_done, took = Math.max(1, c.at - c.started), rate = c.bytes_done / took;
+          const eta = c.step === "waiting" ? "waiting while a radio plays" : rate > 0 && c.bytes_done > 2e6 ? `about ${Math.max(1, Math.round(left / rate / 60))} min left` : "working out the time left";
+          const who = mine ? `${c.label}: copying from ${p.name}` : `${c.label}: ${p.name} is copying from this radio`;
+          return { pct: c.bytes ? 100 * c.bytes_done / c.bytes : 0, held: c.step === "waiting",
+                   text: `${c.step === "waiting" ? "⏸" : "⇄"} ${who} · ${c.files_done} of ${c.files} files · ${gb(c.bytes_done)} of ${gb(c.bytes)} · ${eta}` };
+        }
+        const e = [p.progress?.exchange, p.their_progress?.exchange].find(x => x && STEPS[x.step] && Date.now() / 1000 - x.at < 120);
+        if (e) { const [i, w] = STEPS[e.step]; return { pct: 100 * i / 4, text: `⇄ Syncing: ${w} ${w === "Comparing" ? "" : p.name}… (step ${i} of 3)` }; }
+        return null;
+      };
+      const bar = pr => el("div", { className: "syncbar" + (pr.held ? " held" : ""), role: "progressbar", ariaValueNow: String(Math.round(pr.pct)), ariaValueMin: "0", ariaValueMax: "100", ariaValueText: pr.text },
+        el("div", { className: "fill", style: `width:${Math.max(2, Math.min(100, pr.pct)).toFixed(1)}%` }), el("span", { textContent: pr.text }));
+      const peerBlock = p => {
+        const st = p.status, pr = progressOf(p);
+        const said = st ? `${st.ok ? "✓" : st.held ? "⏸ Held:" : "✗ Not synced:"} ${clock(st.at)} (${ago(st.at)}): ${st.said}` : "Not synced yet";
+        const next = d.next_at && d.next_at > Date.now() / 1000 ? ` · next in ${Math.max(1, Math.round((d.next_at - Date.now() / 1000) / 60))} min` : "";
+        const rows = (p.items || []).map(it => {
+          const k = it.name.startsWith("media:") ? it.name.slice(6) : null;
+          const share = k ? sbtn((it.shared ? "✓ " : "") + "Share", () => flip(p, k), it.shared ? "primary" : "")
+                          : el("span", { className: "muted", textContent: "✓ always" });
+          return el("tr", { className: "st-" + it.state }, el("td", { textContent: it.label }), el("td", {}, share),
+            el("td", { className: "num", textContent: many(it.here) }), el("td", { className: "num", textContent: it.shared ? many(it.there) : "–" }),
+            el("td", { textContent: STATE[it.state] || it.state }));
+        });
+        const free = [d.me?.free != null && `here ${gb(d.me.free)}`, p.free_there != null && `${p.name} ${gb(p.free_there)}`].filter(Boolean).join(" · ");
+        return grp(`${d.me?.name || "This radio"} and ${p.name || p.address}`,
+          srow("Last sync", el("span", { className: "shelp", textContent: `${said}${next} · ${p.address}, ${p.online ? "on the network" : "not heard lately"}` }),
+            line(sbtn("Sync now", () => act(async () => { const r = await api("/api/sync/now", { id: p.id }); toast(r.ok ? `Synced with ${p.name}: ${r.said}.` : `${p.name}: ${r.said}.`); })),
+                 ...(st?.held ? [sbtn("Sync anyway", () => act(() => api("/api/sync/allow", { id: p.id })))] : []),
+                 sbtn("Unpair", () => act(() => api("/api/sync/unpair", { id: p.id }))))),
+          ...(pr ? [bar(pr)] : []),
+          ...(rows.length ? [el("table", { className: "synctab" },
+            el("thead", {}, el("tr", {}, ...["", "Shared", "Here", p.name || "There", "Status"].map(t => el("th", { textContent: t })))), el("tbody", {}, ...rows))]
+            : [help("Counts show here after the next sync.")]),
+          ...(free ? [help(`Free on the card: ${free}.`)] : []),
+          ...(p.media_status?.said && !pr ? [help(`${p.media_status.done ? "✓" : "…"} ${p.media_status.said} (${ago(p.media_status.at)})`)] : []),
+          help("Counts are this radio's now, and the other radio's at the last sync. Kept to each radio, never shared: speakers and EQ, volume, buttons and knob, glow and meter, what's playing, programme mode, the DJ's and news's voice, receiver jobs, browser listening, and the room's settings (news quiet hours, room level, noise reduction, announcer volume, even out the volume, start-up sound, notifications, the lightning bell, the desktop picture)."));
       };
       return [
-        grp("Paired with " + (d.me?.name || "this radio"),
-          ...(d.peers.length ? d.peers.flatMap(p => [peerRow(p), ...mediaRows(p)]) : [help("None yet: pair with a radio below.")]),
-          help("Paired radios keep their stations, themes, playlists, messages and settings the same, both ways: a change on either is on both after the next sync (every few minutes, or Sync now). Each radio's own set-up, buttons and volume stay its own. Music, On demand, audiobooks and ebooks are shared only when ticked under Share (both radios need to be on to change it); a file deleted on one then goes from both.")),
+        ...(d.peers.length ? d.peers.map(peerBlock) : [grp("Paired with " + (d.me?.name || "this radio"), help("None yet: pair with a radio below."))]),
         grp("On the network",
           ...(d.seen.length ? d.seen.map(r => srow(r.name || r.address, el("span", { className: "shelp", textContent: `${r.address}${r.version ? " · v" + r.version : ""}` }),
                 line(sbtn("Pair", () => pair(r.address), "primary"))))

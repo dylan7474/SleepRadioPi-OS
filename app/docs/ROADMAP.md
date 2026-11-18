@@ -8,10 +8,15 @@ the image README's [Roadmap](../../README.md#roadmap) (keep the two in step).
   settings, stations, themes, playlists, programmes, messages, birthdays,
   podcasts, DJ lines, theme jingles, voice packs and Wi-Fi networks the same
   both ways (*Other radios*), and the music, On demand, audiobooks and ebooks
-  when shared. Still to do: **book and podcast places** (stop a book on one
-  radio, carry on from there on the other); a meter of how much of each card
-  the shared library fills; and a radio with a web password pairing with its
-  partners (today such a radio stays out of sync).
+  when shared, and Other radios shows counts, status and progress for each.
+  Still to do (the plan, in order): **choosing what's shared** -- a tick for
+  every item, set on both radios, the settings in four groups (DJ and news,
+  ebook reading, station identity, the world outside), warnings where one
+  item needs another (a programme's playlist), a backup when something new is
+  ticked, and Pause syncing; then a list of **recent syncs** and **book and
+  podcast places** (stop a book on one radio, carry on from there on the
+  other); and a radio with a web password pairing with its partners (today
+  such a radio stays out of sync).
 - **More ways to pick the sound** — the sound by kind of audio is built (music, radio, audiobook,
   ebook, podcast). Buttons can carry a sound too (day and night sets each have their own). Still open: a sound per
   music genre (needs reliable tags), a Music/Talk tag for stations played from the page, and the same on

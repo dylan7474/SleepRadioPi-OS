@@ -74,10 +74,13 @@ class Net:
             return {"ok": True}
         if what == "adopt":
             asker = next((a for a, x in self.radios.items() if x.id == body["id"]), None)
-            ok = r.adopt(body["id"], body["merged"], body["was"], asker, body.get("was_media"))
+            ok = r.adopt(body["id"], body["merged"], body["was"], asker, body.get("was_media"),
+                         body.get("counts"), body.get("usage"))
             if self.lose():
                 raise OSError("timed out")
             return {"ok": ok}
+        if what == "progress":
+            return r.progress_for(query)
         if what == "media-set":
             asker = next((a for a, x in self.radios.items() if x.id == body["id"]), None)
             return {"ok": r.media_set(body["id"], body["kinds"], asker)}
@@ -719,3 +722,86 @@ def test_only_the_paired_radio_itself_can_share_with_this_one(tmp_path) -> None:
     with pytest.raises(ValueError):
         two.media_set(one.id, ["music"], "10.9.9.9")           # (asked from somewhere else)
     assert two.shared(one.id) == []
+
+
+
+# --- 1.9.96: what the Other radios window shows, and the room's settings kept to each radio ---
+
+def set_conf(r, **kv):
+    conf = json.loads(r.config_file.read_text())
+    conf.update(kv)
+    r.config_file.write_text(json.dumps(conf))
+
+
+def conf_of(r):
+    return json.loads(r.config_file.read_text())
+
+
+def test_the_rooms_settings_stay_each_radios_own(tmp_path) -> None:
+    net = Net()
+    one, two = radio(tmp_path, net, "one"), radio(tmp_path, net, "two")
+    set_conf(one, room_level=-30, news_quiet_hours=True, notify="muted", news_speed=1.1)
+    set_conf(two, room_level=-50, news_quiet_hours=False, notify="armed")
+    one.pair("two")
+    assert conf_of(two)["room_level"] == -50 and conf_of(two)["news_quiet_hours"] is False and conf_of(two)["notify"] == "armed"
+    assert conf_of(two)["news_speed"] == 1.1                    # (the DJ and news settings still go across)
+    for key in ("news_quiet_hours", "room_level", "noise_reduction", "broadcast_announcer_volume", "stream_evenness",
+                "startup_sound", "notify", "lightning_bell", "background_url"):
+        assert key not in sync_mod._synced_settings()
+
+
+def test_both_radios_know_how_much_each_has_after_a_sync(tmp_path) -> None:
+    net = Net()
+    one = libraried(tmp_path, net, "one", {"music/A/a.mp3": b"AAAA"})
+    two = libraried(tmp_path, net, "two", {"music/A/a.mp3": b"AAAA", "music/B/b.mp3": b"BB"})
+    set_stations(one, [st("a"), st("b")])
+    one.pair("two")
+    settle(one, two)
+    for r, other in ((one, two), (two, one)):
+        items = {i["name"]: i for i in r.items(other.id)}
+        assert items["radio_stations"]["here"]["n"] == items["radio_stations"]["there"]["n"] == 2
+        assert items["radio_stations"]["state"] == "same"
+        assert items["media:music"]["state"] == "off" and items["media:music"]["shared"] is False
+    one.share_media(two.id, ["music"])
+    settle(one, two)
+    one.sync_now(two.id)
+    settle(one, two, want=lambda: len(one.media.files["music"]) == 2)
+    one._live = (0.0, None, {})                                 # (read again, not the 15 s copy)
+    m = {i["name"]: i for i in one.items(two.id)}["media:music"]
+    assert m["shared"] and m["here"] == {"n": 2, "bytes": 6} and m["state"] == "same"
+    set_stations(one, [st("a")])                                # changed here since the sync
+    one._live = (0.0, None, {})
+    assert {i["name"]: i for i in one.items(two.id)}["radio_stations"]["state"] == "changed"
+    ov = one.overview(live=True)
+    p = ov["peers"][0]
+    assert p["items"] and "progress" in p and ov["me"]["free"] is not None
+
+
+def test_a_copy_shows_its_progress_by_bytes(tmp_path, monkeypatch) -> None:
+    import threading
+    net = Net()
+    one = libraried(tmp_path, net, "one", {})
+    two = libraried(tmp_path, net, "two", {"music/A/a.mp3": b"A" * 1000, "music/A/b.mp3": b"B" * 500})
+    seen, gate = [], threading.Event()
+    real = one.get_file
+
+    def slow(addr, kind, path):
+        got = real(addr, kind, path)
+        seen.append(dict(one.copying.get(two.id) or {}))
+        gate.wait(2)
+        return got
+    one.get_file = slow
+    one.pair("two")
+    one.share_media(two.id, ["music"])                         # (its sync starts the copy)
+    import time as _t
+    for _ in range(100):
+        if one.busy_summary():
+            break
+        _t.sleep(0.02)
+    b = one.busy_summary()
+    assert b and b["step"] == "copying" and b["pct"] is not None
+    assert two.progress_for(one.id)["copying"] is None        # (the copying is one's)
+    gate.set()
+    settle(one, two, want=lambda: len(one.media.files["music"]) == 2)
+    assert seen and seen[0]["files"] == 2 and seen[0]["bytes"] == 1500
+    assert one.copying.get(two.id) is None and one.busy_summary() is None

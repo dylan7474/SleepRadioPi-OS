@@ -23,7 +23,13 @@ def build(ctx):
         if sync is None or not path.startswith("/api/sync"):
             return False
         if path == "/api/sync":
-            self._send(json.dumps(sync.overview()).encode(), "application/json")
+            from urllib.parse import parse_qs, urlparse
+            live = parse_qs(urlparse(self.path).query).get("live", [""])[0] == "1"
+            self._send(json.dumps(sync.overview(live)).encode(), "application/json")
+        elif path == "/api/sync/progress":   # (asked by a paired radio: how its sync and copying look from here)
+            from urllib.parse import parse_qs, urlparse
+            for_id = parse_qs(urlparse(self.path).query).get("for", [""])[0]
+            self._send(json.dumps(sync.progress_for(for_id)).encode(), "application/json")
         elif path == "/api/sync/voice":      # a voice pack, as a tar (for a paired radio that hasn't got it)
             self._send_voice()
         elif path == "/api/sync/hello":
@@ -57,7 +63,8 @@ def build(ctx):
                 reply = {"ok": True}
             elif action == "adopt":          # (a paired radio worked out the merge: take it up, if nothing changed here)
                 reply = {"ok": sync.adopt(str(body.get("id", "")), body.get("merged"), str(body.get("was", "")),
-                                          self.client_address[0].removeprefix("::ffff:"), body.get("was_media"))}
+                                          self.client_address[0].removeprefix("::ffff:"), body.get("was_media"),
+                                          body.get("counts"), body.get("usage"))}
             elif action == "media-set":      # (the paired radio, sharing media with this one: from its own address)
                 reply = {"ok": sync.media_set(str(body.get("id", "")), body.get("kinds"),
                                               self.client_address[0].removeprefix("::ffff:"))}
