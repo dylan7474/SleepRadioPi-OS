@@ -62,6 +62,8 @@ KINDS = {                    # the eye-only alerts: {kind: (name, what it is)}; 
 INBOUND_MIN, INBOUND_NM, INBOUND_FAR_NM = 8.0, 2.0, 80.0
 LOITER_S, LOITER_NM, LOITER_MOST, LOITER_SAMPLES = 900.0, 5.0, 3, 8
 TRACK_S, GAP_S = 1500.0, 300.0                   # a track is kept this long; a gap this long ends it (a new aircraft, or out of range)
+RECENT_S = 600.0                                 # an alert that has ended stays in the window this long ("earlier": which aircraft it was); memory only
+RECENT_MOST = 5
 TRAIL_POINTS = 40                                # the 3D view's trail: at most this many of an aircraft's latest positions (about 13 minutes)
 DESCENT_RATE, DESCENT_AGAIN, DESCENT_FT, DESCENT_SHOWN_S = -4000, -3000, 10000, 600.0
 LONG_NM = 250.0
@@ -222,6 +224,7 @@ class Aircraft(Kept):
         self._descents: dict[str, tuple[float, dict]] = {}
         self._hist: dict[int, list] = {}             # {half hour: [farthest nm, sum of counts, samples]}, a day of it, for "usual"
         self._where: tuple[str, tuple[float, float] | None, str | None] | None = None      # (the base it was for, the aerial's place, where that came from)
+        self._recent: dict[str, dict] = {}           # each alert of the last RECENT_S: {what: {short, hex, call, kind, first, last, on}}; memory only
 
     def _aerial(self, url: str) -> tuple[tuple[float, float] | None, str | None]:
         """Where the aerial is, and where that came from ("receiver": its receiver.json, asked once for an address and
@@ -355,7 +358,32 @@ class Aircraft(Kept):
         had = super().fetch()
         if had is None:
             self._empty_since = None                 # (it didn't answer: nothing is known about what it hears)
+        else:
+            self._note(had)
         return had
+
+    def _note(self, had: dict) -> None:
+        """Keep each alert as it was last seen, so one that has ended can still be shown for RECENT_S (which aircraft it was)."""
+        now = self._clock()
+        planes = {p.get("hex"): p for v in had.values() if isinstance(v, list) for p in v if isinstance(p, dict) and p.get("hex")}
+        with self._mem:
+            for r in self._recent.values():
+                r["on"] = False
+            for what, _, _, short in alerts(had):
+                parts = what.split(":")
+                hex_ = parts[1] if len(parts) == 3 and parts[2] in EMERGENCY else parts[2] if len(parts) == 3 else None
+                kind = "emergency" if len(parts) == 3 and parts[2] in EMERGENCY else parts[1]
+                r = self._recent.setdefault(what, {"first": now, "kind": kind, "hex": hex_, "call": None})
+                r.update(short=short, last=now, on=True, call=(planes.get(hex_) or {}).get("call") or r["call"])
+            for k in [k for k, r in self._recent.items() if not r["on"] and now - r["last"] > RECENT_S]:
+                del self._recent[k]
+
+    def recent(self) -> list[dict]:
+        """The alerts that have ended in the last RECENT_S, newest first: [{short, hex, call, kind, first, last}]."""
+        now = self._clock()
+        with self._mem:
+            out = [{k: v for k, v in r.items() if k != "on"} for r in self._recent.values() if not r["on"] and now - r["last"] <= RECENT_S]
+        return sorted(out, key=lambda r: -r["last"])[:RECENT_MOST]
 
     def trouble(self) -> list[dict]:
         """Things for the "something's wrong" light: a receiver that answers but has heard no aircraft at all for DEAF_S; and one
@@ -395,7 +423,7 @@ class Aircraft(Kept):
             self._had, self._tried, self._where, self._empty_since = None, 0.0, None, None
         with self._mem:
             self._tracks.clear(), self._rates.clear(), self._descents.clear()
-            self._hist.clear()
+            self._hist.clear(), self._recent.clear()
 
     def _says(self, had: dict) -> str:
         return says(had)

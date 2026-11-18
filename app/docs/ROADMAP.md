@@ -75,6 +75,8 @@ the image README's [Roadmap](../../README.md#roadmap) (keep the two in step).
   under the knob, a hold keeps going; the knob stays as the indicator, click / scroll as before)
 - **Aircraft in 3D** (DONE 2026-11-17, 1.9.92: a Flat / 3D switch above the Aircraft scope; the 3D view stands each
   aircraft on a stalk over the map with its recent path; the Aircraft window now updates itself while it's open)
+- **Which aircraft was that alert?** (DONE 2026-11-18, 1.9.102: in 3D an alerted aircraft has a ▲ banner from the start and its
+  details say what the alert is; an alert that has ended stays in the Aircraft window for 10 minutes as EARLIER, with the callsign)
 - **DJ lines: fully managed** (DONE 2026-11-18, 1.9.100: edit, remove, switch off and restore every
   DJ line, your own and the 70s ones; changes sync between paired radios that share themes.)
 - **Tune the speakers from the phone app** (DONE 2026-11-15: radio side 1.9.87, app 1.1+;

@@ -1676,7 +1676,8 @@ The cards:
   (category A7) and `heavy` (A5 low), `busy` (count over `BUSY_X` times the median of the half-hour
   averages, from `BUSY_NEED` of them). All of it (`_tracks`, `_rates`, `_descents`, `_hist`) is in
   memory under `Aircraft._mem`, cleared by `forget()`; `flagged()` gives the scope the aircraft
-  with an alert. `GET /api/aircraft` also returns `alerts`, `flagged`, `off`, `kinds`, `now` (the radio's clock)
+  with an alert. `GET /api/aircraft` also returns `alerts`, `recent` (`Aircraft.recent()`: the alerts that ended in the last `RECENT_S` 600 s, newest
+  first, at most `RECENT_MOST` 5, `{short, hex, call, kind, first, last}`, noted at each fetch by `_note()` in memory under `_mem`), `flagged`, `off`, `kinds`, `now` (the radio's clock)
   and `trails` (`Aircraft.trails()`: each placed aircraft's latest `TRAIL_POINTS` 40 positions from `_tracks`,
   `[nm east, nm north, ft, seconds ago]` from the aerial, oldest first) for the desktop's 3D view (`Air3D`, the
   Flat / 3D switch, `srd.airview`); the desktop asks again every 15 s while the window is open (`refreshLive`).

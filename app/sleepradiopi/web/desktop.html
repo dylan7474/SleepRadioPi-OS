@@ -680,6 +680,7 @@
   .air-key { display: flex; gap: 12px; flex-wrap: wrap; justify-content: center; font-size: 10.5px; color: var(--dim); margin: 2px 0 0; }
   .air-key i { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 5px; vertical-align: -0.5px; }
   .air-alarm { display: flex; align-items: center; gap: 8px; margin: 0 0 10px; padding: 8px 12px; border-radius: 9px; background: color-mix(in srgb, var(--red) 14%, var(--win)); border: 1px solid var(--red); color: var(--ink); font-weight: 600; }
+  .air-past { background: transparent; border: 1px dashed var(--dim); color: var(--dim); font-weight: 500; }
   .air-kind { display: flex; align-items: center; justify-content: space-between; gap: 14px; padding: 7px 0; border-bottom: 1px solid color-mix(in srgb, var(--plate-line) 55%, transparent); }
   .air-kind b { font-weight: 600; font-size: 13px; }
   .air-kind small { display: block; color: var(--dim); font-size: 11.5px; margin-top: 1px; }
@@ -5316,7 +5317,7 @@ const Sonde3D = {
 // Drag to turn it, the wheel to zoom, click an aircraft for its banner and details (again: off). One node is kept and moved into each redraw of the window, so the
 // angle, the zoom and the aircraft picked stay put while the window refreshes. Callsigns come from the air: drawn on a canvas, never HTML.
 const Air3D = {
-  st: { yaw: 0, pitch: 30, zoom: 1, node: null, a: null, o: null, got: 0, sel: null, tagged: new Set(), disp: {}, raf: 0, last: 0, groundKey: null, ground: null, screen: [] },
+  st: { yaw: 0, pitch: 30, zoom: 1, node: null, a: null, o: null, got: 0, sel: null, tagged: new Set(), untagged: new Set(), disp: {}, raf: 0, last: 0, groundKey: null, ground: null, screen: [] },
   CEIL_FT: 45000,                                   // the top of the height scale; it stands half the range tall
   MODEL: [[0, 1], [.1, .55], [.12, .25], [.95, -.12], [.95, -.28], [.12, -.12], [.08, -.62], [.38, -.82], [.38, -.95], [0, -.88],
           [-.38, -.95], [-.38, -.82], [-.08, -.62], [-.12, -.12], [-.95, -.28], [-.95, -.12], [-.12, .25], [-.1, .55]],
@@ -5351,7 +5352,11 @@ const Air3D = {
       let best = null, bd = 16;
       for (const [sx, sy, hex] of st.screen) { const d = Math.hypot(sx - x, sy - y); if (d < bd) { bd = d; best = hex; } }
       if (!best) return;
-      if (st.tagged.has(best)) { st.tagged.delete(best); if (st.sel === best) st.sel = null; }      // (a click turns its banner on, and says its details; again: off)
+      if (st.o?.marks?.has(best)) {                                       // one with an alert has its banner already: a click says its details, again takes the banner off, again puts it back
+        if (st.untagged.has(best)) { st.untagged.delete(best); st.sel = best; }
+        else if (st.sel !== best) st.sel = best;
+        else { st.untagged.add(best); st.sel = null; }
+      } else if (st.tagged.has(best)) { st.tagged.delete(best); if (st.sel === best) st.sel = null; }      // (a click turns its banner on, and says its details; again: off)
       else { st.tagged.add(best); st.sel = best; }
       this.draw();
     };
@@ -5376,7 +5381,7 @@ const Air3D = {
     new ResizeObserver(() => this.draw()).observe(cv);
     return el("div", { className: "air3d" }, el("div", { className: "air3d-wrap" }, cv), this.info,
       el("div", { className: "line", style: "justify-content:center;margin-top:6px" }, reset, full),
-      el("p", { className: "shelp air-attr", textContent: "Drag to turn it, the wheel (or + and -) to zoom. Each stands on a stalk down to where it is over the ground; the line behind it is where it has been. Click an aircraft to give it a banner with its name and height (click it again to take it off); one squawking an emergency always has one. The pole at the aerial is the height scale. Seen from the south to begin with: north is away from you." }));
+      el("p", { className: "shelp air-attr", textContent: "Drag to turn it, the wheel (or + and -) to zoom. Each stands on a stalk down to where it is over the ground; the line behind it is where it has been. Click an aircraft to give it a banner with its name and height (click it again to take it off); one with an alert (▲) has one to begin with, and one squawking an emergency always has one. The pole at the aerial is the height scale. Seen from the south to begin with: north is away from you." }));
   },
   full() {
     const st = this.st, host = el("div", { className: "air3d-host" });
@@ -5516,6 +5521,7 @@ const Air3D = {
     }
     for (const h of Object.keys(st.disp)) if (!seen.has(h)) delete st.disp[h];
     for (const h of [...st.tagged]) if (!seen.has(h)) st.tagged.delete(h);
+    for (const h of [...st.untagged]) if (!seen.has(h) || !o.marks.has(h)) st.untagged.delete(h);
     if (st.sel && !seen.has(st.sel)) st.sel = null;
     list.sort((u, v) => u.at[2] - v.at[2]);
     st.screen = [];
@@ -5550,14 +5556,14 @@ const Air3D = {
       if (picked) { g.strokeStyle = "#fff"; g.lineWidth = 1.5; g.strokeRect(at[0] - 13, at[1] - 13, 26, 26); }
       st.screen.push([at[0], at[1], p.hex]);
     }
-    // banners: only on the aircraft clicked (a click again takes it off) and on any squawking an emergency, each towed behind its aircraft
+    // banners: on the aircraft clicked (a click again takes it off), on any with an alert (a click takes it off) and on any squawking an emergency, each towed behind its aircraft
     // (the line points back the way it came, so aircraft going different ways spread their banners apart; the writing stays level).
     // Where there's no room a longer tow line is tried; failing that it goes where it would have, over another.
     g.font = "bold 10.5px ui-monospace, monospace";
     const boxes = [];
     const high = p => p.ground ? "gnd" : p.ft == null ? "" : p.ft < 1000 ? String(Math.round(p.ft / 100) * 100) : p.ft < 10000 ? `${+(p.ft / 1000).toFixed(1)}k` : `${Math.round(p.ft / 1000)}k`;
-    const must = p => !!(p.squawk || st.tagged.has(p.hex));
-    const order = list.filter(({ p }) => must(p)).sort((u, v) => (!!v.p.squawk - !!u.p.squawk) || (u.p.nm - v.p.nm));
+    const must = p => !!(p.squawk || st.tagged.has(p.hex) || (o.marks.has(p.hex) && !st.untagged.has(p.hex)));
+    const order = list.filter(({ p }) => must(p)).sort((u, v) => (!!v.p.squawk - !!u.p.squawk) || (o.marks.has(v.p.hex) - o.marks.has(u.p.hex)) || (u.p.nm - v.p.nm));
     const marks = list.map(({ at }) => [at[0] - 7, at[1] - 7, at[0] + 7, at[1] + 7]);       // (a banner keeps off the aircraft themselves too)
     const clash = b => boxes.some(u => b[0] < u[2] + 3 && b[2] + 3 > u[0] && b[1] < u[3] + 2 && b[3] + 2 > u[1]) || marks.some(u => b[0] < u[2] && b[2] > u[0] && b[1] < u[3] && b[3] > u[1]);
     for (const { p, q, at } of order) {
@@ -5587,11 +5593,14 @@ const Air3D = {
     const sel = st.sel && o.shown.find(p => p.hex === st.sel), DIRS = ["N", "NE", "E", "SE", "S", "SW", "W", "NW"];
     const said = sel ? [sel.call || sel.hex, sel.ground ? "on the ground" : sel.ft != null ? `${sel.ft.toLocaleString("en-GB")} ft${sel.climb ? (sel.climb === "up" ? " climbing" : " descending") : ""}` : null,
                         sel.kt != null ? `${sel.kt} kt` : null, sel.track != null && !sel.ground ? `heading ${String(sel.track).padStart(3, "0")}°` : null,
-                        `${sel.nm} nm ${DIRS[Math.round(sel.deg / 45) % 8]}`, sel.squawk ? `squawking ${sel.squawk}` : null, o.marks.has(sel.hex) ? "on your watch list" : null].filter(Boolean).join(" · ")
+                        `${sel.nm} nm ${DIRS[Math.round(sel.deg / 45) % 8]}`, sel.squawk ? `squawking ${sel.squawk}` : null, o.why?.get(sel.hex)?.length ? "▲ alert: " + o.why.get(sel.hex).map(k => AIR_ALERT_WORD[k] || k).join(", ") : null].filter(Boolean).join(" · ")
                      : `${o.shown.length} aircraft · click one for its name and details (again to take it off)`;
     if (this.info.textContent !== said) this.info.textContent = said;
   },
 };
+// what an aircraft's alert is, in the 3D view's details line (playback/aircraft.py KINDS)
+const AIR_ALERT_WORD = { low: "low and close", watch: "on your watch list", inbound: "heading for you", loiter: "circling", descent: "descending fast",
+                         long: "unusually far", night: "night flight", heli: "helicopter", heavy: "heavy jet, low" };
 // The radiosonde live console: a flight being heard, as it happens, in panels like a tracking station's -- the link (signal, battery, the
 // decoder), height, climb, temperature, humidity, pressure, where to point the aerial (bearing and elevation), the drift, the ground track,
 // a log of what has happened and, on the way down, an estimate of when it lands. It asks the radio every LIVE_EVERY_MS for the rows the
@@ -6887,7 +6896,7 @@ const UI = {
           const views = seg([["flat", "Flat"], ["3d", "3D"]], three ? "3d" : "flat", v => { Air3D.set(v === "3d"); draw(); setTimeout(() => fitWin(PANEL.aircraft.id), 60); });
           views.setAttribute("aria-label", "How the aircraft are shown");
           box.classList.toggle("wide", three);
-          const main = three ? Air3D.view(a, { range, step, marks, col: p => p.squawk ? "#ff6a55" : altCol(p),
+          const main = three ? Air3D.view(a, { range, step, marks, why: new Map((a.flagged || []).map(f => [f.hex, f.kinds || []])), col: p => p.squawk ? "#ff6a55" : altCol(p),
                                                shown: a.range ? plot.filter(p => p.nm <= range || p.squawk || marks.has(p.hex)) : plot }) : scope(a);
           box.replaceChildren(el("div", { className: "line", style: "justify-content:center;margin-bottom:8px" }, el("span", { className: "shelp", textContent: "View" }), views), main, ranges, beyond ? el("p", { className: "shelp air-attr", textContent: `${beyond} more beyond ${rng} nm: not shown (Auto or a longer range brings them back).` }) : "", el("p", { className: "shelp air-attr" }, ...(a.at ? [el("label", {}, cb, " Map"), ` · rings every ${step} nm from the aerial${note ? " · " + note : ""}`] : [`Rings every ${step} nm from the aerial. ${note}`])));
         };
@@ -6931,6 +6940,8 @@ const UI = {
       return [
         a.emergency?.length ? el("div", { className: "air-alarm", role: "alert", textContent: "⚠ " + a.emergency.map(p => `${p.call || p.hex} squawking ${p.squawk}`).join(" · ") }) : null,
         ...(a.alerts || []).map(x => el("div", { className: "air-alarm air-note", role: "alert", textContent: `▲ ALERT · ${x.says || x.short}` })),
+        ...(a.recent || []).map(x => { const hm = t => new Date(t * 1000).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" }), t0 = hm(x.first), t1 = hm(x.last);
+          return el("div", { className: "air-alarm air-past", textContent: `△ EARLIER · ${t0 === t1 ? t0 : t0 + "–" + t1} · ${x.short} · ended` }); }),   // (an alert that has ended, kept for 10 minutes: which aircraft it was)
         a.up ? el("div", { className: "air" }, scopeBox(a), figures(a)) : null,
         a.up ? line(el("p", { className: "air-key" }, ...ALT_BANDS.map(([, col, txt]) => el("span", {}, el("i", { style: `background:${col}` }), txt)))) : null,
         a.up ? grp(a.range ? `Within ${a.range} nm, nearest first` : "Nearest first", table(a), help((a.from === "receiver" ? "Distances are from the receiver's aerial, where the receiver says it is." : a.from === "locator" ? "The receiver didn't say where its aerial is, so distances are from the middle of this radio's locator square: approximate (a longer locator in Settings is closer)." : "The receiver didn't say where its aerial is and the radio has no locator, so there are no distances or plot.") + " Callsigns are what the aircraft transmits; ones with no position yet are listed last.")) :

@@ -576,7 +576,13 @@ Actions, Sleep timer and Radio folders open:
   stalk down to where it is over the ground, with a height scale at the aerial
   (every 10,000 ft) and a trail of where it has been in the last few minutes.
   Click an aircraft and it tows a banner with its callsign and height (click it
-  again to take it off); one squawking an emergency always has one. The colours are the scope's; the height is also the stalk and the
+  again to take it off); one squawking an emergency always has one, and one
+  with an alert has a ▲ banner to begin with (a click gives its details, which
+  say what the alert is -- low and close, on your watch list, heading for you...;
+  a second click takes the banner off). An alert that has ended stays at the
+  top of the window for 10 minutes, dashed and marked *EARLIER* with its times
+  and the aircraft's callsign, so one opened late still says which aircraft it
+  was (kept in memory only). The colours are the scope's; the height is also the stalk and the
   label, never colour alone. Between pictures each aircraft glides on along its
   heading. Drag to turn it, the wheel to zoom; a click also gives its details.
   *Full screen* (beside *Reset view*, where the browser allows it) fills the

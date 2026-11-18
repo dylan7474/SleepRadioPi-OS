@@ -552,3 +552,24 @@ def test_the_3d_view_gets_each_aircrafts_recent_path() -> None:
     assert abs(math.degrees(math.atan2(e, n)) % 360 - p["deg"]) < 1
     assert pts[-1][1] > pts[0][1]                                        # (it went north)
 
+
+
+def test_an_alert_that_has_ended_is_kept_for_a_while() -> None:
+    now = [NOW]
+    answers = {"/data/aircraft.json": SKY, "/data/receiver.json": RECEIVER}
+    a = aircraft.Aircraft(get=_get(answers), clock=lambda: now[0], address=lambda: "pi:8080")
+    had = a.fetch()
+    on = [w for w, _, _, _ in aircraft.alerts(had)]
+    assert on and a.recent() == []                                                                       # (still going: not "earlier")
+    now[0] += 60
+    answers["/data/aircraft.json"] = {"aircraft": []}
+    a.fetch()
+    r = a.recent()
+    assert r and r[0]["last"] == NOW and r[0]["first"] == NOW and r[0]["short"]
+    emerg = [x for x in r if x["kind"] == "emergency"]
+    assert emerg and emerg[0]["call"] == "EMRG1" and emerg[0]["hex"]                                      # (which aircraft it was, by name)
+    now[0] += aircraft.RECENT_S + 1
+    a.fetch()
+    assert a.recent() == []                                                                              # (gone after RECENT_S)
+    a.forget()
+    assert a._recent == {}
