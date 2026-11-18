@@ -752,7 +752,9 @@ Actions, Sleep timer and Radio folders open:
   (set on both radios at once): each gets what the other has, a file deleted
   on either goes from both, the same track as a FLAC on one and an MP3 on the
   other ends as the MP3 on both, nothing is copied that won't fit, and the
-  copying waits while a radio plays. The window shows, for each paired radio,
+  copying waits while a radio plays. Each thing is ticked to share or not, for
+  each paired radio (the settings in four groups), and syncing can be paused.
+  The window shows, for each paired radio,
   how many of each thing both radios have, whether they're the same, and a
   progress bar while a sync or a copy runs. See the [app README](app/README.md)
   for how it merges.
@@ -1324,14 +1326,11 @@ What's left to do (everything else described here is built and running):
   podcasts, DJ lines, theme jingles, voice packs and Wi-Fi networks the same
   both ways (*Other radios*), and the music, On demand, audiobooks and ebooks
   when shared, and Other radios shows counts, status and progress for each.
-  Still to do (the plan, in order): **choosing what's shared** -- a tick for
-  every item, set on both radios, the settings in four groups (DJ and news,
-  ebook reading, station identity, the world outside), warnings where one
-  item needs another (a programme's playlist), a backup when something new is
-  ticked, and Pause syncing; then a list of **recent syncs** and **book and
-  podcast places** (stop a book on one radio, carry on from there on the
-  other); and a radio with a web password pairing with its partners (today
-  such a radio stays out of sync).
+  What's shared is chosen item by item (the settings in four groups), with
+  warnings where one item needs another, and syncing can be paused. Still to
+  do: a list of **recent syncs** and **book and podcast places** (stop a book
+  on one radio, carry on from there on the other); and a radio with a web
+  password pairing with its partners (today such a radio stays out of sync).
 - **More ways to pick the sound** — the sound by kind of audio is built (music, radio, audiobook,
   ebook, podcast). Buttons can carry a sound too (day and night sets each have their own). Still open: a sound per
   music genre (needs reliable tags), a Music/Talk tag for stations played from the page, and the same on

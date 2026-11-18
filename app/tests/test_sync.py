@@ -81,6 +81,9 @@ class Net:
             return {"ok": ok}
         if what == "progress":
             return r.progress_for(query)
+        if what == "share-set":
+            asker = next((a for a, x in self.radios.items() if x.id == body["id"]), None)
+            return {"ok": r.share_set(body["id"], body["share"], body.get("paused"), asker)}
         if what == "media-set":
             asker = next((a for a, x in self.radios.items() if x.id == body["id"]), None)
             return {"ok": r.media_set(body["id"], body["kinds"], asker)}
@@ -276,17 +279,17 @@ def test_a_programme_arrives_switched_off_and_on_off_stays_each_radios(tmp_path)
 
 
 def test_a_setting_left_empty_is_a_value_not_a_delete() -> None:
-    got, counts = merge("settings", None, {"locator": None, "callsign": "X"}, {"locator": "IO00", "callsign": None})
+    got, counts = merge("settings:identity", None, {"locator": None, "callsign": "X"}, {"locator": "IO00", "callsign": None})
     assert counts["deleted"] == 0 and set(got) == {"locator", "callsign"}
-    got, counts = merge("settings", {"locator": None}, {"locator": None}, {"locator": "IO00"})
+    got, counts = merge("settings:identity", {"locator": None}, {"locator": None}, {"locator": "IO00"})
     assert got == {"locator": "IO00"} and counts == {"added": 0, "changed": 1, "deleted": 0}
 
 
 def test_on_a_first_sync_a_setting_someone_set_beats_one_never_set() -> None:
-    got, _ = merge("settings", None, {"broadcast_chattiness": "maximum", "locator": None},     # (new-radio values)
+    got, _ = merge("settings:dj", None, {"broadcast_chattiness": "maximum", "locator": None},     # (new-radio values)
                    {"broadcast_chattiness": "minimal", "locator": "IO00"})
     assert got == {"broadcast_chattiness": "minimal", "locator": "IO00"}
-    got2, _ = merge("settings", None, {"broadcast_chattiness": "minimal", "locator": "IO00"},
+    got2, _ = merge("settings:dj", None, {"broadcast_chattiness": "minimal", "locator": "IO00"},
                     {"broadcast_chattiness": "maximum", "locator": None})
     assert got2 == got                                                                        # either way round
 
@@ -794,8 +797,8 @@ def test_a_copy_shows_its_progress_by_bytes(tmp_path, monkeypatch) -> None:
     one.pair("two")
     one.share_media(two.id, ["music"])                         # (its sync starts the copy)
     import time as _t
-    for _ in range(100):
-        if one.busy_summary():
+    for _ in range(200):
+        if (one.busy_summary() or {}).get("step") == "copying":
             break
         _t.sleep(0.02)
     b = one.busy_summary()
@@ -805,3 +808,108 @@ def test_a_copy_shows_its_progress_by_bytes(tmp_path, monkeypatch) -> None:
     settle(one, two, want=lambda: len(one.media.files["music"]) == 2)
     assert seen and seen[0]["files"] == 2 and seen[0]["bytes"] == 1500
     assert one.copying.get(two.id) is None and one.busy_summary() is None
+
+
+
+# --- 1.9.97: choosing what's shared, settings in groups, pausing, warnings ---
+
+def test_every_shared_setting_is_in_a_group() -> None:
+    grouped = {k for keys in sync_mod.SETTING_GROUPS.values() for k in keys}
+    assert set(sync_mod._synced_settings()) == grouped                 # (none left over, none that isn't shared)
+    assert sum(len(k) for k in sync_mod.SETTING_GROUPS.values()) == len(grouped) == 24
+
+
+def test_a_new_pairing_shares_all_but_the_media_and_an_old_one_keeps_what_it_had(tmp_path) -> None:
+    net = Net()
+    one, two = radio(tmp_path, net, "one"), radio(tmp_path, net, "two")
+    one.pair("two")
+    assert one.share(two.id) == two.share(one.id) == sync_mod.DEFAULT_SHARE
+    assert not any(k in sync_mod.MEDIA_KINDS for k in one.share(two.id))
+    old = {"id": "x", "name": "Old", "address": "x", "media": ["music"]}            # (paired before 1.9.97)
+    assert sync_mod.share_of(old) == sync_mod.DEFAULT_SHARE + ["music"]
+
+
+def test_an_item_not_shared_stays_each_radios_own_and_ticking_it_saves_a_backup(tmp_path) -> None:
+    net = Net()
+    one = radio(tmp_path, net, "one", [st("a")])
+    two = radio(tmp_path, net, "two", [st("b")])
+    backups = {one.id: [], two.id: []}
+    one.backup, two.backup = backups[one.id].append, backups[two.id].append
+    one.pair("two")
+    settle(one, two)
+    without = [k for k in one.share(two.id) if k != "stations"]
+    one.set_share(two.id, without)
+    settle(one, two)
+    assert two.share(one.id) == without                                # (set on both)
+    set_stations(one, [st("a"), st("c")])
+    one.sync_now(two.id)
+    assert urls(stations_of(two)) == ["http://a", "http://b"]          # (c stayed on one)
+    one.set_share(two.id, without + ["stations"])
+    settle(one, two)
+    assert any("Stations" in b for b in backups[one.id]) and any("Stations" in b for b in backups[two.id])
+    one.sync_now(two.id)
+    assert urls(stations_of(two)) == ["http://a", "http://b", "http://c"]
+
+
+def test_unticking_forgets_the_agreement_so_ticking_again_only_adds(tmp_path) -> None:
+    net = Net()
+    one = radio(tmp_path, net, "one", [st("a"), st("b")])
+    two = radio(tmp_path, net, "two")
+    one.pair("two")
+    settle(one, two)
+    assert "radio_stations" in one._bases()[two.id]
+    keys = one.share(two.id)
+    one.set_share(two.id, [k for k in keys if k != "stations"])
+    settle(one, two)
+    assert "radio_stations" not in one._bases()[two.id] and "radio_stations" not in two._bases()[one.id]
+    set_stations(two, [st("a")])                                       # b deleted on two while not shared
+    one.set_share(two.id, keys)
+    settle(one, two)
+    one.sync_now(two.id)
+    assert urls(stations_of(one)) == ["http://a", "http://b"] == urls(stations_of(two))   # (added back, not deleted)
+
+
+def test_a_paused_pair_does_not_sync_until_resumed(tmp_path) -> None:
+    net = Net()
+    one, two = radio(tmp_path, net, "one", [st("a")]), radio(tmp_path, net, "two")
+    one.pair("two")
+    settle(one, two)
+    one.set_share(two.id, one.share(two.id), paused=True)
+    assert one.paused(two.id) and two.paused(one.id)                   # (both radios)
+    set_stations(one, [st("a"), st("b")])
+    assert one.sync_now(two.id).get("paused") and two.sync_now(one.id).get("paused")
+    assert urls(stations_of(two)) == ["http://a"]
+    one.set_share(two.id, one.share(two.id), paused=False)
+    settle(one, two)
+    assert not one.paused(two.id) and not two.paused(one.id)
+    one.sync_now(two.id)
+    assert urls(stations_of(two)) == ["http://a", "http://b"]
+
+
+def test_the_window_warns_when_a_programme_needs_something_not_shared(tmp_path) -> None:
+    net = Net()
+    one, two = radio(tmp_path, net, "one"), radio(tmp_path, net, "two")
+    set_conf(one, programmes=[{"name": "Bedtime", "start": "22:00", "auto": False, "days": [], "then": "show",
+                               "blocks": [{"name": "b", "items": [{"kind": "playlist", "name": "Calm"}], "rule": "end"}]}],
+             playlists=[{"name": "Calm", "tracks": [["music", "A/a.mp3"]]}])
+    one.pair("two")
+    settle(one, two)
+    rows = {r["key"]: r for r in one.rows(two.id)}
+    assert rows["programmes"]["warnings"] == []                        # (playlists are shared)
+    assert rows["playlists"]["warnings"] and "Music" in rows["playlists"]["warnings"][0]
+    one.set_share(two.id, [k for k in one.share(two.id) if k != "playlists"])
+    settle(one, two)
+    rows = {r["key"]: r for r in one.rows(two.id)}
+    assert rows["programmes"]["warnings"] and "Playlists" in rows["programmes"]["warnings"][0]
+    assert rows["playlists"]["shared"] is False and rows["playlists"]["state"] == "off"
+
+
+def test_the_window_says_which_settings_differ(tmp_path) -> None:
+    net = Net()
+    one, two = radio(tmp_path, net, "one"), radio(tmp_path, net, "two")
+    one.pair("two")
+    settle(one, two)
+    set_conf(one, news_speed=1.2)
+    one._live = (0.0, None, {})
+    row = {r["key"]: r for r in one.rows(two.id)}["set:dj"]
+    assert row["state"] == "changed" and any(d.startswith("news speed: 1.2 here") for d in row["differs"])

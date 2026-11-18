@@ -2120,6 +2120,22 @@ The cards:
   off forgets what was agreed for it: shared again later, it starts as a first
   sync.
 
+  **What's shared is chosen** (since 1.9.97), a tick each in the window for
+  each paired radio: stations and receivers; themes with their jingles and
+  your DJ lines; playlists; programmes; messages; birthdays; podcasts; voices;
+  Wi-Fi networks; the settings in four groups (DJ and news, ebook reading,
+  station identity, the world outside); and music, On demand, audiobooks and
+  ebooks. A new pairing shares all but the media; one paired before keeps what
+  it shared. A tick is set on both radios at once (`POST /api/sync/share
+  {"id", "share", "paused"?}`, asking the other with `/api/sync/share-set`
+  from its own address), so both must be on; something newly ticked saves a
+  settings backup on each radio first (*Before sharing ...*) and its first sync
+  only adds; unticked, what was agreed for it is forgotten (each keeps what it
+  has). **Pause syncing** stops all syncing with that radio, both ways, copying
+  too, until *Resume*. The window warns beside a tick where something shared
+  uses something that isn't (a programme playing a playlist, a playlist of
+  music), and for a settings group that differs it says which settings and how.
+
   **The window** (`GET /api/sync?live=1`, asked every few seconds while it's
   open) shows, for each paired radio, every thing that can be shared: whether
   it is, how many each radio has (this radio's now; the other's as of the last

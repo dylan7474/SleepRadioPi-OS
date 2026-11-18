@@ -71,6 +71,7 @@ BEACON_EVERY_S = 60
 SEEN_FOR_S = 3 * BEACON_EVERY_S + 30     # a radio not heard for this long is no longer listed as on the network
 SYNC_EVERY_S = 300
 TIMEOUT_S = 6
+SLOW_TIMEOUT_S = 30                 # (a radio's state, with its libraries, and taking up a merge: seconds on a Zero)
 HOLD_DELETES = 0.3              # a merge deleting more than this share of a collection (and more than HOLD_MIN) waits
 HOLD_MIN = 3
 BASE_FILE = "sync-base.json"
@@ -193,22 +194,46 @@ def _synced_settings() -> list[str]:
     return sorted(f.name for f in backup_mod.SHARED if f.name not in RADIO_OWN | COLLECTION_KEYS)
 
 
-def _settings_in(conf: dict) -> dict:
-    defaults = asdict(Settings())
-    out = {}
-    for k in _synced_settings():
-        try:
-            out[k] = backup_mod._check(k, conf.get(k, defaults.get(k)))
-        except ValueError:
-            out[k] = defaults.get(k)
-    return out
+# The settings that are shared, in groups each shared (or not) on its own (since 1.9.97). A shared setting no group
+# names yet goes with the DJ's (a test makes sure there are none).
+SETTING_GROUPS = {
+    "dj": ("broadcast_chattiness", "broadcast_dj", "broadcast_dj_hooks", "broadcast_jingle_enabled",
+           "broadcast_jingle_every", "broadcast_time_checks", "broadcast_announcer_speed", "news_enabled", "news_speed"),
+    "ebook": ("ebook_voice", "ebook_pause", "ebook_speed", "ebook_pace"),
+    "identity": ("callsign", "locator"),
+    "outside": ("conditions_every_h", "conditions_alerts", "lightning_watch", "lightning_when", "aircraft_url",
+                "aircraft_range", "aircraft_off", "aircraft_watch", "warnings_region"),
+}
 
 
-def _check_settings(value) -> dict:
-    if not isinstance(value, dict):
-        raise ValueError("settings: {...}")
-    known = set(_synced_settings())
-    return {k: backup_mod._check(k, v) for k, v in value.items() if k in known}     # (one this version hasn't: skipped)
+def _group_of(key: str) -> str:
+    return next((g for g, keys in SETTING_GROUPS.items() if key in keys), "dj")
+
+
+def _settings_of(group: str) -> list[str]:
+    return [k for k in _synced_settings() if _group_of(k) == group]
+
+
+def _settings_reader(group: str):
+    def read(conf: dict) -> dict:
+        defaults = asdict(Settings())
+        out = {}
+        for k in _settings_of(group):
+            try:
+                out[k] = backup_mod._check(k, conf.get(k, defaults.get(k)))
+            except ValueError:
+                out[k] = defaults.get(k)
+        return out
+    return read
+
+
+def _settings_checker(group: str):
+    def check(value) -> dict:
+        if not isinstance(value, dict):
+            raise ValueError("settings: {...}")
+        known = set(_settings_of(group))
+        return {k: backup_mod._check(k, v) for k, v in value.items() if k in known}     # (one this version hasn't: skipped)
+    return check
 
 
 COLLECTIONS = {
@@ -224,7 +249,7 @@ COLLECTIONS = {
     "birthdays": (*_plain("birthdays", birthdays_mod.validate)[:2], lambda b: f"{b['name'].lower()}|{b['day']}|{b['month']}", _plain("birthdays", birthdays_mod.validate)[2]),
     "podcasts": (*_plain("podcasts", podcasts_mod.validate_shows)[:2], lambda p: p["feed_url"], _plain("podcasts", podcasts_mod.validate_shows)[2]),
     "dj_hooks_own": (*_plain("dj_hooks_own", selector_mod.validate_own_hooks)[:2], lambda line: line, _plain("dj_hooks_own", selector_mod.validate_own_hooks)[2]),
-    "settings": (_settings_in, _check_settings, None, lambda conf, v: dict(v)),
+    **{f"settings:{g}": (_settings_reader(g), _settings_checker(g), None, lambda conf, v: dict(v)) for g in SETTING_GROUPS},
 }
 # Files kept the same too: each kind a collection of {path: size}, read from the card, not the config. A file
 # one radio lacks is fetched from the other (GET /api/media/download); one deleted on either goes from both.
@@ -366,7 +391,9 @@ UNION_ONLY = {"voices", "wifi"}            # (only ever added: merged as a first
 WORDS = {**{f"files:{k}": k for k in FILE_KINDS}, **{f"media:{k}": w for k, w in MEDIA_WORDS.items()},
          "voices": "voices", "wifi": "Wi-Fi networks", "radio_stations": "stations", "receiver_names": "receiver names", "profiles": "themes", "playlists": "playlists",
          "programmes": "programmes", "messages": "messages", "message_times": "message times", "birthdays": "birthdays",
-         "podcasts": "podcasts", "dj_hooks_own": "DJ lines", "settings": "settings"}
+         "podcasts": "podcasts", "dj_hooks_own": "DJ lines", "settings:dj": "DJ and news settings",
+         "settings:ebook": "ebook reading settings", "settings:identity": "station identity settings",
+         "settings:outside": "outside settings"}
 
 
 # What the Other radios window calls each thing, in the order it lists them.
@@ -374,8 +401,75 @@ LABELS = {"radio_stations": "Stations", "receiver_names": "Receiver names", "pro
           "files:jingles": "Theme jingles", "dj_hooks_own": "Your DJ lines", "playlists": "Playlists",
           "programmes": "Programmes", "messages": "Messages", "message_times": "Message times",
           "birthdays": "Birthdays", "podcasts": "Podcasts", "voices": "Voices", "wifi": "Wi-Fi networks",
-          "settings": "Settings", "media:music": "Music", "media:ondemand": "On demand",
+          "settings:dj": "DJ and news", "settings:ebook": "Ebook reading", "settings:identity": "Station identity",
+          "settings:outside": "The world outside", "media:music": "Music", "media:ondemand": "On demand",
           "media:audiobooks": "Audiobooks", "media:ebooks": "Ebooks"}
+
+
+# What can be shared with a paired radio, a tick each (since 1.9.97): key -> (what the window calls it, the
+# collections it covers). Set for both radios at once (sync_peers' "share"); a new pairing shares all but the media.
+SHARE = {
+    "stations": ("Stations and receivers", ("radio_stations", "receiver_names")),
+    "themes": ("Themes, their jingles and your DJ lines", ("profiles", "files:jingles", "dj_hooks_own")),
+    "playlists": ("Playlists", ("playlists",)),
+    "programmes": ("Programmes", ("programmes",)),
+    "messages": ("Messages", ("messages", "message_times")),
+    "birthdays": ("Birthdays", ("birthdays",)),
+    "podcasts": ("Podcasts", ("podcasts",)),
+    "voices": ("Voices", ("voices",)),
+    "wifi": ("Wi-Fi networks", ("wifi",)),
+    "set:dj": ("DJ and news settings", ("settings:dj",)),
+    "set:ebook": ("Ebook reading", ("settings:ebook",)),
+    "set:identity": ("Station identity", ("settings:identity",)),
+    "set:outside": ("The world outside", ("settings:outside",)),
+    "music": ("Music", ("media:music",)),
+    "ondemand": ("On demand", ("media:ondemand",)),
+    "audiobooks": ("Audiobooks", ("media:audiobooks",)),
+    "ebooks": ("Ebooks", ("media:ebooks",)),
+}
+DEFAULT_SHARE = [k for k in SHARE if k not in MEDIA_KINDS]
+# What a programme's or a playlist's things need on the other radio, by share key (for the window's warnings).
+NEEDS = {"playlist": "playlists", "book": "audiobooks", "podcast": "podcasts", "episode": "podcasts", "list": "themes",
+         "jingle": "themes"}
+
+
+def _check_share(value) -> list[str]:
+    if not isinstance(value, list) or any(k not in SHARE for k in value):
+        raise ValueError(f"share: a list of {', '.join(SHARE)}")
+    return [k for k in SHARE if k in value]
+
+
+def share_of(peer: dict | None) -> list[str]:
+    """What's shared with a paired radio. One paired before 1.9.97 shares what it did then: all but the media,
+    and the media it had ticked."""
+    if not isinstance(peer, dict):
+        return []
+    if isinstance(peer.get("share"), list):
+        return [k for k in SHARE if k in peer["share"]]
+    media = peer.get("media") if isinstance(peer.get("media"), list) else []
+    return DEFAULT_SHARE + [k for k in MEDIA_KINDS if k in media]
+
+
+def _needs(conf: dict) -> dict:
+    """{share key: {needed share key: how many}}: what the programmes and playlists here use."""
+    out: dict = {"programmes": {}, "playlists": {}}
+    for p in conf.get("programmes") or []:
+        need = set()
+        for b in (p.get("blocks") or []) if isinstance(p, dict) else []:
+            for it in (b.get("items") or []) if isinstance(b, dict) else []:
+                k = it.get("kind") if isinstance(it, dict) else None
+                if k in ("album", "track"):
+                    need.add("ondemand" if it.get("root") == "ondemand" else "music")
+                elif k in NEEDS:
+                    need.add(NEEDS[k])
+        for n in need:
+            out["programmes"][n] = out["programmes"].get(n, 0) + 1
+    for pl in conf.get("playlists") or []:
+        need = {("ondemand" if t[0] == "ondemand" else "music") for t in (pl.get("tracks") or [])
+                if isinstance(t, (list, tuple)) and t} if isinstance(pl, dict) else set()
+        for n in need:
+            out["playlists"][n] = out["playlists"].get(n, 0) + 1
+    return out
 
 
 def _measure(name: str, value) -> dict:
@@ -407,7 +501,7 @@ def _unset(name: str, key, value) -> bool:
     """Never set on that radio: empty, or (a setting) still what a new radio has."""
     if value is None:
         return True
-    if name == "settings":
+    if name.startswith("settings"):
         return _canon(value) == _canon(asdict(Settings()).get(key))
     return False
 
@@ -503,6 +597,7 @@ class Sync:
         self.progress: dict[str, dict] = {}      # peer id -> the exchange going on: {"step", "at", "started"}
         self.copying: dict[str, dict] = {}       # peer id -> the media copy going on: {"step", "name", files, bytes...}
         self.next_at = 0.0                        # when the next round of syncs is due
+        self.their_settings: dict[str, dict] = {}  # peer id -> its shared settings at the last exchange (what differs)
         self._live: tuple = (0.0, None, {})      # (when, names, collections): this radio's own, read for the window
         conf = self._conf()
         self.id = conf.get("radio_id") if isinstance(conf.get("radio_id"), str) and conf.get("radio_id") else ""
@@ -515,16 +610,27 @@ class Sync:
         return [n for n, c in COLLECTIONS.items() if c[0] is not None or (n == "wifi" and self.wifi_path is not None)
                 or (n == "voices" and self.voice_jobs is not None) or (n.startswith(("files:", "media:")) and self.media is not None)]
 
+    def _peer(self, peer_id: str) -> dict | None:
+        return next((p for p in self.peers() if p["id"] == peer_id), None) if peer_id else None
+
+    def share(self, peer_id: str) -> list[str]:
+        """What's shared with that paired radio (share keys)."""
+        return share_of(self._peer(peer_id))
+
     def shared(self, peer_id: str) -> list[str]:
-        """The media kinds shared with that paired radio (none until both have ticked them: share_media)."""
-        peer = next((p for p in self.peers() if p["id"] == peer_id), None)
-        kinds = peer.get("media") if peer is not None else None
-        return [k for k in MEDIA_KINDS if isinstance(kinds, list) and k in kinds]
+        """The media kinds shared with that paired radio (none until both have ticked them)."""
+        return [k for k in MEDIA_KINDS if k in self.share(peer_id)]
+
+    def paused(self, peer_id: str) -> float | None:
+        """When syncing with that radio was paused (both radios), or None."""
+        at = (self._peer(peer_id) or {}).get("paused")
+        return at if isinstance(at, (int, float)) and not isinstance(at, bool) else None
 
     def names_for(self, peer_id: str) -> list[str]:
-        """The collections synced with that radio: the media only where shared with it."""
-        kinds = self.shared(peer_id) if peer_id else []
-        return [n for n in self.names() if not n.startswith("media:") or n.split(":", 1)[1] in kinds]
+        """The collections synced with that radio: what's ticked for it (no radio: all but the media)."""
+        keys = self.share(peer_id) if peer_id else DEFAULT_SHARE
+        allowed = {n for k in keys for n in SHARE[k][1]}
+        return [n for n in self.names() if n in allowed]
 
     def voice_names(self) -> dict:
         """The voice packs here: {name: 1} (a folder with a model; not one part-installed)."""
@@ -640,7 +746,8 @@ class Sync:
     def paired_with(self, peer: dict) -> None:
         """Another radio paired with this one (its id, name, address): keep it."""
         peers = [p for p in self.peers() if p["id"] != peer["id"]]
-        self._save_peers(peers + [{"id": peer["id"], "name": peer.get("name", ""), "address": peer["address"]}])
+        self._save_peers(peers + [{"id": peer["id"], "name": peer.get("name", ""), "address": peer["address"],
+                                   "share": list(DEFAULT_SHARE)}])
         log.info("sync: paired with %s (%s)", peer.get("name"), peer["address"])
 
     def unpaired(self, peer_id: str) -> None:
@@ -684,53 +791,85 @@ class Sync:
             pass                                  # (it's off: it'll find it's no longer paired when it asks)
         self.unpaired(peer_id)
 
-    # --- the media: which kinds are shared with a radio, and the copying ---
+    # --- what's shared with a radio (set on both at once), pausing, and the media copying ---
 
-    def share_media(self, peer_id: str, kinds) -> dict:
-        """From the page: share these media kinds with that paired radio -- set on both at once (it must be
-        answering), then a sync straight away. A kind no longer shared forgets what the two agreed on for it, so
-        sharing it again later starts as a first sync does: adding only."""
-        kinds = _check_kinds(kinds)
-        peer = next((p for p in self.peers() if p["id"] == peer_id), None)
+    def set_share(self, peer_id: str, keys, paused: bool | None = None) -> dict:
+        """From the page: share these things with that paired radio (and pause or resume syncing with it) -- set
+        on both radios at once (it must be answering), then a sync straight away. Something newly shared saves a
+        settings backup on each radio first, and its first sync only adds; something no longer shared forgets what
+        the two agreed on for it (shared again later, it starts the same way)."""
+        keys = _check_share(keys)
+        peer = self._peer(peer_id)
         if peer is None:
             raise ValueError("that radio isn't paired with this one")
+        if paused is None:
+            pause = self.paused(peer_id)
+        else:
+            pause = (self.paused(peer_id) or time.time()) if paused else None
         name = peer.get("name") or peer["address"]
         try:
-            ok = self.fetch(f"http://{peer['address']}/api/sync/media-set", {"id": self.id, "kinds": kinds})
+            ok = self.fetch(f"http://{peer['address']}/api/sync/share-set",
+                            {"id": self.id, "share": keys, "paused": pause})
         except (OSError, ValueError) as e:
             raise ValueError(f"{name} isn't answering ({str(getattr(e, 'reason', e))[:60]}): both radios need "
                              "to be on, with this version or later, to change what they share") from None
         if not (isinstance(ok, dict) and ok.get("ok")):
             raise ValueError(f"{name} didn't take it: {ok.get('error') if isinstance(ok, dict) else 'no answer'}")
-        self._set_media(peer_id, kinds)
-        threading.Thread(target=self._quietly, args=(peer_id,), name="sync-now", daemon=True).start()
-        return {"ok": True, "kinds": kinds}
+        self._apply_share(peer_id, keys, pause)
+        if not pause:
+            threading.Thread(target=self._quietly, args=(peer_id,), name="sync-now", daemon=True).start()
+        return {"ok": True, "share": keys, "paused": pause}
 
-    def media_set(self, peer_id: str, kinds, ip: str | None) -> bool:
-        """Asked by the paired radio itself (from its own address): share these media kinds with it."""
+    def share_set(self, peer_id: str, keys, paused, ip: str | None) -> bool:
+        """Asked by the paired radio itself (from its own address): what's shared with it, and paused or not."""
         if not self._asked_by_peer(peer_id, ip):
             raise ValueError("only that paired radio can change what it shares")
-        self._set_media(peer_id, _check_kinds(kinds))
+        pause = paused if isinstance(paused, (int, float)) and not isinstance(paused, bool) and paused > 0 else None
+        self._apply_share(peer_id, _check_share(keys), pause)
         return True
 
-    def _set_media(self, peer_id: str, kinds: list[str]) -> None:
+    def share_media(self, peer_id: str, kinds) -> dict:
+        """The media kinds shared with that radio (the rest as it is)."""
+        kinds = _check_kinds(kinds)
+        return self.set_share(peer_id, [k for k in self.share(peer_id) if k not in MEDIA_KINDS] + kinds)
+
+    def media_set(self, peer_id: str, kinds, ip: str | None) -> bool:
+        """Asked by a paired radio on 1.9.95-96: its media ticks (the rest as it is)."""
+        kinds = _check_kinds(kinds)
+        return self.share_set(peer_id, [k for k in self.share(peer_id) if k not in MEDIA_KINDS] + kinds,
+                              self.paused(peer_id), ip)
+
+    def _apply_share(self, peer_id: str, keys: list[str], paused: float | None) -> None:
         with self._lock:
-            peers = self.peers()
-            was = set(self.shared(peer_id))
-            self._save_peers([{**p, "media": kinds} if p["id"] == peer_id else p for p in peers])
-            dropped = {f"media:{k}" for k in was - set(kinds)}
+            peer = self._peer(peer_id)
+            if peer is None:
+                raise ValueError("that radio isn't paired with this one")
+            was = set(share_of(peer))
+            if peer.get("paused") and not paused:    # (resumed: the "paused" left from the last try isn't news)
+                self.status[peer_id] = {"at": time.time(), "ok": True, "said": "syncing again"}
+            added = [k for k in keys if k not in was]
+            if added and self.backup is not None:     # (something newly shared: a backup first, as before a first sync)
+                try:
+                    self.backup(f"Before sharing {', '.join(SHARE[k][0] for k in added)} with "
+                                f"{peer.get('name') or 'another radio'}"[:120])
+                except Exception:
+                    log.exception("sync: the backup before sharing more wasn't made")
+            self._save_peers([{**{k: v for k, v in p.items() if k not in ("media", "paused")}, "share": keys,
+                               **({"paused": paused} if paused else {})} if p["id"] == peer_id else p
+                              for p in self.peers()])
+            dropped = {n for k in was - set(keys) for n in SHARE[k][1]}
             if dropped:
                 bases = self._bases()
                 b = bases.get(peer_id)
                 if isinstance(b, dict) and dropped & set(b):
                     bases[peer_id] = {n: v for n, v in b.items() if n not in dropped}
                     self._save_bases(bases)
-                with self._media_lock:
-                    for key in [k for k in self._media_jobs if k[0] == peer_id and k[1] in dropped]:
-                        del self._media_jobs[key]
-        if not kinds:
+            with self._media_lock:                   # (no longer shared, or paused: its copying stops)
+                for key in [k for k in self._media_jobs if k[0] == peer_id and (k[1] in dropped or paused)]:
+                    del self._media_jobs[key]
+        if not any(k in MEDIA_KINDS for k in keys):
             self.media_status.pop(peer_id, None)
-        log.info("sync: media shared with %s: %s", peer_id, ", ".join(kinds) or "none")
+        log.info("sync: shared with %s: %s%s", peer_id, ", ".join(keys) or "nothing", " (paused)" if paused else "")
 
     def _queue_media(self, peer_id: str, address: str, name: str, mine: dict, want: dict) -> None:
         """Copy what a sync agreed on, in the background (a newer sync's goal replaces an older one's)."""
@@ -768,7 +907,7 @@ class Sync:
         one file at a time, waiting while the radio plays. All there: kept as agreed (the base). True if so."""
         kind, words = name.split(":", 1)[1], WORDS[name]
         key = (peer_id, name)
-        superseded = lambda: self._media_jobs.get(key, (None, None, None))[2] is not want
+        superseded = lambda: self._media_jobs.get(key, (None, None, None))[2] is not want or bool(self.paused(peer_id))
         goal, before = _media_paths(want), _media_paths(mine)
         try:
             have = {p: s for p, s in self.media.tree(kind)["files"].items() if _syncable(kind, p)}
@@ -864,6 +1003,8 @@ class Sync:
             raise ValueError("that radio isn't paired with this one")
         if self.protected():
             return self._said(peer_id, False, "this radio has a password: no sync")
+        if self.paused(peer_id):
+            return self._said(peer_id, False, "paused: Resume to sync again", paused=True)
         self._step(peer_id, "asking")
         try:
             them = self.fetch(f"http://{peer['address']}/api/sync/state?for={self.id}")
@@ -917,6 +1058,7 @@ class Sync:
                     except ValueError as e:                # (e.g. more stations together than a radio keeps)
                         return self._said(peer_id, False, f"together they don't fit: {e}")
             self._keep_counts(peer_id, mine, theirs, them.get("usage"))
+            self.their_settings[peer_id] = {n: v for n, v in theirs.items() if n.startswith("settings:")}
             if held:
                 return self._said(peer_id, False, "held: it would delete " + ", ".join(held) +
                                   ". Sync anyway to let it through", held=True)
@@ -964,6 +1106,8 @@ class Sync:
             raise ValueError("that radio isn't paired with this one")
         if not isinstance(merged, dict):
             raise ValueError("send the merged collections")
+        if self.paused(peer_id):
+            return False
         names = [n for n in self.names_for(peer_id) if n in merged and (n != "wifi" or self._asked_by_peer(peer_id, ip))]
         new = {n: COLLECTIONS[n][1](merged[n]) for n in names}      # (ValueError: refused)
         if not self._lock.acquire(timeout=2):        # (this radio is syncing with that one itself: no -- try later)
@@ -1154,8 +1298,9 @@ class Sync:
                                 "there": there if there is not None else {n: _measure(n, v) for n, v in (theirs or {}).items()},
                                 "free_there": usage.get("free") if isinstance(usage, dict) else None}
 
-    def _said(self, peer_id: str, ok: bool, said: str, held: bool = False) -> dict:
-        st = {"at": time.time(), "ok": ok, "said": said, **({"held": True} if held else {})}
+    def _said(self, peer_id: str, ok: bool, said: str, held: bool = False, paused: bool = False) -> dict:
+        st = {"at": time.time(), "ok": ok, "said": said, **({"held": True} if held else {}),
+              **({"paused": True} if paused else {})}
         self.status[peer_id] = st
         self.progress[peer_id] = {"step": "done" if ok else "failed", "at": st["at"]}
         if not ok:
@@ -1193,7 +1338,7 @@ class Sync:
         [{"name", "label", "shared", "here", "there", "state"}] -- state: same, copying, waiting, held, changed
         (here, since the last sync), unsynced (not agreed yet), differs, off (not shared)."""
         shared = self.names_for(peer_id)
-        allnames = [n for n in LABELS if n in self.names()]
+        allnames = [n for n in LABELS if n in self.names() and (n != "wifi" or self.wifi_path is not None)]
         live = self._here_now(shared)
         bases = self._bases().get(peer_id)
         bases = bases if isinstance(bases, dict) else {}
@@ -1220,6 +1365,44 @@ class Sync:
                         "state": state})
         return out
 
+    def rows(self, peer_id: str) -> list[dict]:
+        """The window's table: one row per thing that can be shared -- [{"key", "label", "shared", "state",
+        "members": items(), "warnings": [...], "differs": [...]}]; state: the member's that matters most."""
+        items = {i["name"]: i for i in self.items(peer_id)}
+        keys = self.share(peer_id)
+        peer = self._peer(peer_id) or {}
+        who = peer.get("name") or "the other radio"
+        needs = _needs(self._conf())
+        theirs = self.their_settings.get(peer_id) or {}
+        live = self._live[2] if isinstance(self._live[2], dict) else {}
+        order = ("copying", "waiting", "held", "differs", "changed", "unsynced", "same", "off")
+        out = []
+        for k, (label, names) in SHARE.items():
+            members = [items[n] for n in names if n in items]
+            if not members:
+                continue
+            states = [m["state"] for m in members]
+            state = next((s for s in order if s in states), "off") if k in keys else "off"
+            warnings = []
+            if k in keys and k in needs:
+                what = "programme" if k == "programmes" else "playlist"
+                for need, n in sorted(needs[k].items()):
+                    if need not in keys:
+                        warnings.append(f"{n} {what}{'s' if n != 1 else ''} here use{'s' if n == 1 else ''} "
+                                        f"{SHARE[need][0]}, which isn't shared with {who}: there "
+                                        f"{'it' if n == 1 else 'they'} may find nothing to play")
+            differs = []
+            if k in keys and k.startswith("set:") and state != "same":
+                n = SHARE[k][1][0]
+                mine, there = live.get(n), theirs.get(n)
+                if isinstance(mine, dict) and isinstance(there, dict):
+                    for s in sorted(set(mine) | set(there)):
+                        if _canon(mine.get(s)) != _canon(there.get(s)):
+                            differs.append(f"{s.replace('_', ' ')}: {mine.get(s)!r} here, {there.get(s)!r} on {who}")
+            out.append({"key": k, "label": label, "shared": k in keys, "state": state, "members": members,
+                        "warnings": warnings, "differs": differs[:8]})
+        return out
+
     def overview(self, live: bool = False) -> dict:
         """The Other radios window. live: the items too, and each paired radio on the network asked how its side
         of a sync or a copy is going."""
@@ -1239,11 +1422,12 @@ class Sync:
         return {"me": {**self.hello(), "free": usage.get("free") if usage else None},
                 "next_at": self.next_at or None,
                 "peers": [{**p, "online": online(p), "status": self.status.get(p["id"]), "media": self.shared(p["id"]),
+                           "share": self.share(p["id"]), "paused": self.paused(p["id"]),
                            "media_status": self.media_status.get(p["id"]), "progress": self.progress_for(p["id"]),
                            "their_progress": theirs.get(p["id"]),
                            "counts_at": (self.counts.get(p["id"]) or {}).get("at"),
                            "free_there": (self.counts.get(p["id"]) or {}).get("free_there"),
-                           **({"items": self.items(p["id"])} if live else {})} for p in peers],
+                           **({"items": self.items(p["id"]), "rows": self.rows(p["id"])} if live else {})} for p in peers],
                 "media_kinds": list(MEDIA_KINDS) if self.media is not None else [],
                 "seen": [{k: v for k, v in s.items() if k != "at"} for s in self.seen.values()
                          if s["id"] not in paired and now - s["at"] < SEEN_FOR_S]}
@@ -1380,7 +1564,8 @@ def _get_file(address: str, kind: str, path: str):
 def _fetch(url: str, body: dict | None = None):
     data = json.dumps(body).encode() if body is not None else None
     req = urllib.request.Request(url, data=data, headers={"Content-Type": "application/json"} if data else {})
-    with urllib.request.urlopen(req, timeout=TIMEOUT_S) as r:
+    slow = "/api/sync/state" in url or "/api/sync/adopt" in url
+    with urllib.request.urlopen(req, timeout=SLOW_TIMEOUT_S if slow else TIMEOUT_S) as r:
         return json.loads(r.read())
 
 

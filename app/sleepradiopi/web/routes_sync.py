@@ -5,7 +5,9 @@ network. Asked by another radio: GET /api/sync/hello, GET /api/sync/state, POST 
 "port"}, /api/sync/unpaired {"id"}, /api/sync/adopt {"id", "merged", "was"} (its merge, to take up). From the page: POST
 /api/sync/pair {"address"}, /api/sync/unpair {"id"}, /api/sync/now {"id"}, /api/sync/allow {"id"} (a held sync
 let through once), /api/sync/media {"id", "kinds": ["music", "ondemand", "audiobooks", "ebooks"]} (the media shared
-with that radio: set on both, so it must be answering; asked of it as POST /api/sync/media-set {"id", "kinds"}).
+with that radio: set on both, so it must be answering; asked of it as POST /api/sync/media-set {"id", "kinds"}),
+/api/sync/share {"id", "share": [keys of sync.SHARE], "paused"?: true | false} (what's shared, and pausing: set on both,
+asked of the other as POST /api/sync/share-set {"id", "share", "paused": when or null}).
 """
 
 from __future__ import annotations
@@ -70,6 +72,12 @@ def build(ctx):
                                               self.client_address[0].removeprefix("::ffff:"))}
             elif action == "media":          # (from the page: share these media kinds with that radio)
                 reply = sync.share_media(str(body.get("id", "")), body.get("kinds"))
+            elif action == "share":          # (from the page: what's shared with that radio; "paused": true/false)
+                p = body.get("paused")
+                reply = sync.set_share(str(body.get("id", "")), body.get("share"), p if isinstance(p, bool) else None)
+            elif action == "share-set":      # (the paired radio, setting what's shared both ways: from its own address)
+                reply = {"ok": sync.share_set(str(body.get("id", "")), body.get("share"), body.get("paused"),
+                                              self.client_address[0].removeprefix("::ffff:"))}
             elif action == "pair":
                 reply = sync.pair(str(body.get("address", "")))
             elif action == "unpair":
