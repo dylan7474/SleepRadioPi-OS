@@ -144,6 +144,10 @@
   .synctab td .sub { font-size: 11.5px; opacity: .65; }
   .synctab tr.note td { white-space: normal; font-size: 12px; padding: 0 6px 5px 18px; border-bottom: 1px solid rgba(128,128,128,.15); }
   .synctab tr.st-paused td { opacity: .8; }
+  .synchist { margin: 2px 0 10px; font-size: 12.5px; }
+  .synchist summary { cursor: pointer; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .synchist ul { margin: 6px 0 0; padding-left: 18px; }
+  .synchist li { margin: 2px 0; }
   .synctab td:nth-child(2), .synctab td:last-child, .synctab td.num { white-space: nowrap; }
   .menubar .opill { display: inline-flex; align-items: center; gap: 8px; padding: 2px 12px; border-radius: 12px; background: var(--win); border: 1px solid var(--amber);
                     font: 600 11.5px var(--display); color: var(--ink); cursor: pointer; max-width: 330px; overflow: hidden; text-overflow: ellipsis; transition: opacity .4s; flex-shrink: 1; }
@@ -5924,6 +5928,14 @@ const UI = {
             el("thead", {}, el("tr", {}, ...["", "Shared", "Here", p.name || "There", "Status"].map(t => el("th", { textContent: t })))), el("tbody", {}, ...rows))]
             : [help("Counts show here after the next sync.")]),
           ...(free ? [help(`Free on the card: ${free}.`)] : []),
+          ...(p.history?.length ? [(() => {          // (Recent syncs: kept in the radio's memory, newest first)
+            const line_ = h => el("li", { textContent: `${clock(h.at)} ${h.ok ? "✓" : "✗"} ${h.said}${h.times > 1 ? ` (×${h.times}, last ${ago(h.at)})` : ""}` });
+            const box = el("details", { className: "synchist", open: !!win?.histOpen },
+              el("summary", { textContent: `Recent syncs · latest ${clock(p.history[0].at)}: ${p.history[0].said}` }),
+              el("ul", {}, ...p.history.map(line_)));
+            box.addEventListener("toggle", () => { if (win) win.histOpen = box.open; });
+            return box;
+          })()] : []),
           ...(p.media_status?.said && !pr ? [help(`${p.media_status.done ? "✓" : "…"} ${p.media_status.said} (${ago(p.media_status.at)})`)] : []),
           help("Counts are how many of each (stations, files, settings): this radio's now, and the other radio's at the last sync. Kept to each radio, never shared: speakers and EQ, volume, buttons and knob, glow and meter, what's playing, programme mode, the DJ's and news's voice, receiver jobs, browser listening, and the room's settings (news quiet hours, room level, noise reduction, announcer volume, even out the volume, start-up sound, notifications, the lightning bell, the desktop picture)."));
       };

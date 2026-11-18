@@ -1113,6 +1113,10 @@ def main() -> None:
                              backup=lambda label: store.save(backup_mod.export(args.config, None), label),
                              media=media, voice_jobs=jobs)
         sync.voice_ok = lambda key, v: v in station.ebook_voices()
+        sync.places = station.book_positions        # (where books and podcast episodes were left: synced when ticked)
+        sync.playing_place = lambda: (station.book_now or {}).get("key")
+        from sleepradiopi.config.clock import clock_trusted as _clock_set
+        sync.clock_ok = _clock_set
         # (the media copying waits while the radio plays: the speaker, or someone listening in a browser)
         sync.busy = lambda: (control is not None and not control.paused) or bool(getattr(station, "_listeners", 0))
         if wifi.NETWORKS.parent.is_dir():          # (the appliance: its Wi-Fi networks synced too)

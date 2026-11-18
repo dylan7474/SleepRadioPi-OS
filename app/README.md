@@ -2136,6 +2136,16 @@ The cards:
   uses something that isn't (a programme playing a playlist, a playlist of
   music), and for a settings group that differs it says which settings and how.
 
+  **Places in books and podcasts** (since 1.9.99, its own tick, off until
+  ticked): where each audiobook, ebook, podcast episode and kept On demand
+  thing was left, and which episodes were heard (`book-positions.json`). Only
+  ever added or moved on: where both radios have a place for the same thing,
+  the one saved later wins, so it's shared only between radios whose clocks
+  are set (`clock_trusted`: one that isn't keeps out), and the book playing on
+  a radio is never moved under it. **Recent syncs** (the window's fold-out):
+  the last 20 syncs with each radio and what each changed, a run of the same
+  shown once; kept in memory only, so nothing more is written to the card.
+
   **The window** (`GET /api/sync?live=1`, asked every few seconds while it's
   open) shows, for each paired radio, every thing that can be shared: whether
   it is, how many each radio has (this radio's now; the other's as of the last

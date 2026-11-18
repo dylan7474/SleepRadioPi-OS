@@ -297,6 +297,33 @@ class Positions:
         with self._lock:
             return bool(self._data.get(key, {}).get("done"))
 
+    def snapshot(self) -> dict:
+        """Every place, as it is now (a copy): {key: {"pos_ms", "at", "done"?}}."""
+        with self._lock:
+            return {k: dict(v) for k, v in self._data.items() if isinstance(v, dict)}
+
+    def take(self, places: dict, skip: str | None = None) -> int:
+        """Places from another radio: each taken where it's newer than this radio's (by "at"), except skip (the
+        book playing here now: its place is moving under it). Saved once. Returns how many were taken."""
+        taken = 0
+        with self._lock:
+            for key, p in places.items():
+                if key == skip or not isinstance(p, dict):
+                    continue
+                have = self._data.get(key)
+                if have == p or (isinstance(have, dict) and float(have.get("at", 0)) >= float(p.get("at", 0))):
+                    continue
+                self._data[key] = {"pos_ms": max(0, int(p.get("pos_ms", 0))), "at": float(p.get("at", 0)),
+                                   **({"done": True} if p.get("done") else {})}
+                taken += 1
+            data = json.dumps(self._data) if taken else None
+        if data is not None and self.path is not None:
+            try:
+                write_atomic(self.path, data)
+            except OSError as e:
+                log.warning("couldn't save the places from another radio: %s", e)
+        return taken
+
     def set(self, key: str, pos_ms: int, done: bool = False) -> None:
         with self._lock:
             self._data[key] = {"pos_ms": max(0, int(pos_ms)), "at": time.time(), **({"done": True} if done else {})}

@@ -930,3 +930,80 @@ def test_an_agreement_written_by_an_older_version_does_not_stop_the_sync(tmp_pat
     assert "settings" not in one.state(two.id, "two")["base"]
     set_stations(one, [st("a"), st("b")])
     assert one.sync_now(two.id)["ok"] and urls(stations_of(two)) == ["http://a", "http://b"]
+
+
+
+# --- 1.9.99: places in books and podcasts; recent syncs ---
+
+def placed(tmp_path, net, address, places=None):
+    from sleepradiopi.playback.audiobooks import Positions
+    r = radio(tmp_path, net, address)
+    f = tmp_path / f"{address}-positions.json"
+    f.write_text(json.dumps(places or {}))
+    r.places = Positions(f)
+    return r
+
+
+def test_places_are_off_until_ticked_then_the_later_one_wins_both_ways(tmp_path) -> None:
+    net = Net()
+    one = placed(tmp_path, net, "one", {"Book A.mp3": {"pos_ms": 1000, "at": 100.0},
+                                        "pod:pod_1:e1": {"pos_ms": 50, "at": 300.0, "done": True}})
+    two = placed(tmp_path, net, "two", {"Book A.mp3": {"pos_ms": 9000, "at": 200.0}})
+    one.pair("two")
+    settle(one, two)
+    assert "places" not in one.share(two.id)                          # (off for a new pairing)
+    assert two.places.get("Book A.mp3") == 9000 and one.places.get("Book A.mp3") == 1000
+    one.set_share(two.id, one.share(two.id) + ["places"])
+    settle(one, two)
+    one.sync_now(two.id)
+    for r in (one, two):
+        assert r.places.get("Book A.mp3") == 9000                     # (two's was saved later)
+        assert r.places.done("pod:pod_1:e1") and r.places.get("pod:pod_1:e1") == 50
+    one.places.set("Book A.mp3", 12000)                                # read on, on one
+    two.sync_now(one.id)
+    assert two.places.get("Book A.mp3") == 12000
+    one._live = (0.0, None, {})
+    assert {r["key"]: r for r in one.rows(two.id)}["places"]["state"] == "same"
+
+
+def test_the_book_playing_is_not_moved_and_an_unset_clock_keeps_out(tmp_path) -> None:
+    net = Net()
+    one = placed(tmp_path, net, "one", {"Book A.mp3": {"pos_ms": 1000, "at": 100.0}})
+    two = placed(tmp_path, net, "two", {"Book A.mp3": {"pos_ms": 9000, "at": 200.0}, "Book B.mp3": {"pos_ms": 5, "at": 1.0}})
+    one.playing_place = lambda: "Book A.mp3"                           # (one is playing Book A)
+    one.pair("two")
+    one.set_share(two.id, one.share(two.id) + ["places"])
+    settle(one, two)
+    one.sync_now(two.id)
+    assert one.places.get("Book A.mp3") == 1000 and one.places.get("Book B.mp3") == 5
+    three = placed(tmp_path, net, "three", {"Book C.mp3": {"pos_ms": 7, "at": 5.0}})
+    three.clock_ok = lambda: False                                     # (no NTP: its times can't be trusted)
+    three.pair("two")
+    three.set_share(two.id, three.share(two.id) + ["places"])
+    settle(three, two)
+    three.sync_now(two.id)
+    assert two.places.get("Book C.mp3") == 0 and three.places.get("Book A.mp3") == 0
+
+
+def test_an_odd_place_never_stops_a_sync(tmp_path) -> None:
+    net = Net()
+    one = placed(tmp_path, net, "one", {"Good.mp3": {"pos_ms": 10, "at": 1.0}, "Odd.mp3": {"pos_ms": "x"}})
+    two = placed(tmp_path, net, "two")
+    one.pair("two")
+    one.set_share(two.id, one.share(two.id) + ["places"])
+    settle(one, two)
+    assert one.sync_now(two.id)["ok"] and two.places.get("Good.mp3") == 10
+
+
+def test_recent_syncs_are_kept_and_a_run_of_the_same_is_one(tmp_path) -> None:
+    net = Net()
+    one, two = radio(tmp_path, net, "one", [st("a")]), radio(tmp_path, net, "two")
+    one.pair("two")
+    settle(one, two)
+    for _ in range(3):
+        one.sync_now(two.id)
+    set_stations(one, [st("a"), st("b")])
+    one.sync_now(two.id)
+    h = one.overview()["peers"][0]["history"]
+    assert h[0]["said"].startswith("on two: 1 added") and h[1]["said"] == "already the same" and h[1]["times"] >= 3
+    assert any(x["said"].startswith("one synced") for x in two.overview()["peers"][0]["history"])

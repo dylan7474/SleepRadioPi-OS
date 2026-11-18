@@ -317,6 +317,40 @@ def _check_wifi(value) -> list[dict]:
 COLLECTIONS["wifi"] = (None, _check_wifi, lambda n: n["ssid"], None)
 
 
+# Places: where each audiobook, ebook, podcast episode and kept On demand thing was left (and whether an episode was
+# heard to the end) -- the radio's book_positions, {key: {"pos_ms", "at", "done"?}}. Only ever added or moved on:
+# where both radios have a place for the same thing, the one saved later wins (so only between radios whose clocks
+# are set: one that isn't doesn't take part), and the book playing on a radio is never moved under it.
+MAX_PLACES = 5000
+
+
+def _check_places(value) -> dict:
+    if not isinstance(value, dict) or len(value) > MAX_PLACES:
+        raise ValueError("places: {key: {pos_ms, at}}")
+    out = {}
+    for key, p in value.items():
+        if not isinstance(key, str) or not 0 < len(key) <= 1000 or not isinstance(p, dict) \
+                or not isinstance(p.get("pos_ms"), int) or isinstance(p.get("pos_ms"), bool) or p["pos_ms"] < 0 \
+                or not isinstance(p.get("at"), (int, float)) or isinstance(p.get("at"), bool) or p["at"] < 0:
+            raise ValueError(f"places: {str(key)[:60]!r} isn't a place")
+        out[key] = {"pos_ms": p["pos_ms"], "at": float(p["at"]), **({"done": True} if p.get("done") is True else {})}
+    return out
+
+
+def _clean_places(value) -> dict:
+    """This radio's own places, the ones that check out (one odd entry never stops a sync)."""
+    out = {}
+    for key, p in (value or {}).items():
+        try:
+            out.update(_check_places({key: p}))
+        except ValueError:
+            continue
+    return out
+
+
+COLLECTIONS["places"] = (None, _check_places, None, None)
+
+
 # The media: music, On demand, audiobooks, ebooks -- shared only with a paired radio both radios have ticked it
 # for (sync_peers' "media", set on both at once: share_media). Each a collection of {key: "size:.ext"}: a sound
 # file is keyed without its extension, so the same track as a FLAC on one radio and an MP3 on the other is one
@@ -387,9 +421,9 @@ def _check_kinds(value) -> list[str]:
 for _kind in MEDIA_KINDS:
     COLLECTIONS[f"media:{_kind}"] = (None, _check_media, None, None)
 
-UNION_ONLY = {"voices", "wifi"}            # (only ever added: merged as a first sync is, every time)
+UNION_ONLY = {"voices", "wifi", "places"}  # (only ever added: merged as a first sync is, every time)
 WORDS = {**{f"files:{k}": k for k in FILE_KINDS}, **{f"media:{k}": w for k, w in MEDIA_WORDS.items()},
-         "voices": "voices", "wifi": "Wi-Fi networks", "radio_stations": "stations", "receiver_names": "receiver names", "profiles": "themes", "playlists": "playlists",
+         "voices": "voices", "wifi": "Wi-Fi networks", "places": "places in books and podcasts", "radio_stations": "stations", "receiver_names": "receiver names", "profiles": "themes", "playlists": "playlists",
          "programmes": "programmes", "messages": "messages", "message_times": "message times", "birthdays": "birthdays",
          "podcasts": "podcasts", "dj_hooks_own": "DJ lines", "settings:dj": "DJ and news settings",
          "settings:ebook": "ebook reading settings", "settings:identity": "station identity settings",
@@ -401,6 +435,7 @@ LABELS = {"radio_stations": "Stations", "receiver_names": "Receiver names", "pro
           "files:jingles": "Theme jingles", "dj_hooks_own": "Your DJ lines", "playlists": "Playlists",
           "programmes": "Programmes", "messages": "Messages", "message_times": "Message times",
           "birthdays": "Birthdays", "podcasts": "Podcasts", "voices": "Voices", "wifi": "Wi-Fi networks",
+          "places": "Places in books and podcasts",
           "settings:dj": "DJ and news", "settings:ebook": "Ebook reading", "settings:identity": "Station identity",
           "settings:outside": "The world outside", "media:music": "Music", "media:ondemand": "On demand",
           "media:audiobooks": "Audiobooks", "media:ebooks": "Ebooks"}
@@ -426,8 +461,9 @@ SHARE = {
     "ondemand": ("On demand", ("media:ondemand",)),
     "audiobooks": ("Audiobooks", ("media:audiobooks",)),
     "ebooks": ("Ebooks", ("media:ebooks",)),
+    "places": ("Places in books and podcasts", ("places",)),
 }
-DEFAULT_SHARE = [k for k in SHARE if k not in MEDIA_KINDS]
+DEFAULT_SHARE = [k for k in SHARE if k not in MEDIA_KINDS and k != "places"]
 # What a programme's or a playlist's things need on the other radio, by share key (for the window's warnings).
 NEEDS = {"playlist": "playlists", "book": "audiobooks", "podcast": "podcasts", "episode": "podcasts", "list": "themes",
          "jingle": "themes"}
@@ -511,6 +547,8 @@ def _pick(name: str, a, b):
     over the FLAC of the same track); otherwise the larger, as text."""
     if name.startswith("media:"):
         return min(a, b, key=lambda v: (_size_of(v), _canon(v)))
+    if name == "places":                    # (the one saved later; the same moment: the further on)
+        return max(a, b, key=lambda v: (v.get("at", 0), v.get("pos_ms", 0), _canon(v)))
     return max(a, b, key=_canon)
 
 
@@ -598,6 +636,12 @@ class Sync:
         self.copying: dict[str, dict] = {}       # peer id -> the media copy going on: {"step", "name", files, bytes...}
         self.next_at = 0.0                        # when the next round of syncs is due
         self.their_settings: dict[str, dict] = {}  # peer id -> its shared settings at the last exchange (what differs)
+        self.places = None                       # the station's book_positions (audiobooks.Positions): places synced
+        self.playing_place = lambda: None        # the key of the book playing now (its place isn't moved)
+        self.clock_ok = lambda: True             # the clock is set (by NTP): places are synced only then
+        self.history: list[dict] = []            # the recent syncs, newest last: {"at", "peer", "ok", "said"} (in memory)
+        self._union_seen: dict[str, dict] = {}   # peer id -> {voices/wifi/places: digest both had at the last exchange}
+        self._union_sent: dict[str, dict] = {}   # peer id -> the same, as this radio last told it (it asked)
         self._live: tuple = (0.0, None, {})      # (when, names, collections): this radio's own, read for the window
         conf = self._conf()
         self.id = conf.get("radio_id") if isinstance(conf.get("radio_id"), str) and conf.get("radio_id") else ""
@@ -608,6 +652,7 @@ class Sync:
     def names(self) -> list[str]:
         """The collections this radio syncs: the files only if it has music storage."""
         return [n for n, c in COLLECTIONS.items() if c[0] is not None or (n == "wifi" and self.wifi_path is not None)
+                or (n == "places" and self.places is not None and self.clock_ok())
                 or (n == "voices" and self.voice_jobs is not None) or (n.startswith(("files:", "media:")) and self.media is not None)]
 
     def _peer(self, peer_id: str) -> dict | None:
@@ -650,6 +695,8 @@ class Sync:
                 out[n] = self.voice_names()
             elif n == "wifi":
                 out[n] = _check_wifi(wifi_mod.load(self.wifi_path)["networks"]) if self.wifi_path.exists() else []
+            elif n == "places":
+                out[n] = _clean_places(self.places.snapshot())
             elif n.startswith("media:"):
                 kind = n.split(":", 1)[1]
                 try:
@@ -740,7 +787,10 @@ class Sync:
         base = self._bases().get(for_id) if for_id else None
         names = [n for n in self.names_for(for_id) if n != "wifi" or self._asked_by_peer(for_id, ip)]
         base = base if isinstance(base, dict) else {}
-        return {**self.hello(), "collections": self._read(conf, names), "usage": self._usage(),
+        collections = self._read(conf, names)
+        if for_id:                                   # (what it was told: if it sends nothing back, it had it all)
+            self._union_sent[for_id] = {n: _digest({n: v}) for n, v in collections.items() if n in UNION_ONLY}
+        return {**self.hello(), "collections": collections, "usage": self._usage(),
                 "base": {n: _digest({n: v}) for n, v in base.items() if n not in UNION_ONLY}}
 
     def _usage(self) -> dict | None:
@@ -763,6 +813,7 @@ class Sync:
             self._save_bases(bases)
         self.status.pop(peer_id, None)
         self.media_status.pop(peer_id, None)
+        self.history = [h for h in self.history if h["peer"] != peer_id]
         with self._media_lock:
             for key in [k for k in self._media_jobs if k[0] == peer_id]:
                 del self._media_jobs[key]
@@ -991,6 +1042,8 @@ class Sync:
             self._live = (0.0, None, {})
         self._media_said(peer_id, f"{words}: the same on both" + (f" ({len(fetch)} copied, {len(gone)} deleted)"
                                                                      if fetch or gone else ""), done=True)
+        if fetch or gone:
+            self._remember(peer_id, True, f"{words}: {len(fetch)} copied here, {len(gone)} deleted here")
         log.info("sync: %s: %d copied, %d deleted", words, len(fetch), len(gone))
         return True
 
@@ -1094,6 +1147,7 @@ class Sync:
             self._allow_once.discard(peer_id)
             # (now: both hold what was merged -- the files where they've arrived; the rest as they were read)
             files_ = lambda n: n.startswith(("files:", "media:"))
+            self._union_seen[peer_id] = {n: _digest({n: merged[n]}) for n in names if n in UNION_ONLY}
             self._keep_counts(peer_id, {n: merged[n] if n in got or not files_(n) else mine[n] for n in names},
                               {n: theirs[n] if files_(n) else merged[n] for n in names}, them.get("usage"))
         if their_name and their_name != peer.get("name"):
@@ -1140,6 +1194,10 @@ class Sync:
             files = [n for n in names if (n.startswith(("files:", "media:")) or n == "voices") and not same(n, new[n], mine[n])]
             self._keep_base(peer_id, {n: v for n, v in new.items() if n not in files})     # (those once they're here)
             self.status[peer_id] = {"at": time.time(), "ok": True, "said": "synced (it asked)"}
+            self._union_seen[peer_id] = {n: _digest({n: new[n]}) for n in names if n in UNION_ONLY}
+            ch = ", ".join(f"{v} {k} {WORDS[n]}" for n in names for k, v in _changes(n, mine[n], new[n]).items() if v)
+            peer_name = (self._peer(peer_id) or {}).get("name") or "it"
+            self._remember(peer_id, True, f"{peer_name} synced: " + (f"here: {ch}" if ch else "already the same"))
             sent = counts if isinstance(counts, dict) else {}
             self._keep_counts(peer_id, {n: new[n] if n not in files else mine[n] for n in names}, None,
                               usage if isinstance(usage, dict) else None,
@@ -1233,6 +1291,10 @@ class Sync:
                 updates.update(out)
         if "wifi" in merged and self.wifi_path is not None and not same("wifi", merged["wifi"], mine.get("wifi", [])):
             self._write_wifi(merged["wifi"])
+        if "places" in merged and self.places is not None and not same("places", merged["places"], mine.get("places", {})):
+            n = self.places.take(merged["places"], skip=self.playing_place())
+            if n:
+                log.info("sync: %d places in books and podcasts taken", n)
         if not updates:
             return {}
         before = {k: conf.get(k) for k in updates}
@@ -1304,9 +1366,22 @@ class Sync:
                                 "there": there if there is not None else {n: _measure(n, v) for n, v in (theirs or {}).items()},
                                 "free_there": usage.get("free") if isinstance(usage, dict) else None}
 
+    HISTORY = 20
+
+    def _remember(self, peer_id: str, ok: bool, said: str) -> None:
+        """A sync for the window's Recent syncs (in memory only: no writes to the card). A run of the same outcome
+        (already the same, every few minutes) is one entry, its time the latest."""
+        last = next((h for h in reversed(self.history) if h["peer"] == peer_id), None)
+        if last is not None and last["ok"] == ok and last["said"] == said:
+            last["at"], last["times"] = time.time(), last.get("times", 1) + 1
+            return
+        self.history.append({"at": time.time(), "peer": peer_id, "ok": ok, "said": said})
+        del self.history[:-self.HISTORY * 4]
+
     def _said(self, peer_id: str, ok: bool, said: str, held: bool = False, paused: bool = False) -> dict:
         st = {"at": time.time(), "ok": ok, "said": said, **({"held": True} if held else {}),
               **({"paused": True} if paused else {})}
+        self._remember(peer_id, ok, said)
         self.status[peer_id] = st
         self.progress[peer_id] = {"step": "done" if ok else "failed", "at": st["at"]}
         if not ok:
@@ -1362,7 +1437,11 @@ class Sync:
             elif n.startswith("media:") and said.startswith(WORDS[n] + ": held"):
                 state = "held"
             elif n in UNION_ONLY:
-                state = "same" if here and there and here["n"] == there["n"] else "differs"
+                seen = [d.get(n) for d in (self._union_seen.get(peer_id), self._union_sent.get(peer_id)) if d and d.get(n)]
+                if seen and n in live:
+                    state = "same" if _digest({n: live[n]}) in seen else "changed"
+                else:
+                    state = "same" if here and there and here["n"] == there["n"] else "differs"
             elif n in bases and n in live:
                 state = "same" if same(n, bases[n], live[n]) else "changed"
             else:
@@ -1429,6 +1508,7 @@ class Sync:
                 "next_at": self.next_at or None,
                 "peers": [{**p, "online": online(p), "status": self.status.get(p["id"]), "media": self.shared(p["id"]),
                            "share": self.share(p["id"]), "paused": self.paused(p["id"]),
+                           "history": [h for h in self.history if h["peer"] == p["id"]][-self.HISTORY:][::-1],
                            "media_status": self.media_status.get(p["id"]), "progress": self.progress_for(p["id"]),
                            "their_progress": theirs.get(p["id"]),
                            "counts_at": (self.counts.get(p["id"]) or {}).get("at"),

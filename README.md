@@ -753,7 +753,9 @@ Actions, Sleep timer and Radio folders open:
   on either goes from both, the same track as a FLAC on one and an MP3 on the
   other ends as the MP3 on both, nothing is copied that won't fit, and the
   copying waits while a radio plays. Each thing is ticked to share or not, for
-  each paired radio (the settings in four groups), and syncing can be paused.
+  each paired radio (the settings in four groups), and syncing can be paused;
+  where each book and podcast was left can be shared too, so one picks up
+  where the other stopped.
   The window shows, for each paired radio,
   how many of each thing both radios have, whether they're the same, and a
   progress bar while a sync or a copy runs. See the [app README](app/README.md)
@@ -1327,10 +1329,10 @@ What's left to do (everything else described here is built and running):
   both ways (*Other radios*), and the music, On demand, audiobooks and ebooks
   when shared, and Other radios shows counts, status and progress for each.
   What's shared is chosen item by item (the settings in four groups), with
-  warnings where one item needs another, and syncing can be paused. Still to
-  do: a list of **recent syncs** and **book and podcast places** (stop a book
-  on one radio, carry on from there on the other); and a radio with a web
-  password pairing with its partners (today such a radio stays out of sync).
+  warnings where one item needs another, syncing can be paused, places in
+  books and podcasts can be shared, and the window lists the recent syncs.
+  Still to do: a radio with a web password pairing with its partners (today
+  such a radio stays out of sync).
 - **More ways to pick the sound** — the sound by kind of audio is built (music, radio, audiobook,
   ebook, podcast). Buttons can carry a sound too (day and night sets each have their own). Still open: a sound per
   music genre (needs reliable tags), a Music/Talk tag for stations played from the page, and the same on

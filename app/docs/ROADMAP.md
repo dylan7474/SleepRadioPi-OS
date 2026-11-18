@@ -10,10 +10,10 @@ the image README's [Roadmap](../../README.md#roadmap) (keep the two in step).
   both ways (*Other radios*), and the music, On demand, audiobooks and ebooks
   when shared, and Other radios shows counts, status and progress for each.
   What's shared is chosen item by item (the settings in four groups), with
-  warnings where one item needs another, and syncing can be paused. Still to
-  do: a list of **recent syncs** and **book and podcast places** (stop a book
-  on one radio, carry on from there on the other); and a radio with a web
-  password pairing with its partners (today such a radio stays out of sync).
+  warnings where one item needs another, syncing can be paused, places in
+  books and podcasts can be shared, and the window lists the recent syncs.
+  Still to do: a radio with a web password pairing with its partners (today
+  such a radio stays out of sync).
 - **More ways to pick the sound** — the sound by kind of audio is built (music, radio, audiobook,
   ebook, podcast). Buttons can carry a sound too (day and night sets each have their own). Still open: a sound per
   music genre (needs reliable tags), a Music/Talk tag for stations played from the page, and the same on
