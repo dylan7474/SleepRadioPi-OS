@@ -189,23 +189,37 @@ def build(ctx):
         if path == "/api/dj":
             self._send(json.dumps(self._dj_state()).encode(), "application/json")
             return True
-        if path == "/api/dj/hooks":         # the DJ's lines: the 70s ones that come with the radio, and its own
-            self._send(json.dumps({"builtin": getattr(station, "hooks_builtin", []),
-                                   "own": getattr(station, "hooks_own", [])}).encode(), "application/json")
+        if path == "/api/dj/hooks":         # the DJ's lines: the 70s ones that come with the radio (and this radio's
+            self._send(json.dumps(_hooks_reply()).encode(), "application/json")     # changes to them), and its own
             return True
         return False
 
+    def _hooks_reply() -> dict:
+        return {"builtin": getattr(station, "hooks_builtin", []), "changes": getattr(station, "hooks_changes", {}),
+                "own": getattr(station, "hooks_own", [])}
+
     def post(self, path) -> bool:
-        if path == "/api/dj/hooks":         # {"own": [...]}: the DJ's own lines, replaced (saved; synced to paired radios)
+        if path == "/api/dj/hooks":
+            # {"own"?: [...], "changes"?: {line: {"text"} | {"off": true}}}: the DJ's own lines, and this radio's changes
+            # to the 70s ones, each replaced as sent (saved; synced to paired radios that share themes)
             try:
-                own = selector_mod.validate_own_hooks(self._body().get("own"))
-            except (ValueError, AttributeError) as e:
-                self._error(str(e) or "send {\"own\": [...]}")
+                body = self._body()
+                own = selector_mod.validate_own_hooks(body["own"]) if "own" in body else None
+                changes = selector_mod.validate_hook_changes(body["changes"]) if "changes" in body else None
+                if own is None and changes is None:
+                    raise ValueError('send {"own": [...]} and/or {"changes": {...}}')
+            except (ValueError, AttributeError, TypeError) as e:
+                self._error(str(e) or 'send {"own": [...]}')
                 return True
-            station.set_own_hooks(own)
-            if config_file is not None:
-                save_setting(config_file, "dj_hooks_own", own)
-            self._send(json.dumps({"builtin": station.hooks_builtin, "own": station.hooks_own}).encode(), "application/json")
+            if changes is not None:
+                station.set_hook_changes(changes)
+                if config_file is not None:
+                    save_setting(config_file, "dj_hooks_changes", changes)
+            if own is not None:
+                station.set_own_hooks(own)
+                if config_file is not None:
+                    save_setting(config_file, "dj_hooks_own", own)
+            self._send(json.dumps(_hooks_reply()).encode(), "application/json")
             return True
         if path == "/api/birthdays":
             self._set_birthdays()

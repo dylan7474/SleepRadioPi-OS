@@ -187,7 +187,7 @@ RADIO_OWN = {"speaker_mono", "speaker_eq", "speaker_highpass_hz", "speaker_volum
              "broadcast_announcer_volume", "stream_evenness", "startup_sound", "notify", "lightning_bell",
              "background_url"}    # (the DJ's and the news's voice: each radio's choice; the packs themselves sync)
 COLLECTION_KEYS = {"radio_stations", "receiver_names", "profiles", "playlists", "programmes", "messages",
-                   "birthdays", "podcasts", "dj_hooks_own"}
+                   "birthdays", "podcasts", "dj_hooks_own", "dj_hooks_changes"}
 
 
 def _synced_settings() -> list[str]:
@@ -249,6 +249,9 @@ COLLECTIONS = {
     "birthdays": (*_plain("birthdays", birthdays_mod.validate)[:2], lambda b: f"{b['name'].lower()}|{b['day']}|{b['month']}", _plain("birthdays", birthdays_mod.validate)[2]),
     "podcasts": (*_plain("podcasts", podcasts_mod.validate_shows)[:2], lambda p: p["feed_url"], _plain("podcasts", podcasts_mod.validate_shows)[2]),
     "dj_hooks_own": (*_plain("dj_hooks_own", selector_mod.validate_own_hooks)[:2], lambda line: line, _plain("dj_hooks_own", selector_mod.validate_own_hooks)[2]),
+    # (changes to the 70s lines, by the line as it comes: a new wording or switched off; Restore deletes the change)
+    "dj_hooks_changes": (*_plain("dj_hooks_changes", selector_mod.validate_hook_changes, dict)[:2], None,
+                         _plain("dj_hooks_changes", selector_mod.validate_hook_changes, dict)[2]),
     **{f"settings:{g}": (_settings_reader(g), _settings_checker(g), None, lambda conf, v: dict(v)) for g in SETTING_GROUPS},
 }
 # Files kept the same too: each kind a collection of {path: size}, read from the card, not the config. A file
@@ -425,14 +428,16 @@ UNION_ONLY = {"voices", "wifi", "places"}  # (only ever added: merged as a first
 WORDS = {**{f"files:{k}": k for k in FILE_KINDS}, **{f"media:{k}": w for k, w in MEDIA_WORDS.items()},
          "voices": "voices", "wifi": "Wi-Fi networks", "places": "places in books and podcasts", "radio_stations": "stations", "receiver_names": "receiver names", "profiles": "themes", "playlists": "playlists",
          "programmes": "programmes", "messages": "messages", "message_times": "message times", "birthdays": "birthdays",
-         "podcasts": "podcasts", "dj_hooks_own": "DJ lines", "settings:dj": "DJ and news settings",
+         "podcasts": "podcasts", "dj_hooks_own": "DJ lines", "dj_hooks_changes": "changes to the 70s DJ lines",
+         "settings:dj": "DJ and news settings",
          "settings:ebook": "ebook reading settings", "settings:identity": "station identity settings",
          "settings:outside": "outside settings"}
 
 
 # What the Other radios window calls each thing, in the order it lists them.
 LABELS = {"radio_stations": "Stations", "receiver_names": "Receiver names", "profiles": "Themes",
-          "files:jingles": "Theme jingles", "dj_hooks_own": "Your DJ lines", "playlists": "Playlists",
+          "files:jingles": "Theme jingles", "dj_hooks_own": "Your DJ lines", "dj_hooks_changes": "70s lines changed",
+          "playlists": "Playlists",
           "programmes": "Programmes", "messages": "Messages", "message_times": "Message times",
           "birthdays": "Birthdays", "podcasts": "Podcasts", "voices": "Voices", "wifi": "Wi-Fi networks",
           "places": "Places in books and podcasts",
@@ -445,7 +450,7 @@ LABELS = {"radio_stations": "Stations", "receiver_names": "Receiver names", "pro
 # collections it covers). Set for both radios at once (sync_peers' "share"); a new pairing shares all but the media.
 SHARE = {
     "stations": ("Stations and receivers", ("radio_stations", "receiver_names")),
-    "themes": ("Themes, their jingles and your DJ lines", ("profiles", "files:jingles", "dj_hooks_own")),
+    "themes": ("Themes, their jingles and your DJ lines", ("profiles", "files:jingles", "dj_hooks_own", "dj_hooks_changes")),
     "playlists": ("Playlists", ("playlists",)),
     "programmes": ("Programmes", ("programmes",)),
     "messages": ("Messages", ("messages", "message_times")),

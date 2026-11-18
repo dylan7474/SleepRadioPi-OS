@@ -166,6 +166,45 @@ def validate_own_hooks(lines) -> list[str]:
     return out
 
 
+MAX_HOOK_CHANGES = 500
+
+
+def validate_hook_changes(changes) -> dict:
+    """This radio's changes to the 70s lines that come with it: {the line as it comes: {"text": its new wording} or
+    {"off": true}}. Kept as changes over the shipped list, so a new release's lines still arrive (a change to a line
+    no longer shipped just does nothing)."""
+    if changes is None:
+        return {}
+    if not isinstance(changes, dict) or len(changes) > MAX_HOOK_CHANGES:
+        raise ValueError(f"the changes to the DJ's lines: up to {MAX_HOOK_CHANGES}")
+    out = {}
+    for line, ch in changes.items():
+        if not isinstance(line, str) or not line.strip() or len(line) > 1000 or not isinstance(ch, dict):
+            raise ValueError("a change to a DJ line: {line: {\"text\"} or {\"off\": true}}")
+        if ch.get("off") is True:
+            out[line] = {"off": True}
+            continue
+        t = " ".join(str(ch.get("text") or "").split()) if isinstance(ch.get("text"), str) else ""
+        if not t:
+            raise ValueError("a changed DJ line needs its words (or switch it off)")
+        if len(t) > MAX_HOOK_LEN:
+            raise ValueError(f"a DJ line is up to {MAX_HOOK_LEN} letters")
+        if t != line:
+            out[line] = {"text": t}
+    return out
+
+
+def apply_hook_changes(builtin: list[str], changes: dict) -> list[str]:
+    """The 70s lines as this radio says them: changed ones in their new words, switched-off ones left out."""
+    out = []
+    for line in builtin:
+        ch = changes.get(line) or {}
+        if ch.get("off"):
+            continue
+        out.append(ch.get("text") or line)
+    return out
+
+
 def parse_hooks(text: str) -> list[str]:
     """One hook per line; blank lines and '#' comments are skipped."""
     lines = (line.strip() for line in text.splitlines())

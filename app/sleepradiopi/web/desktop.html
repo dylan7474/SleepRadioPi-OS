@@ -145,6 +145,14 @@
   .synctab tr.note td { white-space: normal; font-size: 12px; padding: 0 6px 5px 18px; border-bottom: 1px solid rgba(128,128,128,.15); }
   .synctab tr.st-paused td { opacity: .8; }
   .synchist { margin: 2px 0 10px; font-size: 12.5px; }
+  /* the DJ lines window */
+  .hookrow { display: flex; gap: 8px; align-items: center; justify-content: space-between; padding: 4px 0; border-bottom: 1px solid rgba(128,128,128,.15); }
+  .hookrow .hooktext { flex: 1; min-width: 0; font-size: 13px; }
+  .hookrow .hooktag { font-size: 11.5px; font-weight: 600; white-space: nowrap; }
+  .hookrow .hookwas { font-size: 11.5px; opacity: .65; }
+  .hookrow.off .hooktext > span:first-child { text-decoration: line-through; opacity: .6; }
+  .hookrow .line { flex-shrink: 0; }
+  .hookrow input.hookedit { flex: 1; min-width: 0; }
   .synchist summary { cursor: pointer; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .synchist ul { margin: 6px 0 0; padding-left: 18px; }
   .synchist li { margin: 2px 0; }
@@ -5825,22 +5833,58 @@ const Spectrum = {
 };
 const UI = {
   // The DJ's lines between songs: the 70s ones that come with the radio (to read), and its own (added here, synced).
+  // The DJ's lines: its own (add, edit, remove) and the 70s ones that come with the radio (edit, switch off, restore:
+  // kept as this radio's changes over the shipped list, so a new release's lines still arrive). Both sync.
   hooks: {
     load: () => api("/api/dj/hooks"),
-    build: (d, act) => {
+    build: (d, act, win) => {
+      const ch = d.changes || {};
+      const saveOwn = change => act(async () => { const now = await api("/api/dj/hooks"); await api("/api/dj/hooks", { own: change(now.own) }); });
+      const saveCh = change => act(async () => { const now = await api("/api/dj/hooks"); await api("/api/dj/hooks", { changes: change({ ...(now.changes || {}) }) }); });
+      const stop = () => { if (win) win.editing = null; drawDesk(); };
+      const editing = (kind, key) => win?.editing?.kind === kind && win.editing.key === key;
+      // (a line being edited: its words in a box, Enter keeps them, Escape doesn't)
+      const editor = (start, done) => {
+        const box = el("input", { type: "text", maxLength: 240, value: start, className: "hookedit" });
+        setTimeout(() => { if (box.isConnected) { box.focus(); box.setSelectionRange(box.value.length, box.value.length); } }, 0);
+        const ok = () => { const t = box.value.trim(); if (!t) return toast("Some words for the DJ, please (or Remove the line)."); if (win) win.editing = null; done(t); };
+        box.onkeydown = e => { if (e.key === "Enter") ok(); else if (e.key === "Escape") { e.preventDefault(); stop(); } };
+        return el("div", { className: "hookrow" }, box, line(sbtn("Save", ok, "primary"), sbtn("Cancel", stop)));
+      };
+      const edit = (kind, key) => () => { if (win) win.editing = { kind, key }; drawDesk(); };
       const add = el("input", { type: "text", id: "hook-add", maxLength: 240, placeholder: "A line for the DJ to say before a song" });
-      const save = change => act(async () => { const now = await api("/api/dj/hooks"); await api("/api/dj/hooks", { own: change(now.own) }); });
-      const go = () => { const t = add.value.trim(); if (!t) return toast("A line for the DJ, please."); save(own => [...own, t]); };
+      const go = () => { const t = add.value.trim(); if (!t) return toast("A line for the DJ, please."); saveOwn(own => [...own, t]); };
       add.onkeydown = e => { if (e.key === "Enter") go(); };
+      const ownRow = t => editing("own", t)
+        ? editor(t, n => saveOwn(own => own.map(x => x === t ? n : x)))
+        : el("div", { className: "hookrow" }, el("span", { className: "hooktext", textContent: "“" + t + "”" }),
+            line(sbtn("Edit", edit("own", t)), sbtn("Remove", () => saveOwn(own => own.filter(x => x !== t)))));
+      const builtinRow = t => {
+        const c = ch[t] || {};
+        if (editing("builtin", t))
+          return editor(c.text || t, n => saveCh(all => { if (n === t) delete all[t]; else all[t] = { text: n }; return all; }));
+        const shown = c.off ? t : (c.text || t);
+        const tag = c.off ? "⊘ Off: not said" : c.text ? "✎ Changed" : "";
+        return el("div", { className: "hookrow" + (c.off ? " off" : "") },
+          el("span", { className: "hooktext" }, el("span", { textContent: "“" + shown + "”" }),
+            ...(tag ? [el("span", { className: "hooktag", textContent: " " + tag })] : []),
+            ...(c.text ? [el("div", { className: "hookwas", textContent: "As it came: “" + t + "”" })] : [])),
+          line(...(c.off ? [] : [sbtn("Edit", edit("builtin", t))]),
+               sbtn(c.off ? "Switch on" : "Switch off", () => saveCh(all => { if (c.off) delete all[t]; else all[t] = { off: true }; return all; })),
+               ...(c.text ? [sbtn("Restore", () => saveCh(all => { delete all[t]; return all; }))] : [])));
+      };
+      const changed = d.builtin.filter(t => ch[t]?.text).length, off = d.builtin.filter(t => ch[t]?.off).length;
       return [
         grp("Your own lines",
-          ...(d.own.length ? d.own.map(t => srow("", el("span", { textContent: "“" + t + "”" }), sbtn("Remove", () => save(own => own.filter(x => x !== t)))))
+          ...(d.own.length ? d.own.map(ownRow)
             : [help("None yet. Add your own below: they go in the shuffle with the 70s ones, on every theme with 70s hooks on.")]),
           srow("New line", add), line(sbtn("Add", go, "primary")),
-          help("A line is said just before the DJ introduces the next song. Paired radios share your lines.")),
-        grp(`The 70s lines (${d.builtin.length}, with the radio)`,
-          ...d.builtin.map(t => el("p", { className: "shelp", textContent: "“" + t + "”" })),
-          help("Each theme says these when its 70s hooks are on (a theme's Settings). They're shuffled: each is said once before any again.")),
+          help("A line is said just before the DJ introduces the next song. Paired radios that share themes share your lines, and your changes to the 70s ones.")),
+        grp(`The 70s lines (${d.builtin.length} with the radio${changed || off ? `: ${changed} changed, ${off} switched off` : ""})`,
+          ...d.builtin.map(builtinRow),
+          ...(changed || off ? [line(sbtn("Restore all", () => ask(`Put all ${d.builtin.length} of the 70s lines back as they came? ${changed} changed and ${off} switched off go back to how they were.`, "Restore all",
+                () => act(async () => { await api("/api/dj/hooks", { changes: {} }); toast("The 70s lines are as they came."); }))))] : []),
+          help("Each theme says these when its 70s hooks are on (a theme's Settings). They're shuffled: each is said once before any again. Edit one to say it your way, or switch it off; Restore puts it back as it came. A new version of the radio still brings its new lines.")),
       ];
     },
   },

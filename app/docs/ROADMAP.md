@@ -75,11 +75,8 @@ the image README's [Roadmap](../../README.md#roadmap) (keep the two in step).
   under the knob, a hold keeps going; the knob stays as the indicator, click / scroll as before)
 - **Aircraft in 3D** (DONE 2026-11-17, 1.9.92: a Flat / 3D switch above the Aircraft scope; the 3D view stands each
   aircraft on a stalk over the map with its recent path; the Aircraft window now updates itself while it's open)
-- **DJ lines: fully managed** — edit and delete every DJ line, not only add/remove your own:
-  edit a line in place (own lines), and edit or switch off the 70s lines that come with the radio
-  (kept as this radio's changes over the built-in list, so a new release's lines still arrive).
-  Needs care with sync: today own lines only ever add between paired radios, so an edit or delete
-  must travel as a change, not come back from the other radio. (Asked for 2026-11-15.)
+- **DJ lines: fully managed** (DONE 2026-11-18, 1.9.100: edit, remove, switch off and restore every
+  DJ line, your own and the 70s ones; changes sync between paired radios that share themes.)
 - **Tune the speakers from the phone app** (DONE 2026-11-15: radio side 1.9.87, app 1.1+;
   the app measures with a sweep from three places, suggests, Listen / Adjust / Save) — the speaker analyser (the web page at
   `/analyser/`: quiet, then hiss, measured by the phone's microphone, suggesting the EQ and low cut)

@@ -2053,9 +2053,17 @@ The cards:
   is confirmed, then stops (a `stay-paused` file in `/data/radio/.update`,
   read once at the next start; a power cut still plays, as a radio does).
 - **DJ lines** — the lines the DJ says before introducing a song when a
-  theme's *70s hooks* are on: the 78 that come with the radio, to read, and
-  your own, added here (they join the shuffle on every theme with hooks on,
-  and paired radios share them). From The DJ, or a theme's Settings: *DJ lines…*.
+  theme's *70s hooks* are on: the 78 that come with the radio, and your own
+  (they join the shuffle on every theme with hooks on). Every line can be
+  managed: your own are added, **edited** in place and removed; each 70s line
+  can be **edited** (said your way) or **switched off**, and *Restore* (or
+  *Restore all*) puts it back as it came. The 70s changes are kept as this
+  radio's changes over the shipped list (`dj_hooks_changes`: {the line as it
+  comes: {"text"} or {"off": true}}), so a new release's lines still arrive;
+  `GET/POST /api/dj/hooks` {"own"?, "changes"?}. Paired radios that share
+  themes share both, edits and deletes included (an edit to your own line
+  travels as one removed and one added). From The DJ, or a theme's Settings:
+  *DJ lines…*.
 - **Other radios** (`sleepradiopi/sync.py`) — radios find each other on the
   network (each says it's there about once a minute, and asks who's there
   when it starts: a small UDP broadcast on port 47474) and can be **paired**,

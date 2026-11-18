@@ -1007,3 +1007,27 @@ def test_recent_syncs_are_kept_and_a_run_of_the_same_is_one(tmp_path) -> None:
     h = one.overview()["peers"][0]["history"]
     assert h[0]["said"].startswith("on two: 1 added") and h[1]["said"] == "already the same" and h[1]["times"] >= 3
     assert any(x["said"].startswith("one synced") for x in two.overview()["peers"][0]["history"])
+
+
+# --- DJ lines, fully managed: changes to the 70s lines travel too (with themes) ---
+
+def test_changes_to_the_70s_lines_travel_and_a_restore_goes_from_both(tmp_path) -> None:
+    net = Net()
+    one, two = radio(tmp_path, net, "one"), radio(tmp_path, net, "two")
+    one.pair("two")
+    settle(one, two)
+    set_conf(one, dj_hooks_changes={"Line A": {"text": "Line A, my way"}, "Line B": {"off": True}},
+             dj_hooks_own=["Mine", "Old wording"])
+    one.sync_now(two.id)
+    assert conf_of(two)["dj_hooks_changes"] == {"Line A": {"text": "Line A, my way"}, "Line B": {"off": True}}
+    set_conf(one, dj_hooks_changes={"Line B": {"off": True}},          # Line A restored on one...
+             dj_hooks_own=["Mine", "New wording"])                    # ...and an own line edited
+    one.sync_now(two.id)
+    assert conf_of(two)["dj_hooks_changes"] == {"Line B": {"off": True}}
+    assert sorted(conf_of(two)["dj_hooks_own"]) == ["Mine", "New wording"]
+    keys = [k for k in one.share(two.id) if k != "themes"]
+    one.set_share(two.id, keys)
+    settle(one, two)
+    set_conf(one, dj_hooks_changes={})
+    one.sync_now(two.id)
+    assert conf_of(two)["dj_hooks_changes"] == {"Line B": {"off": True}}   # (themes not shared: stays two's own)

@@ -40,6 +40,7 @@ class Settings:
     radio_stations: list | None = None    # internet radio: [{"name", "url", "info"?}]; None = the starter set
     callsign: str | None = None           # the owner's amateur radio callsign: what a room is joined under (playback/room.py)
     dj_hooks_own: list = field(default_factory=list)   # the DJ's own lines, added on the page: with the 70s ones (synced)
+    dj_hooks_changes: dict = field(default_factory=dict)   # changes to the 70s lines: {line: {"text"} | {"off": true}} (synced)
     radio_id: str = ""                    # who this radio is to the others it syncs with (made once: sync.py)
     sync_peers: list = field(default_factory=list)   # the radios it's paired with: [{"id", "name", "address"}] (sync.py)
     receiver_names: dict = field(default_factory=dict)   # names given to receivers on the desktop: {"http://192.168.50.4:8075": "Short wave"}

@@ -56,7 +56,8 @@ from . import profiles as profiles_mod
 from .birthdays import BirthdayWishes, wish_text
 from .messages import Messages
 from .script_builder import DjScriptBuilder, ShowClock, artist_station_name
-from .selector import BroadcastSelector, DeckStore, HookPool, artist_key, parse_hooks, validate_own_hooks
+from .selector import (BroadcastSelector, DeckStore, HookPool, apply_hook_changes, artist_key, parse_hooks,
+                       validate_hook_changes, validate_own_hooks)
 
 log = logging.getLogger(__name__)
 
@@ -237,6 +238,7 @@ class Station:
         self._hook_pool = None                # loaded even when off, so they can be turned on
         self.hooks_builtin: list[str] = []    # the 70s lines that come with the radio (hooks_file)
         self.hooks_own: list[str] = []        # lines added on the page (dj_hooks_own: synced between paired radios)
+        self.hooks_changes: dict = {}         # this radio's changes to the 70s lines (dj_hooks_changes: synced too)
         if cfg["hooks_file"] and Path(cfg["hooks_file"]).is_file():
             self.hooks_builtin = parse_hooks(Path(cfg["hooks_file"]).read_text())
             self._hook_pool = HookPool(self.hooks_builtin)
@@ -1796,7 +1798,19 @@ class Station:
     def set_own_hooks(self, lines: list[str]) -> None:
         """The DJ's own lines (added on the page) join the 70s ones in the shuffle (validated: ValueError)."""
         self.hooks_own = validate_own_hooks(lines)
-        every = self.hooks_builtin + self.hooks_own
+        self._rebuild_hooks()
+
+    def set_hook_changes(self, changes: dict) -> None:
+        """This radio's changes to the 70s lines: new wordings, and ones switched off (validated: ValueError)."""
+        self.hooks_changes = validate_hook_changes(changes)
+        self._rebuild_hooks()
+
+    def hooks_said(self) -> list[str]:
+        """Every line in the shuffle: the 70s ones as changed here, then the radio's own."""
+        return apply_hook_changes(self.hooks_builtin, self.hooks_changes) + self.hooks_own
+
+    def _rebuild_hooks(self) -> None:
+        every = self.hooks_said()
         if self._hook_pool is None:
             if not every:
                 return

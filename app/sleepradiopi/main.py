@@ -402,7 +402,11 @@ def _lock_in_memory() -> None:
 
 
 def _own_hooks(station: Station, settings) -> None:
-    """The DJ's own lines (dj_hooks_own), with the 70s ones."""
+    """The DJ's own lines (dj_hooks_own), with the 70s ones as changed here (dj_hooks_changes)."""
+    try:
+        station.set_hook_changes(getattr(settings, "dj_hooks_changes", None) or {})
+    except ValueError as e:
+        logging.getLogger(__name__).warning("the changes to the DJ's 70s lines ignored: %s", e)
     try:
         station.set_own_hooks(settings.dj_hooks_own or [])
     except ValueError as e:

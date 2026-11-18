@@ -46,7 +46,7 @@ LOCAL = {"hardware", "station_name", "music_folder", "jingles_folder", "audioboo
          "web_password", "update_source", "stream_source", "rx_reader", "messages_away", "qrz_key",
          "radio_id", "sync_peers"}   # (what's on, not a setting)           # (not a Settings field: kept out of the file on purpose)
 # Applied while the station runs; any other change needs a restart.
-LIVE = {"dj_hooks_own", "speaker_mono", "speaker_eq", "speaker_highpass_hz", "stream_evenness", "broadcast_artist", "birthdays",
+LIVE = {"dj_hooks_own", "dj_hooks_changes", "speaker_mono", "speaker_eq", "speaker_highpass_hz", "stream_evenness", "broadcast_artist", "birthdays",
         "profiles", "broadcast_profile", "broadcast_chattiness", "broadcast_dj_hooks",
         "broadcast_jingle_enabled", "broadcast_jingle_every", "news_enabled", "startup_sound", "web_stream",
         "broadcast_announcer_speed", "news_speed", "ebook_speed", "ebook_voice", "ebook_pace", "ebook_pause", "radio_stations", "buttons", "noise_on", "noise_kind", "noise_mix",
@@ -135,6 +135,12 @@ def _check(name: str, value):
             return programmes_mod.validate(value)
         except ValueError as e:
             raise BadSettings(f"programmes: {e}") from None
+    if name == "dj_hooks_changes":
+        from sleepradiopi.broadcast import selector as selector_mod
+        try:
+            return selector_mod.validate_hook_changes(value)
+        except ValueError as e:
+            raise BadSettings(f"dj_hooks_changes: {e}") from None
     if name == "playlists":
         try:
             return playlists_mod.validate(value)
