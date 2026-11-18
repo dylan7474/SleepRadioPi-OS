@@ -125,7 +125,9 @@ def test_web_api_tone_checks_its_numbers() -> None:
         httpd.shutdown()
 
 
-def test_power_dips_are_counted_while_watched(tmp_path) -> None:
+def test_power_dips_are_counted_while_watched(tmp_path, monkeypatch) -> None:
+    """A dip counts once however long it lasts. (The alarm is fed as a fixed run of readings, not flipped against
+    the clock: with real sleeps a busy machine sampled a change late or twice, and the test failed now and then.)"""
     import time
     d = tmp_path / "hwmon1"
     d.mkdir()
@@ -133,10 +135,22 @@ def test_power_dips_are_counted_while_watched(tmp_path) -> None:
     alarm = d / "in0_lcrit_alarm"
     alarm.write_text("0\n")
     w = spectrum.PowerWatch(tmp_path)
-    w.EVERY_S = 0.02
-    assert w.watch(time.monotonic() + 1.0) == 0
-    for v in ("1", "1", "0", "1", "0"):
-        alarm.write_text(v + "\n")
-        time.sleep(0.08)
-    assert w.watch(time.monotonic() + 0.1) == 2                   # two dips, however long each lasted
+    assert w._read() is False
+    alarm.write_text("1\n")
+    assert w._read() is True                                      # (the real sensor file is read)
+    readings = [False, True, True, False, True, False]            # (the first is where it starts)
+
+    def read():
+        v = readings.pop(0)
+        if not readings:
+            w._until = 0.0                                         # (the run of readings is over: stop)
+        return v
+    w._read = read
+    monkeypatch.setattr(spectrum.time, "sleep", lambda s: None)
+    w._until = float("inf")
+    w._run()
+    assert w.dips == 2                                             # two dips, however long each lasted
+    quiet = spectrum.PowerWatch(tmp_path)
+    alarm.write_text("0\n")
+    assert quiet.watch(time.monotonic() + 0.05) == 0              # (watching starts, nothing yet)
     assert spectrum.PowerWatch(tmp_path / "none").watch(time.monotonic() + 1) is None   # no sensor: None

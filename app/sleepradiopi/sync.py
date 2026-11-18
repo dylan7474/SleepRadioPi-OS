@@ -366,6 +366,8 @@ MEDIA_WORDS = {"music": "music files", "ondemand": "On demand files", "audiobook
 MAX_MEDIA_FILES = 60000
 SOUNDS = {".mp3", ".flac", ".m4a", ".ogg", ".opus", ".wav", ".m4b", ".aac"}
 MEDIA_WAIT_S = 30                          # (playing: looked at again this often)
+TREE_MAX_AGE_S = 1800                      # (a library's file list, kept between its changes: read again at least this often)
+TOMBSTONE_DAYS = 7                         # (a delete made while a library isn't agreed yet: remembered this long at most)
 
 
 def _syncable(kind: str, path: str) -> bool:
@@ -647,6 +649,12 @@ class Sync:
         self.history: list[dict] = []            # the recent syncs, newest last: {"at", "peer", "ok", "said"} (in memory)
         self._union_seen: dict[str, dict] = {}   # peer id -> {voices/wifi/places: digest both had at the last exchange}
         self._union_sent: dict[str, dict] = {}   # peer id -> the same, as this radio last told it (it asked)
+        # A library's file list is a walk of the card (thousands of files: seconds on a Zero, while it plays): kept
+        # till the library changes (media.changes) or TREE_MAX_AGE_S. kind -> (changes, when, entries)
+        self._trees: dict[str, tuple] = {}
+        # Files deleted here from the page while a library wasn't agreed with the other radio (a copy still going):
+        # left out of what's taken from it, so they don't come back, till the two agree. kind -> {rel: when}
+        self._deleted: dict[str, dict] = {}
         self._live: tuple = (0.0, None, {})      # (when, names, collections): this radio's own, read for the window
         conf = self._conf()
         self.id = conf.get("radio_id") if isinstance(conf.get("radio_id"), str) and conf.get("radio_id") else ""
@@ -704,12 +712,21 @@ class Sync:
                 out[n] = _clean_places(self.places.snapshot())
             elif n.startswith("media:"):
                 kind = n.split(":", 1)[1]
+                self._hook_media()
+                changes = getattr(self.media, "changes", None)
+                ver = changes.get(kind, 0) if isinstance(changes, dict) else None
+                kept = self._trees.get(kind)
+                if ver is not None and kept and kept[0] == ver and time.time() - kept[1] < TREE_MAX_AGE_S:
+                    out[n] = dict(kept[2])
+                    continue
                 try:
                     if not self.media._root(kind).is_dir():
                         continue                     # (not there: skipped, never read as "everything deleted")
                     out[n] = _media_entries(kind, self.media.tree(kind)["files"])
                 except (media_mod.MediaError, OSError):
                     continue
+                if ver is not None:
+                    self._trees[kind] = (ver, time.time(), dict(out[n]))
             else:
                 kind = n.split(":", 1)[1]
                 try:
@@ -797,6 +814,40 @@ class Sync:
             self._union_sent[for_id] = {n: _digest({n: v}) for n, v in collections.items() if n in UNION_ONLY}
         return {**self.hello(), "collections": collections, "usage": self._usage(),
                 "base": {n: _digest({n: v}) for n, v in base.items() if n not in UNION_ONLY}}
+
+    def _hook_media(self) -> None:
+        """Be told of deletes and adds made in the library (once: the storage may be given after the start)."""
+        m = self.media
+        if m is not None and getattr(m, "on_deleted", False) is None:
+            m.on_deleted = self._note_delete
+        if m is not None and getattr(m, "on_added", False) is None:
+            m.on_added = self._note_add
+
+    def _note_delete(self, kind: str, rel: str) -> None:
+        if kind not in MEDIA_KINDS or not rel:
+            return
+        now = time.time()
+        tomb = {r: at for r, at in self._deleted.get(kind, {}).items() if now - at < TOMBSTONE_DAYS * 86400}
+        tomb[rel] = now
+        self._deleted[kind] = tomb
+
+    def _note_add(self, kind: str, rel: str) -> None:
+        tomb = self._deleted.get(kind)
+        if tomb and rel in tomb:                     # (put back here: no longer a delete to keep)
+            del tomb[rel]
+
+    def _without_deleted(self, name: str, entries: dict) -> dict:
+        """A library's entries less the ones deleted here while it wasn't agreed (a file, or all in a folder)."""
+        tomb = self._deleted.get(name.split(":", 1)[1]) if name.startswith("media:") else None
+        if not tomb:
+            return entries
+        gone = lambda path: any(path == t or path.startswith(t + "/") for t in tomb)
+        return {k: v for k, v in entries.items() if not gone(k + str(v).partition(":")[2])}
+
+    def _agreed(self, name: str) -> None:
+        """A library agreed with the other radio: its deletes travel by the base from now on."""
+        if name.startswith("media:"):
+            self._deleted.pop(name.split(":", 1)[1], None)
 
     def _usage(self) -> dict | None:
         try:
@@ -989,7 +1040,7 @@ class Sync:
         try:
             for p in gone:
                 try:
-                    self.media.delete(kind, p, prune=True)
+                    self._delete_by_sync(kind, p, prune=True)
                 except media_mod.MediaError as e:
                     ok = False
                     log.warning("sync: %s/%s not deleted (%s)", kind, p, e)
@@ -1015,7 +1066,7 @@ class Sync:
                         if length != size:
                             raise OSError(f"{length} bytes, not {size}")
                         if p in have:                     # (a different one there: out of the way first)
-                            self.media.delete(kind, p)
+                            self._delete_by_sync(kind, p)
 
                         def read(n, r=r):
                             data = r.read(n)
@@ -1041,6 +1092,7 @@ class Sync:
         with self._lock:
             b = self._bases().get(peer_id)
             self._keep_base(peer_id, {**(b if isinstance(b, dict) else {}), name: want})
+            self._agreed(name)
             c = self.counts.get(peer_id)
             if c:
                 c["here"][name] = _measure(name, want)
@@ -1051,6 +1103,12 @@ class Sync:
             self._remember(peer_id, True, f"{words}: {len(fetch)} copied here, {len(gone)} deleted here")
         log.info("sync: %s: %d copied, %d deleted", words, len(fetch), len(gone))
         return True
+
+    def _delete_by_sync(self, kind: str, path: str, prune: bool = False) -> None:
+        try:
+            self.media.delete(kind, path, prune=prune, by_sync=True)
+        except TypeError:                            # (a storage without by_sync: a test's)
+            self.media.delete(kind, path, prune=prune)
 
     def allow_once(self, peer_id: str) -> None:
         self._allow_once.add(peer_id)
@@ -1111,7 +1169,8 @@ class Sync:
                 merged, here, there, held = {}, {}, {}, []
                 for n in names:
                     check = COLLECTIONS[n][1]
-                    merged[n], here[n] = merge(n, base.get(n), mine[n], theirs[n])
+                    take = theirs[n] if n in base else self._without_deleted(n, theirs[n])   # (deleted here: not taken back)
+                    merged[n], here[n] = merge(n, base.get(n), mine[n], take)
                     there[n] = _gone(n, theirs[n], merged[n])                  # (what the other radio would lose)
                     for where, count, of in (("here", here[n]["deleted"], mine[n]), ("there", there[n], theirs[n])):
                         if count > HOLD_MIN and count > HOLD_DELETES * max(1, len(_as_map(n, of))) \
@@ -1149,6 +1208,8 @@ class Sync:
             moved = {n for n in names if n.startswith("media:") and _digest({n: now.get(n)}) != _digest({n: mine[n]})}
             got = self._files(peer["address"], [n for n in names if n not in moved], mine, merged, peer_id)
             self._keep_base(peer_id, {n: v for n, v in merged.items() if n in got or not n.startswith(("files:", "media:"))})
+            for n in got:
+                self._agreed(n)
             self._allow_once.discard(peer_id)
             # (now: both hold what was merged -- the files where they've arrived; the rest as they were read)
             files_ = lambda n: n.startswith(("files:", "media:"))
@@ -1195,6 +1256,7 @@ class Sync:
                 skip = {n for n in names if n.startswith("media:") and was_media.get(n) != _digest({n: mine[n]})}
                 names = [n for n in names if n not in skip]
                 new, mine = {n: new[n] for n in names}, {n: mine[n] for n in names}
+                new = {n: self._without_deleted(n, v) if n.startswith("media:") else v for n, v in new.items()}
                 updates = self._write(conf, new, mine)
             files = [n for n in names if (n.startswith(("files:", "media:")) or n == "voices") and not same(n, new[n], mine[n])]
             self._keep_base(peer_id, {n: v for n, v in new.items() if n not in files})     # (those once they're here)

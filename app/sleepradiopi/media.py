@@ -140,6 +140,9 @@ class MediaLibrary:
         self.lease = lease
         self._lock = threading.Lock()
         self._dirty: set[str] = set()   # the libraries changed (music, jingles...): only they're rescanned
+        self.changes: dict[str, int] = {}   # kind -> how many changes so far (a sync keeps its file list till it moves)
+        self.on_deleted = None              # on_deleted(kind, rel): something deleted from the page (not by a sync)
+        self.on_added = None                # on_added(kind, rel): a file put in place (an upload, or a sync's copy)
         self._last_change = 0.0
         self._settle: threading.Timer | None = None
 
@@ -246,6 +249,8 @@ class MediaLibrary:
     def _changed(self, *kinds: str) -> None:
         with self._lock:
             self._dirty.update(kinds)
+            for k in kinds:
+                self.changes[k] = self.changes.get(k, 0) + 1
             self._last_change = time.monotonic()
             if self._settle is not None:
                 self._settle.cancel()
@@ -421,8 +426,9 @@ class MediaLibrary:
         log.info("media: made %s/%s", kind, path.relative_to(self._root(kind)))
         return str(path.relative_to(self._root(kind)))
 
-    def delete(self, kind: str, rel: str, prune: bool = False) -> None:
-        """prune: the folders that leaves empty go too (but never the library's own)."""
+    def delete(self, kind: str, rel: str, prune: bool = False, by_sync: bool = False) -> None:
+        """prune: the folders that leaves empty go too (but never the library's own). by_sync: a sync's own
+        delete (not told to on_deleted)."""
         root = self._root(kind)
         path = self.resolve(kind, rel)
         if path == root:
@@ -449,6 +455,11 @@ class MediaLibrary:
                 above = above.parent
         log.info("media: deleted %s/%s", kind, rel)
         self._changed(kind)
+        if not by_sync and self.on_deleted is not None:
+            try:
+                self.on_deleted(kind, "/".join(_clean_rel(rel)))
+            except Exception:
+                log.exception("media: on_deleted failed")
 
     def rename(self, kind: str, rel: str, new_name: str) -> str:
         """Rename a file or folder where it is (a theme's jingles folder, with the theme).
@@ -562,6 +573,11 @@ class MediaLibrary:
                 pass
         log.info("media: %s %s/%s (%d bytes)", "replaced" if replaced else "added", kind, dest.relative_to(root), length)
         self._changed(kind)
+        if self.on_added is not None:
+            try:
+                self.on_added(kind, dest.relative_to(root).as_posix())
+            except Exception:
+                log.exception("media: on_added failed")
         return {"path": str(dest.relative_to(root)), "status": "replaced" if replaced else "added"}
 
 

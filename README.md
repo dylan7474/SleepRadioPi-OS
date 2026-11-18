@@ -888,6 +888,10 @@ music and settings stay put.
   need: BusyBox init, eudev, Wi-Fi, mDNS, ssh, and the station; plus 256 MB
   of compressed swap in RAM (zram), so the neural voice has room to work
   without starving the music.
+- **No click at a restart.** Shut down or restarted (an update, the Power
+  button), the amp is muted first while its sound card still runs, then the
+  radio stops (`amp-quiet`, first of init's shutdown steps; the station does
+  the same when it alone is stopped).
 - **Looks after itself.** If the sound card ever refuses to open, the radio
   restarts itself after 2 minutes (at most once an hour) rather than sitting
   there silent; a broken update undoes itself; a Wi-Fi drop is reconnected

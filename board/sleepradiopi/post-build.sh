@@ -41,6 +41,11 @@ mkdir -p "${TARGET_DIR}/data" "${TARGET_DIR}/media"
 rm -rf "${TARGET_DIR}/var/lib/seedrng"
 ln -sfn /data/seedrng "${TARGET_DIR}/var/lib/seedrng"
 
+# At shutdown, before anything is stopped: silence the amp while its sound card still runs (no click). Put
+# first among init's ::shutdown actions (they run in order, before init stops every process).
+grep -q amp-quiet "${TARGET_DIR}/etc/inittab" ||
+	sed -i '0,/^::shutdown:/s//::shutdown:\/usr\/sbin\/amp-quiet\n&/' "${TARGET_DIR}/etc/inittab"
+
 # The station: init starts it after rcS and restarts it if it exits.
 grep -q sleepradiopi-station "${TARGET_DIR}/etc/inittab" ||
 	echo "::respawn:/usr/sbin/sleepradiopi-station" >> "${TARGET_DIR}/etc/inittab"

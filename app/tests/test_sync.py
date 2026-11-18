@@ -1031,3 +1031,78 @@ def test_changes_to_the_70s_lines_travel_and_a_restore_goes_from_both(tmp_path) 
     set_conf(one, dj_hooks_changes={})
     one.sync_now(two.id)
     assert conf_of(two)["dj_hooks_changes"] == {"Line B": {"off": True}}   # (themes not shared: stays two's own)
+
+
+# --- quick fixes 2026-11-18: library lists kept between changes; deletes during an unfinished copy stay deleted ---
+
+class CountedLibrary(Library):
+    """A Library that says when it changes (as media.MediaLibrary does) and counts its walks."""
+    def __init__(self, *a, **k):
+        super().__init__(*a, **k)
+        self.changes, self.walks = {}, 0
+        self.on_deleted = self.on_added = None
+
+    def tree(self, kind):
+        if kind == "music":                                           # (the big one: theme jingles are a handful)
+            self.walks += 1
+        return super().tree(kind)
+
+    def receive(self, kind, folder, name, length, read, replace=False):
+        super().receive(kind, folder, name, length, read, replace)
+        self.changes[kind] = self.changes.get(kind, 0) + 1
+        if self.on_added:
+            self.on_added(kind, name)
+
+    def delete(self, kind, path, prune=False, by_sync=False):
+        super().delete(kind, path, prune)
+        self.changes[kind] = self.changes.get(kind, 0) + 1
+        if not by_sync and self.on_deleted:
+            self.on_deleted(kind, path)
+
+
+def counted(tmp_path, net, address, files):
+    r = carded(tmp_path, net, address, {})
+    r.media = CountedLibrary(tmp_path / f"{address}-lib", files)
+    return r
+
+
+def test_a_librarys_file_list_is_kept_until_it_changes(tmp_path) -> None:
+    net = Net()
+    one = counted(tmp_path, net, "one", {"music/A/a.mp3": b"AAAA"})
+    two = counted(tmp_path, net, "two", {})
+    one.pair("two")
+    one.share_media(two.id, ["music"])
+    settle(one, two)
+    walks = one.media.walks
+    for _ in range(3):
+        one.state(two.id, "two")                                     # (asked, again and again)
+    assert one.media.walks == walks                                  # ...the card isn't walked again
+    one.media.delete("music", "A/a.mp3")                             # a change: walked again next time
+    one.state(two.id, "two")
+    assert one.media.walks == walks + 1
+
+
+def test_a_file_deleted_while_a_copy_is_unfinished_does_not_come_back(tmp_path) -> None:
+    net = Net()
+    one = counted(tmp_path, net, "one", {})
+    two = counted(tmp_path, net, "two", {"music/A/a.mp3": b"AAAA", "music/A/b.mp3": b"BB", "music/A/c.mp3": b"C"})
+    real = one.get_file
+    one.get_file = lambda addr, kind, path: (_ for _ in ()).throw(OSError("dropped")) if path == "A/c.mp3" else real(addr, kind, path)
+    one.pair("two")
+    one.share_media(two.id, ["music"])
+    settle(one, two)
+    one.sync_now(two.id)
+    settle(one, two)
+    assert set(one.media.files["music"]) == {"A/a.mp3", "A/b.mp3"}    # (c didn't come: not agreed yet)
+    one.media.delete("music", "A/a.mp3")                              # deleted on one, meanwhile
+    one.sync_now(two.id)
+    settle(one, two)
+    two.sync_now(one.id)
+    settle(one, two)
+    assert "A/a.mp3" not in one.media.files["music"]                  # (not brought back)
+    assert "A/a.mp3" not in two.media.files["music"]                  # ...and gone from two too
+    one.get_file = real
+    one.sync_now(two.id)
+    settle(one, two, want=lambda: "A/c.mp3" in one.media.files["music"])
+    assert set(one.media.files["music"]) == set(two.media.files["music"]) == {"A/b.mp3", "A/c.mp3"}
+    assert not one._deleted.get("music")                              # (agreed: deletes go by the base now)

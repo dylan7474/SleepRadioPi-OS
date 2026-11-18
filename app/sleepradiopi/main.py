@@ -401,6 +401,32 @@ def _lock_in_memory() -> None:
         pass
 
 
+def _quiet_on_stop(amp) -> None:
+    """Asked to stop (SIGTERM: a restart, or init stopping everything): the amp muted first, while its sound card
+    still runs -- the silent order -- then out at once. Dying with the amp on is a click as its clock stops."""
+    import signal
+
+    def stop(signum, frame) -> None:
+        try:
+            if amp is not None:
+                amp.mute()
+                time.sleep(0.1)
+        finally:
+            try:                                 # (its helpers too -- the voice worker: else one left behind
+                import multiprocessing           #  keeps its 150 MB while the station starts again)
+                for child in multiprocessing.active_children():
+                    child.terminate()
+            except Exception:
+                pass
+            logging.getLogger(__name__).info("asked to stop: the amp muted, going")
+            logging.shutdown()
+            os._exit(0)
+    try:
+        signal.signal(signal.SIGTERM, stop)
+    except ValueError:                           # (not the main thread: a test)
+        pass
+
+
 def _own_hooks(station: Station, settings) -> None:
     """The DJ's own lines (dj_hooks_own), with the 70s ones as changed here (dj_hooks_changes)."""
     try:
@@ -1128,6 +1154,7 @@ def main() -> None:
         sync.start()
     except Exception:                                  # (never stops the radio starting)
         logging.getLogger(__name__).exception("sync: not started")
+    _quiet_on_stop(amp if settings.speaker_enabled else None)
     serve(station, stream, args.port or settings.http_port, control, args.config, announcer, jobs, updates,
           presets, directory, media, lamps, sync)
 

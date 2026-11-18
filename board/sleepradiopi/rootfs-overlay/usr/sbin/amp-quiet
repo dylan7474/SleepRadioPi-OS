@@ -1,0 +1,12 @@
+#!/bin/sh
+# Silence the amp before the radio is stopped, at shutdown or a reboot (an update's, the Power button's): run by
+# init first among the ::shutdown actions, while the station still plays. The amp's MUTE/SD pin goes low with its
+# sound card's clock still running -- the order found silent on both radios (2026-11-14) -- so when the station
+# and its aplay are then stopped, the clock stops on a muted amp: no click. A radio with no amp mute pin set
+# (amp_mute_gpio) has no /run/sleepradiopi/amp-mute: nothing to do.
+PIN=/run/sleepradiopi/amp-mute
+if [ -e "$PIN" ]; then
+	echo 0 > "$PIN" 2>/dev/null
+	sleep 0.1 2>/dev/null || sleep 1             # (the amp shuts down before the clock goes)
+fi
+exit 0

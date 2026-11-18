@@ -2123,7 +2123,13 @@ The cards:
   while the radio plays** (the speaker or a browser listening). What the two
   agreed on is kept only once every file has arrived, so a copy cut short
   never turns into deletes; and a library still being copied into doesn't hold
-  up the rest of a sync (it's left for the next one). How it's going is shown
+  up the rest of a sync (it's left for the next one). A file deleted here
+  from the page while a library isn't yet agreed (a copy still going) is
+  remembered: it isn't taken back from the other radio, which is told to
+  delete it too, until the two agree (then deletes go by what was agreed).
+  Each library's file list is kept between its changes (and read again at
+  least every 30 minutes), so answering a sync doesn't walk the card while
+  the radio plays. How it's going is shown
   under each paired radio (`media_status` in `GET /api/sync`). Turning a kind
   off forgets what was agreed for it: shared again later, it starts as a first
   sync.
