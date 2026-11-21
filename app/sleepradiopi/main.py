@@ -241,7 +241,7 @@ def _alerts_found() -> list:
     """What's worth an alert now (conditions.alerts_now(), from the feeds as they stand)."""
     from sleepradiopi.playback import aircraft, conditions, lightning, qrzlog, quakes, ukwarnings
     return conditions.alerts_now(conditions.sun.status(), conditions.forecast.status(), conditions.aurora.status(), quakes.quakes.status(),
-                                 ukwarnings.warnings.status(), qrzlog.logbook.status(), lightning.watch.status(), aircraft.aircraft.status(), True)
+                                 ukwarnings.warnings.status(), qrzlog.logbook.status(), lightning.watch.status(), aircraft.aircraft.status())
 
 
 def _alert_voice(station) -> str:

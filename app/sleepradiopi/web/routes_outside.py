@@ -18,7 +18,7 @@ def build(ctx):
     config_file, speaker = ctx.config_file, ctx.speaker
 
     def air_state() -> dict:
-        from sleepradiopi.playback import aircraft as air_mod
+        from sleepradiopi.playback import aircraft as air_mod, notify as notify_mod
         had = air_mod.aircraft.status(False)
         planes = (had or {}).get("planes") or []
         trails = air_mod.aircraft.trails([p["hex"] for p in planes if "nm" in p]) if had else {}
@@ -26,6 +26,7 @@ def build(ctx):
                 "alerts": [{"what": w, "short": sh, "says": words} for w, _, words, sh in air_mod.alerts(had) if w.split(":")[-1] not in air_mod.EMERGENCY],
                 "recent": air_mod.aircraft.recent() if had else [],
                 "flagged": air_mod.flagged(had), "off": sorted(air_mod.OFF), "kinds": {k: list(v) for k, v in air_mod.KINDS.items()},
+                "notify": {k: notify_mod.mode(k) for k in notify_mod.KINDS if k == "aircraft" or k.startswith("aircraft:")},     # (each alert's mode, for its picker)
                 "planes": (had or {}).get("planes") or [], "emergency": (had or {}).get("emergency") or [], "far_nm": had and had["far_nm"],
                 "aerial": bool(had and had["aerial"]), "at": had and had.get("at"), "range": air_mod.RANGE, "ranges": list(air_mod.SCOPE_RANGES), "from": had and had["from"], "says": had and had["says"], "low_ft": air_mod.LOW_FT}
 
@@ -95,7 +96,8 @@ def build(ctx):
             # Flite is here to say them.
             from sleepradiopi.playback import lightning as lightning_mod, notify as notify_mod
             from sleepradiopi.tts import flite as flite_mod
-            kinds = [{"key": k, "label": label, "mode": lightning_mod.WHEN if k == "lightning" else notify_mod.mode(k)} for k, label in notify_mod.KINDS.items()]
+            kinds = [{"key": k, "label": label, "group": notify_mod.GROUPS.get(k, ""), "mode": lightning_mod.WHEN if k == "lightning" else notify_mod.mode(k)}
+                     for k, label in notify_mod.KINDS.items()]
             self._send(json.dumps({"kinds": kinds, "modes": list(notify_mod.MODES), "flite": flite_mod.available()}).encode(), "application/json")
             return True
         if path == "/api/lightning":

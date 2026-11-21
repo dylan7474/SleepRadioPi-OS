@@ -297,14 +297,15 @@ def test_what_to_watch_for() -> None:
     assert not aircraft.watched(p, aircraft.parse_watch("ASCOT, #43C0A2")) and not aircraft.watched({"hex": "~12345"}, aircraft.parse_watch("mil"))
 
 
-def test_low_and_close_and_watched_are_for_the_eye_only() -> None:
+def test_low_and_close_and_watched_are_alerts_of_their_own_kinds() -> None:
     a = aircraft.Aircraft(get=_get({"/data/aircraft.json": SKY2, "/data/receiver.json": RECEIVER}), clock=lambda: NOW, address=lambda: "pi:8080", watch=lambda: "mil")
     had = a.fetch()
     assert [p["call"] for p in had["low"]] == ["RRR123"] and [p["call"] for p in had["watch"]] == ["RRR123"]        # (GNJWI is low but 3.7 nm out)
     seen = aircraft.alerts(had)
     assert [w for w, *_ in seen] == ["aircraft:400004:7700", "aircraft:low:43c0a1", "aircraft:watch:43c0a1"]
     assert seen[1][3].startswith("Low: RRR123 900 ft · ") and seen[2][3].startswith("Watching: RRR123 ")
-    assert [w for w, *_ in aircraft.alerts(had, spoken=True)] == ["aircraft:400004:7700"]                        # (the DJ says only the emergency)
+    from sleepradiopi.playback import notify
+    assert [notify.kind_of(w) for w, *_ in seen] == ["aircraft", "aircraft:low", "aircraft:watch"]          # (each said as Notifications allows)
     t = aircraft.tile(had, {"aircraft"})[0]
     assert t["state"] == "alert" and t["sub"] == "EMRG1 squawking 7700" and "Low aircraft RRR123" in t["says"]
     calm = {**had, "emergency": []}

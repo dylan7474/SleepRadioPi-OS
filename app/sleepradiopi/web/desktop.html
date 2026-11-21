@@ -684,6 +684,10 @@
   .air-kind { display: flex; align-items: center; justify-content: space-between; gap: 14px; padding: 7px 0; border-bottom: 1px solid color-mix(in srgb, var(--plate-line) 55%, transparent); }
   .air-kind b { font-weight: 600; font-size: 13px; }
   .air-kind small { display: block; color: var(--dim); font-size: 11.5px; margin-top: 1px; }
+  .air-kind { flex-wrap: wrap; }
+  .air-kind > div:first-child { flex: 1 1 200px; min-width: 0; }
+  .air-ctl { display: flex; align-items: center; gap: 8px; flex: none; }
+  .air-show { display: flex; align-items: center; gap: 4px; font-size: 12px; }
   .air-chips { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 12px; }
   .air-chip { padding: 4px 11px; border-radius: 999px; font-size: 12px; background: color-mix(in srgb, var(--amber) 18%, var(--win)); border: 1px solid var(--amber-deep); color: var(--ink); white-space: nowrap; }
   .air-tab { display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr) minmax(0, 1.05fr) minmax(0, .7fr); gap: 4px 10px; font-size: 12.5px; align-items: baseline; }
@@ -1306,7 +1310,11 @@ function timeline(p) {
 
 // ============ drawing helpers ============
 const $ = id => document.getElementById(id);
-const el = (tag, props = {}, ...kids) => { const e = Object.assign(document.createElement(tag), props); e.append(...kids.filter(k => k != null)); return e; };
+// (aria-* and data-* are attributes, not properties: Object.assign alone left them unset)
+const el = (tag, props = {}, ...kids) => { const at = {}, pr = {};
+  for (const [k, v] of Object.entries(props || {})) (/^(aria|data)-/.test(k) ? at : pr)[k] = v;
+  const e = Object.assign(document.createElement(tag), pr); for (const [k, v] of Object.entries(at)) if (v != null) e.setAttribute(k, v);
+  e.append(...kids.filter(k => k != null)); return e; };
 // A time of day, chosen with up and down keys: hours, and minutes in fives (Shift: ones; the wheel
 // works too). It opens under what was clicked; Enter, Done or a click elsewhere keeps the time, Escape doesn't.
 let timePick = null;
@@ -4776,14 +4784,19 @@ const grp = (title, ...rows) => el("div", { className: "grp" }, title ? el("h3",
 const help = t => el("p", { className: "shelp", textContent: t });
 const NOTIFY_MODES = [["off", "Muted"], ["active", "Armed: playing"], ["always", "Armed: playing or paused"]];
 // an alert's mode (playback/notify.py): muted | armed while the radio plays | armed while it plays or is paused (the quiet hours beat all three)
-const notifySelect = (kind, label) => {
+// (current: its mode when the window's data has it, else it's asked for; act: the window's, to reload it after a change)
+const notifySelect = (kind, label, current, act) => {
   const s = el("select", { "aria-label": label + ": when it may be said" });
   NOTIFY_MODES.forEach(([v, t]) => s.append(new Option(t, v)));
-  api("/api/notify").then(N => { const k = N.kinds.find(x => x.key === kind); if (k) s.value = k.mode; }).catch(() => {});
-  s.onchange = () => api("/api/notify", { modes: { [kind]: s.value } }).catch(e => toast(e.message));
+  if (current) s.value = current;
+  else api("/api/notify").then(N => { const k = N.kinds.find(x => x.key === kind); if (k) s.value = k.mode; }).catch(() => {});
+  const send = () => api("/api/notify", { modes: { [kind]: s.value } });
+  s.onchange = () => act ? act(send) : send().catch(e => toast(e.message));
   return s;
 };
-const notifyRow = (kind, label) => srow(label, notifySelect(kind, label), line(sbtn("Hear it", () => api("/api/notify", { test: kind }).catch(e => toast(e.message)))));
+const NOTIFY_HELP = "Muted: shown, never said. Armed: playing: said only while the radio plays. Armed: playing or paused: also on its own while paused. Nothing gets past the quiet hours (the do-not-disturb, in The DJ's settings).";
+const notifyGrp = (what, ...rows) => grp("Alerts", ...rows, help(what), help(NOTIFY_HELP));
+const notifyRow = (kind, label, current, act) => srow(label, notifySelect(kind, label, current, act), line(sbtn("Hear it", () => api("/api/notify", { test: kind }).catch(e => toast(e.message)))));
 
 // Step by step, in Cloudflare's own words, for someone who has never used it. Open until a token is kept.
 function cloudflareGuide(open) {
@@ -6635,8 +6648,8 @@ const UI = {
         srow("Every", seg([[0, "Never"], [1, "Hour"], [2, "2 h"], [3, "3 h"], [6, "6 h"]], c.say_every_h, v => act(() => api("/api/rx/conditions", { say_every_h: v })))),
         c.spoken ? el("p", { className: "note", id: "cond-spoken", textContent: `As it would be said now: “${c.spoken}”` }) : null,
         help("Like the news: at a quarter past the hour or the first gap after, on Theme Radio with the DJ on, and not in the news's quiet hours. What the radio has heard comes first; with no survey lately it says N0NBH's forecast instead."),
-        notifyRow("aurora", "Aurora alerts"), notifyRow("es", "Sporadic E openings"), notifyRow("noaa", "Solar storms and blackouts"),
-        help("Each says once when it starts, in Flite's voice: AuroraWatch UK at amber or red, sporadic E on 6, 4 or 2 m, or a strong NOAA radio blackout or geomagnetic storm. Muted never speaks; the quiet hours stop all of them."))],
+        line(sbtn("Alerts: Notifications…", () => open(PANEL.notify.id))),
+        help("The aurora, sporadic E and solar storm alerts are set in their own windows (Aurora, VHF openings, The sun) and all together in Notifications."))],
   },
   // Log: the radio's log, newest at the bottom (logView below keeps its own state: it refreshes itself while Follow is on)
   log: {
@@ -6657,9 +6670,8 @@ const UI = {
           help("Magnitude 4.5 and over, the biggest first, from the US Geological Survey.")),
         grp(`In the UK, the last ${q.hours} hours`, ...(q.uk.length ? q.uk.map(x => row(x, true)) : [help(q.had ? "None." : "Not had yet.")]),
           help("From the British Geological Survey: mostly small ones, felt by few if any.")),
-        grp("Said by the DJ",
-          notifyRow("quake", "World quakes"), notifyRow("ukquake", "UK quakes"),
-          help(`A fresh one, once, in Flite's voice: magnitude ${q.alert_at.world} or more anywhere, ${q.alert_at.uk} or more in the UK, or ${q.alert_at.near} or more within ${q.alert_at.near_km} km of here. Never in the quiet hours.`))];
+        notifyGrp(`A fresh one, once, in Flite's voice: magnitude ${q.alert_at.world} or more anywhere, ${q.alert_at.uk} or more in the UK, or ${q.alert_at.near} or more within ${q.alert_at.near_km} km of here.`,
+          notifyRow("quake", "World quakes"), notifyRow("ukquake", "UK quakes"))];
     },
   },
   // The sun, Aurora and VHF openings (tiles in The world outside): each from /api/rx/conditions, said in full.
@@ -6683,6 +6695,8 @@ const UI = {
           return outKv(SCALE[L][0], v === "0" ? "none" : L + v, v === "0" ? "" : SCALE[L][1]); }),
           help("Each from 1 (minor) to 5 (extreme).")) : null,
         help(`From NOAA's Space Weather Prediction Center${s?.t ? `, ${condAge(s.t)}` : ""}, and N0NBH for the sunspots and X-rays.`),
+        notifyGrp("A strong NOAA radio blackout or geomagnetic storm (R3 or G3 and over), once when it starts and again if it goes higher, in Flite's voice.",
+          notifyRow("noaa", "Solar storms and blackouts")),
         line(el("a", { href: "https://www.swpc.noaa.gov/", target: "_blank", rel: "noopener", textContent: "NOAA's Space Weather Prediction Center" }))];
     },
   },
@@ -6702,6 +6716,7 @@ const UI = {
         vhf ? grp("On the radio", outKv("Aurora on VHF", /closed/i.test(vhf) ? "closed" : vhf, /closed/i.test(vhf) ? "" : "signals on 6 and 2 m bounce off the aurora: rough, buzzy, beam north"),
           outKv("K index", c.sun?.k != null ? Math.round(c.sun.k * 10) / 10 : "–", "5 and over: a storm, and the aurora further south")) : null,
         help("Alert status by AuroraWatch UK. " + (a?.credit || "")),
+        notifyGrp("AuroraWatch UK going to amber or red, once when it does and again if it goes higher, in Flite's voice.", notifyRow("aurora", "Aurora alerts")),
         line(el("a", { href: "https://aurorawatch.lancs.ac.uk/", target: "_blank", rel: "noopener", textContent: "AuroraWatch UK" }))];
     },
   },
@@ -6716,7 +6731,8 @@ const UI = {
         grp("Sporadic E across Europe", ...["6 m", "4 m", "2 m"].map(b => outKv(b, open(v[b]) ? "open" : "closed", open(v[b]) ? `listen on FT8, ${FT8[b]} MHz` : "", open(v[b]) ? "#2a9d3a" : null)),
           help("Patches of dense ionisation low in the sky bounce VHF 1,000 to 2,000 km: mostly May to August, by day, coming and going in minutes.")),
         grp("Aurora on VHF", outKv("Northern hemisphere", open(v.aurora) ? v.aurora : "closed", open(v.aurora) ? "beam north: rough, buzzy signals off the aurora" : "", open(v.aurora) ? "#2a9d3a" : null)),
-        help(`N0NBH's calculation (hamqsl.com)${c.forecast.updated ? `, updated ${c.forecast.updated}` : ""}. With Alerts on (Band conditions), the DJ says it when sporadic E opens.`),
+        help(`N0NBH's calculation (hamqsl.com)${c.forecast.updated ? `, updated ${c.forecast.updated}` : ""}.`),
+        notifyGrp("Sporadic E opening on 6, 4 or 2 m, once when it opens, in Flite's voice.", notifyRow("es", "Sporadic E openings")),
         line(el("a", { href: "https://www.hamqsl.com/solar.html", target: "_blank", rel: "noopener", textContent: "N0NBH's solar page" }))];
     },
   },
@@ -6742,9 +6758,8 @@ const UI = {
               f.message ? el("span", { className: "shelp", style: "display:block", textContent: f.message.slice(0, 300) + (f.message.length > 300 ? "…" : "") }) : null))
             : [help(w.home ? "No flood warnings or alerts in force." : "Set the radio's locator for its flood warnings.")]),
           help(`From the Environment Agency, within ${w.flood_km} km of the locator: England only (Scotland, Wales and Northern Ireland have their own).`)),
-        grp("Said by the DJ",
-          notifyRow("met", "Met Office warnings"), notifyRow("flood", "Flood warnings"),
-          help("An amber or red weather warning, or a flood warning or severe flood warning, once when it's issued (and again if it's raised), in Flite's voice. Never in the quiet hours."))];
+        notifyGrp("An amber or red weather warning, or a flood warning or severe flood warning, once when it's issued (and again if it's raised), in Flite's voice.",
+          notifyRow("met", "Met Office warnings"), notifyRow("flood", "Flood warnings"))];
     },
   },
   // Lightning (a tile in The world outside): strikes near the locator lately, from Blitzortung's live feed, which
@@ -6769,7 +6784,7 @@ const UI = {
               pick.onchange = () => act(() => api("/api/lightning", { when: pick.value })); return pick; })(),
             line(sbtn("Hear the bell", () => api("/api/lightning", { ring: true }).catch(e => toast(e.message))))),
           help(`The bell rings on the radio when a storm first comes within ${L.alert_km} km, and again if one strikes within ${L.close_km} km: twice a storm at most, whether the DJ's on or not. Muted: never. Armed while playing: only when the radio is playing. Armed while playing or paused: also on its own while paused. Nothing gets past the quiet hours (the do-not-disturb, in The DJ's settings): the bell never rings in them.`),
-          help(`Every ${Math.round(L.every_s / 60)} minutes the radio listens for ${Math.round(L.sample_s)} seconds to Blitzortung's live feed of every strike in the world, and keeps those within ${L.area_km} km; while one lands that near, it stays listening until the storm's been quiet for 20 minutes. With Alerts on (Band conditions), the DJ says it once a storm when it comes within ${L.alert_km} km.`),
+          help(`Every ${Math.round(L.every_s / 60)} minutes the radio listens for ${Math.round(L.sample_s)} seconds to Blitzortung's live feed of every strike in the world, and keeps those within ${L.area_km} km; while one lands that near, it stays listening until the storm's been quiet for 20 minutes. The bell is this storm's alert: set it here or in Notifications.`),
           help("Lightning data by Blitzortung.org and its contributors. It's a community network: not for protecting life or property, and its live feed may change or stop without notice.")),
         line(el("a", { href: "https://www.lightningmaps.org/", target: "_blank", rel: "noopener", textContent: "The live map on LightningMaps.org" }))];
     },
@@ -6778,9 +6793,10 @@ const UI = {
   notify: {
     load: () => api("/api/notify"),
     build: (N, act) => [
-      grp("When each alert may be said",
-        ...N.kinds.map(k => notifyRow(k.key, k.label)),
-        help("Muted: never. Armed while playing: only when the radio is playing. Armed while playing or paused: also on its own while paused. Nothing gets past the quiet hours (the do-not-disturb, in The DJ's settings)."),
+      ...[...new Set(N.kinds.map(k => k.group || "Other"))].map(g => grp(g,
+        ...N.kinds.filter(k => (k.group || "Other") === g).map(k => notifyRow(k.key, k.label.replace(/^Aircraft: (.)/, (_, c) => c.toUpperCase()), k.mode, act)))),
+      grp("",
+        help(NOTIFY_HELP + " Each window in The world outside has its own alerts too: the same settings."),
         help(N.flite ? "Alerts are spoken in Flite's voice, over whatever is playing, with the DJ on or off. Lightning rings its bell first, then says how near the storm is."
                      : "This radio has no Flite voice, so alerts can't be spoken (lightning still rings its bell)."))],
   },
@@ -6802,7 +6818,7 @@ const UI = {
           q.total != null ? outKv("QSOs", q.total.toLocaleString("en-GB"), "") : null,
           q.confirmed != null ? outKv("Confirmed", q.confirmed.toLocaleString("en-GB"), "") : null,
           q.dxcc != null ? outKv("Countries", q.dxcc, "DXCC entities worked") : null,
-          help(`From QRZ, ${condAge(q.t)}. With Alerts on (Band conditions), the DJ says it when a new country goes in.`)) : null,
+          help(`From QRZ, ${condAge(q.t)}.`)) : null,
         q.had ? grp("The latest", ...q.recent.map(x => el("p", { className: "note", style: "margin:3px 0" },
           el("a", { href: `https://www.qrz.com/db/${encodeURIComponent(x.call)}`, target: "_blank", rel: "noopener", textContent: x.call }),
           ` · ${[x.country, x.km != null ? `${x.km.toLocaleString("en-GB")} km` : x.near || x.grid, x.band, x.mode, t(x)].filter(Boolean).join(" · ")}`)),
@@ -6814,6 +6830,7 @@ const UI = {
           q.refused ? el("p", { className: "note", style: "color:var(--red)", textContent: `QRZ said no: ${q.refused}. Reading a logbook needs a QRZ Logbook subscription, and the key from that logbook's settings.` }) : null,
           q.set ? line(sbtn("Forget the key", () => act(() => api("/api/qrz", { key: "" })))) : null,
           help("On QRZ: your Logbook, Settings, the API access key. The radio keeps it in its own settings: it isn't shown here again, isn't in a backup file, and goes nowhere but QRZ. It asks every half an hour at most.")),
+        notifyGrp("A new country (DXCC entity) going into the logbook, in Flite's voice.", notifyRow("qrz", "New country")),
         line(el("a", { href: "https://logbook.qrz.com/", target: "_blank", rel: "noopener", textContent: "Your logbook on QRZ" }))];
     },
   },
@@ -6946,14 +6963,20 @@ const UI = {
         a.up ? line(el("p", { className: "air-key" }, ...ALT_BANDS.map(([, col, txt]) => el("span", {}, el("i", { style: `background:${col}` }), txt)))) : null,
         a.up ? grp(a.range ? `Within ${a.range} nm, nearest first` : "Nearest first", table(a), help((a.from === "receiver" ? "Distances are from the receiver's aerial, where the receiver says it is." : a.from === "locator" ? "The receiver didn't say where its aerial is, so distances are from the middle of this radio's locator square: approximate (a longer locator in Settings is closer)." : "The receiver didn't say where its aerial is and the radio has no locator, so there are no distances or plot.") + " Callsigns are what the aircraft transmits; ones with no position yet are listed last.")) :
           grp("Aircraft", help(a.address ? "The receiver isn't answering. That's normal away from home: the Aircraft tile is in The world outside only while it does." : "No receiver set. The tile shows once one is.")),
-        grp("Alerts", ...Object.entries(a.kinds || {}).map(([k, [name, what]]) => el("div", { className: "air-kind" }, el("div", {}, el("b", { textContent: name }), el("small", { textContent: what })),
-            sw(!a.off.includes(k), v => act(() => api("/api/aircraft", { off: Object.keys(a.kinds).filter(x => (x === k ? !v : a.off.includes(x))) })), name))),
-          help("Shown on the tile, in this window and on the scope, never spoken. An emergency squawk (7500, 7600, 7700) is always on, and the DJ says it with Alerts on.")),
+        grp("Alerts",
+          el("div", { className: "air-kind" }, el("div", {}, el("b", { textContent: "Emergency squawk" }), el("small", { textContent: "7500 hijack, 7600 radio failure, 7700 general emergency: always shown" })),
+            el("div", { className: "air-ctl" }, notifySelect("aircraft", "Emergency squawk", a.notify?.aircraft, act),
+              sbtn("Hear it", () => api("/api/notify", { test: "aircraft" }).catch(e => toast(e.message))))),
+          ...Object.entries(a.kinds || {}).map(([k, [name, what]]) => { const shown = !a.off.includes(k), pick = notifySelect("aircraft:" + k, name, a.notify?.["aircraft:" + k], act);
+            pick.disabled = !shown;                    // (one not shown is never said)
+            return el("div", { className: "air-kind" }, el("div", {}, el("b", { textContent: name }), el("small", { textContent: what })),
+              el("div", { className: "air-ctl" }, pick, el("label", { className: "air-show" }, sw(shown, v => act(() => api("/api/aircraft", { off: Object.keys(a.kinds).filter(x => (x === k ? !v : a.off.includes(x))) })), name + ": show"), " Show"))); }),
+          help("Show: on the tile, in this window and on the scope (one not shown is never said). " + NOTIFY_HELP + " Night flights only happen in the quiet hours, so they're shown, never said.")),
         grp("The receiver", srow("Address", addr, sbtn(a.address ? "Change" : "Keep it", save, "primary")),
           srow("Watch for", watchIn, sbtn("Keep", saveWatch)),
           help("For the Watch list alert: callsigns starting so (RRR, ASCOT), # then an address (#43C0A1) or a range (#43C000-43CFFF), or mil for UK and US military. Commas between."),
           a.address ? line(sbtn("Forget it", () => act(() => api("/api/aircraft", { address: "" })))) : null,
-          help("A dump1090 or readsb receiver on your network: the address of the page it serves, like 192.168.1.5:8080 (the radio reads its /data/aircraft.json). Only this address is asked, every half a minute or so, and nothing is written to the card. With Alerts on (Band conditions), the DJ says it when one squawks 7500, 7600 or 7700.")),
+          help("A dump1090 or readsb receiver on your network: the address of the page it serves, like 192.168.1.5:8080 (the radio reads its /data/aircraft.json). Only this address is asked, every half a minute or so, and nothing is written to the card.")),
       ];
     },
   },

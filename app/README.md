@@ -1656,8 +1656,8 @@ The cards:
   `OLD_S` = 120 s after the receiver stops answering); `LAN = True` keeps it
   out of the health light's stale-feed list (a radio away from home is not
   "wrong"); `wanted()` is false with no address.
-  Visual-only alerts (`alerts(had, spoken)`: `alert_due` passes `spoken=True`, which
-  leaves them out until `SPEAK_EXTRAS`): `aircraft:low:<hex>` (`"low"`: under `LOW_ALERT_FT`
+  The other alerts (`alerts(had)`, each said as Notifications allows: the kind `aircraft:<kind>`,
+  see notify.py; the emergency squawk is the kind `aircraft`): `aircraft:low:<hex>` (`"low"`: under `LOW_ALERT_FT`
   2000 within `LOW_ALERT_NM` 3, in the air) and `aircraft:watch:<hex>` (`"watch"`: matches
   the setting `aircraft_watch` / `POST /api/aircraft {"watch"}`, parsed by `parse_watch()`:
   a callsign prefix, `#hex`, `#lo-hi`, `mil`; a bad one is a 400). `Aircraft.trouble()`
@@ -1665,8 +1665,8 @@ The cards:
   (health.py asks any feed that has `trouble()`): it answered, but with no aircraft at all for
   `DEAF_S` (an hour); or the last hour's best range is under `DRIFT_RATIO` (35%) of the median of
   the day's half-hour bests (12 h of them needed, 60 nm or more, 20 samples in the last hour).
-  The other visual-only kinds (`KINDS`: name + what it is, shown in the window with a switch each;
-  switched off = the setting `aircraft_off`, `POST /api/aircraft {"off": [...]}`; `aircraft.OFF`):
+  The other kinds (`KINDS`: name + what it is, shown in the window with a notification picker and a
+  Show switch each; not shown (so never said) = the setting `aircraft_off`, `POST /api/aircraft {"off": [...]}`; `aircraft.OFF`):
   `inbound` (`cpa()`: closest approach from position, track and speed: within `INBOUND_NM` 2 inside
   `INBOUND_MIN` 8 min), `loiter` (`circling()` on the in-memory tracks: `LOITER_S` 15 min within
   `LOITER_NM` 5 of the track's middle; a gap over `GAP_S` ends a track), `descent` (baro rate under
@@ -2217,7 +2217,12 @@ The cards:
   (again when higher, or after `ALERT_AGAIN_S`) in Flite's voice (`main._say_alert`: `FliteTts`, levelled with
   `pcm.speech_pcm`, played with `play_clip`, so it works with the DJ off and without the neural worker); a held
   back one is not marked said. Lightning keeps its bell (`main._lightning_bell`), which now says how near the
-  storm is after it (`lightning.near_words`). A kind not set follows the old `conditions_alerts` switch. The
+  storm is after it (`lightning.near_words`). A kind not set follows the old `conditions_alerts` switch, except
+  the aircraft's own kinds (`aircraft:low`, `aircraft:watch`... one per `aircraft.KINDS`; `kind_of()` maps an
+  alert's key to its kind), which start muted. `GROUPS` heads the Notifications window's sections; every
+  tile's window has an "Alerts" group (`notifyGrp`) with the same picker (`notifySelect`). The modes are each
+  radio's own (not synced, like the quiet hours); a settings file or sync still takes them up at once
+  (`routes_system.apply_outside`, with `lightning_when` and the aircraft settings). The
   DJ no longer says alerts in the gap (only the periodic band report). Window: Notifications (The world
   outside's toolbar and The DJ), and each feed's own window has its row.
 

@@ -44,10 +44,9 @@ DEAF_S = 3600.0              # a receiver that hears no aircraft at all for this
 WATCH = ""                   # what to watch for ("RRR, ASCOT, #43C0A1, mil"); main.py sets it from the settings (aircraft_watch)
 WATCH_MOST = 10
 MIL = ((0x43C000, 0x43CFFF), (0xAE0000, 0xAFFFFF))      # UK and US military addresses
-SPEAK_EXTRAS = False         # low-and-close and watched aircraft are for the eye only (the tile, the folder's badge) until this is True
-OFF: set[str] = set()        # kinds of alert switched off (KINDS); main.py sets it from the settings (aircraft_off)
+OFF: set[str] = set()        # kinds of alert not shown (KINDS), so never said either; main.py sets it from the settings (aircraft_off)
 QUIET: Callable[[], bool] = lambda: False       # whether it's the quiet hours now; main.py sets it
-KINDS = {                    # the eye-only alerts: {kind: (name, what it is)}; the emergency squawk is always on
+KINDS = {                    # the alerts besides an emergency squawk: {kind: (name, what it is)}; each may be said as Notifications allows (notify.py)
     "low": ("Low and close", f"Under {LOW_ALERT_FT:,} ft within {LOW_ALERT_NM:g} nm"),
     "watch": ("Watch list", "An aircraft matching Watch for"),
     "inbound": ("Heading for you", "On course to pass within 2 nm in the next 8 minutes"),
@@ -481,17 +480,15 @@ def _quiet() -> bool:
         return False
 
 
-def alerts(had: dict | None, spoken: bool = False) -> list[tuple[str, int, str, str]]:
-    """What's worth an alert (conditions.alerts_now()): an aircraft squawking an emergency code (the DJ says it); one low
-    and close, and one on the watch list (the eye only: spoken=True leaves them out, until SPEAK_EXTRAS)."""
+def alerts(had: dict | None) -> list[tuple[str, int, str, str]]:
+    """What's worth an alert (conditions.alerts_now()): an aircraft squawking an emergency code (always shown), and each
+    of KINDS not switched off (OFF). Whether one is said is Notifications' business (notify.py), kind by kind."""
     out = []
     for p in (had or {}).get("emergency") or []:
         sq = p["squawk"]
         out.append((f"aircraft:{p.get('hex') or label(p)}:{sq}", 2,
                     f"Aircraft {label(p)} is squawking {sq}: {EMERGENCY[sq]}." + (f" It is {where(p)}." if where(p) else ""),
                     f"{label(p)} squawking {sq}"))
-    if spoken and not SPEAK_EXTRAS:
-        return out
     h = had or {}
     on = lambda kind: kind not in OFF
     at = lambda p: (f" {p['nm']:g} nm {SHORT[round(p['deg'] / 45) % 8]}" if "nm" in p else "")

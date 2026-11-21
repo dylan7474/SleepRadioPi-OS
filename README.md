@@ -544,13 +544,16 @@ Actions, Sleep timer and Radio folders open:
   bearing, height, speed and heading. The tile is there only while the
   receiver answers, so a radio away from home (or the receiver switched
   off) just has no Aircraft tile, and nothing is written to the card.
-  With Alerts on, the DJ says when an aircraft squawks 7500, 7600 or 7700.
-  Two more are for the eye only (never spoken): an aircraft **low and close**
+  An aircraft squawking 7500, 7600 or 7700 is always shown. Every aircraft
+  alert has the same three notification levels as the other alerts
+  (Muted, Armed: playing, Armed: playing or paused, set in the Aircraft
+  window or Notifications; nothing is said in the quiet hours), and all
+  start Muted. An aircraft **low and close**
   (under 2,000 ft within 3 nm) and any on your **watch list** (callsigns
   starting so, like `RRR`; `#43C0A1` an address; `#43C000-43CFFF` a range;
   `mil` the UK and US military) turn the tile red, say what and where in it,
   ring it on the scope and badge the folder. So do these (each with its own
-  switch in the window): one **heading for you** (on course to pass within
+  Show switch in the window: one not shown is never said): one **heading for you** (on course to pass within
   2 nm in the next 8 minutes), one **circling** (within 5 nm of a spot for
   15 minutes: helicopters, survey flights), an **emergency descent**
   (over 4,000 ft/min, from high up), **long range** (heard beyond 250 nm),

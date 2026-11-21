@@ -102,6 +102,26 @@ def test_the_default_follows_the_old_alerts_switch() -> None:
     assert notify.clean({"aurora": "always", "bogus": "always", "quake": "sometimes"}) == {"aurora": "always"}
 
 
+def test_every_aircraft_alert_is_a_kind_of_its_own_and_starts_muted(monkeypatch) -> None:
+    from sleepradiopi.playback import aircraft
+    assert notify.kind_of("aircraft:4ca1b2:7700") == "aircraft" and notify.kind_of("aircraft:low:4ca1b2") == "aircraft:low"
+    assert notify.kind_of("aircraft:busy") == "aircraft:busy" and notify.kind_of("quake:us7000abc") == "quake"
+    assert all(f"aircraft:{k}" in notify.KINDS and notify.GROUPS[f"aircraft:{k}"] == "Aircraft" for k in aircraft.KINDS)
+    notify.set_default(True)                                     # (the old Alerts switch was on: the emergency follows it...)
+    assert notify.mode("aircraft") == "active" and notify.mode("aircraft:low") == "off"       # (...the others were never said: muted)
+    found = [("aircraft:low:43c0a1", 1, "Low aircraft RRR123: 1 mile north.", "Low: RRR123"),
+             ("aircraft:heli:400010", 1, "Helicopter G-ABCD: 3 miles east.", "Helicopter: G-ABCD")]
+    n, said, st = _notifier(found)
+    assert n.tick(1000.0) == []                                  # muted to begin with
+    notify.modes["aircraft:low"] = "active"
+    assert n.tick(1010.0) == ["Low aircraft RRR123: 1 mile north."] and said[-1][1] == "Aircraft: low and close"
+    notify.modes["aircraft:heli"] = "always"
+    st["paused"], st["quiet"] = True, True
+    assert n.tick(1020.0) == []                                  # nothing past the quiet hours
+    st["quiet"] = False
+    assert n.tick(1030.0) == ["Helicopter G-ABCD: 3 miles east."]         # armed while paused too
+
+
 def test_near_words() -> None:
     st = {"t": 1000.0, "strikes": [{"t": 990.0, "km": 12, "deg": 45}, {"t": 900.0, "km": 30, "deg": 90}]}
     w = lightning.near_words(st, 1000.0)
@@ -138,6 +158,8 @@ def test_the_page_api(tmp_path, monkeypatch) -> None:
         saved = json.loads(conf.read_text())
         assert saved["notify"] == {"aurora": "active"} and saved["lightning_when"] == "off" and lightning.WHEN == "off"
         assert post({"test": "aurora"})[0] == 200 and said[0][1] == "Aurora"
+        assert {k["key"]: k["group"] for k in d["kinds"]}["aircraft:low"] == "Aircraft"
+        assert post({"modes": {"aircraft:heli": "always"}})[0] == 200 and json.loads(conf.read_text())["notify"]["aircraft:heli"] == "always"
     finally:
         httpd.shutdown()
         httpd.server_close()

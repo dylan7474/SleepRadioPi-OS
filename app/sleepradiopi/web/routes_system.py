@@ -154,6 +154,22 @@ def build(ctx):
             return
         self._send(json.dumps({"ok": True, "name": name, "backups": backups.list()}).encode(), "application/json")
 
+    def apply_outside(settings: dict, changed: set) -> None:
+        """The world outside's alert settings, taken up at once (they were read only at the start before)."""
+        from sleepradiopi.playback import aircraft as air_mod, lightning as lightning_mod, notify as notify_mod
+        if "notify" in changed:
+            notify_mod.modes.clear()
+            notify_mod.modes.update(notify_mod.clean(settings.get("notify")))
+        if "lightning_when" in changed and settings.get("lightning_when") in lightning_mod.WHENS:
+            lightning_mod.WHEN = settings["lightning_when"]
+            lightning_mod.BELL = lightning_mod.WHEN != "off"
+        if "aircraft_off" in changed:
+            air_mod.OFF = {k for k in (settings.get("aircraft_off") or []) if k in air_mod.KINDS}
+        if "aircraft_range" in changed and settings.get("aircraft_range") in (0, *air_mod.SCOPE_RANGES):
+            air_mod.RANGE = settings["aircraft_range"]
+        if "aircraft_watch" in changed and isinstance(settings.get("aircraft_watch"), str):
+            air_mod.WATCH = settings["aircraft_watch"]         # (the next look at the sky goes by it)
+
     def apply_live(settings: dict, changed: set, volume=None, save_selection=None) -> set:
         """Take up settings already written to the config (changed: the ones that differ) in the running
         radio: from a settings file (_apply_settings) or another radio (sync.py). Nothing restarts here."""
@@ -184,6 +200,8 @@ def build(ctx):
                     save_setting(config_file, "profiles", station.profiles)
             if save_selection is not None:
                 save_selection()
+        if changed & {"notify", "lightning_when", "aircraft_off", "aircraft_watch", "aircraft_range"}:
+            apply_outside(settings, changed)
         if "birthdays" in changed:
             station.set_birthdays(settings["birthdays"])
         if "dj_hooks_own" in changed and hasattr(station, "set_own_hooks"):

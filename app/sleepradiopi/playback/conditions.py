@@ -666,10 +666,10 @@ _alerted: dict[str, tuple[int, float]] = {}       # what's been alerted: {"auror
 
 def alerts_now(sun_now: dict | None, fc: dict | None, aurora_now: dict | None, quakes_now: dict | None = None,
                warn_now: dict | None = None, qrz_now: dict | None = None, light_now: dict | None = None,
-               air_now: dict | None = None, speak: bool = False) -> list[tuple[str, int, str, str]]:
+               air_now: dict | None = None) -> list[tuple[str, int, str, str]]:
     """What's worth an alert as things are: [(what, how high, the words, a few of them for the page)]."""
     from sleepradiopi.playback import aircraft, lightning, qrzlog, quakes, ukwarnings        # (they build on Kept, here)
-    out = lightning.alerts(light_now) + quakes.alerts(quakes_now) + ukwarnings.alerts(warn_now) + qrzlog.alerts(qrz_now) + aircraft.alerts(air_now, speak)
+    out = lightning.alerts(light_now) + quakes.alerts(quakes_now) + ukwarnings.alerts(warn_now) + qrzlog.alerts(qrz_now) + aircraft.alerts(air_now)
     if aurora_now and aurora_now.get("level") in ("amber", "red"):
         level = aurora_now["level"]
         out.append(("aurora", AURORA_LEVELS.index(level),
@@ -694,7 +694,7 @@ def alert_due(at, clock_ok: bool, quiet: bool, now: float | None = None) -> str 
     now = time.time() if now is None else now
     from sleepradiopi.playback import aircraft, lightning, qrzlog, quakes, ukwarnings
     found = alerts_now(sun.status(), forecast.status(), aurora.status(), quakes.quakes.status(), ukwarnings.warnings.status(), qrzlog.logbook.status(),
-                       lightning.watch.status(), aircraft.aircraft.status(), True)
+                       lightning.watch.status(), aircraft.aircraft.status())
     live = {what for what, *_ in found}
     for what in [w for w in _alerted if w not in live and now - _alerted[w][1] > ALERT_AGAIN_S]:
         del _alerted[what]
