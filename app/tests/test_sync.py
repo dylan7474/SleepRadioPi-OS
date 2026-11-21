@@ -820,7 +820,7 @@ def test_a_copy_shows_its_progress_by_bytes(tmp_path, monkeypatch) -> None:
 def test_every_shared_setting_is_in_a_group() -> None:
     grouped = {k for keys in sync_mod.SETTING_GROUPS.values() for k in keys}
     assert set(sync_mod._synced_settings()) == grouped                 # (none left over, none that isn't shared)
-    assert sum(len(k) for k in sync_mod.SETTING_GROUPS.values()) == len(grouped) == 24
+    assert sum(len(k) for k in sync_mod.SETTING_GROUPS.values()) == len(grouped) == 21                  # (24 before 1.9.105: the notification settings are each radio's own now)
 
 
 def test_a_new_pairing_shares_all_but_the_media_and_an_old_one_keeps_what_it_had(tmp_path) -> None:
@@ -1186,3 +1186,9 @@ def test_an_older_radio_without_fingerprints_still_syncs(tmp_path) -> None:
     two.state = lambda for_id="", ip=None, digests=False, only=None: full(for_id, ip)     # (it ignores what it doesn't know)
     set_stations(two, [st("a"), st("q")])
     assert one.pull(two.id)["ok"] and urls(stations_of(one)) == ["http://a", "http://q"]
+
+
+def test_notification_settings_are_each_radios_own() -> None:
+    shared = set(sync_mod._synced_settings())
+    for key in ("notify", "lightning_when", "aircraft_off", "conditions_alerts", "news_quiet_hours"):
+        assert key in sync_mod.RADIO_OWN and key not in shared

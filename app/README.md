@@ -2221,8 +2221,9 @@ The cards:
   the aircraft's own kinds (`aircraft:low`, `aircraft:watch`... one per `aircraft.KINDS`; `kind_of()` maps an
   alert's key to its kind), which start muted. `GROUPS` heads the Notifications window's sections; every
   tile's window has an "Alerts" group (`notifyGrp`) with the same picker (`notifySelect`). The modes are each
-  radio's own (not synced, like the quiet hours); a settings file or sync still takes them up at once
-  (`routes_system.apply_outside`, with `lightning_when` and the aircraft settings). The
+  radio's own (not synced, like the quiet hours), and so is every other notification setting since 1.9.105
+  (`lightning_when`, `aircraft_off`, `conditions_alerts`: `sync.RADIO_OWN`); a settings file still takes them
+  up at once (`routes_system.apply_outside`, with the aircraft's watch list and range, which do sync). The
   DJ no longer says alerts in the gap (only the periodic band report). Window: Notifications (The world
   outside's toolbar and The DJ), and each feed's own window has its row.
 

@@ -185,6 +185,8 @@ RADIO_OWN = {"speaker_mono", "speaker_eq", "speaker_highpass_hz", "speaker_volum
              # (the room's and the speaker's, not the programme's -- each radio's own since 1.9.96)
              "news_quiet_hours", "news_quiet_start_min", "news_quiet_end_min", "room_level", "noise_reduction",
              "broadcast_announcer_volume", "stream_evenness", "startup_sound", "notify", "lightning_bell",
+             # (every notification setting is each radio's own, since 1.9.105: the bell, what's shown, the old Alerts switch)
+             "lightning_when", "aircraft_off", "conditions_alerts",
              "background_url"}    # (the DJ's and the news's voice: each radio's choice; the packs themselves sync)
 COLLECTION_KEYS = {"radio_stations", "receiver_names", "profiles", "playlists", "programmes", "messages",
                    "birthdays", "podcasts", "dj_hooks_own", "dj_hooks_changes"}
@@ -201,8 +203,8 @@ SETTING_GROUPS = {
            "broadcast_jingle_every", "broadcast_time_checks", "broadcast_announcer_speed", "news_enabled", "news_speed"),
     "ebook": ("ebook_voice", "ebook_pause", "ebook_speed", "ebook_pace"),
     "identity": ("callsign", "locator"),
-    "outside": ("conditions_every_h", "conditions_alerts", "lightning_watch", "lightning_when", "aircraft_url",
-                "aircraft_range", "aircraft_off", "aircraft_watch", "warnings_region"),
+    "outside": ("conditions_every_h", "lightning_watch", "aircraft_url",
+                "aircraft_range", "aircraft_watch", "warnings_region"),
 }
 
 
